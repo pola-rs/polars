@@ -1,11 +1,11 @@
 use crate::error::PolarsError;
-use crate::{arithmetic::Arithmetic, error::Result};
+use crate::error::Result;
 use arrow::array::{Array, ArrayRef};
 use arrow::datatypes::DataType;
 use arrow::{
     array,
     array::{PrimitiveArray, PrimitiveBuilder},
-    compute,
+    compute, datatypes,
     datatypes::{ArrowNumericType, ArrowPrimitiveType, Field, Int8Type},
 };
 use num::Zero;
@@ -46,31 +46,106 @@ impl Column {
     }
 }
 
+macro_rules! variant_operand {
+    ($_self:expr, $rhs:expr, $data_type:ty, $operand:ident, $expect:expr) => {{
+        let mut new_chunks = Vec::with_capacity($_self.data_chunks.len());
+        $_self
+            .data_chunks
+            .iter()
+            .zip($rhs.data_chunks.iter())
+            .for_each(|(l, r)| {
+                let left_any = l.as_any();
+                let right_any = r.as_any();
+                let left = left_any
+                    .downcast_ref::<PrimitiveArray<$data_type>>()
+                    .unwrap();
+                let right = right_any
+                    .downcast_ref::<PrimitiveArray<$data_type>>()
+                    .unwrap();
+                let res =
+                    Arc::new(arrow::compute::$operand(left, right).expect($expect)) as ArrayRef;
+                new_chunks.push(res);
+            });
+        $_self.replace_array(new_chunks)
+    }};
+}
+
 impl Add for Column {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
+        let expect_str = "Could not add, check data types and length";
         let result = match self.field.data_type() {
-            DataType::Int8 => {
-                let mut new_chunks = Vec::with_capacity(self.data_chunks.len());
-                self.data_chunks
-                    .iter()
-                    .zip(rhs.data_chunks.iter())
-                    .for_each(|(l, r)| {
-                        let left_any = l.as_any();
-                        let right_any = r.as_any();
-                        let left = left_any.downcast_ref::<PrimitiveArray<Int8Type>>().unwrap();
-                        let right = right_any
-                            .downcast_ref::<PrimitiveArray<Int8Type>>()
-                            .unwrap();
-                        let res = Arc::new(compute::add(left, right).unwrap()) as ArrayRef;
-                        new_chunks.push(res);
-                    });
-                self.replace_array(new_chunks)
+            DataType::Int32 => variant_operand![self, rhs, datatypes::Int32Type, add, expect_str],
+            DataType::Float32 => {
+                variant_operand![self, rhs, datatypes::Float32Type, add, expect_str]
             }
             _ => return unimplemented!(),
         };
         result
+    }
+}
+
+impl Mul for Column {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let expect_str = "Could not multiply, check data types and length";
+        let result = match self.field.data_type() {
+            DataType::Int32 => {
+                variant_operand![self, rhs, datatypes::Int32Type, multiply, expect_str]
+            }
+            DataType::Float32 => {
+                variant_operand![self, rhs, datatypes::Float32Type, multiply, expect_str]
+            }
+            _ => return unimplemented!(),
+        };
+        result
+    }
+}
+
+impl Sub for Column {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let expect_str = "Could not subtract, check data types and length";
+        let result = match self.field.data_type() {
+            DataType::Int32 => {
+                variant_operand![self, rhs, datatypes::Int32Type, subtract, expect_str]
+            }
+            DataType::Float32 => {
+                variant_operand![self, rhs, datatypes::Float32Type, subtract, expect_str]
+            }
+            _ => return unimplemented!(),
+        };
+        result
+    }
+}
+
+impl Add for &Column {
+    type Output = Column;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let lhs = self.clone();
+        lhs.add(rhs.clone())
+    }
+}
+
+impl Mul for &Column {
+    type Output = Column;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let lhs = self.clone();
+        lhs.mul(rhs.clone())
+    }
+}
+
+impl Sub for &Column {
+    type Output = Column;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let lhs = self.clone();
+        lhs.sub(rhs.clone())
     }
 }
 
@@ -85,10 +160,12 @@ mod test {
     use super::*;
 
     #[test]
-    fn add() {
-        let s1 = Column::new::<Int8Type>("a", &[1, 2, 3]);
+    fn arithmetic() {
+        let s1 = Column::new::<datatypes::Int32Type>("a", &[1, 2, 3]);
         println!("{:?}", s1.data_chunks);
         let s2 = s1.clone();
-        println!("{:?}", (s1 + s2));
+        println!("{:?}", &s1 + &s2);
+        println!("{:?}", &s1 - &s2);
+        println!("{:?}", &s1 * &s2);
     }
 }
