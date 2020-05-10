@@ -1,0 +1,12 @@
+[package]
+name = "polars"
+version = "0.1.0"
+authors = ["ritchie46 <ritchie46@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arrow = "0.16.0"
+thiserror = "1.0.16"
+num = "0.2.1"
