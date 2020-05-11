@@ -38,16 +38,16 @@ impl Column {
         }
     }
 
-    fn replace_array(self, arr: Vec<ArrayRef>) -> Self {
+    fn replace_array(&self, arr: Vec<ArrayRef>) -> Self {
         Column {
-            field: self.field,
+            field: self.field.clone(),
             data_chunks: arr,
         }
     }
 }
 
 macro_rules! variant_operand {
-    ($_self:expr, $rhs:expr, $data_type:ty, $operand:ident, $expect:expr) => {{
+    ($_self:expr, $rhs:tt, $data_type:ty, $operand:ident, $expect:expr) => {{
         let mut new_chunks = Vec::with_capacity($_self.data_chunks.len());
         $_self
             .data_chunks
@@ -70,8 +70,8 @@ macro_rules! variant_operand {
     }};
 }
 
-impl Add for Column {
-    type Output = Self;
+impl Add for &Column {
+    type Output = Column;
 
     fn add(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not add, check data types and length";
@@ -86,8 +86,8 @@ impl Add for Column {
     }
 }
 
-impl Mul for Column {
-    type Output = Self;
+impl Mul for &Column {
+    type Output = Column;
 
     fn mul(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not multiply, check data types and length";
@@ -104,8 +104,8 @@ impl Mul for Column {
     }
 }
 
-impl Sub for Column {
-    type Output = Self;
+impl Sub for &Column {
+    type Output = Column;
 
     fn sub(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not subtract, check data types and length";
@@ -122,30 +122,27 @@ impl Sub for Column {
     }
 }
 
-impl Add for &Column {
-    type Output = Column;
+impl Add for Column {
+    type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let lhs = self.clone();
-        lhs.add(rhs.clone())
+        (&self).add(&rhs)
     }
 }
 
-impl Mul for &Column {
-    type Output = Column;
+impl Mul for Column {
+    type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let lhs = self.clone();
-        lhs.mul(rhs.clone())
+        (&self).mul(&rhs)
     }
 }
 
-impl Sub for &Column {
-    type Output = Column;
+impl Sub for Column {
+    type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let lhs = self.clone();
-        lhs.sub(rhs.clone())
+        (&self).sub(&rhs)
     }
 }
 
