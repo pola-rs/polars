@@ -14,45 +14,53 @@ use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
 
 #[derive(Clone)]
-struct Column {
+struct ChunkedArray {
     field: Field,
     // For now settle with dynamic generics until we are more confident about the api
-    data_chunks: Vec<ArrayRef>,
+    chunks: Vec<ArrayRef>,
+    /// sum of all chunk lengths
+    len: usize,
+    /// sum of all chunk nulls
+    null_counts: usize,
 }
 
-impl Column {
+impl ChunkedArray {
     fn new<T>(name: &str, v: &[T::Native]) -> Self
     where
         T: ArrowPrimitiveType,
     {
         let mut builder = PrimitiveBuilder::<T>::new(v.len());
         v.into_iter().for_each(|&val| {
-            builder.append_value(val);
+            builder.append_value(val).expect("Could not append value");
         });
 
         let field = Field::new(name, T::get_data_type(), true);
 
-        Column {
+        ChunkedArray {
             field,
-            data_chunks: vec![Arc::new(builder.finish())],
+            chunks: vec![Arc::new(builder.finish())],
+            len: v.len(),
+            null_counts: 0,
         }
     }
 
-    fn replace_array(&self, arr: Vec<ArrayRef>) -> Self {
-        Column {
+    fn copy_with_array(&self, arr: Vec<ArrayRef>) -> Self {
+        ChunkedArray {
             field: self.field.clone(),
-            data_chunks: arr,
+            chunks: arr,
+            len: self.len,
+            null_counts: self.null_counts,
         }
     }
 }
 
 macro_rules! variant_operand {
     ($_self:expr, $rhs:tt, $data_type:ty, $operand:ident, $expect:expr) => {{
-        let mut new_chunks = Vec::with_capacity($_self.data_chunks.len());
+        let mut new_chunks = Vec::with_capacity($_self.chunks.len());
         $_self
-            .data_chunks
+            .chunks
             .iter()
-            .zip($rhs.data_chunks.iter())
+            .zip($rhs.chunks.iter())
             .for_each(|(l, r)| {
                 let left_any = l.as_any();
                 let right_any = r.as_any();
@@ -66,12 +74,12 @@ macro_rules! variant_operand {
                     Arc::new(arrow::compute::$operand(left, right).expect($expect)) as ArrayRef;
                 new_chunks.push(res);
             });
-        $_self.replace_array(new_chunks)
+        $_self.copy_with_array(new_chunks)
     }};
 }
 
-impl Add for &Column {
-    type Output = Column;
+impl Add for &ChunkedArray {
+    type Output = ChunkedArray;
 
     fn add(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not add, check data types and length";
@@ -86,8 +94,8 @@ impl Add for &Column {
     }
 }
 
-impl Mul for &Column {
-    type Output = Column;
+impl Mul for &ChunkedArray {
+    type Output = ChunkedArray;
 
     fn mul(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not multiply, check data types and length";
@@ -104,8 +112,8 @@ impl Mul for &Column {
     }
 }
 
-impl Sub for &Column {
-    type Output = Column;
+impl Sub for &ChunkedArray {
+    type Output = ChunkedArray;
 
     fn sub(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not subtract, check data types and length";
@@ -122,7 +130,7 @@ impl Sub for &Column {
     }
 }
 
-impl Add for Column {
+impl Add for ChunkedArray {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -130,7 +138,7 @@ impl Add for Column {
     }
 }
 
-impl Mul for Column {
+impl Mul for ChunkedArray {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -138,7 +146,7 @@ impl Mul for Column {
     }
 }
 
-impl Sub for Column {
+impl Sub for ChunkedArray {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -146,9 +154,9 @@ impl Sub for Column {
     }
 }
 
-impl Debug for Column {
+impl Debug for ChunkedArray {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("{:?}", self.data_chunks))
+        f.write_str(&format!("{:?}", self.chunks))
     }
 }
 
@@ -158,8 +166,8 @@ mod test {
 
     #[test]
     fn arithmetic() {
-        let s1 = Column::new::<datatypes::Int32Type>("a", &[1, 2, 3]);
-        println!("{:?}", s1.data_chunks);
+        let s1 = ChunkedArray::new::<datatypes::Int32Type>("a", &[1, 2, 3]);
+        println!("{:?}", s1.chunks);
         let s2 = s1.clone();
         println!("{:?}", &s1 + &s2);
         println!("{:?}", &s1 - &s2);
