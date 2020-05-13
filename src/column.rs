@@ -52,6 +52,16 @@ impl ChunkedArray {
             null_counts: self.null_counts,
         }
     }
+
+    /// Caller determines the data type, and only works on single chunked series.
+    fn get_iter<T: ArrowNumericType>(&self) -> impl Iterator<Item = &T::Native> + '_ {
+        let a0_any = self.chunks[0].as_any();
+        let arr = a0_any
+            .downcast_ref::<PrimitiveArray<T>>()
+            .expect("could not downcast");
+        let slice = arr.value_slice(0, arr.len());
+        slice.iter()
+    }
 }
 
 macro_rules! variant_operand {
@@ -164,13 +174,26 @@ impl Debug for ChunkedArray {
 mod test {
     use super::*;
 
+    fn get_array() -> ChunkedArray {
+        ChunkedArray::new::<datatypes::Int32Type>("a", &[1, 2, 3])
+    }
+
     #[test]
     fn arithmetic() {
-        let s1 = ChunkedArray::new::<datatypes::Int32Type>("a", &[1, 2, 3]);
+        let s1 = get_array();
         println!("{:?}", s1.chunks);
         let s2 = s1.clone();
         println!("{:?}", &s1 + &s2);
         println!("{:?}", &s1 - &s2);
         println!("{:?}", &s1 * &s2);
+    }
+
+    #[test]
+    fn iter() {
+        let s1 = get_array();
+        let mut a = s1.get_iter::<datatypes::Int32Type>();
+        let v = a.next().unwrap();
+
+        println!("{:?}", v)
     }
 }
