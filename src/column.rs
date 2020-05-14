@@ -9,6 +9,7 @@ use arrow::{
     datatypes::{ArrowNumericType, ArrowPrimitiveType, Field, Int8Type},
 };
 use num::Zero;
+use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
@@ -49,6 +50,26 @@ where
             phantom: PhantomData,
         }
     }
+
+    fn iter(&self) -> ChunkIter<T> {
+        let arrays = self
+            .chunks
+            .iter()
+            .map(|a| {
+                a.as_any()
+                    .downcast_ref::<PrimitiveArray<T>>()
+                    .expect("could not downcast")
+            })
+            .collect::<Vec<_>>();
+        // let any = &self.chunks as &dyn Any;
+        // let arrays = any.downcast_ref::<Vec<Arc<PrimitiveArray<T>>>>().expect("could not downcast");
+        ChunkIter {
+            arrays,
+            chunk_i: 0,
+            array_i: 0,
+            out_of_bounds: false,
+        }
+    }
 }
 
 impl<T> ChunkedArray<T> {
@@ -61,16 +82,61 @@ impl<T> ChunkedArray<T> {
             phantom: PhantomData,
         }
     }
-    //
-    // /// Caller determines the data type, and only works on single chunked series.
-    // fn get_iter<T: ArrowNumericType>(&self) -> impl Iterator<Item = &T::Native> + '_ {
-    //     let a0_any = self.chunks[0].as_any();
-    //     let arr = a0_any
-    //         .downcast_ref::<PrimitiveArray<T>>()
-    //         .expect("could not downcast");
-    //     let slice = arr.value_slice(0, arr.len());
-    //     slice.iter()
-    // }
+}
+
+struct ChunkIter<'a, T>
+where
+    T: ArrowPrimitiveType,
+{
+    arrays: Vec<&'a PrimitiveArray<T>>,
+    chunk_i: usize,
+    array_i: usize,
+    out_of_bounds: bool,
+}
+
+impl<T> ChunkIter<'_, T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn set_indexes(&mut self, arr: &PrimitiveArray<T>) {
+        self.array_i += 1;
+        if self.array_i >= arr.len() {
+            // go to next array in the chunks
+            self.array_i = 0;
+            self.chunk_i += 1;
+        }
+        if self.chunk_i >= self.arrays.len() {
+            self.out_of_bounds = true;
+        }
+    }
+}
+
+impl<T> Iterator for ChunkIter<'_, T>
+where
+    T: ArrowPrimitiveType + ArrowNumericType,
+{
+    // nullable, therefore an option
+    type Item = Option<T::Native>;
+
+    /// Because arrow types are nullable an option is returned. This is wrapped in another option
+    /// to indicate if the iterator returns Some or None.
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.out_of_bounds {
+            return None;
+        }
+
+        let arr = unsafe { self.arrays.get_unchecked(self.chunk_i) };
+        let data = arr.data();
+        let ret;
+        if data.is_null(self.array_i) {
+            ret = Some(None)
+        } else {
+            let v = arr.value(self.array_i);
+            ret = Some(Some(v))
+        }
+        self.set_indexes(arr);
+        ret
+    }
 }
 
 macro_rules! variant_operand {
@@ -233,12 +299,10 @@ mod test {
         println!("{:?}", s1 * s2);
     }
 
-    // #[test]
-    // fn iter() {
-    //     let s1 = get_array();
-    //     let mut a = s1.get_iter::<datatypes::Int32Type>();
-    //     let v = a.next().unwrap();
-    //
-    //     println!("{:?}", v)
-    // }
+    #[test]
+    fn iter() {
+        let s1 = get_array();
+        let mut a = s1.iter();
+        s1.iter().for_each(|a| println!("iterator: {:?}", a));
+    }
 }
