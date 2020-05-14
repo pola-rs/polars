@@ -4,9 +4,9 @@ use arrow::array::{Array, ArrayRef};
 use arrow::datatypes::DataType;
 use arrow::{
     array,
-    array::{PrimitiveArray, PrimitiveBuilder},
+    array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
     compute, datatypes,
-    datatypes::{ArrowNumericType, ArrowPrimitiveType, Field, Int8Type},
+    datatypes::{ArrowNumericType, ArrowPrimitiveType, Field},
 };
 use num::Zero;
 use std::any::Any;
@@ -49,7 +49,7 @@ where
             chunks: vec![Arc::new(builder.finish())],
             len: v.len(),
             null_counts: 0,
-            chunk_id: format!("{:}", v.len()).to_string(),
+            chunk_id: format!("{}-", v.len()).to_string(),
             phantom: PhantomData,
         }
     }
@@ -72,18 +72,13 @@ where
             out_of_bounds: false,
         }
     }
-}
-
-impl<T> ChunkedArray<T>
-where
-    T: ArrowNumericType,
-{
     fn rechunk(&mut self) {
         let mut builder = PrimitiveBuilder::<T>::new(self.len);
         self.iter().for_each(|val| {
             builder.append_option(val).expect("Could not append value");
         });
-        self.chunks = vec![Arc::new(builder.finish())]
+        self.chunks = vec![Arc::new(builder.finish())];
+        self.set_chunk_id()
     }
 }
 
@@ -96,6 +91,13 @@ impl<T> ChunkedArray<T> {
             null_counts: self.null_counts,
             chunk_id: self.chunk_id.clone(),
             phantom: PhantomData,
+        }
+    }
+
+    fn set_chunk_id(&mut self) {
+        self.chunk_id = String::new();
+        for a in &self.chunks {
+            self.chunk_id.push_str(&format!("{}-", a.len()))
         }
     }
 
@@ -136,7 +138,7 @@ where
 
 impl<T> Iterator for ChunkIter<'_, T>
 where
-    T: ArrowNumericType,
+    T: ArrowPrimitiveType,
 {
     // nullable, therefore an option
     type Item = Option<T::Native>;
