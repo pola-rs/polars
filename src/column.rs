@@ -24,6 +24,8 @@ struct ChunkedArray<T> {
     len: usize,
     /// sum of all chunk nulls
     null_counts: usize,
+    /// len_chunk0-len_chunk1-len_chunk2 etc.
+    chunk_id: String,
     phantom: PhantomData<T>,
 }
 
@@ -47,6 +49,7 @@ where
             chunks: vec![Arc::new(builder.finish())],
             len: v.len(),
             null_counts: 0,
+            chunk_id: format!("{:}", v.len()).to_string(),
             phantom: PhantomData,
         }
     }
@@ -61,14 +64,26 @@ where
                     .expect("could not downcast")
             })
             .collect::<Vec<_>>();
-        // let any = &self.chunks as &dyn Any;
-        // let arrays = any.downcast_ref::<Vec<Arc<PrimitiveArray<T>>>>().expect("could not downcast");
+
         ChunkIter {
             arrays,
             chunk_i: 0,
             array_i: 0,
             out_of_bounds: false,
         }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: ArrowNumericType,
+{
+    fn rechunk(&mut self) {
+        let mut builder = PrimitiveBuilder::<T>::new(self.len);
+        self.iter().for_each(|val| {
+            builder.append_option(val).expect("Could not append value");
+        });
+        self.chunks = vec![Arc::new(builder.finish())]
     }
 }
 
@@ -79,9 +94,17 @@ impl<T> ChunkedArray<T> {
             chunks: arr,
             len: self.len,
             null_counts: self.null_counts,
+            chunk_id: self.chunk_id.clone(),
             phantom: PhantomData,
         }
     }
+
+    // /// Chunk sizes should match
+    // fn filter(&self, filter: ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
+    //     self.chunks.map(|arr| {
+    //         compute::filter(arr, filter.)
+    //     })
+    // }
 }
 
 struct ChunkIter<'a, T>
@@ -113,7 +136,7 @@ where
 
 impl<T> Iterator for ChunkIter<'_, T>
 where
-    T: ArrowPrimitiveType + ArrowNumericType,
+    T: ArrowNumericType,
 {
     // nullable, therefore an option
     type Item = Option<T::Native>;
@@ -275,6 +298,7 @@ impl<T> Clone for ChunkedArray<T> {
             chunks: self.chunks.clone(),
             len: self.len,
             null_counts: self.null_counts,
+            chunk_id: self.chunk_id.clone(),
             phantom: PhantomData,
         }
     }
