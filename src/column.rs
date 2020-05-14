@@ -1,6 +1,6 @@
 use crate::error::PolarsError;
 use crate::error::Result;
-use arrow::array::{Array, ArrayRef};
+use arrow::array::{Array, ArrayRef, BooleanArray};
 use arrow::datatypes::DataType;
 use arrow::{
     array,
@@ -16,14 +16,20 @@ use std::ops::{Add, Div, Mul, Sub};
 use std::rc::Rc;
 use std::sync::Arc;
 
+fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
+    let mut chunk_id = String::new();
+    for a in chunks {
+        chunk_id.push_str(&format!("{}-", a.len()))
+    }
+    chunk_id
+}
+
 struct ChunkedArray<T> {
     field: Field,
     // For now settle with dynamic generics until we are more confident about the api
     chunks: Vec<ArrayRef>,
     /// sum of all chunk lengths
     len: usize,
-    /// sum of all chunk nulls
-    null_counts: usize,
     /// len_chunk0-len_chunk1-len_chunk2 etc.
     chunk_id: String,
     phantom: PhantomData<T>,
@@ -48,7 +54,6 @@ where
             field,
             chunks: vec![Arc::new(builder.finish())],
             len: v.len(),
-            null_counts: 0,
             chunk_id: format!("{}-", v.len()).to_string(),
             phantom: PhantomData,
         }
@@ -80,33 +85,55 @@ where
         self.chunks = vec![Arc::new(builder.finish())];
         self.set_chunk_id()
     }
+
+    fn optional_rechunk<A>(&mut self, rhs: &ChunkedArray<A>) {
+        if self.chunk_id != rhs.chunk_id && rhs.chunks.len() == 1 {
+            self.rechunk()
+        }
+    }
+
+    /// Chunk sizes should match or rhs should have one chunk
+    fn filter(&mut self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
+        self.optional_rechunk(filter);
+        let chunks = self
+            .chunks
+            .iter()
+            .zip(&filter.chunks)
+            .map(|(arr, fil)| {
+                let fil = fil
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<datatypes::BooleanType>>()
+                    .expect("could not downcast filter");
+                let arr = arr
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<T>>()
+                    .expect("could not downcast");
+                compute::filter(arr, fil)
+            })
+            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
+        match chunks {
+            Ok(chunks) => Ok(self.copy_with_array(chunks)),
+            Err(e) => Err(PolarsError::ArrowError(e)),
+        }
+    }
 }
 
 impl<T> ChunkedArray<T> {
     fn copy_with_array(&self, arr: Vec<ArrayRef>) -> Self {
+        let len = arr.len();
+        let chunk_id = create_chunk_id(&arr);
         ChunkedArray {
             field: self.field.clone(),
             chunks: arr,
-            len: self.len,
-            null_counts: self.null_counts,
-            chunk_id: self.chunk_id.clone(),
+            len,
+            chunk_id,
             phantom: PhantomData,
         }
     }
 
     fn set_chunk_id(&mut self) {
-        self.chunk_id = String::new();
-        for a in &self.chunks {
-            self.chunk_id.push_str(&format!("{}-", a.len()))
-        }
+        self.chunk_id = create_chunk_id(&self.chunks)
     }
-
-    // /// Chunk sizes should match
-    // fn filter(&self, filter: ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
-    //     self.chunks.map(|arr| {
-    //         compute::filter(arr, filter.)
-    //     })
-    // }
 }
 
 struct ChunkIter<'a, T>
@@ -299,7 +326,6 @@ impl<T> Clone for ChunkedArray<T> {
             field: self.field.clone(),
             chunks: self.chunks.clone(),
             len: self.len,
-            null_counts: self.null_counts,
             chunk_id: self.chunk_id.clone(),
             phantom: PhantomData,
         }
