@@ -84,17 +84,18 @@ where
         self.set_chunk_id()
     }
 
-    fn optional_rechunk<A>(&mut self, rhs: &ChunkedArray<A>) -> Result<()> {
+    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
         if self.chunk_id != rhs.chunk_id {
             // we can rechunk ourselves to match
             if rhs.chunks.len() == 1 {
-                self.rechunk();
-                Ok(())
+                let mut new = self.clone();
+                new.rechunk();
+                Ok(Some(new))
             } else {
                 Err(PolarsError::ChunkMismatch)
             }
         } else {
-            Ok(())
+            Ok(None)
         }
     }
 
@@ -111,7 +112,12 @@ where
 
     /// Chunk sizes should match or rhs should have one chunk
     fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
-        let chunks = self
+        let opt = self.optional_rechunk(filter)?;
+        let left = match &opt {
+            Some(a) => a,
+            None => self,
+        };
+        let chunks = left
             .downcast_chunks()
             .iter()
             .zip(&filter.downcast_chunks())
@@ -272,23 +278,14 @@ where
 }
 
 macro_rules! variant_operand {
-    ($_self:expr, $rhs:tt, $data_type:ty, $operand:ident, $expect:expr) => {{
+    ($_self:expr, $rhs:tt, $data_type:ty, $operand:expr, $expect:expr) => {{
         let mut new_chunks = Vec::with_capacity($_self.chunks.len());
         $_self
-            .chunks
+            .downcast_chunks()
             .iter()
-            .zip($rhs.chunks.iter())
-            .for_each(|(l, r)| {
-                let left_any = l.as_any();
-                let right_any = r.as_any();
-                let left = left_any
-                    .downcast_ref::<PrimitiveArray<$data_type>>()
-                    .unwrap();
-                let right = right_any
-                    .downcast_ref::<PrimitiveArray<$data_type>>()
-                    .unwrap();
-                let res =
-                    Arc::new(arrow::compute::$operand(left, right).expect($expect)) as ArrayRef;
+            .zip($rhs.downcast_chunks())
+            .for_each(|(left, right)| {
+                let res = Arc::new($operand(left, right).expect($expect)) as ArrayRef;
                 new_chunks.push(res);
             });
         $_self.copy_with_array(new_chunks)
@@ -308,7 +305,7 @@ where
 
     fn add(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not add, check data types and length";
-        variant_operand![self, rhs, T, add, expect_str]
+        variant_operand![self, rhs, T, compute::add, expect_str]
     }
 }
 
@@ -325,7 +322,7 @@ where
 
     fn mul(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not multiply, check data types and length";
-        variant_operand!(self, rhs, T, multiply, expect_str)
+        variant_operand!(self, rhs, T, compute::multiply, expect_str)
     }
 }
 
@@ -342,7 +339,7 @@ where
 
     fn sub(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not subtract, check data types and length";
-        variant_operand![self, rhs, T, subtract, expect_str]
+        variant_operand![self, rhs, T, compute::subtract, expect_str]
     }
 }
 
