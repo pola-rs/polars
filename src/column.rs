@@ -1,6 +1,7 @@
 use crate::error::PolarsError;
 use crate::error::Result;
 use arrow::array::{Array, ArrayRef, BooleanArray};
+use arrow::compute::TakeOptions;
 use arrow::datatypes::DataType;
 use arrow::{
     array,
@@ -194,6 +195,24 @@ impl<T> ChunkedArray<T> {
 
     fn set_chunk_id(&mut self) {
         self.chunk_id = create_chunk_id(&self.chunks)
+    }
+
+    fn take(
+        &self,
+        indices: &ChunkedArray<datatypes::UInt32Type>,
+        options: Option<TakeOptions>,
+    ) -> Result<Self> {
+        let taken = self
+            .chunks
+            .iter()
+            .zip(indices.downcast_chunks())
+            .map(|(arr, idx)| compute::take(&arr, idx, options.clone()))
+            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
+
+        match taken {
+            Ok(chunks) => Ok(self.copy_with_array(chunks.clone())),
+            Err(e) => Err(PolarsError::ArrowError(e)),
+        }
     }
 }
 
@@ -448,5 +467,12 @@ mod test {
         assert_eq!(a.max(), Some(3));
         assert_eq!(a.min(), Some(1));
         assert_eq!(a.sum(), Some(6))
+    }
+
+    #[test]
+    fn take() {
+        let a = get_array();
+        let new = a.take(&ChunkedArray::new("idx", &[0, 1]), None).unwrap();
+        assert_eq!(new.len, 2)
     }
 }
