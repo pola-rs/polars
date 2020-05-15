@@ -39,16 +39,13 @@ impl<T> ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
-    fn new<K>(name: &str, v: &[K::Native]) -> Self
-    where
-        K: ArrowPrimitiveType,
-    {
-        let mut builder = PrimitiveBuilder::<K>::new(v.len());
+    fn new(name: &str, v: &[T::Native]) -> Self {
+        let mut builder = PrimitiveBuilder::<T>::new(v.len());
         v.into_iter().for_each(|&val| {
             builder.append_value(val).expect("Could not append value");
         });
 
-        let field = Field::new(name, K::get_data_type(), true);
+        let field = Field::new(name, T::get_data_type(), true);
 
         ChunkedArray {
             field,
@@ -86,31 +83,42 @@ where
         self.set_chunk_id()
     }
 
-    fn optional_rechunk<A>(&mut self, rhs: &ChunkedArray<A>) {
-        if self.chunk_id != rhs.chunk_id && rhs.chunks.len() == 1 {
-            self.rechunk()
+    fn optional_rechunk<A>(&mut self, rhs: &ChunkedArray<A>) -> Result<()> {
+        if self.chunk_id != rhs.chunk_id {
+            // we can rechunk ourselves to match
+            if rhs.chunks.len() == 1 {
+                self.rechunk();
+                Ok(())
+            } else {
+                Err(PolarsError::ChunkMismatch)
+            }
+        } else {
+            Ok(())
         }
+    }
+
+    fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                arr.as_any()
+                    .downcast_ref::<PrimitiveArray<T>>()
+                    .expect("could not downcast one of the chunks")
+            })
+            .collect::<Vec<_>>()
     }
 
     /// Chunk sizes should match or rhs should have one chunk
     fn filter(&mut self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
-        self.optional_rechunk(filter);
+        self.optional_rechunk(filter)?;
+
         let chunks = self
-            .chunks
+            .downcast_chunks()
             .iter()
-            .zip(&filter.chunks)
-            .map(|(arr, fil)| {
-                let fil = fil
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<datatypes::BooleanType>>()
-                    .expect("could not downcast filter");
-                let arr = arr
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<T>>()
-                    .expect("could not downcast");
-                compute::filter(arr, fil)
-            })
+            .zip(&filter.downcast_chunks())
+            .map(|(&arr, &fil)| compute::filter(arr, fil))
             .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
+
         match chunks {
             Ok(chunks) => Ok(self.copy_with_array(chunks)),
             Err(e) => Err(PolarsError::ArrowError(e)),

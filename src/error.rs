@@ -6,6 +6,8 @@ pub enum PolarsError {
     ArrowError(#[from] arrow::error::ArrowError),
     #[error("Invalid operation")]
     InvalidOperation,
+    #[error("Chunk don't match")]
+    ChunkMismatch,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
