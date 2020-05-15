@@ -109,9 +109,7 @@ where
     }
 
     /// Chunk sizes should match or rhs should have one chunk
-    fn filter(&mut self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
-        self.optional_rechunk(filter)?;
-
+    fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
         let chunks = self
             .downcast_chunks()
             .iter()
@@ -124,15 +122,33 @@ where
             Err(e) => Err(PolarsError::ArrowError(e)),
         }
     }
+
+    fn limit(&self, num_elements: usize) -> Result<Self> {
+        if num_elements >= self.len {
+            Ok(self.copy_with_array(self.chunks.clone()))
+        } else {
+            let mut new_chunks = Vec::with_capacity(self.chunks.len());
+            let mut remaining_elements = num_elements as i64;
+
+            let mut c = 0;
+            while remaining_elements > 0 {
+                let chunk = &self.chunks[c];
+                new_chunks.push(compute::limit(chunk, remaining_elements as usize)?);
+                remaining_elements -= chunk.len() as i64;
+                c += 1;
+            }
+            Ok(self.copy_with_array(new_chunks))
+        }
+    }
 }
 
 impl<T> ChunkedArray<T> {
-    fn copy_with_array(&self, arr: Vec<ArrayRef>) -> Self {
-        let len = arr.len();
-        let chunk_id = create_chunk_id(&arr);
+    fn copy_with_array(&self, chunks: Vec<ArrayRef>) -> Self {
+        let len = chunks.iter().fold(0, |acc, arr| acc + arr.len());
+        let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
             field: self.field.clone(),
-            chunks: arr,
+            chunks,
             len,
             chunk_id,
             phantom: PhantomData,
@@ -345,7 +361,7 @@ mod test {
     use super::*;
 
     fn get_array() -> ChunkedArray<datatypes::Int32Type> {
-        ChunkedArray::new::<datatypes::Int32Type>("a", &[1, 2, 3])
+        ChunkedArray::<datatypes::Int32Type>::new("a", &[1, 2, 3])
     }
 
     #[test]
@@ -364,5 +380,28 @@ mod test {
         let s1 = get_array();
         let mut a = s1.iter();
         s1.iter().for_each(|a| println!("iterator: {:?}", a));
+        // sum
+        assert_eq!(s1.iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
+    }
+
+    #[test]
+    fn limit() {
+        let a = get_array();
+        let b = a.limit(2).unwrap();
+        println!("{:?}", b);
+        assert_eq!(b.len, 2)
+    }
+
+    #[test]
+    fn filter() {
+        let a = get_array();
+        let b = a
+            .filter(&ChunkedArray::<datatypes::BooleanType>::new(
+                "filter",
+                &[true, false, false],
+            ))
+            .unwrap();
+        assert_eq!(b.len, 1);
+        assert_eq!(b.iter().next(), Some(Some(1)));
     }
 }
