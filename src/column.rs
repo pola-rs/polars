@@ -140,6 +140,43 @@ where
             Ok(self.copy_with_array(new_chunks))
         }
     }
+
+    fn sum(&self) -> Option<T::Native>
+    where
+        T: ArrowNumericType,
+        T::Native: std::ops::Add<Output = T::Native>,
+    {
+        self.downcast_chunks()
+            .iter()
+            .map(|&a| compute::sum(a))
+            .fold(None, |acc, v| match v {
+                Some(v) => match acc {
+                    None => Some(v),
+                    Some(acc) => Some(acc + v),
+                },
+                None => acc,
+            })
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: ArrowNumericType,
+    T::Native: std::cmp::Ord,
+{
+    fn max(&self) -> Option<T::Native> {
+        self.downcast_chunks()
+            .iter()
+            .filter_map(|&a| compute::max(a))
+            .max()
+    }
+
+    fn min(&self) -> Option<T::Native> {
+        self.downcast_chunks()
+            .iter()
+            .filter_map(|&a| compute::min(a))
+            .min()
+    }
 }
 
 impl<T> ChunkedArray<T> {
@@ -403,5 +440,13 @@ mod test {
             .unwrap();
         assert_eq!(b.len, 1);
         assert_eq!(b.iter().next(), Some(Some(1)));
+    }
+
+    #[test]
+    fn aggregates() {
+        let a = get_array();
+        assert_eq!(a.max(), Some(3));
+        assert_eq!(a.min(), Some(1));
+        assert_eq!(a.sum(), Some(6))
     }
 }
