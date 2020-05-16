@@ -3,6 +3,8 @@ use crate::error::Result;
 use arrow::array::{Array, ArrayRef, BooleanArray};
 use arrow::compute::TakeOptions;
 use arrow::datatypes::DataType;
+use arrow::error::ArrowError;
+use arrow::ipc::SparseMatrixCompressedAxis::Column;
 use arrow::{
     array,
     array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
@@ -25,12 +27,20 @@ fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
     chunk_id
 }
 
+macro_rules! apply_operator {
+    ($lhs:ident, $rhs:ident, $operator:expr) => {
+        $lhs.downcast_chunks()
+            .iter()
+            .zip($rhs.downcast_chunks())
+            .map(|(left, right)| $operator(left, right))
+            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>()
+    };
+}
+
 struct ChunkedArray<T> {
     field: Field,
     // For now settle with dynamic generics until we are more confident about the api
     chunks: Vec<ArrayRef>,
-    /// sum of all chunk lengths
-    len: usize,
     /// len_chunk0-len_chunk1-len_chunk2 etc.
     chunk_id: String,
     phantom: PhantomData<T>,
@@ -51,8 +61,18 @@ where
         ChunkedArray {
             field,
             chunks: vec![Arc::new(builder.finish())],
-            len: v.len(),
             chunk_id: format!("{}-", v.len()).to_string(),
+            phantom: PhantomData,
+        }
+    }
+
+    fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
+        let field = Field::new(name, T::get_data_type(), true);
+        let chunk_id = create_chunk_id(&chunks);
+        ChunkedArray {
+            field,
+            chunks,
+            chunk_id,
             phantom: PhantomData,
         }
     }
@@ -76,7 +96,7 @@ where
         }
     }
     fn rechunk(&mut self) {
-        let mut builder = PrimitiveBuilder::<T>::new(self.len);
+        let mut builder = PrimitiveBuilder::<T>::new(self.len());
         self.iter().for_each(|val| {
             builder.append_option(val).expect("Could not append value");
         });
@@ -131,7 +151,7 @@ where
     }
 
     fn limit(&self, num_elements: usize) -> Result<Self> {
-        if num_elements >= self.len {
+        if num_elements >= self.len() {
             Ok(self.copy_with_array(self.chunks.clone()))
         } else {
             let mut new_chunks = Vec::with_capacity(self.chunks.len());
@@ -169,6 +189,66 @@ where
 impl<T> ChunkedArray<T>
 where
     T: ArrowNumericType,
+{
+    fn comparison(
+        &self,
+        rhs: &ChunkedArray<T>,
+        operator: impl Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> arrow::error::Result<BooleanArray>,
+    ) -> Result<ChunkedArray<datatypes::BooleanType>> {
+        let opt = self.optional_rechunk(rhs)?;
+        let left = match &opt {
+            Some(a) => a,
+            None => self,
+        };
+
+        let chunks_res = left
+            .downcast_chunks()
+            .iter()
+            .zip(rhs.downcast_chunks())
+            .map(|(left, right)| operator(left, right))
+            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
+
+        let chunks_res = chunks_res.map(|chunks| {
+            chunks
+                .into_iter()
+                .map(|arr| Arc::new(arr) as ArrayRef)
+                .collect()
+        });
+
+        match chunks_res {
+            Ok(chunks) => Ok(ChunkedArray::new_from_chunks("", chunks)),
+            Err(e) => Err(PolarsError::ArrowError(e)),
+        }
+    }
+
+    fn eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+        self.comparison(rhs, compute::eq)
+    }
+
+    fn neq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+        self.comparison(rhs, compute::neq)
+    }
+
+    fn gt(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+        self.comparison(rhs, compute::gt)
+    }
+
+    fn gt_eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+        self.comparison(rhs, compute::gt_eq)
+    }
+
+    fn lt(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+        self.comparison(rhs, compute::lt)
+    }
+
+    fn lt_eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+        self.comparison(rhs, compute::lt_eq)
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: ArrowNumericType,
     T::Native: std::cmp::Ord,
 {
     fn max(&self) -> Option<T::Native> {
@@ -187,13 +267,14 @@ where
 }
 
 impl<T> ChunkedArray<T> {
+    fn len(&self) -> usize {
+        self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
+    }
     fn copy_with_array(&self, chunks: Vec<ArrayRef>) -> Self {
-        let len = chunks.iter().fold(0, |acc, arr| acc + arr.len());
         let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
             field: self.field.clone(),
             chunks,
-            len,
             chunk_id,
             phantom: PhantomData,
         }
@@ -277,15 +358,15 @@ where
     }
 }
 
-macro_rules! variant_operand {
-    ($_self:expr, $rhs:tt, $data_type:ty, $operand:expr, $expect:expr) => {{
+macro_rules! operand_on_primitive_arr {
+    ($_self:expr, $rhs:tt, $operator:expr, $expect:expr) => {{
         let mut new_chunks = Vec::with_capacity($_self.chunks.len());
         $_self
             .downcast_chunks()
             .iter()
             .zip($rhs.downcast_chunks())
             .for_each(|(left, right)| {
-                let res = Arc::new($operand(left, right).expect($expect)) as ArrayRef;
+                let res = Arc::new($operator(left, right).expect($expect)) as ArrayRef;
                 new_chunks.push(res);
             });
         $_self.copy_with_array(new_chunks)
@@ -305,7 +386,7 @@ where
 
     fn add(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not add, check data types and length";
-        variant_operand![self, rhs, T, compute::add, expect_str]
+        operand_on_primitive_arr![self, rhs, compute::add, expect_str]
     }
 }
 
@@ -322,7 +403,7 @@ where
 
     fn mul(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not multiply, check data types and length";
-        variant_operand!(self, rhs, T, compute::multiply, expect_str)
+        operand_on_primitive_arr!(self, rhs, compute::multiply, expect_str)
     }
 }
 
@@ -339,7 +420,7 @@ where
 
     fn sub(self, rhs: Self) -> Self::Output {
         let expect_str = "Could not subtract, check data types and length";
-        variant_operand![self, rhs, T, compute::subtract, expect_str]
+        operand_on_primitive_arr![self, rhs, compute::subtract, expect_str]
     }
 }
 
@@ -402,7 +483,6 @@ impl<T> Clone for ChunkedArray<T> {
         ChunkedArray {
             field: self.field.clone(),
             chunks: self.chunks.clone(),
-            len: self.len,
             chunk_id: self.chunk_id.clone(),
             phantom: PhantomData,
         }
