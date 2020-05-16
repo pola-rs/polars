@@ -538,7 +538,7 @@ mod test {
         let a = get_array();
         let b = a.limit(2).unwrap();
         println!("{:?}", b);
-        assert_eq!(b.len, 2)
+        assert_eq!(b.len(), 2)
     }
 
     #[test]
@@ -550,7 +550,7 @@ mod test {
                 &[true, false, false],
             ))
             .unwrap();
-        assert_eq!(b.len, 1);
+        assert_eq!(b.len(), 1);
         assert_eq!(b.iter().next(), Some(Some(1)));
     }
 
@@ -566,6 +566,13 @@ mod test {
     fn take() {
         let a = get_array();
         let new = a.take(&ChunkedArray::new("idx", &[0, 1]), None).unwrap();
-        assert_eq!(new.len, 2)
+        assert_eq!(new.len(), 2)
+    }
+
+    #[test]
+    fn cast() {
+        let a = get_array();
+        let b = a.cast::<datatypes::Int64Type>().unwrap();
+        assert_eq!(b.field.data_type(), &datatypes::DataType::Int64)
     }
 }
