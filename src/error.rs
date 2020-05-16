@@ -7,7 +7,7 @@ pub enum PolarsError {
     #[error("Invalid operation")]
     InvalidOperation,
     #[error("Chunk don't match")]
-    ChunkMismatch,
+    ChunkMisMatch,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

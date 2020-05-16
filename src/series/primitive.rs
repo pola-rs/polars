@@ -2,21 +2,14 @@ use crate::error::PolarsError;
 use crate::error::Result;
 use arrow::array::{Array, ArrayRef, BooleanArray};
 use arrow::compute::TakeOptions;
-use arrow::datatypes::DataType;
-use arrow::error::ArrowError;
-use arrow::ipc::SparseMatrixCompressedAxis::Column;
 use arrow::{
-    array,
     array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
     compute, datatypes,
     datatypes::{ArrowNumericType, ArrowPrimitiveType, Field},
 };
-use num::Zero;
-use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
-use std::rc::Rc;
 use std::sync::Arc;
 
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
@@ -27,18 +20,8 @@ fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
     chunk_id
 }
 
-macro_rules! apply_operator {
-    ($lhs:ident, $rhs:ident, $operator:expr) => {
-        $lhs.downcast_chunks()
-            .iter()
-            .zip($rhs.downcast_chunks())
-            .map(|(left, right)| $operator(left, right))
-            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>()
-    };
-}
-
-struct ChunkedArray<T> {
-    field: Field,
+pub struct ChunkedArray<T> {
+    pub(crate) field: Field,
     // For now settle with dynamic generics until we are more confident about the api
     chunks: Vec<ArrayRef>,
     /// len_chunk0-len_chunk1-len_chunk2 etc.
@@ -112,7 +95,7 @@ where
                 new.rechunk();
                 Ok(Some(new))
             } else {
-                Err(PolarsError::ChunkMismatch)
+                Err(PolarsError::ChunkMisMatch)
             }
         } else {
             Ok(None)
