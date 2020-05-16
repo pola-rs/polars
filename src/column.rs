@@ -145,14 +145,14 @@ where
             .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
 
         match chunks {
-            Ok(chunks) => Ok(self.copy_with_array(chunks)),
+            Ok(chunks) => Ok(self.copy_with_chunks(chunks)),
             Err(e) => Err(PolarsError::ArrowError(e)),
         }
     }
 
     fn limit(&self, num_elements: usize) -> Result<Self> {
         if num_elements >= self.len() {
-            Ok(self.copy_with_array(self.chunks.clone()))
+            Ok(self.copy_with_chunks(self.chunks.clone()))
         } else {
             let mut new_chunks = Vec::with_capacity(self.chunks.len());
             let mut remaining_elements = num_elements as i64;
@@ -164,7 +164,7 @@ where
                 remaining_elements -= chunk.len() as i64;
                 c += 1;
             }
-            Ok(self.copy_with_array(new_chunks))
+            Ok(self.copy_with_chunks(new_chunks))
         }
     }
 
@@ -270,7 +270,7 @@ impl<T> ChunkedArray<T> {
     fn len(&self) -> usize {
         self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
     }
-    fn copy_with_array(&self, chunks: Vec<ArrayRef>) -> Self {
+    fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
         let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
             field: self.field.clone(),
@@ -297,9 +297,25 @@ impl<T> ChunkedArray<T> {
             .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
 
         match taken {
-            Ok(chunks) => Ok(self.copy_with_array(chunks.clone())),
+            Ok(chunks) => Ok(self.copy_with_chunks(chunks.clone())),
             Err(e) => Err(PolarsError::ArrowError(e)),
         }
+    }
+
+    fn cast<N>(&self) -> Result<ChunkedArray<N>>
+    where
+        N: ArrowPrimitiveType,
+    {
+        let chunks = self
+            .chunks
+            .iter()
+            .map(|arr| compute::cast(arr, &N::get_data_type()))
+            .collect::<arrow::error::Result<Vec<_>>>()?;
+
+        Ok(ChunkedArray::<N>::new_from_chunks(
+            self.field.name(),
+            chunks,
+        ))
     }
 }
 
@@ -369,7 +385,7 @@ macro_rules! operand_on_primitive_arr {
                 let res = Arc::new($operator(left, right).expect($expect)) as ArrayRef;
                 new_chunks.push(res);
             });
-        $_self.copy_with_array(new_chunks)
+        $_self.copy_with_chunks(new_chunks)
     }};
 }
 
