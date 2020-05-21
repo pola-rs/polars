@@ -1,19 +1,14 @@
-use crate::error::Result;
-use crate::series::{
-    primitive::ChunkedArray,
-    series::{Series, SeriesRef},
-};
-use arrow::array::PrimitiveArray;
-use arrow::{
+use crate::{
     datatypes,
-    datatypes::{DataType, Field, Schema},
+    datatypes::ArrowDataType,
+    error::Result,
+    series::{chunked_array::ChunkedArray, series::Series},
 };
-use std::any::Any;
+use arrow::datatypes::{Field, Schema};
 use std::io::Read;
-use std::path::Path;
 use std::sync::Arc;
 
-type CSVReader<R: Read> = arrow::csv::Reader<R>;
+type CSVReader<R> = arrow::csv::Reader<R>;
 
 struct DataFrame {
     schema: Arc<Schema>,
@@ -31,11 +26,20 @@ impl DataFrame {
             .fields()
             .iter()
             .map(|field| match field.data_type() {
-                DataType::Int32 => Series::Int32(
+                ArrowDataType::Int32 => Series::Int32(
                     ChunkedArray::<datatypes::Int32Type>::new_from_chunks(field.name(), vec![]),
                 ),
-                DataType::Int64 => Series::Int64(
+                ArrowDataType::Int64 => Series::Int64(
                     ChunkedArray::<datatypes::Int64Type>::new_from_chunks(field.name(), vec![]),
+                ),
+                ArrowDataType::Float32 => Series::Float32(
+                    ChunkedArray::<datatypes::Float32Type>::new_from_chunks(field.name(), vec![]),
+                ),
+                ArrowDataType::Float64 => Series::Float64(
+                    ChunkedArray::<datatypes::Float64Type>::new_from_chunks(field.name(), vec![]),
+                ),
+                ArrowDataType::Utf8 => Series::Utf8(
+                    ChunkedArray::<datatypes::Utf8Type>::new_from_chunks(field.name(), vec![]),
                 ),
                 _ => unimplemented!(),
             })
@@ -46,9 +50,8 @@ impl DataFrame {
                 .columns()
                 .into_iter()
                 .zip(&mut columns)
-                .for_each(|(arr, ser)| {
-                    ser.append_array(arr.clone());
-                })
+                .map(|(arr, ser)| ser.append_array(arr.clone()))
+                .collect::<Result<Vec<_>>>()?;
         }
 
         Ok(DataFrame {

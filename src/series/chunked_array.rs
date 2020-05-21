@@ -1,10 +1,12 @@
-use crate::error::PolarsError;
-use crate::error::Result;
+use crate::{
+    datatypes,
+    error::{PolarsError, Result},
+};
 use arrow::array::{Array, ArrayRef, BooleanArray};
 use arrow::compute::TakeOptions;
 use arrow::{
     array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
-    compute, datatypes,
+    compute,
     datatypes::{ArrowNumericType, ArrowPrimitiveType, Field},
 };
 use std::fmt::{Debug, Formatter};
@@ -31,6 +33,22 @@ pub struct ChunkedArray<T> {
 
 impl<T> ChunkedArray<T>
 where
+    T: datatypes::PolarsDataType,
+{
+    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
+        let field = Field::new(name, T::get_data_type(), true);
+        let chunk_id = create_chunk_id(&chunks);
+        ChunkedArray {
+            field,
+            chunks,
+            chunk_id,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
     T: ArrowPrimitiveType,
 {
     pub fn new(name: &str, v: &[T::Native]) -> Self {
@@ -45,17 +63,6 @@ where
             field,
             chunks: vec![Arc::new(builder.finish())],
             chunk_id: format!("{}-", v.len()).to_string(),
-            phantom: PhantomData,
-        }
-    }
-
-    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
-        let field = Field::new(name, T::get_data_type(), true);
-        let chunk_id = create_chunk_id(&chunks);
-        ChunkedArray {
-            field,
-            chunks,
-            chunk_id,
             phantom: PhantomData,
         }
     }
@@ -565,6 +572,6 @@ mod test {
     fn cast() {
         let a = get_array();
         let b = a.cast::<datatypes::Int64Type>().unwrap();
-        assert_eq!(b.field.data_type(), &datatypes::DataType::Int64)
+        assert_eq!(b.field.data_type(), &datatypes::ArrowDataType::Int64)
     }
 }
