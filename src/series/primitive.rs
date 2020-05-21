@@ -33,7 +33,7 @@ impl<T> ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
-    fn new(name: &str, v: &[T::Native]) -> Self {
+    pub fn new(name: &str, v: &[T::Native]) -> Self {
         let mut builder = PrimitiveBuilder::<T>::new(v.len());
         v.into_iter().for_each(|&val| {
             builder.append_value(val).expect("Could not append value");
@@ -49,7 +49,7 @@ where
         }
     }
 
-    fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
+    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
         let field = Field::new(name, T::get_data_type(), true);
         let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
@@ -299,6 +299,15 @@ impl<T> ChunkedArray<T> {
             self.field.name(),
             chunks,
         ))
+    }
+
+    pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+        if other.data_type() == self.field.data_type() {
+            self.chunks.push(other);
+            Ok(())
+        } else {
+            Err(PolarsError::DataTypeMisMatch)
+        }
     }
 }
 

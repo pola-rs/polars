@@ -1,4 +1,5 @@
 .idea/
 target/
 Cargo.lock
+data/
 

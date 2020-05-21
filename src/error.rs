@@ -8,6 +8,8 @@ pub enum PolarsError {
     InvalidOperation,
     #[error("Chunk don't match")]
     ChunkMisMatch,
+    #[error("Data types don't match")]
+    DataTypeMisMatch,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
