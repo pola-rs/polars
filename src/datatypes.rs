@@ -5,7 +5,6 @@ pub use arrow::datatypes::{
 use arrow::datatypes::ArrowPrimitiveType;
 pub use arrow::datatypes::DataType as ArrowDataType;
 use std::ops::{Deref, DerefMut};
-pub use std::string::String;
 
 pub struct Utf8Type {
     data: String,
