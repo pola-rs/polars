@@ -68,21 +68,6 @@ where
         }
     }
 
-    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
-        if self.chunk_id != rhs.chunk_id {
-            // we can rechunk ourselves to match
-            if rhs.chunks.len() == 1 {
-                let mut new = self.clone();
-                new.rechunk();
-                Ok(Some(new))
-            } else {
-                Err(PolarsError::ChunkMisMatch)
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
     fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
         self.chunks
             .iter()
@@ -426,6 +411,26 @@ impl<T> Clone for ChunkedArray<T> {
 
 pub trait ChunkOps {
     fn rechunk(&mut self);
+    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>>
+    where
+        Self: std::marker::Sized;
+}
+
+macro_rules! optional_rechunk {
+    ($self:tt, $rhs:tt) => {
+        if $self.chunk_id != $rhs.chunk_id {
+            // we can rechunk ourselves to match
+            if $rhs.chunks.len() == 1 {
+                let mut new = $self.clone();
+                new.rechunk();
+                Ok(Some(new))
+            } else {
+                Err(PolarsError::ChunkMisMatch)
+            }
+        } else {
+            Ok(None)
+        }
+    };
 }
 
 impl<T> ChunkOps for ChunkedArray<T>
@@ -440,6 +445,10 @@ where
         self.chunks = vec![Arc::new(builder.finish())];
         self.set_chunk_id()
     }
+
+    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
+        optional_rechunk!(self, rhs)
+    }
 }
 
 impl ChunkOps for ChunkedArray<datatypes::Utf8Type> {
@@ -449,6 +458,10 @@ impl ChunkOps for ChunkedArray<datatypes::Utf8Type> {
             .for_each(|val| builder.append_value(val).expect("Could not append value"));
         self.chunks = vec![Arc::new(builder.finish())];
         self.set_chunk_id()
+    }
+
+    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
+        optional_rechunk!(self, rhs)
     }
 }
 
