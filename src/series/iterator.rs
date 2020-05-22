@@ -3,6 +3,11 @@ use arrow::array::{Array, PrimitiveArray, PrimitiveArrayOps, StringArray};
 use arrow::datatypes::ArrowPrimitiveType;
 use std::marker::PhantomData;
 
+enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
+
 /// K is a phantom type to make specialization work.
 /// K is set to u8 for all ArrowPrimitiveTypes
 /// K is set to String for datatypes::Utf8DataType
@@ -10,8 +15,7 @@ pub struct ChunkIterPrimitive<'a, T, K>
 where
     T: ArrowPrimitiveType,
 {
-    arrays: Vec<&'a PrimitiveArray<T>>,
-    stringarrays: Vec<&'a StringArray>,
+    arrays: Either<Vec<&'a PrimitiveArray<T>>, Vec<&'a StringArray>>,
     chunk_i: usize,
     array_i: usize,
     out_of_bounds: bool,
@@ -29,7 +33,13 @@ where
             self.array_i = 0;
             self.chunk_i += 1;
         }
-        if self.chunk_i >= self.arrays.len() {
+
+        let length = match &self.arrays {
+            Either::Left(arr) => arr.len(),
+            Either::Right(arr) => arr.len(),
+        };
+
+        if self.chunk_i >= length {
             self.out_of_bounds = true;
         }
     }
@@ -49,7 +59,14 @@ where
             return None;
         }
 
-        let arr = unsafe { *self.arrays.get_unchecked(self.chunk_i) };
+        let arrays;
+        if let Either::Left(arr) = &self.arrays {
+            arrays = arr;
+        } else {
+            panic!("implementation error")
+        }
+
+        let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
         let data = arr.data();
         let ret;
         if data.is_null(self.array_i) {
@@ -73,7 +90,16 @@ where
         if self.out_of_bounds {
             return None;
         }
-        let arr = unsafe { *self.stringarrays.get_unchecked(self.chunk_i) };
+
+        let arrays;
+        if let Either::Right(arr) = &self.arrays {
+            arrays = arr;
+        } else {
+            panic!("implementation error")
+        }
+
+        let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
+
         let data = arr.data();
         let ret;
         if data.is_null(self.array_i) {
@@ -111,8 +137,7 @@ where
             .collect::<Vec<_>>();
 
         ChunkIterPrimitive {
-            arrays,
-            stringarrays: vec![],
+            arrays: Either::Left(arrays),
             chunk_i: 0,
             array_i: 0,
             out_of_bounds: false,
@@ -124,7 +149,7 @@ where
 /// ChunkIter for the Utf8Type Chose by unstable specialization
 impl ChunkIter<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf8Type> {
     fn iter(&self) -> ChunkIterPrimitive<datatypes::Int32Type, String> {
-        let stringarrays = self
+        let arrays = self
             .chunks
             .iter()
             .map(|a| {
@@ -135,8 +160,7 @@ impl ChunkIter<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf8Typ
             .collect::<Vec<_>>();
 
         ChunkIterPrimitive {
-            arrays: vec![],
-            stringarrays,
+            arrays: Either::Right(arrays),
             chunk_i: 0,
             array_i: 0,
             out_of_bounds: false,

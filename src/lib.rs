@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(specialization)]
+#![feature(min_specialization)]
 mod error;
 mod series {
     pub(crate) mod chunked_array;
