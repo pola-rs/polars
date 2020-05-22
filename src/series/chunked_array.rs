@@ -15,6 +15,15 @@ use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
 
+pub trait SeriesOps {
+    fn limit(&self, num_elements: usize) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+    fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+}
+
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
     let mut chunk_id = String::new();
     for a in chunks {
@@ -32,22 +41,11 @@ pub struct ChunkedArray<T> {
     phantom: PhantomData<T>,
 }
 
-impl<T> ChunkedArray<T>
+impl<T> SeriesOps for ChunkedArray<T>
 where
     T: datatypes::PolarsDataType,
     ChunkedArray<T>: ChunkOps,
 {
-    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
-        let field = Field::new(name, T::get_data_type(), true);
-        let chunk_id = create_chunk_id(&chunks);
-        ChunkedArray {
-            field,
-            chunks,
-            chunk_id,
-            phantom: PhantomData,
-        }
-    }
-
     fn limit(&self, num_elements: usize) -> Result<Self> {
         if num_elements >= self.len() {
             Ok(self.copy_with_chunks(self.chunks.clone()))
@@ -83,6 +81,23 @@ where
         match chunks {
             Ok(chunks) => Ok(self.copy_with_chunks(chunks)),
             Err(e) => Err(PolarsError::ArrowError(e)),
+        }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: datatypes::PolarsDataType,
+    ChunkedArray<T>: ChunkOps,
+{
+    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
+        let field = Field::new(name, T::get_data_type(), true);
+        let chunk_id = create_chunk_id(&chunks);
+        ChunkedArray {
+            field,
+            chunks,
+            chunk_id,
+            phantom: PhantomData,
         }
     }
 }
