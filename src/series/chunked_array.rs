@@ -35,6 +35,7 @@ pub struct ChunkedArray<T> {
 impl<T> ChunkedArray<T>
 where
     T: datatypes::PolarsDataType,
+    ChunkedArray<T>: ChunkOps,
 {
     pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
         let field = Field::new(name, T::get_data_type(), true);
@@ -46,13 +47,51 @@ where
             phantom: PhantomData,
         }
     }
+
+    fn limit(&self, num_elements: usize) -> Result<Self> {
+        if num_elements >= self.len() {
+            Ok(self.copy_with_chunks(self.chunks.clone()))
+        } else {
+            let mut new_chunks = Vec::with_capacity(self.chunks.len());
+            let mut remaining_elements = num_elements as i64;
+
+            let mut c = 0;
+            while remaining_elements > 0 {
+                let chunk = &self.chunks[c];
+                new_chunks.push(compute::limit(chunk, remaining_elements as usize)?);
+                remaining_elements -= chunk.len() as i64;
+                c += 1;
+            }
+            Ok(self.copy_with_chunks(new_chunks))
+        }
+    }
+
+    /// Chunk sizes should match or rhs should have one chunk
+    fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
+        let opt = self.optional_rechunk(filter)?;
+        let left = match &opt {
+            Some(a) => a,
+            None => self,
+        };
+        let chunks = left
+            .chunks
+            .iter()
+            .zip(&filter.downcast_chunks())
+            .map(|(arr, &fil)| compute::filter(&*(arr.clone()), fil))
+            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
+
+        match chunks {
+            Ok(chunks) => Ok(self.copy_with_chunks(chunks)),
+            Err(e) => Err(PolarsError::ArrowError(e)),
+        }
+    }
 }
 
 impl<T> ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
-    pub fn new(name: &str, v: &[T::Native]) -> Self {
+    pub fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
         let mut builder = PrimitiveBuilder::<T>::new(v.len());
         v.into_iter().for_each(|&val| {
             builder.append_value(val).expect("Could not append value");
@@ -77,45 +116,6 @@ where
                     .expect("could not downcast one of the chunks")
             })
             .collect::<Vec<_>>()
-    }
-
-    // TODO: move to generic T
-    /// Chunk sizes should match or rhs should have one chunk
-    fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
-        let opt = self.optional_rechunk(filter)?;
-        let left = match &opt {
-            Some(a) => a,
-            None => self,
-        };
-        let chunks = left
-            .chunks
-            .iter()
-            .zip(&filter.downcast_chunks())
-            .map(|(arr, &fil)| compute::filter(&*(arr.clone()), fil))
-            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
-
-        match chunks {
-            Ok(chunks) => Ok(self.copy_with_chunks(chunks)),
-            Err(e) => Err(PolarsError::ArrowError(e)),
-        }
-    }
-
-    fn limit(&self, num_elements: usize) -> Result<Self> {
-        if num_elements >= self.len() {
-            Ok(self.copy_with_chunks(self.chunks.clone()))
-        } else {
-            let mut new_chunks = Vec::with_capacity(self.chunks.len());
-            let mut remaining_elements = num_elements as i64;
-
-            let mut c = 0;
-            while remaining_elements > 0 {
-                let chunk = &self.chunks[c];
-                new_chunks.push(compute::limit(chunk, remaining_elements as usize)?);
-                remaining_elements -= chunk.len() as i64;
-                c += 1;
-            }
-            Ok(self.copy_with_chunks(new_chunks))
-        }
     }
 
     fn sum(&self) -> Option<T::Native>
@@ -470,7 +470,7 @@ mod test {
     use super::*;
 
     fn get_array() -> ChunkedArray<datatypes::Int32Type> {
-        ChunkedArray::<datatypes::Int32Type>::new("a", &[1, 2, 3])
+        ChunkedArray::<datatypes::Int32Type>::new_from_slice("a", &[1, 2, 3])
     }
 
     #[test]
@@ -505,7 +505,7 @@ mod test {
     fn filter() {
         let a = get_array();
         let b = a
-            .filter(&ChunkedArray::<datatypes::BooleanType>::new(
+            .filter(&ChunkedArray::<datatypes::BooleanType>::new_from_slice(
                 "filter",
                 &[true, false, false],
             ))
@@ -525,7 +525,9 @@ mod test {
     #[test]
     fn take() {
         let a = get_array();
-        let new = a.take(&ChunkedArray::new("idx", &[0, 1]), None).unwrap();
+        let new = a
+            .take(&ChunkedArray::new_from_slice("idx", &[0, 1]), None)
+            .unwrap();
         assert_eq!(new.len(), 2)
     }
 
