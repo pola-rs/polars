@@ -1,8 +1,9 @@
+use crate::series::iterator::ChunkIter;
 use crate::{
     datatypes,
     error::{PolarsError, Result},
 };
-use arrow::array::{Array, ArrayRef, BooleanArray};
+use arrow::array::{Array, ArrayRef, BooleanArray, StringBuilder};
 use arrow::compute::TakeOptions;
 use arrow::{
     array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
@@ -442,7 +443,13 @@ where
 }
 
 impl ChunkOps for ChunkedArray<datatypes::Utf8Type> {
-    fn rechunk(&mut self) {}
+    fn rechunk(&mut self) {
+        let mut builder = StringBuilder::new(self.len());
+        self.iter()
+            .for_each(|val| builder.append_value(val).expect("Could not append value"));
+        self.chunks = vec![Arc::new(builder.finish())];
+        self.set_chunk_id()
+    }
 }
 
 #[cfg(test)]

@@ -37,7 +37,7 @@ where
     }
 }
 
-impl PolarsDataType for Utf8Type {
+impl<'a> PolarsDataType for Utf8Type {
     fn get_data_type() -> ArrowDataType {
         ArrowDataType::Utf8
     }
