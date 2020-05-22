@@ -19,9 +19,30 @@ impl DataFrame {
     fn fields(&self) -> &Vec<Field> {
         self.schema.fields()
     }
+}
 
-    fn new_from_csv<R: Read>(reader: &mut CSVReader<R>) -> Result<Self> {
-        let mut columns = reader
+struct DataFrameBuilder<'a, R>
+where
+    R: Read,
+{
+    reader: &'a mut CSVReader<R>,
+    rechunk: bool,
+}
+
+impl<'a, R> DataFrameBuilder<'a, R>
+where
+    R: Read,
+{
+    fn new_from_csv(reader: &'a mut CSVReader<R>) -> Self {
+        DataFrameBuilder {
+            reader,
+            rechunk: true,
+        }
+    }
+
+    fn build(&mut self) -> Result<DataFrame> {
+        let mut columns = self
+            .reader
             .schema()
             .fields()
             .iter()
@@ -45,7 +66,7 @@ impl DataFrame {
             })
             .collect::<Vec<_>>();
 
-        while let Some(batch) = reader.next()? {
+        while let Some(batch) = self.reader.next()? {
             batch
                 .columns()
                 .into_iter()
@@ -55,7 +76,7 @@ impl DataFrame {
         }
 
         Ok(DataFrame {
-            schema: reader.schema(),
+            schema: self.reader.schema(),
             columns,
         })
     }
@@ -69,10 +90,13 @@ mod test {
     #[test]
     fn read_csv() {
         let file = File::open("data/iris.csv").unwrap();
-        let builder = csv::ReaderBuilder::new().infer_schema(None);
+        let builder = csv::ReaderBuilder::new()
+            .infer_schema(None)
+            .has_headers(true);
         let mut reader = builder.build(file).unwrap();
 
-        println!("{:?}", reader.schema());
-        let df = DataFrame::new_from_csv(&mut reader);
+        let df = DataFrameBuilder::new_from_csv(&mut reader).build().unwrap();
+        assert_eq!(reader.schema(), df.schema);
+        println!("{:?}", df.schema)
     }
 }
