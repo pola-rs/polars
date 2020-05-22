@@ -1,10 +1,12 @@
+use crate::series::chunked_array::SeriesOps;
 use crate::{
     datatypes,
     datatypes::ArrowDataType,
     error::Result,
+    series,
     series::{chunked_array::ChunkedArray, series::Series},
 };
-use arrow::datatypes::{Field, Schema};
+use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
 use std::io::Read;
 use std::sync::Arc;
 
@@ -18,6 +20,29 @@ struct DataFrame {
 impl DataFrame {
     fn fields(&self) -> &Vec<Field> {
         self.schema.fields()
+    }
+
+    fn select_series_ops_by_idx(&self, idx: usize) -> &dyn SeriesOps {
+        match &self.columns[idx] {
+            Series::Int32(arr) => arr,
+            Series::Int64(arr) => arr,
+            Series::Float32(arr) => arr,
+            Series::Float64(arr) => arr,
+            Series::Utf8(arr) => arr,
+            _ => unimplemented!(),
+        }
+    }
+
+    fn select_type<N>(&self, name: &str) -> ChunkedArray<N> {
+        unimplemented!()
+    }
+
+    fn select_type_by_idx<N>(&self, idx: usize) -> ChunkedArray<N> {
+        unimplemented!()
+    }
+
+    fn select_by_idx(&self, idx: usize) -> Series {
+        unimplemented!()
     }
 }
 

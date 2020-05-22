@@ -5,6 +5,7 @@ use crate::{
 };
 use arrow::array::{Array, ArrayRef, BooleanArray, StringBuilder};
 use arrow::compute::TakeOptions;
+use arrow::datatypes::ArrowNativeType;
 use arrow::{
     array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
     compute,
@@ -22,6 +23,16 @@ pub trait SeriesOps {
     fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self>
     where
         Self: std::marker::Sized;
+    fn take(
+        &self,
+        indices: &ChunkedArray<datatypes::UInt32Type>,
+        options: Option<TakeOptions>,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+    fn append_array(&mut self, other: ArrayRef) -> Result<()>;
+
+    fn len(&self) -> usize;
 }
 
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
@@ -46,6 +57,19 @@ where
     T: datatypes::PolarsDataType,
     ChunkedArray<T>: ChunkOps,
 {
+    fn len(&self) -> usize {
+        self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
+    }
+
+    fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+        if other.data_type() == self.field.data_type() {
+            self.chunks.push(other);
+            Ok(())
+        } else {
+            Err(PolarsError::DataTypeMisMatch)
+        }
+    }
+
     fn limit(&self, num_elements: usize) -> Result<Self> {
         if num_elements >= self.len() {
             Ok(self.copy_with_chunks(self.chunks.clone()))
@@ -80,6 +104,24 @@ where
 
         match chunks {
             Ok(chunks) => Ok(self.copy_with_chunks(chunks)),
+            Err(e) => Err(PolarsError::ArrowError(e)),
+        }
+    }
+
+    fn take(
+        &self,
+        indices: &ChunkedArray<datatypes::UInt32Type>,
+        options: Option<TakeOptions>,
+    ) -> Result<Self> {
+        let taken = self
+            .chunks
+            .iter()
+            .zip(indices.downcast_chunks())
+            .map(|(arr, idx)| compute::take(&arr, idx, options.clone()))
+            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
+
+        match taken {
+            Ok(chunks) => Ok(self.copy_with_chunks(chunks.clone())),
             Err(e) => Err(PolarsError::ArrowError(e)),
         }
     }
@@ -132,10 +174,14 @@ where
             })
             .collect::<Vec<_>>()
     }
+}
 
+impl<T> ChunkedArray<T>
+where
+    T: ArrowNumericType,
+{
     fn sum(&self) -> Option<T::Native>
     where
-        T: ArrowNumericType,
         T::Native: std::ops::Add<Output = T::Native>,
     {
         self.downcast_chunks()
@@ -149,12 +195,7 @@ where
                 None => acc,
             })
     }
-}
 
-impl<T> ChunkedArray<T>
-where
-    T: ArrowNumericType,
-{
     fn comparison(
         &self,
         rhs: &ChunkedArray<T>,
@@ -232,9 +273,6 @@ where
 }
 
 impl<T> ChunkedArray<T> {
-    fn len(&self) -> usize {
-        self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
-    }
     fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
         let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
@@ -247,24 +285,6 @@ impl<T> ChunkedArray<T> {
 
     fn set_chunk_id(&mut self) {
         self.chunk_id = create_chunk_id(&self.chunks)
-    }
-
-    fn take(
-        &self,
-        indices: &ChunkedArray<datatypes::UInt32Type>,
-        options: Option<TakeOptions>,
-    ) -> Result<Self> {
-        let taken = self
-            .chunks
-            .iter()
-            .zip(indices.downcast_chunks())
-            .map(|(arr, idx)| compute::take(&arr, idx, options.clone()))
-            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
-
-        match taken {
-            Ok(chunks) => Ok(self.copy_with_chunks(chunks.clone())),
-            Err(e) => Err(PolarsError::ArrowError(e)),
-        }
     }
 
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
@@ -281,15 +301,6 @@ impl<T> ChunkedArray<T> {
             self.field.name(),
             chunks,
         ))
-    }
-
-    pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        if other.data_type() == self.field.data_type() {
-            self.chunks.push(other);
-            Ok(())
-        } else {
-            Err(PolarsError::DataTypeMisMatch)
-        }
     }
 }
 
