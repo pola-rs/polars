@@ -3,15 +3,22 @@ use arrow::array::{Array, PrimitiveArray, PrimitiveArrayOps, StringArray};
 use arrow::datatypes::ArrowPrimitiveType;
 use std::marker::PhantomData;
 
+// This module implements an iter method for both ArrowPrimitiveType and Utf8 type.
+// As both expose a different api in arrow, this required some hacking.
+// A solution was found by returning an auxiliary struct ChunkIterState from the .iter methods.
+// This ChunkIterState has a generic type T: ArrowPrimitiveType to work well with the arrow api.
+// It also has a phantomtype K that is only used as distinctive type to be able to implement a trait
+// method twice. Sort of a specialization hack.
+
 enum Either<L, R> {
     Left(L),
     Right(R),
 }
 
-/// K is a phantom type to make specialization work.
-/// K is set to u8 for all ArrowPrimitiveTypes
-/// K is set to String for datatypes::Utf8DataType
-pub struct ChunkIterPrimitive<'a, T, K>
+// K is a phantom type to make specialization work.
+// K is set to u8 for all ArrowPrimitiveTypes
+// K is set to String for datatypes::Utf8DataType
+pub struct ChunkIterState<'a, T, K>
 where
     T: ArrowPrimitiveType,
 {
@@ -22,7 +29,7 @@ where
     phantom: PhantomData<K>,
 }
 
-impl<T, S> ChunkIterPrimitive<'_, T, S>
+impl<T, S> ChunkIterState<'_, T, S>
 where
     T: ArrowPrimitiveType,
 {
@@ -45,7 +52,7 @@ where
     }
 }
 
-impl<T> Iterator for ChunkIterPrimitive<'_, T, u8>
+impl<T> Iterator for ChunkIterState<'_, T, u8>
 where
     T: ArrowPrimitiveType,
 {
@@ -80,7 +87,7 @@ where
     }
 }
 
-impl<'a, T> Iterator for ChunkIterPrimitive<'a, T, String>
+impl<'a, T> Iterator for ChunkIterState<'a, T, String>
 where
     T: ArrowPrimitiveType,
 {
@@ -113,19 +120,20 @@ where
     }
 }
 
-pub trait ChunkIter<T, S>
+pub trait ChunkIterator<T, S>
 where
     T: ArrowPrimitiveType,
 {
-    fn iter(&self) -> ChunkIterPrimitive<T, S>;
+    fn iter(&self) -> ChunkIterState<T, S>;
 }
 
 /// ChunkIter for all the ArrowPrimitiveTypes
-impl<T> ChunkIter<T, u8> for ChunkedArray<T>
+/// Note that u8 is only a phantom type to be able to have stable specialization.
+impl<T> ChunkIterator<T, u8> for ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
-    default fn iter(&self) -> ChunkIterPrimitive<T, u8> {
+    fn iter(&self) -> ChunkIterState<T, u8> {
         let arrays = self
             .chunks
             .iter()
@@ -136,7 +144,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkIterPrimitive {
+        ChunkIterState {
             arrays: Either::Left(arrays),
             chunk_i: 0,
             array_i: 0,
@@ -146,9 +154,11 @@ where
     }
 }
 
-/// ChunkIter for the Utf8Type Chose by unstable specialization
-impl ChunkIter<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf8Type> {
-    fn iter(&self) -> ChunkIterPrimitive<datatypes::Int32Type, String> {
+/// ChunkIter for the Utf8Type
+/// Note that datatypes::Int32Type is just a random ArrowPrimitveType for the Left variant
+/// of the Either enum. We don't need it.
+impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf8Type> {
+    fn iter(&self) -> ChunkIterState<datatypes::Int32Type, String> {
         let arrays = self
             .chunks
             .iter()
@@ -159,7 +169,7 @@ impl ChunkIter<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf8Typ
             })
             .collect::<Vec<_>>();
 
-        ChunkIterPrimitive {
+        ChunkIterState {
             arrays: Either::Right(arrays),
             chunk_i: 0,
             array_i: 0,

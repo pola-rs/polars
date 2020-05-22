@@ -1,4 +1,4 @@
-use crate::series::iterator::ChunkIter;
+use crate::series::iterator::ChunkIterator;
 use crate::{
     datatypes,
     error::{PolarsError, Result},
