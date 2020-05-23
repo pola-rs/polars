@@ -6,7 +6,7 @@ use crate::{
     series,
     series::{chunked_array::ChunkedArray, series::Series},
 };
-use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
+use arrow::datatypes::{Field, Schema};
 use std::io::Read;
 use std::sync::Arc;
 

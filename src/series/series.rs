@@ -2,7 +2,6 @@ use super::chunked_array::ChunkedArray;
 use crate::series::chunked_array::SeriesOps;
 use crate::{datatypes, error::Result};
 use arrow::array::ArrayRef;
-use arrow::datatypes::{ArrowPrimitiveType, DataType};
 
 pub enum Series {
     Int32(ChunkedArray<datatypes::Int32Type>),

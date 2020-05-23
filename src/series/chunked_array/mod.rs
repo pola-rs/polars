@@ -3,18 +3,18 @@ use crate::{
     datatypes,
     error::{PolarsError, Result},
 };
-use arrow::array::{Array, ArrayRef, BooleanArray, StringBuilder};
+use arrow::array::{ArrayRef, BooleanArray, StringBuilder};
 use arrow::compute::TakeOptions;
-use arrow::datatypes::ArrowNativeType;
 use arrow::{
-    array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
+    array::{PrimitiveArray, PrimitiveBuilder},
     compute,
     datatypes::{ArrowNumericType, ArrowPrimitiveType, Field},
 };
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
-use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
+
+mod arithmetic;
 
 pub trait SeriesOps {
     fn limit(&self, num_elements: usize) -> Result<Self>
@@ -57,19 +57,6 @@ where
     T: datatypes::PolarsDataType,
     ChunkedArray<T>: ChunkOps,
 {
-    fn len(&self) -> usize {
-        self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
-    }
-
-    fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        if other.data_type() == self.field.data_type() {
-            self.chunks.push(other);
-            Ok(())
-        } else {
-            Err(PolarsError::DataTypeMisMatch)
-        }
-    }
-
     fn limit(&self, num_elements: usize) -> Result<Self> {
         if num_elements >= self.len() {
             Ok(self.copy_with_chunks(self.chunks.clone()))
@@ -124,6 +111,19 @@ where
             Ok(chunks) => Ok(self.copy_with_chunks(chunks.clone())),
             Err(e) => Err(PolarsError::ArrowError(e)),
         }
+    }
+
+    fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+        if other.data_type() == self.field.data_type() {
+            self.chunks.push(other);
+            Ok(())
+        } else {
+            Err(PolarsError::DataTypeMisMatch)
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
     }
 }
 
@@ -301,155 +301,6 @@ impl<T> ChunkedArray<T> {
             self.field.name(),
             chunks,
         ))
-    }
-}
-
-macro_rules! operand_on_primitive_arr {
-    ($_self:expr, $rhs:tt, $operator:expr, $expect:expr) => {{
-        let mut new_chunks = Vec::with_capacity($_self.chunks.len());
-        $_self
-            .downcast_chunks()
-            .iter()
-            .zip($rhs.downcast_chunks())
-            .for_each(|(left, right)| {
-                let res = Arc::new($operator(left, right).expect($expect)) as ArrayRef;
-                new_chunks.push(res);
-            });
-        $_self.copy_with_chunks(new_chunks)
-    }};
-}
-
-impl<T> Add for &ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
-{
-    type Output = ChunkedArray<T>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        let expect_str = "Could not add, check data types and length";
-        operand_on_primitive_arr![self, rhs, compute::add, expect_str]
-    }
-}
-
-impl<T> Div for &ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero
-        + num::One,
-{
-    type Output = ChunkedArray<T>;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        let expect_str = "Could not divide, check data types and length";
-        operand_on_primitive_arr!(self, rhs, compute::divide, expect_str)
-    }
-}
-
-impl<T> Mul for &ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
-{
-    type Output = ChunkedArray<T>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let expect_str = "Could not multiply, check data types and length";
-        operand_on_primitive_arr!(self, rhs, compute::multiply, expect_str)
-    }
-}
-
-impl<T> Sub for &ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
-{
-    type Output = ChunkedArray<T>;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        let expect_str = "Could not subtract, check data types and length";
-        operand_on_primitive_arr![self, rhs, compute::subtract, expect_str]
-    }
-}
-
-impl<T> Add for ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
-{
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        (&self).add(&rhs)
-    }
-}
-
-impl<T> Div for ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero
-        + num::One,
-{
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        (&self).div(&rhs)
-    }
-}
-
-impl<T> Mul for ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
-{
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        (&self).mul(&rhs)
-    }
-}
-
-impl<T> Sub for ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
-{
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        (&self).sub(&rhs)
     }
 }
 
