@@ -23,26 +23,11 @@ impl DataFrame {
     }
 
     fn select_series_ops_by_idx(&self, idx: usize) -> &dyn SeriesOps {
-        match &self.columns[idx] {
-            Series::Int32(arr) => arr,
-            Series::Int64(arr) => arr,
-            Series::Float32(arr) => arr,
-            Series::Float64(arr) => arr,
-            Series::Utf8(arr) => arr,
-            _ => unimplemented!(),
-        }
+        self.columns[idx].as_series_ops()
     }
 
-    fn select_type<N>(&self, name: &str) -> ChunkedArray<N> {
-        unimplemented!()
-    }
-
-    fn select_type_by_idx<N>(&self, idx: usize) -> ChunkedArray<N> {
-        unimplemented!()
-    }
-
-    fn select_by_idx(&self, idx: usize) -> Series {
-        unimplemented!()
+    fn select_by_idx(&self, idx: usize) -> &Series {
+        &self.columns[idx]
     }
 }
 

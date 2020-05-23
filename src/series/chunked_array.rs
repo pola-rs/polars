@@ -336,6 +336,24 @@ where
     }
 }
 
+impl<T> Div for &ChunkedArray<T>
+where
+    T: ArrowNumericType,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + num::Zero
+        + num::One,
+{
+    type Output = ChunkedArray<T>;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        let expect_str = "Could not divide, check data types and length";
+        operand_on_primitive_arr!(self, rhs, compute::divide, expect_str)
+    }
+}
+
 impl<T> Mul for &ChunkedArray<T>
 where
     T: ArrowNumericType,
@@ -383,6 +401,23 @@ where
 
     fn add(self, rhs: Self) -> Self::Output {
         (&self).add(&rhs)
+    }
+}
+
+impl<T> Div for ChunkedArray<T>
+where
+    T: ArrowNumericType,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + num::Zero
+        + num::One,
+{
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        (&self).div(&rhs)
     }
 }
 

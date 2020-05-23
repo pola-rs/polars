@@ -23,4 +23,14 @@ impl Series {
             _ => unimplemented!(),
         }
     }
+
+    pub fn as_series_ops(&self) -> &dyn SeriesOps {
+        match self {
+            Series::Int32(arr) => arr,
+            Series::Int64(arr) => arr,
+            Series::Float32(arr) => arr,
+            Series::Float64(arr) => arr,
+            Series::Utf8(arr) => arr,
+        }
+    }
 }
