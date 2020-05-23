@@ -16,6 +16,8 @@ use std::sync::Arc;
 
 mod arithmetic;
 
+/// Operations that are possible without knowing underlying type.
+/// These operations will not fail due to non matching types.
 pub trait SeriesOps {
     fn limit(&self, num_elements: usize) -> Result<Self>
     where
