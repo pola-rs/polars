@@ -289,7 +289,7 @@ impl<T> ChunkedArray<T> {
         self.chunk_id = create_chunk_id(&self.chunks)
     }
 
-    fn cast<N>(&self) -> Result<ChunkedArray<N>>
+    pub fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
         N: ArrowPrimitiveType,
     {
