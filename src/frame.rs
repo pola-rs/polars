@@ -22,12 +22,12 @@ impl DataFrame {
         self.schema.fields()
     }
 
-    // fn select_series_ops_by_idx(&self, idx: usize) -> &dyn SeriesOps {
-    //     self.columns[idx].as_series_ops()
-    // }
-
-    fn select_by_idx(&self, idx: usize) -> &Series {
+    fn select_idx(&self, idx: usize) -> &Series {
         &self.columns[idx]
+    }
+
+    fn select(&self, name: &str) -> &Series {
+        unimplemented!()
     }
 }
 

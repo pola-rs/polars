@@ -18,6 +18,7 @@ pub enum Series {
     Float32(ChunkedArray<datatypes::Float32Type>),
     Float64(ChunkedArray<datatypes::Float64Type>),
     Utf8(ChunkedArray<datatypes::Utf8Type>),
+    Bool(ChunkedArray<datatypes::BooleanType>),
 }
 
 macro_rules! apply_method {
@@ -28,6 +29,7 @@ macro_rules! apply_method {
             Series::Float32(a) => a.$method($($args),*),
             Series::Float64(a) => a.$method($($args),*),
             Series::Utf8(a) => a.$method($($args),*),
+            Series::Bool(a) => a.$method($($args),*),
             _ => unimplemented!(),
         }
     }
@@ -41,6 +43,7 @@ macro_rules! apply_method_and_return {
             Series::Float32(a) => Series::Float32(a.$method($($args),+)$($opt_question_mark)*),
             Series::Float64(a) => Series::Float64(a.$method($($args),+)$($opt_question_mark)*),
             Series::Utf8(a) => Series::Utf8(a.$method($($args),+)$($opt_question_mark)*),
+            Series::Bool(a) => Series::Bool(a.$method($($args),+)$($opt_question_mark)*),
             _ => unimplemented!(),
         }
     }
@@ -58,6 +61,7 @@ impl Series {
             Series::Float32(arr) => arr,
             Series::Float64(arr) => arr,
             Series::Utf8(arr) => arr,
+            Series::Bool(arr) => arr,
         }
     }
 
@@ -109,6 +113,28 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
         }
     }
 }
+
+pub trait NamedFrom<T> {
+    fn from(name: &str, _: T) -> Self;
+}
+
+macro_rules! impl_named_from {
+    ($type:ty, $series_var:ident, $method:ident) => {
+        impl NamedFrom<&[$type]> for Series {
+            fn from(name: &str, v: &[$type]) -> Self {
+                Series::$series_var(ChunkedArray::$method(name, v))
+            }
+        }
+    };
+}
+
+impl_named_from!(&str, Utf8, new_utf8_from_slice);
+impl_named_from!(String, Utf8, new_utf8_from_slice);
+impl_named_from!(bool, Bool, new_from_slice);
+impl_named_from!(i32, Int32, new_from_slice);
+impl_named_from!(i64, Int64, new_from_slice);
+impl_named_from!(f32, Float32, new_from_slice);
+impl_named_from!(f64, Float64, new_from_slice);
 
 mod test {
     use super::*;

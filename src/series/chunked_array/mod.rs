@@ -132,10 +132,12 @@ where
 }
 
 impl ChunkedArray<datatypes::Utf8Type> {
-    pub fn new_from_slice(name: &str, v: &[&str]) -> Self {
+    pub fn new_utf8_from_slice<S: AsRef<str>>(name: &str, v: &[S]) -> Self {
         let mut builder = StringBuilder::new(v.len());
-        v.into_iter().for_each(|&val| {
-            builder.append_value(val).expect("Could not append value");
+        v.into_iter().for_each(|val| {
+            builder
+                .append_value(val.as_ref())
+                .expect("Could not append value");
         });
 
         let field = Field::new(name, ArrowDataType::Utf8, true);

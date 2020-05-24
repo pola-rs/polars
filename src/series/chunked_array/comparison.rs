@@ -163,8 +163,8 @@ mod test {
 
     #[test]
     fn utf8_cmp() {
-        let a = ChunkedArray::<datatypes::Utf8Type>::new_from_slice("a", &["hello", "world"]);
-        let b = ChunkedArray::<datatypes::Utf8Type>::new_from_slice("a", &["hello", "world"]);
+        let a = ChunkedArray::<datatypes::Utf8Type>::new_utf8_from_slice("a", &["hello", "world"]);
+        let b = ChunkedArray::<datatypes::Utf8Type>::new_utf8_from_slice("a", &["hello", "world"]);
         let sum_true = a.eq(&b).unwrap().iter().fold(0, |acc, opt| match opt {
             Some(b) => acc + b as i32,
             None => acc,
