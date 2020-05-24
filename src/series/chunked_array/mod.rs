@@ -317,12 +317,14 @@ where
     T: ArrowPrimitiveType,
 {
     fn rechunk(&mut self) {
-        let mut builder = PrimitiveBuilder::<T>::new(self.len());
-        self.iter().for_each(|val| {
-            builder.append_option(val).expect("Could not append value");
-        });
-        self.chunks = vec![Arc::new(builder.finish())];
-        self.set_chunk_id()
+        if self.chunks.len() > 1 {
+            let mut builder = PrimitiveBuilder::<T>::new(self.len());
+            self.iter().for_each(|val| {
+                builder.append_option(val).expect("Could not append value");
+            });
+            self.chunks = vec![Arc::new(builder.finish())];
+            self.set_chunk_id()
+        }
     }
 
     fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
@@ -332,11 +334,13 @@ where
 
 impl ChunkOps for ChunkedArray<datatypes::Utf8Type> {
     fn rechunk(&mut self) {
-        let mut builder = StringBuilder::new(self.len());
-        self.iter()
-            .for_each(|val| builder.append_value(val).expect("Could not append value"));
-        self.chunks = vec![Arc::new(builder.finish())];
-        self.set_chunk_id()
+        if self.chunks.len() > 1 {
+            let mut builder = StringBuilder::new(self.len());
+            self.iter()
+                .for_each(|val| builder.append_value(val).expect("Could not append value"));
+            self.chunks = vec![Arc::new(builder.finish())];
+            self.set_chunk_id()
+        }
     }
 
     fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
