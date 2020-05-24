@@ -40,25 +40,21 @@ where
             None => self,
         };
 
-        // TODO: Fix unnecessary second iter over chunk res
-        let chunks_res = left
+        let chunks = left
             .downcast_chunks()
             .iter()
             .zip(rhs.downcast_chunks())
-            .map(|(left, right)| operator(left, right))
-            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
+            .map(|(left, right)| {
+                let arr_res = operator(left, right);
+                let arr = match arr_res {
+                    Ok(arr) => arr,
+                    Err(e) => return Err(PolarsError::ArrowError(e)),
+                };
+                Ok(Arc::new(arr) as ArrayRef)
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-        let chunks_res = chunks_res.map(|chunks| {
-            chunks
-                .into_iter()
-                .map(|arr| Arc::new(arr) as ArrayRef)
-                .collect()
-        });
-
-        match chunks_res {
-            Ok(chunks) => Ok(ChunkedArray::new_from_chunks("", chunks)),
-            Err(e) => Err(PolarsError::ArrowError(e)),
-        }
+        Ok(ChunkedArray::new_from_chunks("", chunks))
     }
 }
 
