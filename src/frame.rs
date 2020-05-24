@@ -18,6 +18,16 @@ struct DataFrame {
 }
 
 impl DataFrame {
+    pub fn new(columns: Vec<Series>) -> Self {
+        let fields = columns
+            .iter()
+            .map(|s| s.field().clone())
+            .collect::<Vec<_>>();
+        let schema = Arc::new(Schema::new(fields));
+
+        DataFrame { schema, columns }
+    }
+
     fn fields(&self) -> &Vec<Field> {
         self.schema.fields()
     }

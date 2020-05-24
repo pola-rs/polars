@@ -7,7 +7,7 @@ use crate::{
 };
 use arrow::array::ArrayRef;
 use arrow::compute::TakeOptions;
-use arrow::datatypes::ArrowPrimitiveType;
+use arrow::datatypes::{ArrowPrimitiveType, Field};
 use std::mem;
 use std::ops::Deref;
 
@@ -36,20 +36,28 @@ macro_rules! apply_method {
 }
 
 macro_rules! apply_method_and_return {
-    ($self:ident, $method:ident, [$($args:expr),+], $($opt_question_mark:tt)*) => {
+    ($self:ident, $method:ident, [$($args:expr),*], $($opt_question_mark:tt)*) => {
         match $self {
-            Series::Int32(a) => Series::Int32(a.$method($($args),+)$($opt_question_mark)*),
-            Series::Int64(a) => Series::Int64(a.$method($($args),+)$($opt_question_mark)*),
-            Series::Float32(a) => Series::Float32(a.$method($($args),+)$($opt_question_mark)*),
-            Series::Float64(a) => Series::Float64(a.$method($($args),+)$($opt_question_mark)*),
-            Series::Utf8(a) => Series::Utf8(a.$method($($args),+)$($opt_question_mark)*),
-            Series::Bool(a) => Series::Bool(a.$method($($args),+)$($opt_question_mark)*),
+            Series::Int32(a) => Series::Int32(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Int64(a) => Series::Int64(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Float32(a) => Series::Float32(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Float64(a) => Series::Float64(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Utf8(a) => Series::Utf8(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Bool(a) => Series::Bool(a.$method($($args),*)$($opt_question_mark)*),
             _ => unimplemented!(),
         }
     }
 }
 
 impl Series {
+    pub fn name(&self) -> &str {
+        apply_method!(self, name,)
+    }
+
+    pub fn field(&self) -> &Field {
+        apply_method!(self, ref_field,)
+    }
+
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         apply_method!(self, append_array, other)
     }

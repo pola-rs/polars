@@ -156,6 +156,15 @@ where
     T: datatypes::PolarsDataType,
     ChunkedArray<T>: ChunkOps,
 {
+    pub fn name(&self) -> &str {
+        self.field.name()
+    }
+
+    /// used by Series macro
+    pub fn ref_field(&self) -> &Field {
+        &self.field
+    }
+
     pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
         let field = Field::new(name, T::get_data_type(), true);
         let chunk_id = create_chunk_id(&chunks);
