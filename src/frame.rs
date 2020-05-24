@@ -102,7 +102,7 @@ mod test {
         let file = File::open("data/iris.csv").unwrap();
         let builder = csv::ReaderBuilder::new()
             .infer_schema(None)
-            .has_headers(true);
+            .has_header(true);
         let mut reader = builder.build(file).unwrap();
 
         let df = DataFrameBuilder::new_from_csv(&mut reader).build().unwrap();

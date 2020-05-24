@@ -7,6 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-arrow = "0.16.0"
+arrow = { git = "https://github.com/apache/arrow", rev = "6e84421933894cd8e448f0c74828e9e18b2167aa"}
 thiserror = "1.0.16"
 num = "0.2.1"
