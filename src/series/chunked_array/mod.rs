@@ -1,3 +1,4 @@
+use crate::datatypes::ArrowDataType;
 use crate::series::iterator::ChunkIterator;
 use crate::{
     datatypes,
@@ -127,6 +128,24 @@ where
 
     fn len(&self) -> usize {
         self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
+    }
+}
+
+impl ChunkedArray<datatypes::Utf8Type> {
+    pub fn new_from_slice(name: &str, v: &[&str]) -> Self {
+        let mut builder = StringBuilder::new(v.len());
+        v.into_iter().for_each(|&val| {
+            builder.append_value(val).expect("Could not append value");
+        });
+
+        let field = Field::new(name, ArrowDataType::Utf8, true);
+
+        ChunkedArray {
+            field,
+            chunks: vec![Arc::new(builder.finish())],
+            chunk_id: format!("{}-", v.len()).to_string(),
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -386,7 +405,10 @@ mod test {
     fn take() {
         let a = get_array();
         let new = a
-            .take(&ChunkedArray::new_from_slice("idx", &[0, 1]), None)
+            .take(
+                &ChunkedArray::<datatypes::UInt32Type>::new_from_slice("idx", &[0, 1]),
+                None,
+            )
             .unwrap();
         assert_eq!(new.len(), 2)
     }
