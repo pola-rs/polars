@@ -359,6 +359,12 @@ impl ChunkOps for ChunkedArray<datatypes::Utf8Type> {
     }
 }
 
+impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
+    fn as_ref(&self) -> &ChunkedArray<T> {
+        self
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

@@ -1,4 +1,5 @@
 use super::chunked_array::ChunkedArray;
+use crate::datatypes::PolarsDataType;
 use crate::series::chunked_array::{ChunkOps, SeriesOps};
 use crate::{
     datatypes,
@@ -13,6 +14,7 @@ use std::ops::Deref;
 
 #[derive(Clone)]
 pub enum Series {
+    UInt32(ChunkedArray<datatypes::UInt32Type>),
     Int32(ChunkedArray<datatypes::Int32Type>),
     Int64(ChunkedArray<datatypes::Int64Type>),
     Float32(ChunkedArray<datatypes::Float32Type>),
@@ -24,6 +26,7 @@ pub enum Series {
 macro_rules! apply_method {
     ($self:ident, $method:ident, $($args:ident),*) => {
         match $self {
+            Series::UInt32(a) => a.$method($($args),*),
             Series::Int32(a) => a.$method($($args),*),
             Series::Int64(a) => a.$method($($args),*),
             Series::Float32(a) => a.$method($($args),*),
@@ -38,6 +41,7 @@ macro_rules! apply_method {
 macro_rules! apply_method_and_return {
     ($self:ident, $method:ident, [$($args:expr),*], $($opt_question_mark:tt)*) => {
         match $self {
+            Series::UInt32(a) => Series::UInt32(a.$method($($args),*)$($opt_question_mark)*),
             Series::Int32(a) => Series::Int32(a.$method($($args),*)$($opt_question_mark)*),
             Series::Int64(a) => Series::Int64(a.$method($($args),*)$($opt_question_mark)*),
             Series::Float32(a) => Series::Float32(a.$method($($args),*)$($opt_question_mark)*),
@@ -64,6 +68,7 @@ impl Series {
 
     pub fn as_series_ops(&self) -> &dyn SeriesOps {
         match self {
+            Series::UInt32(arr) => arr,
             Series::Int32(arr) => arr,
             Series::Int64(arr) => arr,
             Series::Float32(arr) => arr,
@@ -76,15 +81,18 @@ impl Series {
     pub fn limit(&self, num_elements: usize) -> Result<Self> {
         Ok(apply_method_and_return!(self, limit, [num_elements], ?))
     }
-    pub fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
-        Ok(apply_method_and_return!(self, filter, [filter], ?))
-    }
-    pub fn take(
+    pub fn filter<T: AsRef<ChunkedArray<datatypes::BooleanType>>>(
         &self,
-        indices: &ChunkedArray<datatypes::UInt32Type>,
+        filter: T,
+    ) -> Result<Self> {
+        Ok(apply_method_and_return!(self, filter, [filter.as_ref()], ?))
+    }
+    pub fn take<T: AsRef<ChunkedArray<datatypes::UInt32Type>>>(
+        &self,
+        indices: T,
         options: Option<TakeOptions>,
     ) -> Result<Self> {
-        Ok(apply_method_and_return!(self, take, [indices, options], ?))
+        Ok(apply_method_and_return!(self, take, [indices.as_ref(), options], ?))
     }
 
     pub fn len(&self) -> usize {
@@ -100,6 +108,7 @@ impl Series {
         N: ArrowPrimitiveType,
     {
         let s = match self {
+            Series::UInt32(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Int32(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Int64(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Float32(arr) => pack_ca_to_series(arr.cast::<N>()?),
@@ -113,6 +122,7 @@ impl Series {
 fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
     unsafe {
         match N::get_data_type() {
+            ArrowDataType::UInt32 => Series::UInt32(mem::transmute(ca)),
             ArrowDataType::Int32 => Series::Int32(mem::transmute(ca)),
             ArrowDataType::Int64 => Series::Int64(mem::transmute(ca)),
             ArrowDataType::Float32 => Series::Float32(mem::transmute(ca)),
@@ -139,10 +149,53 @@ macro_rules! impl_named_from {
 impl_named_from!(&str, Utf8, new_utf8_from_slice);
 impl_named_from!(String, Utf8, new_utf8_from_slice);
 impl_named_from!(bool, Bool, new_from_slice);
+impl_named_from!(u32, UInt32, new_from_slice);
 impl_named_from!(i32, Int32, new_from_slice);
 impl_named_from!(i64, Int64, new_from_slice);
 impl_named_from!(f32, Float32, new_from_slice);
 impl_named_from!(f64, Float64, new_from_slice);
+
+macro_rules! impl_as_ref_ca {
+    ($type:ident, $series_var:ident) => {
+        impl AsRef<ChunkedArray<datatypes::$type>> for Series {
+            fn as_ref(&self) -> &ChunkedArray<datatypes::$type> {
+                match self {
+                    Series::$series_var(a) => a,
+                    _ => unimplemented!(),
+                }
+            }
+        }
+    };
+}
+
+impl_as_ref_ca!(UInt32Type, UInt32);
+impl_as_ref_ca!(Int32Type, Int32);
+impl_as_ref_ca!(Int64Type, Int64);
+impl_as_ref_ca!(Float32Type, Float32);
+impl_as_ref_ca!(Float64Type, Float64);
+impl_as_ref_ca!(BooleanType, Bool);
+impl_as_ref_ca!(Utf8Type, Utf8);
+
+macro_rules! impl_as_mut_ca {
+    ($type:ident, $series_var:ident) => {
+        impl AsMut<ChunkedArray<datatypes::$type>> for Series {
+            fn as_mut(&mut self) -> &mut ChunkedArray<datatypes::$type> {
+                match self {
+                    Series::$series_var(a) => a,
+                    _ => unimplemented!(),
+                }
+            }
+        }
+    };
+}
+
+impl_as_mut_ca!(UInt32Type, UInt32);
+impl_as_mut_ca!(Int32Type, Int32);
+impl_as_mut_ca!(Int64Type, Int64);
+impl_as_mut_ca!(Float32Type, Float32);
+impl_as_mut_ca!(Float64Type, Float64);
+impl_as_mut_ca!(BooleanType, Bool);
+impl_as_mut_ca!(Utf8Type, Utf8);
 
 mod test {
     use super::*;
