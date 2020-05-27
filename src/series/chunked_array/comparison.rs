@@ -1,4 +1,4 @@
-use crate::series::iterator::ChunkIterator;
+use crate::series::chunked_array::iterator::ChunkIterator;
 use crate::{
     datatypes,
     datatypes::BooleanChunked,
@@ -8,6 +8,7 @@ use crate::{
 use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray};
 use arrow::compute;
 use arrow::datatypes::ArrowNumericType;
+use num::{Num, NumCast};
 use std::sync::Arc;
 
 pub trait CmpOps<Rhs> {

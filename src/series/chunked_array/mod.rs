@@ -1,5 +1,4 @@
 use crate::datatypes::ArrowDataType;
-use crate::series::iterator::ChunkIterator;
 use crate::{
     datatypes,
     error::{PolarsError, Result},
@@ -11,12 +10,14 @@ use arrow::{
     compute,
     datatypes::{ArrowNumericType, ArrowPrimitiveType, Field},
 };
+use iterator::ChunkIterator;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
 mod arithmetic;
 pub mod comparison;
+pub mod iterator;
 
 /// Operations that are possible without knowing underlying type.
 /// These operations will not fail due to non matching types.
