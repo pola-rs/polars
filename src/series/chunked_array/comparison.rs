@@ -1,6 +1,7 @@
 use crate::series::iterator::ChunkIterator;
 use crate::{
     datatypes,
+    datatypes::BooleanChunked,
     error::{PolarsError, Result},
     series::chunked_array::{ChunkOps, ChunkedArray},
 };
@@ -9,18 +10,18 @@ use arrow::compute;
 use arrow::datatypes::ArrowNumericType;
 use std::sync::Arc;
 
-pub trait CmpOpsChunkedArray<T> {
-    fn eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>>;
+pub trait CmpOps<Rhs, B> {
+    fn eq(&self, rhs: &Rhs) -> Result<B>;
 
-    fn neq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>>;
+    fn neq(&self, rhs: &Rhs) -> Result<B>;
 
-    fn gt(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>>;
+    fn gt(&self, rhs: &Rhs) -> Result<B>;
 
-    fn gt_eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>>;
+    fn gt_eq(&self, rhs: &Rhs) -> Result<B>;
 
-    fn lt(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>>;
+    fn lt(&self, rhs: &Rhs) -> Result<B>;
 
-    fn lt_eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>>;
+    fn lt_eq(&self, rhs: &Rhs) -> Result<B>;
 }
 
 impl<T> ChunkedArray<T>
@@ -33,7 +34,7 @@ where
         &self,
         rhs: &ChunkedArray<T>,
         operator: impl Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> arrow::error::Result<BooleanArray>,
-    ) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    ) -> Result<BooleanChunked> {
         let opt = self.optional_rechunk(rhs)?;
         let left = match &opt {
             Some(a) => a,
@@ -58,31 +59,31 @@ where
     }
 }
 
-impl<T> CmpOpsChunkedArray<T> for ChunkedArray<T>
+impl<T> CmpOps<ChunkedArray<T>, datatypes::BooleanChunked> for ChunkedArray<T>
 where
     T: ArrowNumericType,
 {
-    fn eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn eq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::eq)
     }
 
-    fn neq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn neq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::neq)
     }
 
-    fn gt(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn gt(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::gt)
     }
 
-    fn gt_eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn gt_eq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::gt_eq)
     }
 
-    fn lt(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn lt(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::lt)
     }
 
-    fn lt_eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn lt_eq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::lt_eq)
     }
 }
@@ -96,7 +97,7 @@ impl ChunkedArray<datatypes::Utf8Type> {
         &self,
         rhs: &ChunkedArray<T>,
         operator: impl Fn(&StringArray, &StringArray) -> arrow::error::Result<BooleanArray>,
-    ) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    ) -> Result<BooleanChunked> {
         let opt = self.optional_rechunk(rhs)?;
         let left = match &opt {
             Some(a) => a,
@@ -129,31 +130,31 @@ impl ChunkedArray<datatypes::Utf8Type> {
     }
 }
 
-impl<T> CmpOpsChunkedArray<T> for ChunkedArray<datatypes::Utf8Type>
+impl<T> CmpOps<ChunkedArray<T>, datatypes::BooleanChunked> for ChunkedArray<datatypes::Utf8Type>
 where
     T: BoundedToUtf8,
 {
-    fn eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn eq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::eq_utf8)
     }
 
-    fn neq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn neq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::neq_utf8)
     }
 
-    fn gt(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn gt(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::gt_utf8)
     }
 
-    fn gt_eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn gt_eq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::gt_eq_utf8)
     }
 
-    fn lt(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn lt(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::lt_utf8)
     }
 
-    fn lt_eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>> {
+    fn lt_eq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::lt_eq_utf8)
     }
 }

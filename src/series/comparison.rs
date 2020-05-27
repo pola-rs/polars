@@ -1,28 +1,23 @@
 use super::series::Series;
 use crate::{
     datatypes,
+    datatypes::BooleanChunked,
     error::{PolarsError, Result},
-    series::chunked_array::{comparison::CmpOpsChunkedArray, ChunkedArray},
+    series::chunked_array::{comparison::CmpOps, ChunkedArray},
 };
-
-type CompareResult = Result<ChunkedArray<datatypes::BooleanType>>;
 
 macro_rules! compare {
     ($variant:path, $lhs:ident, $rhs:ident, $cmp_method:ident) => {{
         if let $variant(rhs_) = $rhs {
-            Ok($lhs.$cmp_method(&rhs_))
+            Ok($lhs.$cmp_method(&rhs_)?)
         } else {
             Err(PolarsError::DataTypeMisMatch)
         }
     }};
 }
 
-pub trait CmpOps<T> {
-    fn eq(&self, rhs: T) -> CompareResult;
-}
-
-impl CmpOps<Series> for Series {
-    fn eq(&self, rhs: Series) -> CompareResult {
+impl CmpOps<Series, BooleanChunked> for Series {
+    fn eq(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, eq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, eq),
@@ -31,7 +26,66 @@ impl CmpOps<Series> for Series {
             Series::Float64(a) => compare!(Series::Float64, a, rhs, eq),
             Series::Bool(_a) => unimplemented!(),
             Series::Utf8(a) => compare!(Series::Utf8, a, rhs, eq),
-        };
-        unimplemented!()
+        }
+    }
+
+    fn neq(&self, rhs: &Series) -> Result<BooleanChunked> {
+        match self {
+            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, neq),
+            Series::Int32(a) => compare!(Series::Int32, a, rhs, neq),
+            Series::Int64(a) => compare!(Series::Int64, a, rhs, neq),
+            Series::Float32(a) => compare!(Series::Float32, a, rhs, neq),
+            Series::Float64(a) => compare!(Series::Float64, a, rhs, neq),
+            Series::Bool(_a) => unimplemented!(),
+            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, neq),
+        }
+    }
+
+    fn gt(&self, rhs: &Series) -> Result<BooleanChunked> {
+        match self {
+            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt),
+            Series::Int32(a) => compare!(Series::Int32, a, rhs, gt),
+            Series::Int64(a) => compare!(Series::Int64, a, rhs, gt),
+            Series::Float32(a) => compare!(Series::Float32, a, rhs, gt),
+            Series::Float64(a) => compare!(Series::Float64, a, rhs, gt),
+            Series::Bool(_a) => unimplemented!(),
+            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, gt),
+        }
+    }
+
+    fn gt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+        match self {
+            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt_eq),
+            Series::Int32(a) => compare!(Series::Int32, a, rhs, gt_eq),
+            Series::Int64(a) => compare!(Series::Int64, a, rhs, gt_eq),
+            Series::Float32(a) => compare!(Series::Float32, a, rhs, gt_eq),
+            Series::Float64(a) => compare!(Series::Float64, a, rhs, gt_eq),
+            Series::Bool(_a) => unimplemented!(),
+            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, gt_eq),
+        }
+    }
+
+    fn lt(&self, rhs: &Series) -> Result<BooleanChunked> {
+        match self {
+            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt),
+            Series::Int32(a) => compare!(Series::Int32, a, rhs, lt),
+            Series::Int64(a) => compare!(Series::Int64, a, rhs, lt),
+            Series::Float32(a) => compare!(Series::Float32, a, rhs, lt),
+            Series::Float64(a) => compare!(Series::Float64, a, rhs, lt),
+            Series::Bool(_a) => unimplemented!(),
+            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, lt),
+        }
+    }
+
+    fn lt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+        match self {
+            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt_eq),
+            Series::Int32(a) => compare!(Series::Int32, a, rhs, lt_eq),
+            Series::Int64(a) => compare!(Series::Int64, a, rhs, lt_eq),
+            Series::Float32(a) => compare!(Series::Float32, a, rhs, lt_eq),
+            Series::Float64(a) => compare!(Series::Float64, a, rhs, lt_eq),
+            Series::Bool(_a) => unimplemented!(),
+            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, lt_eq),
+        }
     }
 }

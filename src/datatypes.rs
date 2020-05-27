@@ -2,6 +2,7 @@ pub use arrow::datatypes::{
     BooleanType, Float32Type, Float64Type, Int32Type, Int64Type, UInt32Type,
 };
 
+use crate::series::chunked_array::ChunkedArray;
 use arrow::datatypes::ArrowPrimitiveType;
 pub use arrow::datatypes::DataType as ArrowDataType;
 use std::ops::{Deref, DerefMut};
@@ -42,3 +43,11 @@ impl<'a> PolarsDataType for Utf8Type {
         ArrowDataType::Utf8
     }
 }
+
+pub type BooleanChunked = ChunkedArray<BooleanType>;
+pub type UInt32Chunked = ChunkedArray<UInt32Type>;
+pub type Int32Chunked = ChunkedArray<Int32Type>;
+pub type Int64Chunked = ChunkedArray<Int64Type>;
+pub type Float32Chunked = ChunkedArray<Float32Type>;
+pub type Float64Chunked = ChunkedArray<Float64Type>;
+pub type Utf8Chunked = ChunkedArray<Utf8Type>;
