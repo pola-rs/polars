@@ -5,6 +5,7 @@ use crate::{
     error::{PolarsError, Result},
     series::chunked_array::{comparison::CmpOps, ChunkedArray},
 };
+use num::traits::{Num, NumCast};
 
 macro_rules! compare {
     ($variant:path, $lhs:ident, $rhs:ident, $cmp_method:ident) => {{
@@ -16,7 +17,7 @@ macro_rules! compare {
     }};
 }
 
-impl CmpOps<Series, BooleanChunked> for Series {
+impl CmpOps<Series> for Series {
     fn eq(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, eq),
@@ -24,8 +25,8 @@ impl CmpOps<Series, BooleanChunked> for Series {
             Series::Int64(a) => compare!(Series::Int64, a, rhs, eq),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, eq),
             Series::Float64(a) => compare!(Series::Float64, a, rhs, eq),
-            Series::Bool(_a) => unimplemented!(),
             Series::Utf8(a) => compare!(Series::Utf8, a, rhs, eq),
+            Series::Bool(_a) => unimplemented!(),
         }
     }
 
@@ -36,8 +37,8 @@ impl CmpOps<Series, BooleanChunked> for Series {
             Series::Int64(a) => compare!(Series::Int64, a, rhs, neq),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, neq),
             Series::Float64(a) => compare!(Series::Float64, a, rhs, neq),
-            Series::Bool(_a) => unimplemented!(),
             Series::Utf8(a) => compare!(Series::Utf8, a, rhs, neq),
+            Series::Bool(_a) => unimplemented!(),
         }
     }
 
@@ -48,8 +49,8 @@ impl CmpOps<Series, BooleanChunked> for Series {
             Series::Int64(a) => compare!(Series::Int64, a, rhs, gt),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, gt),
             Series::Float64(a) => compare!(Series::Float64, a, rhs, gt),
-            Series::Bool(_a) => unimplemented!(),
             Series::Utf8(a) => compare!(Series::Utf8, a, rhs, gt),
+            Series::Bool(_a) => unimplemented!(),
         }
     }
 
@@ -60,8 +61,8 @@ impl CmpOps<Series, BooleanChunked> for Series {
             Series::Int64(a) => compare!(Series::Int64, a, rhs, gt_eq),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, gt_eq),
             Series::Float64(a) => compare!(Series::Float64, a, rhs, gt_eq),
-            Series::Bool(_a) => unimplemented!(),
             Series::Utf8(a) => compare!(Series::Utf8, a, rhs, gt_eq),
+            Series::Bool(_a) => unimplemented!(),
         }
     }
 
@@ -72,8 +73,8 @@ impl CmpOps<Series, BooleanChunked> for Series {
             Series::Int64(a) => compare!(Series::Int64, a, rhs, lt),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, lt),
             Series::Float64(a) => compare!(Series::Float64, a, rhs, lt),
-            Series::Bool(_a) => unimplemented!(),
             Series::Utf8(a) => compare!(Series::Utf8, a, rhs, lt),
+            Series::Bool(_a) => unimplemented!(),
         }
     }
 
@@ -84,8 +85,8 @@ impl CmpOps<Series, BooleanChunked> for Series {
             Series::Int64(a) => compare!(Series::Int64, a, rhs, lt_eq),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, lt_eq),
             Series::Float64(a) => compare!(Series::Float64, a, rhs, lt_eq),
-            Series::Bool(_a) => unimplemented!(),
             Series::Utf8(a) => compare!(Series::Utf8, a, rhs, lt_eq),
+            Series::Bool(_a) => unimplemented!(),
         }
     }
 }

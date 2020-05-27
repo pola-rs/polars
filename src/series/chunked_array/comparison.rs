@@ -10,18 +10,18 @@ use arrow::compute;
 use arrow::datatypes::ArrowNumericType;
 use std::sync::Arc;
 
-pub trait CmpOps<Rhs, B> {
-    fn eq(&self, rhs: &Rhs) -> Result<B>;
+pub trait CmpOps<Rhs> {
+    fn eq(&self, rhs: &Rhs) -> Result<BooleanChunked>;
 
-    fn neq(&self, rhs: &Rhs) -> Result<B>;
+    fn neq(&self, rhs: &Rhs) -> Result<BooleanChunked>;
 
-    fn gt(&self, rhs: &Rhs) -> Result<B>;
+    fn gt(&self, rhs: &Rhs) -> Result<BooleanChunked>;
 
-    fn gt_eq(&self, rhs: &Rhs) -> Result<B>;
+    fn gt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked>;
 
-    fn lt(&self, rhs: &Rhs) -> Result<B>;
+    fn lt(&self, rhs: &Rhs) -> Result<BooleanChunked>;
 
-    fn lt_eq(&self, rhs: &Rhs) -> Result<B>;
+    fn lt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked>;
 }
 
 impl<T> ChunkedArray<T>
@@ -59,7 +59,7 @@ where
     }
 }
 
-impl<T> CmpOps<ChunkedArray<T>, datatypes::BooleanChunked> for ChunkedArray<T>
+impl<T> CmpOps<ChunkedArray<T>> for ChunkedArray<T>
 where
     T: ArrowNumericType,
 {
@@ -130,7 +130,7 @@ impl ChunkedArray<datatypes::Utf8Type> {
     }
 }
 
-impl<T> CmpOps<ChunkedArray<T>, datatypes::BooleanChunked> for ChunkedArray<datatypes::Utf8Type>
+impl<T> CmpOps<ChunkedArray<T>> for ChunkedArray<datatypes::Utf8Type>
 where
     T: BoundedToUtf8,
 {
