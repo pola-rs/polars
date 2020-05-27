@@ -28,16 +28,28 @@ impl DataFrame {
         DataFrame { schema, columns }
     }
 
-    fn fields(&self) -> &Vec<Field> {
+    pub fn fields(&self) -> &Vec<Field> {
         self.schema.fields()
     }
 
-    fn select_idx(&self, idx: usize) -> &Series {
-        &self.columns[idx]
+    pub fn select_idx(&self, idx: usize) -> Option<&Series> {
+        self.columns.get(idx)
     }
 
-    fn select(&self, name: &str) -> &Series {
-        unimplemented!()
+    pub fn select(&self, name: &str) -> Option<&Series> {
+        let opt_idx = self
+            .schema
+            .fields()
+            .iter()
+            .enumerate()
+            .filter(|(idx, field)| field.name() == name)
+            .map(|(idx, _)| idx)
+            .next();
+
+        match opt_idx {
+            Some(idx) => self.select_idx(idx),
+            None => None,
+        }
     }
 }
 
@@ -104,8 +116,21 @@ where
 
 mod test {
     use super::*;
+    use crate::series::series::NamedFrom;
     use arrow::csv;
     use std::fs::File;
+
+    fn create_frame() -> DataFrame {
+        let s0 = Series::init("days", [0, 1, 2].as_ref());
+        let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
+        DataFrame::new(vec![s0, s1])
+    }
+
+    #[test]
+    fn test_select() {
+        let df = create_frame();
+        println!("{:?}", df.select("days"));
+    }
 
     #[test]
     fn read_csv() {

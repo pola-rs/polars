@@ -12,7 +12,7 @@ use arrow::datatypes::{ArrowPrimitiveType, Field};
 use std::mem;
 use std::ops::Deref;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Series {
     UInt32(ChunkedArray<datatypes::UInt32Type>),
     Int32(ChunkedArray<datatypes::Int32Type>),
@@ -133,13 +133,13 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
 }
 
 pub trait NamedFrom<T> {
-    fn from(name: &str, _: T) -> Self;
+    fn init(name: &str, _: T) -> Self;
 }
 
 macro_rules! impl_named_from {
     ($type:ty, $series_var:ident, $method:ident) => {
         impl NamedFrom<&[$type]> for Series {
-            fn from(name: &str, v: &[$type]) -> Self {
+            fn init(name: &str, v: &[$type]) -> Self {
                 Series::$series_var(ChunkedArray::$method(name, v))
             }
         }
