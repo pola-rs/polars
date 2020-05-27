@@ -16,7 +16,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 mod arithmetic;
-mod comparison;
+pub mod comparison;
 
 /// Operations that are possible without knowing underlying type.
 /// These operations will not fail due to non matching types.

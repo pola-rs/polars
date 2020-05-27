@@ -9,7 +9,7 @@ use arrow::compute;
 use arrow::datatypes::ArrowNumericType;
 use std::sync::Arc;
 
-pub trait CmpOps<T> {
+pub trait CmpOpsChunkedArray<T> {
     fn eq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>>;
 
     fn neq(&self, rhs: &ChunkedArray<T>) -> Result<ChunkedArray<datatypes::BooleanType>>;
@@ -58,7 +58,7 @@ where
     }
 }
 
-impl<T> CmpOps<T> for ChunkedArray<T>
+impl<T> CmpOpsChunkedArray<T> for ChunkedArray<T>
 where
     T: ArrowNumericType,
 {
@@ -129,7 +129,7 @@ impl ChunkedArray<datatypes::Utf8Type> {
     }
 }
 
-impl<T> CmpOps<T> for ChunkedArray<datatypes::Utf8Type>
+impl<T> CmpOpsChunkedArray<T> for ChunkedArray<datatypes::Utf8Type>
 where
     T: BoundedToUtf8,
 {
