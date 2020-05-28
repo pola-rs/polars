@@ -10,7 +10,7 @@ use num::traits::{Num, NumCast};
 macro_rules! compare {
     ($variant:path, $lhs:ident, $rhs:ident, $cmp_method:ident) => {{
         if let $variant(rhs_) = $rhs {
-            Ok($lhs.$cmp_method(&rhs_)?)
+            Ok($lhs.$cmp_method(rhs_)?)
         } else {
             Err(PolarsError::DataTypeMisMatch)
         }

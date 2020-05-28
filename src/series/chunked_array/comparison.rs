@@ -1,3 +1,4 @@
+use crate::datatypes::ArrowDataType;
 use crate::series::chunked_array::iterator::ChunkIterator;
 use crate::{
     datatypes,
@@ -5,10 +6,12 @@ use crate::{
     error::{PolarsError, Result},
     series::chunked_array::{ChunkOps, ChunkedArray},
 };
-use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray};
+use arrow::array::{
+    Array, ArrayData, ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, StringArray,
+};
 use arrow::compute;
 use arrow::datatypes::ArrowNumericType;
-use num::{Num, NumCast};
+use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
 
 pub trait CmpOps<Rhs> {
@@ -157,6 +160,56 @@ where
 
     fn lt_eq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::lt_eq_utf8)
+    }
+}
+
+impl<T, Rhs> CmpOps<Rhs> for ChunkedArray<T>
+where
+    T: ArrowNumericType,
+    T::Native: ToPrimitive,
+    Rhs: Num + NumCast,
+{
+    fn eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
+        let chunks = self
+            .downcast_chunks()
+            .iter()
+            .map(|&a| {
+                let mut builder = BooleanBuilder::new(a.len());
+
+                for i in 0..a.len() {
+                    let val = a.value(i);
+                    let val = Rhs::from(val);
+                    let val = match val {
+                        Some(val) => val,
+                        None => return Err(PolarsError::DataTypeMisMatch),
+                    };
+                    builder.append_value(val == *rhs);
+                }
+                Ok(Arc::new(builder.finish()) as ArrayRef)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(BooleanChunked::new_from_chunks("", chunks))
+    }
+
+    fn neq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
+
+    fn gt(&self, rhs: &Rhs) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
+
+    fn gt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
+
+    fn lt(&self, rhs: &Rhs) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
+
+    fn lt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
+        unimplemented!()
     }
 }
 

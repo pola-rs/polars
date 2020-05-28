@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![feature(min_specialization)]
 mod error;
 mod series {
     pub(crate) mod arithmetic;
