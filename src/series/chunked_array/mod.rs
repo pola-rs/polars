@@ -340,9 +340,10 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::datatypes::Int32Chunked;
 
-    fn get_array() -> ChunkedArray<datatypes::Int32Type> {
-        ChunkedArray::<datatypes::Int32Type>::new_from_slice("a", &[1, 2, 3])
+    fn get_array() -> Int32Chunked {
+        ChunkedArray::new_from_slice("a", &[1, 2, 3])
     }
 
     #[test]
@@ -387,7 +388,7 @@ mod test {
     }
 
     #[test]
-    fn aggregates() {
+    fn aggregates_numeric() {
         let a = get_array();
         assert_eq!(a.max(), Some(3));
         assert_eq!(a.min(), Some(1));

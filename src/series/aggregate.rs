@@ -30,19 +30,37 @@ macro_rules! apply_agg_fn {
     };
 }
 
-impl<T> Agg<T> for Series
-where
-    T: Num + NumCast + Zero + ToPrimitive,
-{
-    fn sum(&self) -> Option<T> {
+impl Series {
+    fn sum<T>(&self) -> Option<T>
+    where
+        T: Num + NumCast + Zero + ToPrimitive,
+    {
         apply_agg_fn!(self, sum)
     }
 
-    fn min(&self) -> Option<T> {
+    fn min<T>(&self) -> Option<T>
+    where
+        T: Num + NumCast + Zero + ToPrimitive,
+    {
         apply_agg_fn!(self, min)
     }
 
-    fn max(&self) -> Option<T> {
+    fn max<T>(&self) -> Option<T>
+    where
+        T: Num + NumCast + Zero + ToPrimitive,
+    {
         apply_agg_fn!(self, max)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_agg_bool() {
+        let s = Series::init("", vec![true, false, true].as_slice());
+        assert_eq!(s.max::<u8>(), Some(1));
+        assert_eq!(s.min::<u8>(), Some(0));
     }
 }
