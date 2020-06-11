@@ -1,4 +1,4 @@
-use crate::datatypes::ArrowDataType;
+use crate::datatypes::{ArrowDataType, Utf8Chunked};
 use crate::series::chunked_array::iterator::ChunkIterator;
 use crate::{
     datatypes,
@@ -165,7 +165,7 @@ where
 
 fn cmp_chunked_array_to_num<T, Rhs>(
     ca: &ChunkedArray<T>,
-    lambda: &dyn Fn(Rhs) -> bool,
+    cmp_fn: &dyn Fn(Rhs) -> bool,
 ) -> Result<BooleanChunked>
 where
     T: ArrowNumericType,
@@ -185,7 +185,7 @@ where
                     Some(val) => val,
                     None => return Err(PolarsError::DataTypeMisMatch),
                 };
-                builder.append_value(lambda(val));
+                builder.append_value(cmp_fn(val));
             }
             Ok(Arc::new(builder.finish()) as ArrayRef)
         })
@@ -222,6 +222,52 @@ where
 
     fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
         cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs <= rhs)
+    }
+}
+
+fn cmp_chunked_array_to_str(
+    ca: &Utf8Chunked,
+    cmp_fn: &dyn Fn(&str) -> bool,
+) -> Result<BooleanChunked> {
+    let chunks = ca
+        .downcast_chunks()
+        .iter()
+        .map(|a| {
+            let mut builder = BooleanBuilder::new(a.len());
+
+            for i in 0..a.len() {
+                let val = a.value(i);
+                builder.append_value(cmp_fn(val));
+            }
+            Ok(Arc::new(builder.finish()) as ArrayRef)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(BooleanChunked::new_from_chunks("", chunks))
+}
+
+impl CmpOps<&str> for Utf8Chunked {
+    fn eq(&self, rhs: &str) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_str(self, &|lhs| lhs == rhs)
+    }
+
+    fn neq(&self, rhs: &str) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_str(self, &|lhs| lhs != rhs)
+    }
+
+    fn gt(&self, rhs: &str) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_str(self, &|lhs| lhs > rhs)
+    }
+
+    fn gt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_str(self, &|lhs| lhs >= rhs)
+    }
+
+    fn lt(&self, rhs: &str) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_str(self, &|lhs| lhs < rhs)
+    }
+
+    fn lt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_str(self, &|lhs| lhs <= rhs)
     }
 }
 

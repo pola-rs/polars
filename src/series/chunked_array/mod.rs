@@ -3,7 +3,7 @@ use crate::{
     datatypes,
     error::{PolarsError, Result},
 };
-use arrow::array::{ArrayRef, BooleanArray, StringBuilder};
+use arrow::array::{ArrayRef, BooleanArray, StringArray, StringBuilder};
 use arrow::compute::TakeOptions;
 use arrow::{
     array::{PrimitiveArray, PrimitiveBuilder},
@@ -149,6 +149,16 @@ impl ChunkedArray<datatypes::Utf8Type> {
             chunk_id: format!("{}-", v.len()).to_string(),
             phantom: PhantomData,
         }
+    }
+    fn downcast_chunks(&self) -> Vec<&StringArray> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                arr.as_any()
+                    .downcast_ref()
+                    .expect("could not downcast one of the chunks")
+            })
+            .collect::<Vec<_>>()
     }
 }
 
