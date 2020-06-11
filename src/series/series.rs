@@ -23,7 +23,8 @@ pub enum Series {
     Bool(ChunkedArray<datatypes::BooleanType>),
 }
 
-macro_rules! apply_method {
+#[macro_export]
+macro_rules! apply_method_all_series {
     ($self:ident, $method:ident, $($args:ident),*) => {
         match $self {
             Series::UInt32(a) => a.$method($($args),*),
@@ -33,6 +34,21 @@ macro_rules! apply_method {
             Series::Float64(a) => a.$method($($args),*),
             Series::Utf8(a) => a.$method($($args),*),
             Series::Bool(a) => a.$method($($args),*),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+// doesn't include Bool and Utf8
+#[macro_export]
+macro_rules! apply_method_arrowprimitive_series {
+    ($self:ident, $method:ident, $($args:ident),*) => {
+        match $self {
+            Series::UInt32(a) => a.$method($($args),*),
+            Series::Int32(a) => a.$method($($args),*),
+            Series::Int64(a) => a.$method($($args),*),
+            Series::Float32(a) => a.$method($($args),*),
+            Series::Float64(a) => a.$method($($args),*),
             _ => unimplemented!(),
         }
     }
@@ -55,15 +71,15 @@ macro_rules! apply_method_and_return {
 
 impl Series {
     pub fn name(&self) -> &str {
-        apply_method!(self, name,)
+        apply_method_all_series!(self, name,)
     }
 
     pub fn field(&self) -> &Field {
-        apply_method!(self, ref_field,)
+        apply_method_all_series!(self, ref_field,)
     }
 
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        apply_method!(self, append_array, other)
+        apply_method_all_series!(self, append_array, other)
     }
 
     pub fn as_series_ops(&self) -> &dyn SeriesOps {
@@ -96,11 +112,11 @@ impl Series {
     }
 
     pub fn len(&self) -> usize {
-        apply_method!(self, len,)
+        apply_method_all_series!(self, len,)
     }
 
     pub fn rechunk(&mut self) {
-        apply_method!(self, rechunk,)
+        apply_method_all_series!(self, rechunk,)
     }
 
     pub fn cast<N>(&self) -> Result<Self>

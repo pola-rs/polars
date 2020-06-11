@@ -1,6 +1,6 @@
 use super::series::Series;
 use crate::{
-    datatypes,
+    apply_method_arrowprimitive_series, datatypes,
     datatypes::BooleanChunked,
     error::{PolarsError, Result},
     series::chunked_array::{comparison::CmpOps, ChunkedArray},
@@ -88,5 +88,34 @@ impl CmpOps<&Series> for Series {
             Series::Utf8(a) => compare!(Series::Utf8, a, rhs, lt_eq),
             Series::Bool(_a) => unimplemented!(),
         }
+    }
+}
+
+impl<Rhs> CmpOps<Rhs> for Series
+where
+    Rhs: Num + NumCast + PartialOrd,
+{
+    fn eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        apply_method_arrowprimitive_series!(self, eq, rhs)
+    }
+
+    fn neq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        apply_method_arrowprimitive_series!(self, neq, rhs)
+    }
+
+    fn gt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        apply_method_arrowprimitive_series!(self, gt, rhs)
+    }
+
+    fn gt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        apply_method_arrowprimitive_series!(self, gt_eq, rhs)
+    }
+
+    fn lt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        apply_method_arrowprimitive_series!(self, lt, rhs)
+    }
+
+    fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        apply_method_arrowprimitive_series!(self, lt_eq, rhs)
     }
 }
