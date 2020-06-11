@@ -163,53 +163,65 @@ where
     }
 }
 
-impl<T, Rhs> CmpOps<Rhs> for ChunkedArray<T>
+fn cmp_chunked_array_to_num<T, Rhs>(
+    ca: &ChunkedArray<T>,
+    lambda: &dyn Fn(Rhs) -> bool,
+) -> Result<BooleanChunked>
 where
     T: ArrowNumericType,
     T::Native: ToPrimitive,
     Rhs: Num + NumCast,
 {
+    let chunks = ca
+        .downcast_chunks()
+        .iter()
+        .map(|&a| {
+            let mut builder = BooleanBuilder::new(a.len());
+
+            for i in 0..a.len() {
+                let val = a.value(i);
+                let val = Rhs::from(val);
+                let val = match val {
+                    Some(val) => val,
+                    None => return Err(PolarsError::DataTypeMisMatch),
+                };
+                builder.append_value(lambda(val));
+            }
+            Ok(Arc::new(builder.finish()) as ArrayRef)
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(BooleanChunked::new_from_chunks("", chunks))
+}
+
+impl<T, Rhs> CmpOps<Rhs> for ChunkedArray<T>
+where
+    T: ArrowNumericType,
+    T::Native: ToPrimitive,
+    Rhs: Num + NumCast + PartialOrd,
+{
     fn eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        let chunks = self
-            .downcast_chunks()
-            .iter()
-            .map(|&a| {
-                let mut builder = BooleanBuilder::new(a.len());
-
-                for i in 0..a.len() {
-                    let val = a.value(i);
-                    let val = Rhs::from(val);
-                    let val = match val {
-                        Some(val) => val,
-                        None => return Err(PolarsError::DataTypeMisMatch),
-                    };
-                    builder.append_value(val == *rhs);
-                }
-                Ok(Arc::new(builder.finish()) as ArrayRef)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(BooleanChunked::new_from_chunks("", chunks))
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs == *rhs)
     }
 
     fn neq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        unimplemented!()
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs != *rhs)
     }
 
     fn gt(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        unimplemented!()
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs > *rhs)
     }
 
     fn gt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        unimplemented!()
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs >= *rhs)
     }
 
     fn lt(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        unimplemented!()
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs < *rhs)
     }
 
     fn lt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        unimplemented!()
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs <= *rhs)
     }
 }
 
