@@ -1,4 +1,6 @@
 use super::series::Series;
+use crate::error::PolarsError::DataTypeMisMatch;
+use crate::series::chunked_array::comparison::NumComp;
 use crate::{
     apply_method_arrowprimitive_series, datatypes,
     datatypes::BooleanChunked,
@@ -93,7 +95,7 @@ impl CmpOps<&Series> for Series {
 
 impl<Rhs> CmpOps<Rhs> for Series
 where
-    Rhs: Num + NumCast + PartialOrd,
+    Rhs: NumComp,
 {
     fn eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
         apply_method_arrowprimitive_series!(self, eq, rhs)
@@ -117,5 +119,49 @@ where
 
     fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
         apply_method_arrowprimitive_series!(self, lt_eq, rhs)
+    }
+}
+
+impl CmpOps<&str> for Series {
+    fn eq(&self, rhs: &str) -> Result<BooleanChunked> {
+        match self {
+            Series::Utf8(a) => a.eq(rhs),
+            _ => Err(DataTypeMisMatch),
+        }
+    }
+
+    fn neq(&self, rhs: &str) -> Result<BooleanChunked> {
+        match self {
+            Series::Utf8(a) => a.neq(rhs),
+            _ => Err(DataTypeMisMatch),
+        }
+    }
+
+    fn gt(&self, rhs: &str) -> Result<BooleanChunked> {
+        match self {
+            Series::Utf8(a) => a.gt(rhs),
+            _ => Err(DataTypeMisMatch),
+        }
+    }
+
+    fn gt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+        match self {
+            Series::Utf8(a) => a.gt_eq(rhs),
+            _ => Err(DataTypeMisMatch),
+        }
+    }
+
+    fn lt(&self, rhs: &str) -> Result<BooleanChunked> {
+        match self {
+            Series::Utf8(a) => a.lt(rhs),
+            _ => Err(DataTypeMisMatch),
+        }
+    }
+
+    fn lt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+        match self {
+            Series::Utf8(a) => a.lt_eq(rhs),
+            _ => Err(DataTypeMisMatch),
+        }
     }
 }

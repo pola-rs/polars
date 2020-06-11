@@ -194,11 +194,24 @@ where
     Ok(BooleanChunked::new_from_chunks("", chunks))
 }
 
+pub trait NumComp: Num + NumCast + PartialOrd {}
+
+impl NumComp for f32 {}
+impl NumComp for f64 {}
+impl NumComp for i8 {}
+impl NumComp for i16 {}
+impl NumComp for i32 {}
+impl NumComp for i64 {}
+impl NumComp for u8 {}
+impl NumComp for u16 {}
+impl NumComp for u32 {}
+impl NumComp for u64 {}
+
 impl<T, Rhs> CmpOps<Rhs> for ChunkedArray<T>
 where
     T: ArrowNumericType,
     T::Native: ToPrimitive,
-    Rhs: Num + NumCast + PartialOrd,
+    Rhs: NumComp,
 {
     fn eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
         cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs == rhs)
