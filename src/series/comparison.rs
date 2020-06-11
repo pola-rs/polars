@@ -1,6 +1,6 @@
 use super::series::Series;
 use crate::error::PolarsError::DataTypeMisMatch;
-use crate::series::chunked_array::comparison::NumComp;
+use crate::series::chunked_array::comparison::{ForceCmpOps, NumComp};
 use crate::{
     apply_method_arrowprimitive_series, datatypes,
     datatypes::BooleanChunked,
@@ -165,3 +165,6 @@ impl CmpOps<&str> for Series {
         }
     }
 }
+
+impl ForceCmpOps<&str> for Series {}
+impl<Rhs: NumComp> ForceCmpOps<Rhs> for Series {}

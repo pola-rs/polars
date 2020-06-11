@@ -1,9 +1,9 @@
 use super::chunked_array::ChunkedArray;
-use crate::datatypes::PolarsDataType;
+use crate::datatypes::{PolarsDataType, UInt32Chunked};
 use crate::series::chunked_array::{ChunkOps, SeriesOps};
 use crate::{
     datatypes,
-    datatypes::ArrowDataType,
+    datatypes::{ArrowDataType, BooleanChunked},
     error::{PolarsError, Result},
 };
 use arrow::array::ArrayRef;
@@ -97,13 +97,10 @@ impl Series {
     pub fn limit(&self, num_elements: usize) -> Result<Self> {
         Ok(apply_method_and_return!(self, limit, [num_elements], ?))
     }
-    pub fn filter<T: AsRef<ChunkedArray<datatypes::BooleanType>>>(
-        &self,
-        filter: T,
-    ) -> Result<Self> {
+    pub fn filter<T: AsRef<BooleanChunked>>(&self, filter: T) -> Result<Self> {
         Ok(apply_method_and_return!(self, filter, [filter.as_ref()], ?))
     }
-    pub fn take<T: AsRef<ChunkedArray<datatypes::UInt32Type>>>(
+    pub fn take<T: AsRef<UInt32Chunked>>(
         &self,
         indices: T,
         options: Option<TakeOptions>,

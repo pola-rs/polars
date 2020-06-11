@@ -1,3 +1,7 @@
+use crate::datatypes::{
+    BooleanChunked, Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, UInt32Chunked,
+    Utf8Chunked,
+};
 use crate::prelude::*;
 use crate::series::chunked_array::SeriesOps;
 use crate::{
@@ -13,6 +17,7 @@ use std::sync::Arc;
 
 type CSVReader<R> = arrow::csv::Reader<R>;
 
+#[derive(Debug)]
 struct DataFrame {
     schema: Arc<Schema>,
     columns: Vec<Series>,
@@ -52,6 +57,23 @@ impl DataFrame {
             None => None,
         }
     }
+
+    pub fn f_select(&self, name: &str) -> &Series {
+        self.select(name)
+            .expect(&format!("name {} does not exist on dataframe", name))
+    }
+
+    pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
+        let mut new_col = Vec::with_capacity(self.columns.len());
+        for col in &self.columns {
+            new_col.push(col.filter(mask)?)
+        }
+        Ok(DataFrame::new(new_col))
+    }
+
+    pub fn f_filter(&self, mask: &BooleanChunked) -> Self {
+        self.filter(mask).expect("could not filter")
+    }
 }
 
 struct DataFrameBuilder<'a, R>
@@ -80,21 +102,27 @@ where
             .fields()
             .iter()
             .map(|field| match field.data_type() {
-                ArrowDataType::Int32 => Series::Int32(
-                    ChunkedArray::<datatypes::Int32Type>::new_from_chunks(field.name(), vec![]),
-                ),
-                ArrowDataType::Int64 => Series::Int64(
-                    ChunkedArray::<datatypes::Int64Type>::new_from_chunks(field.name(), vec![]),
-                ),
-                ArrowDataType::Float32 => Series::Float32(
-                    ChunkedArray::<datatypes::Float32Type>::new_from_chunks(field.name(), vec![]),
-                ),
-                ArrowDataType::Float64 => Series::Float64(
-                    ChunkedArray::<datatypes::Float64Type>::new_from_chunks(field.name(), vec![]),
-                ),
-                ArrowDataType::Utf8 => Series::Utf8(
-                    ChunkedArray::<datatypes::Utf8Type>::new_from_chunks(field.name(), vec![]),
-                ),
+                ArrowDataType::UInt32 => {
+                    Series::UInt32(UInt32Chunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Int32 => {
+                    Series::Int32(Int32Chunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Int64 => {
+                    Series::Int64(Int64Chunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Float32 => {
+                    Series::Float32(Float32Chunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Float64 => {
+                    Series::Float64(Float64Chunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Utf8 => {
+                    Series::Utf8(Utf8Chunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Boolean => {
+                    Series::Bool(BooleanChunked::new_from_chunks(field.name(), vec![]))
+                }
                 _ => unimplemented!(),
             })
             .collect::<Vec<_>>();
@@ -130,10 +158,13 @@ mod test {
     #[test]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(
-            df.select("days").map(|s| s.eq(1)).unwrap().unwrap().sum(),
-            Some(1)
-        );
+        assert_eq!(df.f_select("days").f_eq(1).sum(), Some(1));
+    }
+
+    #[test]
+    fn test_filter() {
+        let df = create_frame();
+        println!("{:?}", df.filter(&df.f_select("days").f_eq(0)))
     }
 
     #[test]

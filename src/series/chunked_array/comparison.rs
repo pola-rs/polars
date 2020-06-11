@@ -28,6 +28,27 @@ pub trait CmpOps<Rhs> {
     fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 }
 
+pub trait ForceCmpOps<Rhs>: CmpOps<Rhs> {
+    fn f_eq(&self, rhs: Rhs) -> BooleanChunked {
+        self.eq(rhs).expect("could not cmp")
+    }
+    fn f_neq(&self, rhs: Rhs) -> BooleanChunked {
+        self.neq(rhs).expect("could not cmp")
+    }
+    fn f_gt(&self, rhs: Rhs) -> BooleanChunked {
+        self.gt(rhs).expect("could not cmp")
+    }
+    fn f_gt_eq(&self, rhs: Rhs) -> BooleanChunked {
+        self.gt_eq(rhs).expect("could not cmp")
+    }
+    fn f_lt(&self, rhs: Rhs) -> BooleanChunked {
+        self.lt(rhs).expect("could not cmp")
+    }
+    fn f_lt_eq(&self, rhs: Rhs) -> BooleanChunked {
+        self.lt_eq(rhs).expect("could not cmp")
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: ArrowNumericType,
@@ -92,11 +113,13 @@ where
     }
 }
 
+impl<T: ArrowNumericType> ForceCmpOps<&ChunkedArray<T>> for ChunkedArray<T> {}
+
 /// Auxiliary trait for CmpOps trait
 pub trait BoundedToUtf8 {}
 impl BoundedToUtf8 for datatypes::Utf8Type {}
 
-impl ChunkedArray<datatypes::Utf8Type> {
+impl Utf8Chunked {
     fn comparison<T: BoundedToUtf8>(
         &self,
         rhs: &ChunkedArray<T>,
@@ -134,7 +157,7 @@ impl ChunkedArray<datatypes::Utf8Type> {
     }
 }
 
-impl<T> CmpOps<&ChunkedArray<T>> for ChunkedArray<datatypes::Utf8Type>
+impl<T> CmpOps<&ChunkedArray<T>> for Utf8Chunked
 where
     T: BoundedToUtf8,
 {
@@ -162,6 +185,8 @@ where
         self.comparison(rhs, compute::lt_eq_utf8)
     }
 }
+
+impl<T: BoundedToUtf8> ForceCmpOps<&ChunkedArray<T>> for Utf8Chunked {}
 
 fn cmp_chunked_array_to_num<T, Rhs>(
     ca: &ChunkedArray<T>,
@@ -238,6 +263,14 @@ where
     }
 }
 
+impl<T, Rhs> ForceCmpOps<Rhs> for ChunkedArray<T>
+where
+    T: ArrowNumericType,
+    T::Native: ToPrimitive,
+    Rhs: NumComp,
+{
+}
+
 fn cmp_chunked_array_to_str(
     ca: &Utf8Chunked,
     cmp_fn: &dyn Fn(&str) -> bool,
@@ -283,6 +316,8 @@ impl CmpOps<&str> for Utf8Chunked {
         cmp_chunked_array_to_str(self, &|lhs| lhs <= rhs)
     }
 }
+
+impl ForceCmpOps<&str> for Utf8Chunked {}
 
 fn cmp_chunked_array_to_boolarr(
     ca: &BooleanChunked,
@@ -330,6 +365,8 @@ impl CmpOps<&[bool]> for BooleanChunked {
         cmp_chunked_array_to_boolarr(self, &|lhs, rhs_i| lhs <= rhs_i, rhs)
     }
 }
+
+impl ForceCmpOps<&[bool]> for BooleanChunked {}
 
 mod test {
     use super::*;
