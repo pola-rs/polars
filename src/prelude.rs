@@ -1,1 +1,1 @@
-use crate::series::chunked_array::comparison::CmpOps;
+pub use crate::series::chunked_array::{aggregate::Agg, comparison::CmpOps};

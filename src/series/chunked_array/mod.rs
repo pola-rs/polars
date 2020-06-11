@@ -1,4 +1,5 @@
-use crate::datatypes::ArrowDataType;
+use self::aggregate::Agg;
+use crate::datatypes::{ArrowDataType, BooleanChunked};
 use crate::{
     datatypes,
     error::{PolarsError, Result},
@@ -15,6 +16,7 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+pub mod aggregate;
 mod arithmetic;
 pub mod comparison;
 pub mod iterator;
@@ -25,7 +27,7 @@ pub trait SeriesOps {
     fn limit(&self, num_elements: usize) -> Result<Self>
     where
         Self: std::marker::Sized;
-    fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self>
+    fn filter(&self, filter: &BooleanChunked) -> Result<Self>
     where
         Self: std::marker::Sized;
     fn take(
@@ -81,7 +83,7 @@ where
     }
 
     /// Chunk sizes should match or rhs should have one chunk
-    fn filter(&self, filter: &ChunkedArray<datatypes::BooleanType>) -> Result<Self> {
+    fn filter(&self, filter: &BooleanChunked) -> Result<Self> {
         let opt = self.optional_rechunk(filter)?;
         let left = match &opt {
             Some(a) => a,
@@ -217,27 +219,6 @@ where
                     .expect("could not downcast one of the chunks")
             })
             .collect::<Vec<_>>()
-    }
-}
-
-impl<T> ChunkedArray<T>
-where
-    T: ArrowNumericType,
-{
-    fn sum(&self) -> Option<T::Native>
-    where
-        T::Native: std::ops::Add<Output = T::Native>,
-    {
-        self.downcast_chunks()
-            .iter()
-            .map(|&a| compute::sum(a))
-            .fold(None, |acc, v| match v {
-                Some(v) => match acc {
-                    None => Some(v),
-                    Some(acc) => Some(acc + v),
-                },
-                None => acc,
-            })
     }
 }
 
@@ -416,7 +397,7 @@ mod test {
     fn filter() {
         let a = get_array();
         let b = a
-            .filter(&ChunkedArray::<datatypes::BooleanType>::new_from_slice(
+            .filter(&BooleanChunked::new_from_slice(
                 "filter",
                 &[true, false, false],
             ))

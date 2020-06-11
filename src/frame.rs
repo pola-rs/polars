@@ -129,9 +129,11 @@ mod test {
 
     #[test]
     fn test_select() {
-        use crate::series::chunked_array::comparison::CmpOps;
         let df = create_frame();
-        println!("{:?}", df.select("days").map(|s| s.eq(1)).unwrap().unwrap());
+        assert_eq!(
+            df.select("days").map(|s| s.eq(1)).unwrap().unwrap().sum(),
+            Some(1)
+        );
     }
 
     #[test]

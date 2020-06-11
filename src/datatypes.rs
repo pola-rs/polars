@@ -3,8 +3,8 @@ pub use arrow::datatypes::{
 };
 
 use crate::series::chunked_array::ChunkedArray;
-use arrow::datatypes::ArrowPrimitiveType;
 pub use arrow::datatypes::DataType as ArrowDataType;
+use arrow::datatypes::{ArrowNumericType, ArrowPrimitiveType};
 use std::ops::{Deref, DerefMut};
 
 pub struct Utf8Type {
@@ -51,3 +51,11 @@ pub type Int64Chunked = ChunkedArray<Int64Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
+
+pub trait PolarNumericType: ArrowNumericType {}
+
+impl PolarNumericType for Int32Type {}
+impl PolarNumericType for Int64Type {}
+impl PolarNumericType for Float32Type {}
+impl PolarNumericType for Float64Type {}
+impl PolarNumericType for UInt32Type {}
