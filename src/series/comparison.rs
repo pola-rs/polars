@@ -17,7 +17,7 @@ macro_rules! compare {
     }};
 }
 
-impl CmpOps<Series> for Series {
+impl CmpOps<&Series> for Series {
     fn eq(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, eq),

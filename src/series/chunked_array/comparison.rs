@@ -15,17 +15,17 @@ use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
 
 pub trait CmpOps<Rhs> {
-    fn eq(&self, rhs: &Rhs) -> Result<BooleanChunked>;
+    fn eq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
-    fn neq(&self, rhs: &Rhs) -> Result<BooleanChunked>;
+    fn neq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
-    fn gt(&self, rhs: &Rhs) -> Result<BooleanChunked>;
+    fn gt(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
-    fn gt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked>;
+    fn gt_eq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
-    fn lt(&self, rhs: &Rhs) -> Result<BooleanChunked>;
+    fn lt(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
-    fn lt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked>;
+    fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 }
 
 impl<T> ChunkedArray<T>
@@ -63,7 +63,7 @@ where
     }
 }
 
-impl<T> CmpOps<ChunkedArray<T>> for ChunkedArray<T>
+impl<T> CmpOps<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: ArrowNumericType,
 {
@@ -134,7 +134,7 @@ impl ChunkedArray<datatypes::Utf8Type> {
     }
 }
 
-impl<T> CmpOps<ChunkedArray<T>> for ChunkedArray<datatypes::Utf8Type>
+impl<T> CmpOps<&ChunkedArray<T>> for ChunkedArray<datatypes::Utf8Type>
 where
     T: BoundedToUtf8,
 {
@@ -200,28 +200,28 @@ where
     T::Native: ToPrimitive,
     Rhs: Num + NumCast + PartialOrd,
 {
-    fn eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs == *rhs)
+    fn eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs == rhs)
     }
 
-    fn neq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs != *rhs)
+    fn neq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs != rhs)
     }
 
-    fn gt(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs > *rhs)
+    fn gt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs > rhs)
     }
 
-    fn gt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs >= *rhs)
+    fn gt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs >= rhs)
     }
 
-    fn lt(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs < *rhs)
+    fn lt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs < rhs)
     }
 
-    fn lt_eq(&self, rhs: &Rhs) -> Result<BooleanChunked> {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs <= *rhs)
+    fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs <= rhs)
     }
 }
 
