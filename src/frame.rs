@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::series::chunked_array::SeriesOps;
 use crate::{
     datatypes,
@@ -128,8 +129,9 @@ mod test {
 
     #[test]
     fn test_select() {
+        use crate::series::chunked_array::comparison::CmpOps;
         let df = create_frame();
-        println!("{:?}", df.select("days"));
+        println!("{:?}", df.select("days").map(|s| s.eq(1)).unwrap().unwrap());
     }
 
     #[test]

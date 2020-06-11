@@ -284,6 +284,53 @@ impl CmpOps<&str> for Utf8Chunked {
     }
 }
 
+fn cmp_chunked_array_to_boolarr(
+    ca: &BooleanChunked,
+    cmp_fn: &dyn Fn(bool, bool) -> bool,
+    rhs: &[bool],
+) -> Result<BooleanChunked> {
+    let chunks = ca
+        .downcast_chunks()
+        .iter()
+        .map(|a| {
+            let mut builder = BooleanBuilder::new(a.len());
+
+            for i in 0..a.len() {
+                let val = a.value(i);
+                builder.append_value(cmp_fn(val, rhs[i]));
+            }
+            Ok(Arc::new(builder.finish()) as ArrayRef)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(BooleanChunked::new_from_chunks("", chunks))
+}
+
+impl CmpOps<&[bool]> for BooleanChunked {
+    fn eq(&self, rhs: &[bool]) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_boolarr(self, &|lhs, rhs_i| lhs == rhs_i, rhs)
+    }
+
+    fn neq(&self, rhs: &[bool]) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_boolarr(self, &|lhs, rhs_i| lhs != rhs_i, rhs)
+    }
+
+    fn gt(&self, rhs: &[bool]) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_boolarr(self, &|lhs, rhs_i| lhs > rhs_i, rhs)
+    }
+
+    fn gt_eq(&self, rhs: &[bool]) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_boolarr(self, &|lhs, rhs_i| lhs >= rhs_i, rhs)
+    }
+
+    fn lt(&self, rhs: &[bool]) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_boolarr(self, &|lhs, rhs_i| lhs < rhs_i, rhs)
+    }
+
+    fn lt_eq(&self, rhs: &[bool]) -> Result<BooleanChunked> {
+        cmp_chunked_array_to_boolarr(self, &|lhs, rhs_i| lhs <= rhs_i, rhs)
+    }
+}
+
 mod test {
     use super::*;
 
