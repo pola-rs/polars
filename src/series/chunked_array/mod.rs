@@ -222,26 +222,6 @@ where
     }
 }
 
-impl<T> ChunkedArray<T>
-where
-    T: ArrowNumericType,
-    T::Native: std::cmp::Ord,
-{
-    fn max(&self) -> Option<T::Native> {
-        self.downcast_chunks()
-            .iter()
-            .filter_map(|&a| compute::max(a))
-            .max()
-    }
-
-    fn min(&self) -> Option<T::Native> {
-        self.downcast_chunks()
-            .iter()
-            .filter_map(|&a| compute::min(a))
-            .min()
-    }
-}
-
 impl<T> ChunkedArray<T> {
     fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
         let chunk_id = create_chunk_id(&chunks);
