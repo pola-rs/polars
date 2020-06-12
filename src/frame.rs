@@ -1,6 +1,6 @@
 use crate::datatypes::{
-    BooleanChunked, Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, UInt32Chunked,
-    Utf8Chunked,
+    AnyType, BooleanChunked, Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked,
+    UInt32Chunked, Utf8Chunked,
 };
 use crate::prelude::*;
 use crate::series::chunked_array::SeriesOps;
@@ -17,8 +17,7 @@ use std::sync::Arc;
 
 type CSVReader<R> = arrow::csv::Reader<R>;
 
-#[derive(Debug)]
-struct DataFrame {
+pub struct DataFrame {
     schema: Arc<Schema>,
     columns: Vec<Series>,
 }
@@ -36,6 +35,18 @@ impl DataFrame {
 
     pub fn fields(&self) -> &Vec<Field> {
         self.schema.fields()
+    }
+
+    pub fn select_row_idx(&self, idx: usize) -> Option<Vec<AnyType>> {
+        if self.columns.len() == 0 {
+            return None;
+        }
+        unsafe {
+            if self.columns.get_unchecked(0).len() <= idx {
+                return None;
+            }
+        };
+        Some(self.columns.iter().map(|s| s.get(idx)).collect())
     }
 
     pub fn select_idx(&self, idx: usize) -> Option<&Series> {

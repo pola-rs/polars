@@ -1,5 +1,5 @@
 use super::chunked_array::ChunkedArray;
-use crate::datatypes::{PolarsDataType, UInt32Chunked};
+use crate::datatypes::{AnyType, PolarsDataType, UInt32Chunked};
 use crate::series::chunked_array::{ChunkOps, SeriesOps};
 use crate::{
     datatypes,
@@ -129,6 +129,10 @@ impl Series {
             _ => return Err(PolarsError::DataTypeMisMatch),
         };
         Ok(s)
+    }
+
+    pub fn get(&self, index: usize) -> AnyType {
+        apply_method_all_series!(self, get, index)
     }
 }
 

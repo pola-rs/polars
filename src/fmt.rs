@@ -1,9 +1,14 @@
-use crate::series::chunked_array::iterator::ChunkIterator;
-use crate::series::series::Series;
-use std::fmt::{Debug, Display, Formatter};
+use crate::{
+    frame::DataFrame,
+    series::{chunked_array::iterator::ChunkIterator, series::Series},
+};
+use std::{
+    fmt,
+    fmt::{Debug, Display, Formatter},
+};
 
 impl Debug for Series {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         const LIMIT: usize = 10;
 
         macro_rules! format_series {
@@ -43,7 +48,13 @@ impl Debug for Series {
 }
 
 impl Display for Series {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Debug::fmt(self, f)
+    }
+}
+
+impl Debug for DataFrame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        unimplemented!()
     }
 }

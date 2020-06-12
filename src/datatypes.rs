@@ -59,3 +59,15 @@ impl PolarNumericType for Int64Type {}
 impl PolarNumericType for Float32Type {}
 impl PolarNumericType for Float64Type {}
 impl PolarNumericType for UInt32Type {}
+
+#[derive(Debug, PartialEq)]
+pub enum AnyType<'a> {
+    Null,
+    Bool(bool),
+    I32(i32),
+    I64(i64),
+    F32(f32),
+    F64(f64),
+    U32(u32),
+    Str(&'a str),
+}

@@ -1,10 +1,13 @@
 use self::aggregate::Agg;
-use crate::datatypes::{ArrowDataType, BooleanChunked};
+use crate::datatypes::{AnyType, ArrowDataType, BooleanChunked, UInt32Chunked};
 use crate::{
     datatypes,
     error::{PolarsError, Result},
 };
-use arrow::array::{ArrayRef, BooleanArray, StringArray, StringBuilder};
+use arrow::array::{
+    ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
+    StringBuilder,
+};
 use arrow::compute::TakeOptions;
 use arrow::{
     array::{PrimitiveArray, PrimitiveBuilder},
@@ -30,16 +33,14 @@ pub trait SeriesOps {
     fn filter(&self, filter: &BooleanChunked) -> Result<Self>
     where
         Self: std::marker::Sized;
-    fn take(
-        &self,
-        indices: &ChunkedArray<datatypes::UInt32Type>,
-        options: Option<TakeOptions>,
-    ) -> Result<Self>
+    fn take(&self, indices: &UInt32Chunked, options: Option<TakeOptions>) -> Result<Self>
     where
         Self: std::marker::Sized;
     fn append_array(&mut self, other: ArrayRef) -> Result<()>;
 
     fn len(&self) -> usize;
+
+    fn get(&self, index: usize) -> AnyType;
 }
 
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
@@ -57,6 +58,23 @@ pub struct ChunkedArray<T> {
     /// len_chunk0-len_chunk1-len_chunk2 etc.
     chunk_id: String,
     phantom: PhantomData<T>,
+}
+
+impl<T> ChunkedArray<T> {
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        let mut index_remainder = index;
+        let mut current_chunk_idx = 0;
+
+        for chunk in &self.chunks {
+            if chunk.len() - 1 > index_remainder {
+                break;
+            } else {
+                index_remainder -= chunk.len();
+                current_chunk_idx += 1;
+            }
+        }
+        (current_chunk_idx, index_remainder)
+    }
 }
 
 impl<T> SeriesOps for ChunkedArray<T>
@@ -131,6 +149,35 @@ where
 
     fn len(&self) -> usize {
         self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
+    }
+
+    fn get(&self, index: usize) -> AnyType {
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let arr = &self.chunks[chunk_idx];
+
+        if arr.is_null(idx) {
+            return AnyType::Null;
+        }
+
+        macro_rules! downcast_and_pack {
+            ($casttype:ident, $variant:ident) => {{
+                let arr = arr
+                    .as_any()
+                    .downcast_ref::<$casttype>()
+                    .expect("could not downcast one of the chunks");
+                let v = arr.value(idx);
+                AnyType::$variant(v)
+            }};
+        }
+        match T::get_data_type() {
+            ArrowDataType::Boolean => downcast_and_pack!(BooleanArray, Bool),
+            ArrowDataType::Int32 => downcast_and_pack!(Int32Array, I32),
+            ArrowDataType::Int64 => downcast_and_pack!(Int64Array, I64),
+            ArrowDataType::Float32 => downcast_and_pack!(Float32Array, F32),
+            ArrowDataType::Float64 => downcast_and_pack!(Float64Array, F64),
+            ArrowDataType::Utf8 => downcast_and_pack!(StringArray, Str),
+            _ => unimplemented!(),
+        }
     }
 }
 
@@ -405,6 +452,15 @@ mod test {
             )
             .unwrap();
         assert_eq!(new.len(), 2)
+    }
+
+    #[test]
+    fn get() {
+        let mut a = get_array();
+        assert_eq!(AnyType::I32(2), a.get(1));
+        // check if chunks indexes are properly determined
+        a.append_array(a.chunks[0].clone());
+        assert_eq!(AnyType::I32(1), a.get(3));
     }
 
     #[test]
