@@ -13,14 +13,14 @@ impl Debug for Series {
 
         macro_rules! format_series {
             ($a:ident, $name:expr) => {{
-                write![f, "Series: {} \n[\n", $name];
+                write![f, "Series: {} \n[\n", $name]?;
                 $a.iter().take(LIMIT).for_each(|v| {
                     match v {
                         Some(v) => {
-                            write!(f, "\t{}\n", v);
+                            write!(f, "\t{}\n", v).ok();
                         }
                         None => {
-                            write!(f, "\tnull");
+                            write!(f, "\tnull").ok();
                         }
                     };
                 });
@@ -36,9 +36,9 @@ impl Debug for Series {
             Series::Float32(a) => format_series!(a, "f32"),
             Series::Float64(a) => format_series!(a, "f64"),
             Series::Utf8(a) => {
-                write![f, "Series: str \n[\n"];
+                write![f, "Series: str \n[\n"]?;
                 a.iter().take(LIMIT).for_each(|v| {
-                    write!(f, "\t{}\n", &v[..LIMIT]);
+                    write!(f, "\t{}\n", &v[..LIMIT]).ok();
                 });
                 write![f, "]"]
             }
@@ -55,6 +55,18 @@ impl Display for Series {
 
 impl Debug for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        unimplemented!()
+        for i in 0..10 {
+            let opt = self.get(i);
+            if let Some(row) = opt {
+                write![f, "{:?}\n", row]?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for DataFrame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self, f)
     }
 }

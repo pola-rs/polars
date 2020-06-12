@@ -19,7 +19,7 @@ type CSVReader<R> = arrow::csv::Reader<R>;
 
 pub struct DataFrame {
     schema: Arc<Schema>,
-    columns: Vec<Series>,
+    pub(crate) columns: Vec<Series>,
 }
 
 impl DataFrame {
@@ -37,15 +37,16 @@ impl DataFrame {
         self.schema.fields()
     }
 
-    pub fn select_row_idx(&self, idx: usize) -> Option<Vec<AnyType>> {
-        if self.columns.len() == 0 {
-            return None;
-        }
-        unsafe {
-            if self.columns.get_unchecked(0).len() <= idx {
-                return None;
+    /// Get a row in the dataframe. Beware this is slow.
+    pub fn get(&self, idx: usize) -> Option<Vec<AnyType>> {
+        match self.columns.get(0) {
+            Some(s) => {
+                if s.len() <= idx {
+                    return None;
+                }
             }
-        };
+            None => return None,
+        }
         Some(self.columns.iter().map(|s| s.get(idx)).collect())
     }
 
@@ -59,7 +60,7 @@ impl DataFrame {
             .fields()
             .iter()
             .enumerate()
-            .filter(|(idx, field)| field.name() == name)
+            .filter(|(_idx, field)| field.name() == name)
             .map(|(idx, _)| idx)
             .next();
 
@@ -176,6 +177,7 @@ mod test {
     fn test_filter() {
         let df = create_frame();
         println!("{}", df.f_select("days"));
+        println!("{:?}", df);
         println!("{:?}", df.filter(&df.f_select("days").f_eq(0)))
     }
 

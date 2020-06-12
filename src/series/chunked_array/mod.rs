@@ -66,7 +66,7 @@ impl<T> ChunkedArray<T> {
         let mut current_chunk_idx = 0;
 
         for chunk in &self.chunks {
-            if chunk.len() - 1 > index_remainder {
+            if chunk.len() - 1 >= index_remainder {
                 break;
             } else {
                 index_remainder -= chunk.len();
