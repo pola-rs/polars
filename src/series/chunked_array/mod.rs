@@ -1,5 +1,5 @@
 use self::aggregate::Agg;
-use crate::datatypes::{AnyType, ArrowDataType, BooleanChunked, UInt32Chunked};
+use crate::datatypes::{AnyType, ArrowDataType, BooleanChunked, UInt32Chunked, Utf8Chunked};
 use crate::{
     datatypes,
     error::{PolarsError, Result},
@@ -181,7 +181,7 @@ where
     }
 }
 
-impl ChunkedArray<datatypes::Utf8Type> {
+impl Utf8Chunked {
     pub fn new_utf8_from_slice<S: AsRef<str>>(name: &str, v: &[S]) -> Self {
         let mut builder = StringBuilder::new(v.len());
         v.into_iter().for_each(|val| {
@@ -198,16 +198,6 @@ impl ChunkedArray<datatypes::Utf8Type> {
             chunk_id: format!("{}-", v.len()).to_string(),
             phantom: PhantomData,
         }
-    }
-    fn downcast_chunks(&self) -> Vec<&StringArray> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                arr.as_any()
-                    .downcast_ref()
-                    .expect("could not downcast one of the chunks")
-            })
-            .collect::<Vec<_>>()
     }
 }
 
@@ -255,17 +245,6 @@ where
             chunk_id: format!("{}-", v.len()).to_string(),
             phantom: PhantomData,
         }
-    }
-
-    fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                arr.as_any()
-                    .downcast_ref::<PrimitiveArray<T>>()
-                    .expect("could not downcast one of the chunks")
-            })
-            .collect::<Vec<_>>()
     }
 }
 
@@ -362,7 +341,7 @@ where
     }
 }
 
-impl ChunkOps for ChunkedArray<datatypes::Utf8Type> {
+impl ChunkOps for Utf8Chunked {
     fn rechunk(&mut self) {
         if self.chunks.len() > 1 {
             let mut builder = StringBuilder::new(self.len());
@@ -375,6 +354,39 @@ impl ChunkOps for ChunkedArray<datatypes::Utf8Type> {
 
     fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
         optional_rechunk!(self, rhs)
+    }
+}
+
+impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                arr.as_any()
+                    .downcast_ref::<PrimitiveArray<T>>()
+                    .expect("could not downcast one of the chunks")
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
+pub trait Downcast<T> {
+    fn downcast_chunks(&self) -> Vec<&T>;
+}
+
+impl Downcast<StringArray> for Utf8Chunked {
+    fn downcast_chunks(&self) -> Vec<&StringArray> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                arr.as_any()
+                    .downcast_ref()
+                    .expect("could not downcast one of the chunks")
+            })
+            .collect::<Vec<_>>()
     }
 }
 

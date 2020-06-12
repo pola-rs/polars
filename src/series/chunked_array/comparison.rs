@@ -1,10 +1,13 @@
-use crate::datatypes::{ArrowDataType, Utf8Chunked};
 use crate::series::chunked_array::iterator::ChunkIterator;
 use crate::{
     datatypes,
     datatypes::BooleanChunked,
     error::{PolarsError, Result},
     series::chunked_array::{ChunkOps, ChunkedArray},
+};
+use crate::{
+    datatypes::{ArrowDataType, Utf8Chunked},
+    prelude::*,
 };
 use arrow::array::{
     Array, ArrayData, ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, StringArray,

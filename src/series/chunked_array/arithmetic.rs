@@ -1,4 +1,4 @@
-use crate::series::chunked_array::ChunkedArray;
+use crate::{prelude::*, series::chunked_array::ChunkedArray};
 use arrow::{array::ArrayRef, compute, datatypes::ArrowNumericType};
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
