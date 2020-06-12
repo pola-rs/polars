@@ -12,7 +12,7 @@ use arrow::datatypes::{ArrowPrimitiveType, Field};
 use std::mem;
 use std::ops::Deref;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Series {
     UInt32(ChunkedArray<datatypes::UInt32Type>),
     Int32(ChunkedArray<datatypes::Int32Type>),

@@ -164,6 +164,7 @@ mod test {
     #[test]
     fn test_filter() {
         let df = create_frame();
+        println!("{}", df.f_select("days"));
         println!("{:?}", df.filter(&df.f_select("days").f_eq(0)))
     }
 

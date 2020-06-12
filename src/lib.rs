@@ -9,5 +9,6 @@ mod series {
     pub(crate) mod series;
 }
 mod datatypes;
+pub mod fmt;
 mod frame;
 mod prelude;
