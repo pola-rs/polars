@@ -1,8 +1,15 @@
-pub use crate::series::{
-    chunked_array::{
-        aggregate::Agg,
-        comparison::{CmpOps, ForceCmpOps},
-        Downcast,
+pub use crate::{
+    error::{
+        PolarsError,
+        Result
     },
-    series::{NamedFrom, Series},
+    series::{
+        chunked_array::{
+            aggregate::Agg,
+            comparison::{CmpOps, ForceCmpOps},
+            iterator::ChunkIterator,
+            Downcast, SeriesOps,
+        },
+        series::{NamedFrom, Series},
+    }
 };

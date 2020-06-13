@@ -10,3 +10,4 @@ edition = "2018"
 arrow = { git = "https://github.com/apache/arrow", rev = "6e84421933894cd8e448f0c74828e9e18b2167aa"}
 thiserror = "1.0.16"
 num = "0.2.1"
+fnv = "1.0.7"

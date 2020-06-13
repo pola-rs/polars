@@ -15,6 +15,8 @@ use arrow::datatypes::{Field, Schema};
 use std::io::Read;
 use std::sync::Arc;
 
+mod hash_join;
+
 type CSVReader<R> = arrow::csv::Reader<R>;
 
 pub struct DataFrame {

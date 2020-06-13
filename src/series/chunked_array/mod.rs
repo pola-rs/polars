@@ -227,6 +227,56 @@ where
     }
 }
 
+pub struct PrimitiveChunkedBuilder<T>
+where
+    T: ArrowPrimitiveType,
+{
+    builder: PrimitiveBuilder<T>,
+    capacity: usize,
+    field: Field,
+}
+
+impl<T> PrimitiveChunkedBuilder<T>
+where
+    T: ArrowPrimitiveType,
+{
+    pub fn new(name: &str, capacity: usize) -> Self {
+        PrimitiveChunkedBuilder {
+            builder: PrimitiveBuilder::<T>::new(capacity),
+            capacity,
+            field: Field::new(name, T::get_data_type(), true),
+        }
+    }
+
+    pub fn append_value(&mut self, val: T::Native) {
+        // Note: all Results are unpacked. The arrow lib returns results,
+        // but they don't seem to be able to fail with an Err()
+        self.builder.append_value(val).expect("could not append");
+    }
+
+    pub fn append_null(&mut self)  {
+        self.builder.append_null().expect("could not append");
+    }
+
+    pub fn append_option(&mut self, v: Option<T::Native>) {
+        self.builder.append_option(v).expect("could not append");
+    }
+
+    /// Appends a slice of type `T` into the builder
+    pub fn append_slice(&mut self, v: &[T::Native]) {
+        self.builder.append_slice(v).expect("could not append");
+    }
+
+    pub fn finish(mut self) -> ChunkedArray<T> {
+        ChunkedArray {
+            field: self.field,
+            chunks: vec![Arc::new(self.builder.finish())],
+            chunk_id: format!("{}-", self.capacity).to_string(),
+            phantom: PhantomData,
+        }
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
@@ -357,6 +407,10 @@ impl ChunkOps for Utf8Chunked {
     }
 }
 
+pub trait Downcast<T> {
+    fn downcast_chunks(&self) -> Vec<&T>;
+}
+
 impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
@@ -371,10 +425,6 @@ where
             })
             .collect::<Vec<_>>()
     }
-}
-
-pub trait Downcast<T> {
-    fn downcast_chunks(&self) -> Vec<&T>;
 }
 
 impl Downcast<StringArray> for Utf8Chunked {
