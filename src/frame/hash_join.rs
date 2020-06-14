@@ -1,9 +1,12 @@
 use crate::datatypes::UInt32Type;
+use crate::frame::DataFrame;
 use crate::series::chunked_array::PrimitiveChunkedBuilder;
 use crate::{datatypes::UInt32Chunked, prelude::*, series::chunked_array::ChunkedArray};
+use arrow::compute::TakeOptions;
 use arrow::datatypes::ArrowPrimitiveType;
 use fnv::FnvHashMap;
 use std::hash::Hash;
+use std::mem::take;
 
 /// Hash join a and b.
 ///     b should be the shorter relation.
@@ -78,5 +81,50 @@ where
             right.append_value(b as u32);
         });
         (left.finish(), right.finish())
+    }
+}
+
+impl DataFrame {
+    pub fn join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
+        let s_left = self.select(left_on).ok_or(PolarsError::NotFound)?;
+        let s_right = other.select(right_on).ok_or(PolarsError::NotFound)?;
+
+        macro_rules! hash_join {
+            ($s_right:ident, $ca_left:ident, $type_:ident) => {{
+                let ca_right = $s_right.$type_()?;
+                $ca_left.hash_join(ca_right)
+            }};
+        }
+
+        let (take_left, take_right) = match s_left {
+            Series::UInt32(ca_left) => hash_join!(s_right, ca_left, u32),
+            Series::Int32(ca_left) => hash_join!(s_right, ca_left, i32),
+            Series::Int64(ca_left) => hash_join!(s_right, ca_left, i64),
+            Series::Bool(ca_left) => hash_join!(s_right, ca_left, bool),
+            _ => unimplemented!(),
+        };
+
+        let df_left = self.take(&take_left, Some(TakeOptions::default()))?;
+        let df_right = other.take(&take_right, Some(TakeOptions::default()))?;
+
+        unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_hash_join() {
+        let s0 = Series::init("days", [0, 1, 2].as_ref());
+        let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
+        let temp = DataFrame::new(vec![s0, s1]);
+
+        let s0 = Series::init("days", [1, 2, 3, 1].as_ref());
+        let s1 = Series::init("rain", [0.1, 0.2, 0.3].as_ref());
+        let rain = DataFrame::new(vec![s0, s1]);
+
+        temp.join(&rain, "days", "days");
     }
 }

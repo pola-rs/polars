@@ -1,8 +1,5 @@
 pub use crate::{
-    error::{
-        PolarsError,
-        Result
-    },
+    error::{PolarsError, Result},
     series::{
         chunked_array::{
             aggregate::Agg,
@@ -11,5 +8,5 @@ pub use crate::{
             Downcast, SeriesOps,
         },
         series::{NamedFrom, Series},
-    }
+    },
 };

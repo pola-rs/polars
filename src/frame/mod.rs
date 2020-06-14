@@ -11,6 +11,7 @@ use crate::{
     series,
     series::{chunked_array::ChunkedArray, series::Series},
 };
+use arrow::compute::TakeOptions;
 use arrow::datatypes::{Field, Schema};
 use std::io::Read;
 use std::sync::Arc;
@@ -87,6 +88,21 @@ impl DataFrame {
 
     pub fn f_filter(&self, mask: &BooleanChunked) -> Self {
         self.filter(mask).expect("could not filter")
+    }
+
+    pub fn take<T: AsRef<UInt32Chunked>>(
+        &self,
+        indices: T,
+        options: Option<TakeOptions>,
+    ) -> Result<Self> {
+        let new_col = self
+            .columns
+            .iter()
+            .map(|s| s.take(indices.as_ref(), options.clone()))
+            .collect::<Result<Vec<_>>>()?;
+
+        //TODO use a dataframe builder
+        Ok(DataFrame::new(new_col))
     }
 }
 

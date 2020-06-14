@@ -254,7 +254,7 @@ where
         self.builder.append_value(val).expect("could not append");
     }
 
-    pub fn append_null(&mut self)  {
+    pub fn append_null(&mut self) {
         self.builder.append_null().expect("could not append");
     }
 

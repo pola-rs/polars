@@ -1,5 +1,8 @@
 use super::chunked_array::ChunkedArray;
-use crate::datatypes::{AnyType, PolarsDataType, UInt32Chunked};
+use crate::datatypes::{
+    AnyType, Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, PolarsDataType,
+    UInt32Chunked, Utf8Chunked,
+};
 use crate::series::chunked_array::{ChunkOps, SeriesOps};
 use crate::{
     datatypes,
@@ -69,6 +72,16 @@ macro_rules! apply_method_and_return {
     }
 }
 
+macro_rules! unpack_series {
+    ($self:ident, $variant:ident) => {
+        if let Series::$variant(ca) = $self {
+            Ok(ca)
+        } else {
+            Err(PolarsError::DataTypeMisMatch)
+        }
+    };
+}
+
 impl Series {
     pub fn name(&self) -> &str {
         apply_method_all_series!(self, name,)
@@ -76,6 +89,38 @@ impl Series {
 
     pub fn field(&self) -> &Field {
         apply_method_all_series!(self, ref_field,)
+    }
+
+    pub fn dtype(&self) -> &ArrowDataType {
+        self.field().data_type()
+    }
+
+    pub fn i32(&self) -> Result<&Int32Chunked> {
+        unpack_series!(self, Int32)
+    }
+
+    pub fn i64(&self) -> Result<&Int64Chunked> {
+        unpack_series!(self, Int64)
+    }
+
+    pub fn f32(&self) -> Result<&Float32Chunked> {
+        unpack_series!(self, Float32)
+    }
+
+    pub fn f64(&self) -> Result<&Float64Chunked> {
+        unpack_series!(self, Float64)
+    }
+
+    pub fn u32(&self) -> Result<&UInt32Chunked> {
+        unpack_series!(self, UInt32)
+    }
+
+    pub fn bool(&self) -> Result<&BooleanChunked> {
+        unpack_series!(self, Bool)
+    }
+
+    pub fn utf8(&self) -> Result<&Utf8Chunked> {
+        unpack_series!(self, Utf8)
     }
 
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
