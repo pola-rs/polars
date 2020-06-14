@@ -13,6 +13,8 @@ use crate::{
 };
 use arrow::compute::TakeOptions;
 use arrow::datatypes::{Field, Schema};
+use itertools::Itertools;
+use std::borrow::Borrow;
 use std::io::Read;
 use std::sync::Arc;
 
@@ -20,24 +22,87 @@ mod hash_join;
 
 type CSVReader<R> = arrow::csv::Reader<R>;
 
+type DfSchema = Arc<Schema>;
+type DfSeries = Series;
+type DfColumns = Vec<DfSeries>;
+
 pub struct DataFrame {
-    schema: Arc<Schema>,
-    pub(crate) columns: Vec<Series>,
+    pub schema: DfSchema,
+    pub columns: DfColumns,
 }
 
 impl DataFrame {
-    pub fn new(columns: Vec<Series>) -> Self {
-        let fields = columns
-            .iter()
-            .map(|s| s.field().clone())
-            .collect::<Vec<_>>();
-        let schema = Arc::new(Schema::new(fields));
+    pub fn new(schema: DfSchema, columns: DfColumns) -> Result<Self> {
+        if !columns.iter().map(|s| s.len()).all_equal() {
+            return Err(PolarsError::LengthMismatch);
+        }
+        Ok(DataFrame { schema, columns })
+    }
 
-        DataFrame { schema, columns }
+    fn create_fields(columns: &DfColumns) -> Vec<Field> {
+        columns.iter().map(|s| s.field().clone()).collect()
+    }
+
+    fn update_schema(&mut self) {
+        let fields = Self::create_fields(&self.columns);
+        self.schema = Arc::new(Schema::new(fields));
+    }
+
+    pub fn new_from_columns(columns: Vec<Series>) -> Result<Self> {
+        let fields = Self::create_fields(&columns);
+        let schema = Arc::new(Schema::new(fields));
+        Self::new(schema, columns)
     }
 
     pub fn fields(&self) -> &Vec<Field> {
         self.schema.fields()
+    }
+
+    /// Get (width x height)
+    pub fn shape(&self) -> (usize, usize) {
+        let width = self.columns.len();
+        if width > 0 {
+            (width, self.columns[0].len())
+        } else {
+            (0, 0)
+        }
+    }
+
+    /// Get width of DataFrame
+    pub fn width(&self) -> usize {
+        self.shape().0
+    }
+
+    /// Get height of DataFrame
+    pub fn height(&self) -> usize {
+        self.shape().1
+    }
+
+    /// Add series column to DataFrame
+    pub fn hstack(&mut self, columns: &[DfSeries]) -> Result<()> {
+        columns
+            .iter()
+            .for_each(|column| self.columns.push(column.clone()));
+        self.update_schema();
+        Ok(())
+    }
+
+    /// Remove column by name
+    pub fn drop(&mut self, name: &str) -> Option<DfSeries> {
+        let mut idx = 0;
+        for column in &self.columns {
+            if column.name() == name {
+                break;
+            }
+            idx += 1;
+        }
+        if idx == self.columns.len() {
+            None
+        } else {
+            let result = Some(self.columns.remove(idx));
+            self.update_schema();
+            result
+        }
     }
 
     /// Get a row in the dataframe. Beware this is slow.
@@ -83,7 +148,7 @@ impl DataFrame {
         for col in &self.columns {
             new_col.push(col.filter(mask)?)
         }
-        Ok(DataFrame::new(new_col))
+        DataFrame::new_from_columns(new_col)
     }
 
     pub fn f_filter(&self, mask: &BooleanChunked) -> Self {
@@ -101,12 +166,37 @@ impl DataFrame {
             .map(|s| s.take(indices.as_ref(), options.clone()))
             .collect::<Result<Vec<_>>>()?;
 
-        //TODO use a dataframe builder
-        Ok(DataFrame::new(new_col))
+        DataFrame::new(self.schema.clone(), new_col)
     }
 }
 
-struct DataFrameBuilder<'a, R>
+struct DataFrameBuilder {
+    schema: Option<DfSchema>,
+    columns: DfColumns,
+}
+
+impl DataFrameBuilder {
+    pub fn new(columns: DfColumns) -> Self {
+        DataFrameBuilder {
+            schema: None,
+            columns,
+        }
+    }
+
+    pub fn schema(mut self, schema: DfSchema) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    pub fn finish(self) -> Result<DataFrame> {
+        match self.schema {
+            Some(schema) => DataFrame::new(schema, self.columns),
+            None => DataFrame::new_from_columns(self.columns),
+        }
+    }
+}
+
+struct DataFrameCsvBuilder<'a, R>
 where
     R: Read,
 {
@@ -114,18 +204,18 @@ where
     rechunk: bool,
 }
 
-impl<'a, R> DataFrameBuilder<'a, R>
+impl<'a, R> DataFrameCsvBuilder<'a, R>
 where
     R: Read,
 {
     fn new_from_csv(reader: &'a mut CSVReader<R>) -> Self {
-        DataFrameBuilder {
+        DataFrameCsvBuilder {
             reader,
             rechunk: true,
         }
     }
 
-    fn build(&mut self) -> Result<DataFrame> {
+    fn finish(&mut self) -> Result<DataFrame> {
         let mut columns = self
             .reader
             .schema()
@@ -182,7 +272,7 @@ mod test {
     fn create_frame() -> DataFrame {
         let s0 = Series::init("days", [0, 1, 2].as_ref());
         let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
-        DataFrame::new(vec![s0, s1])
+        DataFrame::new_from_columns(vec![s0, s1]).unwrap()
     }
 
     #[test]
@@ -207,7 +297,9 @@ mod test {
             .has_header(true);
         let mut reader = builder.build(file).unwrap();
 
-        let df = DataFrameBuilder::new_from_csv(&mut reader).build().unwrap();
+        let df = DataFrameCsvBuilder::new_from_csv(&mut reader)
+            .finish()
+            .unwrap();
         assert_eq!(reader.schema(), df.schema);
         println!("{:?}", df.schema)
     }

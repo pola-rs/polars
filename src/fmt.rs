@@ -1,3 +1,4 @@
+use crate::datatypes::AnyType;
 use crate::{
     frame::DataFrame,
     series::{chunked_array::iterator::ChunkIterator, series::Series},
@@ -55,18 +56,42 @@ impl Display for Series {
 
 impl Debug for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for DataFrame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for field in self.schema.fields() {
+            write!(f, "{:>15},", field.name())?;
+        }
+        write!(f, "\n")?;
+
         for i in 0..10 {
             let opt = self.get(i);
             if let Some(row) = opt {
-                write![f, "{:?}\n", row]?;
+                for v in row {
+                    write!(f, "{}", v)?;
+                }
+                write!(f, "\n")?;
             }
         }
         Ok(())
     }
 }
 
-impl Display for DataFrame {
+impl Display for AnyType<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Debug::fmt(self, f)
+        let width = 15;
+        match self {
+            AnyType::Null => write!(f, "{:width$},", "null", width = width),
+            AnyType::U32(v) => write!(f, "{:width$},", v, width = width),
+            AnyType::I32(v) => write!(f, "{:width$},", v, width = width),
+            AnyType::I64(v) => write!(f, "{:width$},", v, width = width),
+            AnyType::F32(v) => write!(f, "{:width$},", v, width = width),
+            AnyType::F64(v) => write!(f, "{:width$},", v, width = width),
+            AnyType::Bool(v) => write!(f, "{:width$},", v, width = width),
+            AnyType::Str(v) => write!(f, "{:width$},", v, width = width),
+        }
     }
 }

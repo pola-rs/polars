@@ -104,10 +104,14 @@ impl DataFrame {
             _ => unimplemented!(),
         };
 
-        let df_left = self.take(&take_left, Some(TakeOptions::default()))?;
-        let df_right = other.take(&take_right, Some(TakeOptions::default()))?;
+        let mut df_left = self.take(&take_left, Some(TakeOptions::default()))?;
+        let mut df_right = other.take(&take_right, Some(TakeOptions::default()))?;
+        df_right.drop(right_on);
 
-        unimplemented!()
+        // TODO: check duplicate names and append _left or _right
+
+        df_left.hstack(&df_right.columns);
+        Ok(df_left)
     }
 }
 
@@ -119,12 +123,13 @@ mod test {
     fn test_hash_join() {
         let s0 = Series::init("days", [0, 1, 2].as_ref());
         let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
-        let temp = DataFrame::new(vec![s0, s1]);
+        let temp = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
 
         let s0 = Series::init("days", [1, 2, 3, 1].as_ref());
-        let s1 = Series::init("rain", [0.1, 0.2, 0.3].as_ref());
-        let rain = DataFrame::new(vec![s0, s1]);
+        let s1 = Series::init("rain", [0.1, 0.2, 0.3, 0.4].as_ref());
+        let rain = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
 
-        temp.join(&rain, "days", "days");
+        let joined = temp.join(&rain, "days", "days");
+        println!("{}", joined.unwrap())
     }
 }

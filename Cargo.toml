@@ -11,3 +11,4 @@ arrow = { git = "https://github.com/apache/arrow", rev = "6e84421933894cd8e448f0
 thiserror = "1.0.16"
 num = "0.2.1"
 fnv = "1.0.7"
+itertools = "0.9.0"

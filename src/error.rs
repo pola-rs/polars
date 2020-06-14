@@ -12,6 +12,10 @@ pub enum PolarsError {
     DataTypeMisMatch,
     #[error("Not found")]
     NotFound,
+    #[error("Lengths don't match")]
+    LengthMismatch,
+    #[error("{0}")]
+    Other(String),
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
