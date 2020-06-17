@@ -92,7 +92,7 @@ impl Display for AnyType<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 15;
         match self {
-            AnyType::Null => write!(f, "{:width$}", "null", width = width),
+            AnyType::Null => write!(f, "{:>width$}", "null", width = width),
             AnyType::U32(v) => write!(f, "{:width$}", v, width = width),
             AnyType::I32(v) => write!(f, "{:width$}", v, width = width),
             AnyType::I64(v) => write!(f, "{:width$}", v, width = width),
