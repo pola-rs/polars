@@ -38,8 +38,8 @@ This is my mock up of DataFrames implemented in Rust, using Apache Arrow as back
 - [x] f32
 - [x] f64
 - [x] utf-8
-- [ ] date
-- [ ] timestamp
+- [x] date
+- [x] time
 
 
 ## Example

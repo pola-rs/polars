@@ -100,6 +100,8 @@ impl Display for AnyType<'_> {
             AnyType::F64(v) => write!(f, "{:width$}", v, width = width),
             AnyType::Bool(v) => write!(f, "{:width$}", v, width = width),
             AnyType::Str(v) => write!(f, "{:width$}", v, width = width),
+            AnyType::Date64(v) => write!(f, "{:width$}", v, width = width),
+            AnyType::Time64Ns(v) => write!(f, "{:width$}", v, width = width),
         }
     }
 }

@@ -25,6 +25,12 @@ macro_rules! apply_agg_fn {
             Series::Float64(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast f64 to T")),
+            Series::Date64(a) => a
+                .$agg()
+                .map(|v| T::from(v).expect("could not cast Date64 to T")),
+            Series::Time64Ns(a) => a
+                .$agg()
+                .map(|v| T::from(v).expect("could not cast Time64Ns to T")),
             Series::Utf8(_a) => unimplemented!(),
         }
     };
