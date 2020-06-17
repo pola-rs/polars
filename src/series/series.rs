@@ -41,7 +41,6 @@ macro_rules! apply_method_all_series {
             Series::Bool(a) => a.$method($($args),*),
             Series::Date64(a) => a.$method($($args),*),
             Series::Time64Ns(a) => a.$method($($args),*),
-            _ => unimplemented!(),
         }
     }
 }
