@@ -1,6 +1,6 @@
 pub use arrow::datatypes::{
-    BooleanType, Date64Type, Float32Type, Float64Type, Int32Type, Int64Type, Time64NanosecondType,
-    UInt32Type,
+    BooleanType, Date32Type, Date64Type, DurationNanosecondType, Float32Type, Float64Type,
+    Int32Type, Int64Type, Time64NanosecondType, TimeUnit, UInt32Type,
 };
 
 use crate::series::chunked_array::ChunkedArray;
@@ -62,6 +62,8 @@ impl PolarNumericType for Float64Type {}
 impl PolarNumericType for UInt32Type {}
 impl PolarNumericType for Date64Type {}
 impl PolarNumericType for Time64NanosecondType {}
+impl PolarNumericType for Date32Type {}
+impl PolarNumericType for DurationNanosecondType {}
 
 #[derive(Debug, PartialEq)]
 pub enum AnyType<'a> {
@@ -74,7 +76,9 @@ pub enum AnyType<'a> {
     U32(u32),
     Str(&'a str),
     Date64(i64),
-    Time64Ns(i64),
+    Date32(i32),
+    Time64(i64, TimeUnit),
+    Duration(i64, TimeUnit),
 }
 
 pub trait ToStr {
@@ -94,8 +98,8 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Utf8 => "str",
             ArrowDataType::Date32(_) => "date32",
             ArrowDataType::Date64(_) => "date64",
-            ArrowDataType::Time64(_) => "time64",
-            ArrowDataType::Timestamp(_, _) => "timestmp",
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
             _ => unimplemented!(),
         }
     }

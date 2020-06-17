@@ -24,8 +24,10 @@ pub enum Series {
     Float64(ChunkedArray<datatypes::Float64Type>),
     Utf8(ChunkedArray<datatypes::Utf8Type>),
     Bool(ChunkedArray<datatypes::BooleanType>),
+    Date32(ChunkedArray<datatypes::Date32Type>),
     Date64(ChunkedArray<datatypes::Date64Type>),
     Time64Ns(ChunkedArray<datatypes::Time64NanosecondType>),
+    DurationNs(ChunkedArray<datatypes::DurationNanosecondType>),
 }
 
 #[macro_export]
@@ -39,8 +41,10 @@ macro_rules! apply_method_all_series {
             Series::Float64(a) => a.$method($($args),*),
             Series::Utf8(a) => a.$method($($args),*),
             Series::Bool(a) => a.$method($($args),*),
+            Series::Date32(a) => a.$method($($args),*),
             Series::Date64(a) => a.$method($($args),*),
             Series::Time64Ns(a) => a.$method($($args),*),
+            Series::DurationNs(a) => a.$method($($args),*),
         }
     }
 }
@@ -55,8 +59,10 @@ macro_rules! apply_method_arrowprimitive_series {
             Series::Int64(a) => a.$method($($args),*),
             Series::Float32(a) => a.$method($($args),*),
             Series::Float64(a) => a.$method($($args),*),
+            Series::Date32(a) => a.$method($($args),*),
             Series::Date64(a) => a.$method($($args),*),
             Series::Time64Ns(a) => a.$method($($args),*),
+            Series::DurationNs(a) => a.$method($($args),*),
             _ => unimplemented!(),
         }
     }
@@ -72,8 +78,10 @@ macro_rules! apply_method_and_return {
             Series::Float64(a) => Series::Float64(a.$method($($args),*)$($opt_question_mark)*),
             Series::Utf8(a) => Series::Utf8(a.$method($($args),*)$($opt_question_mark)*),
             Series::Bool(a) => Series::Bool(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Date32(a) => Series::Date32(a.$method($($args),*)$($opt_question_mark)*),
             Series::Date64(a) => Series::Date64(a.$method($($args),*)$($opt_question_mark)*),
             Series::Time64Ns(a) => Series::Time64Ns(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationNs(a) => Series::DurationNs(a.$method($($args),*)$($opt_question_mark)*),
             _ => unimplemented!(),
         }
     }
@@ -146,9 +154,11 @@ impl Series {
             Series::Float32(arr) => arr,
             Series::Float64(arr) => arr,
             Series::Utf8(arr) => arr,
+            Series::Date32(arr) => arr,
             Series::Date64(arr) => arr,
             Series::Time64Ns(arr) => arr,
             Series::Bool(arr) => arr,
+            Series::DurationNs(arr) => arr,
         }
     }
 
@@ -184,8 +194,10 @@ impl Series {
             Series::Int64(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Float32(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Float64(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Date32(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Date64(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Time64Ns(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::DurationNs(arr) => pack_ca_to_series(arr.cast::<N>()?),
             _ => return Err(PolarsError::DataTypeMisMatch),
         };
         Ok(s)
@@ -204,8 +216,14 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Int64 => Series::Int64(mem::transmute(ca)),
             ArrowDataType::Float32 => Series::Float32(mem::transmute(ca)),
             ArrowDataType::Float64 => Series::Float64(mem::transmute(ca)),
+            ArrowDataType::Date32(_) => Series::Date32(mem::transmute(ca)),
             ArrowDataType::Date64(_) => Series::Date64(mem::transmute(ca)),
-            ArrowDataType::Time32(_) => Series::Time64Ns(mem::transmute(ca)),
+            ArrowDataType::Time64(datatypes::TimeUnit::Nanosecond) => {
+                Series::Time64Ns(mem::transmute(ca))
+            }
+            ArrowDataType::Duration(datatypes::TimeUnit::Nanosecond) => {
+                Series::DurationNs(mem::transmute(ca))
+            }
             _ => unimplemented!(),
         }
     }
