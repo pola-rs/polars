@@ -1,6 +1,8 @@
 use crate::prelude::*;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use arrow::datatypes::{ArrowPrimitiveType, Field};
+use itertools::Itertools;
+use std::cmp::Ordering;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -88,3 +90,4 @@ impl DerefMut for Utf8ChunkedBuilder {
         &mut self.builder
     }
 }
+

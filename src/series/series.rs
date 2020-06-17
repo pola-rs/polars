@@ -244,6 +244,10 @@ impl Series {
     pub fn get(&self, index: usize) -> AnyType {
         apply_method_all_series!(self, get, index)
     }
+
+    pub fn sort(&mut self) {
+        apply_method_arrowprimitive_series!(self, sort_in_place,)
+    }
 }
 
 fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
@@ -338,14 +342,14 @@ mod test {
 
     #[test]
     fn cast() {
-        let ar = ChunkedArray::<datatypes::Int32Type>::new_from_slice("a", &[1, 2]);
+        let ar = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2]);
         let s = Series::Int32(ar);
-        let s2 = s.cast::<datatypes::Int64Type>().unwrap();
+        let s2 = s.cast::<Int64Type>().unwrap();
         match s2 {
             Series::Int64(_) => assert!(true),
             _ => assert!(false),
         }
-        let s2 = s.cast::<datatypes::Float32Type>().unwrap();
+        let s2 = s.cast::<Float32Type>().unwrap();
         match s2 {
             Series::Float32(_) => assert!(true),
             _ => assert!(false),

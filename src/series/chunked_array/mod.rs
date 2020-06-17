@@ -5,7 +5,7 @@ use crate::{
     error::{PolarsError, Result},
 };
 use arrow::array::{
-    ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
+    Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
     StringBuilder,
 };
 use arrow::compute::TakeOptions;
@@ -19,6 +19,8 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::cmp::Ordering;
+use itertools::Itertools;
 
 pub mod aggregate;
 mod arithmetic;
@@ -412,13 +414,41 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
     }
 }
 
+impl<T> ChunkedArray<T>
+    where
+        T: ArrowPrimitiveType,
+        T::Native: std::cmp::PartialOrd,
+{
+    pub fn sort(&self) -> Self {
+        self.iter()
+            .sorted_by(|a, b| match (a, b) {
+                (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
+                (None, Some(_)) => Ordering::Less,
+                (Some(_), None) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            })
+            .collect()
+    }
+
+    pub fn sort_in_place(&mut self) {
+        let sorted = self.sort();
+        self.chunks = sorted.chunks;
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::datatypes::Int32Chunked;
+    use crate::prelude::*;
 
     fn get_array() -> Int32Chunked {
         ChunkedArray::new_from_slice("a", &[1, 2, 3])
+    }
+
+    #[test]
+    fn test_sort() {
+        let a = Int32Chunked::new_from_slice("a", &[1, 9, 3, 2]);
+        let b = a.sort().iter().map(|opt| opt.unwrap()).collect::<Vec<_>>();
+        assert_eq!(b, [1, 2, 3, 9]);
     }
 
     #[test]
@@ -475,7 +505,7 @@ mod test {
         let a = get_array();
         let new = a
             .take(
-                &ChunkedArray::<datatypes::UInt32Type>::new_from_slice("idx", &[0, 1]),
+                &ChunkedArray::<UInt32Type>::new_from_slice("idx", &[0, 1]),
                 None,
             )
             .unwrap();
@@ -494,7 +524,7 @@ mod test {
     #[test]
     fn cast() {
         let a = get_array();
-        let b = a.cast::<datatypes::Int64Type>().unwrap();
-        assert_eq!(b.field.data_type(), &datatypes::ArrowDataType::Int64)
+        let b = a.cast::<Int64Type>().unwrap();
+        assert_eq!(b.field.data_type(), &ArrowDataType::Int64)
     }
 }

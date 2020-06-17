@@ -33,6 +33,7 @@ where
     array_i: usize,
     out_of_bounds: bool,
     length: usize,
+    n_chunks: usize,
     phantom: PhantomData<K>,
 }
 
@@ -48,7 +49,7 @@ where
             self.chunk_i += 1;
         }
 
-        if self.chunk_i >= self.length {
+        if self.chunk_i >= self.n_chunks {
             self.out_of_bounds = true;
         }
     }
@@ -75,6 +76,7 @@ where
             panic!("implementation error")
         }
 
+        debug_assert!(self.chunk_i < arrays.len());
         let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
         let data = arr.data();
         let ret;
@@ -152,6 +154,7 @@ where
             array_i: 0,
             out_of_bounds: false,
             length: self.len(),
+            n_chunks: self.chunks.len(),
             phantom: PhantomData,
         }
     }
@@ -178,6 +181,7 @@ impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf
             array_i: 0,
             out_of_bounds: false,
             length: self.len(),
+            n_chunks: self.chunks.len(),
             phantom: PhantomData,
         }
     }
