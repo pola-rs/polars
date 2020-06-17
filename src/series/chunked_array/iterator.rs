@@ -1,6 +1,12 @@
-use crate::{datatypes, series::chunked_array::ChunkedArray};
+use crate::datatypes::Utf8Chunked;
+use crate::series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
+use crate::{
+    datatypes,
+    series::chunked_array::{ChunkedArray, SeriesOps},
+};
 use arrow::array::{Array, PrimitiveArray, PrimitiveArrayOps, StringArray};
 use arrow::datatypes::ArrowPrimitiveType;
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 // This module implements an iter method for both ArrowPrimitiveType and Utf8 type.
@@ -26,6 +32,7 @@ where
     chunk_i: usize,
     array_i: usize,
     out_of_bounds: bool,
+    length: usize,
     phantom: PhantomData<K>,
 }
 
@@ -41,12 +48,7 @@ where
             self.chunk_i += 1;
         }
 
-        let length = match &self.arrays {
-            Either::Left(arr) => arr.len(),
-            Either::Right(arr) => arr.len(),
-        };
-
-        if self.chunk_i >= length {
+        if self.chunk_i >= self.length {
             self.out_of_bounds = true;
         }
     }
@@ -149,6 +151,7 @@ where
             chunk_i: 0,
             array_i: 0,
             out_of_bounds: false,
+            length: self.len(),
             phantom: PhantomData,
         }
     }
@@ -174,7 +177,34 @@ impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf
             chunk_i: 0,
             array_i: 0,
             out_of_bounds: false,
+            length: self.len(),
             phantom: PhantomData,
         }
+    }
+}
+
+impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
+        let mut builder = PrimitiveChunkedBuilder::new("", 1024);
+
+        for opt_val in iter {
+            builder.append_option(opt_val).expect("could not append");
+        }
+
+        builder.finish()
+    }
+}
+
+impl<'a> FromIterator<&'a str> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
+        let mut builder = Utf8ChunkedBuilder::new("", 1024);
+
+        for val in iter {
+            builder.append_value(val).expect("could not append");
+        }
+        builder.finish()
     }
 }

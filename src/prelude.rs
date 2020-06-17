@@ -1,5 +1,5 @@
 pub use crate::{
-    datatypes,
+    datatypes::*,
     error::{PolarsError, Result},
     frame::{DataFrame, DataFrameCsvBuilder},
     series::{

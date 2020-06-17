@@ -1,6 +1,6 @@
 use crate::datatypes::UInt32Type;
 use crate::frame::DataFrame;
-use crate::series::chunked_array::PrimitiveChunkedBuilder;
+use crate::series::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::{datatypes::UInt32Chunked, prelude::*, series::chunked_array::ChunkedArray};
 use arrow::compute::TakeOptions;
 use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
@@ -136,9 +136,9 @@ where
                 left.append_value(idx_left as u32);
 
                 match opt_idx_right {
-                    Some(idx) => right.append_value(idx as u32),
-                    None => right.append_null(),
-                }
+                    Some(idx) => right.append_value(idx as u32).expect("could not append"),
+                    None => right.append_null().expect("could not append"),
+                };
             });
         (left.finish(), right.finish())
     }
