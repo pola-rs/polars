@@ -71,3 +71,26 @@ pub enum AnyType<'a> {
     U32(u32),
     Str(&'a str),
 }
+
+pub trait ToStr {
+    fn to_str(&self) -> &'static str;
+}
+
+impl ToStr for ArrowDataType {
+    fn to_str(&self) -> &'static str {
+        match self {
+            ArrowDataType::Null => "null",
+            ArrowDataType::Boolean => "bool",
+            ArrowDataType::UInt32 => "u32",
+            ArrowDataType::Int32 => "i32",
+            ArrowDataType::Int64 => "i64",
+            ArrowDataType::Float32 => "f32",
+            ArrowDataType::Float64 => "f64",
+            ArrowDataType::Utf8 => "str",
+            ArrowDataType::Date32(_) => "date32",
+            ArrowDataType::Date64(_) => "date64",
+            ArrowDataType::Timestamp(_, _) => "time",
+            _ => unimplemented!(),
+        }
+    }
+}

@@ -1,4 +1,4 @@
-use crate::datatypes::AnyType;
+use crate::datatypes::{AnyType, ToStr};
 use crate::{
     frame::DataFrame,
     series::{chunked_array::iterator::ChunkIterator, series::Series},
@@ -63,9 +63,17 @@ impl Debug for DataFrame {
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         for field in self.schema.fields() {
-            write!(f, "{:>15},", field.name())?;
+            write!(f, "{:>15}", field.name())?;
         }
         write!(f, "\n")?;
+        for field in self.schema.fields() {
+            write!(f, "{:>15}", field.data_type().to_str())?;
+        }
+        write!(f, "\n")?;
+        for _ in self.schema.fields() {
+            write!(f, "{:>15}", "---")?;
+        }
+        write!(f, "\n\n")?;
 
         for i in 0..10 {
             let opt = self.get(i);
@@ -84,14 +92,14 @@ impl Display for AnyType<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 15;
         match self {
-            AnyType::Null => write!(f, "{:width$},", "null", width = width),
-            AnyType::U32(v) => write!(f, "{:width$},", v, width = width),
-            AnyType::I32(v) => write!(f, "{:width$},", v, width = width),
-            AnyType::I64(v) => write!(f, "{:width$},", v, width = width),
-            AnyType::F32(v) => write!(f, "{:width$},", v, width = width),
-            AnyType::F64(v) => write!(f, "{:width$},", v, width = width),
-            AnyType::Bool(v) => write!(f, "{:width$},", v, width = width),
-            AnyType::Str(v) => write!(f, "{:width$},", v, width = width),
+            AnyType::Null => write!(f, "{:width$}", "null", width = width),
+            AnyType::U32(v) => write!(f, "{:width$}", v, width = width),
+            AnyType::I32(v) => write!(f, "{:width$}", v, width = width),
+            AnyType::I64(v) => write!(f, "{:width$}", v, width = width),
+            AnyType::F32(v) => write!(f, "{:width$}", v, width = width),
+            AnyType::F64(v) => write!(f, "{:width$}", v, width = width),
+            AnyType::Bool(v) => write!(f, "{:width$}", v, width = width),
+            AnyType::Str(v) => write!(f, "{:width$}", v, width = width),
         }
     }
 }
