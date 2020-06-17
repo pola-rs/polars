@@ -1,12 +1,16 @@
 pub use crate::{
+    datatypes,
     error::{PolarsError, Result},
+    frame::{DataFrame, DataFrameCsvBuilder},
     series::{
         chunked_array::{
             aggregate::Agg,
             comparison::{CmpOps, ForceCmpOps},
             iterator::ChunkIterator,
-            Downcast, SeriesOps,
+            ChunkedArray, Downcast, SeriesOps,
         },
         series::{NamedFrom, Series},
     },
 };
+
+pub use arrow::csv;

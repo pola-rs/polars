@@ -1,7 +1,7 @@
 use super::chunked_array::ChunkedArray;
 use crate::datatypes::{
-    AnyType, Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, PolarsDataType,
-    UInt32Chunked, Utf8Chunked,
+    AnyType, Date32Chunked, Date64Chunked, DurationNsChunked, Float32Chunked, Float64Chunked,
+    Int32Chunked, Int64Chunked, PolarsDataType, Time64NsChunked, UInt32Chunked, Utf8Chunked,
 };
 use crate::series::chunked_array::{ChunkOps, SeriesOps};
 use crate::{
@@ -98,14 +98,17 @@ macro_rules! unpack_series {
 }
 
 impl Series {
+    /// Name of series.
     pub fn name(&self) -> &str {
         apply_method_all_series!(self, name,)
     }
 
+    /// Rename series.
     pub fn rename(&mut self, name: &str) {
         apply_method_all_series!(self, rename, name)
     }
 
+    /// Get field (used in schema)
     pub fn field(&self) -> &Field {
         apply_method_all_series!(self, ref_field,)
     }
@@ -114,32 +117,59 @@ impl Series {
         self.field().data_type()
     }
 
+    /// Unpack to ChunkedArray
     pub fn i32(&self) -> Result<&Int32Chunked> {
         unpack_series!(self, Int32)
     }
 
+    /// Unpack to ChunkedArray
     pub fn i64(&self) -> Result<&Int64Chunked> {
         unpack_series!(self, Int64)
     }
 
+    /// Unpack to ChunkedArray
     pub fn f32(&self) -> Result<&Float32Chunked> {
         unpack_series!(self, Float32)
     }
 
+    /// Unpack to ChunkedArray
     pub fn f64(&self) -> Result<&Float64Chunked> {
         unpack_series!(self, Float64)
     }
 
+    /// Unpack to ChunkedArray
     pub fn u32(&self) -> Result<&UInt32Chunked> {
         unpack_series!(self, UInt32)
     }
 
+    /// Unpack to ChunkedArray
     pub fn bool(&self) -> Result<&BooleanChunked> {
         unpack_series!(self, Bool)
     }
 
+    /// Unpack to ChunkedArray
     pub fn utf8(&self) -> Result<&Utf8Chunked> {
         unpack_series!(self, Utf8)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn date32(&self) -> Result<&Date32Chunked> {
+        unpack_series!(self, Date32)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn date64(&self) -> Result<&Date64Chunked> {
+        unpack_series!(self, Date64)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn time64ns(&self) -> Result<&Time64NsChunked> {
+        unpack_series!(self, Time64Ns)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn duration_ns(&self) -> Result<&DurationNsChunked> {
+        unpack_series!(self, DurationNs)
     }
 
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
@@ -162,12 +192,17 @@ impl Series {
         }
     }
 
+    /// Take `num_elements`.
     pub fn limit(&self, num_elements: usize) -> Result<Self> {
         Ok(apply_method_and_return!(self, limit, [num_elements], ?))
     }
+
+    /// Filter by boolean mask.
     pub fn filter<T: AsRef<BooleanChunked>>(&self, filter: T) -> Result<Self> {
         Ok(apply_method_and_return!(self, filter, [filter.as_ref()], ?))
     }
+
+    /// Take by index.
     pub fn take<T: AsRef<UInt32Chunked>>(
         &self,
         indices: T,
@@ -176,14 +211,17 @@ impl Series {
         Ok(apply_method_and_return!(self, take, [indices.as_ref(), options], ?))
     }
 
+    /// Get length of series.
     pub fn len(&self) -> usize {
         apply_method_all_series!(self, len,)
     }
 
+    /// Aggregate all chunks to a contiguous array of memory.
     pub fn rechunk(&mut self) {
         apply_method_all_series!(self, rechunk,)
     }
 
+    /// Cast to an arrow primitive type.
     pub fn cast<N>(&self) -> Result<Self>
     where
         N: ArrowPrimitiveType,
@@ -230,6 +268,7 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
 }
 
 pub trait NamedFrom<T> {
+    /// Initialize by name and values.
     fn init(name: &str, _: T) -> Self;
 }
 
@@ -295,7 +334,7 @@ impl_as_mut_ca!(BooleanType, Bool);
 impl_as_mut_ca!(Utf8Type, Utf8);
 
 mod test {
-    use super::*;
+    use crate::prelude::*;
 
     #[test]
     fn cast() {

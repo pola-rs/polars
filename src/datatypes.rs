@@ -52,6 +52,10 @@ pub type Int64Chunked = ChunkedArray<Int64Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
+pub type Date32Chunked = ChunkedArray<Date32Type>;
+pub type Date64Chunked = ChunkedArray<Date64Type>;
+pub type DurationNsChunked = ChunkedArray<DurationNanosecondType>;
+pub type Time64NsChunked = ChunkedArray<Time64NanosecondType>;
 
 pub trait PolarNumericType: ArrowNumericType {}
 

@@ -18,19 +18,26 @@ use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
 
 pub trait CmpOps<Rhs> {
+    /// Check for equality.
     fn eq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
+    /// Check for inequality.
     fn neq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
+    /// Greater than comparison.
     fn gt(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
+    /// Greater than or equal comparison.
     fn gt_eq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
+    /// Less than comparison.
     fn lt(&self, rhs: Rhs) -> Result<BooleanChunked>;
 
+    /// Less than or equal comparison
     fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked>;
 }
 
+/// Forced comparisons. Results are unwrapped.
 pub trait ForceCmpOps<Rhs>: CmpOps<Rhs> {
     fn f_eq(&self, rhs: Rhs) -> BooleanChunked {
         self.eq(rhs).expect("could not cmp")

@@ -1,3 +1,5 @@
+//! Comparison operations on Series.
+
 use super::series::Series;
 use crate::error::PolarsError::DataTypeMisMatch;
 use crate::series::chunked_array::comparison::{ForceCmpOps, NumComp};

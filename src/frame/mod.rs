@@ -223,7 +223,7 @@ impl DataFrameBuilder {
     }
 }
 
-struct DataFrameCsvBuilder<'a, R>
+pub struct DataFrameCsvBuilder<'a, R>
 where
     R: Read,
 {
@@ -291,9 +291,10 @@ where
 }
 
 mod test {
-    use super::*;
-    use crate::series::series::NamedFrom;
-    use arrow::csv;
+    // use super::*;
+    // use crate::series::series::NamedFrom;
+    // use arrow::csv;
+    use crate::prelude::*;
     use std::fs::File;
 
     fn create_frame() -> DataFrame {

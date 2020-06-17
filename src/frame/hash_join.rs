@@ -228,7 +228,7 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_inner_join() {

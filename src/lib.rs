@@ -1,14 +1,14 @@
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
-mod error;
-mod series {
-    pub(crate) mod aggregate;
-    pub(crate) mod arithmetic;
+pub mod error;
+pub mod series {
+    pub mod aggregate;
+    pub mod arithmetic;
     pub mod chunked_array;
-    pub(crate) mod comparison;
-    pub(crate) mod series;
+    pub mod comparison;
+    pub mod series;
 }
-mod datatypes;
+pub mod datatypes;
 pub mod fmt;
-mod frame;
-mod prelude;
+pub mod frame;
+pub mod prelude;

@@ -27,19 +27,25 @@ pub mod iterator;
 /// Operations that are possible without knowing underlying type.
 /// These operations will not fail due to non matching types.
 pub trait SeriesOps {
+    /// Take only `num_elements`.
     fn limit(&self, num_elements: usize) -> Result<Self>
     where
         Self: std::marker::Sized;
+    /// Filter by boolean mask.
     fn filter(&self, filter: &BooleanChunked) -> Result<Self>
     where
         Self: std::marker::Sized;
+    /// Take by index.
     fn take(&self, indices: &UInt32Chunked, options: Option<TakeOptions>) -> Result<Self>
     where
         Self: std::marker::Sized;
+    /// Append an arrow array type.
     fn append_array(&mut self, other: ArrayRef) -> Result<()>;
 
+    /// Length of container.
     fn len(&self) -> usize;
 
+    /// Get a single value
     fn get(&self, index: usize) -> AnyType;
 }
 
