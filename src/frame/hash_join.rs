@@ -3,10 +3,10 @@ use crate::frame::DataFrame;
 use crate::series::chunked_array::PrimitiveChunkedBuilder;
 use crate::{datatypes::UInt32Chunked, prelude::*, series::chunked_array::ChunkedArray};
 use arrow::compute::TakeOptions;
-use arrow::datatypes::ArrowPrimitiveType;
-use fnv::FnvHashMap;
+use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
+use fnv::{FnvBuildHasher, FnvHashMap};
+use std::collections::HashSet;
 use std::hash::Hash;
-use std::mem::take;
 
 /// Hash join a and b.
 ///     b should be the shorter relation.
@@ -108,7 +108,23 @@ impl DataFrame {
         let mut df_right = other.take(&take_right, Some(TakeOptions::default()))?;
         df_right.drop(right_on);
 
-        // TODO: check duplicate names and append _left or _right
+        let mut left_names =
+            HashSet::with_capacity_and_hasher(df_left.width(), FnvBuildHasher::default());
+        for field in df_left.schema.fields() {
+            left_names.insert(field.name());
+        }
+
+        let mut rename_strs = Vec::with_capacity(df_right.width());
+
+        for field in df_right.schema.fields() {
+            if left_names.contains(field.name()) {
+                rename_strs.push(field.name().to_owned())
+            }
+        }
+
+        for name in rename_strs {
+            df_right.rename(&name, &format!("{}_right", name))?
+        }
 
         df_left.hstack(&df_right.columns);
         Ok(df_left)
@@ -123,7 +139,8 @@ mod test {
     fn test_hash_join() {
         let s0 = Series::init("days", [0, 1, 2].as_ref());
         let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
-        let temp = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
+        let s2 = Series::init("rain", [0.2, 0.1, 0.3].as_ref());
+        let temp = DataFrame::new_from_columns(vec![s0, s1, s2]).unwrap();
 
         let s0 = Series::init("days", [1, 2, 3, 1].as_ref());
         let s1 = Series::init("rain", [0.1, 0.2, 0.3, 0.4].as_ref());

@@ -87,6 +87,10 @@ impl Series {
         apply_method_all_series!(self, name,)
     }
 
+    pub fn rename(&mut self, name: &str) {
+        apply_method_all_series!(self, rename, name)
+    }
+
     pub fn field(&self) -> &Field {
         apply_method_all_series!(self, ref_field,)
     }

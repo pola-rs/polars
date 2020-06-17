@@ -122,15 +122,22 @@ impl DataFrame {
         self.columns.get(idx)
     }
 
-    pub fn select(&self, name: &str) -> Option<&Series> {
-        let opt_idx = self
-            .schema
+    pub fn select_idx_mut(&mut self, idx: usize) -> Option<&mut Series> {
+        self.columns.get_mut(idx)
+    }
+
+    fn find_idx_by_name(&self, name: &str) -> Option<usize> {
+        self.schema
             .fields()
             .iter()
             .enumerate()
             .filter(|(_idx, field)| field.name() == name)
             .map(|(idx, _)| idx)
-            .next();
+            .next()
+    }
+
+    pub fn select(&self, name: &str) -> Option<&Series> {
+        let opt_idx = self.find_idx_by_name(name);
 
         match opt_idx {
             Some(idx) => self.select_idx(idx),
@@ -140,6 +147,20 @@ impl DataFrame {
 
     pub fn f_select(&self, name: &str) -> &Series {
         self.select(name)
+            .expect(&format!("name {} does not exist on dataframe", name))
+    }
+
+    pub fn select_mut(&mut self, name: &str) -> Option<&mut Series> {
+        let opt_idx = self.find_idx_by_name(name);
+
+        match opt_idx {
+            Some(idx) => self.select_idx_mut(idx),
+            None => None,
+        }
+    }
+
+    pub fn f_select_mut(&mut self, name: &str) -> &mut Series {
+        self.select_mut(name)
             .expect(&format!("name {} does not exist on dataframe", name))
     }
 
@@ -167,6 +188,12 @@ impl DataFrame {
             .collect::<Result<Vec<_>>>()?;
 
         DataFrame::new(self.schema.clone(), new_col)
+    }
+
+    pub fn rename(&mut self, col: &str, name: &str) -> Result<()> {
+        self.select_mut(col)
+            .ok_or(PolarsError::NotFound)
+            .map(|s| s.rename(name))
     }
 }
 
