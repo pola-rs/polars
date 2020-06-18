@@ -16,6 +16,7 @@ where
     T: PolarNumericType,
     T::Native: std::ops::Add<Output = T::Native> + std::cmp::PartialOrd,
 {
+    /// Returns `None` if the array is empty or only contains null values.
     fn sum(&self) -> Option<T::Native> {
         self.downcast_chunks()
             .iter()
@@ -29,6 +30,8 @@ where
             })
     }
 
+    /// Returns the minimum value in the array, according to the natural order.
+    /// Returns an option because the array is nullable.
     fn min(&self) -> Option<T::Native> {
         self.downcast_chunks()
             .iter()
@@ -36,6 +39,8 @@ where
             .fold_first(|acc, v| if acc < v { acc } else { v })
     }
 
+    /// Returns the maximum value in the array, according to the natural order.
+    /// Returns an option because the array is nullable.
     fn max(&self) -> Option<T::Native> {
         self.downcast_chunks()
             .iter()
@@ -67,7 +72,9 @@ fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u64> {
     Some(min_max)
 }
 
+/// Booleans are casted to 1 or 0.
 impl Agg<u64> for BooleanChunked {
+    /// Returns `None` if the array is empty or only contains null values.
     fn sum(&self) -> Option<u64> {
         if self.len() == 0 {
             return None;

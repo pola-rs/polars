@@ -11,6 +11,7 @@ pub use crate::{
         },
         series::{NamedFrom, Series},
     },
+    testing::*,
 };
 
 pub use arrow::csv;

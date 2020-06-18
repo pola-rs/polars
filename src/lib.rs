@@ -12,3 +12,4 @@ pub mod datatypes;
 pub mod fmt;
 pub mod frame;
 pub mod prelude;
+pub mod testing;

@@ -241,8 +241,22 @@ mod test {
         let s1 = Series::init("rain", [0.1, 0.2, 0.3, 0.4].as_ref());
         let rain = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
 
-        let joined = temp.inner_join(&rain, "days", "days");
-        println!("{}", joined.unwrap())
+        let joined = temp.inner_join(&rain, "days", "days").unwrap();
+
+        let join_col_days = Series::init("days", [1, 2, 1].as_ref());
+        let join_col_temp = Series::init("temp", [19.9, 7., 19.9].as_ref());
+        let join_col_rain = Series::init("rain", [0.1, 0.3, 0.1].as_ref());
+        let join_col_rain_right = Series::init("rain_right", [0.1, 0.2, 0.4].as_ref());
+        let true_df = DataFrame::new_from_columns(vec![
+            join_col_days,
+            join_col_temp,
+            join_col_rain,
+            join_col_rain_right,
+        ])
+        .unwrap();
+
+        assert!(joined.frame_equal(&true_df));
+        println!("{}", joined)
     }
 
     #[test]

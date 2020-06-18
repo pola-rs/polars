@@ -43,6 +43,7 @@ macro_rules! apply_agg_fn {
 }
 
 impl Series {
+    /// Returns `None` if the array is empty or only contains null values.
     fn sum<T>(&self) -> Option<T>
     where
         T: Num + NumCast + Zero + ToPrimitive,
@@ -50,6 +51,8 @@ impl Series {
         apply_agg_fn!(self, sum)
     }
 
+    /// Returns the minimum value in the array, according to the natural order.
+    /// Returns an option because the array is nullable.
     fn min<T>(&self) -> Option<T>
     where
         T: Num + NumCast + Zero + ToPrimitive,
@@ -57,6 +60,8 @@ impl Series {
         apply_agg_fn!(self, min)
     }
 
+    /// Returns the maximum value in the array, according to the natural order.
+    /// Returns an option because the array is nullable.
     fn max<T>(&self) -> Option<T>
     where
         T: Num + NumCast + Zero + ToPrimitive,

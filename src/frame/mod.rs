@@ -26,6 +26,7 @@ type DfSchema = Arc<Schema>;
 type DfSeries = Series;
 type DfColumns = Vec<DfSeries>;
 
+#[derive(Clone)]
 pub struct DataFrame {
     pub schema: DfSchema,
     pub columns: DfColumns,
