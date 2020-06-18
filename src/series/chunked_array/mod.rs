@@ -1,5 +1,9 @@
 use self::aggregate::Agg;
-use crate::datatypes::{AnyType, ArrowDataType, BooleanChunked, UInt32Chunked, Utf8Chunked};
+use crate::datatypes::{
+    AnyType, ArrowDataType, BooleanChunked, Date32Chunked, Date64Chunked, DurationNsChunked,
+    Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, PolarsDataType, Time64NsChunked,
+    UInt32Chunked, Utf8Chunked,
+};
 use crate::{
     datatypes,
     error::{PolarsError, Result},
@@ -9,6 +13,7 @@ use arrow::array::{
     StringBuilder,
 };
 use arrow::compute::TakeOptions;
+use arrow::datatypes::TimeUnit;
 use arrow::{
     array::{PrimitiveArray, PrimitiveBuilder},
     compute,
@@ -70,7 +75,10 @@ pub struct ChunkedArray<T> {
     phantom: PhantomData<T>,
 }
 
-impl<T> ChunkedArray<T> {
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
         let mut index_remainder = index;
         let mut current_chunk_idx = 0;
@@ -84,6 +92,85 @@ impl<T> ChunkedArray<T> {
             }
         }
         (current_chunk_idx, index_remainder)
+    }
+
+    pub fn u32(self) -> Result<UInt32Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::UInt32 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn i32(self) -> Result<Int32Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Int32 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn i64(self) -> Result<Int64Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Int64 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn f32(self) -> Result<Float32Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Float32 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn f64(self) -> Result<Float64Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Float64 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn bool(self) -> Result<BooleanChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Boolean => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn utf8(self) -> Result<Utf8Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Utf8 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn date32(self) -> Result<Date32Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Date32(_) => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn date64(self) -> Result<Date64Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Date64(_) => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn time64ns(self) -> Result<Time64NsChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    pub fn duration_ns(self) -> Result<DurationNsChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
     }
 }
 

@@ -6,6 +6,7 @@ pub mod series {
     pub mod arithmetic;
     pub mod chunked_array;
     pub mod comparison;
+    pub mod iterator;
     pub mod series;
 }
 pub mod datatypes;
