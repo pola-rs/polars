@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
-#![feature(specialization)]
 pub mod error;
 pub mod series {
     pub mod aggregate;
