@@ -11,6 +11,20 @@ macro_rules! from_iterator {
                 Series::$variant(ca)
             }
         }
+
+        impl FromIterator<$native> for Series {
+            fn from_iter<I: IntoIterator<Item = $native>>(iter: I) -> Self {
+                let ca = iter.into_iter().map(|v| Some(v)).collect();
+                Series::$variant(ca)
+            }
+        }
+
+        impl<'a> FromIterator<&'a $native> for Series {
+            fn from_iter<I: IntoIterator<Item = &'a $native>>(iter: I) -> Self {
+                let ca = iter.into_iter().map(|v| Some(*v)).collect();
+                Series::$variant(ca)
+            }
+        }
     };
 }
 

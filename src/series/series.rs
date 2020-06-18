@@ -118,6 +118,19 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s: Series = [1, 2, 3].iter().collect();
+    /// let s_squared: Series = s.i32()
+    ///     .unwrap()
+    ///     .iter()
+    ///     .map(|opt_v| {
+    ///         match opt_v {
+    ///             Some(v) => Some(v * v),
+    ///             None => None, // null value
+    ///         }
+    /// }).collect();
+    /// ```
     pub fn i32(&self) -> Result<&Int32Chunked> {
         unpack_series!(self, Int32)
     }

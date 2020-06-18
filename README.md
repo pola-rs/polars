@@ -76,3 +76,27 @@ println!("{}", joined.unwrap())
               3              2           null
               4              3           nul
 ```
+
+### Arithmetic
+```rust
+use polars::prelude::*;
+
+let s: Series = [1, 2, 3].iter().collect(); 
+let s_squared = &s * &s;
+```
+
+### Custom functions
+```rust
+use polars::prelude::*;
+
+let s: Series = [1, 2, 3].iter().collect(); 
+let s_squared: Series = s.i32()
+     .expect("datatype mismatch")
+     .iter()
+     .map(|optional_v| {
+         match optional_v {
+             Some(v) => Some(v * v),
+             None => None, // null value
+         }
+ }).collect();
+```

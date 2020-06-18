@@ -127,6 +127,11 @@ impl ops::Sub for &Series {
 impl ops::Add for &Series {
     type Output = Series;
 
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s: Series = [1, 2, 3].iter().collect();
+    /// let out = &s + &s;
+    /// ```
     fn add(self, rhs: Self) -> Self::Output {
         (&self).add_to(rhs).expect("data types don't match")
     }
@@ -135,6 +140,11 @@ impl ops::Add for &Series {
 impl std::ops::Mul for &Series {
     type Output = Series;
 
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s: Series = [1, 2, 3].iter().collect();
+    /// let out = &s * &s;
+    /// ```
     fn mul(self, rhs: Self) -> Self::Output {
         (&self).multiply(rhs).expect("data types don't match")
     }
@@ -143,6 +153,11 @@ impl std::ops::Mul for &Series {
 impl std::ops::Div for &Series {
     type Output = Series;
 
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s: Series = [1, 2, 3].iter().collect();
+    /// let out = &s / &s;
+    /// ```
     fn div(self, rhs: Self) -> Self::Output {
         (&self).divide(rhs).expect("data types don't match")
     }
