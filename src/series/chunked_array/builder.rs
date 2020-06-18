@@ -90,4 +90,3 @@ impl DerefMut for Utf8ChunkedBuilder {
         &mut self.builder
     }
 }
-

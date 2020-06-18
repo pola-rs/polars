@@ -11,13 +11,13 @@ This is my mock up of DataFrames implemented in Rust, using Apache Arrow as back
 - [x] cast
 - [x] take by index/ boolean mask
 - [x] limit
-- [x] Rust iterators
+- [x] Rust iterators!
 - [x] append
 - [x] aggregation: min, max, sum
 - [x] arithmetic
 - [x] comparison
 - [ ] find
-- [ ] sorting (can be done w/ iterators)
+- [x] sorting
 
 ### DataFrame
 - [x] take by index/ boolean mask
@@ -30,7 +30,7 @@ This is my mock up of DataFrames implemented in Rust, using Apache Arrow as back
 - [ ] write csv
 - [ ] write json
 - [ ] read json
-- [ ] sorting
+- [x] sorting
 
 ### Data types
 - [x] null

@@ -248,6 +248,10 @@ impl Series {
     pub fn sort(&mut self) {
         apply_method_arrowprimitive_series!(self, sort_in_place,)
     }
+
+    pub fn argsort(&self) -> UInt32Chunked {
+        apply_method_arrowprimitive_series!(self, argsort,)
+    }
 }
 
 fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {

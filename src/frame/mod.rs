@@ -32,6 +32,7 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
+    /// Create a new DataFrame from a schema and a vec of series.
     pub fn new(schema: DfSchema, columns: DfColumns) -> Result<Self> {
         if !columns.iter().map(|s| s.len()).all_equal() {
             return Err(PolarsError::LengthMismatch);
@@ -54,6 +55,7 @@ impl DataFrame {
         Self::new(schema, columns)
     }
 
+    /// Get a reference the schema fields of the DataFrame.
     pub fn fields(&self) -> &Vec<Field> {
         self.schema.fields()
     }
@@ -118,15 +120,28 @@ impl DataFrame {
         Some(self.columns.iter().map(|s| s.get(idx)).collect())
     }
 
+    /// Select a series by index.
     pub fn select_idx(&self, idx: usize) -> Option<&Series> {
         self.columns.get(idx)
     }
 
+    /// Force select.
+    pub fn f_select_idx(&self, idx: usize) -> &Series {
+        self.select_idx(idx).expect("out of bounds")
+    }
+
+    /// Select a mutable series by index.
     pub fn select_idx_mut(&mut self, idx: usize) -> Option<&mut Series> {
         self.columns.get_mut(idx)
     }
 
-    fn find_idx_by_name(&self, name: &str) -> Option<usize> {
+    /// Force select.
+    pub fn f_select_idx_mut(&mut self, idx: usize) -> &mut Series {
+        self.select_idx_mut(idx).expect("out of bounds")
+    }
+
+    /// Get column index of a series by name.
+    pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
         self.schema
             .fields()
             .iter()
@@ -136,6 +151,7 @@ impl DataFrame {
             .next()
     }
 
+    /// Select a series by name.
     pub fn select(&self, name: &str) -> Option<&Series> {
         let opt_idx = self.find_idx_by_name(name);
 
@@ -145,11 +161,13 @@ impl DataFrame {
         }
     }
 
+    /// Force select.
     pub fn f_select(&self, name: &str) -> &Series {
         self.select(name)
             .expect(&format!("name {} does not exist on dataframe", name))
     }
 
+    /// Select a mutable series by name.
     pub fn select_mut(&mut self, name: &str) -> Option<&mut Series> {
         let opt_idx = self.find_idx_by_name(name);
 
@@ -159,11 +177,13 @@ impl DataFrame {
         }
     }
 
+    /// Force select.
     pub fn f_select_mut(&mut self, name: &str) -> &mut Series {
         self.select_mut(name)
             .expect(&format!("name {} does not exist on dataframe", name))
     }
 
+    /// Take DataFrame rows by a boolean mask.
     pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
         let mut new_col = Vec::with_capacity(self.columns.len());
         for col in &self.columns {
@@ -172,10 +192,12 @@ impl DataFrame {
         DataFrame::new_from_columns(new_col)
     }
 
+    /// Force filter
     pub fn f_filter(&self, mask: &BooleanChunked) -> Self {
         self.filter(mask).expect("could not filter")
     }
 
+    /// Take DataFrame rows by index values.
     pub fn take<T: AsRef<UInt32Chunked>>(
         &self,
         indices: T,
@@ -190,10 +212,37 @@ impl DataFrame {
         DataFrame::new(self.schema.clone(), new_col)
     }
 
-    pub fn rename(&mut self, col: &str, name: &str) -> Result<()> {
-        self.select_mut(col)
+    /// Force take
+    pub fn f_take<T: AsRef<UInt32Chunked>>(
+        &self,
+        indices: T,
+        options: Option<TakeOptions>,
+    ) -> Self {
+        self.take(indices, options).expect("could not take")
+    }
+
+    /// Rename a column in the DataFrame
+    pub fn rename(&mut self, column: &str, name: &str) -> Result<()> {
+        self.select_mut(column)
             .ok_or(PolarsError::NotFound)
             .map(|s| s.rename(name))
+    }
+
+    /// Sort DataFrame in place by a column.
+    pub fn sort(&mut self, by_column: &str) -> Result<()> {
+        let s = match self.select(by_column) {
+            Some(s) => s,
+            None => return Err(PolarsError::NotFound),
+        };
+
+        let take = s.argsort();
+
+        self.columns = self
+            .columns
+            .iter()
+            .map(|s| s.take(&take, None))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(())
     }
 }
 
@@ -330,5 +379,12 @@ mod test {
             .unwrap();
         assert_eq!(reader.schema(), df.schema);
         println!("{:?}", df.schema)
+    }
+
+    #[test]
+    fn test_sort() {
+        let mut df = create_frame();
+        df.sort("temp").unwrap();
+        println!("{:?}", df);
     }
 }

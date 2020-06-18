@@ -15,12 +15,12 @@ use arrow::{
     datatypes::{ArrowNumericType, ArrowPrimitiveType, Field},
 };
 use iterator::ChunkIterator;
+use itertools::Itertools;
+use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::cmp::Ordering;
-use itertools::Itertools;
 
 pub mod aggregate;
 mod arithmetic;
@@ -415,9 +415,9 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
 }
 
 impl<T> ChunkedArray<T>
-    where
-        T: ArrowPrimitiveType,
-        T::Native: std::cmp::PartialOrd,
+where
+    T: ArrowPrimitiveType,
+    T::Native: std::cmp::PartialOrd,
 {
     pub fn sort(&self) -> Self {
         self.iter()
@@ -433,6 +433,19 @@ impl<T> ChunkedArray<T>
     pub fn sort_in_place(&mut self) {
         let sorted = self.sort();
         self.chunks = sorted.chunks;
+    }
+
+    pub fn argsort(&self) -> UInt32Chunked {
+        self.iter()
+            .enumerate()
+            .sorted_by(|(_idx_a, a), (_idx_b, b)| match (a, b) {
+                (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
+                (None, Some(_)) => Ordering::Less,
+                (Some(_), None) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            })
+            .map(|(idx, v)| Some(idx as u32))
+            .collect()
     }
 }
 
