@@ -3,6 +3,7 @@ pub use crate::{
     error::{PolarsError, Result},
     frame::{DataFrame, DataFrameCsvBuilder},
     series::{
+        arithmetic::LhsNumOps,
         chunked_array::{
             aggregate::Agg,
             comparison::{CmpOps, ForceCmpOps},

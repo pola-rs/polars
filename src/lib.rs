@@ -2,15 +2,15 @@
 #![feature(iterator_fold_self)]
 pub mod error;
 pub mod series {
-    pub mod aggregate;
-    pub mod arithmetic;
+    mod aggregate;
+    pub(crate) mod arithmetic;
     pub mod chunked_array;
-    pub mod comparison;
-    pub mod iterator;
+    mod comparison;
+    mod iterator;
     pub mod series;
 }
 pub mod datatypes;
-pub mod fmt;
+mod fmt;
 pub mod frame;
 pub mod prelude;
 pub mod testing;

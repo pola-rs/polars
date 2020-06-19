@@ -1,3 +1,33 @@
+//! # Series
+//! The columnar data type for a DataFrame.
+//!
+//! ## Arithmetic
+//!
+//! You can do standard arithmetic on series.
+//! ```
+//! # use polars::prelude::*;
+//! let s: Series = [1, 2, 3].iter().collect();
+//! let out_add = &s + &s;
+//! let out_sub = &s - &s;
+//! let out_div = &s / &s;
+//! let out_mul = &s * &s;
+//! ```
+//!
+//! Or with series and numbers.
+//!
+//! ```
+//! # use polars::prelude::*;
+//! let s: Series = (1..3).collect();
+//! let out_add_one = &s + 1;
+//! let out_multiply = &s * 10;
+//!
+//! // Could not overload left hand side operator.
+//! let out_divide = 1.div(&s);
+//! let out_add = 1.add(&s);
+//! let out_subtract = 1.sub(&s);
+//! let out_multiply = 1.mul(&s);
+//! ```
+
 use super::chunked_array::ChunkedArray;
 use crate::datatypes::{
     AnyType, Date32Chunked, Date64Chunked, DurationNsChunked, Float32Chunked, Float64Chunked,
