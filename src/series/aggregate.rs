@@ -44,7 +44,12 @@ macro_rules! apply_agg_fn {
 
 impl Series {
     /// Returns `None` if the array is empty or only contains null values.
-    fn sum<T>(&self) -> Option<T>
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s = Series::init("days", [1, 2, 3].as_ref());
+    /// assert_eq!(s.sum(), Some(6));
+    /// ```
+    pub fn sum<T>(&self) -> Option<T>
     where
         T: Num + NumCast + Zero + ToPrimitive,
     {
@@ -53,7 +58,12 @@ impl Series {
 
     /// Returns the minimum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    fn min<T>(&self) -> Option<T>
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s = Series::init("days", [1, 2, 3].as_ref());
+    /// assert_eq!(s.min(), Some(1));
+    /// ```
+    pub fn min<T>(&self) -> Option<T>
     where
         T: Num + NumCast + Zero + ToPrimitive,
     {
@@ -62,7 +72,12 @@ impl Series {
 
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    fn max<T>(&self) -> Option<T>
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s = Series::init("days", [1, 2, 3].as_ref());
+    /// assert_eq!(s.max(), Some(3));
+    /// ```
+    pub fn max<T>(&self) -> Option<T>
     where
         T: Num + NumCast + Zero + ToPrimitive,
     {

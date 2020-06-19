@@ -27,6 +27,42 @@
 //! let out_subtract = 1.sub(&s);
 //! let out_multiply = 1.mul(&s);
 //! ```
+//!
+//! ## Comparison
+//! You can obtain boolean mask by comparing series.
+//!
+//! ```
+//! # use polars::prelude::*;
+//! use itertools::Itertools;
+//! let s = Series::init("dollars", [1, 2, 3].as_ref());
+//! let mask = s.eq(1).expect("could not compare types");
+//! let valid = [true, false, false].iter();
+//! assert!(mask
+//!     .iter()
+//!     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
+//!     .zip(valid)
+//!     .all(|(a, b)| a == *b))
+//! ```
+//!
+//! See all the comparison operators in the [CmpOps trait](../chunked_array/comparison/trait.CmpOps.html)
+//!
+//! ## Iterators
+//! The Series variants contain differently typed [ChunkedArray's](../chunked_array/struct.ChunkedArray.html).
+//! These structs can be turned into iterators, making it possible to use any function/ closure you want
+//! on a Series.
+//!
+//! These iteratiors return an `Option<T>` because the values of a series may be null.
+//!
+//! ```
+//! use polars::prelude::*;
+//! let pi = 3.14;
+//! let s = Series::init("angle", [2f32 * pi, pi, 1.5 * pi].as_ref());
+//! let s_cos: Series = s.f32()
+//!                     .expect("series was not an f32 dtype")
+//!                     .iter()
+//!                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
+//!                     .collect();
+//! ```
 
 use super::chunked_array::ChunkedArray;
 use crate::datatypes::{
