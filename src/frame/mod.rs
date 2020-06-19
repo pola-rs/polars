@@ -18,6 +18,7 @@ use std::borrow::Borrow;
 use std::io::Read;
 use std::sync::Arc;
 
+mod group_by;
 mod hash_join;
 
 type CSVReader<R> = arrow::csv::Reader<R>;
@@ -196,6 +197,11 @@ impl DataFrame {
     /// Force filter
     pub fn f_filter(&self, mask: &BooleanChunked) -> Self {
         self.filter(mask).expect("could not filter")
+    }
+
+    pub fn take_usize(&self, indices: &[usize], options: Option<TakeOptions>) -> Result<Self> {
+        let s: Series = indices.iter().map(|&val| val as u32).collect();
+        self.take(s, options)
     }
 
     /// Take DataFrame rows by index values.

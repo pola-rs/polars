@@ -8,20 +8,22 @@ use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-fn prepare_hashed_relation<T>(
+// TODO: join strings
+
+pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = Option<T>>,
 ) -> HashMap<T, Vec<usize>, FnvBuildHasher>
 where
     T: Hash + Eq + Copy,
 {
-    let mut hashmap = FnvHashMap::default();
+    let mut hash_tbl = FnvHashMap::default();
 
     b.enumerate().for_each(|(idx, o)| {
         if let Some(key) = o {
-            hashmap.entry(key).or_insert_with(Vec::new).push(idx)
+            hash_tbl.entry(key).or_insert_with(Vec::new).push(idx)
         }
     });
-    hashmap
+    hash_tbl
 }
 
 /// Hash join a and b.
@@ -33,12 +35,12 @@ fn hash_join<T>(
 where
     T: Hash + Eq + Copy,
 {
-    let hashmap = prepare_hashed_relation(b);
+    let hash_tbl = prepare_hashed_relation(b);
 
     let mut results = Vec::new();
     a.enumerate().for_each(|(idx_a, o)| {
         if let Some(key) = o {
-            if let Some(indexes_b) = hashmap.get(&key) {
+            if let Some(indexes_b) = hash_tbl.get(&key) {
                 let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
                 results.extend(tuples)
             }
@@ -54,7 +56,7 @@ fn hash_join_left<T>(
 where
     T: Hash + Eq + Copy,
 {
-    let hashmap = prepare_hashed_relation(b);
+    let hash_tbl = prepare_hashed_relation(b);
     let mut results = Vec::new();
 
     a.enumerate().for_each(|(idx_a, o)| {
@@ -62,7 +64,7 @@ where
             // left value is null, so right is automatically null
             None => results.push((idx_a, None)),
             Some(key) => {
-                match hashmap.get(&key) {
+                match hash_tbl.get(&key) {
                     // left and right matches
                     Some(indexes_b) => {
                         results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
