@@ -64,17 +64,7 @@
 //!                     .collect();
 //! ```
 
-use super::chunked_array::ChunkedArray;
-use crate::datatypes::{
-    AnyType, Date32Chunked, Date64Chunked, DurationNsChunked, Float32Chunked, Float64Chunked,
-    Int32Chunked, Int64Chunked, PolarsDataType, Time64NsChunked, UInt32Chunked, Utf8Chunked,
-};
-use crate::series::chunked_array::{ChunkOps, SeriesOps};
-use crate::{
-    datatypes,
-    datatypes::{ArrowDataType, BooleanChunked},
-    error::{PolarsError, Result},
-};
+use crate::prelude::*;
 use arrow::array::ArrayRef;
 use arrow::compute::TakeOptions;
 use arrow::datatypes::{ArrowPrimitiveType, Field};
@@ -282,12 +272,10 @@ impl Series {
     }
 
     /// Take by index.
-    pub fn take<T: AsRef<UInt32Chunked>>(
-        &self,
-        indices: T,
-        options: Option<TakeOptions>,
-    ) -> Result<Self> {
-        Ok(apply_method_and_return!(self, take, [indices.as_ref(), options], ?))
+    pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
+        let iter = indices.as_take_iter();
+        let capacity = indices.take_index_len();
+        Ok(apply_method_and_return!(self, take, [iter, options, Some(capacity)], ?))
     }
 
     /// Get length of series.

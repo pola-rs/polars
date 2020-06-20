@@ -1,4 +1,5 @@
 pub use crate::{
+    datatypes,
     datatypes::*,
     error::{PolarsError, Result},
     frame::{DataFrame, DataFrameCsvBuilder},
@@ -8,7 +9,8 @@ pub use crate::{
             aggregate::Agg,
             comparison::{CmpOps, ForceCmpOps},
             iterator::ChunkIterator,
-            ChunkedArray, Downcast, SeriesOps,
+            take::{Take, TakeIndex},
+            ChunkOps, ChunkedArray, Downcast, SeriesOps,
         },
         series::{NamedFrom, Series},
     },

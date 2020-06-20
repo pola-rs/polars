@@ -199,32 +199,19 @@ impl DataFrame {
         self.filter(mask).expect("could not filter")
     }
 
-    pub fn take_usize(&self, indices: &[usize], options: Option<TakeOptions>) -> Result<Self> {
-        let s: Series = indices.iter().map(|&val| val as u32).collect();
-        self.take(s, options)
-    }
-
     /// Take DataFrame rows by index values.
-    pub fn take<T: AsRef<UInt32Chunked>>(
-        &self,
-        indices: T,
-        options: Option<TakeOptions>,
-    ) -> Result<Self> {
+    pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
         let new_col = self
             .columns
             .iter()
-            .map(|s| s.take(indices.as_ref(), options.clone()))
+            .map(|s| s.take(indices, options.clone()))
             .collect::<Result<Vec<_>>>()?;
 
         DataFrame::new(self.schema.clone(), new_col)
     }
 
     /// Force take
-    pub fn f_take<T: AsRef<UInt32Chunked>>(
-        &self,
-        indices: T,
-        options: Option<TakeOptions>,
-    ) -> Self {
+    pub fn f_take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Self {
         self.take(indices, options).expect("could not take")
     }
 

@@ -154,8 +154,8 @@ impl DataFrame {
         take_right: &UInt32Chunked,
         right_on: &str,
     ) -> Result<DataFrame> {
-        let mut df_left = self.take(&take_left, Some(TakeOptions::default()))?;
-        let mut df_right = other.take(&take_right, Some(TakeOptions::default()))?;
+        let mut df_left = self.take(take_left, Some(TakeOptions::default()))?;
+        let mut df_right = other.take(take_right, Some(TakeOptions::default()))?;
         df_right.drop(right_on);
 
         let mut left_names =

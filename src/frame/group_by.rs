@@ -3,12 +3,6 @@ use crate::prelude::*;
 use fnv::FnvHashMap;
 use std::hash::Hash;
 
-pub struct GroupBy<'a> {
-    df: &'a DataFrame,
-    // [first idx, [other idx]]
-    groups: Vec<(usize, Vec<usize>)>,
-}
-
 fn group_by<T>(a: impl Iterator<Item = Option<T>>) -> Vec<(usize, Vec<usize>)>
 where
     T: Hash + Eq + Copy,
@@ -43,6 +37,22 @@ impl DataFrame {
             return None;
         };
 
-        Some(GroupBy { df: self, groups })
+        Some(GroupBy {
+            df: self,
+            by: by.to_string(),
+            groups,
+        })
     }
 }
+
+pub struct GroupBy<'a> {
+    df: &'a DataFrame,
+    by: String,
+    // [first idx, [other idx]]
+    groups: Vec<(usize, Vec<usize>)>,
+}
+
+// impl<'a> GroupBy<'a> {
+//     pub fn mean(&self)
+//
+// }

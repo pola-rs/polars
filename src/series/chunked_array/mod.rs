@@ -2,8 +2,9 @@ use self::aggregate::Agg;
 use crate::datatypes::{
     AnyType, ArrowDataType, BooleanChunked, Date32Chunked, Date64Chunked, DurationNsChunked,
     Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, PolarsDataType, Time64NsChunked,
-    UInt32Chunked, Utf8Chunked,
+    UInt32Chunked, UInt32Type, Utf8Chunked,
 };
+use crate::series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use crate::{
     datatypes,
     error::{PolarsError, Result},
@@ -12,10 +13,9 @@ use arrow::array::{
     Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
     StringBuilder,
 };
-use arrow::compute::TakeOptions;
 use arrow::datatypes::TimeUnit;
 use arrow::{
-    array::{PrimitiveArray, PrimitiveBuilder},
+    array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
     compute,
     datatypes::{ArrowNumericType, ArrowPrimitiveType, Field},
 };
@@ -32,6 +32,7 @@ mod arithmetic;
 pub(crate) mod builder;
 pub mod comparison;
 pub mod iterator;
+pub mod take;
 
 /// Operations that are possible without knowing underlying type.
 /// These operations will not fail due to non matching types.
@@ -44,10 +45,7 @@ pub trait SeriesOps {
     fn filter(&self, filter: &BooleanChunked) -> Result<Self>
     where
         Self: std::marker::Sized;
-    /// Take by index.
-    fn take(&self, indices: &UInt32Chunked, options: Option<TakeOptions>) -> Result<Self>
-    where
-        Self: std::marker::Sized;
+
     /// Append an arrow array type.
     fn append_array(&mut self, other: ArrayRef) -> Result<()>;
 
@@ -213,24 +211,6 @@ where
 
         match chunks {
             Ok(chunks) => Ok(self.copy_with_chunks(chunks)),
-            Err(e) => Err(PolarsError::ArrowError(e)),
-        }
-    }
-
-    fn take(
-        &self,
-        indices: &ChunkedArray<datatypes::UInt32Type>,
-        options: Option<TakeOptions>,
-    ) -> Result<Self> {
-        let taken = self
-            .chunks
-            .iter()
-            .zip(indices.downcast_chunks())
-            .map(|(arr, idx)| compute::take(&arr, idx, options.clone()))
-            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>();
-
-        match taken {
-            Ok(chunks) => Ok(self.copy_with_chunks(chunks.clone())),
             Err(e) => Err(PolarsError::ArrowError(e)),
         }
     }
@@ -604,10 +584,7 @@ mod test {
     fn take() {
         let a = get_array();
         let new = a
-            .take(
-                &ChunkedArray::<UInt32Type>::new_from_slice("idx", &[0, 1]),
-                None,
-            )
+            .take([0u32, 1].as_ref().as_take_iter(), None, None)
             .unwrap();
         assert_eq!(new.len(), 2)
     }
