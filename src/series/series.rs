@@ -271,11 +271,20 @@ impl Series {
         Ok(apply_method_and_return!(self, filter, [filter.as_ref()], ?))
     }
 
+    pub fn take_iter(
+        &self,
+        iter: impl Iterator<Item = Option<usize>>,
+        options: Option<TakeOptions>,
+        capacity: Option<usize>,
+    ) -> Result<Self> {
+        Ok(apply_method_and_return!(self, take, [iter, options, capacity], ?))
+    }
+
     /// Take by index.
     pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
         let iter = indices.as_take_iter();
         let capacity = indices.take_index_len();
-        Ok(apply_method_and_return!(self, take, [iter, options, Some(capacity)], ?))
+        self.take_iter(iter, options, Some(capacity))
     }
 
     /// Get length of series.

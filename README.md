@@ -11,7 +11,7 @@ This is my mock up of DataFrames implemented in Rust, using Apache Arrow as back
 - [x] cast
 - [x] take by index/ boolean mask
 - [x] limit
-- [x] Rust iterators!
+- [x] Rust iterators! (So any function you can think of)
 - [x] append
 - [x] aggregation: min, max, sum
 - [x] arithmetic
@@ -24,12 +24,14 @@ This is my mock up of DataFrames implemented in Rust, using Apache Arrow as back
 - [x] limit
 - [x] join: inner, left
 - [x] column ops: drop, select, rename
-- [ ] group by
+- [x] group by: min, max, sum, mean, count
 - [x] concat (horizontal)
 - [x] read csv
 - [ ] write csv
 - [ ] write json
 - [ ] read json
+- [ ] write parquet
+- [ ] read parquet
 - [x] sorting
 
 ### Data types
@@ -74,7 +76,7 @@ println!("{}", joined.unwrap())
               1           19.9            0.1
               2              7            0.2
               3              2           null
-              4              3           nul
+              4              3           null
 ```
 
 ### Arithmetic

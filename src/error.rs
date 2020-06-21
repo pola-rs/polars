@@ -16,6 +16,8 @@ pub enum PolarsError {
     LengthMismatch,
     #[error("{0}")]
     Other(String),
+    #[error("No selection was made")]
+    NoSelection,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

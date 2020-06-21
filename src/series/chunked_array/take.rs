@@ -89,6 +89,15 @@ impl TakeIndex for [usize] {
     }
 }
 
+impl TakeIndex for Vec<usize> {
+    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
+        Box::new(self.iter().map(|&v| Some(v)))
+    }
+    fn take_index_len(&self) -> usize {
+        self.len()
+    }
+}
+
 impl TakeIndex for [u32] {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
         Box::new(self.iter().map(|&v| Some(v as usize)))

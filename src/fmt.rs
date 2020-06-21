@@ -1,8 +1,10 @@
 use crate::datatypes::{AnyType, ToStr};
+use crate::series::chunked_array::comparison::NumComp;
 use crate::{
     frame::DataFrame,
     series::{chunked_array::iterator::ChunkIterator, series::Series},
 };
+use num::{Num, NumCast};
 use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
@@ -88,22 +90,40 @@ impl Display for DataFrame {
     }
 }
 
+fn fmt_integer<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
+    let v: i64 = NumCast::from(v).unwrap();
+    if v > 9999 {
+        write!(f, "{:>width$e}", v, width = width)
+    } else {
+        write!(f, "{:>width$}", v, width = width)
+    }
+}
+
+fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
+    let v: f64 = NumCast::from(v).unwrap();
+    if v > 9999. || v < 0.001 {
+        write!(f, "{:>width$e}", v, width = width)
+    } else {
+        write!(f, "{:>width$}", v, width = width)
+    }
+}
+
 impl Display for AnyType<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 15;
         match self {
             AnyType::Null => write!(f, "{:>width$}", "null", width = width),
-            AnyType::U32(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::I32(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::I64(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::F32(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::F64(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::Bool(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::Str(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::Date64(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::Date32(v) => write!(f, "{:width$}", v, width = width),
-            AnyType::Time64(v, _) => write!(f, "{:width$}", v, width = width),
-            AnyType::Duration(v, _) => write!(f, "{:width$}", v, width = width),
+            AnyType::U32(v) => write!(f, "{:>width$}", v, width = width),
+            AnyType::I32(v) => fmt_integer(f, width, *v),
+            AnyType::I64(v) => fmt_integer(f, width, *v),
+            AnyType::F32(v) => fmt_float(f, width, *v),
+            AnyType::F64(v) => fmt_float(f, width, *v),
+            AnyType::Bool(v) => write!(f, "{:>width$}", v, width = width),
+            AnyType::Str(v) => write!(f, "{:>width$}", v, width = width),
+            AnyType::Date64(v) => write!(f, "{:>width$}", v, width = width),
+            AnyType::Date32(v) => write!(f, "{:>width$}", v, width = width),
+            AnyType::Time64(v, _) => write!(f, "{:>width$}", v, width = width),
+            AnyType::Duration(v, _) => write!(f, "{:>width$}", v, width = width),
         }
     }
 }

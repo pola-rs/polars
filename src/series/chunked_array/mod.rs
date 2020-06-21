@@ -11,7 +11,7 @@ use crate::{
 };
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
-    StringBuilder,
+    StringBuilder, UInt32Array,
 };
 use arrow::datatypes::TimeUnit;
 use arrow::{
@@ -248,6 +248,7 @@ where
         }
         match T::get_data_type() {
             ArrowDataType::Boolean => downcast_and_pack!(BooleanArray, Bool),
+            ArrowDataType::UInt32 => downcast_and_pack!(UInt32Array, U32),
             ArrowDataType::Int32 => downcast_and_pack!(Int32Array, I32),
             ArrowDataType::Int64 => downcast_and_pack!(Int64Array, I64),
             ArrowDataType::Float32 => downcast_and_pack!(Float32Array, F32),

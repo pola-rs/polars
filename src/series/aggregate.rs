@@ -83,6 +83,13 @@ impl Series {
     {
         apply_agg_fn!(self, max)
     }
+
+    pub fn mean<T>(&self) -> Option<T>
+    where
+        T: Num + NumCast + Zero + ToPrimitive,
+    {
+        apply_agg_fn!(self, sum).map(|v| v / T::from(self.len()).unwrap())
+    }
 }
 
 #[cfg(test)]
