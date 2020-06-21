@@ -18,10 +18,9 @@ use std::borrow::Borrow;
 use std::io::Read;
 use std::sync::Arc;
 
+pub mod csv;
 mod group_by;
 mod hash_join;
-
-type CSVReader<R> = arrow::csv::Reader<R>;
 
 type DfSchema = Arc<Schema>;
 type DfSeries = Series;
@@ -240,7 +239,7 @@ impl DataFrame {
     }
 }
 
-struct DataFrameBuilder {
+pub struct DataFrameBuilder {
     schema: Option<DfSchema>,
     columns: DfColumns,
 }
@@ -266,77 +265,7 @@ impl DataFrameBuilder {
     }
 }
 
-pub struct DataFrameCsvBuilder<'a, R>
-where
-    R: Read,
-{
-    reader: &'a mut CSVReader<R>,
-    rechunk: bool,
-}
-
-impl<'a, R> DataFrameCsvBuilder<'a, R>
-where
-    R: Read,
-{
-    fn new_from_csv(reader: &'a mut CSVReader<R>) -> Self {
-        DataFrameCsvBuilder {
-            reader,
-            rechunk: true,
-        }
-    }
-
-    fn finish(&mut self) -> Result<DataFrame> {
-        let mut columns = self
-            .reader
-            .schema()
-            .fields()
-            .iter()
-            .map(|field| match field.data_type() {
-                ArrowDataType::UInt32 => {
-                    Series::UInt32(UInt32Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Int32 => {
-                    Series::Int32(Int32Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Int64 => {
-                    Series::Int64(Int64Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Float32 => {
-                    Series::Float32(Float32Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Float64 => {
-                    Series::Float64(Float64Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Utf8 => {
-                    Series::Utf8(Utf8Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Boolean => {
-                    Series::Bool(BooleanChunked::new_from_chunks(field.name(), vec![]))
-                }
-                _ => unimplemented!(),
-            })
-            .collect::<Vec<_>>();
-
-        while let Some(batch) = self.reader.next()? {
-            batch
-                .columns()
-                .into_iter()
-                .zip(&mut columns)
-                .map(|(arr, ser)| ser.append_array(arr.clone()))
-                .collect::<Result<Vec<_>>>()?;
-        }
-
-        Ok(DataFrame {
-            schema: self.reader.schema(),
-            columns,
-        })
-    }
-}
-
 mod test {
-    // use super::*;
-    // use crate::series::series::NamedFrom;
-    // use arrow::csv;
     use crate::prelude::*;
     use std::fs::File;
 
@@ -363,9 +292,7 @@ mod test {
     #[test]
     fn read_csv() {
         let file = File::open("data/iris.csv").unwrap();
-        let builder = csv::ReaderBuilder::new()
-            .infer_schema(None)
-            .has_header(true);
+        let builder = csvReaderBuilder::new().infer_schema(None).has_header(true);
         let mut reader = builder.build(file).unwrap();
 
         let df = DataFrameCsvBuilder::new_from_csv(&mut reader)
