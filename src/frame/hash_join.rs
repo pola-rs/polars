@@ -8,7 +8,7 @@ use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-// TODO: join strings
+// TODO: join reuse code in functions/ macros
 
 pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = Option<T>>,
@@ -83,26 +83,23 @@ pub trait HashJoin<T> {
     fn hash_join_left(&self, other: &ChunkedArray<T>) -> (UInt32Chunked, UInt32Chunked);
 }
 
-impl<T> HashJoin<T> for ChunkedArray<T>
-where
-    T: ArrowPrimitiveType,
-    T::Native: Eq + Hash,
-{
-    fn hash_join(&self, other: &ChunkedArray<T>) -> (UInt32Chunked, UInt32Chunked) {
+macro_rules! create_join_tuples {
+    // wrap option makes the iterator add an Option, needed for utf-8
+    ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
-        let left_first = self.len() > other.len();
+        let left_first = $self.len() > $other.len();
         let a;
         let b;
         if left_first {
-            a = self;
-            b = other;
+            a = $self;
+            b = $other;
         } else {
-            b = self;
-            a = other;
+            b = $self;
+            a = $other;
         }
 
         // Resort the relation tuple to match the input, (left, right)
-        let srt_tuples = |(a, b)| {
+        let srt_tuples = move |(a, b)| {
             if left_first {
                 (a, b)
             } else {
@@ -110,6 +107,17 @@ where
             }
         };
 
+        (srt_tuples, a, b)
+    }};
+}
+
+impl<T> HashJoin<T> for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: Eq + Hash,
+{
+    fn hash_join(&self, other: &ChunkedArray<T>) -> (UInt32Chunked, UInt32Chunked) {
+        let (srt_tuples, a, b) = create_join_tuples!(self, other);
         // Create the join tuples
         let join_tuples = hash_join(a.iter(), b.iter());
 
@@ -127,6 +135,46 @@ where
 
     fn hash_join_left(&self, other: &ChunkedArray<T>) -> (UInt32Chunked, UInt32Chunked) {
         let join_tuples = hash_join_left(self.iter(), other.iter());
+        // Create the UInt32Chunked arrays. These can be used to take values from both the dataframes.
+        let mut left =
+            PrimitiveChunkedBuilder::<UInt32Type>::new("left_take_idx", join_tuples.len());
+        let mut right =
+            PrimitiveChunkedBuilder::<UInt32Type>::new("right_take_idx", join_tuples.len());
+        join_tuples
+            .into_iter()
+            .for_each(|(idx_left, opt_idx_right)| {
+                left.append_value(idx_left as u32);
+
+                match opt_idx_right {
+                    Some(idx) => right.append_value(idx as u32).expect("could not append"),
+                    None => right.append_null().expect("could not append"),
+                };
+            });
+        (left.finish(), right.finish())
+    }
+}
+
+impl HashJoin<Utf8Type> for Utf8Chunked {
+    fn hash_join(&self, other: &Utf8Chunked) -> (UInt32Chunked, UInt32Chunked) {
+        let (srt_tuples, a, b) = create_join_tuples!(self, other);
+        // Create the join tuples
+        let join_tuples = hash_join(a.iter().map(|v| Some(v)), b.iter().map(|v| Some(v)));
+
+        // Create the UInt32Chunked arrays. These can be used to take values from both the dataframes.
+        let mut left =
+            PrimitiveChunkedBuilder::<UInt32Type>::new("left_take_idx", join_tuples.len());
+        let mut right =
+            PrimitiveChunkedBuilder::<UInt32Type>::new("right_take_idx", join_tuples.len());
+        join_tuples.into_iter().map(srt_tuples).for_each(|(a, b)| {
+            left.append_value(a as u32);
+            right.append_value(b as u32);
+        });
+        (left.finish(), right.finish())
+    }
+
+    fn hash_join_left(&self, other: &Utf8Chunked) -> (UInt32Chunked, UInt32Chunked) {
+        let join_tuples =
+            hash_join_left(self.iter().map(|v| Some(v)), other.iter().map(|v| Some(v)));
         // Create the UInt32Chunked arrays. These can be used to take values from both the dataframes.
         let mut left =
             PrimitiveChunkedBuilder::<UInt32Type>::new("left_take_idx", join_tuples.len());
@@ -191,6 +239,7 @@ impl DataFrame {
 
         macro_rules! hash_join {
             ($s_right:ident, $ca_left:ident, $type_:ident) => {{
+                // call the type method series.i32()
                 let ca_right = $s_right.$type_()?;
                 $ca_left.hash_join(ca_right)
             }};
@@ -201,6 +250,7 @@ impl DataFrame {
             Series::Int32(ca_left) => hash_join!(s_right, ca_left, i32),
             Series::Int64(ca_left) => hash_join!(s_right, ca_left, i64),
             Series::Bool(ca_left) => hash_join!(s_right, ca_left, bool),
+            Series::Utf8(ca_left) => hash_join!(s_right, ca_left, utf8),
             _ => unimplemented!(),
         };
         self.finish_join(other, &take_left, &take_right, right_on)
@@ -222,6 +272,7 @@ impl DataFrame {
             Series::Int32(ca_left) => hash_join!(s_right, ca_left, i32),
             Series::Int64(ca_left) => hash_join!(s_right, ca_left, i64),
             Series::Bool(ca_left) => hash_join!(s_right, ca_left, bool),
+            Series::Utf8(ca_left) => hash_join!(s_right, ca_left, utf8),
             _ => unimplemented!(),
         };
         self.finish_join(other, &take_left, &take_right, right_on)
