@@ -54,6 +54,11 @@ pub trait SeriesOps {
 
     /// Get a single value
     fn get(&self, index: usize) -> AnyType;
+
+    /// Zero copy slice
+    fn slice(&self, offset: usize, length: usize) -> Result<Self>
+    where
+        Self: std::marker::Sized;
 }
 
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
@@ -256,6 +261,34 @@ where
             ArrowDataType::Utf8 => downcast_and_pack!(StringArray, Str),
             _ => unimplemented!(),
         }
+    }
+
+    fn slice(&self, offset: usize, length: usize) -> Result<Self> {
+        // TODO: Test slice indexes correct
+        if offset + length > self.len() {
+            return Err(PolarsError::OutOfBounds);
+        }
+        let mut remaining_length = length;
+        let mut remaining_offset = offset;
+        let mut new_chunks = vec![];
+
+        for chunk in &self.chunks {
+            let chunk_len = chunk.len();
+            if remaining_offset >= chunk_len {
+                remaining_offset -= chunk_len;
+                continue;
+            }
+            let take_len;
+            if remaining_length + remaining_offset > chunk_len {
+                remaining_length -= (chunk_len + remaining_offset);
+                take_len = chunk_len
+            } else {
+                take_len = remaining_length
+            }
+
+            new_chunks.push(chunk.slice(remaining_offset, take_len))
+        }
+        Ok(self.copy_with_chunks(new_chunks))
     }
 }
 

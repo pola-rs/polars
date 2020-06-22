@@ -266,6 +266,10 @@ impl Series {
         Ok(apply_method_and_return!(self, limit, [num_elements], ?))
     }
 
+    pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
+        Ok(apply_method_and_return!(self, slice, [offset, length], ?))
+    }
+
     /// Filter by boolean mask.
     pub fn filter<T: AsRef<BooleanChunked>>(&self, filter: T) -> Result<Self> {
         Ok(apply_method_and_return!(self, filter, [filter.as_ref()], ?))

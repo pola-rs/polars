@@ -18,6 +18,8 @@ pub enum PolarsError {
     Other(String),
     #[error("No selection was made")]
     NoSelection,
+    #[error("Out of bounds")]
+    OutOfBounds,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
