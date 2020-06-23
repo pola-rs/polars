@@ -1,31 +1,78 @@
 use crate::prelude::*;
-pub use arrow::csv::{ReaderBuilder as csvReaderBuilder, WriterBuilder as csvWriterBuilder};
-use std::io::Read;
+pub use arrow::csv::{ReaderBuilder};
+use arrow::datatypes::Schema;
+use std::io::{Read, Seek};
+use std::sync::Arc;
 
-type CSVReader<R> = arrow::csv::Reader<R>;
-
-pub struct DataFrameCsvBuilder<'a, R>
+/// Creates a DataFrame after reading a csv.
+pub struct CsvReader<R>
 where
-    R: Read,
+    R: Read + Seek,
 {
-    reader: &'a mut CSVReader<R>,
+    reader: R,
+    reader_builder: ReaderBuilder,
     rechunk: bool,
 }
 
-impl<'a, R> DataFrameCsvBuilder<'a, R>
+impl<R> CsvReader<R>
 where
-    R: Read,
+    R: Read + Seek,
 {
-    pub fn new_from_csv(reader: &'a mut CSVReader<R>) -> Self {
-        DataFrameCsvBuilder {
+    /// Create a new CsvReader from a file/ stream
+    pub fn new(reader: R) -> Self {
+        CsvReader {
             reader,
+            reader_builder: ReaderBuilder::new(),
             rechunk: true,
         }
     }
 
-    pub fn finish(&mut self) -> Result<DataFrame> {
-        let mut columns = self
-            .reader
+    /// Rechunk to one contiguous chunk of memory after all data is read
+    pub fn set_rechunk(mut self, rechunk: bool) -> Self {
+        self.rechunk = rechunk;
+        self
+    }
+
+    /// Set the CSV file's schema
+    pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
+        self.reader_builder = self.reader_builder.with_schema(schema);
+        self
+    }
+
+    /// Set whether the CSV file has headers
+    pub fn has_header(mut self, has_header: bool) -> Self {
+        self.reader_builder = self.reader_builder.has_header(has_header);
+        self
+    }
+
+    /// Set the CSV file's column delimiter as a byte character
+    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
+        self.reader_builder = self.reader_builder.with_delimiter(delimiter);
+        self
+    }
+
+    /// Set the CSV reader to infer the schema of the file
+    pub fn infer_schema(mut self, max_records: Option<usize>) -> Self {
+        self.reader_builder = self.reader_builder.infer_schema(max_records);
+        self
+    }
+
+    /// Set the batch size (number of records to load at one time)
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.reader_builder = self.reader_builder.with_batch_size(batch_size);
+        self
+    }
+
+    /// Set the reader's column projection
+    pub fn with_projection(mut self, projection: Vec<usize>) -> Self {
+        self.reader_builder = self.reader_builder.with_projection(projection);
+        self
+    }
+
+    /// Read the file and create the DataFrame.
+    pub fn finish(mut self) -> Result<DataFrame> {
+        let mut csv_reader = self.reader_builder.build(self.reader)?;
+        let mut columns = csv_reader
             .schema()
             .fields()
             .iter()
@@ -51,11 +98,12 @@ where
                 ArrowDataType::Boolean => {
                     Series::Bool(BooleanChunked::new_from_chunks(field.name(), vec![]))
                 }
+                // TODO: We've got more types
                 _ => unimplemented!(),
             })
             .collect::<Vec<_>>();
 
-        while let Some(batch) = self.reader.next()? {
+        while let Some(batch) = csv_reader.next()? {
             batch
                 .columns()
                 .into_iter()
@@ -65,7 +113,7 @@ where
         }
 
         Ok(DataFrame {
-            schema: self.reader.schema(),
+            schema: csv_reader.schema(),
             columns,
         })
     }

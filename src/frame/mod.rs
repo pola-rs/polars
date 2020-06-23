@@ -292,14 +292,14 @@ mod test {
     #[test]
     fn read_csv() {
         let file = File::open("data/iris.csv").unwrap();
-        let builder = csvReaderBuilder::new().infer_schema(None).has_header(true);
-        let mut reader = builder.build(file).unwrap();
-
-        let df = DataFrameCsvBuilder::new_from_csv(&mut reader)
+        let df = CsvReader::new(file)
+            .infer_schema(None)
+            .has_header(true)
             .finish()
             .unwrap();
-        assert_eq!(reader.schema(), df.schema);
-        println!("{:?}", df.schema)
+
+        assert_eq!("sepal.length", df.schema.fields()[0].name());
+        println!("{:?}", df)
     }
 
     #[test]

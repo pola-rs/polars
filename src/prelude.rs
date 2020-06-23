@@ -2,10 +2,7 @@ pub use crate::{
     datatypes,
     datatypes::*,
     error::{PolarsError, Result},
-    frame::{
-        csv::{csvReaderBuilder, DataFrameCsvBuilder},
-        DataFrame,
-    },
+    frame::{csv::CsvReader, DataFrame},
     series::{
         arithmetic::LhsNumOps,
         chunked_array::{
