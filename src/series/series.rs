@@ -270,6 +270,23 @@ impl Series {
         Ok(apply_method_and_return!(self, slice, [offset, length], ?))
     }
 
+    pub fn append(&mut self, other: &Self) -> Result<()> {
+        match self {
+            Series::UInt32(arr) => arr.append(other.u32()?),
+            Series::Int32(arr) => arr.append(other.i32()?),
+            Series::Int64(arr) => arr.append(other.i64()?),
+            Series::Float32(arr) => arr.append(other.f32()?),
+            Series::Float64(arr) => arr.append(other.f64()?),
+            Series::Utf8(arr) => arr.append(other.utf8()?),
+            Series::Date32(arr) => arr.append(other.date32()?),
+            Series::Date64(arr) => arr.append(other.date64()?),
+            Series::Time64Ns(arr) => arr.append(other.time64ns()?),
+            Series::Bool(arr) => arr.append(other.bool()?),
+            Series::DurationNs(arr) => arr.append(other.duration_ns()?),
+        };
+        Ok(())
+    }
+
     /// Filter by boolean mask.
     pub fn filter<T: AsRef<BooleanChunked>>(&self, filter: T) -> Result<Self> {
         Ok(apply_method_and_return!(self, filter, [filter.as_ref()], ?))
