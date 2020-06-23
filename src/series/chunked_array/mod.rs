@@ -59,6 +59,10 @@ pub trait SeriesOps {
     fn slice(&self, offset: usize, length: usize) -> Result<Self>
     where
         Self: std::marker::Sized;
+
+    fn append(&mut self, other: &Self)
+    where
+        Self: std::marker::Sized;
 }
 
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
@@ -280,15 +284,26 @@ where
             }
             let take_len;
             if remaining_length + remaining_offset > chunk_len {
-                remaining_length -= (chunk_len + remaining_offset);
-                take_len = chunk_len
+                take_len = chunk_len - remaining_offset;
             } else {
-                take_len = remaining_length
+                take_len = remaining_length;
             }
 
-            new_chunks.push(chunk.slice(remaining_offset, take_len))
+            new_chunks.push(chunk.slice(remaining_offset, take_len));
+            remaining_length -= take_len;
+            remaining_offset = 0;
+            if remaining_length == 0 {
+                break;
+            }
         }
         Ok(self.copy_with_chunks(new_chunks))
+    }
+
+    fn append(&mut self, other: &Self)
+    where
+        Self: std::marker::Sized,
+    {
+        self.chunks.extend(other.chunks.clone())
     }
 }
 
@@ -553,6 +568,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use arrow::datatypes::ArrowPrimitiveType;
 
     fn get_array() -> Int32Chunked {
         ChunkedArray::new_from_slice("a", &[1, 2, 3])
@@ -637,5 +653,26 @@ mod test {
         let a = get_array();
         let b = a.cast::<Int64Type>().unwrap();
         assert_eq!(b.field.data_type(), &ArrowDataType::Int64)
+    }
+
+    fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])
+    where
+        ChunkedArray<T>: ChunkOps + SeriesOps,
+        T: ArrowPrimitiveType,
+    {
+        assert_eq!(ca.iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(), eq)
+    }
+
+    #[test]
+    fn slice() {
+        let mut first = UInt32Chunked::new_from_slice("first", &[0, 1, 2]);
+        let second = UInt32Chunked::new_from_slice("second", &[3, 4, 5]);
+        first.append(&second);
+        assert_slice_equal(&first.slice(0, 3).unwrap(), &[0, 1, 2]);
+        assert_slice_equal(&first.slice(0, 4).unwrap(), &[0, 1, 2, 3]);
+        assert_slice_equal(&first.slice(1, 4).unwrap(), &[1, 2, 3, 4]);
+        assert_slice_equal(&first.slice(3, 2).unwrap(), &[3, 4]);
+        assert_slice_equal(&first.slice(3, 3).unwrap(), &[3, 4, 5]);
+        assert!(first.slice(3, 4).is_err());
     }
 }
