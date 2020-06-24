@@ -593,8 +593,6 @@ mod test {
     #[test]
     fn iter() {
         let s1 = get_array();
-        let mut a = s1.iter();
-        s1.iter().for_each(|a| println!("iterator: {:?}", a));
         // sum
         assert_eq!(s1.iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
     }
@@ -642,7 +640,7 @@ mod test {
         let mut a = get_array();
         assert_eq!(AnyType::I32(2), a.get(1));
         // check if chunks indexes are properly determined
-        a.append_array(a.chunks[0].clone());
+        a.append_array(a.chunks[0].clone()).unwrap();
         assert_eq!(AnyType::I32(1), a.get(3));
     }
 

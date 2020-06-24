@@ -8,6 +8,7 @@ use arrow::array::{Array, PrimitiveArray, PrimitiveArrayOps, StringArray};
 use arrow::datatypes::ArrowPrimitiveType;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
+use unsafe_unwrap::UnsafeUnwrap;
 
 // This module implements an iter method for both ArrowPrimitiveType and Utf8 type.
 // As both expose a different api in arrow, this required some hacking.
@@ -16,11 +17,6 @@ use std::marker::PhantomData;
 // It also has a phantomtype K that is only used as distinctive type to be able to implement a trait
 // method twice. Sort of a specialization hack.
 
-enum Either<L, R> {
-    Left(L),
-    Right(R),
-}
-
 // K is a phantom type to make specialization work.
 // K is set to u8 for all ArrowPrimitiveTypes
 // K is set to String for datatypes::Utf8DataType
@@ -28,10 +24,10 @@ pub struct ChunkIterState<'a, T, K>
 where
     T: ArrowPrimitiveType,
 {
-    arrays: Either<Vec<&'a PrimitiveArray<T>>, Vec<&'a StringArray>>,
+    array_primitive: Option<Vec<&'a PrimitiveArray<T>>>,
+    array_string: Option<Vec<&'a StringArray>>,
     chunk_i: usize,
     array_i: usize,
-    out_of_bounds: bool,
     length: usize,
     n_chunks: usize,
     phantom: PhantomData<K>,
@@ -48,10 +44,10 @@ where
             self.array_i = 0;
             self.chunk_i += 1;
         }
+    }
 
-        if self.chunk_i >= self.n_chunks {
-            self.out_of_bounds = true;
-        }
+    fn out_of_bounds(&self) -> bool {
+        self.chunk_i >= self.n_chunks
     }
 }
 
@@ -65,16 +61,12 @@ where
     /// Because arrow types are nullable an option is returned. This is wrapped in another option
     /// to indicate if the iterator returns Some or None.
     fn next(&mut self) -> Option<Self::Item> {
-        if self.out_of_bounds {
+        if self.out_of_bounds() {
             return None;
         }
 
-        let arrays;
-        if let Either::Left(arr) = &self.arrays {
-            arrays = arr;
-        } else {
-            panic!("implementation error")
-        }
+        debug_assert!(self.array_primitive.is_some());
+        let arrays = unsafe { self.array_primitive.as_ref().take().unsafe_unwrap() };
 
         debug_assert!(self.chunk_i < arrays.len());
         let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
@@ -98,19 +90,14 @@ where
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.out_of_bounds {
+        if self.out_of_bounds() {
             return None;
         }
 
-        let arrays;
-        if let Either::Right(arr) = &self.arrays {
-            arrays = arr;
-        } else {
-            panic!("implementation error")
-        }
+        debug_assert!(self.array_string.is_some());
+        let arrays = unsafe { self.array_string.as_ref().take().unsafe_unwrap() };
 
         let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
-
         let data = arr.data();
         let ret;
         if data.is_null(self.array_i) {
@@ -149,10 +136,10 @@ where
             .collect::<Vec<_>>();
 
         ChunkIterState {
-            arrays: Either::Left(arrays),
+            array_primitive: Some(arrays),
+            array_string: None,
             chunk_i: 0,
             array_i: 0,
-            out_of_bounds: false,
             length: self.len(),
             n_chunks: self.chunks.len(),
             phantom: PhantomData,
@@ -176,10 +163,10 @@ impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf
             .collect::<Vec<_>>();
 
         ChunkIterState {
-            arrays: Either::Right(arrays),
+            array_primitive: None,
+            array_string: Some(arrays),
             chunk_i: 0,
             array_i: 0,
-            out_of_bounds: false,
             length: self.len(),
             n_chunks: self.chunks.len(),
             phantom: PhantomData,

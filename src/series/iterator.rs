@@ -40,6 +40,6 @@ mod test {
     #[test]
     fn test_iter() {
         let a = Series::init("age", [23, 71, 9].as_ref());
-        let b = a.i32().unwrap().iter().map(|opt_v| opt_v.map(|v| v * 2));
+        let _b = a.i32().unwrap().iter().map(|opt_v| opt_v.map(|v| v * 2));
     }
 }

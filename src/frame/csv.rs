@@ -1,8 +1,5 @@
 use crate::prelude::*;
-pub use arrow::csv::{
-    ReaderBuilder,
-    WriterBuilder
-};
+pub use arrow::csv::{ReaderBuilder, WriterBuilder};
 use arrow::datatypes::Schema;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
@@ -13,7 +10,8 @@ pub struct CsvWriter<W: Write> {
 }
 
 impl<W> CsvWriter<W>
-where W: Write
+where
+    W: Write,
 {
     pub fn new(writer: W) -> Self {
         CsvWriter {
@@ -84,7 +82,7 @@ where
     /// use std::fs::File;
     ///
     /// fn example() -> Result<DataFrame> {
-    ///     let file = File::open("iris.csv")?;
+    ///     let file = File::open("iris.csv").expect("could not open file");
     ///
     ///     CsvReader::new(file)
     ///             .infer_schema(None)
