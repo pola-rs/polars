@@ -405,13 +405,12 @@ where
     }
 
     /// If `cont_slice` is successful a closure can be applied as aggregation
-    pub fn apply_agg<F>(&self, f: F) -> Result<T::Native>
+    pub fn apply_agg<F, B>(&self, init: B, f: F) -> Result<B>
     where
-        F: Fn(&T::Native) -> T::Native,
-        T::Native: std::iter::FromIterator<T::Native>,
+        F: Fn(B, &T::Native) -> B,
     {
         let slice = self.cont_slice()?;
-        Ok(slice.iter().map(f).collect())
+        Ok(slice.iter().fold(init, f))
     }
 }
 

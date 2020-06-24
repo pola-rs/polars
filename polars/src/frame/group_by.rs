@@ -170,12 +170,7 @@ impl<'a> GroupBy<'a> {
         let agg = match agg_col.dtype() {
             ArrowDataType::Float64 => {
                 let vec_opts = self.groups.par_iter().map(|(_first, idx)| {
-                    let ca = agg_col.f64().unwrap();
-                    if let Ok(slice) = ca.cont_slice() {
-                        let mut sum = 0.;
-                        for i in idx {
-                            sum += slice[*i]
-                        }
+                    if let Ok(sum) = agg_col.f64().unwrap().apply_agg(0., |acc, v| acc + v) {
                         Some(sum)
                     } else {
                         let take = agg_col.take(idx, None).unwrap();
@@ -188,7 +183,6 @@ impl<'a> GroupBy<'a> {
                 }
                 let ca = builder.finish();
                 Series::Float64(ca)
-
             }
             _ => return Err(PolarsError::DataTypeMisMatch),
         };
