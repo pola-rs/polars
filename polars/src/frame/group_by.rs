@@ -1,6 +1,7 @@
 use super::hash_join::{prepare_hashed_relation, prepare_hashed_relation_non_null};
 use crate::prelude::*;
 use crate::series::chunked_array::builder::PrimitiveChunkedBuilder;
+use rayon::prelude::*;
 use std::hash::Hash;
 
 fn groupby_opt<T>(a: impl Iterator<Item = Option<T>>) -> Vec<(usize, Vec<usize>)>
@@ -85,9 +86,20 @@ pub struct GroupBy<'a> {
 macro_rules! build_ca_agg {
     ($self:ident, $new_name:ident, $agg_col:ident, $variant:ident, $agg_fn:ident) => {{
         let mut builder = PrimitiveChunkedBuilder::new(&$new_name, $self.groups.len());
-        for (_first, idx) in &$self.groups {
-            let s = $agg_col.take(idx, None)?;
-            builder.append_option(s.$agg_fn())?;
+
+        // First parallelize
+        let vec_opts = $self
+            .groups
+            .par_iter()
+            .map(|(_first, idx)| {
+                let s = $agg_col.take(idx, None).expect("could not append");
+                let opt = s.$agg_fn();
+                opt
+            })
+            .collect::<Vec<_>>();
+
+        for opt in vec_opts {
+            builder.append_option(opt).expect("could not append");
         }
         let ca = builder.finish();
         Series::$variant(ca)

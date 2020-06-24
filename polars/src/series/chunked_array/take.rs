@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
-use arrow::{array::PrimitiveArrayOps, compute::TakeOptions, datatypes::ArrowPrimitiveType};
+use arrow::compute::TakeOptions;
 
 pub trait Take {
     fn take(
