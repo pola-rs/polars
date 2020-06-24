@@ -85,8 +85,6 @@ pub struct GroupBy<'a> {
 
 macro_rules! build_ca_agg {
     ($self:ident, $new_name:ident, $agg_col:ident, $variant:ident, $agg_fn:ident) => {{
-        let mut builder = PrimitiveChunkedBuilder::new(&$new_name, $self.groups.len());
-
         // First parallelize
         let vec_opts = $self
             .groups
@@ -98,6 +96,7 @@ macro_rules! build_ca_agg {
             })
             .collect::<Vec<_>>();
 
+        let mut builder = PrimitiveChunkedBuilder::new(&$new_name, $self.groups.len());
         for opt in vec_opts {
             builder.append_option(opt).expect("could not append");
         }
@@ -164,7 +163,32 @@ impl<'a> GroupBy<'a> {
     pub fn sum(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_sum", name];
-        let agg = build_ca_agg_variants!(self, new_name, agg_col, sum);
+        let agg = match agg_col.dtype() {
+            ArrowDataType::Float64 => {
+                let vec_opts = self.groups.par_iter().map(|(_first, idx)| {
+                    let ca = agg_col.f64().unwrap();
+                    if let Ok(slice) = ca.cont_slice() {
+                        let mut sum = 0.;
+                        for i in idx {
+                            sum += slice[*i]
+                        }
+                        Some(sum)
+                    } else {
+                        let take = agg_col.take(idx, None).unwrap();
+                        take.sum()
+                    }
+                }).collect::<Vec<_>>();
+                let mut builder = PrimitiveChunkedBuilder::new(&new_name, self.groups.len());
+                for opt in vec_opts {
+                    builder.append_option(opt).expect("could not append");
+                }
+                let ca = builder.finish();
+                Series::Float64(ca)
+
+            }
+            _ => return Err(PolarsError::DataTypeMisMatch),
+        };
+        // let agg = build_ca_agg_variants!(self, new_name, agg_col, sum);
         DataFrame::new_from_columns(vec![keys, agg])
     }
 
