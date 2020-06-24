@@ -98,6 +98,10 @@ where
         (current_chunk_idx, index_remainder)
     }
 
+    pub fn chunks(&self) -> &Vec<ArrayRef> {
+        &self.chunks
+    }
+
     /// Downcast
     pub fn u32(self) -> Result<UInt32Chunked> {
         match T::get_data_type() {

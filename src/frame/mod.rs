@@ -1,6 +1,6 @@
 use crate::prelude::*;
-use arrow::compute::TakeOptions;
 use arrow::datatypes::{Field, Schema};
+use arrow::{compute::TakeOptions, record_batch::RecordBatch};
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -225,6 +225,10 @@ impl DataFrame {
             .map(|s| s.take(&take, None))
             .collect::<Result<Vec<_>>>()?;
         Ok(())
+    }
+
+    pub fn as_record_batch(&self, _offset: usize, _length: usize) -> RecordBatch {
+        todo!()
     }
 }
 

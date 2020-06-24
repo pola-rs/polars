@@ -167,8 +167,14 @@ impl Series {
         apply_method_all_series!(self, ref_field,)
     }
 
+    /// Get datatype of series.
     pub fn dtype(&self) -> &ArrowDataType {
         self.field().data_type()
+    }
+
+    /// Underlying chunks.
+    pub fn chunks(&self) -> &Vec<ArrayRef> {
+        apply_method_all_series!(self, chunks,)
     }
 
     /// Unpack to ChunkedArray
