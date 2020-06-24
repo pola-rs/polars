@@ -1,9 +1,9 @@
-use super::hash_join::prepare_hashed_relation;
+use super::hash_join::{prepare_hashed_relation, prepare_hashed_relation_non_null};
 use crate::prelude::*;
 use crate::series::chunked_array::builder::PrimitiveChunkedBuilder;
 use std::hash::Hash;
 
-fn groupby<T>(a: impl Iterator<Item = Option<T>>) -> Vec<(usize, Vec<usize>)>
+fn groupby_opt<T>(a: impl Iterator<Item = Option<T>>) -> Vec<(usize, Vec<usize>)>
 where
     T: Hash + Eq + Copy,
 {
@@ -18,20 +18,46 @@ where
         .collect()
 }
 
+/// No null values
+fn groupby_no_null<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
+where
+    T: Hash + Eq + Copy,
+{
+    let hash_tbl = prepare_hashed_relation_non_null(a);
+
+    hash_tbl
+        .into_iter()
+        .map(|(_, indexes)| {
+            let first = unsafe { *indexes.get_unchecked(0) };
+            (first, indexes)
+        })
+        .collect()
+}
+
 impl DataFrame {
     /// Group DataFrame using a Series column.
     pub fn groupby(&self, by: &str) -> Option<GroupBy> {
         let groups = if let Some(s) = self.select(by) {
+            macro_rules! create_iter {
+                ($ca:ident) => {{
+                    if let Ok(slice) = $ca.cont_slice() {
+                        groupby_no_null(slice.iter())
+                    } else {
+                        groupby_opt($ca.iter())
+                    }
+                }};
+            }
+
             match s {
-                Series::UInt32(ca) => groupby(ca.iter()),
-                Series::Int32(ca) => groupby(ca.iter()),
-                Series::Int64(ca) => groupby(ca.iter()),
-                Series::Bool(ca) => groupby(ca.iter()),
-                Series::Utf8(ca) => groupby(ca.iter().map(|v| Some(v))),
-                Series::Date32(ca) => groupby(ca.iter().map(|v| Some(v))),
-                Series::Date64(ca) => groupby(ca.iter().map(|v| Some(v))),
-                Series::Time64Ns(ca) => groupby(ca.iter().map(|v| Some(v))),
-                Series::DurationNs(ca) => groupby(ca.iter().map(|v| Some(v))),
+                Series::UInt32(ca) => create_iter!(ca),
+                Series::Int32(ca) => create_iter!(ca),
+                Series::Int64(ca) => create_iter!(ca),
+                Series::Bool(ca) => groupby_opt(ca.iter()),
+                Series::Utf8(ca) => groupby_opt(ca.iter().map(|v| Some(v))),
+                Series::Date32(ca) => create_iter!(ca),
+                Series::Date64(ca) => create_iter!(ca),
+                Series::Time64Ns(ca) => create_iter!(ca),
+                Series::DurationNs(ca) => create_iter!(ca),
                 _ => unimplemented!(),
             }
         } else {

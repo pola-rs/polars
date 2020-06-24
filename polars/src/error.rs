@@ -20,6 +20,8 @@ pub enum PolarsError {
     NoSelection,
     #[error("Out of bounds")]
     OutOfBounds,
+    #[error("Not contiguous or null values")]
+    NoSlice,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

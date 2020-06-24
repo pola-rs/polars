@@ -50,6 +50,19 @@ where
     hash_tbl
 }
 
+pub(crate) fn prepare_hashed_relation_non_null<T>(
+    b: impl Iterator<Item = T>,
+) -> HashMap<T, Vec<usize>, FnvBuildHasher>
+where
+    T: Hash + Eq + Copy,
+{
+    let mut hash_tbl = FnvHashMap::default();
+
+    b.enumerate()
+        .for_each(|(idx, key)| hash_tbl.entry(key).or_insert_with(Vec::new).push(idx));
+    hash_tbl
+}
+
 /// Hash join a and b.
 ///     b should be the shorter relation.
 fn hash_join_tuples_inner<T>(

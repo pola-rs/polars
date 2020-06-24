@@ -9,6 +9,7 @@ use arrow::array::{
     ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
     StringBuilder, UInt32Array,
 };
+use arrow::datatypes::ArrowNumericType;
 use arrow::{
     array::{PrimitiveArray, PrimitiveBuilder},
     compute,
@@ -386,6 +387,20 @@ where
             chunks: vec![Arc::new(builder.finish())],
             chunk_id: format!("{}-", v.len()).to_string(),
             phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: ArrowNumericType,
+{
+    /// Contiguous slice
+    pub fn cont_slice(&self) -> Result<&[T::Native]> {
+        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
+            Ok(self.downcast_chunks()[0].value_slice(0, self.len()))
+        } else {
+            Err(PolarsError::NoSlice)
         }
     }
 }

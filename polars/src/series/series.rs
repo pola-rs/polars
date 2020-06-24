@@ -177,6 +177,11 @@ impl Series {
         apply_method_all_series!(self, chunks,)
     }
 
+    /// No. of chunks
+    pub fn n_chunks(&self) -> usize {
+        self.chunks().len()
+    }
+
     /// Unpack to ChunkedArray
     /// ```
     /// # use polars::prelude::*;

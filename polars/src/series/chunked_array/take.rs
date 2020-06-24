@@ -19,7 +19,7 @@ macro_rules! impl_take_builder {
             match opt_idx {
                 Some(idx) => {
                     let (chunk_idx, i) = $self.index_to_chunked_index(idx);
-                    let arr = $chunks[chunk_idx];
+                    let arr = unsafe { $chunks.get_unchecked(chunk_idx) };
                     $builder.append_value(arr.value(i))?
                 }
                 None => $builder.append_null()?,
@@ -42,6 +42,7 @@ where
         // TODO: implement takeoptions
         let capacity = capacity.unwrap_or(1024);
         let mut builder = PrimitiveChunkedBuilder::new(self.name(), capacity);
+
         let chunks = self.downcast_chunks();
         impl_take_builder!(self, indices, builder, chunks)
     }
