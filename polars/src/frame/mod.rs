@@ -305,7 +305,7 @@ mod test {
 
     #[test]
     fn read_csv() {
-        let file = File::open("data/iris.csv").unwrap();
+        let file = File::open("../data/iris.csv").unwrap();
         let df = CsvReader::new(file)
             .infer_schema(None)
             .has_header(true)

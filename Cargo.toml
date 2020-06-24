@@ -1,18 +1,6 @@
-[package]
-name = "polars"
-version = "0.0.0"
-authors = ["ritchie46 <ritchie46@gmail.com>"]
-edition = "2018"
-license = "MIT"
-description = "DataFrame library"
-repository = "https://github.com/ritchie46/polars"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-arrow = { git = "https://github.com/apache/arrow", rev = "6e84421933894cd8e448f0c74828e9e18b2167aa"}
-thiserror = "1.0.16"
-num = "0.2.1"
-fnv = "1.0.7"
-itertools = "0.9.0"
-unsafe_unwrap = "0.1.0"
+members = [
+    "polars",
+    "pandas_cmp"
+]
