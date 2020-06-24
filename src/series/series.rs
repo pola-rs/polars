@@ -360,6 +360,11 @@ impl Series {
     pub fn argsort(&self) -> UInt32Chunked {
         apply_method_arrowprimitive_series!(self, argsort,)
     }
+
+    /// Count the null values.
+    pub fn null_count(&self) -> usize {
+        apply_method_all_series!(self, null_count, )
+    }
 }
 
 fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {

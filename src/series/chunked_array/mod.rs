@@ -98,8 +98,14 @@ where
         (current_chunk_idx, index_remainder)
     }
 
+    /// A reference to the chunks
     pub fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
+    }
+
+    /// Count the null values.
+    pub fn null_count(&self) -> usize {
+        self.chunks.iter().map(|arr| arr.null_count()).sum()
     }
 
     /// Downcast
