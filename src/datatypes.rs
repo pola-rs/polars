@@ -1,6 +1,6 @@
 pub use arrow::datatypes::{
-    BooleanType, Date32Type, Date64Type, DurationNanosecondType, Float32Type, Float64Type,
-    Int32Type, Int64Type, Time64NanosecondType, TimeUnit, UInt32Type,
+    BooleanType, Date32Type, Date64Type, DateUnit, DurationNanosecondType, Float32Type,
+    Float64Type, Int32Type, Int64Type, Time64NanosecondType, TimeUnit, UInt32Type,
 };
 
 use crate::series::chunked_array::ChunkedArray;
@@ -100,8 +100,8 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Float32 => "f32",
             ArrowDataType::Float64 => "f64",
             ArrowDataType::Utf8 => "str",
-            ArrowDataType::Date32(_) => "date32",
-            ArrowDataType::Date64(_) => "date64",
+            ArrowDataType::Date32(DateUnit::Millisecond) => "date32",
+            ArrowDataType::Date64(DateUnit::Millisecond) => "date64",
             ArrowDataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
             ArrowDataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
             _ => unimplemented!(),

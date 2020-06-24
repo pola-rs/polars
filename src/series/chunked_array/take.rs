@@ -36,7 +36,7 @@ where
     fn take(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
-        options: Option<TakeOptions>,
+        _options: Option<TakeOptions>,
         capacity: Option<usize>,
     ) -> Result<Self> {
         // TODO: implement takeoptions
@@ -51,7 +51,7 @@ impl Take for Utf8Chunked {
     fn take(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
-        options: Option<TakeOptions>,
+        _options: Option<TakeOptions>,
         capacity: Option<usize>,
     ) -> Result<Self>
     where

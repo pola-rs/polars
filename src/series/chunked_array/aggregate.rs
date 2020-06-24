@@ -1,9 +1,7 @@
+use crate::datatypes::BooleanChunked;
 use crate::series::chunked_array::{iterator::ChunkIterator, ChunkedArray, SeriesOps};
-use crate::{datatypes, datatypes::BooleanChunked};
 use crate::{datatypes::PolarNumericType, prelude::*};
 use arrow::compute;
-use arrow::datatypes::ArrowNumericType;
-use num::traits::Zero;
 
 pub trait Agg<T> {
     fn sum(&self) -> Option<T>;

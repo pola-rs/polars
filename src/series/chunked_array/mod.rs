@@ -1,30 +1,24 @@
-use self::aggregate::Agg;
 use crate::datatypes::{
     AnyType, ArrowDataType, BooleanChunked, Date32Chunked, Date64Chunked, DurationNsChunked,
     Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, PolarsDataType, Time64NsChunked,
-    UInt32Chunked, UInt32Type, Utf8Chunked,
+    UInt32Chunked, Utf8Chunked,
 };
-use crate::series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
-use crate::{
-    datatypes,
-    error::{PolarsError, Result},
-};
+use crate::error::{PolarsError, Result};
+use crate::prelude::*;
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
+    ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
     StringBuilder, UInt32Array,
 };
-use arrow::datatypes::TimeUnit;
 use arrow::{
-    array::{PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder},
+    array::{PrimitiveArray, PrimitiveBuilder},
     compute,
-    datatypes::{ArrowNumericType, ArrowPrimitiveType, Field},
+    datatypes::{ArrowPrimitiveType, DateUnit, Field, TimeUnit},
 };
 use iterator::ChunkIterator;
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 pub mod aggregate;
@@ -52,19 +46,21 @@ pub trait SeriesOps {
     /// Length of container.
     fn len(&self) -> usize;
 
-    /// Get a single value
+    /// Get a single value.
     fn get(&self, index: usize) -> AnyType;
 
-    /// Zero copy slice
+    /// Zero copy slice.
     fn slice(&self, offset: usize, length: usize) -> Result<Self>
     where
         Self: std::marker::Sized;
 
+    /// Append in place.
     fn append(&mut self, other: &Self)
     where
         Self: std::marker::Sized;
 }
 
+/// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
     let mut chunk_id = String::new();
     for a in chunks {
@@ -86,6 +82,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    /// Get the index of the chunk and the index of the value in that chunk
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
         let mut index_remainder = index;
         let mut current_chunk_idx = 0;
@@ -101,6 +98,7 @@ where
         (current_chunk_idx, index_remainder)
     }
 
+    /// Downcast
     pub fn u32(self) -> Result<UInt32Chunked> {
         match T::get_data_type() {
             ArrowDataType::UInt32 => unsafe { Ok(std::mem::transmute(self)) },
@@ -108,6 +106,7 @@ where
         }
     }
 
+    /// Downcast
     pub fn i32(self) -> Result<Int32Chunked> {
         match T::get_data_type() {
             ArrowDataType::Int32 => unsafe { Ok(std::mem::transmute(self)) },
@@ -115,6 +114,7 @@ where
         }
     }
 
+    /// Downcast
     pub fn i64(self) -> Result<Int64Chunked> {
         match T::get_data_type() {
             ArrowDataType::Int64 => unsafe { Ok(std::mem::transmute(self)) },
@@ -122,6 +122,7 @@ where
         }
     }
 
+    /// Downcast
     pub fn f32(self) -> Result<Float32Chunked> {
         match T::get_data_type() {
             ArrowDataType::Float32 => unsafe { Ok(std::mem::transmute(self)) },
@@ -129,6 +130,7 @@ where
         }
     }
 
+    /// Downcast
     pub fn f64(self) -> Result<Float64Chunked> {
         match T::get_data_type() {
             ArrowDataType::Float64 => unsafe { Ok(std::mem::transmute(self)) },
@@ -136,6 +138,7 @@ where
         }
     }
 
+    /// Downcast
     pub fn bool(self) -> Result<BooleanChunked> {
         match T::get_data_type() {
             ArrowDataType::Boolean => unsafe { Ok(std::mem::transmute(self)) },
@@ -143,6 +146,7 @@ where
         }
     }
 
+    /// Downcast
     pub fn utf8(self) -> Result<Utf8Chunked> {
         match T::get_data_type() {
             ArrowDataType::Utf8 => unsafe { Ok(std::mem::transmute(self)) },
@@ -150,20 +154,27 @@ where
         }
     }
 
+    /// Downcast
     pub fn date32(self) -> Result<Date32Chunked> {
         match T::get_data_type() {
-            ArrowDataType::Date32(_) => unsafe { Ok(std::mem::transmute(self)) },
+            ArrowDataType::Date32(DateUnit::Millisecond) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
             _ => Err(PolarsError::DataTypeMisMatch),
         }
     }
 
+    /// Downcast
     pub fn date64(self) -> Result<Date64Chunked> {
         match T::get_data_type() {
-            ArrowDataType::Date64(_) => unsafe { Ok(std::mem::transmute(self)) },
+            ArrowDataType::Date64(DateUnit::Millisecond) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
             _ => Err(PolarsError::DataTypeMisMatch),
         }
     }
 
+    /// Downcast
     pub fn time64ns(self) -> Result<Time64NsChunked> {
         match T::get_data_type() {
             ArrowDataType::Time64(TimeUnit::Nanosecond) => unsafe { Ok(std::mem::transmute(self)) },
@@ -171,6 +182,7 @@ where
         }
     }
 
+    /// Downcast
     pub fn duration_ns(self) -> Result<DurationNsChunked> {
         match T::get_data_type() {
             ArrowDataType::Duration(TimeUnit::Nanosecond) => unsafe {
@@ -186,22 +198,9 @@ where
     T: datatypes::PolarsDataType,
     ChunkedArray<T>: ChunkOps,
 {
+    /// Take a view of top n elements
     fn limit(&self, num_elements: usize) -> Result<Self> {
-        if num_elements >= self.len() {
-            Ok(self.copy_with_chunks(self.chunks.clone()))
-        } else {
-            let mut new_chunks = Vec::with_capacity(self.chunks.len());
-            let mut remaining_elements = num_elements as i64;
-
-            let mut c = 0;
-            while remaining_elements > 0 {
-                let chunk = &self.chunks[c];
-                new_chunks.push(compute::limit(chunk, remaining_elements as usize)?);
-                remaining_elements -= chunk.len() as i64;
-                c += 1;
-            }
-            Ok(self.copy_with_chunks(new_chunks))
-        }
+        self.slice(0, num_elements)
     }
 
     /// Chunk sizes should match or rhs should have one chunk
@@ -268,7 +267,6 @@ where
     }
 
     fn slice(&self, offset: usize, length: usize) -> Result<Self> {
-        // TODO: Test slice indexes correct
         if offset + length > self.len() {
             return Err(PolarsError::OutOfBounds);
         }
@@ -560,7 +558,7 @@ where
                 (Some(_), None) => Ordering::Greater,
                 (None, None) => Ordering::Equal,
             })
-            .map(|(idx, v)| Some(idx as u32))
+            .map(|(idx, _v)| Some(idx as u32))
             .collect()
     }
 }

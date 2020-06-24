@@ -1,21 +1,7 @@
-use crate::datatypes::{
-    AnyType, BooleanChunked, Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked,
-    UInt32Chunked, Utf8Chunked,
-};
 use crate::prelude::*;
-use crate::series::chunked_array::SeriesOps;
-use crate::{
-    datatypes,
-    datatypes::ArrowDataType,
-    error::Result,
-    series,
-    series::{chunked_array::ChunkedArray, series::Series},
-};
 use arrow::compute::TakeOptions;
 use arrow::datatypes::{Field, Schema};
 use itertools::Itertools;
-use std::borrow::Borrow;
-use std::io::Read;
 use std::sync::Arc;
 
 pub mod csv;
@@ -41,15 +27,18 @@ impl DataFrame {
         Ok(DataFrame { schema, columns })
     }
 
+    /// Get fields from the columns.
     fn create_fields(columns: &DfColumns) -> Vec<Field> {
         columns.iter().map(|s| s.field().clone()).collect()
     }
 
+    /// This method should be called after every mutable addition/ deletion of columns
     fn update_schema(&mut self) {
         let fields = Self::create_fields(&self.columns);
         self.schema = Arc::new(Schema::new(fields));
     }
 
+    /// Create a DataFrame from a Vector of Series.
     pub fn new_from_columns(columns: Vec<Series>) -> Result<Self> {
         let fields = Self::create_fields(&columns);
         let schema = Arc::new(Schema::new(fields));
@@ -265,6 +254,7 @@ impl DataFrameBuilder {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::prelude::*;
     use std::fs::File;

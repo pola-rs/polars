@@ -1,10 +1,9 @@
 use super::hash_join::prepare_hashed_relation;
 use crate::prelude::*;
 use crate::series::chunked_array::builder::PrimitiveChunkedBuilder;
-use fnv::FnvHashMap;
 use std::hash::Hash;
 
-fn group_by<T>(a: impl Iterator<Item = Option<T>>) -> Vec<(usize, Vec<usize>)>
+fn groupby<T>(a: impl Iterator<Item = Option<T>>) -> Vec<(usize, Vec<usize>)>
 where
     T: Hash + Eq + Copy,
 {
@@ -20,18 +19,19 @@ where
 }
 
 impl DataFrame {
-    pub fn group_by(&self, by: &str) -> Option<GroupBy> {
+    /// Group DataFrame using a Series column.
+    pub fn groupby(&self, by: &str) -> Option<GroupBy> {
         let groups = if let Some(s) = self.select(by) {
             match s {
-                Series::UInt32(ca) => group_by(ca.iter()),
-                Series::Int32(ca) => group_by(ca.iter()),
-                Series::Int64(ca) => group_by(ca.iter()),
-                Series::Bool(ca) => group_by(ca.iter()),
-                Series::Utf8(ca) => group_by(ca.iter().map(|v| Some(v))),
-                Series::Date32(ca) => group_by(ca.iter().map(|v| Some(v))),
-                Series::Date64(ca) => group_by(ca.iter().map(|v| Some(v))),
-                Series::Time64Ns(ca) => group_by(ca.iter().map(|v| Some(v))),
-                Series::DurationNs(ca) => group_by(ca.iter().map(|v| Some(v))),
+                Series::UInt32(ca) => groupby(ca.iter()),
+                Series::Int32(ca) => groupby(ca.iter()),
+                Series::Int64(ca) => groupby(ca.iter()),
+                Series::Bool(ca) => groupby(ca.iter()),
+                Series::Utf8(ca) => groupby(ca.iter().map(|v| Some(v))),
+                Series::Date32(ca) => groupby(ca.iter().map(|v| Some(v))),
+                Series::Date64(ca) => groupby(ca.iter().map(|v| Some(v))),
+                Series::Time64Ns(ca) => groupby(ca.iter().map(|v| Some(v))),
+                Series::DurationNs(ca) => groupby(ca.iter().map(|v| Some(v))),
                 _ => unimplemented!(),
             }
         } else {
@@ -61,7 +61,7 @@ macro_rules! build_ca_agg {
         let mut builder = PrimitiveChunkedBuilder::new(&$new_name, $self.groups.len());
         for (_first, idx) in &$self.groups {
             let s = $agg_col.take(idx, None)?;
-            builder.append_option(s.$agg_fn());
+            builder.append_option(s.$agg_fn())?;
         }
         let ca = builder.finish();
         Series::$variant(ca)
@@ -114,6 +114,7 @@ impl<'a> GroupBy<'a> {
         Ok((name, keys, agg_col))
     }
 
+    /// Aggregate grouped series and compute the mean per group.
     pub fn mean(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_mean", name];
@@ -121,6 +122,7 @@ impl<'a> GroupBy<'a> {
         DataFrame::new_from_columns(vec![keys, agg])
     }
 
+    /// Aggregate grouped series and compute the sum per group.
     pub fn sum(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_sum", name];
@@ -128,6 +130,7 @@ impl<'a> GroupBy<'a> {
         DataFrame::new_from_columns(vec![keys, agg])
     }
 
+    /// Aggregate grouped series and compute the minimal value per group.
     pub fn min(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_min", name];
@@ -135,6 +138,7 @@ impl<'a> GroupBy<'a> {
         DataFrame::new_from_columns(vec![keys, agg])
     }
 
+    /// Aggregate grouped series and compute the maximum value per group.
     pub fn max(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_max", name];
@@ -142,6 +146,7 @@ impl<'a> GroupBy<'a> {
         DataFrame::new_from_columns(vec![keys, agg])
     }
 
+    /// Aggregate grouped series and compute the number of values per group.
     pub fn count(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_count", name];
@@ -170,23 +175,23 @@ mod test {
 
         println!(
             "{:?}",
-            df.group_by("days").unwrap().select("temp").count().unwrap()
+            df.groupby("days").unwrap().select("temp").count().unwrap()
         );
         println!(
             "{:?}",
-            df.group_by("days").unwrap().select("temp").mean().unwrap()
+            df.groupby("days").unwrap().select("temp").mean().unwrap()
         );
         println!(
             "{:?}",
-            df.group_by("days").unwrap().select("temp").sum().unwrap()
+            df.groupby("days").unwrap().select("temp").sum().unwrap()
         );
         println!(
             "{:?}",
-            df.group_by("days").unwrap().select("temp").min().unwrap()
+            df.groupby("days").unwrap().select("temp").min().unwrap()
         );
         println!(
             "{:?}",
-            df.group_by("days").unwrap().select("temp").max().unwrap()
+            df.groupby("days").unwrap().select("temp").max().unwrap()
         );
     }
 }

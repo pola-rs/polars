@@ -1,17 +1,5 @@
-use crate::series::chunked_array::iterator::ChunkIterator;
-use crate::{
-    datatypes,
-    datatypes::BooleanChunked,
-    error::{PolarsError, Result},
-    series::chunked_array::{ChunkOps, ChunkedArray},
-};
-use crate::{
-    datatypes::{ArrowDataType, Utf8Chunked},
-    prelude::*,
-};
-use arrow::array::{
-    Array, ArrayData, ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, StringArray,
-};
+use crate::prelude::*;
+use arrow::array::{Array, ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, StringArray};
 use arrow::compute;
 use arrow::datatypes::ArrowNumericType;
 use num::{Num, NumCast, ToPrimitive};
@@ -220,7 +208,7 @@ where
                     Some(val) => val,
                     None => return Err(PolarsError::DataTypeMisMatch),
                 };
-                builder.append_value(cmp_fn(val));
+                builder.append_value(cmp_fn(val))?;
             }
             Ok(Arc::new(builder.finish()) as ArrayRef)
         })
@@ -293,7 +281,7 @@ fn cmp_chunked_array_to_str(
 
             for i in 0..a.len() {
                 let val = a.value(i);
-                builder.append_value(cmp_fn(val));
+                builder.append_value(cmp_fn(val))?;
             }
             Ok(Arc::new(builder.finish()) as ArrayRef)
         })
@@ -342,7 +330,7 @@ fn cmp_chunked_array_to_boolarr(
 
             for i in 0..a.len() {
                 let val = a.value(i);
-                builder.append_value(cmp_fn(val, rhs[i]));
+                builder.append_value(cmp_fn(val, rhs[i]))?;
             }
             Ok(Arc::new(builder.finish()) as ArrayRef)
         })
@@ -378,8 +366,9 @@ impl CmpOps<&[bool]> for BooleanChunked {
 
 impl ForceCmpOps<&[bool]> for BooleanChunked {}
 
+#[cfg(test)]
 mod test {
-    use super::*;
+    use crate::prelude::*;
 
     #[test]
     fn utf8_cmp() {

@@ -1,5 +1,5 @@
 use crate::prelude::*;
-pub use arrow::csv::{ReaderBuilder};
+pub use arrow::csv::ReaderBuilder;
 use arrow::datatypes::Schema;
 use std::io::{Read, Seek};
 use std::sync::Arc;
@@ -70,7 +70,7 @@ where
     }
 
     /// Read the file and create the DataFrame.
-    pub fn finish(mut self) -> Result<DataFrame> {
+    pub fn finish(self) -> Result<DataFrame> {
         let mut csv_reader = self.reader_builder.build(self.reader)?;
         let mut columns = csv_reader
             .schema()

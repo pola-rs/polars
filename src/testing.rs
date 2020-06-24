@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use itertools::Itertools;
 
 impl Series {
     pub fn series_equal(&self, other: &Series) -> bool {

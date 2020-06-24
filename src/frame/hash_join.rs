@@ -1,14 +1,13 @@
-use crate::datatypes::UInt32Type;
-use crate::frame::DataFrame;
+use crate::prelude::*;
 use crate::series::chunked_array::builder::PrimitiveChunkedBuilder;
-use crate::{datatypes::UInt32Chunked, prelude::*, series::chunked_array::ChunkedArray};
 use arrow::compute::TakeOptions;
-use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
+use arrow::datatypes::ArrowPrimitiveType;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 // TODO: join reuse code in functions/ macros
+// TODO: Directly build UInt32Chunked for join. This saves a full iteration over all indices
 
 pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = Option<T>>,
@@ -127,8 +126,8 @@ where
         let mut right =
             PrimitiveChunkedBuilder::<UInt32Type>::new("right_take_idx", join_tuples.len());
         join_tuples.into_iter().map(srt_tuples).for_each(|(a, b)| {
-            left.append_value(a as u32);
-            right.append_value(b as u32);
+            left.append_value(a as u32).expect("could not append");
+            right.append_value(b as u32).expect("could not append");
         });
         (left.finish(), right.finish())
     }
@@ -143,7 +142,8 @@ where
         join_tuples
             .into_iter()
             .for_each(|(idx_left, opt_idx_right)| {
-                left.append_value(idx_left as u32);
+                left.append_value(idx_left as u32)
+                    .expect("could not append");
 
                 match opt_idx_right {
                     Some(idx) => right.append_value(idx as u32).expect("could not append"),
@@ -166,8 +166,8 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         let mut right =
             PrimitiveChunkedBuilder::<UInt32Type>::new("right_take_idx", join_tuples.len());
         join_tuples.into_iter().map(srt_tuples).for_each(|(a, b)| {
-            left.append_value(a as u32);
-            right.append_value(b as u32);
+            left.append_value(a as u32).expect("could not append");
+            right.append_value(b as u32).expect("could not append");
         });
         (left.finish(), right.finish())
     }
@@ -183,7 +183,8 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         join_tuples
             .into_iter()
             .for_each(|(idx_left, opt_idx_right)| {
-                left.append_value(idx_left as u32);
+                left.append_value(idx_left as u32)
+                    .expect("could not append");
 
                 match opt_idx_right {
                     Some(idx) => right.append_value(idx as u32).expect("could not append"),
@@ -195,6 +196,7 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
 }
 
 impl DataFrame {
+    /// Utility method to finish a join.
     fn finish_join(
         &self,
         other: &DataFrame,
@@ -224,10 +226,11 @@ impl DataFrame {
             df_right.rename(&name, &format!("{}_right", name))?
         }
 
-        df_left.hstack(&df_right.columns);
+        df_left.hstack(&df_right.columns)?;
         Ok(df_left)
     }
 
+    /// Perform an inner join on two DataFrames.
     pub fn inner_join(
         &self,
         other: &DataFrame,
@@ -256,6 +259,7 @@ impl DataFrame {
         self.finish_join(other, &take_left, &take_right, right_on)
     }
 
+    /// Perform a left join on two DataFrames
     pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
         let s_left = self.select(left_on).ok_or(PolarsError::NotFound)?;
         let s_right = other.select(right_on).ok_or(PolarsError::NotFound)?;

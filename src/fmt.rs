@@ -1,5 +1,4 @@
 use crate::datatypes::{AnyType, ToStr};
-use crate::series::chunked_array::comparison::NumComp;
 use crate::{
     frame::DataFrame,
     series::{chunked_array::iterator::ChunkIterator, series::Series},

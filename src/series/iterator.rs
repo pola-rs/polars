@@ -1,7 +1,5 @@
 use crate::prelude::*;
-use arrow::datatypes::ArrowPrimitiveType;
 use std::iter::FromIterator;
-use std::mem;
 
 macro_rules! from_iterator {
     ($native:ty, $variant:ident) => {

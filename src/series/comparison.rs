@@ -4,12 +4,11 @@ use super::series::Series;
 use crate::error::PolarsError::DataTypeMisMatch;
 use crate::series::chunked_array::comparison::{ForceCmpOps, NumComp};
 use crate::{
-    apply_method_arrowprimitive_series, datatypes,
+    apply_method_arrowprimitive_series,
     datatypes::BooleanChunked,
     error::{PolarsError, Result},
-    series::chunked_array::{comparison::CmpOps, ChunkedArray},
+    series::chunked_array::comparison::CmpOps,
 };
-use num::traits::{Num, NumCast};
 
 macro_rules! compare {
     ($variant:path, $lhs:ident, $rhs:ident, $cmp_method:ident) => {{

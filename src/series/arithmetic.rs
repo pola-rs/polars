@@ -4,7 +4,6 @@ use crate::{
 };
 use num::{Num, NumCast};
 use std::ops;
-use std::ops::Sub;
 
 impl Series {
     fn subtract(&self, rhs: &Series) -> Result<Self> {

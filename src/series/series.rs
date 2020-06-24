@@ -69,7 +69,6 @@ use arrow::array::ArrayRef;
 use arrow::compute::TakeOptions;
 use arrow::datatypes::{ArrowPrimitiveType, Field};
 use std::mem;
-use std::ops::Deref;
 
 #[derive(Clone)]
 pub enum Series {
@@ -138,7 +137,6 @@ macro_rules! apply_method_and_return {
             Series::Date64(a) => Series::Date64(a.$method($($args),*)$($opt_question_mark)*),
             Series::Time64Ns(a) => Series::Time64Ns(a.$method($($args),*)$($opt_question_mark)*),
             Series::DurationNs(a) => Series::DurationNs(a.$method($($args),*)$($opt_question_mark)*),
-            _ => unimplemented!(),
         }
     }
 }
@@ -261,15 +259,17 @@ impl Series {
         }
     }
 
-    /// Take `num_elements`.
+    /// Take `num_elements` from the top as a zero copy view.
     pub fn limit(&self, num_elements: usize) -> Result<Self> {
         Ok(apply_method_and_return!(self, limit, [num_elements], ?))
     }
 
+    /// Get a zero copy view of the data.
     pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
         Ok(apply_method_and_return!(self, slice, [offset, length], ?))
     }
 
+    /// Append a Series of the same type in place.
     pub fn append(&mut self, other: &Self) -> Result<()> {
         match self {
             Series::UInt32(arr) => arr.append(other.u32()?),
@@ -287,11 +287,12 @@ impl Series {
         Ok(())
     }
 
-    /// Filter by boolean mask.
+    /// Filter by boolean mask. This operation clones data.
     pub fn filter<T: AsRef<BooleanChunked>>(&self, filter: T) -> Result<Self> {
         Ok(apply_method_and_return!(self, filter, [filter.as_ref()], ?))
     }
 
+    /// Take by index from an iterator. This operation clones the data.
     pub fn take_iter(
         &self,
         iter: impl Iterator<Item = Option<usize>>,
@@ -301,7 +302,7 @@ impl Series {
         Ok(apply_method_and_return!(self, take, [iter, options, capacity], ?))
     }
 
-    /// Take by index.
+    /// Take by index. This operation is clone.
     pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
         let iter = indices.as_take_iter();
         let capacity = indices.take_index_len();
@@ -338,14 +339,18 @@ impl Series {
         Ok(s)
     }
 
+    /// Get a single value by index. Don't use this operation for loops as a runtime cast is
+    /// needed for every iteration.
     pub fn get(&self, index: usize) -> AnyType {
         apply_method_all_series!(self, get, index)
     }
 
+    /// Sort in place.
     pub fn sort(&mut self) {
         apply_method_arrowprimitive_series!(self, sort_in_place,)
     }
 
+    /// Retrieve the indexes needed for a sort.
     pub fn argsort(&self) -> UInt32Chunked {
         apply_method_arrowprimitive_series!(self, argsort,)
     }
@@ -359,8 +364,8 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Int64 => Series::Int64(mem::transmute(ca)),
             ArrowDataType::Float32 => Series::Float32(mem::transmute(ca)),
             ArrowDataType::Float64 => Series::Float64(mem::transmute(ca)),
-            ArrowDataType::Date32(_) => Series::Date32(mem::transmute(ca)),
-            ArrowDataType::Date64(_) => Series::Date64(mem::transmute(ca)),
+            ArrowDataType::Date32(DateUnit::Millisecond) => Series::Date32(mem::transmute(ca)),
+            ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(mem::transmute(ca)),
             ArrowDataType::Time64(datatypes::TimeUnit::Nanosecond) => {
                 Series::Time64Ns(mem::transmute(ca))
             }
@@ -438,6 +443,7 @@ impl_as_mut_ca!(Float64Type, Float64);
 impl_as_mut_ca!(BooleanType, Bool);
 impl_as_mut_ca!(Utf8Type, Utf8);
 
+#[cfg(test)]
 mod test {
     use crate::prelude::*;
 
