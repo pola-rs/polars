@@ -113,8 +113,12 @@ macro_rules! build_ca_agg_variants {
             ArrowDataType::Int64 => build_ca_agg!($self, $new_name, $agg_col, Int64, $agg_fn),
             ArrowDataType::Float32 => build_ca_agg!($self, $new_name, $agg_col, Float32, $agg_fn),
             ArrowDataType::Float64 => build_ca_agg!($self, $new_name, $agg_col, Float64, $agg_fn),
-            ArrowDataType::Date32(DateUnit::Millisecond) => build_ca_agg!($self, $new_name, $agg_col, Date32, $agg_fn),
-            ArrowDataType::Date64(DateUnit::Millisecond) => build_ca_agg!($self, $new_name, $agg_col, Date64, $agg_fn),
+            ArrowDataType::Date32(DateUnit::Millisecond) => {
+                build_ca_agg!($self, $new_name, $agg_col, Date32, $agg_fn)
+            }
+            ArrowDataType::Date64(DateUnit::Millisecond) => {
+                build_ca_agg!($self, $new_name, $agg_col, Date64, $agg_fn)
+            }
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                 build_ca_agg!($self, $new_name, $agg_col, Time64Ns, $agg_fn)
             }

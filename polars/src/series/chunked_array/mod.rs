@@ -403,6 +403,16 @@ where
             Err(PolarsError::NoSlice)
         }
     }
+
+    /// If `cont_slice` is successful a closure can be applied as aggregation
+    pub fn apply_agg<F>(&self, f: F) -> Result<T::Native>
+    where
+        F: Fn(&T::Native) -> T::Native,
+        T::Native: std::iter::FromIterator<T::Native>,
+    {
+        let slice = self.cont_slice()?;
+        Ok(slice.iter().map(f).collect())
+    }
 }
 
 impl<T> ChunkedArray<T> {
