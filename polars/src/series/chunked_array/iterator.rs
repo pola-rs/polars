@@ -4,7 +4,7 @@ use crate::{
     datatypes,
     series::chunked_array::{ChunkedArray, SeriesOps},
 };
-use arrow::array::{Array, PrimitiveArray, PrimitiveArrayOps, StringArray};
+use arrow::array::{Array, ArrayDataRef, PrimitiveArray, PrimitiveArrayOps, StringArray};
 use arrow::datatypes::ArrowPrimitiveType;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
@@ -26,6 +26,9 @@ where
 {
     array_primitive: Option<Vec<&'a PrimitiveArray<T>>>,
     array_string: Option<Vec<&'a StringArray>>,
+    current_data: ArrayDataRef,
+    current_primitive: Option<&'a PrimitiveArray<T>>,
+    current_string: Option<&'a StringArray>,
     chunk_i: usize,
     array_i: usize,
     length: usize,
@@ -43,6 +46,23 @@ where
             // go to next array in the chunks
             self.array_i = 0;
             self.chunk_i += 1;
+
+            if let Some(arrays) = &self.array_primitive {
+                if self.chunk_i < arrays.len() {
+                    // not yet at last chunk
+                    let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
+                    self.current_data = arr.data();
+                    self.current_primitive = Some(arr);
+                }
+            }
+            if let Some(arrays) = &self.array_string {
+                if self.chunk_i < arrays.len() {
+                    // not yet at last chunk
+                    let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
+                    self.current_data = arr.data();
+                    self.current_string = Some(arr);
+                }
+            }
         }
     }
 
@@ -69,10 +89,10 @@ where
         let arrays = unsafe { self.array_primitive.as_ref().take().unsafe_unwrap() };
 
         debug_assert!(self.chunk_i < arrays.len());
-        let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
-        let data = arr.data();
         let ret;
-        if data.is_null(self.array_i) {
+        let arr = unsafe { self.current_primitive.unsafe_unwrap() };
+
+        if self.current_data.is_null(self.array_i) {
             ret = Some(None)
         } else {
             let v = arr.value(self.array_i);
@@ -95,17 +115,10 @@ where
         }
 
         debug_assert!(self.array_string.is_some());
-        let arrays = unsafe { self.array_string.as_ref().take().unsafe_unwrap() };
+        let arr = unsafe { self.current_string.unsafe_unwrap() };
 
-        let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
-        let data = arr.data();
-        let ret;
-        if data.is_null(self.array_i) {
-            ret = None
-        } else {
-            let v = arr.value(self.array_i);
-            ret = Some(v)
-        }
+        let v = arr.value(self.array_i);
+        let ret = Some(v);
         self.set_indexes(arr);
         ret
     }
@@ -135,9 +148,15 @@ where
             })
             .collect::<Vec<_>>();
 
+        let arr = unsafe { *arrays.get_unchecked(0) };
+        let data = arr.data();
+
         ChunkIterState {
             array_primitive: Some(arrays),
             array_string: None,
+            current_data: data,
+            current_primitive: Some(arr),
+            current_string: None,
             chunk_i: 0,
             array_i: 0,
             length: self.len(),
@@ -161,10 +180,15 @@ impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf
                     .expect("could not downcast")
             })
             .collect::<Vec<_>>();
+        let arr = unsafe { *arrays.get_unchecked(0) };
+        let data = arr.data();
 
         ChunkIterState {
             array_primitive: None,
             array_string: Some(arrays),
+            current_data: data,
+            current_primitive: None,
+            current_string: Some(arr),
             chunk_i: 0,
             array_i: 0,
             length: self.len(),

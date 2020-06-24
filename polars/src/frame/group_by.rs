@@ -50,7 +50,7 @@ impl DataFrame {
 #[derive(Debug, Clone)]
 pub struct GroupBy<'a> {
     df: &'a DataFrame,
-    by: String,
+    pub by: String,
     // [first idx, [other idx]]
     groups: Vec<(usize, Vec<usize>)>,
     selection: Option<String>,
