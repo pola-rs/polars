@@ -307,12 +307,14 @@ mod test {
     fn read_csv() {
         let file = File::open("../data/iris.csv").unwrap();
         let df = CsvReader::new(file)
-            .infer_schema(None)
+            .infer_schema(Some(100))
             .has_header(true)
+            .with_batch_size(100)
             .finish()
             .unwrap();
 
         assert_eq!("sepal.length", df.schema.fields()[0].name());
+        assert_eq!(1, df.f_select("sepal.length").chunks().len());
         println!("{:?}", df)
     }
 

@@ -185,6 +185,16 @@ where
                 .collect::<Result<Vec<_>>>()?;
         }
 
+        if self.rechunk {
+            columns = columns
+                .into_iter()
+                .map(|mut s| {
+                    s.rechunk();
+                    s
+                })
+                .collect();
+        }
+
         Ok(DataFrame {
             schema: csv_reader.schema(),
             columns,

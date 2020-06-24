@@ -96,7 +96,7 @@ where
             ret = Some(None)
         } else {
             let v = arr.value(self.array_i);
-            ret = Some(Some(v))
+            ret = Some(Some(v));
         }
         self.set_indexes(arr);
         ret
