@@ -31,7 +31,7 @@ macro_rules! impl_take_builder {
 
 impl<T> Take for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarNumericType,
 {
     fn take(
         &self,
@@ -43,6 +43,31 @@ where
         let capacity = capacity.unwrap_or(1024);
         let mut builder = PrimitiveChunkedBuilder::new(self.name(), capacity);
 
+        let chunks = self.downcast_chunks();
+        if let Ok(slice) = self.cont_slice() {
+            for opt_idx in indices {
+                match opt_idx {
+                    Some(idx) => builder.append_value(slice[idx])?,
+                    None => builder.append_null()?,
+                };
+            }
+            Ok(builder.finish())
+        } else {
+            impl_take_builder!(self, indices, builder, chunks)
+        }
+    }
+}
+
+impl Take for BooleanChunked {
+    fn take(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        _options: Option<TakeOptions>,
+        capacity: Option<usize>,
+    ) -> Result<Self> {
+        // TODO: implement takeoptions
+        let capacity = capacity.unwrap_or(1024);
+        let mut builder = PrimitiveChunkedBuilder::new(self.name(), capacity);
         let chunks = self.downcast_chunks();
         impl_take_builder!(self, indices, builder, chunks)
     }
