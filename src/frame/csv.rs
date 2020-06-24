@@ -1,16 +1,73 @@
 use crate::prelude::*;
-pub use arrow::csv::ReaderBuilder;
+pub use arrow::csv::{
+    ReaderBuilder,
+    WriterBuilder
+};
 use arrow::datatypes::Schema;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 use std::sync::Arc;
+
+pub struct CsvWriter<W: Write> {
+    writer: W,
+    writer_builder: WriterBuilder,
+}
+
+impl<W> CsvWriter<W>
+where W: Write
+{
+    pub fn new(writer: W) -> Self {
+        CsvWriter {
+            writer,
+            writer_builder: WriterBuilder::new(),
+        }
+    }
+
+    /// Set whether to write headers
+    pub fn has_headers(mut self, has_headers: bool) -> Self {
+        self.writer_builder = self.writer_builder.has_headers(has_headers);
+        self
+    }
+
+    /// Set the CSV file's column delimiter as a byte character
+    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
+        self.writer_builder = self.writer_builder.with_delimiter(delimiter);
+        self
+    }
+
+    /// Set the CSV file's date format
+    pub fn with_date_format(mut self, format: String) -> Self {
+        self.writer_builder = self.writer_builder.with_date_format(format);
+        self
+    }
+
+    /// Set the CSV file's time format
+    pub fn with_time_format(mut self, format: String) -> Self {
+        self.writer_builder = self.writer_builder.with_time_format(format);
+        self
+    }
+
+    /// Set the CSV file's timestamp format
+    pub fn with_timestamp_format(mut self, format: String) -> Self {
+        self.writer_builder = self.writer_builder.with_timestamp_format(format);
+        self
+    }
+
+    pub fn finish(self, _df: &DataFrame) {
+        let mut _csv_writer = self.writer_builder.build(self.writer);
+        // TODO: Implement RecordBatches on DF.
+    }
+}
 
 /// Creates a DataFrame after reading a csv.
 pub struct CsvReader<R>
 where
     R: Read + Seek,
 {
+    /// File or Stream object
     reader: R,
+    /// Builds an Arrow csv reader
     reader_builder: ReaderBuilder,
+    /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
 }
 
@@ -18,6 +75,24 @@ impl<R> CsvReader<R>
 where
     R: Read + Seek,
 {
+    /// Create a new DataFrame by reading a csv file.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// use std::fs::File;
+    ///
+    /// fn example() -> Result<DataFrame> {
+    ///     let file = File::open("iris.csv")?;
+    ///
+    ///     CsvReader::new(file)
+    ///             .infer_schema(None)
+    ///             .has_header(true)
+    ///             .finish()
+    /// }
+    /// ```
+
     /// Create a new CsvReader from a file/ stream
     pub fn new(reader: R) -> Self {
         CsvReader {
