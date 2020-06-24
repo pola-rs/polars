@@ -310,9 +310,9 @@ impl Series {
 
     /// Take by index. This operation is clone.
     pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
-        let iter = indices.as_take_iter();
+        let mut iter = indices.as_take_iter();
         let capacity = indices.take_index_len();
-        self.take_iter(iter, options, Some(capacity))
+        self.take_iter(&mut iter, options, Some(capacity))
     }
 
     /// Get length of series.
@@ -363,7 +363,7 @@ impl Series {
 
     /// Count the null values.
     pub fn null_count(&self) -> usize {
-        apply_method_all_series!(self, null_count, )
+        apply_method_all_series!(self, null_count,)
     }
 }
 

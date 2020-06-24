@@ -187,6 +187,26 @@ impl DataFrame {
         self.filter(mask).expect("could not filter")
     }
 
+    pub fn take_iter<I>(
+        &self,
+        iter: I,
+        options: Option<TakeOptions>,
+        capacity: Option<usize>,
+    ) -> Result<Self>
+    where
+        I: Iterator<Item = Option<usize>> + Clone,
+    {
+        let new_col = self
+            .columns
+            .iter()
+            .map(|s| {
+                let mut i = iter.clone();
+                s.take_iter(&mut i, options.clone(), capacity)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        DataFrame::new(self.schema.clone(), new_col)
+    }
+
     /// Take DataFrame rows by index values.
     pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
         let new_col = self

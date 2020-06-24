@@ -1,12 +1,9 @@
 use crate::prelude::*;
-use crate::series::chunked_array::builder::PrimitiveChunkedBuilder;
 use arrow::compute::TakeOptions;
 use arrow::datatypes::ArrowPrimitiveType;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-
-// TODO: Directly build UInt32Chunked for join. This saves a full iteration over all indices
 
 macro_rules! hash_join_inner {
     ($s_right:ident, $ca_left:ident, $type_:ident) => {{
@@ -21,6 +18,19 @@ macro_rules! hash_join_left {
         // call the type method series.i32()
         let ca_right = $s_right.$type_()?;
         $ca_left.hash_join_left(ca_right)
+    }};
+}
+
+macro_rules! apply_hash_join_on_series {
+    ($s_left:ident, $s_right:ident, $join_macro:ident) => {{
+        match $s_left {
+            Series::UInt32(ca_left) => $join_macro!($s_right, ca_left, u32),
+            Series::Int32(ca_left) => $join_macro!($s_right, ca_left, i32),
+            Series::Int64(ca_left) => $join_macro!($s_right, ca_left, i64),
+            Series::Bool(ca_left) => $join_macro!($s_right, ca_left, bool),
+            Series::Utf8(ca_left) => $join_macro!($s_right, ca_left, utf8),
+            _ => unimplemented!(),
+        }
     }};
 }
 
@@ -42,9 +52,11 @@ where
 
 /// Hash join a and b.
 ///     b should be the shorter relation.
-fn hash_join<T>(
+fn hash_join_tuples_inner<T>(
     a: impl Iterator<Item = Option<T>>,
     b: impl Iterator<Item = Option<T>>,
+    // Because b should be the shorter relation we could need to swap to keep left left and right right.
+    swap: bool,
 ) -> Vec<(usize, usize)>
 where
     T: Hash + Eq + Copy,
@@ -55,7 +67,16 @@ where
     a.enumerate().for_each(|(idx_a, o)| {
         if let Some(key) = o {
             if let Some(indexes_b) = hash_tbl.get(&key) {
-                let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
+                let tuples =
+                    indexes_b.iter().map(
+                        |&idx_b| {
+                            if swap {
+                                (idx_b, idx_a)
+                            } else {
+                                (idx_a, idx_b)
+                            }
+                        },
+                    );
                 results.extend(tuples)
             }
         }
@@ -93,8 +114,8 @@ where
 }
 
 pub trait HashJoin<T> {
-    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> (UInt32Chunked, UInt32Chunked);
-    fn hash_join_left(&self, other: &ChunkedArray<T>) -> (UInt32Chunked, UInt32Chunked);
+    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)>;
+    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)>;
 }
 
 macro_rules! create_join_tuples {
@@ -112,49 +133,7 @@ macro_rules! create_join_tuples {
             a = $other;
         }
 
-        // Resort the relation tuple to match the input, (left, right)
-        let srt_tuples = move |(a, b)| {
-            if left_first {
-                (a, b)
-            } else {
-                (b, a)
-            }
-        };
-
-        (srt_tuples, a, b)
-    }};
-}
-
-macro_rules! finish_inner_join {
-    ($join_tuples:ident, $srt_tuples:ident, $left:ident, $right:ident) => {{
-        $join_tuples
-            .into_iter()
-            .map($srt_tuples)
-            .for_each(|(a, b)| {
-                $left.append_value(a as u32).expect("could not append");
-                $right.append_value(b as u32).expect("could not append");
-            });
-        ($left.finish(), $right.finish())
-    }};
-}
-
-macro_rules! finish_left_join {
-    ($join_tuples:ident, $left:ident, $right:ident) => {{
-        {
-            $join_tuples
-                .into_iter()
-                .for_each(|(idx_left, opt_idx_right)| {
-                    $left
-                        .append_value(idx_left as u32)
-                        .expect("could not append");
-
-                    match opt_idx_right {
-                        Some(idx) => $right.append_value(idx as u32).expect("could not append"),
-                        None => $right.append_null().expect("could not append"),
-                    };
-                });
-            ($left.finish(), $right.finish())
-        }
+        (a, b, !left_first)
     }};
 }
 
@@ -163,82 +142,38 @@ where
     T: ArrowPrimitiveType,
     T::Native: Eq + Hash,
 {
-    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> (UInt32Chunked, UInt32Chunked) {
-        let (srt_tuples, a, b) = create_join_tuples!(self, other);
+    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
+        let (a, b, swap) = create_join_tuples!(self, other);
         // Create the join tuples
-        let join_tuples = hash_join(a.iter(), b.iter());
-
-        // Create the UInt32Chunked arrays. These can be used to take values from both the dataframes.
-        let mut left =
-            PrimitiveChunkedBuilder::<UInt32Type>::new("left_take_idx", join_tuples.len());
-        let mut right =
-            PrimitiveChunkedBuilder::<UInt32Type>::new("right_take_idx", join_tuples.len());
-        finish_inner_join!(join_tuples, srt_tuples, left, right)
+        hash_join_tuples_inner(a.iter(), b.iter(), swap)
     }
 
-    fn hash_join_left(&self, other: &ChunkedArray<T>) -> (UInt32Chunked, UInt32Chunked) {
-        let join_tuples = hash_join_left(self.iter(), other.iter());
-        // Create the UInt32Chunked arrays. These can be used to take values from both the dataframes.
-        let mut left =
-            PrimitiveChunkedBuilder::<UInt32Type>::new("left_take_idx", join_tuples.len());
-        let mut right =
-            PrimitiveChunkedBuilder::<UInt32Type>::new("right_take_idx", join_tuples.len());
-        finish_left_join!(join_tuples, left, right)
+    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
+        hash_join_left(self.iter(), other.iter())
     }
 }
 
 impl HashJoin<Utf8Type> for Utf8Chunked {
-    fn hash_join_inner(&self, other: &Utf8Chunked) -> (UInt32Chunked, UInt32Chunked) {
-        let (srt_tuples, a, b) = create_join_tuples!(self, other);
+    fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(usize, usize)> {
+        let (a, b, swap) = create_join_tuples!(self, other);
         // Create the join tuples
-        let join_tuples = hash_join(a.iter().map(|v| Some(v)), b.iter().map(|v| Some(v)));
-
-        // Create the UInt32Chunked arrays. These can be used to take values from both the dataframes.
-        let mut left =
-            PrimitiveChunkedBuilder::<UInt32Type>::new("left_take_idx", join_tuples.len());
-        let mut right =
-            PrimitiveChunkedBuilder::<UInt32Type>::new("right_take_idx", join_tuples.len());
-        finish_inner_join!(join_tuples, srt_tuples, left, right)
+        hash_join_tuples_inner(a.iter().map(|v| Some(v)), b.iter().map(|v| Some(v)), swap)
     }
 
-    fn hash_join_left(&self, other: &Utf8Chunked) -> (UInt32Chunked, UInt32Chunked) {
-        let join_tuples =
-            hash_join_left(self.iter().map(|v| Some(v)), other.iter().map(|v| Some(v)));
-        // Create the UInt32Chunked arrays. These can be used to take values from both the dataframes.
-        let mut left =
-            PrimitiveChunkedBuilder::<UInt32Type>::new("left_take_idx", join_tuples.len());
-        let mut right =
-            PrimitiveChunkedBuilder::<UInt32Type>::new("right_take_idx", join_tuples.len());
-        finish_left_join!(join_tuples, left, right)
+    fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
+        hash_join_left(self.iter().map(|v| Some(v)), other.iter().map(|v| Some(v)))
     }
-}
-
-macro_rules! apply_hash_join_on_series {
-    ($s_left:ident, $s_right:ident, $join_macro:ident) => {{
-        match $s_left {
-            Series::UInt32(ca_left) => $join_macro!($s_right, ca_left, u32),
-            Series::Int32(ca_left) => $join_macro!($s_right, ca_left, i32),
-            Series::Int64(ca_left) => $join_macro!($s_right, ca_left, i64),
-            Series::Bool(ca_left) => $join_macro!($s_right, ca_left, bool),
-            Series::Utf8(ca_left) => $join_macro!($s_right, ca_left, utf8),
-            _ => unimplemented!(),
-        }
-    }};
 }
 
 impl DataFrame {
     /// Utility method to finish a join.
     fn finish_join(
         &self,
-        other: &DataFrame,
-        take_left: &UInt32Chunked,
-        take_right: &UInt32Chunked,
+        mut df_left: DataFrame,
+        mut df_right: DataFrame,
         right_on: &str,
     ) -> Result<DataFrame> {
-        let mut df_left = self.take(take_left, Some(TakeOptions::default()))?;
-        let mut df_right = other.take(take_right, Some(TakeOptions::default()))?;
         df_right.drop(right_on);
-
         let mut left_names =
             HashSet::with_capacity_and_hasher(df_left.width(), FnvBuildHasher::default());
         for field in df_left.schema.fields() {
@@ -261,6 +196,14 @@ impl DataFrame {
         Ok(df_left)
     }
 
+    fn create_left_df<B>(&self, join_tuples: &[(usize, B)]) -> Result<DataFrame> {
+        self.take_iter(
+            join_tuples.iter().map(|(left, _right)| Some(*left)),
+            Some(TakeOptions::default()),
+            Some(join_tuples.len()),
+        )
+    }
+
     /// Perform an inner join on two DataFrames.
     pub fn inner_join(
         &self,
@@ -270,9 +213,16 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let s_left = self.select(left_on).ok_or(PolarsError::NotFound)?;
         let s_right = other.select(right_on).ok_or(PolarsError::NotFound)?;
-        let (take_left, take_right) = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
+        let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
 
-        self.finish_join(other, &take_left, &take_right, right_on)
+        let df_left = self.create_left_df(&join_tuples)?;
+        let df_right = other.take_iter(
+            join_tuples.iter().map(|(_left, right)| Some(*right)),
+            Some(TakeOptions::default()),
+            Some(join_tuples.len()),
+        )?;
+
+        self.finish_join(df_left, df_right, right_on)
     }
 
     /// Perform a left join on two DataFrames
@@ -280,8 +230,15 @@ impl DataFrame {
         let s_left = self.select(left_on).ok_or(PolarsError::NotFound)?;
         let s_right = other.select(right_on).ok_or(PolarsError::NotFound)?;
 
-        let (take_left, take_right) = apply_hash_join_on_series!(s_left, s_right, hash_join_left);
-        self.finish_join(other, &take_left, &take_right, right_on)
+        let opt_join_tuples: Vec<(usize, Option<usize>)> =
+            apply_hash_join_on_series!(s_left, s_right, hash_join_left);
+        let df_left = self.create_left_df(&opt_join_tuples)?;
+        let df_right = other.take_iter(
+            opt_join_tuples.iter().map(|(_left, right)| *right),
+            Some(TakeOptions::default()),
+            Some(opt_join_tuples.len()),
+        )?;
+        self.finish_join(df_left, df_right, right_on)
     }
 }
 
@@ -329,7 +286,10 @@ mod test {
         let rain = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, "days", "days").unwrap();
         println!("{}", &joined);
-        assert_eq!((joined.f_select("rain").sum::<f32>().unwrap() * 10.).round(), 3.);
+        assert_eq!(
+            (joined.f_select("rain").sum::<f32>().unwrap() * 10.).round(),
+            3.
+        );
         assert_eq!(joined.f_select("rain").null_count(), 3)
     }
 }
