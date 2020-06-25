@@ -400,30 +400,46 @@ pub trait NamedFrom<T> {
 
 macro_rules! impl_named_from {
     ($type:ty, $series_var:ident, $method:ident) => {
-        impl NamedFrom<&[$type]> for Series {
-            fn init(name: &str, v: &[$type]) -> Self {
+        impl NamedFrom<$type> for Series {
+            fn init(name: &str, v: $type) -> Self {
                 Series::$series_var(ChunkedArray::$method(name, v))
             }
         }
     };
 }
 
-impl_named_from!(&str, Utf8, new_utf8_from_slice);
-impl_named_from!(String, Utf8, new_utf8_from_slice);
-impl_named_from!(bool, Bool, new_from_slice);
-impl_named_from!(u32, UInt32, new_from_slice);
-impl_named_from!(i32, Int32, new_from_slice);
-impl_named_from!(i64, Int64, new_from_slice);
-impl_named_from!(f32, Float32, new_from_slice);
-impl_named_from!(f64, Float64, new_from_slice);
-impl_named_from!(Option<String>, Utf8, new_utf8_from_opt_slice);
-impl_named_from!(Option<&str>, Utf8, new_utf8_from_opt_slice);
-impl_named_from!(Option<bool>, Bool, new_from_opt_slice);
-impl_named_from!(Option<u32>, UInt32, new_from_opt_slice);
-impl_named_from!(Option<i32>, Int32, new_from_opt_slice);
-impl_named_from!(Option<i64>, Int64, new_from_opt_slice);
-impl_named_from!(Option<f32>, Float32, new_from_opt_slice);
-impl_named_from!(Option<f64>, Float64, new_from_opt_slice);
+impl_named_from!(&[&str], Utf8, new_utf8_from_slice);
+impl_named_from!(&Vec<&str>, Utf8, new_utf8_from_slice);
+impl_named_from!(&[String], Utf8, new_utf8_from_slice);
+impl_named_from!(&Vec<String>, Utf8, new_utf8_from_slice);
+impl_named_from!(&[bool], Bool, new_from_slice);
+impl_named_from!(&Vec<bool>, Bool, new_from_slice);
+impl_named_from!(&[u32], UInt32, new_from_slice);
+impl_named_from!(&Vec<u32>, UInt32, new_from_slice);
+impl_named_from!(&[i32], Int32, new_from_slice);
+impl_named_from!(&Vec<i32>, Int32, new_from_slice);
+impl_named_from!(&[i64], Int64, new_from_slice);
+impl_named_from!(&Vec<i64>, Int64, new_from_slice);
+impl_named_from!(&[f32], Float32, new_from_slice);
+impl_named_from!(&Vec<f32>, Float32, new_from_slice);
+impl_named_from!(&[f64], Float64, new_from_slice);
+impl_named_from!(&Vec<f64>, Float64, new_from_slice);
+impl_named_from!(&[Option<String>], Utf8, new_utf8_from_opt_slice);
+impl_named_from!(&Vec<Option<String>>, Utf8, new_utf8_from_opt_slice);
+impl_named_from!(&Vec<Option<&str>>, Utf8, new_utf8_from_opt_slice);
+impl_named_from!(&[Option<&str>], Utf8, new_utf8_from_opt_slice);
+impl_named_from!(&[Option<bool>], Bool, new_from_opt_slice);
+impl_named_from!(&Vec<Option<bool>>, Bool, new_from_opt_slice);
+impl_named_from!(&[Option<u32>], UInt32, new_from_opt_slice);
+impl_named_from!(&Vec<Option<u32>>, UInt32, new_from_opt_slice);
+impl_named_from!(&[Option<i32>], Int32, new_from_opt_slice);
+impl_named_from!(&Vec<Option<i32>>, Int32, new_from_opt_slice);
+impl_named_from!(&[Option<i64>], Int64, new_from_opt_slice);
+impl_named_from!(&Vec<Option<i64>>, Int64, new_from_opt_slice);
+impl_named_from!(&[Option<f32>], Float32, new_from_opt_slice);
+impl_named_from!(&Vec<Option<f32>>, Float32, new_from_opt_slice);
+impl_named_from!(&[Option<f64>], Float64, new_from_opt_slice);
+impl_named_from!(&Vec<Option<f64>>, Float64, new_from_opt_slice);
 
 macro_rules! impl_as_ref_ca {
     ($type:ident, $series_var:ident) => {

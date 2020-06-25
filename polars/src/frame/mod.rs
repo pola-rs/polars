@@ -2,6 +2,7 @@ use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::{compute::TakeOptions, record_batch::RecordBatch};
 use itertools::Itertools;
+use std::mem;
 use std::sync::Arc;
 
 pub mod csv;
@@ -339,6 +340,14 @@ impl DataFrame {
             .iter()
             .map(|s| s.take(&take, None))
             .collect::<Result<Vec<_>>>()?;
+        Ok(())
+    }
+
+    /// Replace a column with a series.
+    pub fn replace(&mut self, column: &str, new_col: DfSeries) -> Result<()> {
+        let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
+        mem::replace(&mut self.columns[idx], new_col);
+        self.update_schema();
         Ok(())
     }
 

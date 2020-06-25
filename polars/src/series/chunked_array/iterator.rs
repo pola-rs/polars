@@ -40,6 +40,7 @@ impl<T, S> ChunkIterState<'_, T, S>
 where
     T: ArrowPrimitiveType,
 {
+    #[inline]
     fn set_indexes(&mut self, arr: &dyn Array) {
         self.array_i += 1;
         if self.array_i >= arr.len() {
@@ -66,6 +67,7 @@ where
         }
     }
 
+    #[inline]
     fn out_of_bounds(&self) -> bool {
         self.chunk_i >= self.n_chunks
     }
@@ -116,11 +118,9 @@ where
 
         debug_assert!(self.array_string.is_some());
         let arr = unsafe { self.current_string.unsafe_unwrap() };
-
         let v = arr.value(self.array_i);
-        let ret = Some(v);
         self.set_indexes(arr);
-        ret
+        Some(v)
     }
 }
 
@@ -221,5 +221,16 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
             builder.append_value(val).expect("could not append");
         }
         builder.finish()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn out_of_bounds() {
+        let a = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let v = a.iter().collect::<Vec<_>>();
     }
 }

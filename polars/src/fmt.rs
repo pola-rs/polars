@@ -40,7 +40,7 @@ impl Debug for Series {
             Series::Utf8(a) => {
                 write![f, "Series: str \n[\n"]?;
                 a.iter().take(LIMIT).for_each(|v| {
-                    write!(f, "\t{}\n", &v[..LIMIT]).ok();
+                    write!(f, "\t\"{}\"\n", &v[..std::cmp::min(LIMIT, v.len())]).ok();
                 });
                 write![f, "]"]
             }
@@ -119,7 +119,7 @@ impl Display for AnyType<'_> {
             AnyType::F32(v) => fmt_float(f, width, *v),
             AnyType::F64(v) => fmt_float(f, width, *v),
             AnyType::Bool(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::Str(v) => write!(f, "{:>width$}", v, width = width),
+            AnyType::Str(v) => write!(f, "{:>width$}", format!("\"{}\"", v), width = width),
             AnyType::Date64(v) => write!(f, "{:>width$}", v, width = width),
             AnyType::Date32(v) => write!(f, "{:>width$}", v, width = width),
             AnyType::Time64(v, _) => write!(f, "{:>width$}", v, width = width),
