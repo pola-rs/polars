@@ -1,5 +1,6 @@
 # Polars
 ---
+[![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
 
 ## In memory DataFrames in Rust
 
