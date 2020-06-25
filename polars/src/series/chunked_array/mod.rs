@@ -41,7 +41,7 @@ pub trait SeriesOps {
     where
         Self: std::marker::Sized;
 
-    /// Append an arrow array type.
+    /// Append an some array type.
     fn append_array(&mut self, other: ArrayRef) -> Result<()>;
 
     /// Length of container.

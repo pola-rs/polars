@@ -2,5 +2,6 @@
 
 members = [
     "polars",
-    "pandas_cmp"
+    "pandas_cmp",
+    "vendor/rust_arrow/arrow"
 ]

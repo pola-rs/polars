@@ -11,9 +11,9 @@ use std::marker::PhantomData;
 use unsafe_unwrap::UnsafeUnwrap;
 
 // This module implements an iter method for both ArrowPrimitiveType and Utf8 type.
-// As both expose a different api in arrow, this required some hacking.
+// As both expose a different api in some, this required some hacking.
 // A solution was found by returning an auxiliary struct ChunkIterState from the .iter methods.
-// This ChunkIterState has a generic type T: ArrowPrimitiveType to work well with the arrow api.
+// This ChunkIterState has a generic type T: ArrowPrimitiveType to work well with the some api.
 // It also has a phantomtype K that is only used as distinctive type to be able to implement a trait
 // method twice. Sort of a specialization hack.
 
@@ -78,7 +78,7 @@ where
     // nullable, therefore an option
     type Item = Option<T::Native>;
 
-    /// Because arrow types are nullable an option is returned. This is wrapped in another option
+    /// Because some types are nullable an option is returned. This is wrapped in another option
     /// to indicate if the iterator returns Some or None.
     fn next(&mut self) -> Option<Self::Item> {
         if self.out_of_bounds() {

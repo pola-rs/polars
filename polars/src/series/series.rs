@@ -330,7 +330,7 @@ impl Series {
         apply_method_all_series!(self, rechunk,)
     }
 
-    /// Cast to an arrow primitive type.
+    /// Cast to an some primitive type.
     pub fn cast<N>(&self) -> Result<Self>
     where
         N: ArrowPrimitiveType,
