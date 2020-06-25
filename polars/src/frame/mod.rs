@@ -5,8 +5,8 @@ use itertools::Itertools;
 use std::sync::Arc;
 
 pub mod csv;
-mod group_by;
-mod hash_join;
+pub mod group_by;
+pub mod hash_join;
 
 type DfSchema = Arc<Schema>;
 type DfSeries = Series;
@@ -39,6 +39,15 @@ impl DataFrame {
     }
 
     /// Create a DataFrame from a Vector of Series.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// let s0 = Series::init("days", [0, 1, 2].as_ref());
+    /// let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
+    /// let df = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
+    /// ```
     pub fn new_from_columns(columns: Vec<Series>) -> Result<Self> {
         let fields = Self::create_fields(&columns);
         let schema = Arc::new(Schema::new(fields));
@@ -51,6 +60,15 @@ impl DataFrame {
     }
 
     /// Get (width x height)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn assert_shape(df: &DataFrame, shape: (usize, usize)) {
+    ///     assert_eq!(df.shape(), shape)
+    /// }
+    /// ```
     pub fn shape(&self) -> (usize, usize) {
         let width = self.columns.len();
         if width > 0 {
@@ -61,16 +79,43 @@ impl DataFrame {
     }
 
     /// Get width of DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn assert_width(df: &DataFrame, width: usize) {
+    ///     assert_eq!(df.width(), width)
+    /// }
+    /// ```
     pub fn width(&self) -> usize {
         self.shape().0
     }
 
     /// Get height of DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn assert_height(df: &DataFrame, height: usize) {
+    ///     assert_eq!(df.height(), height)
+    /// }
+    /// ```
     pub fn height(&self) -> usize {
         self.shape().1
     }
 
     /// Add series column to DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn stack(df: &mut DataFrame, columns: &[Series]) {
+    ///     df.hstack(columns);
+    /// }
+    /// ```
     pub fn hstack(&mut self, columns: &[DfSeries]) -> Result<()> {
         columns
             .iter()
@@ -80,6 +125,15 @@ impl DataFrame {
     }
 
     /// Remove column by name
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn drop_column(df: &mut DataFrame, name: &str) -> Option<Series> {
+    ///     df.drop(name)
+    /// }
+    /// ```
     pub fn drop(&mut self, name: &str) -> Option<DfSeries> {
         let mut idx = 0;
         for column in &self.columns {
@@ -98,6 +152,15 @@ impl DataFrame {
     }
 
     /// Get a row in the dataframe. Beware this is slow.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn example(df: &mut DataFrame, idx: usize) -> Option<Vec<AnyType>> {
+    ///     df.get(idx)
+    /// }
+    /// ```
     pub fn get(&self, idx: usize) -> Option<Vec<AnyType>> {
         match self.columns.get(0) {
             Some(s) => {
@@ -187,6 +250,17 @@ impl DataFrame {
         self.filter(mask).expect("could not filter")
     }
 
+    /// Take DataFrame value by indexes from an iterator.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    ///     let iterator = (0..9).into_iter().map(|idx| Some(idx));
+    ///     df.take_iter(iterator, None, None)
+    /// }
+    /// ```
     pub fn take_iter<I>(
         &self,
         iter: I,
@@ -208,6 +282,16 @@ impl DataFrame {
     }
 
     /// Take DataFrame rows by index values.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    ///     let idx = vec![0, 1, 9];
+    ///     df.take(&idx, None)
+    /// }
+    /// ```
     pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
         let new_col = self
             .columns
@@ -224,6 +308,17 @@ impl DataFrame {
     }
 
     /// Rename a column in the DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn example(df: &mut DataFrame) -> Result<()> {
+    ///     let original_name = "foo";
+    ///     let new_name = "bar";
+    ///     df.rename(original_name, new_name)
+    /// }
+    /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> Result<()> {
         self.select_mut(column)
             .ok_or(PolarsError::NotFound)

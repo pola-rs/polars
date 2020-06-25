@@ -218,6 +218,15 @@ impl DataFrame {
     }
 
     /// Perform an inner join on two DataFrames.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
+    ///     left.inner_join(right, "join_column_left", "join_column_right")
+    /// }
+    /// ```
     pub fn inner_join(
         &self,
         other: &DataFrame,
@@ -239,6 +248,14 @@ impl DataFrame {
     }
 
     /// Perform a left join on two DataFrames
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
+    ///     left.left_join(right, "join_column_left", "join_column_right")
+    /// }
+    /// ```
     pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
         let s_left = self.select(left_on).ok_or(PolarsError::NotFound)?;
         let s_right = other.select(right_on).ok_or(PolarsError::NotFound)?;

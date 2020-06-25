@@ -39,7 +39,18 @@ where
 
 impl DataFrame {
     /// Group DataFrame using a Series column.
-    pub fn groupby(&self, by: &str) -> Option<GroupBy> {
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("column_name")?
+    ///     .select("agg_column_name")
+    ///     .sum()
+    /// }
+    /// ```
+    pub fn groupby(&self, by: &str) -> Result<GroupBy> {
         let groups = if let Some(s) = self.select(by) {
             macro_rules! create_iter {
                 ($ca:ident) => {{
@@ -64,10 +75,10 @@ impl DataFrame {
                 _ => unimplemented!(),
             }
         } else {
-            return None;
+            return Err(PolarsError::NotFound);
         };
 
-        Some(GroupBy {
+        Ok(GroupBy {
             df: self,
             by: by.to_string(),
             groups,
