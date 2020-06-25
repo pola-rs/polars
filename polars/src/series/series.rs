@@ -416,6 +416,14 @@ impl_named_from!(i32, Int32, new_from_slice);
 impl_named_from!(i64, Int64, new_from_slice);
 impl_named_from!(f32, Float32, new_from_slice);
 impl_named_from!(f64, Float64, new_from_slice);
+impl_named_from!(Option<String>, Utf8, new_utf8_from_opt_slice);
+impl_named_from!(Option<&str>, Utf8, new_utf8_from_opt_slice);
+impl_named_from!(Option<bool>, Bool, new_from_opt_slice);
+impl_named_from!(Option<u32>, UInt32, new_from_opt_slice);
+impl_named_from!(Option<i32>, Int32, new_from_opt_slice);
+impl_named_from!(Option<i64>, Int64, new_from_opt_slice);
+impl_named_from!(Option<f32>, Float32, new_from_opt_slice);
+impl_named_from!(Option<f64>, Float64, new_from_opt_slice);
 
 macro_rules! impl_as_ref_ca {
     ($type:ident, $series_var:ident) => {

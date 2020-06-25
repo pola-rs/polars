@@ -1,10 +1,12 @@
-use crate::datatypes::{
-    AnyType, ArrowDataType, BooleanChunked, Date32Chunked, Date64Chunked, DurationNsChunked,
-    Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, PolarsDataType, Time64NsChunked,
-    UInt32Chunked, Utf8Chunked,
-};
-use crate::error::{PolarsError, Result};
 use crate::prelude::*;
+use crate::{
+    datatypes::{
+        AnyType, ArrowDataType, BooleanChunked, Date32Chunked, Date64Chunked, DurationNsChunked,
+        Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, PolarsDataType,
+        Time64NsChunked, UInt32Chunked, Utf8Chunked,
+    },
+    series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
+};
 use arrow::array::{
     ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
     StringBuilder, UInt32Array,
@@ -334,6 +336,16 @@ impl Utf8Chunked {
             phantom: PhantomData,
         }
     }
+
+    pub fn new_utf8_from_opt_slice<S: AsRef<str>>(name: &str, opt_v: &[Option<S>]) -> Self {
+        let mut builder = Utf8ChunkedBuilder::new(name, opt_v.len());
+
+        opt_v.iter().for_each(|opt| match opt {
+            Some(v) => builder.append_value(v.as_ref()).expect("append value"),
+            None => builder.append_null().expect("append null"),
+        });
+        builder.finish()
+    }
 }
 
 impl<T> ChunkedArray<T>
@@ -375,19 +387,18 @@ where
     T: ArrowPrimitiveType,
 {
     pub fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
-        let mut builder = PrimitiveBuilder::<T>::new(v.len());
-        v.into_iter().for_each(|&val| {
-            builder.append_value(val).expect("Could not append value");
-        });
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, v.len());
+        v.iter()
+            .for_each(|&v| builder.append_value(v).expect("append"));
+        builder.finish()
+    }
 
-        let field = Field::new(name, T::get_data_type(), true);
-
-        ChunkedArray {
-            field,
-            chunks: vec![Arc::new(builder.finish())],
-            chunk_id: format!("{}-", v.len()).to_string(),
-            phantom: PhantomData,
-        }
+    pub fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, opt_v.len());
+        opt_v
+            .iter()
+            .for_each(|&opt| builder.append_option(opt).expect("append"));
+        builder.finish()
     }
 }
 
