@@ -88,3 +88,16 @@ impl DerefMut for Utf8ChunkedBuilder {
         &mut self.builder
     }
 }
+
+pub fn build_primitive_ca_with_opt<T>(s: &[Option<T::Native>], name: &str) -> ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: Copy,
+{
+    let mut builder = PrimitiveChunkedBuilder::new(name, s.len());
+    for opt in s {
+        builder.append_option(*opt).expect("could not append");
+    }
+    let ca = builder.finish();
+    ca
+}
