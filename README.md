@@ -102,3 +102,9 @@ let s_squared: Series = s.i32()
          }
  }).collect();
 ```
+
+
+### Performance
+
+#### GroupBy
+![](pandas_cmp/img/groupby10.png)
