@@ -59,7 +59,7 @@
 //! let s = Series::init("angle", [2f32 * pi, pi, 1.5 * pi].as_ref());
 //! let s_cos: Series = s.f32()
 //!                     .expect("series was not an f32 dtype")
-//!                     .iter()
+//!                     .into_iter()
 //!                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
 //!                     .collect();
 //! ```
@@ -188,7 +188,7 @@ impl Series {
     /// let s: Series = [1, 2, 3].iter().collect();
     /// let s_squared: Series = s.i32()
     ///     .unwrap()
-    ///     .iter()
+    ///     .into_iter()
     ///     .map(|opt_v| {
     ///         match opt_v {
     ///             Some(v) => Some(v * v),

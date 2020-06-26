@@ -652,7 +652,7 @@ mod test {
     #[test]
     fn test_sort() {
         let a = Int32Chunked::new_from_slice("a", &[1, 9, 3, 2]);
-        let b = a.sort().iter().map(|opt| opt.unwrap()).collect::<Vec<_>>();
+        let b = a.sort().into_iter().map(|opt| opt.unwrap()).collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
     }
 
@@ -671,7 +671,7 @@ mod test {
     fn iter() {
         let s1 = get_array();
         // sum
-        assert_eq!(s1.iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
+        assert_eq!(s1.into_iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
     }
 
     #[test]
@@ -692,7 +692,7 @@ mod test {
             ))
             .unwrap();
         assert_eq!(b.len(), 1);
-        assert_eq!(b.iter().next(), Some(Some(1)));
+        assert_eq!(b.into_iter().next(), Some(Some(1)));
     }
 
     #[test]

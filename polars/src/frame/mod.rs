@@ -28,6 +28,16 @@ impl DataFrame {
         Ok(DataFrame { schema, columns })
     }
 
+    /// The number of chunks per column
+    pub fn n_chunks(&self) -> Result<usize> {
+        Ok(self
+            .columns
+            .get(0)
+            .ok_or(PolarsError::Empty)?
+            .chunks()
+            .len())
+    }
+
     /// Get fields from the columns.
     fn create_fields(columns: &DfColumns) -> Vec<Field> {
         columns.iter().map(|s| s.field().clone()).collect()
@@ -361,8 +371,25 @@ impl DataFrame {
         DataFrame::new(self.schema.clone(), col)
     }
 
-    pub fn as_record_batch(&self, _offset: usize, _length: usize) -> RecordBatch {
-        todo!()
+    /// Transform the underlying chunks in the DataFrame to Arrow RecordBatches
+    pub fn as_record_batches(&self) -> Result<Vec<RecordBatch>> {
+        // TODO: Make sure chunks in dataframe are equal. Add equality constraint?
+
+        let n_chunks = self.n_chunks()?;
+        let width = self.width();
+
+        let mut record_batches = Vec::with_capacity(n_chunks);
+        for i in 0..n_chunks {
+            // the columns of a single recorbatch
+            let mut rb_cols = Vec::with_capacity(width);
+
+            for col in &self.columns {
+                rb_cols.push(Arc::clone(&col.chunks()[i]))
+            }
+            let rb = RecordBatch::try_new(Arc::clone(&self.schema), rb_cols)?;
+            record_batches.push(rb)
+        }
+        Ok(record_batches)
     }
 }
 

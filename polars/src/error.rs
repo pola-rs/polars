@@ -22,6 +22,8 @@ pub enum PolarsError {
     OutOfBounds,
     #[error("Not contiguous or null values")]
     NoSlice,
+    #[error("Such empty...")]
+    Empty,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

@@ -307,6 +307,6 @@ mod test {
     #[test]
     fn out_of_bounds() {
         let a = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
-        let v = a.iter().collect::<Vec<_>>();
+        let v = a.into_iter().collect::<Vec<_>>();
     }
 }
