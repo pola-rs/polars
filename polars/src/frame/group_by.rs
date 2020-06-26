@@ -1,4 +1,4 @@
-use super::hash_join::{prepare_hashed_relation, prepare_hashed_relation_non_null};
+use super::hash_join::prepare_hashed_relation;
 use crate::prelude::*;
 use crate::series::chunked_array::builder::{build_primitive_ca_with_opt, PrimitiveChunkedBuilder};
 use arrow::datatypes::ArrowNativeType;
@@ -6,27 +6,11 @@ use num::{Num, NumCast, Zero};
 use rayon::prelude::*;
 use std::hash::Hash;
 
-fn groupby_opt<T>(a: impl Iterator<Item = Option<T>>) -> Vec<(usize, Vec<usize>)>
+fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
 where
     T: Hash + Eq + Copy,
 {
     let hash_tbl = prepare_hashed_relation(a);
-
-    hash_tbl
-        .into_iter()
-        .map(|(_, indexes)| {
-            let first = unsafe { *indexes.get_unchecked(0) };
-            (first, indexes)
-        })
-        .collect()
-}
-
-/// No null values
-fn groupby_no_null<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
-where
-    T: Hash + Eq + Copy,
-{
-    let hash_tbl = prepare_hashed_relation_non_null(a);
 
     hash_tbl
         .into_iter()
@@ -55,9 +39,9 @@ impl DataFrame {
             macro_rules! create_iter {
                 ($ca:ident) => {{
                     if let Ok(slice) = $ca.cont_slice() {
-                        groupby_no_null(slice.iter())
+                        groupby(slice.iter())
                     } else {
-                        groupby_opt($ca.iter())
+                        groupby($ca.into_iter())
                     }
                 }};
             }
@@ -66,8 +50,8 @@ impl DataFrame {
                 Series::UInt32(ca) => create_iter!(ca),
                 Series::Int32(ca) => create_iter!(ca),
                 Series::Int64(ca) => create_iter!(ca),
-                Series::Bool(ca) => groupby_opt(ca.iter()),
-                Series::Utf8(ca) => groupby_no_null(ca.iter()),
+                Series::Bool(ca) => groupby(ca.iter()),
+                Series::Utf8(ca) => groupby(ca.iter()),
                 Series::Date32(ca) => create_iter!(ca),
                 Series::Date64(ca) => create_iter!(ca),
                 Series::Time64Ns(ca) => create_iter!(ca),

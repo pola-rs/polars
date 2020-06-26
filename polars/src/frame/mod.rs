@@ -346,7 +346,7 @@ impl DataFrame {
     /// Replace a column with a series.
     pub fn replace(&mut self, column: &str, new_col: DfSeries) -> Result<()> {
         let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
-        mem::replace(&mut self.columns[idx], new_col);
+        let _ = mem::replace(&mut self.columns[idx], new_col);
         self.update_schema();
         Ok(())
     }

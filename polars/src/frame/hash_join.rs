@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use arrow::compute::TakeOptions;
-use arrow::datatypes::ArrowPrimitiveType;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -35,22 +34,6 @@ macro_rules! apply_hash_join_on_series {
 }
 
 pub(crate) fn prepare_hashed_relation<T>(
-    b: impl Iterator<Item = Option<T>>,
-) -> HashMap<T, Vec<usize>, FnvBuildHasher>
-where
-    T: Hash + Eq + Copy,
-{
-    let mut hash_tbl = FnvHashMap::default();
-
-    b.enumerate().for_each(|(idx, o)| {
-        if let Some(key) = o {
-            hash_tbl.entry(key).or_insert_with(Vec::new).push(idx)
-        }
-    });
-    hash_tbl
-}
-
-pub(crate) fn prepare_hashed_relation_non_null<T>(
     b: impl Iterator<Item = T>,
 ) -> HashMap<T, Vec<usize>, FnvBuildHasher>
 where
@@ -65,9 +48,10 @@ where
 
 /// Hash join a and b.
 ///     b should be the shorter relation.
+/// NOTE that T also can be an Option<T>. Nulls are seen as equal.
 fn hash_join_tuples_inner<T>(
-    a: impl Iterator<Item = Option<T>>,
-    b: impl Iterator<Item = Option<T>>,
+    a: impl Iterator<Item = T>,
+    b: impl Iterator<Item = T>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swap: bool,
 ) -> Vec<(usize, usize)>
@@ -77,29 +61,21 @@ where
     let hash_tbl = prepare_hashed_relation(b);
 
     let mut results = Vec::new();
-    a.enumerate().for_each(|(idx_a, o)| {
-        if let Some(key) = o {
-            if let Some(indexes_b) = hash_tbl.get(&key) {
-                let tuples =
-                    indexes_b.iter().map(
-                        |&idx_b| {
-                            if swap {
-                                (idx_b, idx_a)
-                            } else {
-                                (idx_a, idx_b)
-                            }
-                        },
-                    );
-                results.extend(tuples)
-            }
+    a.enumerate().for_each(|(idx_a, key)| {
+        if let Some(indexes_b) = hash_tbl.get(&key) {
+            let tuples = indexes_b
+                .iter()
+                .map(|&idx_b| if swap { (idx_b, idx_a) } else { (idx_a, idx_b) });
+            results.extend(tuples)
         }
     });
     results
 }
 
-fn hash_join_left<T>(
-    a: impl Iterator<Item = Option<T>>,
-    b: impl Iterator<Item = Option<T>>,
+/// Hash join left. None/ Nulls are regarded as Equal
+fn hash_join_tuples_left<T>(
+    a: impl Iterator<Item = T>,
+    b: impl Iterator<Item = T>,
 ) -> Vec<(usize, Option<usize>)>
 where
     T: Hash + Eq + Copy,
@@ -107,20 +83,12 @@ where
     let hash_tbl = prepare_hashed_relation(b);
     let mut results = Vec::new();
 
-    a.enumerate().for_each(|(idx_a, o)| {
-        match o {
-            // left value is null, so right is automatically null
+    a.enumerate().for_each(|(idx_a, key)| {
+        match hash_tbl.get(&key) {
+            // left and right matches
+            Some(indexes_b) => results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b)))),
+            // only left values, right = null
             None => results.push((idx_a, None)),
-            Some(key) => {
-                match hash_tbl.get(&key) {
-                    // left and right matches
-                    Some(indexes_b) => {
-                        results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
-                    }
-                    // only left values, right = null
-                    None => results.push((idx_a, None)),
-                }
-            }
         }
     });
     results
@@ -151,23 +119,56 @@ macro_rules! create_join_tuples {
 
 impl<T> HashJoin<T> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarNumericType,
     T::Native: Eq + Hash,
 {
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
         let (a, b, swap) = create_join_tuples!(self, other);
 
-        // let a = if let Ok(slice) = a.cont_slice() {
-        //     slice.iter().map(|v| Some(v))
-        // } else {
-        //     a.iter()
-        // };
+        match (a.cont_slice(), b.cont_slice()) {
+            (Ok(a_slice), Ok(b_slice)) => {
+                hash_join_tuples_inner(a_slice.iter(), b_slice.iter(), swap)
+            }
+            (Ok(a_slice), Err(_)) => {
+                hash_join_tuples_inner(
+                    a_slice.iter().map(|v| Some(*v)), // take ownership
+                    b.into_iter(),
+                    swap,
+                )
+            }
+            (Err(_), Ok(b_slice)) => {
+                hash_join_tuples_inner(a.into_iter(), b_slice.iter().map(|v| Some(*v)), swap)
+            }
+            (Err(_), Err(_)) => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
+        }
+    }
+
+    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
+        match (self.cont_slice(), other.cont_slice()) {
+            (Ok(a_slice), Ok(b_slice)) => hash_join_tuples_left(a_slice.iter(), b_slice.iter()),
+            (Ok(a_slice), Err(_)) => {
+                hash_join_tuples_left(
+                    a_slice.iter().map(|v| Some(*v)), // take ownership
+                    other.into_iter(),
+                )
+            }
+            (Err(_), Ok(b_slice)) => {
+                hash_join_tuples_left(self.into_iter(), b_slice.iter().map(|v| Some(*v)))
+            }
+            (Err(_), Err(_)) => hash_join_tuples_left(self.into_iter(), other.into_iter()),
+        }
+    }
+}
+
+impl HashJoin<BooleanType> for BooleanChunked {
+    fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(usize, usize)> {
+        let (a, b, swap) = create_join_tuples!(self, other);
         // Create the join tuples
         hash_join_tuples_inner(a.iter(), b.iter(), swap)
     }
 
-    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
-        hash_join_left(self.iter(), other.iter())
+    fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(usize, Option<usize>)> {
+        hash_join_tuples_left(self.iter(), other.iter())
     }
 }
 
@@ -175,11 +176,11 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(usize, usize)> {
         let (a, b, swap) = create_join_tuples!(self, other);
         // Create the join tuples
-        hash_join_tuples_inner(a.iter().map(|v| Some(v)), b.iter().map(|v| Some(v)), swap)
+        hash_join_tuples_inner(a.iter(), b.iter(), swap)
     }
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
-        hash_join_left(self.iter().map(|v| Some(v)), other.iter().map(|v| Some(v)))
+        hash_join_tuples_left(self.iter(), other.iter())
     }
 }
 
