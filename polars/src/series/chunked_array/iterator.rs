@@ -1,5 +1,6 @@
 use crate::datatypes::Utf8Chunked;
 use crate::series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
+use crate::series::chunked_array::Downcast;
 use crate::{
     datatypes,
     series::chunked_array::{ChunkedArray, SeriesOps},
@@ -141,16 +142,7 @@ where
     T: ArrowPrimitiveType,
 {
     fn iter(&self) -> ChunkIterState<T, u8> {
-        let arrays = self
-            .chunks
-            .iter()
-            .map(|a| {
-                a.as_any()
-                    .downcast_ref::<PrimitiveArray<T>>()
-                    .expect("could not downcast")
-            })
-            .collect::<Vec<_>>();
-
+        let arrays = self.downcast_chunks();
         let arr = unsafe { *arrays.get_unchecked(0) };
         let data = arr.data();
 
@@ -174,15 +166,7 @@ where
 /// of the Either enum. We don't need it.
 impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf8Type> {
     fn iter(&self) -> ChunkIterState<datatypes::Int32Type, String> {
-        let arrays = self
-            .chunks
-            .iter()
-            .map(|a| {
-                a.as_any()
-                    .downcast_ref::<StringArray>()
-                    .expect("could not downcast")
-            })
-            .collect::<Vec<_>>();
+        let arrays = self.downcast_chunks();
         let arr = unsafe { *arrays.get_unchecked(0) };
         let data = arr.data();
 
@@ -201,13 +185,15 @@ impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf
     }
 }
 
+/// Specialized Iterator for ChunkedArray<PolarsNumericType>
 pub struct ChunkNumIter<'a, T>
 where
     T: ArrowNumericType,
 {
     array_chunks: Vec<&'a PrimitiveArray<T>>,
-    current_data: ArrayDataRef,
-    current_array: &'a PrimitiveArray<T>,
+    current_data: Option<ArrayDataRef>,
+    current_array: Option<&'a PrimitiveArray<T>>,
+    current_len: usize,
     chunk_i: usize,
     array_i: usize,
     length: usize,
@@ -230,13 +216,16 @@ where
             return None;
         }
 
+        let current_data = unsafe { self.current_data.as_ref().unsafe_unwrap() };
+        let current_array = unsafe { self.current_array.unsafe_unwrap() };
+
         debug_assert!(self.chunk_i < self.array_chunks.len());
         let ret;
 
-        if self.current_data.is_null(self.array_i) {
+        if current_data.is_null(self.array_i) {
             ret = Some(None)
         } else {
-            let v = self.current_array.value(self.array_i);
+            let v = current_array.value(self.array_i);
             ret = Some(Some(v));
         }
         self.set_indexes();
@@ -251,7 +240,7 @@ where
     #[inline]
     fn set_indexes(&mut self) {
         self.array_i += 1;
-        if self.array_i >= self.current_array.len() {
+        if self.array_i >= self.current_len {
             // go to next array in the chunks
             self.array_i = 0;
             self.chunk_i += 1;
@@ -259,8 +248,8 @@ where
             if self.chunk_i < self.array_chunks.len() {
                 // not yet at last chunk
                 let arr = unsafe { *self.array_chunks.get_unchecked(self.chunk_i) };
-                self.current_data = arr.data();
-                self.current_array = arr;
+                self.current_data = Some(arr.data());
+                self.current_array = Some(arr);
             }
         }
     }
@@ -279,28 +268,25 @@ where
     type IntoIter = ChunkNumIter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let arrays = self
-            .chunks
-            .iter()
-            .map(|a| {
-                a.as_any()
-                    .downcast_ref::<PrimitiveArray<T>>()
-                    .expect("could not downcast")
-            })
-            .collect::<Vec<_>>();
+        let arrays = self.downcast_chunks();
 
-        let arr = unsafe { *arrays.get_unchecked(0) };
-        let data = arr.data();
+        let arr = arrays.get(0).map(|v| *v);
+        let data = arr.map(|arr| arr.data());
 
         let opt_slice = match self.cont_slice() {
             Ok(slice) => Some(slice.iter()),
             Err(_) => None,
+        };
+        let current_len = match arr {
+            Some(arr) => arr.len(),
+            None => 0,
         };
 
         ChunkNumIter {
             array_chunks: arrays,
             current_data: data,
             current_array: arr,
+            current_len,
             chunk_i: 0,
             array_i: 0,
             length: self.len(),
