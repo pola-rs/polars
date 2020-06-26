@@ -1,5 +1,5 @@
 use crate::{prelude::*, series::chunked_array::ChunkedArray};
-use arrow::{array::ArrayRef, compute, datatypes::ArrowNumericType};
+use arrow::{array::ArrayRef, compute};
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ macro_rules! operand_on_primitive_arr {
 
 impl<T> Add for &ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -37,7 +37,7 @@ where
 
 impl<T> Div for &ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -55,7 +55,7 @@ where
 
 impl<T> Mul for &ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -72,7 +72,7 @@ where
 
 impl<T> Sub for &ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -89,7 +89,7 @@ where
 
 impl<T> Add for ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -105,7 +105,7 @@ where
 
 impl<T> Div for ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -122,7 +122,7 @@ where
 
 impl<T> Mul for ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -138,7 +138,7 @@ where
 
 impl<T> Sub for ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>

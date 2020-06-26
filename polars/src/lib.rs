@@ -64,7 +64,7 @@
 //! let s: Series = [1, 2, 3].iter().collect();
 //! let s_squared: Series = s.i32()
 //!      .expect("datatype mismatch")
-//!      .iter()
+//!      .into_iter()
 //!      .map(|optional_v| {
 //!          match optional_v {
 //!              Some(v) => Some(v * v),
@@ -82,7 +82,7 @@
 //! let mask = s.eq(1).expect("could not compare types");
 //! let valid = [true, false, false].iter();
 //! assert!(mask
-//!     .iter()
+//!     .into_iter()
 //!     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
 //!     .zip(valid)
 //!     .all(|(a, b)| a == *b))

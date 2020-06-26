@@ -8,7 +8,6 @@ pub use crate::{
         chunked_array::{
             aggregate::Agg,
             comparison::{CmpOps, ForceCmpOps},
-            iterator::ChunkIterator,
             take::{Take, TakeIndex},
             ChunkOps, ChunkedArray, Downcast, SeriesOps,
         },

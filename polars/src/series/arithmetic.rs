@@ -1,7 +1,4 @@
-use crate::{
-    error::{PolarsError, Result},
-    series::{chunked_array::iterator::ChunkIterator, series::Series},
-};
+use crate::prelude::*;
 use num::{Num, NumCast};
 use std::ops;
 
@@ -185,7 +182,7 @@ macro_rules! op_num_rhs {
     ($typ:ty, $ca:ident, $rhs:ident, $operand:tt) => {
     {
             let rhs: $typ = NumCast::from($rhs).expect(&format!("could not cast"));
-            $ca.iter().map(|opt_v| opt_v.map(|v| v $operand rhs)).collect()
+            $ca.into_iter().map(|opt_v| opt_v.map(|v| v $operand rhs)).collect()
             }
     }
 }
@@ -335,7 +332,7 @@ macro_rules! op_num_lhs {
     ($typ:ty, $ca:ident, $lhs:ident, $operand:tt) => {
     {
             let lhs: $typ = NumCast::from($lhs).expect(&format!("could not cast"));
-            $ca.iter().map(|opt_v| opt_v.map(|v| lhs $operand v)).collect()
+            $ca.into_iter().map(|opt_v| opt_v.map(|v| lhs $operand v)).collect()
             }
     }
 }

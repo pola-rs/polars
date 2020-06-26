@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, StringArray};
 use arrow::compute;
-use arrow::datatypes::ArrowNumericType;
 use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
 
@@ -49,7 +48,7 @@ pub trait ForceCmpOps<Rhs>: CmpOps<Rhs> {
 
 impl<T> ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
 {
     /// First ensure that the chunks of lhs and rhs match and then iterates over the chunks and applies
     /// the comparison operator.
@@ -84,7 +83,7 @@ where
 
 impl<T> CmpOps<&ChunkedArray<T>> for ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
 {
     fn eq(&self, rhs: &ChunkedArray<T>) -> Result<BooleanChunked> {
         self.comparison(rhs, compute::eq)
@@ -111,7 +110,7 @@ where
     }
 }
 
-impl<T: ArrowNumericType> ForceCmpOps<&ChunkedArray<T>> for ChunkedArray<T> {}
+impl<T: PolarNumericType> ForceCmpOps<&ChunkedArray<T>> for ChunkedArray<T> {}
 
 /// Auxiliary trait for CmpOps trait
 pub trait BoundedToUtf8 {}
@@ -191,7 +190,7 @@ fn cmp_chunked_array_to_num<T, Rhs>(
     cmp_fn: &dyn Fn(Rhs) -> bool,
 ) -> Result<BooleanChunked>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: ToPrimitive,
     Rhs: Num + NumCast,
 {
@@ -232,7 +231,7 @@ impl NumComp for u64 {}
 
 impl<T, Rhs> CmpOps<Rhs> for ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: ToPrimitive,
     Rhs: NumComp,
 {
@@ -263,7 +262,7 @@ where
 
 impl<T, Rhs> ForceCmpOps<Rhs> for ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
     T::Native: ToPrimitive,
     Rhs: NumComp,
 {
@@ -374,7 +373,7 @@ mod test {
     fn utf8_cmp() {
         let a = ChunkedArray::<datatypes::Utf8Type>::new_utf8_from_slice("a", &["hello", "world"]);
         let b = ChunkedArray::<datatypes::Utf8Type>::new_utf8_from_slice("a", &["hello", "world"]);
-        let sum_true = a.eq(&b).unwrap().iter().fold(0, |acc, opt| match opt {
+        let sum_true = a.eq(&b).unwrap().into_iter().fold(0, |acc, opt| match opt {
             Some(b) => acc + b as i32,
             None => acc,
         });

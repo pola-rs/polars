@@ -99,7 +99,10 @@ pub trait TakeIndex {
 
 impl TakeIndex for UInt32Chunked {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
-        Box::new(self.iter().map(|opt_val| opt_val.map(|val| val as usize)))
+        Box::new(
+            self.into_iter()
+                .map(|opt_val| opt_val.map(|val| val as usize)),
+        )
     }
     fn take_index_len(&self) -> usize {
         self.len()

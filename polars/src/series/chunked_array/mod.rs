@@ -11,13 +11,11 @@ use arrow::array::{
     ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
     StringBuilder, UInt32Array,
 };
-use arrow::datatypes::ArrowNumericType;
 use arrow::{
     array::{PrimitiveArray, PrimitiveBuilder},
     compute,
     datatypes::{ArrowPrimitiveType, DateUnit, Field, TimeUnit},
 };
-use iterator::ChunkIterator;
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
@@ -404,7 +402,7 @@ where
 
 impl<T> ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
 {
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
@@ -442,7 +440,9 @@ impl<T> ChunkedArray<T> {
 
     pub fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
-        N: ArrowPrimitiveType,
+        N: PolarNumericType,
+        // TODO: check if this works
+        // ChunkedArray<N>: ChunkOps
     {
         let chunks = self
             .chunks
@@ -500,14 +500,30 @@ macro_rules! optional_rechunk {
 
 impl<T> ChunkOps for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarNumericType,
 {
     fn rechunk(&mut self) {
         if self.chunks.len() > 1 {
             let mut builder = PrimitiveBuilder::<T>::new(self.len());
-            self.iter().for_each(|val| {
+            self.into_iter().for_each(|val| {
                 builder.append_option(val).expect("Could not append value");
             });
+            self.chunks = vec![Arc::new(builder.finish())];
+            self.set_chunk_id()
+        }
+    }
+
+    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
+        optional_rechunk!(self, rhs)
+    }
+}
+
+impl ChunkOps for BooleanChunked {
+    fn rechunk(&mut self) {
+        if self.chunks.len() > 1 {
+            let mut builder = PrimitiveBuilder::<BooleanType>::new(self.len());
+            self.into_iter()
+                .for_each(|val| builder.append_option(val).expect("Could not append value"));
             self.chunks = vec![Arc::new(builder.finish())];
             self.set_chunk_id()
         }
@@ -522,8 +538,11 @@ impl ChunkOps for Utf8Chunked {
     fn rechunk(&mut self) {
         if self.chunks.len() > 1 {
             let mut builder = StringBuilder::new(self.len());
-            self.iter()
-                .for_each(|val| builder.append_value(val).expect("Could not append value"));
+            self.into_iter().for_each(|opt_val| match opt_val {
+                Some(val) => builder.append_value(val).expect("Could not append value"),
+                None => builder.append_null().expect("append null"),
+            });
+
             self.chunks = vec![Arc::new(builder.finish())];
             self.set_chunk_id()
         }
@@ -540,7 +559,7 @@ pub trait Downcast<T> {
 
 impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarNumericType,
 {
     fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
         self.chunks
@@ -567,6 +586,19 @@ impl Downcast<StringArray> for Utf8Chunked {
     }
 }
 
+impl Downcast<BooleanArray> for BooleanChunked {
+    fn downcast_chunks(&self) -> Vec<&BooleanArray> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                arr.as_any()
+                    .downcast_ref()
+                    .expect("could not downcast one of the chunks")
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
 impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
     fn as_ref(&self) -> &ChunkedArray<T> {
         self
@@ -575,11 +607,11 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
 
 impl<T> ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarNumericType,
     T::Native: std::cmp::PartialOrd,
 {
     pub fn sort(&self) -> Self {
-        self.iter()
+        self.into_iter()
             .sorted_by(|a, b| match (a, b) {
                 (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
                 (None, Some(_)) => Ordering::Less,
@@ -595,7 +627,7 @@ where
     }
 
     pub fn argsort(&self) -> UInt32Chunked {
-        self.iter()
+        self.into_iter()
             .enumerate()
             .sorted_by(|(_idx_a, a), (_idx_b, b)| match (a, b) {
                 (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
@@ -699,9 +731,12 @@ mod test {
     fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])
     where
         ChunkedArray<T>: ChunkOps + SeriesOps,
-        T: ArrowPrimitiveType,
+        T: PolarNumericType,
     {
-        assert_eq!(ca.iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(), eq)
+        assert_eq!(
+            ca.into_iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(),
+            eq
+        )
     }
 
     #[test]

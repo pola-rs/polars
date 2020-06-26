@@ -95,7 +95,7 @@ use polars::prelude::*;
 let s: Series = [1, 2, 3].iter().collect(); 
 let s_squared: Series = s.i32()
      .expect("datatype mismatch")
-     .iter()
+     .into_iter()
      .map(|optional_v| {
          match optional_v {
              Some(v) => Some(v * v),

@@ -1,8 +1,5 @@
 use crate::datatypes::{AnyType, ToStr};
-use crate::{
-    frame::DataFrame,
-    series::{chunked_array::iterator::ChunkIterator, series::Series},
-};
+use crate::prelude::*;
 use num::{Num, NumCast};
 use std::{
     fmt,
@@ -16,7 +13,7 @@ impl Debug for Series {
         macro_rules! format_series {
             ($a:ident, $name:expr) => {{
                 write![f, "Series: {} \n[\n", $name]?;
-                $a.iter().take(LIMIT).for_each(|v| {
+                $a.into_iter().take(LIMIT).for_each(|v| {
                     match v {
                         Some(v) => {
                             write!(f, "\t{}\n", v).ok();
@@ -39,8 +36,13 @@ impl Debug for Series {
             Series::Float64(a) => format_series!(a, "f64"),
             Series::Utf8(a) => {
                 write![f, "Series: str \n[\n"]?;
-                a.iter().take(LIMIT).for_each(|v| {
-                    write!(f, "\t\"{}\"\n", &v[..std::cmp::min(LIMIT, v.len())]).ok();
+                a.into_iter().take(LIMIT).for_each(|v| match v {
+                    Some(v) => {
+                        write!(f, "\t\"{}\"\n", &v[..std::cmp::min(LIMIT, v.len())]).ok();
+                    }
+                    None => {
+                        write!(f, "\tnull").ok();
+                    }
                 });
                 write![f, "]"]
             }

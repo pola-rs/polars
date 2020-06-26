@@ -164,11 +164,11 @@ impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(usize, usize)> {
         let (a, b, swap) = create_join_tuples!(self, other);
         // Create the join tuples
-        hash_join_tuples_inner(a.iter(), b.iter(), swap)
+        hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap)
     }
 
     fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(usize, Option<usize>)> {
-        hash_join_tuples_left(self.iter(), other.iter())
+        hash_join_tuples_left(self.into_iter(), other.into_iter())
     }
 }
 
@@ -176,11 +176,11 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(usize, usize)> {
         let (a, b, swap) = create_join_tuples!(self, other);
         // Create the join tuples
-        hash_join_tuples_inner(a.iter(), b.iter(), swap)
+        hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap)
     }
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
-        hash_join_tuples_left(self.iter(), other.iter())
+        hash_join_tuples_left(self.into_iter(), other.into_iter())
     }
 }
 

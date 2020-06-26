@@ -1,5 +1,5 @@
 use crate::datatypes::BooleanChunked;
-use crate::series::chunked_array::{iterator::ChunkIterator, ChunkedArray, SeriesOps};
+use crate::series::chunked_array::{ChunkedArray, SeriesOps};
 use crate::{datatypes::PolarNumericType, prelude::*};
 use arrow::compute;
 
@@ -48,7 +48,7 @@ where
 }
 
 fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u64> {
-    let min_max = ca.iter().fold(0, |acc: u64, x| match x {
+    let min_max = ca.into_iter().fold(0, |acc: u64, x| match x {
         Some(v) => {
             let v = v as u64;
             if min {
@@ -77,7 +77,7 @@ impl Agg<u64> for BooleanChunked {
         if self.len() == 0 {
             return None;
         }
-        let sum = self.iter().fold(0, |acc: u64, x| match x {
+        let sum = self.into_iter().fold(0, |acc: u64, x| match x {
             Some(v) => acc + v as u64,
             None => acc,
         });

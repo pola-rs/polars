@@ -38,7 +38,7 @@
 //! let mask = s.eq(1).expect("could not compare types");
 //! let valid = [true, false, false].iter();
 //! assert!(mask
-//!     .iter()
+//!     .into_iter()
 //!     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
 //!     .zip(valid)
 //!     .all(|(a, b)| a == *b))
@@ -333,7 +333,7 @@ impl Series {
     /// Cast to an some primitive type.
     pub fn cast<N>(&self) -> Result<Self>
     where
-        N: ArrowPrimitiveType,
+        N: PolarNumericType,
     {
         let s = match self {
             Series::UInt32(arr) => pack_ca_to_series(arr.cast::<N>()?),

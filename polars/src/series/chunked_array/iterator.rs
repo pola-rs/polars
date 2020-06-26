@@ -1,74 +1,45 @@
-use crate::datatypes::Utf8Chunked;
+use crate::prelude::*;
 use crate::series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
-use crate::series::chunked_array::Downcast;
-use crate::{
-    datatypes,
-    series::chunked_array::{ChunkedArray, SeriesOps},
-};
-use arrow::array::{Array, ArrayDataRef, PrimitiveArray, PrimitiveArrayOps, StringArray};
-use arrow::datatypes::{ArrowNumericType, ArrowPrimitiveType};
+use arrow::array::{Array, ArrayDataRef, BooleanArray, PrimitiveArray, StringArray};
+use arrow::datatypes::ArrowPrimitiveType;
 use std::iter::FromIterator;
-use std::marker::PhantomData;
 use std::slice::Iter;
 use unsafe_unwrap::UnsafeUnwrap;
 
-/// TODO: Split the ChunkIterState in separate structs.
+macro_rules! set_indexes {
+    ($self:ident) => {{
+        $self.array_i += 1;
+        if $self.array_i >= $self.current_len {
+            // go to next array in the chunks
+            $self.array_i = 0;
+            $self.chunk_i += 1;
 
-// This module implements an iter method for both ArrowPrimitiveType and Utf8 type.
-// As both expose a different api in some, this required some hacking.
-// A solution was found by returning an auxiliary struct ChunkIterState from the .iter methods.
-// This ChunkIterState has a generic type T: ArrowPrimitiveType to work well with the some api.
-// It also has a phantomtype K that is only used as distinctive type to be able to implement a trait
-// method twice. Sort of a specialization hack.
+            if $self.chunk_i < $self.array_chunks.len() {
+                // not yet at last chunk
+                let arr = unsafe { *$self.array_chunks.get_unchecked($self.chunk_i) };
+                $self.current_data = Some(arr.data());
+                $self.current_array = Some(arr);
+                $self.current_len = arr.len();
+            }
+        }
+    }};
+}
 
-// K is a phantom type to make specialization work.
-// K is set to u8 for all ArrowPrimitiveTypes
-// K is set to String for datatypes::Utf8DataType
-pub struct ChunkIterState<'a, T, K>
-where
-    T: ArrowPrimitiveType,
-{
-    array_primitive: Option<Vec<&'a PrimitiveArray<T>>>,
-    array_string: Option<Vec<&'a StringArray>>,
-    current_data: ArrayDataRef,
-    current_primitive: Option<&'a PrimitiveArray<T>>,
-    current_string: Option<&'a StringArray>,
+pub struct ChunkStringIter<'a> {
+    array_chunks: Vec<&'a StringArray>,
+    current_data: Option<ArrayDataRef>,
+    current_array: Option<&'a StringArray>,
+    current_len: usize,
     chunk_i: usize,
     array_i: usize,
     length: usize,
     n_chunks: usize,
-    phantom: PhantomData<K>,
 }
 
-impl<T, S> ChunkIterState<'_, T, S>
-where
-    T: ArrowPrimitiveType,
-{
+impl<'a> ChunkStringIter<'a> {
     #[inline]
-    fn set_indexes(&mut self, arr: &dyn Array) {
-        self.array_i += 1;
-        if self.array_i >= arr.len() {
-            // go to next array in the chunks
-            self.array_i = 0;
-            self.chunk_i += 1;
-
-            if let Some(arrays) = &self.array_primitive {
-                if self.chunk_i < arrays.len() {
-                    // not yet at last chunk
-                    let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
-                    self.current_data = arr.data();
-                    self.current_primitive = Some(arr);
-                }
-            }
-            if let Some(arrays) = &self.array_string {
-                if self.chunk_i < arrays.len() {
-                    // not yet at last chunk
-                    let arr = unsafe { *arrays.get_unchecked(self.chunk_i) };
-                    self.current_data = arr.data();
-                    self.current_string = Some(arr);
-                }
-            }
-        }
+    fn set_indexes(&mut self) {
+        set_indexes!(self)
     }
 
     #[inline]
@@ -77,110 +48,129 @@ where
     }
 }
 
-impl<T> Iterator for ChunkIterState<'_, T, u8>
-where
-    T: ArrowPrimitiveType,
-{
-    // nullable, therefore an option
-    type Item = Option<T::Native>;
+impl<'a> Iterator for ChunkStringIter<'a> {
+    type Item = Option<&'a str>;
 
-    /// Because some types are nullable an option is returned. This is wrapped in another option
-    /// to indicate if the iterator returns Some or None.
     fn next(&mut self) -> Option<Self::Item> {
         if self.out_of_bounds() {
             return None;
         }
 
-        debug_assert!(self.array_primitive.is_some());
-        let arrays = unsafe { self.array_primitive.as_ref().take().unsafe_unwrap() };
+        let current_data = unsafe { self.current_data.as_ref().unsafe_unwrap() };
+        let current_array = unsafe { self.current_array.unsafe_unwrap() };
 
-        debug_assert!(self.chunk_i < arrays.len());
+        debug_assert!(self.chunk_i < self.array_chunks.len());
         let ret;
-        let arr = unsafe { self.current_primitive.unsafe_unwrap() };
 
-        if self.current_data.is_null(self.array_i) {
+        if current_data.is_null(self.array_i) {
             ret = Some(None)
         } else {
-            let v = arr.value(self.array_i);
+            let v = current_array.value(self.array_i);
             ret = Some(Some(v));
         }
-        self.set_indexes(arr);
+        self.set_indexes();
         ret
     }
 }
 
-impl<'a, T> Iterator for ChunkIterState<'a, T, String>
-where
-    T: ArrowPrimitiveType,
-{
-    type Item = &'a str;
+impl<'a> IntoIterator for &'a Utf8Chunked {
+    type Item = Option<&'a str>;
+    type IntoIter = ChunkStringIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let arrays = self.downcast_chunks();
+
+        let arr = arrays.get(0).map(|v| *v);
+        let data = arr.map(|arr| arr.data());
+        let current_len = match arr {
+            Some(arr) => arr.len(),
+            None => 0,
+        };
+
+        ChunkStringIter {
+            array_chunks: arrays,
+            current_data: data,
+            current_array: arr,
+            current_len,
+            chunk_i: 0,
+            array_i: 0,
+            length: self.len(),
+            n_chunks: self.chunks.len(),
+        }
+    }
+}
+
+pub struct ChunkBoolIter<'a> {
+    array_chunks: Vec<&'a BooleanArray>,
+    current_data: Option<ArrayDataRef>,
+    current_array: Option<&'a BooleanArray>,
+    current_len: usize,
+    chunk_i: usize,
+    array_i: usize,
+    length: usize,
+    n_chunks: usize,
+}
+
+impl<'a> ChunkBoolIter<'a> {
+    #[inline]
+    fn set_indexes(&mut self) {
+        set_indexes!(self)
+    }
+
+    #[inline]
+    fn out_of_bounds(&self) -> bool {
+        self.chunk_i >= self.n_chunks
+    }
+}
+
+impl<'a> Iterator for ChunkBoolIter<'a> {
+    type Item = Option<bool>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.out_of_bounds() {
             return None;
         }
 
-        debug_assert!(self.array_string.is_some());
-        let arr = unsafe { self.current_string.unsafe_unwrap() };
-        let v = arr.value(self.array_i);
-        self.set_indexes(arr);
-        Some(v)
-    }
-}
+        let current_data = unsafe { self.current_data.as_ref().unsafe_unwrap() };
+        let current_array = unsafe { self.current_array.unsafe_unwrap() };
 
-pub trait ChunkIterator<T, S>
-where
-    T: ArrowPrimitiveType,
-{
-    fn iter(&self) -> ChunkIterState<T, S>;
-}
+        debug_assert!(self.chunk_i < self.array_chunks.len());
+        let ret;
 
-/// ChunkIter for all the ArrowPrimitiveTypes
-/// Note that u8 is only a phantom type to be able to have stable specialization.
-impl<T> ChunkIterator<T, u8> for ChunkedArray<T>
-where
-    T: ArrowPrimitiveType,
-{
-    fn iter(&self) -> ChunkIterState<T, u8> {
-        let arrays = self.downcast_chunks();
-        let arr = unsafe { *arrays.get_unchecked(0) };
-        let data = arr.data();
-
-        ChunkIterState {
-            array_primitive: Some(arrays),
-            array_string: None,
-            current_data: data,
-            current_primitive: Some(arr),
-            current_string: None,
-            chunk_i: 0,
-            array_i: 0,
-            length: self.len(),
-            n_chunks: self.chunks.len(),
-            phantom: PhantomData,
+        if current_data.is_null(self.array_i) {
+            ret = Some(None)
+        } else {
+            let v = current_array.value(self.array_i);
+            ret = Some(Some(v));
         }
+        self.set_indexes();
+        ret
     }
 }
 
-/// ChunkIter for the Utf8Type
-/// Note that datatypes::Int32Type is just a random ArrowPrimitveType for the Left variant
-/// of the Either enum. We don't need it.
-impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf8Type> {
-    fn iter(&self) -> ChunkIterState<datatypes::Int32Type, String> {
-        let arrays = self.downcast_chunks();
-        let arr = unsafe { *arrays.get_unchecked(0) };
-        let data = arr.data();
+impl<'a> IntoIterator for &'a BooleanChunked {
+    type Item = Option<bool>;
+    type IntoIter = ChunkBoolIter<'a>;
 
-        ChunkIterState {
-            array_primitive: None,
-            array_string: Some(arrays),
+    fn into_iter(self) -> Self::IntoIter {
+        let arrays = self.downcast_chunks();
+
+        let arr = arrays.get(0).map(|v| *v);
+        let data = arr.map(|arr| arr.data());
+        let current_len = match arr {
+            Some(arr) => arr.len(),
+            None => 0,
+        };
+
+        ChunkBoolIter {
+            array_chunks: arrays,
             current_data: data,
-            current_primitive: None,
-            current_string: Some(arr),
+            current_array: arr,
+            current_len,
             chunk_i: 0,
             array_i: 0,
             length: self.len(),
             n_chunks: self.chunks.len(),
-            phantom: PhantomData,
         }
     }
 }
@@ -188,7 +178,7 @@ impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf
 /// Specialized Iterator for ChunkedArray<PolarsNumericType>
 pub struct ChunkNumIter<'a, T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
 {
     array_chunks: Vec<&'a PrimitiveArray<T>>,
     current_data: Option<ArrayDataRef>,
@@ -203,14 +193,14 @@ where
 
 impl<'a, T> Iterator for ChunkNumIter<'a, T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
 {
     type Item = Option<T::Native>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(iter) = &mut self.opt_slice {
-            return iter.next().map(|&v| Some(v));
-        }
+        // if let Some(iter) = &mut self.opt_slice {
+        //     return iter.next().map(|&v| Some(v));
+        // }
 
         if self.out_of_bounds() {
             return None;
@@ -235,23 +225,11 @@ where
 
 impl<'a, T> ChunkNumIter<'a, T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
 {
     #[inline]
     fn set_indexes(&mut self) {
-        self.array_i += 1;
-        if self.array_i >= self.current_len {
-            // go to next array in the chunks
-            self.array_i = 0;
-            self.chunk_i += 1;
-
-            if self.chunk_i < self.array_chunks.len() {
-                // not yet at last chunk
-                let arr = unsafe { *self.array_chunks.get_unchecked(self.chunk_i) };
-                self.current_data = Some(arr.data());
-                self.current_array = Some(arr);
-            }
-        }
+        set_indexes!(self)
     }
 
     #[inline]
@@ -262,7 +240,7 @@ where
 
 impl<'a, T> IntoIterator for &'a ChunkedArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarNumericType,
 {
     type Item = Option<T::Native>;
     type IntoIter = ChunkNumIter<'a, T>;
