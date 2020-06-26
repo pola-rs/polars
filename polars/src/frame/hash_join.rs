@@ -132,7 +132,6 @@ pub trait HashJoin<T> {
 }
 
 macro_rules! create_join_tuples {
-    // wrap option makes the iterator add an Option, needed for utf-8
     ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
         let left_first = $self.len() > $other.len();
@@ -157,6 +156,12 @@ where
 {
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
         let (a, b, swap) = create_join_tuples!(self, other);
+
+        let a = if let Ok(slice) = a.cont_slice() {
+            slice.iter().map(|v| Some(v))
+        } else {
+            a.iter()
+        };
         // Create the join tuples
         hash_join_tuples_inner(a.iter(), b.iter(), swap)
     }

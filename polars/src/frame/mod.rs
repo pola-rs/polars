@@ -351,6 +351,16 @@ impl DataFrame {
         Ok(())
     }
 
+    /// Slice the DataFrame along the rows.
+    pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
+        let col = self
+            .columns
+            .iter()
+            .map(|s| s.slice(offset, length))
+            .collect::<Result<Vec<_>>>()?;
+        DataFrame::new(self.schema.clone(), col)
+    }
+
     pub fn as_record_batch(&self, _offset: usize, _length: usize) -> RecordBatch {
         todo!()
     }
@@ -427,5 +437,12 @@ mod test {
         let mut df = create_frame();
         df.sort("temp").unwrap();
         println!("{:?}", df);
+    }
+
+    #[test]
+    fn slice() {
+        let df = create_frame();
+        let sliced_df = df.slice(0, 2).expect("slice");
+        assert_eq!(sliced_df.shape(), (2, 2))
     }
 }

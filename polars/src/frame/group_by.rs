@@ -67,7 +67,7 @@ impl DataFrame {
                 Series::Int32(ca) => create_iter!(ca),
                 Series::Int64(ca) => create_iter!(ca),
                 Series::Bool(ca) => groupby_opt(ca.iter()),
-                Series::Utf8(ca) => groupby_opt(ca.iter().map(|v| Some(v))),
+                Series::Utf8(ca) => groupby_no_null(ca.iter()),
                 Series::Date32(ca) => create_iter!(ca),
                 Series::Date64(ca) => create_iter!(ca),
                 Series::Time64Ns(ca) => create_iter!(ca),

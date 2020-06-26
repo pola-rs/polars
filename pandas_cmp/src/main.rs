@@ -19,7 +19,7 @@ fn read_df(f: &File) -> DataFrame {
         .iter()
         .map(|v| v.map(|v| format!("{}", v)));
     let s: Series = Series::init("str", &s.collect::<Vec<_>>());
-    df.replace("str", s);
+    df.replace("str", s).expect("replaced");
     df
 }
 
@@ -56,9 +56,16 @@ fn bench_groupby() {
 }
 
 fn bench_join() {
-    let f = File::open("../data/100.csv").expect("file");
+    let f = File::open("../data/1000.csv").expect("file");
     let df = read_df(&f);
-    println!("{:?}", df);
+    let size = 500;
+    let a = df.slice(0, size).expect("sliced df");
+    let b = df.slice(size, size).expect("sliced df");
+    let now = Instant::now();
+    let joined = a.inner_join(&b, "groups", "groups");
+    let duration = now.elapsed().as_micros();
+    println!("duration: {} μs", duration);
+    println!("{:?}", joined);
 }
 
 fn print_cli() {
