@@ -652,7 +652,11 @@ mod test {
     #[test]
     fn test_sort() {
         let a = Int32Chunked::new_from_slice("a", &[1, 9, 3, 2]);
-        let b = a.sort().into_iter().map(|opt| opt.unwrap()).collect::<Vec<_>>();
+        let b = a
+            .sort()
+            .into_iter()
+            .map(|opt| opt.unwrap())
+            .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
     }
 

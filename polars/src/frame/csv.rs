@@ -4,16 +4,16 @@ use arrow::datatypes::Schema;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
-pub struct CsvWriter<W: Write> {
-    writer: W,
+pub struct CsvWriter<'a, W: Write> {
+    writer: &'a mut W,
     writer_builder: WriterBuilder,
 }
 
-impl<W> CsvWriter<W>
+impl<'a, W> CsvWriter<'a, W>
 where
     W: Write,
 {
-    pub fn new(writer: W) -> Self {
+    pub fn new(writer: &'a mut W) -> Self {
         CsvWriter {
             writer,
             writer_builder: WriterBuilder::new(),
@@ -44,15 +44,21 @@ where
         self
     }
 
-    /// Set the CSV file's timestamp format
+    /// Set the CSV file's timestamp formatch array in
     pub fn with_timestamp_format(mut self, format: String) -> Self {
         self.writer_builder = self.writer_builder.with_timestamp_format(format);
         self
     }
 
-    pub fn finish(self, _df: &DataFrame) {
-        let mut _csv_writer = self.writer_builder.build(self.writer);
-        // TODO: Implement RecordBatches on DF.
+    pub fn finish(self, df: &DataFrame) -> Result<()> {
+        let mut csv_writer = self.writer_builder.build(self.writer);
+        let record_batches = df.as_record_batches()?;
+
+        for batch in &record_batches {
+            csv_writer.write(batch)?
+        }
+
+        Ok(())
     }
 }
 
@@ -199,5 +205,24 @@ where
             schema: csv_reader.schema(),
             columns,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn write_csv() {
+        let mut buf: Vec<u8> = Vec::new();
+        let df = create_df();
+
+        // TODO: headers not working: https://github.com/apache/arrow/pull/7554
+        CsvWriter::new(&mut buf)
+            .has_headers(true)
+            .finish(&df)
+            .expect("csv written");
+        let csv = std::str::from_utf8(&buf).unwrap();
+        assert_eq!("0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);
     }
 }

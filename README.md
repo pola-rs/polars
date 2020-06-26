@@ -33,7 +33,7 @@ DataFrame library that only support core functionality.
 - [x] group by: min, max, sum, mean, count
 - [x] concat (horizontal)
 - [x] read csv
-- [ ] write csv
+- [x] write csv
 - [ ] write json
 - [ ] read json
 - [ ] write parquet
