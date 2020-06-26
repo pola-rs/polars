@@ -71,9 +71,9 @@ impl DataFrame {
     /// }
     /// ```
     pub fn shape(&self) -> (usize, usize) {
-        let width = self.columns.len();
-        if width > 0 {
-            (width, self.columns[0].len())
+        let rows = self.columns.len();
+        if rows > 0 {
+            (self.columns[0].len(), rows)
         } else {
             (0, 0)
         }

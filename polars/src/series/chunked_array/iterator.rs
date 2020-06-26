@@ -5,10 +5,13 @@ use crate::{
     series::chunked_array::{ChunkedArray, SeriesOps},
 };
 use arrow::array::{Array, ArrayDataRef, PrimitiveArray, PrimitiveArrayOps, StringArray};
-use arrow::datatypes::ArrowPrimitiveType;
+use arrow::datatypes::{ArrowNumericType, ArrowPrimitiveType};
 use std::iter::FromIterator;
 use std::marker::PhantomData;
+use std::slice::Iter;
 use unsafe_unwrap::UnsafeUnwrap;
+
+/// TODO: Split the ChunkIterState in separate structs.
 
 // This module implements an iter method for both ArrowPrimitiveType and Utf8 type.
 // As both expose a different api in some, this required some hacking.
@@ -194,6 +197,115 @@ impl ChunkIterator<datatypes::Int32Type, String> for ChunkedArray<datatypes::Utf
             length: self.len(),
             n_chunks: self.chunks.len(),
             phantom: PhantomData,
+        }
+    }
+}
+
+pub struct ChunkNumIter<'a, T>
+where
+    T: ArrowNumericType,
+{
+    array_chunks: Vec<&'a PrimitiveArray<T>>,
+    current_data: ArrayDataRef,
+    current_array: &'a PrimitiveArray<T>,
+    chunk_i: usize,
+    array_i: usize,
+    length: usize,
+    n_chunks: usize,
+    opt_slice: Option<Iter<'a, T::Native>>,
+}
+
+impl<'a, T> Iterator for ChunkNumIter<'a, T>
+where
+    T: ArrowNumericType,
+{
+    type Item = Option<T::Native>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(iter) = &mut self.opt_slice {
+            return iter.next().map(|&v| Some(v));
+        }
+
+        if self.out_of_bounds() {
+            return None;
+        }
+
+        debug_assert!(self.chunk_i < self.array_chunks.len());
+        let ret;
+
+        if self.current_data.is_null(self.array_i) {
+            ret = Some(None)
+        } else {
+            let v = self.current_array.value(self.array_i);
+            ret = Some(Some(v));
+        }
+        self.set_indexes();
+        ret
+    }
+}
+
+impl<'a, T> ChunkNumIter<'a, T>
+where
+    T: ArrowNumericType,
+{
+    #[inline]
+    fn set_indexes(&mut self) {
+        self.array_i += 1;
+        if self.array_i >= self.current_array.len() {
+            // go to next array in the chunks
+            self.array_i = 0;
+            self.chunk_i += 1;
+
+            if self.chunk_i < self.array_chunks.len() {
+                // not yet at last chunk
+                let arr = unsafe { *self.array_chunks.get_unchecked(self.chunk_i) };
+                self.current_data = arr.data();
+                self.current_array = arr;
+            }
+        }
+    }
+
+    #[inline]
+    fn out_of_bounds(&self) -> bool {
+        self.chunk_i >= self.n_chunks
+    }
+}
+
+impl<'a, T> IntoIterator for &'a ChunkedArray<T>
+where
+    T: ArrowNumericType,
+{
+    type Item = Option<T::Native>;
+    type IntoIter = ChunkNumIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let arrays = self
+            .chunks
+            .iter()
+            .map(|a| {
+                a.as_any()
+                    .downcast_ref::<PrimitiveArray<T>>()
+                    .expect("could not downcast")
+            })
+            .collect::<Vec<_>>();
+
+        let arr = unsafe { *arrays.get_unchecked(0) };
+        let data = arr.data();
+
+        let opt_slice = match self.cont_slice() {
+            Ok(slice) => Some(slice.iter()),
+            Err(_) => None,
+        };
+
+        ChunkNumIter {
+            array_chunks: arrays,
+            current_data: data,
+            current_array: arr,
+            chunk_i: 0,
+            array_i: 0,
+            length: self.len(),
+            n_chunks: self.chunks.len(),
+            opt_slice,
         }
     }
 }

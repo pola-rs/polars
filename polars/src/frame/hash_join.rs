@@ -157,11 +157,11 @@ where
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
         let (a, b, swap) = create_join_tuples!(self, other);
 
-        let a = if let Ok(slice) = a.cont_slice() {
-            slice.iter().map(|v| Some(v))
-        } else {
-            a.iter()
-        };
+        // let a = if let Ok(slice) = a.cont_slice() {
+        //     slice.iter().map(|v| Some(v))
+        // } else {
+        //     a.iter()
+        // };
         // Create the join tuples
         hash_join_tuples_inner(a.iter(), b.iter(), swap)
     }
