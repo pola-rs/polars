@@ -1,12 +1,17 @@
-# Polars
----
+# Polars (WIP)
 [![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
 
-## In memory DataFrames in Rust
+## Blazingly fast in memory DataFrames in Rust
 
-This is my mock up of DataFrames implemented in Rust, using Apache Arrow as backend.
+Polars is a DataFrames library implemented in Rust, using Apache Arrow as backend. It's focus is being a fast in memory
+DataFrame library that only support core functionality.
 
-## WIP
+### Performance
+
+#### GroupBy
+![](pandas_cmp/img/groupby10_.png)
+
+## Functionality
 
 ### Series
 - [x] cast
@@ -48,7 +53,7 @@ This is my mock up of DataFrames implemented in Rust, using Apache Arrow as back
 - [x] time
 
 
-## Example
+## Examples
 
 ```rust
 use polars::prelude::*;
@@ -105,7 +110,3 @@ let s_squared: Series = s.i32()
 ```
 
 
-### Performance
-
-#### GroupBy
-![](pandas_cmp/img/groupby10_.png)
