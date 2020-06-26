@@ -108,4 +108,4 @@ let s_squared: Series = s.i32()
 ### Performance
 
 #### GroupBy
-![](pandas_cmp/img/groupby10.png)
+![](pandas_cmp/img/groupby10_.png)

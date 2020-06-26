@@ -5,3 +5,8 @@ members = [
     "pandas_cmp",
     "vendor/rust_arrow/arrow"
 ]
+
+[profile.release]
+codegen-units = 1
+target-cpu = "native"
+lto = "fat"

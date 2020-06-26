@@ -16,7 +16,7 @@ fn read_df(f: &File) -> DataFrame {
         .f_select_mut("str")
         .i64()
         .expect("i64")
-        .iter()
+        .into_iter()
         .map(|v| v.map(|v| format!("{}", v)));
     let s: Series = Series::init("str", &s.collect::<Vec<_>>());
     df.replace("str", s).expect("replaced");
@@ -62,7 +62,7 @@ fn bench_join() {
     let a = df.slice(0, size).expect("sliced df");
     let b = df.slice(size, size).expect("sliced df");
     let now = Instant::now();
-    let joined = a.inner_join(&b, "groups", "groups");
+    let joined = a.inner_join(&b, "groups", "groups").expect("join");
     let duration = now.elapsed().as_micros();
     println!("duration: {} μs", duration);
     println!("{:?}", joined);
