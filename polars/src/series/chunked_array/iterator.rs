@@ -188,7 +188,7 @@ where
     array_i: usize,
     length: usize,
     n_chunks: usize,
-    opt_slice: Option<Iter<'a, T::Native>>,
+    opt_iter: Option<Iter<'a, T::Native>>,
 }
 
 impl<'a, T> Iterator for ChunkNumIter<'a, T>
@@ -198,9 +198,20 @@ where
     type Item = Option<T::Native>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // if let Some(iter) = &mut self.opt_slice {
-        //     return iter.next().map(|&v| Some(v));
-        // }
+        // Faster path for chunks without null values
+        if self.opt_iter.is_some() {
+            let iter = unsafe { &mut self.opt_iter.as_mut().unsafe_unwrap() };
+
+            // first get return value
+            let ret = iter.next().map(|&v| Some(v));
+
+            // And maybe set indexes. Only when there are multiple chunks
+            // This is stateful and may change the iterator in self.opt_slice
+            if self.n_chunks > 1 {
+                self.set_indexes()
+            }
+            return ret;
+        }
 
         if self.out_of_bounds() {
             return None;
@@ -229,7 +240,26 @@ where
 {
     #[inline]
     fn set_indexes(&mut self) {
-        set_indexes!(self)
+        self.array_i += 1;
+        if self.array_i >= self.current_len {
+            // go to next array in the chunks
+            self.array_i = 0;
+            self.chunk_i += 1;
+
+            if self.chunk_i < self.array_chunks.len() {
+                // not yet at last chunk
+                let arr = unsafe { *self.array_chunks.get_unchecked(self.chunk_i) };
+                self.current_data = Some(arr.data());
+                self.current_array = Some(arr);
+                self.current_len = arr.len();
+
+                if arr.null_count() == 0 {
+                    self.opt_iter = Some(arr.value_slice(0, self.current_len).iter())
+                } else {
+                    self.opt_iter = None
+                }
+            }
+        }
     }
 
     #[inline]
@@ -251,14 +281,16 @@ where
         let arr = arrays.get(0).map(|v| *v);
         let data = arr.map(|arr| arr.data());
 
-        let opt_slice = match self.cont_slice() {
-            Ok(slice) => Some(slice.iter()),
-            Err(_) => None,
+        let (current_len, null_count) = match arr {
+            Some(arr) => (arr.len(), arr.null_count()),
+            None => (0, 0),
         };
-        let current_len = match arr {
-            Some(arr) => arr.len(),
-            None => 0,
-        };
+
+        let mut opt_slice = None;
+
+        if null_count == 0 && current_len > 0 {
+            opt_slice = arr.map(|arr| arr.value_slice(0, current_len).iter())
+        }
 
         ChunkNumIter {
             array_chunks: arrays,
@@ -269,7 +301,7 @@ where
             array_i: 0,
             length: self.len(),
             n_chunks: self.chunks.len(),
-            opt_slice,
+            opt_iter: opt_slice,
         }
     }
 }
@@ -306,7 +338,14 @@ mod test {
 
     #[test]
     fn out_of_bounds() {
-        let a = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let mut a = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let b = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+        a.append(&b);
+
         let v = a.into_iter().collect::<Vec<_>>();
+        assert_eq!(
+            vec![Some(1u32), Some(2), Some(3), Some(1), Some(2), Some(3)],
+            v
+        )
     }
 }
