@@ -23,7 +23,7 @@ pub enum PolarsError {
     #[error("Not contiguous or null values")]
     NoSlice,
     #[error("Such empty...")]
-    Empty,
+    NoData,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

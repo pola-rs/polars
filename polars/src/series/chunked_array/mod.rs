@@ -7,12 +7,11 @@ use crate::{
     },
     series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
 };
-use arrow::array::{
-    ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
-    StringBuilder, UInt32Array,
-};
 use arrow::{
-    array::{PrimitiveArray, PrimitiveBuilder},
+    array::{
+        ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, PrimitiveArray,
+        StringArray, StringBuilder, UInt32Array,
+    },
     compute,
     datatypes::{ArrowPrimitiveType, DateUnit, Field, TimeUnit},
 };
@@ -24,7 +23,8 @@ use std::sync::Arc;
 
 pub mod aggregate;
 mod arithmetic;
-pub(crate) mod builder;
+pub mod builder;
+pub(crate) mod chunkops;
 pub mod comparison;
 pub mod iterator;
 pub mod take;
@@ -62,10 +62,10 @@ pub trait SeriesOps {
 }
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
-fn create_chunk_id(chunks: &Vec<ArrayRef>) -> String {
-    let mut chunk_id = String::new();
+fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
+    let mut chunk_id = Vec::with_capacity(chunks.len());
     for a in chunks {
-        chunk_id.push_str(&format!("{}-", a.len()))
+        chunk_id.push(a.len())
     }
     chunk_id
 }
@@ -74,8 +74,8 @@ pub struct ChunkedArray<T> {
     pub(crate) field: Field,
     // For now settle with dynamic generics until we are more confident about the api
     pub(crate) chunks: Vec<ArrayRef>,
-    /// len_chunk0-len_chunk1-len_chunk2 etc.
-    chunk_id: String,
+    // chunk lengths
+    chunk_id: Vec<usize>,
     phantom: PhantomData<T>,
 }
 
@@ -330,7 +330,7 @@ impl Utf8Chunked {
         ChunkedArray {
             field,
             chunks: vec![Arc::new(builder.finish())],
-            chunk_id: format!("{}-", v.len()).to_string(),
+            chunk_id: vec![v.len()],
             phantom: PhantomData,
         }
     }
@@ -471,85 +471,6 @@ impl<T> Clone for ChunkedArray<T> {
             chunk_id: self.chunk_id.clone(),
             phantom: PhantomData,
         }
-    }
-}
-
-pub trait ChunkOps {
-    fn rechunk(&mut self);
-    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>>
-    where
-        Self: std::marker::Sized;
-}
-
-macro_rules! optional_rechunk {
-    ($self:tt, $rhs:tt) => {
-        if $self.chunk_id != $rhs.chunk_id {
-            // we can rechunk ourselves to match
-            if $rhs.chunks.len() == 1 {
-                let mut new = $self.clone();
-                new.rechunk();
-                Ok(Some(new))
-            } else {
-                Err(PolarsError::ChunkMisMatch)
-            }
-        } else {
-            Ok(None)
-        }
-    };
-}
-
-impl<T> ChunkOps for ChunkedArray<T>
-where
-    T: PolarNumericType,
-{
-    fn rechunk(&mut self) {
-        if self.chunks.len() > 1 {
-            let mut builder = PrimitiveBuilder::<T>::new(self.len());
-            self.into_iter().for_each(|val| {
-                builder.append_option(val).expect("Could not append value");
-            });
-            self.chunks = vec![Arc::new(builder.finish())];
-            self.set_chunk_id()
-        }
-    }
-
-    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
-        optional_rechunk!(self, rhs)
-    }
-}
-
-impl ChunkOps for BooleanChunked {
-    fn rechunk(&mut self) {
-        if self.chunks.len() > 1 {
-            let mut builder = PrimitiveBuilder::<BooleanType>::new(self.len());
-            self.into_iter()
-                .for_each(|val| builder.append_option(val).expect("Could not append value"));
-            self.chunks = vec![Arc::new(builder.finish())];
-            self.set_chunk_id()
-        }
-    }
-
-    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
-        optional_rechunk!(self, rhs)
-    }
-}
-
-impl ChunkOps for Utf8Chunked {
-    fn rechunk(&mut self) {
-        if self.chunks.len() > 1 {
-            let mut builder = StringBuilder::new(self.len());
-            self.into_iter().for_each(|opt_val| match opt_val {
-                Some(val) => builder.append_value(val).expect("Could not append value"),
-                None => builder.append_null().expect("append null"),
-            });
-
-            self.chunks = vec![Arc::new(builder.finish())];
-            self.set_chunk_id()
-        }
-    }
-
-    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
-        optional_rechunk!(self, rhs)
     }
 }
 

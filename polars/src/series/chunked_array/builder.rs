@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use arrow::array::{PrimitiveBuilder, StringBuilder};
+use arrow::array::{Array, PrimitiveBuilder, StringBuilder};
 use arrow::datatypes::{ArrowPrimitiveType, Field};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -27,10 +27,12 @@ where
     }
 
     pub fn finish(mut self) -> ChunkedArray<T> {
+        let arr = Arc::new(self.builder.finish());
+        let len = arr.len();
         ChunkedArray {
             field: self.field,
-            chunks: vec![Arc::new(self.builder.finish())],
-            chunk_id: format!("{}-", self.capacity).to_string(),
+            chunks: vec![arr],
+            chunk_id: vec![len],
             phantom: PhantomData,
         }
     }
@@ -66,10 +68,12 @@ impl Utf8ChunkedBuilder {
     }
 
     pub fn finish(mut self) -> Utf8Chunked {
+        let arr = Arc::new(self.builder.finish());
+        let len = arr.len();
         ChunkedArray {
             field: self.field,
-            chunks: vec![Arc::new(self.builder.finish())],
-            chunk_id: format!("{}-", self.capacity).to_string(),
+            chunks: vec![arr],
+            chunk_id: vec![len],
             phantom: PhantomData,
         }
     }

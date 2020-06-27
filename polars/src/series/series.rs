@@ -87,7 +87,7 @@ pub enum Series {
 
 #[macro_export]
 macro_rules! apply_method_all_series {
-    ($self:ident, $method:ident, $($args:ident),*) => {
+    ($self:ident, $method:ident, $($args:expr),*) => {
         match $self {
             Series::UInt32(a) => a.$method($($args),*),
             Series::Int32(a) => a.$method($($args),*),
@@ -327,7 +327,8 @@ impl Series {
 
     /// Aggregate all chunks to a contiguous array of memory.
     pub fn rechunk(&mut self) {
-        apply_method_all_series!(self, rechunk,)
+        let len = self.len();
+        apply_method_all_series!(self, rechunk, &[len])
     }
 
     /// Cast to an some primitive type.

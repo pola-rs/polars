@@ -8,6 +8,7 @@ use std::sync::Arc;
 pub mod csv;
 pub mod group_by;
 pub mod hash_join;
+mod rechunk;
 
 type DfSchema = Arc<Schema>;
 type DfSeries = Series;
@@ -33,7 +34,7 @@ impl DataFrame {
         Ok(self
             .columns
             .get(0)
-            .ok_or(PolarsError::Empty)?
+            .ok_or(PolarsError::NoData)?
             .chunks()
             .len())
     }

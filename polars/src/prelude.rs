@@ -10,9 +10,11 @@ pub use crate::{
         arithmetic::LhsNumOps,
         chunked_array::{
             aggregate::Agg,
+            builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
+            chunkops::ChunkOps,
             comparison::{CmpOps, ForceCmpOps},
             take::{Take, TakeIndex},
-            ChunkOps, ChunkedArray, Downcast, SeriesOps,
+            ChunkedArray, Downcast, SeriesOps,
         },
         series::{NamedFrom, Series},
     },
