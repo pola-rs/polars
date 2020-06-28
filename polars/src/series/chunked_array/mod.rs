@@ -1,3 +1,4 @@
+//! The typed heart of every Series column.
 use crate::prelude::*;
 use crate::{
     datatypes::{
@@ -424,10 +425,10 @@ where
     /// ```
     /// use polars::prelude::*;
     /// fn compute_sum(ca: &UInt32Chunked) -> Result<u32> {
-    ///     ca.apply_agg(0, |acc, value| acc + *value)
+    ///     ca.fold(0, |acc, value| acc + *value)
     /// }
     /// ```
-    pub fn apply_agg<F, B>(&self, init: B, f: F) -> Result<B>
+    pub fn fold<F, B>(&self, init: B, f: F) -> Result<B>
     where
         F: Fn(B, &T::Native) -> B,
     {
@@ -443,11 +444,11 @@ where
     /// ```
     /// use polars::prelude::*;
     /// fn compute_sum(ca: &UInt32Chunked) -> u32 {
-    ///     match ca.apply_agg(0, |acc, value| acc + *value) {
+    ///     match ca.fold(0, |acc, value| acc + *value) {
     ///         // faster sum without null checks was successful
     ///         Ok(sum) => sum,
     ///         // Null values or multiple chunks in ChunkedArray, we need to do more bounds checking
-    ///         Err(_) => ca.apply_agg_null_checks(0, |acc, opt_value| {
+    ///         Err(_) => ca.fold_null_checks(0, |acc, opt_value| {
     ///             match opt_value {
     ///                 Some(v) => acc + v,
     ///                 None => acc
@@ -456,7 +457,7 @@ where
     ///     }
     /// }
     /// ```
-    pub fn apply_agg_null_checks<F, B>(&self, init: B, f: F) -> B
+    pub fn fold_null_checks<F, B>(&self, init: B, f: F) -> B
     where
         F: Fn(B, Option<T::Native>) -> B,
     {

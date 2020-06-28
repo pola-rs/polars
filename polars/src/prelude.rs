@@ -16,7 +16,7 @@ pub use crate::{
             take::{Take, TakeIndex},
             ChunkedArray, Downcast, SeriesOps,
         },
-        series::{NamedFrom, Series},
+        NamedFrom, Series,
     },
     testing::*,
 };

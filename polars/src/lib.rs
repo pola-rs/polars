@@ -2,7 +2,10 @@
 //!
 //! # WIP
 //!
-//! ## Read csv
+//! Read more in the [DataFrame](frame/struct.DataFrame.html) and [Series](series/index.html)
+//! modules.
+//!
+//! ## Read and write csv
 //!
 //! ```
 //! use polars::prelude::*;
@@ -17,6 +20,8 @@
 //!             .finish()
 //! }
 //! ```
+//!
+//! For more examples see: [the csv module](frame/csv/index.html).
 //!
 //! ## Join
 //!
@@ -88,21 +93,12 @@
 //!     .all(|(a, b)| a == *b))
 //! ```
 //!
-//! Read more in the [DataFrame](frame/struct.DataFrame.html) and [Series](/series/series/index.html)
-//! modules.
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
-pub mod error;
-pub mod series {
-    pub(crate) mod aggregate;
-    pub(crate) mod arithmetic;
-    pub mod chunked_array;
-    mod comparison;
-    pub(crate) mod iterator;
-    pub mod series;
-}
 pub mod datatypes;
+pub mod error;
 mod fmt;
 pub mod frame;
 pub mod prelude;
+pub mod series;
 pub mod testing;

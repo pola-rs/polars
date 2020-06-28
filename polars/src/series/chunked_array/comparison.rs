@@ -4,6 +4,24 @@ use arrow::compute;
 use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
 
+/// Compare [Series](series/series/enum.Series.html)
+///
+/// and [ChunkedArray](series/chunked_array/struct.ChunkedArray.html)'s and get a `boolean` mask that
+/// can be use to filter rows.
+///
+/// # Example
+///
+/// ```
+/// use polars::prelude::*;
+/// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
+///     let mask = df
+///     .select("column_a")
+///     .ok_or(PolarsError::NotFound)?
+///     .eq(1)?;
+///
+///     df.filter(&mask)
+/// }
+/// ```
 pub trait CmpOps<Rhs> {
     /// Check for equality.
     fn eq(&self, rhs: Rhs) -> Result<BooleanChunked>;

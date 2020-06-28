@@ -4,6 +4,7 @@ use arrow::datatypes::Schema;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
+/// Write a DataFrame to csv.
 pub struct CsvWriter<'a, W: Write> {
     writer: &'a mut W,
     writer_builder: WriterBuilder,
@@ -13,6 +14,23 @@ impl<'a, W> CsvWriter<'a, W>
 where
     W: Write,
 {
+    /// Write a DataFrame to a csv file.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// use std::fs::File;
+    ///
+    /// fn example(df: &DataFrame) -> Result<()> {
+    ///     let mut file = File::create("example.csv").expect("could not create file");
+    ///
+    ///     CsvWriter::new(&mut file)
+    ///     .has_headers(true)
+    ///     .with_delimiter(b',')
+    ///     .finish(df)
+    /// }
+    /// ```
     pub fn new(writer: &'a mut W) -> Self {
         CsvWriter {
             writer,

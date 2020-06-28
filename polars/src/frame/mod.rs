@@ -1,3 +1,4 @@
+//! DataFrame module
 use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::{compute::TakeOptions, record_batch::RecordBatch};

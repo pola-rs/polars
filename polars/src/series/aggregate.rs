@@ -1,4 +1,4 @@
-use crate::series::{chunked_array::aggregate::Agg, series::Series};
+use crate::series::{chunked_array::aggregate::Agg, Series};
 use num::{Num, NumCast, ToPrimitive, Zero};
 
 macro_rules! apply_agg_fn {

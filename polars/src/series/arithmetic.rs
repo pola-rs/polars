@@ -3,7 +3,7 @@ use num::{Num, NumCast};
 use std::ops;
 
 impl Series {
-    fn subtract(&self, rhs: &Series) -> Result<Self> {
+    pub fn subtract(&self, rhs: &Series) -> Result<Self> {
         macro_rules! subtract {
             ($variant:path, $lhs:ident) => {{
                 if let $variant(rhs_) = rhs {
@@ -27,7 +27,7 @@ impl Series {
         }
     }
 
-    fn add_to(&self, rhs: &Series) -> Result<Self> {
+    pub fn add_to(&self, rhs: &Series) -> Result<Self> {
         macro_rules! add {
             ($variant:path, $lhs:ident) => {{
                 if let $variant(rhs_) = rhs {
@@ -51,7 +51,7 @@ impl Series {
         }
     }
 
-    fn multiply(&self, rhs: &Series) -> Result<Self> {
+    pub fn multiply(&self, rhs: &Series) -> Result<Self> {
         macro_rules! multiply {
             ($variant:path, $lhs:ident) => {{
                 if let $variant(rhs_) = rhs {

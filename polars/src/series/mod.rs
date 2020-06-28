@@ -1,5 +1,14 @@
 //! # Series
-//! The columnar data type for a DataFrame.
+//! The columnar data type for a DataFrame. The [Series enum](series/enum.Series.html) consists
+//! of typed [ChunkedArray](chunked_array/struct.ChunkedArray.html)'s. To quickly cast
+//! a `Series` to a `ChunkedArray` you can call the method with the name of the type:
+//!
+//! ```
+//! # use polars::prelude::*;
+//! let s: Series = [1, 2, 3].iter().collect();
+//! // Quickly obtain the ChunkedArray wrapped by the Series.
+//! let chunked_array = s.i32().unwrap();
+//! ```
 //!
 //! ## Arithmetic
 //!
@@ -64,11 +73,18 @@
 //!                     .collect();
 //! ```
 
+pub use crate::prelude::CmpOps;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
 use arrow::compute::TakeOptions;
 use arrow::datatypes::{ArrowPrimitiveType, Field};
 use std::mem;
+
+pub(crate) mod aggregate;
+pub(crate) mod arithmetic;
+pub mod chunked_array;
+mod comparison;
+pub(crate) mod iterator;
 
 #[derive(Clone)]
 pub enum Series {
@@ -152,8 +168,8 @@ macro_rules! unpack_series {
 }
 
 impl Series {
-    /// Get an id of the underlying chunks configuration.
-    pub fn chunk_id(&self) -> &Vec<usize> {
+    /// Get the lengths of the underlying chunks
+    pub fn chunk_lengths(&self) -> &Vec<usize> {
         apply_method_all_series!(self, chunk_id,)
     }
     /// Name of series.
