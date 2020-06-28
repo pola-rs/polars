@@ -4,18 +4,18 @@ use itertools::Itertools;
 
 /// Used to create the same chunksizes in a DataFrame
 /// Only aggregate smaller chunks to larger ones
-struct ReChunker<'a> {
-    columns: &'a DfColumns,
+pub(crate) struct ReChunker<'a> {
+    columns: &'a mut DfColumns,
     /// Number of chunks in the column with the least chunks. Optimal chunking is: `min_chunks = 1`
     min_chunks: usize,
     /// The indexes of the columns selected for rechunking
     to_rechunk: Vec<usize>,
-    /// Chunk id/ lengths to resize to.
-    chunk_id: &'a Vec<usize>,
+    // idx of a minimal chunked column
+    argmin: usize,
 }
 
 impl<'a> ReChunker<'a> {
-    fn new(columns: &'a DfColumns) -> Result<Self> {
+    pub(crate) fn new(columns: &'a mut DfColumns) -> Result<Self> {
         let chunk_lens = columns.iter().map(|s| s.n_chunks()).collect::<Vec<_>>();
 
         let argmin = chunk_lens
@@ -23,7 +23,6 @@ impl<'a> ReChunker<'a> {
             .position_min()
             .ok_or(PolarsError::NoData)?;
         let min_chunks = chunk_lens[argmin];
-        let chunk_id = columns[argmin].chunk_id();
 
         let to_rechunk = chunk_lens
             .into_iter()
@@ -35,17 +34,19 @@ impl<'a> ReChunker<'a> {
             columns,
             min_chunks,
             to_rechunk,
-            chunk_id,
+            argmin,
         })
     }
 
-    fn rechunk(&self) -> Result<DfColumns> {
-        self.to_rechunk
-            .iter()
-            .map(|&idx| {
-                let col = &self.columns[idx];
-                col.rechunk(Some(self.chunk_id))
-            })
-            .collect()
+    pub(crate) fn rechunk(self) -> Result<()> {
+        // clone shouldn't be too expensive as we expect the nr. of chunks to be close to 1.
+        let chunk_id = self.columns[self.argmin].chunk_id().clone();
+
+        for idx in self.to_rechunk {
+            let col = &self.columns[idx];
+            let new_col = col.rechunk(Some(&chunk_id))?;
+            self.columns[idx] = new_col;
+        }
+        Ok(())
     }
 }

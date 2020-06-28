@@ -304,7 +304,7 @@ impl<'a> GroupBy<'a> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_mean", name];
         let agg = apply_agg_fn!(self, agg_mean, agg_col, new_name);
-        DataFrame::new_from_columns(vec![keys, agg])
+        DataFrame::new(vec![keys, agg])
     }
 
     /// Aggregate grouped series and compute the sum per group.
@@ -312,7 +312,7 @@ impl<'a> GroupBy<'a> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_sum", name];
         let agg = apply_agg_fn!(self, agg_sum, agg_col, new_name);
-        DataFrame::new_from_columns(vec![keys, agg])
+        DataFrame::new(vec![keys, agg])
     }
 
     /// Aggregate grouped series and compute the minimal value per group.
@@ -320,7 +320,7 @@ impl<'a> GroupBy<'a> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_min", name];
         let agg = apply_agg_fn!(self, agg_min, agg_col, new_name);
-        DataFrame::new_from_columns(vec![keys, agg])
+        DataFrame::new(vec![keys, agg])
     }
 
     /// Aggregate grouped series and compute the maximum value per group.
@@ -328,7 +328,7 @@ impl<'a> GroupBy<'a> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_max", name];
         let agg = apply_agg_fn!(self, agg_max, agg_col, new_name);
-        DataFrame::new_from_columns(vec![keys, agg])
+        DataFrame::new(vec![keys, agg])
     }
 
     /// Aggregate grouped series and compute the number of values per group.
@@ -343,7 +343,7 @@ impl<'a> GroupBy<'a> {
         }
         let ca = builder.finish();
         let agg = Series::UInt32(ca);
-        DataFrame::new_from_columns(vec![keys, agg])
+        DataFrame::new(vec![keys, agg])
     }
 }
 
@@ -356,7 +356,7 @@ mod test {
         let s0 = Series::init("days", ["mo", "mo", "tue", "wed", "tue"].as_ref());
         let s1 = Series::init("temp", [20, 10, 7, 9, 1].as_ref());
         let s2 = Series::init("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
-        let df = DataFrame::new_from_columns(vec![s0, s1, s2]).unwrap();
+        let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
         println!(
             "{:?}",

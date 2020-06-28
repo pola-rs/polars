@@ -2,6 +2,7 @@ use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::{compute::TakeOptions, record_batch::RecordBatch};
 use itertools::Itertools;
+use rechunk::ReChunker;
 use std::mem;
 use std::sync::Arc;
 
@@ -21,8 +22,29 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
+    /// Create a DataFrame from a Vector of Series.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// let s0 = Series::init("days", [0, 1, 2].as_ref());
+    /// let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
+    /// let df = DataFrame::new(vec![s0, s1]).unwrap();
+    /// ```
+    pub fn new(mut columns: Vec<Series>) -> Result<Self> {
+        let fields = Self::create_fields(&columns);
+        let schema = Arc::new(Schema::new(fields));
+
+        let rechunker = ReChunker::new(&mut columns)?;
+        rechunker.rechunk()?;
+
+        Self::new_with_schema(schema, columns)
+    }
+
     /// Create a new DataFrame from a schema and a vec of series.
-    pub fn new(schema: DfSchema, columns: DfColumns) -> Result<Self> {
+    /// Only for crate use as schema is not checked.
+    fn new_with_schema(schema: DfSchema, columns: DfColumns) -> Result<Self> {
         if !columns.iter().map(|s| s.len()).all_equal() {
             return Err(PolarsError::LengthMismatch);
         }
@@ -55,25 +77,12 @@ impl DataFrame {
     }
 
     /// This method should be called after every mutable addition/ deletion of columns
-    fn update_schema(&mut self) {
+    fn register_mutation(&mut self) -> Result<()> {
         let fields = Self::create_fields(&self.columns);
         self.schema = Arc::new(Schema::new(fields));
-    }
-
-    /// Create a DataFrame from a Vector of Series.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars::prelude::*;
-    /// let s0 = Series::init("days", [0, 1, 2].as_ref());
-    /// let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
-    /// let df = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
-    /// ```
-    pub fn new_from_columns(columns: Vec<Series>) -> Result<Self> {
-        let fields = Self::create_fields(&columns);
-        let schema = Arc::new(Schema::new(fields));
-        Self::new(schema, columns)
+        let rechunker = ReChunker::new(&mut self.columns)?;
+        rechunker.rechunk()?;
+        Ok(())
     }
 
     /// Get a reference the schema fields of the DataFrame.
@@ -142,7 +151,7 @@ impl DataFrame {
         columns
             .iter()
             .for_each(|column| self.columns.push(column.clone()));
-        self.update_schema();
+        self.register_mutation()?;
         Ok(())
     }
 
@@ -152,11 +161,11 @@ impl DataFrame {
     ///
     /// ```
     /// use polars::prelude::*;
-    /// fn drop_column(df: &mut DataFrame, name: &str) -> Option<Series> {
+    /// fn drop_column(df: &mut DataFrame, name: &str) -> Result<Series> {
     ///     df.drop(name)
     /// }
     /// ```
-    pub fn drop(&mut self, name: &str) -> Option<DfSeries> {
+    pub fn drop(&mut self, name: &str) -> Result<DfSeries> {
         let mut idx = 0;
         for column in &self.columns {
             if column.name() == name {
@@ -165,10 +174,10 @@ impl DataFrame {
             idx += 1;
         }
         if idx == self.columns.len() {
-            None
+            Err(PolarsError::NotFound)
         } else {
-            let result = Some(self.columns.remove(idx));
-            self.update_schema();
+            let result = Ok(self.columns.remove(idx));
+            self.register_mutation()?;
             result
         }
     }
@@ -264,7 +273,7 @@ impl DataFrame {
         for col in &self.columns {
             new_col.push(col.filter(mask)?)
         }
-        DataFrame::new_from_columns(new_col)
+        DataFrame::new(new_col)
     }
 
     /// Force filter
@@ -300,7 +309,7 @@ impl DataFrame {
                 s.take_iter(&mut i, options.clone(), capacity)
             })
             .collect::<Result<Vec<_>>>()?;
-        DataFrame::new(self.schema.clone(), new_col)
+        DataFrame::new_with_schema(self.schema.clone(), new_col)
     }
 
     /// Take DataFrame rows by index values.
@@ -321,7 +330,7 @@ impl DataFrame {
             .map(|s| s.take(indices, options.clone()))
             .collect::<Result<Vec<_>>>()?;
 
-        DataFrame::new(self.schema.clone(), new_col)
+        DataFrame::new_with_schema(self.schema.clone(), new_col)
     }
 
     /// Force take
@@ -368,7 +377,7 @@ impl DataFrame {
     pub fn replace(&mut self, column: &str, new_col: DfSeries) -> Result<()> {
         let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
         let _ = mem::replace(&mut self.columns[idx], new_col);
-        self.update_schema();
+        self.register_mutation()?;
         Ok(())
     }
 
@@ -379,13 +388,11 @@ impl DataFrame {
             .iter()
             .map(|s| s.slice(offset, length))
             .collect::<Result<Vec<_>>>()?;
-        DataFrame::new(self.schema.clone(), col)
+        DataFrame::new_with_schema(self.schema.clone(), col)
     }
 
     /// Transform the underlying chunks in the DataFrame to Arrow RecordBatches
     pub fn as_record_batches(&self) -> Result<Vec<RecordBatch>> {
-        // TODO: Make sure chunks in dataframe are equal. Add equality constraint?
-
         let n_chunks = self.n_chunks()?;
         let width = self.width();
 
@@ -404,32 +411,6 @@ impl DataFrame {
     }
 }
 
-pub struct DataFrameBuilder {
-    schema: Option<DfSchema>,
-    columns: DfColumns,
-}
-
-impl DataFrameBuilder {
-    pub fn new(columns: DfColumns) -> Self {
-        DataFrameBuilder {
-            schema: None,
-            columns,
-        }
-    }
-
-    pub fn schema(mut self, schema: DfSchema) -> Self {
-        self.schema = Some(schema);
-        self
-    }
-
-    pub fn finish(self) -> Result<DataFrame> {
-        match self.schema {
-            Some(schema) => DataFrame::new(schema, self.columns),
-            None => DataFrame::new_from_columns(self.columns),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -438,7 +419,7 @@ mod test {
     fn create_frame() -> DataFrame {
         let s0 = Series::init("days", [0, 1, 2].as_ref());
         let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
-        DataFrame::new_from_columns(vec![s0, s1]).unwrap()
+        DataFrame::new(vec![s0, s1]).unwrap()
     }
 
     #[test]

@@ -38,7 +38,7 @@ mod test {
         let a = Series::init("a", [1, 2, 3].as_ref());
         let b = Series::init("b", [1, 2, 3].as_ref());
 
-        let df1 = DataFrame::new_from_columns(vec![a, b]).unwrap();
+        let df1 = DataFrame::new(vec![a, b]).unwrap();
         let df2 = df1.clone();
         assert!(df1.frame_equal(&df2))
     }

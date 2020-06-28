@@ -26,12 +26,12 @@
 //! // Create first df.
 //! let s0 = Series::init("days", [0, 1, 2, 3, 4].as_ref());
 //! let s1 = Series::init("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
-//! let temp = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
+//! let temp = DataFrame::new(vec![s0, s1]).unwrap();
 //!
 //! // Create second df.
 //! let s0 = Series::init("days", [1, 2].as_ref());
 //! let s1 = Series::init("rain", [0.1, 0.2].as_ref());
-//! let rain = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
+//! let rain = DataFrame::new(vec![s0, s1]).unwrap();
 //!
 //! // Left join on days column.
 //! let joined = temp.left_join(&rain, "days", "days");

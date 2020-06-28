@@ -25,5 +25,5 @@ pub use crate::{
 pub(crate) fn create_df() -> DataFrame {
     let s0 = Series::init("days", [0, 1, 2, 3, 4].as_ref());
     let s1 = Series::init("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
-    DataFrame::new_from_columns(vec![s0, s1]).unwrap()
+    DataFrame::new(vec![s0, s1]).unwrap()
 }
