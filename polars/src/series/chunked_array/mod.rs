@@ -1,5 +1,6 @@
 //! The typed heart of every Series column.
 use crate::prelude::*;
+use crate::series::chunked_array::iterator::ChunkNumIter;
 use crate::{
     datatypes::{
         AnyType, ArrowDataType, BooleanChunked, Date32Chunked, Date64Chunked, DurationNsChunked,
@@ -19,6 +20,7 @@ use arrow::{
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
+use std::iter::{Copied, Map};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -418,25 +420,70 @@ where
         }
     }
 
-    /// If `cont_slice` is successful a closure can be applied as aggregation
+    /// If [cont_slice](#method.cont_slice) is successful a closure is mapped over the elements.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn multiply(ca: &UInt32Chunked) -> Result<Series> {
+    ///     let mapped = ca.map(|v| v * 2)?;
+    ///     Ok(mapped.collect())
+    /// }
+    /// ```
+    pub fn map<B, F>(&self, f: F) -> Result<Map<Copied<std::slice::Iter<T::Native>>, F>>
+    where
+        F: Fn(T::Native) -> B,
+    {
+        let slice = self.cont_slice()?;
+        Ok(slice.iter().copied().map(f))
+    }
+
+    /// If [cont_slice](#method.cont_slice) fails we can fallback on an iterator with null checks
+    /// and map a closure over the elements.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// use itertools::Itertools;
+    /// fn multiply(ca: &UInt32Chunked) -> Series {
+    ///     let mapped_result = ca.map(|v| v * 2);
+    ///
+    ///     if let Ok(mapped) = mapped_result {
+    ///         mapped.collect()
+    ///     } else {
+    ///         ca
+    ///         .map_null_checks(|opt_v| opt_v.map(|v |v * 2)).collect()
+    ///     }
+    /// }
+    /// ```
+    pub fn map_null_checks<B, F>(&self, f: F) -> Map<ChunkNumIter<T>, F>
+    where
+        F: Fn(Option<T::Native>) -> B,
+    {
+        self.into_iter().map(f)
+    }
+
+    /// If [cont_slice](#method.cont_slice) is successful a closure can be applied as aggregation
     ///
     /// # Example
     ///
     /// ```
     /// use polars::prelude::*;
     /// fn compute_sum(ca: &UInt32Chunked) -> Result<u32> {
-    ///     ca.fold(0, |acc, value| acc + *value)
+    ///     ca.fold(0, |acc, value| acc + value)
     /// }
     /// ```
     pub fn fold<F, B>(&self, init: B, f: F) -> Result<B>
     where
-        F: Fn(B, &T::Native) -> B,
+        F: Fn(B, T::Native) -> B,
     {
         let slice = self.cont_slice()?;
-        Ok(slice.iter().fold(init, f))
+        Ok(slice.iter().copied().fold(init, f))
     }
 
-    /// If `cont_slice` failed we can fallback on an iterator with null checks
+    /// If [cont_slice](#method.cont_slice) fails we can fallback on an iterator with null checks
     /// and a closure for aggregation
     ///
     /// # Example
@@ -444,7 +491,7 @@ where
     /// ```
     /// use polars::prelude::*;
     /// fn compute_sum(ca: &UInt32Chunked) -> u32 {
-    ///     match ca.fold(0, |acc, value| acc + *value) {
+    ///     match ca.fold(0, |acc, value| acc + value) {
     ///         // faster sum without null checks was successful
     ///         Ok(sum) => sum,
     ///         // Null values or multiple chunks in ChunkedArray, we need to do more bounds checking

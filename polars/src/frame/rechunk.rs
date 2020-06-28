@@ -40,7 +40,7 @@ impl<'a> ReChunker<'a> {
 
     pub(crate) fn rechunk(self) -> Result<()> {
         // clone shouldn't be too expensive as we expect the nr. of chunks to be close to 1.
-        let chunk_id = self.columns[self.argmin].chunk_id().clone();
+        let chunk_id = self.columns[self.argmin].chunk_lengths().clone();
 
         for idx in self.to_rechunk {
             let col = &self.columns[idx];
