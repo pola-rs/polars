@@ -16,8 +16,8 @@ type DfColumns = Vec<DfSeries>;
 
 #[derive(Clone)]
 pub struct DataFrame {
-    pub schema: DfSchema,
-    pub columns: DfColumns,
+    schema: DfSchema,
+    columns: DfColumns,
 }
 
 impl DataFrame {
@@ -27,6 +27,16 @@ impl DataFrame {
             return Err(PolarsError::LengthMismatch);
         }
         Ok(DataFrame { schema, columns })
+    }
+
+    /// Get a reference to the DataFrame schema.
+    pub fn schema(&self) -> &DfSchema {
+        &self.schema
+    }
+
+    /// Get a reference to the DataFrame columns.
+    pub fn columns(&self) -> &DfColumns {
+        &self.columns
     }
 
     /// The number of chunks per column

@@ -194,11 +194,11 @@ where
         if self.rechunk {
             columns = columns
                 .into_iter()
-                .map(|mut s| {
-                    s.rechunk();
-                    s
+                .map(|s| {
+                    let s = s.rechunk(None)?;
+                    Ok(s)
                 })
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
         }
 
         Ok(DataFrame {

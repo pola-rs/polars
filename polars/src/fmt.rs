@@ -65,15 +65,15 @@ impl Debug for DataFrame {
 
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for field in self.schema.fields() {
+        for field in self.schema().fields() {
             write!(f, "{:>15}", field.name())?;
         }
         write!(f, "\n")?;
-        for field in self.schema.fields() {
+        for field in self.schema().fields() {
             write!(f, "{:>15}", field.data_type().to_str())?;
         }
         write!(f, "\n")?;
-        for _ in self.schema.fields() {
+        for _ in self.schema().fields() {
             write!(f, "{:>15}", "---")?;
         }
         write!(f, "\n\n")?;

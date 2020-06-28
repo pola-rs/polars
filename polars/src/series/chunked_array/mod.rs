@@ -99,6 +99,10 @@ where
         (current_chunk_idx, index_remainder)
     }
 
+    pub fn chunk_id(&self) -> &Vec<usize> {
+        &self.chunk_id
+    }
+
     /// A reference to the chunks
     pub fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
@@ -564,7 +568,6 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use arrow::datatypes::ArrowPrimitiveType;
 
     fn get_array() -> Int32Chunked {
         ChunkedArray::new_from_slice("a", &[1, 2, 3])

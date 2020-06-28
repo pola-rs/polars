@@ -152,6 +152,10 @@ macro_rules! unpack_series {
 }
 
 impl Series {
+    /// Get an id of the underlying chunks configuration.
+    pub fn chunk_id(&self) -> &Vec<usize> {
+        apply_method_all_series!(self, chunk_id,)
+    }
     /// Name of series.
     pub fn name(&self) -> &str {
         apply_method_all_series!(self, name,)
@@ -326,9 +330,8 @@ impl Series {
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
-    pub fn rechunk(&mut self) {
-        let len = self.len();
-        apply_method_all_series!(self, rechunk, &[len])
+    pub fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
+        Ok(apply_method_and_return!(self, rechunk, [chunk_lengths], ?))
     }
 
     /// Cast to an some primitive type.

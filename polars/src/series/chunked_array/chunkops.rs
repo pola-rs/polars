@@ -1,9 +1,14 @@
 use crate::prelude::*;
-use arrow::array::{PrimitiveBuilder, StringBuilder};
+use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
 use std::sync::Arc;
 
 pub trait ChunkOps {
-    fn rechunk(&mut self, chunk_id: &[usize]);
+    /// Aggregate to chunk id.
+    /// A chunk id is a vector of the chunk lengths.
+    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+    /// Only rechunk if lhs and rhs don't match
     fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>>
     where
         Self: std::marker::Sized;
@@ -13,31 +18,55 @@ macro_rules! optional_rechunk {
     ($self:tt, $rhs:tt) => {
         if $self.chunk_id != $rhs.chunk_id {
             // we can rechunk ourselves to match
-            if $rhs.chunks.len() == 1 {
-                let mut new = $self.clone();
-                new.rechunk(&$rhs.chunk_id);
-                Ok(Some(new))
-            } else {
-                Err(PolarsError::ChunkMisMatch)
-            }
+            $self.rechunk(Some(&$rhs.chunk_id)).map(|v| Some(v))
         } else {
             Ok(None)
         }
     };
 }
 
+fn mimic_chunks<T>(arr: &ArrayRef, chunk_lengths: &[usize], name: &str) -> Result<ChunkedArray<T>>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkOps,
+{
+    let mut chunks = Vec::with_capacity(chunk_lengths.len());
+    let mut offset = 0;
+    for chunk_length in chunk_lengths {
+        chunks.push(arr.slice(offset, *chunk_length));
+        offset += *chunk_length
+    }
+    Ok(ChunkedArray::new_from_chunks(name, chunks))
+}
+
 impl<T> ChunkOps for ChunkedArray<T>
 where
     T: PolarNumericType,
 {
-    fn rechunk(&mut self, chunk_id: &[usize]) {
-        if self.chunks.len() > 1 {
-            let mut builder = PrimitiveBuilder::<T>::new(self.len());
-            self.into_iter().for_each(|val| {
-                builder.append_option(val).expect("Could not append value");
-            });
-            self.chunks = vec![Arc::new(builder.finish())];
-            self.set_chunk_id()
+    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
+        // we aggregate to 1 or chunk_id
+        match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
+            // No rechunking needed.
+            (1, Some(1)) | (1, None) => Ok(self.clone()),
+            // Left contains a single chunk. We can cheaply mimic right as arrow slices are zero copy
+            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            // Left will be aggregated to match right
+            (_, Some(_)) | (_, None) => {
+                let default = &[self.len()];
+                let chunk_id = chunk_lengths.unwrap_or(default);
+                let mut iter = self.into_iter();
+                let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
+
+                for chunk_length in chunk_id {
+                    let mut builder = PrimitiveBuilder::<T>::new(*chunk_length);
+                    builder.append_option(
+                        iter.next()
+                            .expect("the first option is the iterator bounds"),
+                    )?;
+                    chunks.push(Arc::new(builder.finish()))
+                }
+                Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            }
         }
     }
 
@@ -47,13 +76,27 @@ where
 }
 
 impl ChunkOps for BooleanChunked {
-    fn rechunk(&mut self, chunk_id: &[usize]) {
-        if self.chunks.len() > 1 {
-            let mut builder = PrimitiveBuilder::<BooleanType>::new(self.len());
-            self.into_iter()
-                .for_each(|val| builder.append_option(val).expect("Could not append value"));
-            self.chunks = vec![Arc::new(builder.finish())];
-            self.set_chunk_id()
+    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
+        match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
+            (1, Some(1)) | (1, None) => Ok(self.clone()),
+            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (_, Some(_)) | (_, None) => {
+                let default = &[self.len()];
+                let chunk_id = chunk_lengths.unwrap_or(default);
+
+                let mut iter = self.into_iter();
+                let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
+
+                for chunk_length in chunk_id {
+                    let mut builder = PrimitiveBuilder::<BooleanType>::new(*chunk_length);
+                    builder.append_option(
+                        iter.next()
+                            .expect("the first option is the iterator bounds"),
+                    )?;
+                    chunks.push(Arc::new(builder.finish()))
+                }
+                Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            }
         }
     }
 
@@ -63,16 +106,26 @@ impl ChunkOps for BooleanChunked {
 }
 
 impl ChunkOps for Utf8Chunked {
-    fn rechunk(&mut self, chunk_id: &[usize]) {
-        if self.chunks.len() > 1 {
-            let mut builder = StringBuilder::new(self.len());
-            self.into_iter().for_each(|opt_val| match opt_val {
-                Some(val) => builder.append_value(val).expect("Could not append value"),
-                None => builder.append_null().expect("append null"),
-            });
+    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
+        match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
+            (1, Some(1)) | (1, None) => Ok(self.clone()),
+            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (_, Some(_)) | (_, None) => {
+                let default = &[self.len()];
+                let chunk_id = chunk_lengths.unwrap_or(default);
+                let mut iter = self.into_iter();
+                let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
 
-            self.chunks = vec![Arc::new(builder.finish())];
-            self.set_chunk_id()
+                for chunk_length in chunk_id {
+                    let mut builder = StringBuilder::new(*chunk_length);
+                    match iter.next().expect("first option is iterator bounds") {
+                        Some(val) => builder.append_value(val).expect("Could not append value"),
+                        None => builder.append_null().expect("append null"),
+                    }
+                    chunks.push(Arc::new(builder.finish()))
+                }
+                Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            }
         }
     }
 

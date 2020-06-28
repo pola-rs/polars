@@ -14,9 +14,9 @@ impl Series {
 
 impl DataFrame {
     pub fn frame_equal(&self, other: &DataFrame) -> bool {
-        self.columns
+        self.columns()
             .iter()
-            .zip(other.columns.iter())
+            .zip(other.columns().iter())
             .map(|(a, b)| a.series_equal(b))
             .all(|v| v)
     }
