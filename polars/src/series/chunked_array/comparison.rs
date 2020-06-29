@@ -15,7 +15,7 @@ use std::sync::Arc;
 /// use polars::prelude::*;
 /// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
 ///     let mask = df
-///     .select("column_a")
+///     .column("column_a")
 ///     .ok_or(PolarsError::NotFound)?
 ///     .eq(1)?;
 ///

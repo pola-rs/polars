@@ -239,8 +239,8 @@ impl DataFrame {
         left_on: &str,
         right_on: &str,
     ) -> Result<DataFrame> {
-        let s_left = self.select(left_on).ok_or(PolarsError::NotFound)?;
-        let s_right = other.select(right_on).ok_or(PolarsError::NotFound)?;
+        let s_left = self.column(left_on).ok_or(PolarsError::NotFound)?;
+        let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
         let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
 
         let df_left = self.create_left_df(&join_tuples)?;
@@ -263,8 +263,8 @@ impl DataFrame {
     /// }
     /// ```
     pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
-        let s_left = self.select(left_on).ok_or(PolarsError::NotFound)?;
-        let s_right = other.select(right_on).ok_or(PolarsError::NotFound)?;
+        let s_left = self.column(left_on).ok_or(PolarsError::NotFound)?;
+        let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
 
         let opt_join_tuples: Vec<(usize, Option<usize>)> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_left);
@@ -323,9 +323,9 @@ mod test {
         let joined = temp.left_join(&rain, "days", "days").unwrap();
         println!("{}", &joined);
         assert_eq!(
-            (joined.f_select("rain").sum::<f32>().unwrap() * 10.).round(),
+            (joined.f_column("rain").sum::<f32>().unwrap() * 10.).round(),
             3.
         );
-        assert_eq!(joined.f_select("rain").null_count(), 3)
+        assert_eq!(joined.f_column("rain").null_count(), 3)
     }
 }

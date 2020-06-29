@@ -1,4 +1,5 @@
 //! DataFrame module
+use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::{compute::TakeOptions, record_batch::RecordBatch};
@@ -9,6 +10,7 @@ use std::sync::Arc;
 pub mod csv;
 pub mod group_by;
 pub mod hash_join;
+pub mod select;
 
 type DfSchema = Arc<Schema>;
 type DfSeries = Series;
@@ -262,8 +264,8 @@ impl DataFrame {
             .next()
     }
 
-    /// Select a series by name.
-    pub fn select(&self, name: &str) -> Option<&Series> {
+    /// Select a single column by name.
+    pub fn column(&self, name: &str) -> Option<&Series> {
         let opt_idx = self.find_idx_by_name(name);
 
         match opt_idx {
@@ -272,10 +274,38 @@ impl DataFrame {
         }
     }
 
-    /// Force select.
-    pub fn f_select(&self, name: &str) -> &Series {
-        self.select(name)
+    /// Force select a single column.
+    pub fn f_column(&self, name: &str) -> &Series {
+        self.column(name)
             .expect(&format!("name {} does not exist on dataframe", name))
+    }
+
+    /// Select column(s) from this DataFrame.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    ///
+    /// fn example(df: &DataFrame, possible: &str) -> Result<DataFrame> {
+    ///     match possible {
+    ///         "by_str" => df.select("my-column"),
+    ///         "by_tuple" => df.select(("col_1", "col_2")),
+    ///         "by_vec" => df.select(vec!["col_a", "col_b"]),
+    ///          _ => unimplemented!()
+    ///     }
+    /// }
+    /// ```
+    pub fn select<'a, S>(&self, selection: S) -> Result<DataFrame>
+    where
+        S: Selection<'a>,
+    {
+        let cols = selection.to_selection_vec();
+        let selected = cols.iter()
+            .map(|c| self.column(c).map(|s| s.clone()).ok_or(PolarsError::NotFound))
+            .collect::<Result<Vec<_>>>()?;
+        let df = DataFrame::new(selected)?;
+        Ok(df)
     }
 
     /// Select a mutable series by name.
@@ -385,7 +415,7 @@ impl DataFrame {
 
     /// Sort DataFrame in place by a column.
     pub fn sort(&mut self, by_column: &str) -> Result<()> {
-        let s = match self.select(by_column) {
+        let s = match self.column(by_column) {
             Some(s) => s,
             None => return Err(PolarsError::NotFound),
         };
@@ -452,15 +482,15 @@ mod test {
     #[test]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(df.f_select("days").f_eq(1).sum(), Some(1));
+        assert_eq!(df.f_column("days").f_eq(1).sum(), Some(1));
     }
 
     #[test]
     fn test_filter() {
         let df = create_frame();
-        println!("{}", df.f_select("days"));
+        println!("{}", df.f_column("days"));
         println!("{:?}", df);
-        println!("{:?}", df.filter(&df.f_select("days").f_eq(0)))
+        println!("{:?}", df.filter(&df.f_column("days").f_eq(0)))
     }
 
     #[test]
@@ -474,7 +504,7 @@ mod test {
             .unwrap();
 
         assert_eq!("sepal.length", df.schema.fields()[0].name());
-        assert_eq!(1, df.f_select("sepal.length").chunks().len());
+        assert_eq!(1, df.f_column("sepal.length").chunks().len());
         println!("{:?}", df)
     }
 

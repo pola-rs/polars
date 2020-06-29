@@ -35,7 +35,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn groupby(&self, by: &str) -> Result<GroupBy> {
-        let groups = if let Some(s) = self.select(by) {
+        let groups = if let Some(s) = self.column(by) {
             macro_rules! create_iter {
                 ($ca:ident) => {{
                     if let Ok(slice) = $ca.cont_slice() {
@@ -281,7 +281,7 @@ impl<'a> GroupBy<'a> {
     }
 
     fn keys(&self) -> Result<Series> {
-        self.df.f_select(&self.by).take_iter(
+        self.df.f_column(&self.by).take_iter(
             self.groups.iter().map(|(idx, _)| Some(*idx)),
             None,
             Some(self.groups.len()),
@@ -295,7 +295,7 @@ impl<'a> GroupBy<'a> {
         };
 
         let keys = self.keys()?;
-        let agg_col = self.df.select(name).ok_or(PolarsError::NotFound)?;
+        let agg_col = self.df.column(name).ok_or(PolarsError::NotFound)?;
         Ok((name, keys, agg_col))
     }
 
