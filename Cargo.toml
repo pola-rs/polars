@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "bench",
     "polars",
     "pandas_cmp",
     "vendor/rust_arrow/arrow"
