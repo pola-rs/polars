@@ -453,6 +453,26 @@ impl DataFrame {
         DataFrame::new_with_schema(self.schema.clone(), col)
     }
 
+    /// Get the head of the DataFrame
+    pub fn head(&self, length: Option<usize>) -> Result<Self> {
+        let col = self
+            .columns
+            .iter()
+            .map(|s| s.head(length))
+            .collect::<Result<Vec<_>>>()?;
+        DataFrame::new_with_schema(self.schema.clone(), col)
+    }
+
+    /// Get the tail of the DataFrame
+    pub fn tail(&self, length: Option<usize>) -> Result<Self> {
+        let col = self
+            .columns
+            .iter()
+            .map(|s| s.tail(length))
+            .collect::<Result<Vec<_>>>()?;
+        DataFrame::new_with_schema(self.schema.clone(), col)
+    }
+
     /// Transform the underlying chunks in the DataFrame to Arrow RecordBatches
     pub fn as_record_batches(&self) -> Result<Vec<RecordBatch>> {
         let n_chunks = self.n_chunks()?;

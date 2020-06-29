@@ -282,6 +282,23 @@ where
         Ok(self.copy_with_chunks(new_chunks))
     }
 
+    /// Get the head of the ChunkedArray
+    pub fn head(&self, length: Option<usize>) -> Result<Self> {
+        match length {
+            Some(len) => self.slice(0, len),
+            None => self.slice(0, std::cmp::min(10, self.len())),
+        }
+    }
+
+    /// Get the tail of the ChunkedArray
+    pub fn tail(&self, length: Option<usize>) -> Result<Self> {
+        let len = match length {
+            Some(len) => len,
+            None => std::cmp::min(10, self.len()),
+        };
+        self.slice(self.len() - len, len)
+    }
+
     /// Append in place.
     pub fn append(&mut self, other: &Self)
     where
