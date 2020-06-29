@@ -3,14 +3,12 @@ use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::{compute::TakeOptions, record_batch::RecordBatch};
 use itertools::Itertools;
-use rechunk::ReChunker;
 use std::mem;
 use std::sync::Arc;
 
 pub mod csv;
 pub mod group_by;
 pub mod hash_join;
-mod rechunk;
 
 type DfSchema = Arc<Schema>;
 type DfSeries = Series;
@@ -33,14 +31,13 @@ impl DataFrame {
     /// let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
     /// let df = DataFrame::new(vec![s0, s1]).unwrap();
     /// ```
-    pub fn new(mut columns: Vec<Series>) -> Result<Self> {
+    pub fn new(columns: Vec<Series>) -> Result<Self> {
         let fields = Self::create_fields(&columns);
         let schema = Arc::new(Schema::new(fields));
 
-        let rechunker = ReChunker::new(&mut columns)?;
-        rechunker.rechunk()?;
-
-        Self::new_with_schema(schema, columns)
+        let mut df = Self::new_with_schema(schema, columns)?;
+        df.rechunk()?;
+        Ok(df)
     }
 
     /// Create a new DataFrame from a schema and a vec of series.
@@ -50,6 +47,36 @@ impl DataFrame {
             return Err(PolarsError::LengthMismatch);
         }
         Ok(DataFrame { schema, columns })
+    }
+
+    fn rechunk(&mut self) -> Result<()> {
+        let chunk_lens = self
+            .columns
+            .iter()
+            .map(|s| s.n_chunks())
+            .collect::<Vec<_>>();
+
+        let argmin = chunk_lens
+            .iter()
+            .position_min()
+            .ok_or(PolarsError::NoData)?;
+        let min_chunks = chunk_lens[argmin];
+
+        let to_rechunk = chunk_lens
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, len)| if len > min_chunks { Some(idx) } else { None })
+            .collect::<Vec<_>>();
+
+        // clone shouldn't be too expensive as we expect the nr. of chunks to be close to 1.
+        let chunk_id = self.columns[argmin].chunk_lengths().clone();
+
+        for idx in to_rechunk {
+            let col = &self.columns[idx];
+            let new_col = col.rechunk(Some(&chunk_id))?;
+            self.columns[idx] = new_col;
+        }
+        Ok(())
     }
 
     /// Get a reference to the DataFrame schema.
@@ -81,8 +108,7 @@ impl DataFrame {
     fn register_mutation(&mut self) -> Result<()> {
         let fields = Self::create_fields(&self.columns);
         self.schema = Arc::new(Schema::new(fields));
-        let rechunker = ReChunker::new(&mut self.columns)?;
-        rechunker.rechunk()?;
+        self.rechunk()?;
         Ok(())
     }
 

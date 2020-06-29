@@ -21,6 +21,7 @@ macro_rules! compare {
 }
 
 impl CmpOps<&Series> for Series {
+    /// Create a boolean mask by checking for equality.
     fn eq(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, eq),
@@ -37,6 +38,7 @@ impl CmpOps<&Series> for Series {
         }
     }
 
+    /// Create a boolean mask by checking for inequality.
     fn neq(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, neq),
@@ -53,6 +55,7 @@ impl CmpOps<&Series> for Series {
         }
     }
 
+    /// Create a boolean mask by checking if lhs > rhs.
     fn gt(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt),
@@ -69,6 +72,7 @@ impl CmpOps<&Series> for Series {
         }
     }
 
+    /// Create a boolean mask by checking if lhs >= rhs.
     fn gt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt_eq),
@@ -85,6 +89,7 @@ impl CmpOps<&Series> for Series {
         }
     }
 
+    /// Create a boolean mask by checking if lhs < rhs.
     fn lt(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt),
@@ -101,6 +106,7 @@ impl CmpOps<&Series> for Series {
         }
     }
 
+    /// Create a boolean mask by checking if lhs <= rhs.
     fn lt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt_eq),
