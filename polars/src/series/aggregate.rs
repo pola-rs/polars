@@ -43,7 +43,7 @@ impl Series {
     /// Returns `None` if the array is empty or only contains null values.
     /// ```
     /// # use polars::prelude::*;
-    /// let s = Series::init("days", [1, 2, 3].as_ref());
+    /// let s = Series::new("days", [1, 2, 3].as_ref());
     /// assert_eq!(s.sum(), Some(6));
     /// ```
     pub fn sum<T>(&self) -> Option<T>
@@ -57,7 +57,7 @@ impl Series {
     /// Returns an option because the array is nullable.
     /// ```
     /// # use polars::prelude::*;
-    /// let s = Series::init("days", [1, 2, 3].as_ref());
+    /// let s = Series::new("days", [1, 2, 3].as_ref());
     /// assert_eq!(s.min(), Some(1));
     /// ```
     pub fn min<T>(&self) -> Option<T>
@@ -71,7 +71,7 @@ impl Series {
     /// Returns an option because the array is nullable.
     /// ```
     /// # use polars::prelude::*;
-    /// let s = Series::init("days", [1, 2, 3].as_ref());
+    /// let s = Series::new("days", [1, 2, 3].as_ref());
     /// assert_eq!(s.max(), Some(3));
     /// ```
     pub fn max<T>(&self) -> Option<T>
@@ -95,7 +95,7 @@ mod test {
 
     #[test]
     fn test_agg_bool() {
-        let s = Series::init("", vec![true, false, true].as_slice());
+        let s = Series::new("", vec![true, false, true].as_slice());
         assert_eq!(s.max::<u8>(), Some(1));
         assert_eq!(s.min::<u8>(), Some(0));
     }

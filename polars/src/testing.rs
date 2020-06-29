@@ -28,15 +28,15 @@ mod test {
 
     #[test]
     fn test_series_equal() {
-        let a = Series::init("a", [1, 2, 3].as_ref());
-        let b = Series::init("b", [1, 2, 3].as_ref());
+        let a = Series::new("a", [1, 2, 3].as_ref());
+        let b = Series::new("b", [1, 2, 3].as_ref());
         assert!(a.series_equal(&b))
     }
 
     #[test]
     fn test_df_equal() {
-        let a = Series::init("a", [1, 2, 3].as_ref());
-        let b = Series::init("b", [1, 2, 3].as_ref());
+        let a = Series::new("a", [1, 2, 3].as_ref());
+        let b = Series::new("b", [1, 2, 3].as_ref());
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
         let df2 = df1.clone();

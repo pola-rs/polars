@@ -29,8 +29,8 @@ impl DataFrame {
     ///
     /// ```
     /// use polars::prelude::*;
-    /// let s0 = Series::init("days", [0, 1, 2].as_ref());
-    /// let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
+    /// let s0 = Series::new("days", [0, 1, 2].as_ref());
+    /// let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
     /// let df = DataFrame::new(vec![s0, s1]).unwrap();
     /// ```
     pub fn new(columns: Vec<Series>) -> Result<Self> {
@@ -301,8 +301,13 @@ impl DataFrame {
         S: Selection<'a>,
     {
         let cols = selection.to_selection_vec();
-        let selected = cols.iter()
-            .map(|c| self.column(c).map(|s| s.clone()).ok_or(PolarsError::NotFound))
+        let selected = cols
+            .iter()
+            .map(|c| {
+                self.column(c)
+                    .map(|s| s.clone())
+                    .ok_or(PolarsError::NotFound)
+            })
             .collect::<Result<Vec<_>>>()?;
         let df = DataFrame::new(selected)?;
         Ok(df)
@@ -474,8 +479,8 @@ mod test {
     use std::fs::File;
 
     fn create_frame() -> DataFrame {
-        let s0 = Series::init("days", [0, 1, 2].as_ref());
-        let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
+        let s0 = Series::new("days", [0, 1, 2].as_ref());
+        let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
         DataFrame::new(vec![s0, s1]).unwrap()
     }
 

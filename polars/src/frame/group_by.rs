@@ -353,9 +353,9 @@ mod test {
 
     #[test]
     fn test_group_by() {
-        let s0 = Series::init("days", ["mo", "mo", "tue", "wed", "tue"].as_ref());
-        let s1 = Series::init("temp", [20, 10, 7, 9, 1].as_ref());
-        let s2 = Series::init("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
+        let s0 = Series::new("days", ["mo", "mo", "tue", "wed", "tue"].as_ref());
+        let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
+        let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
         let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
         println!(

@@ -29,13 +29,13 @@
 //! use polars::prelude::*;
 //!
 //! // Create first df.
-//! let s0 = Series::init("days", [0, 1, 2, 3, 4].as_ref());
-//! let s1 = Series::init("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
+//! let s0 = Series::new("days", [0, 1, 2, 3, 4].as_ref());
+//! let s1 = Series::new("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
 //! let temp = DataFrame::new(vec![s0, s1]).unwrap();
 //!
 //! // Create second df.
-//! let s0 = Series::init("days", [1, 2].as_ref());
-//! let s1 = Series::init("rain", [0.1, 0.2].as_ref());
+//! let s0 = Series::new("days", [1, 2].as_ref());
+//! let s1 = Series::new("rain", [0.1, 0.2].as_ref());
 //! let rain = DataFrame::new(vec![s0, s1]).unwrap();
 //!
 //! // Left join on days column.
@@ -83,7 +83,7 @@
 //! ```
 //! use polars::prelude::*;
 //! use itertools::Itertools;
-//! let s = Series::init("dollars", [1, 2, 3].as_ref());
+//! let s = Series::new("dollars", [1, 2, 3].as_ref());
 //! let mask = s.eq(1).expect("could not compare types");
 //! let valid = [true, false, false].iter();
 //! assert!(mask

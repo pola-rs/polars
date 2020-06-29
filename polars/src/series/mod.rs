@@ -43,7 +43,7 @@
 //! ```
 //! # use polars::prelude::*;
 //! use itertools::Itertools;
-//! let s = Series::init("dollars", [1, 2, 3].as_ref());
+//! let s = Series::new("dollars", [1, 2, 3].as_ref());
 //! let mask = s.eq(1).expect("could not compare types");
 //! let valid = [true, false, false].iter();
 //! assert!(mask
@@ -65,7 +65,7 @@
 //! ```
 //! use polars::prelude::*;
 //! let pi = 3.14;
-//! let s = Series::init("angle", [2f32 * pi, pi, 1.5 * pi].as_ref());
+//! let s = Series::new("angle", [2f32 * pi, pi, 1.5 * pi].as_ref());
 //! let s_cos: Series = s.f32()
 //!                     .expect("series was not an f32 dtype")
 //!                     .into_iter()
@@ -415,13 +415,13 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
 
 pub trait NamedFrom<T> {
     /// Initialize by name and values.
-    fn init(name: &str, _: T) -> Self;
+    fn new(name: &str, _: T) -> Self;
 }
 
 macro_rules! impl_named_from {
     ($type:ty, $series_var:ident, $method:ident) => {
         impl NamedFrom<$type> for Series {
-            fn init(name: &str, v: $type) -> Self {
+            fn new(name: &str, v: $type) -> Self {
                 Series::$series_var(ChunkedArray::$method(name, v))
             }
         }

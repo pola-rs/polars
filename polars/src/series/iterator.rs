@@ -39,7 +39,7 @@ mod test {
 
     #[test]
     fn test_iter() {
-        let a = Series::init("age", [23, 71, 9].as_ref());
+        let a = Series::new("age", [23, 71, 9].as_ref());
         let _b = a
             .i32()
             .unwrap()

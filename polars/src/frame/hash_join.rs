@@ -284,21 +284,21 @@ mod test {
 
     #[test]
     fn test_inner_join() {
-        let s0 = Series::init("days", [0, 1, 2].as_ref());
-        let s1 = Series::init("temp", [22.1, 19.9, 7.].as_ref());
-        let s2 = Series::init("rain", [0.2, 0.1, 0.3].as_ref());
+        let s0 = Series::new("days", [0, 1, 2].as_ref());
+        let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
+        let s2 = Series::new("rain", [0.2, 0.1, 0.3].as_ref());
         let temp = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
-        let s0 = Series::init("days", [1, 2, 3, 1].as_ref());
-        let s1 = Series::init("rain", [0.1, 0.2, 0.3, 0.4].as_ref());
+        let s0 = Series::new("days", [1, 2, 3, 1].as_ref());
+        let s1 = Series::new("rain", [0.1, 0.2, 0.3, 0.4].as_ref());
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
 
         let joined = temp.inner_join(&rain, "days", "days").unwrap();
 
-        let join_col_days = Series::init("days", [1, 2, 1].as_ref());
-        let join_col_temp = Series::init("temp", [19.9, 7., 19.9].as_ref());
-        let join_col_rain = Series::init("rain", [0.1, 0.3, 0.1].as_ref());
-        let join_col_rain_right = Series::init("rain_right", [0.1, 0.2, 0.4].as_ref());
+        let join_col_days = Series::new("days", [1, 2, 1].as_ref());
+        let join_col_temp = Series::new("temp", [19.9, 7., 19.9].as_ref());
+        let join_col_rain = Series::new("rain", [0.1, 0.3, 0.1].as_ref());
+        let join_col_rain_right = Series::new("rain_right", [0.1, 0.2, 0.4].as_ref());
         let true_df = DataFrame::new(vec![
             join_col_days,
             join_col_temp,
@@ -313,12 +313,12 @@ mod test {
 
     #[test]
     fn test_left_join() {
-        let s0 = Series::init("days", [0, 1, 2, 3, 4].as_ref());
-        let s1 = Series::init("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
+        let s0 = Series::new("days", [0, 1, 2, 3, 4].as_ref());
+        let s1 = Series::new("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
         let temp = DataFrame::new(vec![s0, s1]).unwrap();
 
-        let s0 = Series::init("days", [1, 2].as_ref());
-        let s1 = Series::init("rain", [0.1, 0.2].as_ref());
+        let s0 = Series::new("days", [1, 2].as_ref());
+        let s1 = Series::new("rain", [0.1, 0.2].as_ref());
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, "days", "days").unwrap();
         println!("{}", &joined);
