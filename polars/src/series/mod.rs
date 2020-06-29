@@ -274,22 +274,6 @@ impl Series {
         apply_method_all_series!(self, append_array, other)
     }
 
-    pub fn as_series_ops(&self) -> &dyn SeriesOps {
-        match self {
-            Series::UInt32(arr) => arr,
-            Series::Int32(arr) => arr,
-            Series::Int64(arr) => arr,
-            Series::Float32(arr) => arr,
-            Series::Float64(arr) => arr,
-            Series::Utf8(arr) => arr,
-            Series::Date32(arr) => arr,
-            Series::Date64(arr) => arr,
-            Series::Time64Ns(arr) => arr,
-            Series::Bool(arr) => arr,
-            Series::DurationNs(arr) => arr,
-        }
-    }
-
     /// Take `num_elements` from the top as a zero copy view.
     pub fn limit(&self, num_elements: usize) -> Result<Self> {
         Ok(apply_method_and_return!(self, limit, [num_elements], ?))

@@ -32,38 +32,6 @@ pub mod comparison;
 pub mod iterator;
 pub mod take;
 
-/// Operations that are possible without knowing underlying type.
-/// These operations will not fail due to non matching types.
-pub trait SeriesOps {
-    /// Take only `num_elements`.
-    fn limit(&self, num_elements: usize) -> Result<Self>
-    where
-        Self: std::marker::Sized;
-    /// Filter by boolean mask.
-    fn filter(&self, filter: &BooleanChunked) -> Result<Self>
-    where
-        Self: std::marker::Sized;
-
-    /// Append an some array type.
-    fn append_array(&mut self, other: ArrayRef) -> Result<()>;
-
-    /// Length of container.
-    fn len(&self) -> usize;
-
-    /// Get a single value.
-    fn get(&self, index: usize) -> AnyType;
-
-    /// Zero copy slice.
-    fn slice(&self, offset: usize, length: usize) -> Result<Self>
-    where
-        Self: std::marker::Sized;
-
-    /// Append in place.
-    fn append(&mut self, other: &Self)
-    where
-        Self: std::marker::Sized;
-}
-
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
     let mut chunk_id = Vec::with_capacity(chunks.len());
@@ -85,6 +53,7 @@ pub struct ChunkedArray<T> {
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
+    ChunkedArray<T>: ChunkOps,
 {
     /// Get the index of the chunk and the index of the value in that chunk
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
@@ -209,20 +178,14 @@ where
             _ => Err(PolarsError::DataTypeMisMatch),
         }
     }
-}
 
-impl<T> SeriesOps for ChunkedArray<T>
-where
-    T: datatypes::PolarsDataType,
-    ChunkedArray<T>: ChunkOps,
-{
     /// Take a view of top n elements
-    fn limit(&self, num_elements: usize) -> Result<Self> {
+    pub fn limit(&self, num_elements: usize) -> Result<Self> {
         self.slice(0, num_elements)
     }
 
     /// Chunk sizes should match or rhs should have one chunk
-    fn filter(&self, filter: &BooleanChunked) -> Result<Self> {
+    pub fn filter(&self, filter: &BooleanChunked) -> Result<Self> {
         let opt = self.optional_rechunk(filter)?;
         let left = match &opt {
             Some(a) => a,
@@ -241,7 +204,8 @@ where
         }
     }
 
-    fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+    /// Append arrow array in place.
+    pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         if other.data_type() == self.field.data_type() {
             self.chunks.push(other);
             Ok(())
@@ -250,11 +214,13 @@ where
         }
     }
 
-    fn len(&self) -> usize {
+    /// Combined length of all the chunks.
+    pub fn len(&self) -> usize {
         self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
     }
 
-    fn get(&self, index: usize) -> AnyType {
+    /// Get a single value. Beware this is slow.
+    pub fn get(&self, index: usize) -> AnyType {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let arr = &self.chunks[chunk_idx];
 
@@ -284,7 +250,8 @@ where
         }
     }
 
-    fn slice(&self, offset: usize, length: usize) -> Result<Self> {
+    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
+    pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
         if offset + length > self.len() {
             return Err(PolarsError::OutOfBounds);
         }
@@ -315,7 +282,8 @@ where
         Ok(self.copy_with_chunks(new_chunks))
     }
 
-    fn append(&mut self, other: &Self)
+    /// Append in place.
+    pub fn append(&mut self, other: &Self)
     where
         Self: std::marker::Sized,
     {
@@ -743,7 +711,7 @@ mod test {
 
     fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])
     where
-        ChunkedArray<T>: ChunkOps + SeriesOps,
+        ChunkedArray<T>: ChunkOps,
         T: PolarNumericType,
     {
         assert_eq!(
