@@ -74,7 +74,7 @@ fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
 }
 
 pub struct ChunkedArray<T> {
-    pub(crate) field: Field,
+    pub(crate) field: Arc<Field>,
     // For now settle with dynamic generics until we are more confident about the api
     pub(crate) chunks: Vec<ArrayRef>,
     // chunk lengths
@@ -332,7 +332,7 @@ impl Utf8Chunked {
                 .expect("Could not append value");
         });
 
-        let field = Field::new(name, ArrowDataType::Utf8, true);
+        let field = Arc::new(Field::new(name, ArrowDataType::Utf8, true));
 
         ChunkedArray {
             field,
@@ -368,15 +368,15 @@ where
     }
 
     pub fn rename(&mut self, name: &str) {
-        self.field = Field::new(
+        self.field = Arc::new(Field::new(
             name,
             self.field.data_type().clone(),
             self.field.is_nullable(),
-        )
+        ))
     }
 
     pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
-        let field = Field::new(name, T::get_data_type(), true);
+        let field = Arc::new(Field::new(name, T::get_data_type(), true));
         let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
             field,

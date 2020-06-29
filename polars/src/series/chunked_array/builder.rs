@@ -30,7 +30,7 @@ where
         let arr = Arc::new(self.builder.finish());
         let len = arr.len();
         ChunkedArray {
-            field: self.field,
+            field: Arc::new(self.field),
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
@@ -71,7 +71,7 @@ impl Utf8ChunkedBuilder {
         let arr = Arc::new(self.builder.finish());
         let len = arr.len();
         ChunkedArray {
-            field: self.field,
+            field: Arc::new(self.field),
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
