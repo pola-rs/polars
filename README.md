@@ -1,10 +1,11 @@
 # Polars (WIP)
-[![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
 
 ## Blazingly fast in memory DataFrames in Rust
 
 Polars is a DataFrames library implemented in Rust, using Apache Arrow as backend. It's focus is being a fast in memory
 DataFrame library that only supports core functionality.
+
+[Read more in the docs](https://ritchie46.github.io/polars/docs/doc/polars/index.html)
 
 ### Performance
 
