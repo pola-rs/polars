@@ -1,6 +1,5 @@
 use crate::prelude::*;
-use arrow::datatypes::ArrowPrimitiveType;
-use fnv::{FnvBuildHasher, FnvHashSet, FnvHasher};
+use fnv::{FnvBuildHasher, FnvHasher};
 use std::collections::HashSet;
 use std::hash::{BuildHasherDefault, Hash};
 
@@ -36,8 +35,17 @@ where
             Err(_) => fill_set(self.into_iter(), self.len()),
         };
 
-        let mut builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
+        let  builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
         builder.new_from_iter(set.iter().copied())
+    }
+}
+
+impl Unique for Utf8Chunked {
+    fn unique(&self) -> Self {
+        let set = fill_set(self.into_iter(), self.len());
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), set.len());
+        self.into_iter().for_each(|val| builder.append_value(val).expect("could not append"));
+        builder.finish()
     }
 }
 
