@@ -27,7 +27,6 @@ macro_rules! set_indexes {
 
 pub struct ChunkStringIter<'a> {
     array_chunks: Vec<&'a StringArray>,
-    current_data: Option<ArrayDataRef>,
     current_array: Option<&'a StringArray>,
     current_len: usize,
     chunk_i: usize,
@@ -39,7 +38,19 @@ pub struct ChunkStringIter<'a> {
 impl<'a> ChunkStringIter<'a> {
     #[inline]
     fn set_indexes(&mut self) {
-        set_indexes!(self)
+        self.array_i += 1;
+        if self.array_i >= self.current_len {
+            // go to next array in the chunks
+            self.array_i = 0;
+            self.chunk_i += 1;
+
+            if self.chunk_i < self.array_chunks.len() {
+                // not yet at last chunk
+                let arr = unsafe { *self.array_chunks.get_unchecked(self.chunk_i) };
+                self.current_array = Some(arr);
+                self.current_len = arr.len();
+            }
+        }
     }
 
     #[inline]
@@ -49,39 +60,31 @@ impl<'a> ChunkStringIter<'a> {
 }
 
 impl<'a> Iterator for ChunkStringIter<'a> {
-    type Item = Option<&'a str>;
+    type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.out_of_bounds() {
             return None;
         }
 
-        let current_data = unsafe { self.current_data.as_ref().unsafe_unwrap() };
         let current_array = unsafe { self.current_array.unsafe_unwrap() };
 
         debug_assert!(self.chunk_i < self.array_chunks.len());
-        let ret;
 
-        if current_data.is_null(self.array_i) {
-            ret = Some(None)
-        } else {
-            let v = current_array.value(self.array_i);
-            ret = Some(Some(v));
-        }
+        let v = current_array.value(self.array_i);
         self.set_indexes();
-        ret
+        Some(v)
     }
 }
 
 impl<'a> IntoIterator for &'a Utf8Chunked {
-    type Item = Option<&'a str>;
+    type Item = &'a str;
     type IntoIter = ChunkStringIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         let arrays = self.downcast_chunks();
 
         let arr = arrays.get(0).map(|v| *v);
-        let data = arr.map(|arr| arr.data());
         let current_len = match arr {
             Some(arr) => arr.len(),
             None => 0,
@@ -89,7 +92,6 @@ impl<'a> IntoIterator for &'a Utf8Chunked {
 
         ChunkStringIter {
             array_chunks: arrays,
-            current_data: data,
             current_array: arr,
             current_len,
             chunk_i: 0,

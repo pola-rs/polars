@@ -38,13 +38,8 @@ impl Debug for Series {
             Series::Float64(a) => format_series!(a, "f64"),
             Series::Utf8(a) => {
                 write![f, "Series: str \n[\n"]?;
-                a.into_iter().take(LIMIT).for_each(|v| match v {
-                    Some(v) => {
-                        write!(f, "\t\"{}\"\n", &v[..std::cmp::min(LIMIT, v.len())]).ok();
-                    }
-                    None => {
-                        write!(f, "\tnull").ok();
-                    }
+                a.into_iter().take(LIMIT).for_each(|v| {
+                    write!(f, "\t\"{}\"\n", &v[..std::cmp::min(LIMIT, v.len())]).ok();
                 });
                 write![f, "]"]
             }

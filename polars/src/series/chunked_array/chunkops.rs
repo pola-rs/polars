@@ -118,10 +118,8 @@ impl ChunkOps for Utf8Chunked {
 
                 for chunk_length in chunk_id {
                     let mut builder = StringBuilder::new(*chunk_length);
-                    match iter.next().expect("first option is iterator bounds") {
-                        Some(val) => builder.append_value(val).expect("Could not append value"),
-                        None => builder.append_null().expect("append null"),
-                    }
+                    let val = iter.next().expect("first option is iterator bounds");
+                    builder.append_value(val).expect("Could not append value");
                     chunks.push(Arc::new(builder.finish()))
                 }
                 Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
