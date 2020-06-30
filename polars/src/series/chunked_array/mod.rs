@@ -31,6 +31,7 @@ pub(crate) mod chunkops;
 pub mod comparison;
 pub mod iterator;
 pub mod take;
+pub mod unique;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
@@ -385,10 +386,12 @@ where
         }
     }
 
+    /// Recompute the chunk_id / chunk_lenghts.
     fn set_chunk_id(&mut self) {
         self.chunk_id = create_chunk_id(&self.chunks)
     }
 
+    /// Cast the underlying data type.
     pub fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
         N: PolarNumericType,

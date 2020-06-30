@@ -26,6 +26,11 @@ where
         }
     }
 
+    pub fn new_from_iter(mut self, it: impl Iterator<Item = Option<T::Native>>) -> ChunkedArray<T> {
+        it.for_each(|opt| self.append_option(opt).expect("could not append"));
+        self.finish()
+    }
+
     pub fn finish(mut self) -> ChunkedArray<T> {
         let arr = Arc::new(self.builder.finish());
         let len = arr.len();
