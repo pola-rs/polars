@@ -343,15 +343,17 @@ where
     T: datatypes::PolarsDataType,
     ChunkedArray<T>: ChunkOps,
 {
+    /// Name of the ChunkedArray.
     pub fn name(&self) -> &str {
         self.field.name()
     }
 
-    /// used by Series macro
+    /// Get a reference to the field.
     pub fn ref_field(&self) -> &Field {
         &self.field
     }
 
+    /// Rename this ChunkedArray.
     pub fn rename(&mut self, name: &str) {
         self.field = Arc::new(Field::new(
             name,
@@ -360,6 +362,7 @@ where
         ))
     }
 
+    /// Create a new ChunkedArray from existing chunks.
     pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
         let field = Arc::new(Field::new(name, T::get_data_type(), true));
         let chunk_id = create_chunk_id(&chunks);
@@ -369,6 +372,39 @@ where
             chunk_id,
             phantom: PhantomData,
         }
+    }
+
+    /// Create a new ChunkedArray from self, where the chunks are replaced.
+    fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        let chunk_id = create_chunk_id(&chunks);
+        ChunkedArray {
+            field: self.field.clone(),
+            chunks,
+            chunk_id,
+            phantom: PhantomData,
+        }
+    }
+
+    fn set_chunk_id(&mut self) {
+        self.chunk_id = create_chunk_id(&self.chunks)
+    }
+
+    pub fn cast<N>(&self) -> Result<ChunkedArray<N>>
+    where
+        N: PolarNumericType,
+        // TODO: check if this works
+        // ChunkedArray<N>: ChunkOps
+    {
+        let chunks = self
+            .chunks
+            .iter()
+            .map(|arr| compute::cast(arr, &N::get_data_type()))
+            .collect::<arrow::error::Result<Vec<_>>>()?;
+
+        Ok(ChunkedArray::<N>::new_from_chunks(
+            self.field.name(),
+            chunks,
+        ))
     }
 }
 
@@ -494,40 +530,6 @@ where
         F: Fn(B, Option<T::Native>) -> B,
     {
         self.into_iter().fold(init, f)
-    }
-}
-
-impl<T> ChunkedArray<T> {
-    fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
-        let chunk_id = create_chunk_id(&chunks);
-        ChunkedArray {
-            field: self.field.clone(),
-            chunks,
-            chunk_id,
-            phantom: PhantomData,
-        }
-    }
-
-    fn set_chunk_id(&mut self) {
-        self.chunk_id = create_chunk_id(&self.chunks)
-    }
-
-    pub fn cast<N>(&self) -> Result<ChunkedArray<N>>
-    where
-        N: PolarNumericType,
-        // TODO: check if this works
-        // ChunkedArray<N>: ChunkOps
-    {
-        let chunks = self
-            .chunks
-            .iter()
-            .map(|arr| compute::cast(arr, &N::get_data_type()))
-            .collect::<arrow::error::Result<Vec<_>>>()?;
-
-        Ok(ChunkedArray::<N>::new_from_chunks(
-            self.field.name(),
-            chunks,
-        ))
     }
 }
 

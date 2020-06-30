@@ -51,6 +51,7 @@ impl DataFrame {
         Ok(DataFrame { schema, columns })
     }
 
+    /// Ensure all the chunks in the DataFrame are aligned.
     fn rechunk(&mut self) -> Result<()> {
         let chunk_lens = self
             .columns
