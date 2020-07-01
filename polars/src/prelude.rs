@@ -10,6 +10,7 @@ pub use crate::{
         arithmetic::LhsNumOps,
         chunked_array::{
             aggregate::Agg,
+            apply::Apply,
             builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
             chunkops::ChunkOps,
             comparison::{CmpOps, ForceCmpOps},
@@ -21,6 +22,7 @@ pub use crate::{
     },
     testing::*,
 };
+pub use arrow::datatypes::ArrowPrimitiveType;
 
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {

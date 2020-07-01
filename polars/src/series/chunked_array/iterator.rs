@@ -334,6 +334,19 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
     }
 }
 
+impl FromIterator<String> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
+        let mut builder = Utf8ChunkedBuilder::new("", 1024);
+
+        for val in iter {
+            builder
+                .append_value(val.as_str())
+                .expect("could not append");
+        }
+        builder.finish()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

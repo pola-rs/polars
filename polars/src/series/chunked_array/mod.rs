@@ -25,6 +25,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 pub mod aggregate;
+pub mod apply;
 mod arithmetic;
 pub mod builder;
 pub(crate) mod chunkops;
