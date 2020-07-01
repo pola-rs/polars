@@ -1,4 +1,4 @@
-use crate::{prelude::*, series::chunked_array::ChunkedArray};
+use crate::prelude::*;
 use arrow::{array::ArrayRef, compute};
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
@@ -222,15 +222,15 @@ mod test {
     fn test_chunk_mismatch() {
         let (a1, a2) = create_two_chunked();
         // with different chunks
-        &a1 + &a2;
-        &a1 - &a2;
-        &a1 / &a2;
-        &a1 * &a2;
+        let _ = &a1 + &a2;
+        let _ = &a1 - &a2;
+        let _ = &a1 / &a2;
+        let _ = &a1 * &a2;
 
         // with same chunks
-        &a1 + &a1;
-        &a1 - &a1;
-        &a1 / &a1;
-        &a1 * &a1;
+        let _ = &a1 + &a1;
+        let _ = &a1 - &a1;
+        let _ = &a1 / &a1;
+        let _ = &a1 * &a1;
     }
 }

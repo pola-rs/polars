@@ -1,4 +1,14 @@
 pub use crate::{
+    chunked_array::{
+        aggregate::Agg,
+        apply::Apply,
+        builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
+        chunkops::ChunkOps,
+        comparison::{CmpOps, ForceCmpOps},
+        take::{Take, TakeIndex},
+        unique::Unique,
+        ChunkedArray, Downcast,
+    },
     datatypes,
     datatypes::*,
     error::{PolarsError, Result},
@@ -6,20 +16,7 @@ pub use crate::{
         csv::{CsvReader, CsvWriter},
         DataFrame,
     },
-    series::{
-        arithmetic::LhsNumOps,
-        chunked_array::{
-            aggregate::Agg,
-            apply::Apply,
-            builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
-            chunkops::ChunkOps,
-            comparison::{CmpOps, ForceCmpOps},
-            take::{Take, TakeIndex},
-            unique::Unique,
-            ChunkedArray, Downcast,
-        },
-        NamedFrom, Series,
-    },
+    series::{arithmetic::LhsNumOps, NamedFrom, Series},
     testing::*,
 };
 pub use arrow::datatypes::ArrowPrimitiveType;

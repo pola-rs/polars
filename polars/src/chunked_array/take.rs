@@ -1,5 +1,5 @@
+use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use crate::prelude::*;
-use crate::series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use arrow::compute::TakeOptions;
 
 pub trait Take {

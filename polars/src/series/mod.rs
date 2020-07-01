@@ -82,7 +82,6 @@ use std::mem;
 
 pub(crate) mod aggregate;
 pub(crate) mod arithmetic;
-pub mod chunked_array;
 mod comparison;
 pub(crate) mod iterator;
 

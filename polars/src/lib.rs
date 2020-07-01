@@ -95,6 +95,7 @@
 //!
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
+pub mod chunked_array;
 pub mod datatypes;
 pub mod error;
 mod fmt;

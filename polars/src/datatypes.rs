@@ -3,7 +3,7 @@ pub use arrow::datatypes::{
     Float64Type, Int32Type, Int64Type, Time64NanosecondType, TimeUnit, UInt32Type,
 };
 
-use crate::series::chunked_array::ChunkedArray;
+use crate::chunked_array::ChunkedArray;
 pub use arrow::datatypes::DataType as ArrowDataType;
 use arrow::datatypes::{ArrowNumericType, ArrowPrimitiveType};
 use std::ops::{Deref, DerefMut};

@@ -1,13 +1,13 @@
 //! The typed heart of every Series column.
+use crate::chunked_array::iterator::ChunkNumIter;
 use crate::prelude::*;
-use crate::series::chunked_array::iterator::ChunkNumIter;
 use crate::{
+    chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
     datatypes::{
         AnyType, ArrowDataType, BooleanChunked, Date32Chunked, Date64Chunked, DurationNsChunked,
         Float32Chunked, Float64Chunked, Int32Chunked, Int64Chunked, PolarsDataType,
         Time64NsChunked, UInt32Chunked, Utf8Chunked,
     },
-    series::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
 };
 use arrow::{
     array::{

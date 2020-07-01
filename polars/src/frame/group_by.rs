@@ -1,6 +1,6 @@
 use super::hash_join::prepare_hashed_relation;
+use crate::chunked_array::builder::{build_primitive_ca_with_opt, PrimitiveChunkedBuilder};
 use crate::prelude::*;
-use crate::series::chunked_array::builder::{build_primitive_ca_with_opt, PrimitiveChunkedBuilder};
 use arrow::datatypes::ArrowNativeType;
 use num::{Num, NumCast, Zero};
 use rayon::prelude::*;

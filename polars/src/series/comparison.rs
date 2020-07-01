@@ -1,13 +1,12 @@
 //! Comparison operations on Series.
 
 use super::Series;
+use crate::chunked_array::comparison::{CmpOps, ForceCmpOps, NumComp};
 use crate::error::PolarsError::DataTypeMisMatch;
-use crate::series::chunked_array::comparison::{ForceCmpOps, NumComp};
 use crate::{
     apply_method_arrowprimitive_series,
     datatypes::BooleanChunked,
     error::{PolarsError, Result},
-    series::chunked_array::comparison::CmpOps,
 };
 
 macro_rules! compare {

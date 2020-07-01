@@ -69,7 +69,6 @@ impl Unique for BooleanChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::series::chunked_array::unique::Unique;
     use itertools::Itertools;
 
     #[test]

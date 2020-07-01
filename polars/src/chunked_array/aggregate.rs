@@ -1,5 +1,5 @@
+use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
-use crate::series::chunked_array::ChunkedArray;
 use crate::{datatypes::PolarNumericType, prelude::*};
 use arrow::compute;
 
