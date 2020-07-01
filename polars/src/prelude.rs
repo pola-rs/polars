@@ -14,6 +14,7 @@ pub use crate::{
             chunkops::ChunkOps,
             comparison::{CmpOps, ForceCmpOps},
             take::{Take, TakeIndex},
+            unique::Unique,
             ChunkedArray, Downcast,
         },
         NamedFrom, Series,

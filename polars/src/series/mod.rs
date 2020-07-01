@@ -384,6 +384,23 @@ impl Series {
     pub fn null_count(&self) -> usize {
         apply_method_all_series!(self, null_count,)
     }
+
+    /// Get unique values in the Series.
+    pub fn unique(&self) -> Self {
+        match self {
+            Series::UInt32(ca) => Series::UInt32(ca.unique()),
+            Series::Int32(ca) => Series::Int32(ca.unique()),
+            Series::Int64(ca) => Series::Int64(ca.unique()),
+            Series::Date32(ca) => Series::Date32(ca.unique()),
+            Series::Date64(ca) => Series::Date64(ca.unique()),
+            Series::Time64Ns(ca) => Series::Time64Ns(ca.unique()),
+            Series::DurationNs(ca) => Series::DurationNs(ca.unique()),
+            Series::Utf8(ca) => Series::Utf8(ca.unique()),
+            Series::Bool(ca) => Series::Bool(ca.unique()),
+            Series::Float32(_) => todo!(),
+            Series::Float64(_) => todo!(),
+        }
+    }
 }
 
 fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
