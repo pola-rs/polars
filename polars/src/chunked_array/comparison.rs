@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, StringArray};
+use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray};
 use arrow::compute;
 use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
@@ -234,36 +234,14 @@ impl CmpOps<&Utf8Chunked> for Utf8Chunked {
     }
 }
 
-fn cmp_chunked_array_to_num<T, Rhs>(
+fn cmp_chunked_array_to_num<T>(
     ca: &ChunkedArray<T>,
-    cmp_fn: &dyn Fn(Rhs) -> bool,
-) -> Result<BooleanChunked>
+    cmp_fn: &dyn Fn(Option<T::Native>) -> bool,
+) -> BooleanChunked
 where
     T: PolarNumericType,
-    T::Native: ToPrimitive,
-    Rhs: Num + NumCast,
 {
-    // TODO: Doesnt to do null checks
-    let chunks = ca
-        .downcast_chunks()
-        .iter()
-        .map(|&a| {
-            let mut builder = BooleanBuilder::new(a.len());
-
-            for i in 0..a.len() {
-                let val = a.value(i);
-                let val = Rhs::from(val);
-                let val = match val {
-                    Some(val) => val,
-                    None => return Err(PolarsError::DataTypeMisMatch),
-                };
-                builder.append_value(cmp_fn(val))?;
-            }
-            Ok(Arc::new(builder.finish()) as ArrayRef)
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(BooleanChunked::new_from_chunks("", chunks))
+    ca.into_iter().map(cmp_fn).collect()
 }
 
 pub trait NumComp: Num + NumCast + PartialOrd {}
@@ -282,31 +260,37 @@ impl NumComp for u64 {}
 impl<T, Rhs> CmpOps<Rhs> for ChunkedArray<T>
 where
     T: PolarNumericType,
-    T::Native: ToPrimitive,
-    Rhs: NumComp,
+    T::Native: NumCast,
+    Rhs: NumComp + ToPrimitive,
 {
     fn eq(&self, rhs: Rhs) -> BooleanChunked {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs == rhs).expect("should not fail")
+        let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
+        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs == Some(rhs))
     }
 
     fn neq(&self, rhs: Rhs) -> BooleanChunked {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs != rhs).expect("should not fail")
+        let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
+        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs != Some(rhs))
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs > rhs).expect("should not fail")
+        let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
+        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs > Some(rhs))
     }
 
     fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs >= rhs).expect("should not fail")
+        let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
+        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs >= Some(rhs))
     }
 
     fn lt(&self, rhs: Rhs) -> BooleanChunked {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs < rhs).expect("should not fail")
+        let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
+        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs < Some(rhs))
     }
 
     fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        cmp_chunked_array_to_num(self, &|lhs: Rhs| lhs <= rhs).expect("should not fail")
+        let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
+        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs <= Some(rhs))
     }
 }
 
@@ -337,5 +321,186 @@ impl CmpOps<&str> for Utf8Chunked {
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
         cmp_utf8chunked_to_str(self, &|lhs| lhs <= rhs)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};
+    use crate::prelude::*;
+    use itertools::Itertools;
+    use std::iter::repeat;
+
+    #[test]
+    fn test_compare_chunk_diff() {
+        let (a1, a2) = create_two_chunked();
+
+        assert_eq!(
+            a1.eq(&a2).into_iter().collect_vec(),
+            repeat(Some(true)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a2.eq(&a1).into_iter().collect_vec(),
+            repeat(Some(true)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a1.neq(&a2).into_iter().collect_vec(),
+            repeat(Some(false)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a2.neq(&a1).into_iter().collect_vec(),
+            repeat(Some(false)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a1.gt(&a2).into_iter().collect_vec(),
+            repeat(Some(false)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a2.gt(&a1).into_iter().collect_vec(),
+            repeat(Some(false)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a1.gt_eq(&a2).into_iter().collect_vec(),
+            repeat(Some(true)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a2.gt_eq(&a1).into_iter().collect_vec(),
+            repeat(Some(true)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a1.lt_eq(&a2).into_iter().collect_vec(),
+            repeat(Some(true)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a2.lt_eq(&a1).into_iter().collect_vec(),
+            repeat(Some(true)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a1.lt(&a2).into_iter().collect_vec(),
+            repeat(Some(false)).take(6).collect_vec()
+        );
+        assert_eq!(
+            a2.lt(&a1).into_iter().collect_vec(),
+            repeat(Some(false)).take(6).collect_vec()
+        );
+    }
+
+    #[test]
+    fn test_equal_chunks() {
+        let a1 = get_chunked_array();
+        let a2 = get_chunked_array();
+
+        assert_eq!(
+            a1.eq(&a2).into_iter().collect_vec(),
+            repeat(Some(true)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a2.eq(&a1).into_iter().collect_vec(),
+            repeat(Some(true)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a1.neq(&a2).into_iter().collect_vec(),
+            repeat(Some(false)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a2.neq(&a1).into_iter().collect_vec(),
+            repeat(Some(false)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a1.gt(&a2).into_iter().collect_vec(),
+            repeat(Some(false)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a2.gt(&a1).into_iter().collect_vec(),
+            repeat(Some(false)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a1.gt_eq(&a2).into_iter().collect_vec(),
+            repeat(Some(true)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a2.gt_eq(&a1).into_iter().collect_vec(),
+            repeat(Some(true)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a1.lt_eq(&a2).into_iter().collect_vec(),
+            repeat(Some(true)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a2.lt_eq(&a1).into_iter().collect_vec(),
+            repeat(Some(true)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a1.lt(&a2).into_iter().collect_vec(),
+            repeat(Some(false)).take(3).collect_vec()
+        );
+        assert_eq!(
+            a2.lt(&a1).into_iter().collect_vec(),
+            repeat(Some(false)).take(3).collect_vec()
+        );
+    }
+
+    #[test]
+    fn test_null_handling() {
+        // assert we comply with arrows way of handling null data
+        // we check comparison on two arrays with one chunk and verify it is equal to a differently
+        // chunked array comparison.
+
+        // two same chunked arrays
+        let a1: Int32Chunked = (&[Some(1), None, Some(3)]).iter().copied().collect();
+        let a2: Int32Chunked = (&[Some(1), Some(2), Some(3)]).iter().copied().collect();
+
+        let mut a2_2chunks: Int32Chunked = (&[Some(1), Some(2)]).iter().copied().collect();
+        a2_2chunks.append(&(&[Some(3)]).iter().copied().collect());
+
+        assert_eq!(
+            a1.eq(&a2).into_iter().collect_vec(),
+            a1.eq(&a2_2chunks).into_iter().collect_vec()
+        );
+
+        assert_eq!(
+            a1.neq(&a2).into_iter().collect_vec(),
+            a1.neq(&a2_2chunks).into_iter().collect_vec()
+        );
+        assert_eq!(
+            a1.neq(&a2).into_iter().collect_vec(),
+            a2_2chunks.neq(&a1).into_iter().collect_vec()
+        );
+
+        assert_eq!(
+            a1.gt(&a2).into_iter().collect_vec(),
+            a1.gt(&a2_2chunks).into_iter().collect_vec()
+        );
+        assert_eq!(
+            a1.gt(&a2).into_iter().collect_vec(),
+            a2_2chunks.gt(&a1).into_iter().collect_vec()
+        );
+
+        assert_eq!(
+            a1.gt_eq(&a2).into_iter().collect_vec(),
+            a1.gt_eq(&a2_2chunks).into_iter().collect_vec()
+        );
+        assert_eq!(
+            a1.gt_eq(&a2).into_iter().collect_vec(),
+            a2_2chunks.gt_eq(&a1).into_iter().collect_vec()
+        );
+
+        assert_eq!(
+            a1.lt_eq(&a2).into_iter().collect_vec(),
+            a1.lt_eq(&a2_2chunks).into_iter().collect_vec()
+        );
+        assert_eq!(
+            a1.lt_eq(&a2).into_iter().collect_vec(),
+            a2_2chunks.lt_eq(&a1).into_iter().collect_vec()
+        );
+
+        assert_eq!(
+            a1.lt(&a2).into_iter().collect_vec(),
+            a1.lt(&a2_2chunks).into_iter().collect_vec()
+        );
+        assert_eq!(
+            a1.lt(&a2).into_iter().collect_vec(),
+            a2_2chunks.lt(&a1).into_iter().collect_vec()
+        );
     }
 }

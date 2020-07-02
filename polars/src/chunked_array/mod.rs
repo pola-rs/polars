@@ -643,10 +643,10 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use crate::prelude::*;
 
-    fn get_array() -> Int32Chunked {
+    pub(crate) fn get_chunked_array() -> Int32Chunked {
         ChunkedArray::new_from_slice("a", &[1, 2, 3])
     }
 
@@ -663,7 +663,7 @@ mod test {
 
     #[test]
     fn arithmetic() {
-        let s1 = get_array();
+        let s1 = get_chunked_array();
         println!("{:?}", s1.chunks);
         let s2 = &s1.clone();
         let s1 = &s1;
@@ -674,14 +674,14 @@ mod test {
 
     #[test]
     fn iter() {
-        let s1 = get_array();
+        let s1 = get_chunked_array();
         // sum
         assert_eq!(s1.into_iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
     }
 
     #[test]
     fn limit() {
-        let a = get_array();
+        let a = get_chunked_array();
         let b = a.limit(2).unwrap();
         println!("{:?}", b);
         assert_eq!(b.len(), 2)
@@ -689,7 +689,7 @@ mod test {
 
     #[test]
     fn filter() {
-        let a = get_array();
+        let a = get_chunked_array();
         let b = a
             .filter(&BooleanChunked::new_from_slice(
                 "filter",
@@ -702,7 +702,7 @@ mod test {
 
     #[test]
     fn aggregates_numeric() {
-        let a = get_array();
+        let a = get_chunked_array();
         assert_eq!(a.max(), Some(3));
         assert_eq!(a.min(), Some(1));
         assert_eq!(a.sum(), Some(6))
@@ -710,7 +710,7 @@ mod test {
 
     #[test]
     fn take() {
-        let a = get_array();
+        let a = get_chunked_array();
         let new = a
             .take([0u32, 1].as_ref().as_take_iter(), None, None)
             .unwrap();
@@ -719,7 +719,7 @@ mod test {
 
     #[test]
     fn get() {
-        let mut a = get_array();
+        let mut a = get_chunked_array();
         assert_eq!(AnyType::I32(2), a.get(1));
         // check if chunks indexes are properly determined
         a.append_array(a.chunks[0].clone()).unwrap();
@@ -728,7 +728,7 @@ mod test {
 
     #[test]
     fn cast() {
-        let a = get_array();
+        let a = get_chunked_array();
         let b = a.cast::<Int64Type>().unwrap();
         assert_eq!(b.field.data_type(), &ArrowDataType::Int64)
     }
