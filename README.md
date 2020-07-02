@@ -6,7 +6,7 @@ Polars is a DataFrames library implemented in Rust, using Apache Arrow as backen
 DataFrame library that only supports core functionality.
 
 ## Documentation
-[Read more in the docs.](https://ritchie46.github.io/polars/docs/doc/polars/index.html)
+[Read more in the docs.](https://ritchie46.github.io/polars)
 
 ### Performance
 

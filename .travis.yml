@@ -1,0 +1,17 @@
+language: rust
+rust:
+  - nightly
+
+cache: cargo
+
+script:
+  - cd polars && cargo test
+
+after_success: |
+  cd .. && \
+  cargo doc --no-deps \
+  && echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
+  sudo pip install ghp-import && \
+  ghp-import -n target/doc && \
+  git push -qf https://${GITHUB_TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git gh-pages
+

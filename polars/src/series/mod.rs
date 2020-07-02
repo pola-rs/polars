@@ -1,6 +1,6 @@
 //! # Series
-//! The columnar data type for a DataFrame. The [Series enum](series/enum.Series.html) consists
-//! of typed [ChunkedArray](chunked_array/struct.ChunkedArray.html)'s. To quickly cast
+//! The columnar data type for a DataFrame. The [Series enum](enum.Series.html) consists
+//! of typed [ChunkedArray](../chunked_array/struct.ChunkedArray.html)'s. To quickly cast
 //! a `Series` to a `ChunkedArray` you can call the method with the name of the type:
 //!
 //! ```
