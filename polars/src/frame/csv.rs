@@ -3,6 +3,7 @@ pub use arrow::csv::{ReaderBuilder, WriterBuilder};
 use arrow::datatypes::Schema;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
+use crate::series::Series::Time64Ns;
 
 /// Write a DataFrame to csv.
 pub struct CsvWriter<'a, W: Write> {
@@ -195,8 +196,19 @@ where
                 ArrowDataType::Boolean => {
                     Series::Bool(BooleanChunked::new_from_chunks(field.name(), vec![]))
                 }
-                // TODO: We've got more types
-                _ => unimplemented!(),
+                ArrowDataType::Date32(DateUnit::Millisecond) => {
+                    Series::Date32(Date32Chunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Date64(DateUnit::Millisecond) => {
+                    Series::Date64(Date64Chunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                    Series::DurationNs(DurationNsChunked::new_from_chunks(field.name(), vec![]))
+                }
+                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+                    Series::Time64Ns(Time64NsChunked::new_from_chunks(field.name(), vec![]))
+                }
+                _ => unimplemented!()
             })
             .collect::<Vec<_>>();
 
