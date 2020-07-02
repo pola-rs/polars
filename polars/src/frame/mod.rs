@@ -2,7 +2,7 @@
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
-use arrow::{compute::TakeOptions, record_batch::RecordBatch};
+use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
 use std::mem;
 use std::sync::Arc;
@@ -352,15 +352,10 @@ impl DataFrame {
     /// use polars::prelude::*;
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let iterator = (0..9).into_iter().map(|idx| Some(idx));
-    ///     df.take_iter(iterator, None, None)
+    ///     df.take_iter(iterator, None)
     /// }
     /// ```
-    pub fn take_iter<I>(
-        &self,
-        iter: I,
-        options: Option<TakeOptions>,
-        capacity: Option<usize>,
-    ) -> Result<Self>
+    pub fn take_iter<I>(&self, iter: I, capacity: Option<usize>) -> Result<Self>
     where
         I: Iterator<Item = Option<usize>> + Clone,
     {
@@ -369,7 +364,7 @@ impl DataFrame {
             .iter()
             .map(|s| {
                 let mut i = iter.clone();
-                s.take_iter(&mut i, options.clone(), capacity)
+                s.take_iter(&mut i, capacity)
             })
             .collect::<Result<Vec<_>>>()?;
         DataFrame::new_with_schema(self.schema.clone(), new_col)
@@ -383,22 +378,22 @@ impl DataFrame {
     /// use polars::prelude::*;
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let idx = vec![0, 1, 9];
-    ///     df.take(&idx, None)
+    ///     df.take(&idx)
     /// }
     /// ```
-    pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
+    pub fn take<T: TakeIndex>(&self, indices: &T) -> Result<Self> {
         let new_col = self
             .columns
             .iter()
-            .map(|s| s.take(indices, options.clone()))
+            .map(|s| s.take(indices))
             .collect::<Result<Vec<_>>>()?;
 
         DataFrame::new_with_schema(self.schema.clone(), new_col)
     }
 
     /// Force take
-    pub fn f_take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Self {
-        self.take(indices, options).expect("could not take")
+    pub fn f_take<T: TakeIndex>(&self, indices: &T) -> Self {
+        self.take(indices).expect("could not take")
     }
 
     /// Rename a column in the DataFrame
@@ -431,7 +426,7 @@ impl DataFrame {
         self.columns = self
             .columns
             .iter()
-            .map(|s| s.take(&take, None))
+            .map(|s| s.take(&take))
             .collect::<Result<Vec<_>>>()?;
         Ok(())
     }
@@ -497,7 +492,6 @@ impl DataFrame {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use std::fs::File;
     use std::io::Cursor;
 
     fn create_frame() -> DataFrame {

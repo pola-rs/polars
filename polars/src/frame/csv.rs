@@ -3,7 +3,6 @@ pub use arrow::csv::{ReaderBuilder, WriterBuilder};
 use arrow::datatypes::Schema;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
-use crate::series::Series::Time64Ns;
 
 /// Write a DataFrame to csv.
 pub struct CsvWriter<'a, W: Write> {
@@ -208,7 +207,7 @@ where
                 ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                     Series::Time64Ns(Time64NsChunked::new_from_chunks(field.name(), vec![]))
                 }
-                _ => unimplemented!()
+                _ => unimplemented!(),
             })
             .collect::<Vec<_>>();
 

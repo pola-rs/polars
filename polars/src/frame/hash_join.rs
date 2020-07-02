@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use arrow::compute::TakeOptions;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -218,7 +217,6 @@ impl DataFrame {
     fn create_left_df<B>(&self, join_tuples: &[(usize, B)]) -> Result<DataFrame> {
         self.take_iter(
             join_tuples.iter().map(|(left, _right)| Some(*left)),
-            Some(TakeOptions::default()),
             Some(join_tuples.len()),
         )
     }
@@ -246,7 +244,6 @@ impl DataFrame {
         let df_left = self.create_left_df(&join_tuples)?;
         let df_right = other.take_iter(
             join_tuples.iter().map(|(_left, right)| Some(*right)),
-            Some(TakeOptions::default()),
             Some(join_tuples.len()),
         )?;
 
@@ -271,7 +268,6 @@ impl DataFrame {
         let df_left = self.create_left_df(&opt_join_tuples)?;
         let df_right = other.take_iter(
             opt_join_tuples.iter().map(|(_left, right)| *right),
-            Some(TakeOptions::default()),
             Some(opt_join_tuples.len()),
         )?;
         self.finish_join(df_left, df_right, right_on)

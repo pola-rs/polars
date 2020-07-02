@@ -730,9 +730,7 @@ pub(crate) mod test {
     #[test]
     fn take() {
         let a = get_chunked_array();
-        let new = a
-            .take([0u32, 1].as_ref().as_take_iter(), None, None)
-            .unwrap();
+        let new = a.take([0u32, 1].as_ref().as_take_iter(), None).unwrap();
         assert_eq!(new.len(), 2)
     }
 

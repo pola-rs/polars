@@ -76,7 +76,6 @@
 pub use crate::prelude::CmpOps;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
-use arrow::compute::TakeOptions;
 use arrow::datatypes::{ArrowPrimitiveType, Field};
 use std::mem;
 
@@ -310,17 +309,16 @@ impl Series {
     pub fn take_iter(
         &self,
         iter: impl Iterator<Item = Option<usize>>,
-        options: Option<TakeOptions>,
         capacity: Option<usize>,
     ) -> Result<Self> {
-        Ok(apply_method_and_return!(self, take, [iter, options, capacity], ?))
+        Ok(apply_method_and_return!(self, take, [iter,  capacity], ?))
     }
 
     /// Take by index. This operation is clone.
-    pub fn take<T: TakeIndex>(&self, indices: &T, options: Option<TakeOptions>) -> Result<Self> {
+    pub fn take<T: TakeIndex>(&self, indices: &T) -> Result<Self> {
         let mut iter = indices.as_take_iter();
         let capacity = indices.take_index_len();
-        self.take_iter(&mut iter, options, Some(capacity))
+        self.take_iter(&mut iter, Some(capacity))
     }
 
     /// Get length of series.

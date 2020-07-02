@@ -1,12 +1,10 @@
 use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use crate::prelude::*;
-use arrow::compute::TakeOptions;
 
 pub trait Take {
     fn take(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
-        options: Option<TakeOptions>,
         capacity: Option<usize>,
     ) -> Result<Self>
     where
@@ -36,10 +34,8 @@ where
     fn take(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
-        _options: Option<TakeOptions>,
         capacity: Option<usize>,
     ) -> Result<Self> {
-        // TODO: implement takeoptions
         let capacity = capacity.unwrap_or(1024);
         let mut builder = PrimitiveChunkedBuilder::new(self.name(), capacity);
 
@@ -62,7 +58,6 @@ impl Take for BooleanChunked {
     fn take(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
-        _options: Option<TakeOptions>,
         capacity: Option<usize>,
     ) -> Result<Self> {
         // TODO: implement takeoptions
@@ -77,7 +72,6 @@ impl Take for Utf8Chunked {
     fn take(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
-        _options: Option<TakeOptions>,
         capacity: Option<usize>,
     ) -> Result<Self>
     where

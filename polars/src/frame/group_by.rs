@@ -99,7 +99,7 @@ where
                 }
                 Some(sum)
             } else {
-                let take = agg_col.take(idx, None).unwrap();
+                let take = agg_col.take(idx).unwrap();
                 take.sum()
             }
         })
@@ -125,7 +125,7 @@ where
                 }
                 Some(sum / T::Native::from_usize(idx.len()).unwrap())
             } else {
-                let take = agg_col.take(idx, None).unwrap();
+                let take = agg_col.take(idx).unwrap();
                 let opt_sum: Option<T::Native> = take.sum();
                 opt_sum.map(|sum| sum / T::Native::from_usize(idx.len()).unwrap())
             }
@@ -163,7 +163,7 @@ where
                 }
                 min
             } else {
-                let take = agg_col.take(idx, None).unwrap();
+                let take = agg_col.take(idx).unwrap();
                 take.min()
             }
         })
@@ -200,7 +200,7 @@ where
                 }
                 max
             } else {
-                let take = agg_col.take(idx, None).unwrap();
+                let take = agg_col.take(idx).unwrap();
                 take.max()
             }
         })
@@ -283,7 +283,6 @@ impl<'a> GroupBy<'a> {
     fn keys(&self) -> Result<Series> {
         self.df.f_column(&self.by).take_iter(
             self.groups.iter().map(|(idx, _)| Some(*idx)),
-            None,
             Some(self.groups.len()),
         )
     }
@@ -338,7 +337,7 @@ impl<'a> GroupBy<'a> {
 
         let mut builder = PrimitiveChunkedBuilder::new(&new_name, self.groups.len());
         for (_first, idx) in &self.groups {
-            let s = agg_col.take(idx, None)?;
+            let s = agg_col.take(idx)?;
             builder.append_value(s.len() as u32)?;
         }
         let ca = builder.finish();
