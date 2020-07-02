@@ -57,17 +57,26 @@ pub type Date64Chunked = ChunkedArray<Date64Type>;
 pub type DurationNsChunked = ChunkedArray<DurationNanosecondType>;
 pub type Time64NsChunked = ChunkedArray<Time64NanosecondType>;
 
-pub trait PolarNumericType: ArrowNumericType {}
+pub trait PolarsNumericType: ArrowNumericType {}
 
-impl PolarNumericType for Int32Type {}
-impl PolarNumericType for Int64Type {}
-impl PolarNumericType for Float32Type {}
-impl PolarNumericType for Float64Type {}
-impl PolarNumericType for UInt32Type {}
-impl PolarNumericType for Date64Type {}
-impl PolarNumericType for Time64NanosecondType {}
-impl PolarNumericType for Date32Type {}
-impl PolarNumericType for DurationNanosecondType {}
+impl PolarsNumericType for UInt32Type {}
+impl PolarsNumericType for Int32Type {}
+impl PolarsNumericType for Int64Type {}
+impl PolarsNumericType for Float32Type {}
+impl PolarsNumericType for Float64Type {}
+impl PolarsNumericType for Date32Type {}
+impl PolarsNumericType for Date64Type {}
+impl PolarsNumericType for Time64NanosecondType {}
+impl PolarsNumericType for DurationNanosecondType {}
+
+pub trait PolarsIntegerType: PolarsNumericType {}
+impl PolarsIntegerType for UInt32Type {}
+impl PolarsIntegerType for Int32Type {}
+impl PolarsIntegerType for Int64Type {}
+impl PolarsIntegerType for Date32Type {}
+impl PolarsIntegerType for Date64Type {}
+impl PolarsIntegerType for Time64NanosecondType {}
+impl PolarsIntegerType for DurationNanosecondType {}
 
 #[derive(Debug, PartialEq)]
 pub enum AnyType<'a> {

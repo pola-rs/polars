@@ -8,7 +8,7 @@ pub trait Apply<'a, A, B> {
 
 impl<'a, T> Apply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     // ChunkedArray<T>: IntoIterator,
 {
     /// Chooses the fastest path for closure application.

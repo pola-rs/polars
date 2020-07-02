@@ -1,6 +1,6 @@
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
-use crate::{datatypes::PolarNumericType, prelude::*};
+use crate::{datatypes::PolarsNumericType, prelude::*};
 use arrow::compute;
 
 pub trait Agg<T> {
@@ -11,7 +11,7 @@ pub trait Agg<T> {
 
 impl<T> Agg<T::Native> for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: std::ops::Add<Output = T::Native> + std::cmp::PartialOrd,
 {
     /// Returns `None` if the array is empty or only contains null values.

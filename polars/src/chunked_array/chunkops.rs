@@ -41,7 +41,7 @@ where
 
 impl<T> ChunkOps for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
         // we aggregate to 1 or chunk_id

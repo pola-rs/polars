@@ -346,7 +346,7 @@ impl Series {
     /// Cast to an some primitive type.
     pub fn cast<N>(&self) -> Result<Self>
     where
-        N: PolarNumericType,
+        N: PolarsNumericType,
     {
         let s = match self {
             Series::UInt32(arr) => pack_ca_to_series(arr.cast::<N>()?),
@@ -396,8 +396,8 @@ impl Series {
             Series::DurationNs(ca) => Series::DurationNs(ca.unique()),
             Series::Utf8(ca) => Series::Utf8(ca.unique()),
             Series::Bool(ca) => Series::Bool(ca.unique()),
-            Series::Float32(_) => todo!(),
-            Series::Float64(_) => todo!(),
+            Series::Float32(ca) => Series::Float32(ca.unique()),
+            Series::Float64(ca) => Series::Float64(ca.unique()),
         }
     }
 

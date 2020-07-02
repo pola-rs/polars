@@ -55,7 +55,7 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
 
 impl<T> Add for &ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -76,7 +76,7 @@ where
 
 impl<T> Div for &ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -98,7 +98,7 @@ where
 
 impl<T> Mul for &ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -119,7 +119,7 @@ where
 
 impl<T> Sub for &ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -140,7 +140,7 @@ where
 
 impl<T> Add for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -160,7 +160,7 @@ where
 
 impl<T> Div for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -177,7 +177,7 @@ where
 
 impl<T> Mul for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -193,7 +193,7 @@ where
 
 impl<T> Sub for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>

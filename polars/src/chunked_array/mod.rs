@@ -415,7 +415,7 @@ where
     /// Cast the underlying data type.
     pub fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
-        N: PolarNumericType,
+        N: PolarsNumericType,
         // TODO: check if this works
         // ChunkedArray<N>: ChunkOps
     {
@@ -454,7 +454,7 @@ where
 
 impl<T> ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
@@ -580,7 +580,7 @@ pub trait Downcast<T> {
 
 impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
         self.chunks
@@ -628,7 +628,7 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
 
 impl<T> ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: std::cmp::PartialOrd,
 {
     pub fn sort(&self) -> Self {
@@ -755,7 +755,7 @@ pub(crate) mod test {
     fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])
     where
         ChunkedArray<T>: ChunkOps,
-        T: PolarNumericType,
+        T: PolarsNumericType,
     {
         assert_eq!(
             ca.into_iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(),

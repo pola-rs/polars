@@ -86,7 +86,7 @@ fn agg_sum<T>(
     agg_col: &Series,
 ) -> Vec<Option<T::Native>>
 where
-    T: PolarNumericType + Sync,
+    T: PolarsNumericType + Sync,
     T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
 {
     groups
@@ -112,7 +112,7 @@ fn agg_mean<T>(
     agg_col: &Series,
 ) -> Vec<Option<T::Native>>
 where
-    T: PolarNumericType + Sync,
+    T: PolarsNumericType + Sync,
     T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
 {
     groups
@@ -139,7 +139,7 @@ fn agg_min<T>(
     agg_col: &Series,
 ) -> Vec<Option<T::Native>>
 where
-    T: PolarNumericType + Sync,
+    T: PolarsNumericType + Sync,
     T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
 {
     groups
@@ -176,7 +176,7 @@ fn agg_max<T>(
     agg_col: &Series,
 ) -> Vec<Option<T::Native>>
 where
-    T: PolarNumericType + Sync,
+    T: PolarsNumericType + Sync,
     T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
 {
     groups

@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::utils::{floating_encode_f32, floating_encode_f64, integer_decode};
 use fnv::{FnvBuildHasher, FnvHasher};
 use std::collections::HashSet;
 use std::hash::{BuildHasherDefault, Hash};
@@ -25,7 +26,7 @@ where
 
 impl<T> Unique for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsIntegerType,
     T::Native: Hash + Eq,
     ChunkedArray<T>: ChunkOps,
 {
@@ -63,6 +64,47 @@ impl Unique for BooleanChunked {
             }
         }
         ChunkedArray::new_from_opt_slice(self.name(), &unique)
+    }
+}
+
+impl Unique for Float32Chunked {
+    fn unique(&self) -> Self {
+        let set = match self.cont_slice() {
+            Ok(slice) => fill_set(
+                slice.iter().map(|v| Some(integer_decode(*v as f64))),
+                self.len(),
+            ),
+            Err(_) => fill_set(
+                self.into_iter()
+                    .map(|opt_v| opt_v.map(|v| integer_decode(v as f64))),
+                self.len(),
+            ),
+        };
+
+        let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
+        builder.new_from_iter(set.iter().copied().map(|opt| match opt {
+            Some((mantissa, exponent, sign)) => Some(floating_encode_f32(mantissa, exponent, sign)),
+            None => None,
+        }))
+    }
+}
+
+impl Unique for Float64Chunked {
+    fn unique(&self) -> Self {
+        let set = match self.cont_slice() {
+            Ok(slice) => fill_set(slice.iter().map(|v| Some(integer_decode(*v))), self.len()),
+            Err(_) => fill_set(
+                self.into_iter()
+                    .map(|opt_v| opt_v.map(|v| integer_decode(v))),
+                self.len(),
+            ),
+        };
+
+        let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
+        builder.new_from_iter(set.iter().copied().map(|opt| match opt {
+            Some((mantissa, exponent, sign)) => Some(floating_encode_f64(mantissa, exponent, sign)),
+            None => None,
+        }))
     }
 }
 

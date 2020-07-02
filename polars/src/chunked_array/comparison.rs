@@ -44,7 +44,7 @@ pub trait CmpOps<Rhs> {
 
 impl<T> ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     /// First ensure that the chunks of lhs and rhs match and then iterates over the chunks and applies
     /// the comparison operator.
@@ -73,7 +73,7 @@ where
 
 impl<T> CmpOps<&ChunkedArray<T>> for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     fn eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         if self.chunk_id == rhs.chunk_id {
@@ -239,7 +239,7 @@ fn cmp_chunked_array_to_num<T>(
     cmp_fn: &dyn Fn(Option<T::Native>) -> bool,
 ) -> BooleanChunked
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     ca.into_iter().map(cmp_fn).collect()
 }
@@ -259,7 +259,7 @@ impl NumComp for u64 {}
 
 impl<T, Rhs> CmpOps<Rhs> for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: NumCast,
     Rhs: NumComp + ToPrimitive,
 {

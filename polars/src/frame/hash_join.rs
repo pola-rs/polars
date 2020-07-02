@@ -119,7 +119,7 @@ macro_rules! create_join_tuples {
 
 impl<T> HashJoin<T> for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
     T::Native: Eq + Hash,
 {
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {

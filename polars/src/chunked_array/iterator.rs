@@ -180,7 +180,7 @@ impl<'a> IntoIterator for &'a BooleanChunked {
 /// Specialized Iterator for ChunkedArray<PolarsNumericType>
 pub struct ChunkNumIter<'a, T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     array_chunks: Vec<&'a PrimitiveArray<T>>,
     current_data: Option<ArrayDataRef>,
@@ -195,7 +195,7 @@ where
 
 impl<'a, T> Iterator for ChunkNumIter<'a, T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     type Item = Option<T::Native>;
 
@@ -238,7 +238,7 @@ where
 
 impl<'a, T> ChunkNumIter<'a, T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     #[inline]
     fn set_indexes(&mut self) {
@@ -272,7 +272,7 @@ where
 
 impl<'a, T> IntoIterator for &'a ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     type Item = Option<T::Native>;
     type IntoIter = ChunkNumIter<'a, T>;

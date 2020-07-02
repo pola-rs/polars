@@ -31,7 +31,7 @@ macro_rules! impl_take_builder {
 
 impl<T> Take for ChunkedArray<T>
 where
-    T: PolarNumericType,
+    T: PolarsNumericType,
 {
     fn take(
         &self,
