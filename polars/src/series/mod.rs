@@ -400,6 +400,11 @@ impl Series {
             Series::Float64(_) => todo!(),
         }
     }
+
+    /// Get a mask of the null values.
+    pub fn is_null(&self) -> BooleanChunked {
+        apply_method_all_series!(self, is_null,)
+    }
 }
 
 fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {

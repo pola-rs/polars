@@ -12,7 +12,7 @@ use crate::{
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, PrimitiveArray,
-        StringArray, StringBuilder, UInt32Array,
+        PrimitiveBuilder, StringArray, StringBuilder, UInt32Array,
     },
     compute,
     datatypes::{ArrowPrimitiveType, DateUnit, Field, TimeUnit},
@@ -86,6 +86,25 @@ where
     /// Count the null values.
     pub fn null_count(&self) -> usize {
         self.chunks.iter().map(|arr| arr.null_count()).sum()
+    }
+
+    /// Get a mask of the null values.
+    pub fn is_null(&self) -> BooleanChunked {
+        let chunks = self
+            .chunks
+            .iter()
+            .map(|arr| {
+                let mut builder = PrimitiveBuilder::<BooleanType>::new(arr.len());
+                for i in 0..arr.len() {
+                    builder
+                        .append_value(arr.is_null(i))
+                        .expect("could not append");
+                }
+                let chunk: ArrayRef = Arc::new(builder.finish());
+                chunk
+            })
+            .collect_vec();
+        BooleanChunked::new_from_chunks("is_null", chunks)
     }
 
     /// Downcast
