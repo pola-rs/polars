@@ -2,12 +2,9 @@ use crate::prelude::*;
 
 impl Series {
     pub fn series_equal(&self, other: &Series) -> bool {
-        match self.eq(other) {
-            Err(_) => false,
-            Ok(ca_bool) => match ca_bool.sum() {
-                None => false,
-                Some(sum) => sum as usize == self.len(),
-            },
+        match self.eq(other).sum() {
+            None => false,
+            Some(sum) => sum as usize == self.len(),
         }
     }
 }

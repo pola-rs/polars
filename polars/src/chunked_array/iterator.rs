@@ -323,6 +323,17 @@ where
     }
 }
 
+impl FromIterator<bool> for BooleanChunked {
+    fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
+        let mut builder = PrimitiveChunkedBuilder::new("", 1024);
+
+        for val in iter {
+            builder.append_value(val).expect("could not append");
+        }
+        builder.finish()
+    }
+}
+
 impl<'a> FromIterator<&'a str> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
         let mut builder = Utf8ChunkedBuilder::new("", 1024);

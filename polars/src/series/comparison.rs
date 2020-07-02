@@ -1,27 +1,22 @@
 //! Comparison operations on Series.
 
 use super::Series;
-use crate::chunked_array::comparison::{CmpOps, ForceCmpOps, NumComp};
-use crate::error::PolarsError::DataTypeMisMatch;
-use crate::{
-    apply_method_arrowprimitive_series,
-    datatypes::BooleanChunked,
-    error::{PolarsError, Result},
-};
+use crate::apply_method_arrowprimitive_series;
+use crate::prelude::*;
 
 macro_rules! compare {
     ($variant:path, $lhs:ident, $rhs:ident, $cmp_method:ident) => {{
         if let $variant(rhs_) = $rhs {
-            Ok($lhs.$cmp_method(rhs_)?)
+            $lhs.$cmp_method(rhs_)
         } else {
-            Err(PolarsError::DataTypeMisMatch)
+            std::iter::repeat(false).take($lhs.len()).collect()
         }
     }};
 }
 
 impl CmpOps<&Series> for Series {
     /// Create a boolean mask by checking for equality.
-    fn eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn eq(&self, rhs: &Series) -> BooleanChunked {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, eq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, eq),
@@ -38,7 +33,7 @@ impl CmpOps<&Series> for Series {
     }
 
     /// Create a boolean mask by checking for inequality.
-    fn neq(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn neq(&self, rhs: &Series) -> BooleanChunked {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, neq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, neq),
@@ -55,7 +50,7 @@ impl CmpOps<&Series> for Series {
     }
 
     /// Create a boolean mask by checking if lhs > rhs.
-    fn gt(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn gt(&self, rhs: &Series) -> BooleanChunked {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, gt),
@@ -72,7 +67,7 @@ impl CmpOps<&Series> for Series {
     }
 
     /// Create a boolean mask by checking if lhs >= rhs.
-    fn gt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn gt_eq(&self, rhs: &Series) -> BooleanChunked {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt_eq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, gt_eq),
@@ -89,7 +84,7 @@ impl CmpOps<&Series> for Series {
     }
 
     /// Create a boolean mask by checking if lhs < rhs.
-    fn lt(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn lt(&self, rhs: &Series) -> BooleanChunked {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, lt),
@@ -106,7 +101,7 @@ impl CmpOps<&Series> for Series {
     }
 
     /// Create a boolean mask by checking if lhs <= rhs.
-    fn lt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+    fn lt_eq(&self, rhs: &Series) -> BooleanChunked {
         match self {
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt_eq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, lt_eq),
@@ -127,74 +122,71 @@ impl<Rhs> CmpOps<Rhs> for Series
 where
     Rhs: NumComp,
 {
-    fn eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn eq(&self, rhs: Rhs) -> BooleanChunked {
         apply_method_arrowprimitive_series!(self, eq, rhs)
     }
 
-    fn neq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn neq(&self, rhs: Rhs) -> BooleanChunked {
         apply_method_arrowprimitive_series!(self, neq, rhs)
     }
 
-    fn gt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn gt(&self, rhs: Rhs) -> BooleanChunked {
         apply_method_arrowprimitive_series!(self, gt, rhs)
     }
 
-    fn gt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
         apply_method_arrowprimitive_series!(self, gt_eq, rhs)
     }
 
-    fn lt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn lt(&self, rhs: Rhs) -> BooleanChunked {
         apply_method_arrowprimitive_series!(self, lt, rhs)
     }
 
-    fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+    fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
         apply_method_arrowprimitive_series!(self, lt_eq, rhs)
     }
 }
 
 impl CmpOps<&str> for Series {
-    fn eq(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn eq(&self, rhs: &str) -> BooleanChunked {
         match self {
             Series::Utf8(a) => a.eq(rhs),
-            _ => Err(DataTypeMisMatch),
+            _ => std::iter::repeat(false).take(self.len()).collect(),
         }
     }
 
-    fn neq(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn neq(&self, rhs: &str) -> BooleanChunked {
         match self {
             Series::Utf8(a) => a.neq(rhs),
-            _ => Err(DataTypeMisMatch),
+            _ => std::iter::repeat(false).take(self.len()).collect(),
         }
     }
 
-    fn gt(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn gt(&self, rhs: &str) -> BooleanChunked {
         match self {
             Series::Utf8(a) => a.gt(rhs),
-            _ => Err(DataTypeMisMatch),
+            _ => std::iter::repeat(false).take(self.len()).collect(),
         }
     }
 
-    fn gt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn gt_eq(&self, rhs: &str) -> BooleanChunked {
         match self {
             Series::Utf8(a) => a.gt_eq(rhs),
-            _ => Err(DataTypeMisMatch),
+            _ => std::iter::repeat(false).take(self.len()).collect(),
         }
     }
 
-    fn lt(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn lt(&self, rhs: &str) -> BooleanChunked {
         match self {
             Series::Utf8(a) => a.lt(rhs),
-            _ => Err(DataTypeMisMatch),
+            _ => std::iter::repeat(false).take(self.len()).collect(),
         }
     }
 
-    fn lt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+    fn lt_eq(&self, rhs: &str) -> BooleanChunked {
         match self {
             Series::Utf8(a) => a.lt_eq(rhs),
-            _ => Err(DataTypeMisMatch),
+            _ => std::iter::repeat(false).take(self.len()).collect(),
         }
     }
 }
-
-impl ForceCmpOps<&str> for Series {}
-impl<Rhs: NumComp> ForceCmpOps<Rhs> for Series {}

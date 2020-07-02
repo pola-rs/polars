@@ -84,7 +84,7 @@
 //! use polars::prelude::*;
 //! use itertools::Itertools;
 //! let s = Series::new("dollars", [1, 2, 3].as_ref());
-//! let mask = s.eq(1).expect("could not compare types");
+//! let mask = s.eq(1);
 //! let valid = [true, false, false].iter();
 //! assert!(mask
 //!     .into_iter()

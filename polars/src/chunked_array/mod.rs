@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 pub mod aggregate;
 pub mod apply;
+#[macro_use]
 mod arithmetic;
 pub mod builder;
 pub(crate) mod chunkops;

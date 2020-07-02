@@ -508,7 +508,7 @@ mod test {
     #[test]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(df.f_column("days").f_eq(1).sum(), Some(1));
+        assert_eq!(df.f_column("days").eq(1).sum(), Some(1));
     }
 
     #[test]
@@ -516,7 +516,7 @@ mod test {
         let df = create_frame();
         println!("{}", df.f_column("days"));
         println!("{:?}", df);
-        println!("{:?}", df.filter(&df.f_column("days").f_eq(0)))
+        println!("{:?}", df.filter(&df.f_column("days").eq(0)))
     }
 
     #[test]

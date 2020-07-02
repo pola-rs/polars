@@ -20,7 +20,8 @@ macro_rules! operand_on_primitive_arr {
     }};
 }
 
-macro_rules! apply_operand_iter {
+#[macro_export]
+macro_rules! apply_operand_on_chunkedarray_by_iter {
 
     ($self:ident, $rhs:ident, $operand:tt) => {
             {
@@ -68,7 +69,7 @@ where
             let expect_str = "Could not add, check data types and length";
             operand_on_primitive_arr![self, rhs, compute::add, expect_str]
         } else {
-            apply_operand_iter!(self, rhs, +)
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, +)
         }
     }
 }
@@ -90,7 +91,7 @@ where
             let expect_str = "Could not divide, check data types and length";
             operand_on_primitive_arr!(self, rhs, compute::divide, expect_str)
         } else {
-            apply_operand_iter!(self, rhs, /)
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, /)
         }
     }
 }
@@ -111,7 +112,7 @@ where
             let expect_str = "Could not multiply, check data types and length";
             operand_on_primitive_arr!(self, rhs, compute::multiply, expect_str)
         } else {
-            apply_operand_iter!(self, rhs, *)
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, *)
         }
     }
 }
@@ -132,7 +133,7 @@ where
             let expect_str = "Could not subtract, check data types and length";
             operand_on_primitive_arr![self, rhs, compute::subtract, expect_str]
         } else {
-            apply_operand_iter!(self, rhs, -)
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, -)
         }
     }
 }
@@ -152,7 +153,7 @@ where
         if self.chunk_id == rhs.chunk_id {
             (&self).add(&rhs)
         } else {
-            apply_operand_iter!(self, rhs, +)
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, +)
         }
     }
 }
@@ -207,10 +208,10 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use crate::prelude::*;
 
-    fn create_two_chunked() -> (Int32Chunked, Int32Chunked) {
+    pub(crate) fn create_two_chunked() -> (Int32Chunked, Int32Chunked) {
         let mut a1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
         let a2 = Int32Chunked::new_from_slice("a", &[4, 5, 6]);
         let a3 = Int32Chunked::new_from_slice("a", &[1, 2, 3, 4, 5, 6]);
