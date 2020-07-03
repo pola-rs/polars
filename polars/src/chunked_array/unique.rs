@@ -2,7 +2,7 @@ use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode};
 use fnv::{FnvBuildHasher, FnvHasher};
 use num::{NumCast, ToPrimitive};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
 
 pub trait Unique<T> {
@@ -101,6 +101,44 @@ where
             }
             None => None,
         }))
+    }
+}
+
+pub trait ValueCounts<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, BuildHasherDefault<FnvHasher>>;
+}
+
+fn fill_set_value_count<K>(
+    a: impl Iterator<Item = K>,
+    capacity: usize,
+) -> HashMap<K, u32, BuildHasherDefault<FnvHasher>>
+where
+    K: Hash + Eq,
+{
+    let mut kv_store = HashMap::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
+
+    for key in a {
+        let count = kv_store.entry(key).or_insert(0);
+        *count += 1;
+    }
+
+    kv_store
+}
+
+impl<T> ValueCounts<T> for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Hash + Eq,
+    ChunkedArray<T>: ChunkOps,
+{
+    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, BuildHasherDefault<FnvHasher>> {
+        match self.cont_slice() {
+            Ok(slice) => fill_set_value_count(slice.iter().map(|v| Some(*v)), self.len()),
+            Err(_) => fill_set_value_count(self.into_iter(), self.len()),
+        }
     }
 }
 
