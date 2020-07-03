@@ -1,11 +1,13 @@
 use crate::prelude::*;
-use crate::utils::{floating_encode_f32, floating_encode_f64, integer_decode};
+use crate::utils::{floating_encode_f64, integer_decode};
 use fnv::{FnvBuildHasher, FnvHasher};
+use num::{NumCast, ToPrimitive};
 use std::collections::HashSet;
 use std::hash::{BuildHasherDefault, Hash};
 
-pub trait Unique {
-    fn unique(&self) -> Self;
+pub trait Unique<T> {
+    // We don't return Self to be able to use AutoRef specialization
+    fn unique(&self) -> ChunkedArray<T>;
 }
 
 fn fill_set<A>(
@@ -24,7 +26,7 @@ where
     set
 }
 
-impl<T> Unique for ChunkedArray<T>
+impl<T> Unique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq,
@@ -41,7 +43,7 @@ where
     }
 }
 
-impl Unique for Utf8Chunked {
+impl Unique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> Self {
         let set = fill_set(self.into_iter(), self.len());
         let mut builder = Utf8ChunkedBuilder::new(self.name(), set.len());
@@ -51,7 +53,7 @@ impl Unique for Utf8Chunked {
     }
 }
 
-impl Unique for BooleanChunked {
+impl Unique<BooleanType> for BooleanChunked {
     fn unique(&self) -> Self {
         // can be None, Some(true), Some(false)
         let mut unique = Vec::with_capacity(3);
@@ -67,42 +69,36 @@ impl Unique for BooleanChunked {
     }
 }
 
-impl Unique for Float32Chunked {
-    fn unique(&self) -> Self {
+// Use stable form of specialization using autoref
+// https://github.com/dtolnay/case-studies/blob/master/autoref-specialization/README.md
+impl<T> Unique<T> for &ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast + ToPrimitive,
+    ChunkedArray<T>: ChunkOps,
+{
+    fn unique(&self) -> ChunkedArray<T> {
         let set = match self.cont_slice() {
             Ok(slice) => fill_set(
-                slice.iter().map(|v| Some(integer_decode(*v as f64))),
+                slice
+                    .iter()
+                    .map(|v| Some(integer_decode(v.to_f64().unwrap()))),
                 self.len(),
             ),
             Err(_) => fill_set(
                 self.into_iter()
-                    .map(|opt_v| opt_v.map(|v| integer_decode(v as f64))),
+                    .map(|opt_v| opt_v.map(|v| integer_decode(v.to_f64().unwrap()))),
                 self.len(),
             ),
         };
 
         let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
         builder.new_from_iter(set.iter().copied().map(|opt| match opt {
-            Some((mantissa, exponent, sign)) => Some(floating_encode_f32(mantissa, exponent, sign)),
-            None => None,
-        }))
-    }
-}
-
-impl Unique for Float64Chunked {
-    fn unique(&self) -> Self {
-        let set = match self.cont_slice() {
-            Ok(slice) => fill_set(slice.iter().map(|v| Some(integer_decode(*v))), self.len()),
-            Err(_) => fill_set(
-                self.into_iter()
-                    .map(|opt_v| opt_v.map(|v| integer_decode(v))),
-                self.len(),
-            ),
-        };
-
-        let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
-        builder.new_from_iter(set.iter().copied().map(|opt| match opt {
-            Some((mantissa, exponent, sign)) => Some(floating_encode_f64(mantissa, exponent, sign)),
+            Some((mantissa, exponent, sign)) => {
+                let flt = floating_encode_f64(mantissa, exponent, sign);
+                let val: T::Native = NumCast::from(flt).unwrap();
+                Some(val)
+            }
             None => None,
         }))
     }

@@ -19,6 +19,3 @@ pub(crate) fn integer_decode(val: f64) -> (u64, i16, i8) {
 pub(crate) fn floating_encode_f64(mantissa: u64, exponent: i16, sign: i8) -> f64 {
     sign as f64 * mantissa as f64 * (2.0f64).powf(exponent as f64)
 }
-pub(crate) fn floating_encode_f32(mantissa: u64, exponent: i16, sign: i8) -> f32 {
-    sign as f32 * mantissa as f32 * (2.0f32).powf(exponent as f32)
-}
