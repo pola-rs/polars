@@ -384,19 +384,12 @@ impl Series {
 
     /// Get unique values in the Series.
     pub fn unique(&self) -> Self {
-        match self {
-            Series::UInt32(ca) => Series::UInt32(ca.unique()),
-            Series::Int32(ca) => Series::Int32(ca.unique()),
-            Series::Int64(ca) => Series::Int64(ca.unique()),
-            Series::Date32(ca) => Series::Date32(ca.unique()),
-            Series::Date64(ca) => Series::Date64(ca.unique()),
-            Series::Time64Ns(ca) => Series::Time64Ns(ca.unique()),
-            Series::DurationNs(ca) => Series::DurationNs(ca.unique()),
-            Series::Utf8(ca) => Series::Utf8(ca.unique()),
-            Series::Bool(ca) => Series::Bool(ca.unique()),
-            Series::Float32(ca) => Series::Float32(ca.unique()),
-            Series::Float64(ca) => Series::Float64(ca.unique()),
-        }
+        apply_method_and_return!(self, unique, [],)
+    }
+
+    /// Get first indexes of unique values.
+    pub fn arg_unique(&self) -> UInt32Chunked {
+        apply_method_all_series!(self, arg_unique,)
     }
 
     /// Get a mask of the null values.

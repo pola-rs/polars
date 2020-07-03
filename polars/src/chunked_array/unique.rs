@@ -4,10 +4,15 @@ use fnv::{FnvBuildHasher, FnvHasher};
 use num::{NumCast, ToPrimitive};
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
+use unsafe_unwrap::UnsafeUnwrap;
 
 pub trait Unique<T> {
     // We don't return Self to be able to use AutoRef specialization
+    /// Get unique values of a ChunkedArray
     fn unique(&self) -> ChunkedArray<T>;
+
+    /// Get first index of the unique values in a ChunkedArray.
+    fn arg_unique(&self) -> UInt32Chunked;
 }
 
 fn fill_set<A>(
@@ -26,6 +31,21 @@ where
     set
 }
 
+fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> UInt32Chunked
+where
+    T: Hash + Eq,
+{
+    let mut set = HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
+    let mut builder = PrimitiveChunkedBuilder::new("argunique", capacity);
+    a.enumerate().for_each(|(idx, val)| {
+        if set.insert(val) {
+            builder.append_value(idx as u32).expect("could not append");
+        }
+    });
+
+    builder.finish()
+}
+
 impl<T> Unique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
@@ -41,6 +61,13 @@ where
         let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
         builder.new_from_iter(set.iter().copied())
     }
+
+    fn arg_unique(&self) -> UInt32Chunked {
+        match self.cont_slice() {
+            Ok(slice) => arg_unique(slice.iter(), self.len()),
+            Err(_) => arg_unique(self.into_iter(), self.len()),
+        }
+    }
 }
 
 impl Unique<Utf8Type> for Utf8Chunked {
@@ -50,6 +77,10 @@ impl Unique<Utf8Type> for Utf8Chunked {
         self.into_iter()
             .for_each(|val| builder.append_value(val).expect("could not append"));
         builder.finish()
+    }
+
+    fn arg_unique(&self) -> UInt32Chunked {
+        arg_unique(self.into_iter(), self.len())
     }
 }
 
@@ -66,6 +97,10 @@ impl Unique<BooleanType> for BooleanChunked {
             }
         }
         ChunkedArray::new_from_opt_slice(self.name(), &unique)
+    }
+
+    fn arg_unique(&self) -> UInt32Chunked {
+        arg_unique(self.into_iter(), self.len())
     }
 }
 
@@ -101,6 +136,31 @@ where
             }
             None => None,
         }))
+    }
+
+    fn arg_unique(&self) -> UInt32Chunked {
+        match self.cont_slice() {
+            Ok(slice) => arg_unique(
+                slice.iter().map(|v| {
+                    let v = v.to_f64();
+                    debug_assert!(v.is_some());
+                    let v = unsafe { v.unsafe_unwrap() };
+                    integer_decode(v)
+                }),
+                self.len(),
+            ),
+            Err(_) => arg_unique(
+                self.into_iter().map(|opt_v| {
+                    opt_v.map(|v| {
+                        let v = v.to_f64();
+                        debug_assert!(v.is_some());
+                        let v = unsafe { v.unsafe_unwrap() };
+                        integer_decode(v)
+                    })
+                }),
+                self.len(),
+            ),
+        }
     }
 }
 
@@ -158,6 +218,15 @@ mod test {
         assert_eq!(
             ca.unique().into_iter().collect_vec(),
             vec![Some(true), Some(false)]
+        );
+    }
+
+    #[test]
+    fn arg_unique() {
+        let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 1, 1, 3]);
+        assert_eq!(
+            ca.arg_unique().into_iter().collect_vec(),
+            vec![Some(0), Some(1), Some(4)]
         );
     }
 }
