@@ -76,7 +76,6 @@
 pub use crate::prelude::CmpOps;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
-use arrow::datatypes::{ArrowPrimitiveType, Field};
 use std::mem;
 
 pub(crate) mod aggregate;

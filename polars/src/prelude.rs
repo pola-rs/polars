@@ -19,7 +19,7 @@ pub use crate::{
     series::{arithmetic::LhsNumOps, NamedFrom, Series},
     testing::*,
 };
-pub use arrow::datatypes::ArrowPrimitiveType;
+pub use arrow::datatypes::{ArrowPrimitiveType, Field};
 
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {
