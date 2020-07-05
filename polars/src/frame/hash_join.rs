@@ -19,6 +19,14 @@ macro_rules! hash_join_left {
     }};
 }
 
+macro_rules! hash_join_outer {
+    ($s_right:ident, $ca_left:ident, $type_:ident) => {{
+        // call the type method series.i32()
+        let ca_right = $s_right.$type_()?;
+        $ca_left.hash_join_outer(ca_right)
+    }};
+}
+
 macro_rules! apply_hash_join_on_series {
     ($s_left:ident, $s_right:ident, $join_macro:ident) => {{
         match $s_left {
@@ -57,9 +65,11 @@ fn hash_join_tuples_inner<T>(
 where
     T: Hash + Eq + Copy,
 {
+    let mut results = Vec::new();
+    // First we hash one relation
     let hash_tbl = prepare_hashed_relation(b);
 
-    let mut results = Vec::new();
+    // Next we probe the other relation in the hash table
     a.enumerate().for_each(|(idx_a, key)| {
         if let Some(indexes_b) = hash_tbl.get(&key) {
             let tuples = indexes_b
@@ -72,6 +82,7 @@ where
 }
 
 /// Hash join left. None/ Nulls are regarded as Equal
+/// All left values are joined so no Option<usize> there.
 fn hash_join_tuples_left<T>(
     a: impl Iterator<Item = T>,
     b: impl Iterator<Item = T>,
@@ -79,9 +90,11 @@ fn hash_join_tuples_left<T>(
 where
     T: Hash + Eq + Copy,
 {
-    let hash_tbl = prepare_hashed_relation(b);
     let mut results = Vec::new();
+    // First we hash one relation
+    let hash_tbl = prepare_hashed_relation(b);
 
+    // Next we probe the other relation in the hash table
     a.enumerate().for_each(|(idx_a, key)| {
         match hash_tbl.get(&key) {
             // left and right matches
@@ -93,9 +106,61 @@ where
     results
 }
 
+/// Hash join outer. Both left and right can have no match so Options
+/// We accept a closure as we need to do two passes over the same iterators.
+fn hash_join_tuples_outer<'a, T, I, J>(
+    a: I,
+    b: J,
+    capacity: usize,
+) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher>
+where
+    I: Fn() -> Box<dyn Iterator<Item = T> + 'a>,
+    J: Fn() -> Box<dyn Iterator<Item = T> + 'a>,
+    T: Hash + Eq + Copy,
+{
+    let mut results = HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
+
+    // We do the hash probe combination on both relations.
+    let hash_tbl = prepare_hashed_relation(b());
+
+    a().enumerate().for_each(|(idx_a, key)| {
+        match hash_tbl.get(&key) {
+            // left and right matches
+            Some(indexes_b) => {
+                results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_a), Some(idx_b))))
+            }
+            // only left values, right = null
+            None => {
+                results.insert((Some(idx_a), None));
+            }
+        }
+    });
+
+    let hash_tbl = prepare_hashed_relation(a());
+
+    b().enumerate().for_each(|(idx_b, key)| {
+        match hash_tbl.get(&key) {
+            // left and right matches
+            Some(indexes_a) => {
+                results.extend(indexes_a.iter().map(|&idx_a| (Some(idx_a), Some(idx_b))))
+            }
+            // only left values, right = null
+            None => {
+                results.insert((None, Some(idx_b)));
+            }
+        }
+    });
+
+    results
+}
+
 pub trait HashJoin<T> {
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)>;
     fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)>;
+    fn hash_join_outer(
+        &self,
+        other: &ChunkedArray<T>,
+    ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher>;
 }
 
 macro_rules! create_join_tuples {
@@ -157,6 +222,36 @@ where
             (Err(_), Err(_)) => hash_join_tuples_left(self.into_iter(), other.into_iter()),
         }
     }
+
+    fn hash_join_outer(
+        &self,
+        other: &ChunkedArray<T>,
+    ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> {
+        match (self.cont_slice(), other.cont_slice()) {
+            (Ok(a_slice), Ok(b_slice)) => hash_join_tuples_outer(
+                || Box::new(a_slice.iter()),
+                || Box::new(b_slice.iter()),
+                self.len() + other.len(),
+            ),
+            (Ok(a_slice), Err(_)) => {
+                hash_join_tuples_outer(
+                    || Box::new(a_slice.iter().map(|v| Some(*v))), // take ownership
+                    || Box::new(other.into_iter()),
+                    self.len() + other.len(),
+                )
+            }
+            (Err(_), Ok(b_slice)) => hash_join_tuples_outer(
+                || Box::new(self.into_iter()),
+                || Box::new(b_slice.iter().map(|v: &T::Native| Some(*v))),
+                self.len() + other.len(),
+            ),
+            (Err(_), Err(_)) => hash_join_tuples_outer(
+                || Box::new(self.into_iter()),
+                || Box::new(other.into_iter()),
+                self.len() + other.len(),
+            ),
+        }
+    }
 }
 
 impl HashJoin<BooleanType> for BooleanChunked {
@@ -169,6 +264,17 @@ impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(usize, Option<usize>)> {
         hash_join_tuples_left(self.into_iter(), other.into_iter())
     }
+
+    fn hash_join_outer(
+        &self,
+        other: &BooleanChunked,
+    ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> {
+        hash_join_tuples_outer(
+            || Box::new(self.into_iter()),
+            || Box::new(other.into_iter()),
+            self.len() + other.len(),
+        )
+    }
 }
 
 impl HashJoin<Utf8Type> for Utf8Chunked {
@@ -180,6 +286,17 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
         hash_join_tuples_left(self.into_iter(), other.into_iter())
+    }
+
+    fn hash_join_outer(
+        &self,
+        other: &Utf8Chunked,
+    ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> {
+        hash_join_tuples_outer(
+            || Box::new(self.into_iter()),
+            || Box::new(other.into_iter()),
+            self.len() + other.len(),
+        )
     }
 }
 
@@ -272,14 +389,86 @@ impl DataFrame {
         )?;
         self.finish_join(df_left, df_right, right_on)
     }
+
+    /// Perform an outer join on two DataFrames
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
+    ///     left.outer_join(right, "join_column_left", "join_column_right")
+    /// }
+    /// ```
+    pub fn outer_join(
+        &self,
+        other: &DataFrame,
+        left_on: &str,
+        right_on: &str,
+    ) -> Result<DataFrame> {
+        let s_left = self.column(left_on).ok_or(PolarsError::NotFound)?;
+        let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
+
+        let opt_join_tuples: HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> =
+            apply_hash_join_on_series!(s_left, s_right, hash_join_outer);
+
+        let mut df_left = self.take_iter(
+            opt_join_tuples.iter().map(|(left, _right)| *left),
+            Some(opt_join_tuples.len()),
+        )?;
+        let df_right = other.take_iter(
+            opt_join_tuples.iter().map(|(_left, right)| *right),
+            Some(opt_join_tuples.len()),
+        )?;
+        let left_join_col = df_left.column(left_on).unwrap();
+        let right_join_col = df_right.column(right_on).unwrap();
+
+        macro_rules! downcast_and_replace_joined_column {
+            ($type:ident) => {{
+                let mut join_col: Series = left_join_col
+                    .$type()
+                    .unwrap()
+                    .into_iter()
+                    .zip(right_join_col.$type().unwrap().into_iter())
+                    .map(|(left, right)| if left.is_some() { left } else { right })
+                    .collect();
+                join_col.rename(left_on);
+                df_left.replace(left_on, join_col)?;
+            }};
+        }
+
+        if left_join_col.null_count() > 0 {
+            // TODO: create new from iter with capacity. The collect doesn't no capacity and may be
+            //       more expensive.
+            match s_left.dtype() {
+                ArrowDataType::UInt32 => downcast_and_replace_joined_column!(u32),
+                ArrowDataType::Int32 => downcast_and_replace_joined_column!(i32),
+                ArrowDataType::Int64 => downcast_and_replace_joined_column!(i64),
+                ArrowDataType::Date32(DateUnit::Millisecond) => {
+                    downcast_and_replace_joined_column!(i32)
+                }
+                ArrowDataType::Date64(DateUnit::Millisecond) => {
+                    downcast_and_replace_joined_column!(i64)
+                }
+                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                    downcast_and_replace_joined_column!(i64)
+                }
+                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+                    downcast_and_replace_joined_column!(i64)
+                }
+                ArrowDataType::Boolean => downcast_and_replace_joined_column!(bool),
+                ArrowDataType::Utf8 => todo!(), // string has no nulls but empty strings,
+                _ => unimplemented!(),
+            }
+        }
+        self.finish_join(df_left, df_right, right_on)
+    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
 
-    #[test]
-    fn test_inner_join() {
+    fn create_frames() -> (DataFrame, DataFrame) {
         let s0 = Series::new("days", [0, 1, 2].as_ref());
         let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
         let s2 = Series::new("rain", [0.2, 0.1, 0.3].as_ref());
@@ -288,7 +477,12 @@ mod test {
         let s0 = Series::new("days", [1, 2, 3, 1].as_ref());
         let s1 = Series::new("rain", [0.1, 0.2, 0.3, 0.4].as_ref());
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
+        (temp, rain)
+    }
 
+    #[test]
+    fn test_inner_join() {
+        let (temp, rain) = create_frames();
         let joined = temp.inner_join(&rain, "days", "days").unwrap();
 
         let join_col_days = Series::new("days", [1, 2, 1].as_ref());
@@ -323,5 +517,14 @@ mod test {
             3.
         );
         assert_eq!(joined.f_column("rain").null_count(), 3)
+    }
+
+    #[test]
+    fn test_outer_join() {
+        let (temp, rain) = create_frames();
+        let joined = temp.outer_join(&rain, "days", "days").unwrap();
+        assert_eq!(joined.height(), 5);
+        assert_eq!(joined.column("days").unwrap().sum::<i32>(), Some(7));
+        println!("{:?}", &joined);
     }
 }

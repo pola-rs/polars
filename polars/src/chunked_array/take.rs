@@ -60,7 +60,6 @@ impl Take for BooleanChunked {
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Result<Self> {
-        // TODO: implement takeoptions
         let capacity = capacity.unwrap_or(1024);
         let mut builder = PrimitiveChunkedBuilder::new(self.name(), capacity);
         let chunks = self.downcast_chunks();
@@ -77,7 +76,6 @@ impl Take for Utf8Chunked {
     where
         Self: std::marker::Sized,
     {
-        // TODO: implement takeoptions
         let capacity = capacity.unwrap_or(1024);
         let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity);
         let chunks = self.downcast_chunks();

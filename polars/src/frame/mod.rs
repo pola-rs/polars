@@ -150,7 +150,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn width(&self) -> usize {
-        self.shape().0
+        self.shape().1
     }
 
     /// Get height of DataFrame
@@ -164,7 +164,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn height(&self) -> usize {
-        self.shape().1
+        self.shape().0
     }
 
     /// Add series column to DataFrame

@@ -31,7 +31,7 @@ DataFrame library that only supports core functionality.
 ### DataFrame
 - [x] take by index/ boolean mask
 - [x] limit
-- [x] join: inner, left
+- [x] join: inner, left, and outer
 - [x] column ops: drop, select, rename
 - [x] group by: min, max, sum, mean, count
 - [x] concat (horizontal)
