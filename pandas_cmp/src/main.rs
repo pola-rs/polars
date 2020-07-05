@@ -18,7 +18,7 @@ fn read_df(f: &File) -> DataFrame {
         .expect("i64")
         .into_iter()
         .map(|v| v.map(|v| format!("{}", v)));
-    let s: Series = Series::init("str", &s.collect::<Vec<_>>());
+    let s: Series = Series::new("str", &s.collect::<Vec<_>>());
     df.replace("str", s).expect("replaced");
     df
 }

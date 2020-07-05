@@ -33,6 +33,13 @@ from_iterator!(f32, Float32);
 from_iterator!(f64, Float64);
 from_iterator!(bool, Bool);
 
+impl<'a> FromIterator<&'a str> for Series {
+    fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
+        let ca = iter.into_iter().collect();
+        Series::Utf8(ca)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

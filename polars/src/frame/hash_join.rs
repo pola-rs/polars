@@ -456,7 +456,18 @@ impl DataFrame {
                     downcast_and_replace_joined_column!(i64)
                 }
                 ArrowDataType::Boolean => downcast_and_replace_joined_column!(bool),
-                ArrowDataType::Utf8 => todo!(), // string has no nulls but empty strings,
+                ArrowDataType::Utf8 => {
+                    // string has no nulls but empty strings,
+                    let mut join_col: Series = left_join_col
+                        .utf8()
+                        .unwrap()
+                        .into_iter()
+                        .zip(right_join_col.utf8().unwrap().into_iter())
+                        .map(|(left, right)| if left.len() == 0 { left } else { right })
+                        .collect();
+                    join_col.rename(left_on);
+                    df_left.replace(left_on, join_col)?;
+                }
                 _ => unimplemented!(),
             }
         }
