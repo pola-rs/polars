@@ -331,7 +331,7 @@ impl DataFrame {
         Ok(df_left)
     }
 
-    fn create_left_df<B>(&self, join_tuples: &[(usize, B)]) -> Result<DataFrame> {
+    fn create_left_df<B: Sync>(&self, join_tuples: &[(usize, B)]) -> Result<DataFrame> {
         self.take_iter(
             join_tuples.iter().map(|(left, _right)| Some(*left)),
             Some(join_tuples.len()),

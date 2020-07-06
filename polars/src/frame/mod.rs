@@ -4,6 +4,7 @@ use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
+use rayon::prelude::*;
 use std::mem;
 use std::sync::Arc;
 
@@ -332,10 +333,11 @@ impl DataFrame {
 
     /// Take DataFrame rows by a boolean mask.
     pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
-        let mut new_col = Vec::with_capacity(self.columns.len());
-        for col in &self.columns {
-            new_col.push(col.filter(mask)?)
-        }
+        let new_col = self
+            .columns
+            .par_iter()
+            .map(|col| col.filter(mask))
+            .collect::<Result<Vec<_>>>()?;
         DataFrame::new(new_col)
     }
 
@@ -357,11 +359,11 @@ impl DataFrame {
     /// ```
     pub fn take_iter<I>(&self, iter: I, capacity: Option<usize>) -> Result<Self>
     where
-        I: Iterator<Item = Option<usize>> + Clone,
+        I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
         let new_col = self
             .columns
-            .iter()
+            .par_iter()
             .map(|s| {
                 let mut i = iter.clone();
                 s.take_iter(&mut i, capacity)
@@ -381,10 +383,10 @@ impl DataFrame {
     ///     df.take(&idx)
     /// }
     /// ```
-    pub fn take<T: TakeIndex>(&self, indices: &T) -> Result<Self> {
+    pub fn take<T: TakeIndex + Sync>(&self, indices: &T) -> Result<Self> {
         let new_col = self
             .columns
-            .iter()
+            .par_iter()
             .map(|s| s.take(indices))
             .collect::<Result<Vec<_>>>()?;
 
@@ -392,7 +394,7 @@ impl DataFrame {
     }
 
     /// Force take
-    pub fn f_take<T: TakeIndex>(&self, indices: &T) -> Self {
+    pub fn f_take<T: TakeIndex + Sync>(&self, indices: &T) -> Self {
         self.take(indices).expect("could not take")
     }
 
@@ -425,7 +427,7 @@ impl DataFrame {
 
         self.columns = self
             .columns
-            .iter()
+            .par_iter()
             .map(|s| s.take(&take))
             .collect::<Result<Vec<_>>>()?;
         Ok(())
@@ -443,7 +445,7 @@ impl DataFrame {
     pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
         let col = self
             .columns
-            .iter()
+            .par_iter()
             .map(|s| s.slice(offset, length))
             .collect::<Result<Vec<_>>>()?;
         DataFrame::new_with_schema(self.schema.clone(), col)
