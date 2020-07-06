@@ -75,6 +75,9 @@ impl<'a> Iterator for ChunkStringIter<'a> {
         self.set_indexes();
         Some(v)
     }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.length, Some(self.length))
+    }
 }
 
 impl<'a> IntoIterator for &'a Utf8Chunked {
@@ -147,6 +150,9 @@ impl<'a> Iterator for ChunkBoolIter<'a> {
         }
         self.set_indexes();
         ret
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.length, Some(self.length))
     }
 }
 
@@ -234,6 +240,9 @@ where
         self.set_indexes();
         ret
     }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.length, Some(self.length))
+    }
 }
 
 impl<'a, T> ChunkNumIter<'a, T>
@@ -308,12 +317,21 @@ where
     }
 }
 
+fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
+    match iter.size_hint() {
+        (_lower, Some(upper)) => upper,
+        (0, None) => 1024,
+        (lower, None) => lower,
+    }
+}
+
 impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::new("", 1024);
+        let iter = iter.into_iter();
+        let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for opt_val in iter {
             builder.append_option(opt_val).expect("could not append");
@@ -325,7 +343,8 @@ where
 
 impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::new("", 1024);
+        let iter = iter.into_iter();
+        let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
             builder.append_value(val).expect("could not append");
@@ -336,7 +355,8 @@ impl FromIterator<bool> for BooleanChunked {
 
 impl<'a> FromIterator<&'a str> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new("", 1024);
+        let iter = iter.into_iter();
+        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
             builder.append_value(val).expect("could not append");
@@ -347,7 +367,8 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
 
 impl FromIterator<String> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new("", 1024);
+        let iter = iter.into_iter();
+        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
             builder

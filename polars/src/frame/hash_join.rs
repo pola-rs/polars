@@ -437,8 +437,6 @@ impl DataFrame {
         }
 
         if left_join_col.null_count() > 0 {
-            // TODO: create new from iter with capacity. The collect doesn't no capacity and may be
-            //       more expensive.
             match s_left.dtype() {
                 ArrowDataType::UInt32 => downcast_and_replace_joined_column!(u32),
                 ArrowDataType::Int32 => downcast_and_replace_joined_column!(i32),
