@@ -2,6 +2,8 @@ use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
 use std::sync::Arc;
 
+// TODO: Test rechunking properly
+
 pub trait ChunkOps {
     /// Aggregate to chunk id.
     /// A chunk id is a vector of the chunk lengths.
@@ -57,12 +59,15 @@ where
                 let mut iter = self.into_iter();
                 let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
 
-                for chunk_length in chunk_id {
-                    let mut builder = PrimitiveBuilder::<T>::new(*chunk_length);
-                    builder.append_option(
-                        iter.next()
-                            .expect("the first option is the iterator bounds"),
-                    )?;
+                for &chunk_length in chunk_id {
+                    let mut builder = PrimitiveBuilder::<T>::new(chunk_length);
+
+                    for _ in 0..chunk_length {
+                        builder.append_option(
+                            iter.next()
+                                .expect("the first option is the iterator bounds"),
+                        )?;
+                    }
                     chunks.push(Arc::new(builder.finish()))
                 }
                 Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
@@ -87,12 +92,15 @@ impl ChunkOps for BooleanChunked {
                 let mut iter = self.into_iter();
                 let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
 
-                for chunk_length in chunk_id {
-                    let mut builder = PrimitiveBuilder::<BooleanType>::new(*chunk_length);
-                    builder.append_option(
-                        iter.next()
-                            .expect("the first option is the iterator bounds"),
-                    )?;
+                for &chunk_length in chunk_id {
+                    let mut builder = PrimitiveBuilder::<BooleanType>::new(chunk_length);
+
+                    for _ in 0..chunk_length {
+                        builder.append_option(
+                            iter.next()
+                                .expect("the first option is the iterator bounds"),
+                        )?;
+                    }
                     chunks.push(Arc::new(builder.finish()))
                 }
                 Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
@@ -116,10 +124,13 @@ impl ChunkOps for Utf8Chunked {
                 let mut iter = self.into_iter();
                 let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
 
-                for chunk_length in chunk_id {
-                    let mut builder = StringBuilder::new(*chunk_length);
-                    let val = iter.next().expect("first option is iterator bounds");
-                    builder.append_value(val).expect("Could not append value");
+                for &chunk_length in chunk_id {
+                    let mut builder = StringBuilder::new(chunk_length);
+
+                    for _ in 0..chunk_length {
+                        let val = iter.next().expect("first option is iterator bounds");
+                        builder.append_value(val).expect("Could not append value");
+                    }
                     chunks.push(Arc::new(builder.finish()))
                 }
                 Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
