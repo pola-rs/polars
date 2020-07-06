@@ -12,14 +12,17 @@ fn read_df(f: &File) -> DataFrame {
         .has_header(true)
         .finish()
         .expect("dataframe");
-    let s = df
-        .f_select_mut("str")
-        .i64()
-        .expect("i64")
-        .into_iter()
-        .map(|v| v.map(|v| format!("{}", v)));
-    let s: Series = Series::new("str", &s.collect::<Vec<_>>());
-    df.replace("str", s).expect("replaced");
+
+    // for groupby we need to cast a column to a string
+    if let Some(s) = df.select_mut("str") {
+        let s = s
+            .i64()
+            .expect("i64")
+            .into_iter()
+            .map(|v| v.map(|v| format!("{}", v)));
+        let s: Series = Series::new("str", &s.collect::<Vec<_>>());
+        df.replace("str", s).expect("replaced");
+    }
     df
 }
 
@@ -56,16 +59,31 @@ fn bench_groupby() {
 }
 
 fn bench_join() {
-    let f = File::open("../data/1000.csv").expect("file");
-    let df = read_df(&f);
-    let size = 500;
-    let a = df.slice(0, size).expect("sliced df");
-    let b = df.slice(size, size).expect("sliced df");
+    let f = File::open("../data/join_left_80000.csv").expect("file");
+    let left = read_df(&f);
+    let f = File::open("../data/join_right_80000.csv").expect("file");
+    let right = read_df(&f);
     let now = Instant::now();
-    let joined = a.inner_join(&b, "groups", "groups").expect("join");
+    let joined = left
+        .inner_join(&right, "key", "key")
+        .expect("could not join");
     let duration = now.elapsed().as_micros();
-    println!("duration: {} μs", duration);
-    println!("{:?}", joined);
+    println!("inner join: {} μs", duration);
+    println!("{:?}", joined.shape()); // use the result so that it doesn't get optimized away.
+    let now = Instant::now();
+    let joined = left
+        .left_join(&right, "key", "key")
+        .expect("could not join");
+    let duration = now.elapsed().as_micros();
+    println!("left join: {} μs", duration);
+    println!("{:?}", joined.shape());
+    let now = Instant::now();
+    let joined = left
+        .outer_join(&right, "key", "key")
+        .expect("could not join");
+    let duration = now.elapsed().as_micros();
+    println!("outer join: {} μs", duration);
+    println!("{:?}", joined.shape());
 }
 
 fn print_cli() {
