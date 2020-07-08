@@ -22,3 +22,4 @@ itertools = "0.9.0"
 unsafe_unwrap = "0.1.0"
 rayon = "1.3.1"
 prettytable-rs = { version="0.8.0", features=["win_crlf"], optional = true, default_features = false}
+crossbeam = "0.7"

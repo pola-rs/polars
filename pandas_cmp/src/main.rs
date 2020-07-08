@@ -63,27 +63,46 @@ fn bench_join() {
     let left = read_df(&f);
     let f = File::open("../data/join_right_80000.csv").expect("file");
     let right = read_df(&f);
-    let now = Instant::now();
-    let joined = left
-        .inner_join(&right, "key", "key")
-        .expect("could not join");
-    let duration = now.elapsed().as_micros();
-    println!("inner join: {} μs", duration);
-    println!("{:?}", joined.shape()); // use the result so that it doesn't get optimized away.
-    let now = Instant::now();
-    let joined = left
-        .left_join(&right, "key", "key")
-        .expect("could not join");
-    let duration = now.elapsed().as_micros();
-    println!("left join: {} μs", duration);
-    println!("{:?}", joined.shape());
-    let now = Instant::now();
-    let joined = left
-        .outer_join(&right, "key", "key")
-        .expect("could not join");
-    let duration = now.elapsed().as_micros();
-    println!("outer join: {} μs", duration);
-    println!("{:?}", joined.shape());
+    let mut wrt_file = File::create("../data/rust_bench_join.txt").expect("file");
+
+    let mut mean = 0.0;
+    for _ in 0..10 {
+        let now = Instant::now();
+        let joined = left
+            .inner_join(&right, "key", "key")
+            .expect("could not join");
+        let duration = now.elapsed().as_micros();
+        mean += duration as f32
+    }
+    mean /= 10.;
+    println!("inner join: {} μs", mean);
+    writeln!(wrt_file, "{}", mean).expect("could not write");
+
+    let mut mean = 0.0;
+    for _ in 0..10 {
+        let now = Instant::now();
+        let joined = left
+            .left_join(&right, "key", "key")
+            .expect("could not join");
+        let duration = now.elapsed().as_micros();
+        mean += duration as f32
+    }
+    mean /= 10.;
+    println!("left join: {} μs", mean);
+    writeln!(wrt_file, "{}", mean).expect("could not write");
+
+    let mut mean = 0.0;
+    for _ in 0..10 {
+        let now = Instant::now();
+        let joined = left
+            .outer_join(&right, "key", "key")
+            .expect("could not join");
+        let duration = now.elapsed().as_micros();
+        mean += duration as f32
+    }
+    mean /= 10.;
+    println!("outer join: {} μs", mean);
+    writeln!(wrt_file, "{}", mean).expect("could not write");
 }
 
 fn print_cli() {

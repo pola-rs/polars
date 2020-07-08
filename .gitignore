@@ -1,5 +1,4 @@
 .idea/
 target/
-polars/Cargo.lock
+Cargo.lock
 data/
-

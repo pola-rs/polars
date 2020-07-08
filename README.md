@@ -15,6 +15,9 @@ DataFrame library that only supports core functionality.
 #### GroupBy
 ![](pandas_cmp/img/groupby10_.png)
 
+#### Joins
+![](pandas_cmp/img/join_80_000.png)
+
 ## Functionality
 
 ### Series
