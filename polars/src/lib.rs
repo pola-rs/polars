@@ -113,6 +113,8 @@
 //!
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
+#[macro_use]
+pub(crate) mod utils;
 pub mod chunked_array;
 pub mod datatypes;
 pub mod error;
@@ -121,4 +123,3 @@ pub mod frame;
 pub mod prelude;
 pub mod series;
 pub mod testing;
-pub(crate) mod utils;

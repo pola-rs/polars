@@ -1,3 +1,4 @@
+use crossbeam::thread;
 use std::mem;
 
 /// Used to split the mantissa and exponent of floating point numbers
@@ -18,4 +19,18 @@ pub(crate) fn integer_decode(val: f64) -> (u64, i16, i8) {
 
 pub(crate) fn floating_encode_f64(mantissa: u64, exponent: i16, sign: i8) -> f64 {
     sign as f64 * mantissa as f64 * (2.0f64).powf(exponent as f64)
+}
+
+#[macro_export]
+macro_rules! exec_concurrent {
+    ($block_a:block, $block_b:block) => {{
+        thread::scope(|s| {
+            let handle_left = s.spawn(|_| $block_a);
+            let handle_right = s.spawn(|_| $block_b);
+            let return_left = handle_left.join().expect("thread panicked");
+            let return_right = handle_right.join().expect("thread panicked");
+            (return_left, return_right)
+        })
+        .expect("could not join threads or thread panicked")
+    }};
 }

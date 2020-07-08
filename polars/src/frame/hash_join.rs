@@ -119,9 +119,9 @@ where
     J: Fn() -> Box<dyn Iterator<Item = T> + 'a> + Sync,
     T: Hash + Eq + Copy + Sync,
 {
-    let results =
-        thread::scope(|s| {
-            let handle_left = s.spawn(|_| {
+    let (mut results_left, results_right) =
+        exec_concurrent!(
+            {
                 let mut results =
                     HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
 
@@ -140,9 +140,8 @@ where
                     }
                 });
                 results
-            });
-
-            let handle_right = s.spawn(|_| {
+            },
+            {
                 let mut results =
                     HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
                 let hash_tbl = prepare_hashed_relation(a());
@@ -159,16 +158,10 @@ where
                     }
                 });
                 results
-            });
-
-            let mut results_left = handle_left.join().expect("could not join threads");
-            let results_right = handle_right.join().expect("could not join threads");
-            results_left.extend(results_right);
-            results_left
-        })
-        .unwrap();
-
-    results
+            }
+        );
+    results_left.extend(results_right);
+    results_left
 }
 
 pub trait HashJoin<T> {
@@ -317,25 +310,6 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     }
 }
 
-macro_rules! prep_left_and_right_concurrent {
-    ($self:ident, $other:ident, $join_tuples:ident, $closure:expr) => {{
-        thread::scope(|s| {
-            let handle_left =
-                s.spawn(|_| $self.create_left_df(&$join_tuples).expect("could not take"));
-            let handle_right = s.spawn(|_| {
-                let df_right = $other
-                    .take_iter($join_tuples.iter().map($closure), Some($join_tuples.len()))
-                    .expect("could not take");
-                df_right
-            });
-            let df_left = handle_left.join().expect("could not joint threads");
-            let df_right = handle_right.join().expect("could not join threads");
-            (df_left, df_right)
-        })
-        .expect("could not join threads")
-    }};
-}
-
 impl DataFrame {
     /// Utility method to finish a join.
     fn finish_join(
@@ -393,10 +367,18 @@ impl DataFrame {
         let s_left = self.column(left_on).ok_or(PolarsError::NotFound)?;
         let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
         let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
-        let (df_left, df_right) =
-            prep_left_and_right_concurrent!(self, other, join_tuples, |(_left, right)| Some(
-                *right
-            ));
+
+        let (df_left, df_right) = exec_concurrent!(
+            { self.create_left_df(&join_tuples).expect("could not take") },
+            {
+                other
+                    .take_iter(
+                        join_tuples.iter().map(|(_left, right)| Some(*right)),
+                        Some(join_tuples.len()),
+                    )
+                    .expect("could not take")
+            }
+        );
         self.finish_join(df_left, df_right, right_on)
     }
 
@@ -414,8 +396,21 @@ impl DataFrame {
         let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
         let opt_join_tuples: Vec<(usize, Option<usize>)> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_left);
-        let (df_left, df_right) =
-            prep_left_and_right_concurrent!(self, other, opt_join_tuples, |(_left, right)| *right);
+
+        let (df_left, df_right) = exec_concurrent!(
+            {
+                self.create_left_df(&opt_join_tuples)
+                    .expect("could not take")
+            },
+            {
+                other
+                    .take_iter(
+                        opt_join_tuples.iter().map(|(_left, right)| *right),
+                        Some(opt_join_tuples.len()),
+                    )
+                    .expect("could not take")
+            }
+        );
         self.finish_join(df_left, df_right, right_on)
     }
 
@@ -440,32 +435,23 @@ impl DataFrame {
         let opt_join_tuples: HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_outer);
 
-        let (mut df_left, df_right) = thread::scope(|s| {
-            let handle_left = s.spawn(|_| {
-                let df_left = self
-                    .take_iter(
-                        opt_join_tuples.iter().map(|(left, _right)| *left),
-                        Some(opt_join_tuples.len()),
-                    )
-                    .expect("could not take");
-                df_left
-            });
-
-            let handle_right = s.spawn(|_| {
-                let df_right = other
+        let (mut df_left, df_right) = exec_concurrent!(
+            {
+                self.take_iter(
+                    opt_join_tuples.iter().map(|(left, _right)| *left),
+                    Some(opt_join_tuples.len()),
+                )
+                .expect("could not take")
+            },
+            {
+                other
                     .take_iter(
                         opt_join_tuples.iter().map(|(_left, right)| *right),
                         Some(opt_join_tuples.len()),
                     )
-                    .expect("could not take");
-                df_right
-            });
-
-            let df_left = handle_left.join().expect("could not joint threads");
-            let df_right = handle_right.join().expect("could not join threads");
-            (df_left, df_right)
-        })
-        .expect("could not join threads");
+                    .expect("could not take")
+            }
+        );
 
         let left_join_col = df_left.column(left_on).unwrap();
         let right_join_col = df_right.column(right_on).unwrap();
