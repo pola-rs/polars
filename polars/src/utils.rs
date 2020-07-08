@@ -1,4 +1,3 @@
-use crossbeam::thread;
 use std::mem;
 
 /// Used to split the mantissa and exponent of floating point numbers

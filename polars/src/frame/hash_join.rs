@@ -312,13 +312,7 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
 
 impl DataFrame {
     /// Utility method to finish a join.
-    fn finish_join(
-        &self,
-        mut df_left: DataFrame,
-        mut df_right: DataFrame,
-        right_on: &str,
-    ) -> Result<DataFrame> {
-        df_right.drop(right_on)?;
+    fn finish_join(&self, mut df_left: DataFrame, mut df_right: DataFrame) -> Result<DataFrame> {
         let mut left_names =
             HashSet::with_capacity_and_hasher(df_left.width(), FnvBuildHasher::default());
         for field in df_left.schema.fields() {
@@ -372,6 +366,8 @@ impl DataFrame {
             { self.create_left_df(&join_tuples).expect("could not take") },
             {
                 other
+                    .drop_pure(right_on)
+                    .unwrap()
                     .take_iter(
                         join_tuples.iter().map(|(_left, right)| Some(*right)),
                         Some(join_tuples.len()),
@@ -379,7 +375,7 @@ impl DataFrame {
                     .expect("could not take")
             }
         );
-        self.finish_join(df_left, df_right, right_on)
+        self.finish_join(df_left, df_right)
     }
 
     /// Perform a left join on two DataFrames
@@ -404,6 +400,8 @@ impl DataFrame {
             },
             {
                 other
+                    .drop_pure(right_on)
+                    .unwrap()
                     .take_iter(
                         opt_join_tuples.iter().map(|(_left, right)| *right),
                         Some(opt_join_tuples.len()),
@@ -411,7 +409,7 @@ impl DataFrame {
                     .expect("could not take")
             }
         );
-        self.finish_join(df_left, df_right, right_on)
+        self.finish_join(df_left, df_right)
     }
 
     /// Perform an outer join on two DataFrames
@@ -470,6 +468,8 @@ impl DataFrame {
             }};
         }
 
+        // If the left has nulls, it should be replaced with the value from the
+        // right join column
         if left_join_col.null_count() > 0 {
             match s_left.dtype() {
                 ArrowDataType::UInt32 => downcast_and_replace_joined_column!(u32),
@@ -503,7 +503,7 @@ impl DataFrame {
                 _ => unimplemented!(),
             }
         }
-        self.finish_join(df_left, df_right, right_on)
+        self.finish_join(df_left, df_right)
     }
 }
 

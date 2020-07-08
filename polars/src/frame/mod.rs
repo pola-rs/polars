@@ -24,6 +24,22 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
+    /// Get the index of the column.
+    fn name_to_idx(&self, name: &str) -> Result<usize> {
+        let mut idx = 0;
+        for column in &self.columns {
+            if column.name() == name {
+                break;
+            }
+            idx += 1;
+        }
+        if idx == self.columns.len() {
+            Err(PolarsError::NotFound)
+        } else {
+            Ok(idx)
+        }
+    }
+
     /// Create a DataFrame from a Vector of Series.
     ///
     /// # Example
@@ -197,20 +213,26 @@ impl DataFrame {
     /// }
     /// ```
     pub fn drop(&mut self, name: &str) -> Result<DfSeries> {
-        let mut idx = 0;
-        for column in &self.columns {
-            if column.name() == name {
-                break;
+        let idx = self.name_to_idx(name)?;
+        let result = Ok(self.columns.remove(idx));
+        self.register_mutation()?;
+        result
+    }
+
+    /// Drop a column by name.
+    /// This is a pure method and will return a new DataFrame instead of modifying
+    /// the current one in place.
+    pub fn drop_pure(&self, name: &str) -> Result<DataFrame> {
+        let idx = self.name_to_idx(name)?;
+        let mut new_cols = Vec::with_capacity(self.columns.len() - 1);
+
+        self.columns.iter().enumerate().for_each(|(i, s)| {
+            if i != idx {
+                new_cols.push(s.clone())
             }
-            idx += 1;
-        }
-        if idx == self.columns.len() {
-            Err(PolarsError::NotFound)
-        } else {
-            let result = Ok(self.columns.remove(idx));
-            self.register_mutation()?;
-            result
-        }
+        });
+
+        DataFrame::new(new_cols)
     }
 
     /// Get a row in the dataframe. Beware this is slow.
