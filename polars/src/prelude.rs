@@ -5,7 +5,7 @@ pub use crate::{
         builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
         chunkops::ChunkOps,
         comparison::{CmpOps, NumComp},
-        take::{Take, TakeIndex},
+        take::{IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeIndex},
         unique::Unique,
         ChunkedArray, Downcast,
     },
