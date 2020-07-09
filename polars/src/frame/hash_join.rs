@@ -3,6 +3,7 @@ use crossbeam::thread;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use unsafe_unwrap::UnsafeUnwrap;
 
 macro_rules! hash_join_inner {
     ($s_right:ident, $ca_left:ident, $type_:ident) => {{
@@ -119,49 +120,31 @@ where
     J: Fn() -> Box<dyn Iterator<Item = T> + 'a> + Sync,
     T: Hash + Eq + Copy + Sync,
 {
-    let (mut results_left, results_right) =
-        exec_concurrent!(
-            {
-                let mut results =
-                    HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
+    let mut results = HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
 
-                // We do the hash probe combination on both relations.
-                let hash_tbl = prepare_hashed_relation(b());
+    // prepare hash table
+    let mut hash_tbl = prepare_hashed_relation(b());
 
-                a().enumerate().for_each(|(idx_a, key)| {
-                    match hash_tbl.get(&key) {
-                        // left and right matches
-                        Some(indexes_b) => results
-                            .extend(indexes_b.iter().map(|&idx_b| (Some(idx_a), Some(idx_b)))),
-                        // only left values, right = null
-                        None => {
-                            results.insert((Some(idx_a), None));
-                        }
-                    }
-                });
-                results
-            },
-            {
-                let mut results =
-                    HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
-                let hash_tbl = prepare_hashed_relation(a());
-
-                b().enumerate().for_each(|(idx_b, key)| {
-                    match hash_tbl.get(&key) {
-                        // left and right matches
-                        Some(indexes_a) => results
-                            .extend(indexes_a.iter().map(|&idx_a| (Some(idx_a), Some(idx_b)))),
-                        // only left values, right = null
-                        None => {
-                            results.insert((None, Some(idx_b)));
-                        }
-                    }
-                });
-                results
+    // probe the hash table.
+    // Note: indexes from b that are not matched will be None, Some(idx_b)
+    // Therefore we remove the matches and the remaining will be joined from the right
+    a().enumerate().for_each(|(idx_a, key)| {
+        match hash_tbl.remove(&key) {
+            // left and right matches
+            Some(indexes_b) => {
+                results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_a), Some(idx_b))))
             }
-        );
-    results_left.extend(results_right);
-    results_left
+            // only left values, right = null
+            None => {
+                results.insert((Some(idx_a), None));
+            }
+        }
+    });
+    hash_tbl.iter().for_each(|(_k, indexes_b)| {
+        results.extend(indexes_b.iter().map(|&idx_b| (None, Some(idx_b))))
+    });
+
+    results
 }
 
 pub trait HashJoin<T> {
@@ -430,19 +413,25 @@ impl DataFrame {
         let s_left = self.column(left_on).ok_or(PolarsError::NotFound)?;
         let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
 
+        // Get the indexes of the joined relations
         let opt_join_tuples: HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_outer);
 
+        // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = exec_concurrent!(
             {
-                self.take_iter(
-                    opt_join_tuples.iter().map(|(left, _right)| *left),
-                    Some(opt_join_tuples.len()),
-                )
-                .expect("could not take")
+                self.drop_pure(left_on)
+                    .unwrap()
+                    .take_iter(
+                        opt_join_tuples.iter().map(|(left, _right)| *left),
+                        Some(opt_join_tuples.len()),
+                    )
+                    .expect("could not take")
             },
             {
                 other
+                    .drop_pure(right_on)
+                    .unwrap()
                     .take_iter(
                         opt_join_tuples.iter().map(|(_left, right)| *right),
                         Some(opt_join_tuples.len()),
@@ -451,57 +440,50 @@ impl DataFrame {
             }
         );
 
-        let left_join_col = df_left.column(left_on).unwrap();
-        let right_join_col = df_right.column(right_on).unwrap();
-
+        // Create the column used to join. This column has values from both left and right.
         macro_rules! downcast_and_replace_joined_column {
             ($type:ident) => {{
-                let mut join_col: Series = left_join_col
-                    .$type()
-                    .unwrap()
-                    .into_iter()
-                    .zip(right_join_col.$type().unwrap().into_iter())
-                    .map(|(left, right)| if left.is_some() { left } else { right })
+                let left_join_col = s_left.$type().unwrap();
+                let right_join_col = s_right.$type().unwrap();
+
+                let left_rand_access = left_join_col.take_rand();
+                let right_rand_access = right_join_col.take_rand();
+
+                let mut s: Series = opt_join_tuples
+                    .iter()
+                    .map(|(opt_left_idx, opt_right_idx)| {
+                        if let Some(left_idx) = opt_left_idx {
+                            unsafe { left_rand_access.get_unchecked(*left_idx) }
+                        } else {
+                            unsafe {
+                                let right_idx = opt_right_idx.unsafe_unwrap();
+                                right_rand_access.get_unchecked(right_idx)
+                            }
+                        }
+                    })
                     .collect();
-                join_col.rename(left_on);
-                df_left.replace(left_on, join_col)?;
+                s.rename(left_on);
+                df_left.hstack(&[s])?;
             }};
         }
 
-        // If the left has nulls, it should be replaced with the value from the
-        // right join column
-        if left_join_col.null_count() > 0 {
-            match s_left.dtype() {
-                ArrowDataType::UInt32 => downcast_and_replace_joined_column!(u32),
-                ArrowDataType::Int32 => downcast_and_replace_joined_column!(i32),
-                ArrowDataType::Int64 => downcast_and_replace_joined_column!(i64),
-                ArrowDataType::Date32(DateUnit::Millisecond) => {
-                    downcast_and_replace_joined_column!(i32)
-                }
-                ArrowDataType::Date64(DateUnit::Millisecond) => {
-                    downcast_and_replace_joined_column!(i64)
-                }
-                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                    downcast_and_replace_joined_column!(i64)
-                }
-                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                    downcast_and_replace_joined_column!(i64)
-                }
-                ArrowDataType::Boolean => downcast_and_replace_joined_column!(bool),
-                ArrowDataType::Utf8 => {
-                    // string has no nulls but empty strings,
-                    let mut join_col: Series = left_join_col
-                        .utf8()
-                        .unwrap()
-                        .into_iter()
-                        .zip(right_join_col.utf8().unwrap().into_iter())
-                        .map(|(left, right)| if left.len() == 0 { left } else { right })
-                        .collect();
-                    join_col.rename(left_on);
-                    df_left.replace(left_on, join_col)?;
-                }
-                _ => unimplemented!(),
+        match s_left.dtype() {
+            ArrowDataType::UInt32 => downcast_and_replace_joined_column!(u32),
+            ArrowDataType::Int32 => downcast_and_replace_joined_column!(i32),
+            ArrowDataType::Int64 => downcast_and_replace_joined_column!(i64),
+            ArrowDataType::Date32(DateUnit::Millisecond) => {
+                downcast_and_replace_joined_column!(i32)
             }
+            ArrowDataType::Date64(DateUnit::Millisecond) => {
+                downcast_and_replace_joined_column!(i64)
+            }
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                downcast_and_replace_joined_column!(i64)
+            }
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => downcast_and_replace_joined_column!(i64),
+            ArrowDataType::Boolean => downcast_and_replace_joined_column!(bool),
+            ArrowDataType::Utf8 => downcast_and_replace_joined_column!(utf8),
+            _ => unimplemented!(),
         }
         self.finish_join(df_left, df_right)
     }
@@ -566,8 +548,8 @@ mod test {
     fn test_outer_join() {
         let (temp, rain) = create_frames();
         let joined = temp.outer_join(&rain, "days", "days").unwrap();
+        println!("{:?}", &joined);
         assert_eq!(joined.height(), 5);
         assert_eq!(joined.column("days").unwrap().sum::<i32>(), Some(7));
-        println!("{:?}", &joined);
     }
 }
