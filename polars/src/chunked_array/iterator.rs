@@ -105,24 +105,6 @@ where
     }
 }
 
-macro_rules! set_many_index {
-    ($self:ident) => {{
-        if $self.array_i == $self.current_len {
-            // go to the next array in the chunks
-            $self.chunk_i += 1;
-            $self.array_i = 0;
-
-            if $self.chunk_i < $self.chunks.len() {
-                // not passed last chunk
-                $self.current_len = $self.chunks[$self.chunk_i].len();
-            } else {
-                // end of iterator
-                return None;
-            }
-        }
-    }};
-}
-
 impl<'a, T> Iterator for NumIterManyChunkNullCheck<'a, T>
 where
     T: PolarsNumericType,

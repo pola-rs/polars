@@ -1,5 +1,4 @@
 //! The typed heart of every Series column.
-use crate::chunked_array::iterator::ChunkNumIter;
 use crate::prelude::*;
 use crate::{
     chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
@@ -305,20 +304,21 @@ where
     }
 
     /// Get the head of the ChunkedArray
-    pub fn head(&self, length: Option<usize>) -> Result<Self> {
-        match length {
-            Some(len) => self.slice(0, len),
+    pub fn head(&self, length: Option<usize>) -> Self {
+        let res_ca = match length {
+            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
             None => self.slice(0, std::cmp::min(10, self.len())),
-        }
+        };
+        res_ca.unwrap()
     }
 
     /// Get the tail of the ChunkedArray
-    pub fn tail(&self, length: Option<usize>) -> Result<Self> {
+    pub fn tail(&self, length: Option<usize>) -> Self {
         let len = match length {
-            Some(len) => len,
+            Some(len) => std::cmp::min(len, self.len()),
             None => std::cmp::min(10, self.len()),
         };
-        self.slice(self.len() - len, len)
+        self.slice(self.len() - len, len).unwrap()
     }
 
     /// Append in place.

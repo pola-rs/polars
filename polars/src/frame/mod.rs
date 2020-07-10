@@ -474,23 +474,23 @@ impl DataFrame {
     }
 
     /// Get the head of the DataFrame
-    pub fn head(&self, length: Option<usize>) -> Result<Self> {
+    pub fn head(&self, length: Option<usize>) -> Self {
         let col = self
             .columns
             .iter()
             .map(|s| s.head(length))
-            .collect::<Result<Vec<_>>>()?;
-        DataFrame::new_with_schema(self.schema.clone(), col)
+            .collect::<Vec<_>>();
+        DataFrame::new_with_schema(self.schema.clone(), col).unwrap()
     }
 
     /// Get the tail of the DataFrame
-    pub fn tail(&self, length: Option<usize>) -> Result<Self> {
+    pub fn tail(&self, length: Option<usize>) -> Self {
         let col = self
             .columns
             .iter()
             .map(|s| s.tail(length))
-            .collect::<Result<Vec<_>>>()?;
-        DataFrame::new_with_schema(self.schema.clone(), col)
+            .collect::<Vec<_>>();
+        DataFrame::new_with_schema(self.schema.clone(), col).unwrap()
     }
 
     /// Transform the underlying chunks in the DataFrame to Arrow RecordBatches

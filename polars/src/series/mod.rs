@@ -331,13 +331,13 @@ impl Series {
     }
 
     /// Get the head of the Series.
-    pub fn head(&self, length: Option<usize>) -> Result<Self> {
-        Ok(apply_method_and_return!(self, head, [length], ?))
+    pub fn head(&self, length: Option<usize>) -> Self {
+        apply_method_and_return!(self, head, [length],)
     }
 
     /// Get the tail of the Series.
-    pub fn tail(&self, length: Option<usize>) -> Result<Self> {
-        Ok(apply_method_and_return!(self, tail, [length], ?))
+    pub fn tail(&self, length: Option<usize>) -> Self {
+        apply_method_and_return!(self, tail, [length],)
     }
 
     /// Cast to an some primitive type.

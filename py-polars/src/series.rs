@@ -117,6 +117,18 @@ impl PSeries {
     pub fn div(&self, other: &PSeries) -> PyResult<PSeries> {
         Ok(PSeries::new(&self.series / &other.series))
     }
+
+    pub fn head(&self, length: Option<usize>) -> PyResult<PSeries> {
+        Ok(PSeries::new(self.series.head(length)))
+    }
+
+    pub fn tail(&self, length: Option<usize>) -> PyResult<PSeries> {
+        Ok(PSeries::new(self.series.tail(length)))
+    }
+
+    pub fn sort(&mut self) {
+        self.series.sort();
+    }
 }
 
 macro_rules! impl_arithmetic {
