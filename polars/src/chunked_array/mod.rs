@@ -503,7 +503,10 @@ where
     ///     }
     /// }
     /// ```
-    pub fn map_null_checks<B, F>(&self, f: F) -> Map<ChunkNumIter<T>, F>
+    pub fn map_null_checks<'a, B, F>(
+        &'a self,
+        f: F,
+    ) -> Map<Box<dyn Iterator<Item = Option<T::Native>> + 'a>, F>
     where
         F: Fn(Option<T::Native>) -> B,
     {

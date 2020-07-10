@@ -2,9 +2,242 @@ use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder}
 use crate::prelude::*;
 use arrow::array::{Array, ArrayDataRef, BooleanArray, PrimitiveArray, StringArray};
 use arrow::datatypes::ArrowPrimitiveType;
+use std::iter::Copied;
 use std::iter::FromIterator;
 use std::slice::Iter;
 use unsafe_unwrap::UnsafeUnwrap;
+
+/// Single chunk with null values
+pub struct NumIterSingleChunkNullCheck<'a, T>
+where
+    T: PolarsNumericType,
+{
+    arr: &'a PrimitiveArray<T>,
+    idx: usize,
+}
+
+impl<'a, T> Iterator for NumIterSingleChunkNullCheck<'a, T>
+where
+    T: PolarsNumericType,
+{
+    type Item = Option<T::Native>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx == self.arr.len() {
+            None
+        } else {
+            self.idx += 1;
+            if self.arr.is_null(self.idx - 1) {
+                Some(None)
+            } else {
+                Some(Some(self.arr.value(self.idx - 1)))
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.arr.len();
+        (len, Some(len))
+    }
+}
+
+/// Single chunk no null values
+pub struct NumIterSingleChunk<'a, T>
+where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
+    iter: Copied<Iter<'a, T::Native>>,
+}
+
+impl<'a, T> Iterator for NumIterSingleChunk<'a, T>
+where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
+    type Item = Option<T::Native>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(Some)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+/// Many chunks with null checks
+pub struct NumIterManyChunkNullCheck<'a, T>
+where
+    T: PolarsNumericType,
+{
+    ca: &'a ChunkedArray<T>,
+    chunks: Vec<&'a PrimitiveArray<T>>,
+    array_i: usize,
+    chunk_i: usize,
+    current_len: usize,
+}
+
+impl<'a, T> NumIterManyChunkNullCheck<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn new(ca: &'a ChunkedArray<T>) -> Self {
+        let chunks = ca.downcast_chunks();
+        NumIterManyChunkNullCheck {
+            ca,
+            current_len: chunks[0].len(),
+            chunks,
+            array_i: 0,
+            chunk_i: 0,
+        }
+    }
+}
+
+macro_rules! set_many_index {
+    ($self:ident) => {{
+        if $self.array_i == $self.current_len {
+            // go to the next array in the chunks
+            $self.chunk_i += 1;
+            $self.array_i = 0;
+
+            if $self.chunk_i < $self.chunks.len() {
+                // not passed last chunk
+                $self.current_len = $self.chunks[$self.chunk_i].len();
+            } else {
+                // end of iterator
+                return None;
+            }
+        }
+    }};
+}
+
+impl<'a, T> Iterator for NumIterManyChunkNullCheck<'a, T>
+where
+    T: PolarsNumericType,
+{
+    type Item = Option<T::Native>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        set_many_index!(self);
+        let arr = unsafe { *self.chunks.get_unchecked(self.chunk_i) };
+        let ret;
+        if arr.is_null(self.array_i) {
+            ret = Some(None)
+        } else {
+            ret = Some(Some(arr.value(self.array_i)))
+        }
+        self.array_i += 1;
+        ret
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.ca.len();
+        (len, Some(len))
+    }
+}
+
+/// Many chunks no null checks
+pub struct NumIterManyChunk<'a, T>
+where
+    T: PolarsNumericType,
+{
+    ca: &'a ChunkedArray<T>,
+    chunks: Vec<&'a PrimitiveArray<T>>,
+    current_iter: Copied<Iter<'a, T::Native>>,
+    array_i: usize,
+    chunk_i: usize,
+    current_len: usize,
+}
+
+impl<'a, T> NumIterManyChunk<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn new(ca: &'a ChunkedArray<T>) -> Self {
+        let chunks = ca.downcast_chunks();
+        let current_len = chunks[0].len();
+        NumIterManyChunk {
+            ca,
+            current_len,
+            current_iter: chunks[0].value_slice(0, current_len).iter().copied(),
+            chunks,
+            array_i: 0,
+            chunk_i: 0,
+        }
+    }
+}
+
+impl<'a, T> Iterator for NumIterManyChunk<'a, T>
+where
+    T: PolarsNumericType,
+{
+    type Item = Option<T::Native>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.array_i == self.current_len {
+            // go to the next array in the chunks
+            self.chunk_i += 1;
+            self.array_i = 0;
+
+            if self.chunk_i < self.chunks.len() {
+                let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_i) };
+                // not passed last chunk
+                self.current_len = current_chunk.len();
+                self.current_iter = current_chunk
+                    .value_slice(0, self.current_len)
+                    .iter()
+                    .copied();
+            } else {
+                // end of iterator
+                return None;
+            }
+        }
+        self.array_i += 1;
+        self.current_iter.next().map(Some)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.ca.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a, T> IntoIterator for &'a ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    type Item = Option<T::Native>;
+    type IntoIter = Box<dyn Iterator<Item = Option<T::Native>> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self.cont_slice() {
+            Ok(slice) => {
+                // Compile could not infer T.
+                let a: NumIterSingleChunk<'_, T> = NumIterSingleChunk {
+                    iter: slice.iter().copied(),
+                };
+                Box::new(a)
+            }
+            Err(_) => {
+                let chunks = self.downcast_chunks();
+                match chunks.len() {
+                    1 => Box::new(NumIterSingleChunkNullCheck {
+                        arr: chunks[0],
+                        idx: 0,
+                    }),
+                    _ => {
+                        if self.null_count() == 0 {
+                            Box::new(NumIterManyChunk::new(self))
+                        } else {
+                            Box::new(NumIterManyChunkNullCheck::new(self))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 macro_rules! set_indexes {
     ($self:ident) => {{
@@ -276,44 +509,6 @@ where
     #[inline]
     fn out_of_bounds(&self) -> bool {
         self.chunk_i >= self.n_chunks
-    }
-}
-
-impl<'a, T> IntoIterator for &'a ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Item = Option<T::Native>;
-    type IntoIter = ChunkNumIter<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let arrays = self.downcast_chunks();
-
-        let arr = arrays.get(0).map(|v| *v);
-        let data = arr.map(|arr| arr.data());
-
-        let (current_len, null_count) = match arr {
-            Some(arr) => (arr.len(), arr.null_count()),
-            None => (0, 0),
-        };
-
-        let mut opt_slice = None;
-
-        if null_count == 0 && current_len > 0 {
-            opt_slice = arr.map(|arr| arr.value_slice(0, current_len).iter())
-        }
-
-        ChunkNumIter {
-            array_chunks: arrays,
-            current_data: data,
-            current_array: arr,
-            current_len,
-            chunk_i: 0,
-            array_i: 0,
-            length: self.len(),
-            n_chunks: self.chunks.len(),
-            opt_iter: opt_slice,
-        }
     }
 }
 
