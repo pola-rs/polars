@@ -73,6 +73,11 @@ where
 {
     ca: &'a ChunkedArray<T>,
     chunks: Vec<&'a PrimitiveArray<T>>,
+    current_iter: Copied<Iter<'a, T::Native>>,
+    // data is faster for null checks
+    current_data: ArrayDataRef,
+    // if current chunk has null values
+    current_null: bool,
     array_i: usize,
     chunk_i: usize,
     current_len: usize,
@@ -84,10 +89,16 @@ where
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         let chunks = ca.downcast_chunks();
+        let arr = chunks[0];
+        let current_len = arr.len();
+        let current_iter = arr.value_slice(0, current_len).iter().copied();
         NumIterManyChunkNullCheck {
             ca,
-            current_len: chunks[0].len(),
             chunks,
+            current_iter,
+            current_data: arr.data(),
+            current_null: arr.null_count() != 0,
+            current_len,
             array_i: 0,
             chunk_i: 0,
         }
@@ -119,16 +130,35 @@ where
     type Item = Option<T::Native>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        set_many_index!(self);
-        let arr = unsafe { *self.chunks.get_unchecked(self.chunk_i) };
-        let ret;
-        if arr.is_null(self.array_i) {
-            ret = Some(None)
-        } else {
-            ret = Some(Some(arr.value(self.array_i)))
+        if self.array_i == self.current_len {
+            // go to the next array in the chunks
+            self.chunk_i += 1;
+            self.array_i = 0;
+
+            if self.chunk_i < self.chunks.len() {
+                let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_i) };
+                // not passed last chunk
+                self.current_len = current_chunk.len();
+                self.current_iter = current_chunk
+                    .value_slice(0, self.current_len)
+                    .iter()
+                    .copied();
+                self.current_null = current_chunk.null_count() != 0;
+                self.current_data = current_chunk.data()
+            } else {
+                // end of iterator
+                return None;
+            }
         }
         self.array_i += 1;
-        ret
+        let ret = self.current_iter.next();
+        if self.current_null {
+            if self.current_data.is_null(self.array_i) {
+                return Some(None);
+            }
+        }
+
+        ret.map(Some)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
