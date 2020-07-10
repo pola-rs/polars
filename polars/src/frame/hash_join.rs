@@ -113,35 +113,53 @@ where
 fn hash_join_tuples_outer<'a, T, I, J>(
     a: I,
     b: J,
-    capacity: usize,
+    swap: bool,
 ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher>
 where
-    I: Fn() -> Box<dyn Iterator<Item = T> + 'a> + Sync,
-    J: Fn() -> Box<dyn Iterator<Item = T> + 'a> + Sync,
+    I: Iterator<Item = T>,
+    J: Iterator<Item = T>,
     T: Hash + Eq + Copy + Sync,
 {
-    let mut results = HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
+    let mut results = HashSet::with_capacity_and_hasher(
+        a.size_hint().0 + b.size_hint().0,
+        FnvBuildHasher::default(),
+    );
 
     // prepare hash table
-    let mut hash_tbl = prepare_hashed_relation(b());
+    let mut hash_tbl = prepare_hashed_relation(b);
 
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)
     // Therefore we remove the matches and the remaining will be joined from the right
-    a().enumerate().for_each(|(idx_a, key)| {
+    a.enumerate().for_each(|(idx_a, key)| {
         match hash_tbl.remove(&key) {
             // left and right matches
-            Some(indexes_b) => {
-                results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_a), Some(idx_b))))
-            }
+            Some(indexes_b) => results.extend(indexes_b.iter().map(|&idx_b| {
+                if swap {
+                    (Some(idx_b), Some(idx_a))
+                } else {
+                    (Some(idx_a), Some(idx_b))
+                }
+            })),
             // only left values, right = null
             None => {
-                results.insert((Some(idx_a), None));
+                results.insert(if swap {
+                    (None, Some(idx_a))
+                } else {
+                    (Some(idx_a), None)
+                });
             }
         }
     });
     hash_tbl.iter().for_each(|(_k, indexes_b)| {
-        results.extend(indexes_b.iter().map(|&idx_b| (None, Some(idx_b))))
+        // remaining joined values from the right table
+        results.extend(indexes_b.iter().map(|&idx_b| {
+            if swap {
+                (Some(idx_b), None)
+            } else {
+                (None, Some(idx_b))
+            }
+        }))
     });
 
     results
@@ -156,7 +174,7 @@ pub trait HashJoin<T> {
     ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher>;
 }
 
-macro_rules! create_join_tuples {
+macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
         let left_first = $self.len() > $other.len();
@@ -180,7 +198,7 @@ where
     T::Native: Eq + Hash,
 {
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
-        let (a, b, swap) = create_join_tuples!(self, other);
+        let (a, b, swap) = det_hash_prone_order!(self, other);
 
         match (a.cont_slice(), b.cont_slice()) {
             (Ok(a_slice), Ok(b_slice)) => {
@@ -220,36 +238,31 @@ where
         &self,
         other: &ChunkedArray<T>,
     ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> {
-        match (self.cont_slice(), other.cont_slice()) {
-            (Ok(a_slice), Ok(b_slice)) => hash_join_tuples_outer(
-                || Box::new(a_slice.iter()),
-                || Box::new(b_slice.iter()),
-                self.len() + other.len(),
-            ),
+        let (a, b, swap) = det_hash_prone_order!(self, other);
+        match (a.cont_slice(), b.cont_slice()) {
+            (Ok(a_slice), Ok(b_slice)) => {
+                hash_join_tuples_outer(a_slice.iter(), b_slice.iter(), swap)
+            }
             (Ok(a_slice), Err(_)) => {
                 hash_join_tuples_outer(
-                    || Box::new(a_slice.iter().map(|v| Some(*v))), // take ownership
-                    || Box::new(other.into_iter()),
-                    self.len() + other.len(),
+                    a_slice.iter().map(|v| Some(*v)), // take ownership
+                    b.into_iter(),
+                    swap,
                 )
             }
             (Err(_), Ok(b_slice)) => hash_join_tuples_outer(
-                || Box::new(self.into_iter()),
-                || Box::new(b_slice.iter().map(|v: &T::Native| Some(*v))),
-                self.len() + other.len(),
+                a.into_iter(),
+                b_slice.iter().map(|v: &T::Native| Some(*v)),
+                swap,
             ),
-            (Err(_), Err(_)) => hash_join_tuples_outer(
-                || Box::new(self.into_iter()),
-                || Box::new(other.into_iter()),
-                self.len() + other.len(),
-            ),
+            (Err(_), Err(_)) => hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap),
         }
     }
 }
 
 impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(usize, usize)> {
-        let (a, b, swap) = create_join_tuples!(self, other);
+        let (a, b, swap) = det_hash_prone_order!(self, other);
         // Create the join tuples
         hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap)
     }
@@ -262,17 +275,14 @@ impl HashJoin<BooleanType> for BooleanChunked {
         &self,
         other: &BooleanChunked,
     ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> {
-        hash_join_tuples_outer(
-            || Box::new(self.into_iter()),
-            || Box::new(other.into_iter()),
-            self.len() + other.len(),
-        )
+        let (a, b, swap) = det_hash_prone_order!(self, other);
+        hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap)
     }
 }
 
 impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(usize, usize)> {
-        let (a, b, swap) = create_join_tuples!(self, other);
+        let (a, b, swap) = det_hash_prone_order!(self, other);
         // Create the join tuples
         hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap)
     }
@@ -285,11 +295,8 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         &self,
         other: &Utf8Chunked,
     ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> {
-        hash_join_tuples_outer(
-            || Box::new(self.into_iter()),
-            || Box::new(other.into_iter()),
-            self.len() + other.len(),
-        )
+        let (a, b, swap) = det_hash_prone_order!(self, other);
+        hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap)
     }
 }
 
