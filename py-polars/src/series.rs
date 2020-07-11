@@ -180,6 +180,10 @@ impl PySeries {
     pub fn lt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
         Ok(Self::new(Series::Bool(self.series.lt_eq(&rhs.series))))
     }
+
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self.series))
+    }
 }
 
 macro_rules! impl_arithmetic {
@@ -443,5 +447,23 @@ mod test {
             s.iter().map(|s| s.sum::<i32>()).collect::<Vec<_>>(),
             vec![Some(6)]
         );
+    }
+
+    #[test]
+    fn print() {
+        let ps = PySeries {
+            series: [1i32, 2, 3].iter().collect(),
+        };
+        let str = ps.__str__().unwrap();
+        println!("{}", str);
+        assert_eq!(
+            str,
+            "Series: i32
+[
+	1
+	2
+	3
+]"
+        )
     }
 }
