@@ -1,21 +1,6 @@
+use crate::error::PyPolarsEr;
 use polars::prelude::*;
-use pyo3::exceptions::RuntimeError;
-use pyo3::prelude::*;
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum PyPolarsEr {
-    #[error(transparent)]
-    Any(#[from] PolarsError),
-    #[error("{0}")]
-    Other(String),
-}
-
-impl std::convert::From<PyPolarsEr> for PyErr {
-    fn from(err: PyPolarsEr) -> PyErr {
-        RuntimeError::py_err(format!("{:?}", err))
-    }
-}
+use pyo3::{exceptions::RuntimeError, prelude::*};
 
 #[pyclass]
 #[repr(transparent)]
@@ -25,7 +10,7 @@ pub struct PySeries {
 }
 
 impl PySeries {
-    fn new(series: Series) -> Self {
+    pub(crate) fn new(series: Series) -> Self {
         PySeries { series }
     }
 }
@@ -403,7 +388,7 @@ impl_lt_eq_num!(lt_eq_i64, i64);
 impl_lt_eq_num!(lt_eq_f32, f32);
 impl_lt_eq_num!(lt_eq_f64, f64);
 
-fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
+pub(crate) fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
     // prevent destruction of ps
     let mut ps = std::mem::ManuallyDrop::new(ps);
 
@@ -416,7 +401,7 @@ fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
     unsafe { Vec::from_raw_parts(p, len, cap) }
 }
 
-fn to_pyseries_collection(s: Vec<Series>) -> Vec<PySeries> {
+pub(crate) fn to_pyseries_collection(s: Vec<Series>) -> Vec<PySeries> {
     let mut s = std::mem::ManuallyDrop::new(s);
 
     let p = s.as_mut_ptr() as *mut PySeries;
