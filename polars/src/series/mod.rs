@@ -387,7 +387,7 @@ impl Series {
     }
 
     /// Get first indexes of unique values.
-    pub fn arg_unique(&self) -> UInt32Chunked {
+    pub fn arg_unique(&self) -> Vec<usize> {
         apply_method_all_series!(self, arg_unique,)
     }
 
