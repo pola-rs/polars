@@ -18,6 +18,7 @@ impl std::convert::From<PyPolarsEr> for PyErr {
 }
 
 #[pyclass]
+#[repr(transparent)]
 pub struct PSeries {
     pub series: Series,
 }
@@ -128,6 +129,55 @@ impl PSeries {
 
     pub fn sort(&mut self) {
         self.series.sort();
+    }
+
+    pub fn argsort(&self) -> PyResult<Vec<usize>> {
+        Ok(self.series.argsort())
+    }
+
+    pub fn arg_unique(&self) -> PyResult<Vec<usize>> {
+        Ok(self.series.arg_unique())
+    }
+
+    pub fn take(&self, indices: Vec<usize>) -> PyResult<PSeries> {
+        let take = self.series.take(&indices).map_err(PyPolarsEr::from)?;
+        Ok(PSeries::new(take))
+    }
+
+    pub fn null_count(&self) -> PyResult<usize> {
+        Ok(self.series.null_count())
+    }
+
+    pub fn is_null(&self) -> PSeries {
+        todo!()
+    }
+
+    pub fn series_equal(&self, other: &PSeries) -> PyResult<bool> {
+        Ok(self.series.series_equal(&other.series))
+    }
+
+    pub fn eq(&self, rhs: &PSeries) -> PyResult<Self> {
+        Ok(Self::new(Series::Bool(self.series.eq(&rhs.series))))
+    }
+
+    pub fn neq(&self, rhs: &PSeries) -> PyResult<Self> {
+        Ok(Self::new(Series::Bool(self.series.neq(&rhs.series))))
+    }
+
+    pub fn gt(&self, rhs: &PSeries) -> PyResult<Self> {
+        Ok(Self::new(Series::Bool(self.series.gt(&rhs.series))))
+    }
+
+    pub fn gt_eq(&self, rhs: &PSeries) -> PyResult<Self> {
+        Ok(Self::new(Series::Bool(self.series.gt_eq(&rhs.series))))
+    }
+
+    pub fn lt(&self, rhs: &PSeries) -> PyResult<Self> {
+        Ok(Self::new(Series::Bool(self.series.lt(&rhs.series))))
+    }
+
+    pub fn lt_eq(&self, rhs: &PSeries) -> PyResult<Self> {
+        Ok(Self::new(Series::Bool(self.series.lt_eq(&rhs.series))))
     }
 }
 
@@ -245,3 +295,105 @@ impl_mean!(mean_i32, i32);
 impl_mean!(mean_i64, i64);
 impl_mean!(mean_f32, f32);
 impl_mean!(mean_f64, f64);
+
+macro_rules! impl_eq_num {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PSeries {
+            pub fn $name(&self, rhs: $type) -> PyResult<PSeries> {
+                Ok(PSeries::new(Series::Bool(self.series.eq(rhs))))
+            }
+        }
+    };
+}
+
+impl_eq_num!(eq_u32, u32);
+impl_eq_num!(eq_i32, i32);
+impl_eq_num!(eq_i64, i64);
+impl_eq_num!(eq_f32, f32);
+impl_eq_num!(eq_f64, f64);
+
+macro_rules! impl_neq_num {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PSeries {
+            pub fn $name(&self, rhs: $type) -> PyResult<PSeries> {
+                Ok(PSeries::new(Series::Bool(self.series.neq(rhs))))
+            }
+        }
+    };
+}
+
+impl_neq_num!(neq_u32, u32);
+impl_neq_num!(neq_i32, i32);
+impl_neq_num!(neq_i64, i64);
+impl_neq_num!(neq_f32, f32);
+impl_neq_num!(neq_f64, f64);
+
+macro_rules! impl_gt_num {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PSeries {
+            pub fn $name(&self, rhs: $type) -> PyResult<PSeries> {
+                Ok(PSeries::new(Series::Bool(self.series.gt(rhs))))
+            }
+        }
+    };
+}
+
+impl_gt_num!(gt_u32, u32);
+impl_gt_num!(gt_i32, i32);
+impl_gt_num!(gt_i64, i64);
+impl_gt_num!(gt_f32, f32);
+impl_gt_num!(gt_f64, f64);
+
+macro_rules! impl_gt_eq_num {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PSeries {
+            pub fn $name(&self, rhs: $type) -> PyResult<PSeries> {
+                Ok(PSeries::new(Series::Bool(self.series.gt_eq(rhs))))
+            }
+        }
+    };
+}
+
+impl_gt_eq_num!(gt_eq_u32, u32);
+impl_gt_eq_num!(gt_eq_i32, i32);
+impl_gt_eq_num!(gt_eq_i64, i64);
+impl_gt_eq_num!(gt_eq_f32, f32);
+impl_gt_eq_num!(gt_eq_f64, f64);
+
+macro_rules! impl_lt_num {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PSeries {
+            pub fn $name(&self, rhs: $type) -> PyResult<PSeries> {
+                Ok(PSeries::new(Series::Bool(self.series.lt(rhs))))
+            }
+        }
+    };
+}
+
+impl_lt_num!(lt_u32, u32);
+impl_lt_num!(lt_i32, i32);
+impl_lt_num!(lt_i64, i64);
+impl_lt_num!(lt_f32, f32);
+impl_lt_num!(lt_f64, f64);
+
+macro_rules! impl_lt_eq_num {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PSeries {
+            pub fn $name(&self, rhs: $type) -> PyResult<PSeries> {
+                Ok(PSeries::new(Series::Bool(self.series.lt_eq(rhs))))
+            }
+        }
+    };
+}
+
+impl_lt_eq_num!(lt_eq_u32, u32);
+impl_lt_eq_num!(lt_eq_i32, i32);
+impl_lt_eq_num!(lt_eq_i64, i64);
+impl_lt_eq_num!(lt_eq_f32, f32);
+impl_lt_eq_num!(lt_eq_f64, f64);

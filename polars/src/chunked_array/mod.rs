@@ -643,7 +643,7 @@ where
         self.chunks = sorted.chunks;
     }
 
-    pub fn argsort(&self) -> UInt32Chunked {
+    pub fn argsort(&self) -> Vec<usize> {
         self.into_iter()
             .enumerate()
             .sorted_by(|(_idx_a, a), (_idx_b, b)| match (a, b) {
@@ -652,7 +652,7 @@ where
                 (Some(_), None) => Ordering::Greater,
                 (None, None) => Ordering::Equal,
             })
-            .map(|(idx, _v)| Some(idx as u32))
+            .map(|(idx, _v)| idx)
             .collect()
     }
 }

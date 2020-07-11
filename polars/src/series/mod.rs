@@ -372,7 +372,7 @@ impl Series {
     }
 
     /// Retrieve the indexes needed for a sort.
-    pub fn argsort(&self) -> UInt32Chunked {
+    pub fn argsort(&self) -> Vec<usize> {
         apply_method_arrowprimitive_series!(self, argsort,)
     }
 
