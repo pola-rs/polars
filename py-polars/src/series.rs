@@ -19,7 +19,7 @@ macro_rules! init_method {
     ($name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            #[new]
+            #[staticmethod]
             pub fn $name(name: &str, val: Vec<$type>) -> PySeries {
                 PySeries {
                     series: Series::new(name, &val),

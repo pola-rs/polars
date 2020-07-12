@@ -119,4 +119,55 @@ impl PyDataFrame {
             Err(RuntimeError::py_err("Expected a boolean mask"))
         }
     }
+
+    pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
+        let df = self.df.take(&indices).map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    pub fn sort(&mut self, by_column: &str) -> PyResult<()> {
+        self.df.sort(by_column).map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
+    pub fn replace(&mut self, column: &str, new_col: PySeries) -> PyResult<()> {
+        self.df
+            .replace(column, new_col.series)
+            .map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
+    pub fn slice(&self, offset: usize, length: usize) -> PyResult<Self> {
+        let df = self.df.slice(offset, length).map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    pub fn head(&self, length: Option<usize>) -> Self {
+        let df = self.df.head(length);
+        PyDataFrame::new(df)
+    }
+
+    pub fn tail(&self, length: Option<usize>) -> Self {
+        let df = self.df.tail(length);
+        PyDataFrame::new(df)
+    }
+
+    pub fn frame_equal(&self, other: &PyDataFrame) -> bool {
+        self.df.frame_equal(&other.df)
+    }
+
+    pub fn groupby(&self, by: &str, select: &str, agg: &str) -> PyResult<Self> {
+        let gb = self.df.groupby(by).map_err(PyPolarsEr::from)?;
+        let selection = gb.select(select);
+        let df = match agg {
+            "min" => selection.min(),
+            "max" => selection.max(),
+            "mean" => selection.mean(),
+            "sum" => selection.sum(),
+            "count" => selection.count(),
+            a => Err(PolarsError::Other(format!("agg fn {} does not exists", a))),
+        };
+        let df = df.map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
 }

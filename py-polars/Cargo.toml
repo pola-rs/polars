@@ -1,5 +1,5 @@
 [package]
-name = "py-polars"
+name = "py_polars"
 version = "0.1.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
@@ -7,6 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-"polars" = {path = "../polars"}
-pyo3 = "0.11.1"
+polars = {path = "../polars"}
+pyo3 = {version = "0.11.1", features = ["extension-module"] }
 thiserror = "1.0.20"
+
+
+[lib]
+name = "polars"
+crate-type = ["cdylib"]

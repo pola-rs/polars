@@ -11,10 +11,11 @@ repository = "https://github.com/ritchie46/polars"
 
 [features]
 pretty = ["prettytable-rs"]
+simd = ["arrow/packed_simd"]
 default = ["pretty"]
 
 [dependencies]
-arrow = {path = "../vendor/rust_arrow/arrow", package="polars_arrow_rvsry99dx", version="0.17.1", features = ["packed_simd"]}
+arrow = {path = "../vendor/rust_arrow/arrow", package="polars_arrow_rvsry99dx", version="0.17.1"}
 thiserror = "1.0.16"
 num = "0.2.1"
 fnv = "1.0.7"
