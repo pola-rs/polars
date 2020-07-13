@@ -2,3 +2,4 @@
 target/
 Cargo.lock
 data/
+__pycache__/

@@ -27,7 +27,7 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn __str__(&self) -> String {
+    pub fn as_str(&self) -> String {
         format!("{:?}", self.df)
     }
 

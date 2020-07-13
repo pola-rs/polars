@@ -1,6 +1,7 @@
 use crate::chunked_array::aggregate::Agg;
 use crate::prelude::*;
-use num::{Num, NumCast, ToPrimitive, Zero};
+use num::{NumCast, ToPrimitive, Zero};
+use std::ops::Div;
 
 macro_rules! apply_agg_fn {
     ($self:ident, $agg:ident) => {
@@ -49,7 +50,7 @@ impl Series {
     /// ```
     pub fn sum<T>(&self) -> Option<T>
     where
-        T: Num + NumCast + Zero + ToPrimitive,
+        T: NumCast + Zero + ToPrimitive,
     {
         apply_agg_fn!(self, sum)
     }
@@ -63,7 +64,7 @@ impl Series {
     /// ```
     pub fn min<T>(&self) -> Option<T>
     where
-        T: Num + NumCast + Zero + ToPrimitive,
+        T: NumCast + Zero + ToPrimitive,
     {
         apply_agg_fn!(self, min)
     }
@@ -77,14 +78,14 @@ impl Series {
     /// ```
     pub fn max<T>(&self) -> Option<T>
     where
-        T: Num + NumCast + Zero + ToPrimitive,
+        T: NumCast + Zero + ToPrimitive,
     {
         apply_agg_fn!(self, max)
     }
 
     pub fn mean<T>(&self) -> Option<T>
     where
-        T: Num + NumCast + Zero + ToPrimitive,
+        T: NumCast + Zero + ToPrimitive + Div<Output = T>,
     {
         apply_agg_fn!(self, sum).map(|v| v / T::from(self.len()).unwrap())
     }

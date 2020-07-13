@@ -166,7 +166,7 @@ impl PySeries {
         Ok(Self::new(Series::Bool(self.series.lt_eq(&rhs.series))))
     }
 
-    pub fn __str__(&self) -> PyResult<String> {
+    pub fn as_str(&self) -> PyResult<String> {
         Ok(format!("{:?}", self.series))
     }
 }
@@ -268,6 +268,23 @@ impl_min!(min_i32, i32);
 impl_min!(min_i64, i64);
 impl_min!(min_f32, f32);
 impl_min!(min_f64, f64);
+
+macro_rules! impl_max {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PySeries {
+            pub fn $name(&self) -> PyResult<Option<$type>> {
+                Ok(self.series.max())
+            }
+        }
+    };
+}
+
+impl_max!(max_u32, u32);
+impl_max!(max_i32, i32);
+impl_max!(max_i64, i64);
+impl_max!(max_f32, f32);
+impl_max!(max_f64, f64);
 
 macro_rules! impl_mean {
     ($name:ident, $type:ty) => {
