@@ -76,55 +76,27 @@ where
     T: PolarsNumericType,
 {
     fn eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            // should not fail if arrays are equal
-            self.comparison(rhs, compute::eq)
-                .expect("should not fail implementation error")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
-        }
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
     }
 
     fn neq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::neq).expect("should not fail")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
-        }
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
     }
 
     fn gt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::gt).expect("should not fail")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
-        }
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
     }
 
     fn gt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::gt_eq)
-                .expect("should not fail")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
-        }
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
     }
 
     fn lt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::lt).expect("should not fail")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
-        }
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
     }
 
     fn lt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::lt_eq)
-                .expect("should not fail")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
-        }
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
     }
 }
 
@@ -502,5 +474,20 @@ mod test {
             a1.lt(&a2).into_iter().collect_vec(),
             a2_2chunks.lt(&a1).into_iter().collect_vec()
         );
+    }
+
+    #[test]
+    fn test_left_right() {
+        // This failed with arrow comparisons. TODO: check minimal arrow example with one array being
+        // sliced
+        let a1: Int32Chunked = (&[Some(1), Some(2)]).iter().copied().collect();
+        let a1 = a1.slice(1, 1).unwrap();
+        let a2: Int32Chunked = (&[Some(2)]).iter().copied().collect();
+        assert_eq!(a1.eq(&a2).sum(), a2.eq(&a1).sum());
+        assert_eq!(a1.neq(&a2).sum(), a2.neq(&a1).sum());
+        assert_eq!(a1.gt(&a2).sum(), a2.gt(&a1).sum());
+        assert_eq!(a1.lt(&a2).sum(), a2.lt(&a1).sum());
+        assert_eq!(a1.lt_eq(&a2).sum(), a2.lt_eq(&a1).sum());
+        assert_eq!(a1.gt_eq(&a2).sum(), a2.gt_eq(&a1).sum());
     }
 }
