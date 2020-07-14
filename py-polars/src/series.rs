@@ -135,7 +135,7 @@ impl PySeries {
     }
 
     pub fn is_null(&self) -> PySeries {
-        todo!()
+        Self::new(Series::Bool(self.series.is_null()))
     }
 
     pub fn series_equal(&self, other: &PySeries) -> PyResult<bool> {
@@ -168,6 +168,10 @@ impl PySeries {
 
     pub fn as_str(&self) -> PyResult<String> {
         Ok(format!("{:?}", self.series))
+    }
+
+    pub fn len(&self) -> usize {
+        self.series.len()
     }
 }
 
