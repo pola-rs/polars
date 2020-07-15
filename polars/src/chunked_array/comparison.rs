@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray};
-use arrow::compute;
 use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
 
