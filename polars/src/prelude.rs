@@ -7,7 +7,7 @@ pub use crate::{
         comparison::{CmpOps, NumComp},
         take::{IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeIndex},
         unique::Unique,
-        ChunkedArray, Downcast,
+        ChunkSort, ChunkedArray, Downcast,
     },
     datatypes,
     datatypes::*,

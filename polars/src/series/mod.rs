@@ -367,8 +367,12 @@ impl Series {
     }
 
     /// Sort in place.
-    pub fn sort(&mut self) {
-        apply_method_arrowprimitive_series!(self, sort_in_place,)
+    pub fn sort_in_place(&mut self) {
+        apply_method_all_series!(self, sort_in_place,);
+    }
+
+    pub fn sort(&self) -> Self {
+        apply_method_and_return!(self, sort, [],)
     }
 
     /// Retrieve the indexes needed for a sort.

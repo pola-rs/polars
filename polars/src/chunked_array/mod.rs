@@ -622,12 +622,20 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
     }
 }
 
-impl<T> ChunkedArray<T>
+pub trait ChunkSort<T> {
+    fn sort(&self) -> ChunkedArray<T>;
+
+    fn sort_in_place(&mut self);
+
+    fn argsort(&self) -> Vec<usize>;
+}
+
+impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: std::cmp::PartialOrd,
 {
-    pub fn sort(&self) -> Self {
+    fn sort(&self) -> ChunkedArray<T> {
         self.into_iter()
             .sorted_by(|a, b| match (a, b) {
                 (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
@@ -638,12 +646,12 @@ where
             .collect()
     }
 
-    pub fn sort_in_place(&mut self) {
+    fn sort_in_place(&mut self) {
         let sorted = self.sort();
         self.chunks = sorted.chunks;
     }
 
-    pub fn argsort(&self) -> Vec<usize> {
+    fn argsort(&self) -> Vec<usize> {
         self.into_iter()
             .enumerate()
             .sorted_by(|(_idx_a, a), (_idx_b, b)| match (a, b) {
@@ -652,6 +660,44 @@ where
                 (Some(_), None) => Ordering::Greater,
                 (None, None) => Ordering::Equal,
             })
+            .map(|(idx, _v)| idx)
+            .collect()
+    }
+}
+
+impl ChunkSort<Utf8Type> for Utf8Chunked {
+    fn sort(&self) -> Utf8Chunked {
+        self.into_iter().sorted_by(|a, b| a.cmp(b)).collect()
+    }
+
+    fn sort_in_place(&mut self) {
+        let sorted = self.sort();
+        self.chunks = sorted.chunks;
+    }
+
+    fn argsort(&self) -> Vec<usize> {
+        self.into_iter()
+            .enumerate()
+            .sorted_by(|(_idx_a, a), (_idx_b, b)| a.cmp(b))
+            .map(|(idx, _v)| idx)
+            .collect()
+    }
+}
+
+impl ChunkSort<BooleanType> for BooleanChunked {
+    fn sort(&self) -> BooleanChunked {
+        self.into_iter().sorted_by(|a, b| a.cmp(b)).collect()
+    }
+
+    fn sort_in_place(&mut self) {
+        let sorted = self.sort();
+        self.chunks = sorted.chunks;
+    }
+
+    fn argsort(&self) -> Vec<usize> {
+        self.into_iter()
+            .enumerate()
+            .sorted_by(|(_idx_a, a), (_idx_b, b)| a.cmp(b))
             .map(|(idx, _v)| idx)
             .collect()
     }
@@ -674,6 +720,10 @@ pub(crate) mod test {
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
+        let a = Utf8Chunked::new_utf8_from_slice("a", &["b", "a", "c"]);
+        let a = a.sort();
+        let b = a.into_iter().collect::<Vec<_>>();
+        assert_eq!(b, ["a", "b", "c"]);
     }
 
     #[test]

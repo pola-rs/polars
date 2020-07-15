@@ -1,7 +1,6 @@
 use super::hash_join::prepare_hashed_relation;
 use crate::chunked_array::builder::{build_primitive_ca_with_opt, PrimitiveChunkedBuilder};
 use crate::prelude::*;
-use arrow::datatypes::ArrowNativeType;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::hash::Hash;
