@@ -70,5 +70,10 @@ def test_various():
 
 
 def test_filter():
-    pass
-    # TODO
+    a = Series("a", range(20))
+    assert a[a > 1].len() == 18
+    assert a[a < 1].len() == 1
+    assert a[a <= 1].len() == 2
+    assert a[a >= 1].len() == 19
+    assert a[a == 1].len() == 1
+    assert a[a != 1].len() == 19

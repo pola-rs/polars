@@ -41,32 +41,110 @@ class Series:
     def __eq__(self, other):
         if isinstance(other, Sequence):
             other = Series("", other)
-        return Series.from_pyseries(self._s.eq(other._s))
+        if isinstance(other, Series):
+            return Series.from_pyseries(self._s.eq(other._s))
+        dtype = self.dtype
+        if dtype == "u32":
+            return Series.from_pyseries(self._s.eq_u32(other))
+        if dtype == "i32":
+            return Series.from_pyseries(self._s.eq_i32(other))
+        if dtype == "i64":
+            return Series.from_pyseries(self._s.eq_i64(other))
+        if dtype == "f32":
+            return Series.from_pyseries(self._s.eq_f32(other))
+        if dtype == "f64":
+            return Series.from_pyseries(self._s.eq_f64(other))
+        raise NotImplemented
 
     def __ne__(self, other):
         if isinstance(other, Sequence):
             other = Series("", other)
-        return Series.from_pyseries(self._s.neq(other._s))
+        if isinstance(other, Series):
+            return Series.from_pyseries(self._s.neq(other._s))
+        dtype = self.dtype
+        if dtype == "u32":
+            return Series.from_pyseries(self._s.neq_u32(other))
+        if dtype == "i32":
+            return Series.from_pyseries(self._s.neq_i32(other))
+        if dtype == "i64":
+            return Series.from_pyseries(self._s.neq_i64(other))
+        if dtype == "f32":
+            return Series.from_pyseries(self._s.neq_f32(other))
+        if dtype == "f64":
+            return Series.from_pyseries(self._s.neq_f64(other))
+        raise NotImplemented
 
     def __gt__(self, other):
         if isinstance(other, Sequence):
             other = Series("", other)
-        return Series.from_pyseries(self._s.gt(other._s))
+        if isinstance(other, Series):
+            return Series.from_pyseries(self._s.gt(other._s))
+        dtype = self.dtype
+        if dtype == "u32":
+            return Series.from_pyseries(self._s.gt_u32(other))
+        if dtype == "i32":
+            return Series.from_pyseries(self._s.gt_i32(other))
+        if dtype == "i64":
+            return Series.from_pyseries(self._s.gt_i64(other))
+        if dtype == "f32":
+            return Series.from_pyseries(self._s.gt_f32(other))
+        if dtype == "f64":
+            return Series.from_pyseries(self._s.gt_f64(other))
+        raise NotImplemented
 
     def __lt__(self, other):
         if isinstance(other, Sequence):
             other = Series("", other)
-        return Series.from_pyseries(self._s.lt(other._s))
+        if isinstance(other, Series):
+            return Series.from_pyseries(self._s.lt(other._s))
+        dtype = self.dtype
+        if dtype == "u32":
+            return Series.from_pyseries(self._s.lt_u32(other))
+        if dtype == "i32":
+            return Series.from_pyseries(self._s.lt_i32(other))
+        if dtype == "i64":
+            return Series.from_pyseries(self._s.lt_i64(other))
+        if dtype == "f32":
+            return Series.from_pyseries(self._s.lt_f32(other))
+        if dtype == "f64":
+            return Series.from_pyseries(self._s.lt_f64(other))
+        raise NotImplemented
 
     def __ge__(self, other) -> Series:
         if isinstance(other, Sequence):
             other = Series("", other)
-        return Series.from_pyseries(self._s.gt_eq(other._s))
+        if isinstance(other, Series):
+            return Series.from_pyseries(self._s.gt_eq(other._s))
+        dtype = self.dtype
+        if dtype == "u32":
+            return Series.from_pyseries(self._s.gt_eq_u32(other))
+        if dtype == "i32":
+            return Series.from_pyseries(self._s.gt_eq_i32(other))
+        if dtype == "i64":
+            return Series.from_pyseries(self._s.gt_eq_i64(other))
+        if dtype == "f32":
+            return Series.from_pyseries(self._s.gt_eq_f32(other))
+        if dtype == "f64":
+            return Series.from_pyseries(self._s.gt_eq_f64(other))
+        raise NotImplemented
 
     def __le__(self, other) -> Series:
         if isinstance(other, Sequence):
             other = Series("", other)
-        return Series.from_pyseries(self._s.lt_eq(other._s))
+        if isinstance(other, Series):
+            return Series.from_pyseries(self._s.lt_eq(other._s))
+        dtype = self.dtype
+        if dtype == "u32":
+            return Series.from_pyseries(self._s.lt_eq_u32(other))
+        if dtype == "i32":
+            return Series.from_pyseries(self._s.lt_eq_i32(other))
+        if dtype == "i64":
+            return Series.from_pyseries(self._s.lt_eq_i64(other))
+        if dtype == "f32":
+            return Series.from_pyseries(self._s.lt_eq_f32(other))
+        if dtype == "f64":
+            return Series.from_pyseries(self._s.lt_eq_f64(other))
+        raise NotImplemented
 
     def __add__(self, other) -> Series:
         if isinstance(other, Series):
@@ -194,6 +272,16 @@ class Series:
             return Series.from_pyseries(self._s.div_f32_rhs(other))
         if dtype == "f64":
             return Series.from_pyseries(self._s.div_f64_rhs(other))
+        raise NotImplemented
+
+    def __getitem__(self, item):
+        if isinstance(item, Series):
+            return Series.from_pyseries(self._s.filter(item._s))
+        if type(item) == slice:
+            start, stop, stride = item.indices(self.len())
+            if stride != 1:
+                raise NotImplemented
+            return self.slice(start, stop - start)
         raise NotImplemented
 
     @property
