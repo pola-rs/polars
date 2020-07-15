@@ -49,8 +49,11 @@ class Series:
     def inner(self) -> PySeries:
         return self._s
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self._s.as_str()
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
     def __eq__(self, other):
         if isinstance(other, Sequence):

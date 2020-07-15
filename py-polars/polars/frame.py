@@ -23,8 +23,19 @@ class DataFrame:
         self._df = df
         return self
 
+    @staticmethod
+    def from_csv(
+        path: str, infer_schema_length: int = 100, batch_size: int = 1000
+    ) -> DataFrame:
+        self = DataFrame.__new__(DataFrame)
+        self._df = PyDataFrame.from_csv(path, infer_schema_length, batch_size)
+        return self
+
     def __str__(self) -> str:
         return self._df.as_str()
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
     def __getitem__(self, item):
         # select rows and columns at once

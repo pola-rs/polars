@@ -27,6 +27,19 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
+    #[staticmethod]
+    pub fn from_csv(path: &str, infer_schema_length: usize, batch_size: usize) -> PyResult<Self> {
+        let file = std::fs::File::open(path)?;
+
+        let df = CsvReader::new(file)
+            .infer_schema(Some(infer_schema_length))
+            .has_header(true)
+            .with_batch_size(batch_size)
+            .finish()
+            .map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
     pub fn as_str(&self) -> String {
         format!("{:?}", self.df)
     }
