@@ -114,7 +114,7 @@ impl PySeries {
     }
 
     pub fn sort(&mut self) {
-        self.series.sort();
+        self.series.sort_in_place();
     }
 
     pub fn argsort(&self) -> PyResult<Vec<usize>> {

@@ -2,6 +2,9 @@ use crate::prelude::*;
 
 impl Series {
     pub fn series_equal(&self, other: &Series) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
         match self.eq(other).sum() {
             None => false,
             Some(sum) => sum as usize == self.len(),
@@ -11,6 +14,9 @@ impl Series {
 
 impl DataFrame {
     pub fn frame_equal(&self, other: &DataFrame) -> bool {
+        if self.shape() != other.shape() {
+            return false;
+        }
         self.get_columns()
             .iter()
             .zip(other.get_columns().iter())

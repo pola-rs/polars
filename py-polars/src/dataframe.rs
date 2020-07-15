@@ -135,8 +135,13 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn sort(&mut self, by_column: &str) -> PyResult<()> {
-        self.df.sort(by_column).map_err(PyPolarsEr::from)?;
+    pub fn sort(&self, by_column: &str) -> PyResult<Self> {
+        let df = self.df.sort(by_column).map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    pub fn sort_in_place(&mut self, by_column: &str) -> PyResult<()> {
+        self.df.sort_in_place(by_column).map_err(PyPolarsEr::from)?;
         Ok(())
     }
 

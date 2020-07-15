@@ -1,6 +1,6 @@
 from __future__ import annotations
 from .polars import PyDataFrame, PySeries
-from typing import Dict, Sequence, List, Tuple
+from typing import Dict, Sequence, List, Tuple, Optional
 from .series import Series, wrap_s
 import numpy as np
 
@@ -78,8 +78,11 @@ class DataFrame:
     def columns(self) -> List[str]:
         return self._df.columns()
 
-    def sort(self, by_column: str):
-        self._df.sort(by_column)
+    def sort(self, by_column: str, in_place: bool = False) -> Optional[DataFrame]:
+        if in_place:
+            self._df.sort_in_place(by_column)
+        else:
+            return wrap_df(self._df.sort(by_column))
 
     def frame_equal(self, other: DataFrame) -> bool:
         return self._df.frame_equal(other._df)
@@ -98,3 +101,16 @@ class DataFrame:
 
     def groupby(self, by: str, select: str, agg: str) -> DataFrame:
         return wrap_df(self._df.groupby(by, select, agg))
+
+    def join(
+        self, df: DataFrame, left_on: str, right_on: str, how="inner"
+    ) -> DataFrame:
+        if how == "inner":
+            inner = self._df.inner_join(df._df, left_on, right_on)
+        elif how == "left":
+            inner = self._df.left_join(df._df, left_on, right_on)
+        elif how == "outer":
+            inner = self._df.outer_join(df._df, left_on, right_on)
+        else:
+            raise NotImplemented
+        return wrap_df(inner)

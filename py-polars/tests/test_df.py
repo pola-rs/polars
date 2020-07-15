@@ -29,7 +29,7 @@ def test_selection():
 
 def test_sort():
     df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    df.sort("a")
+    df.sort("a", in_place=True)
     assert df.frame_equal(DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
 
 
@@ -88,3 +88,22 @@ def test_groupby():
     df.groupby(by="a", select="b", agg="count").frame_equal(
         DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
     )
+
+
+def test_join():
+    df_left = DataFrame(
+        {"a": ["a", "b", "a", "z"], "b": [1, 2, 3, 4], "c": [6, 5, 4, 3],}
+    )
+    df_right = DataFrame(
+        {"a": ["b", "c", "b", "a"], "k": [0, 3, 9, 6], "c": [1, 0, 2, 1],}
+    )
+
+    joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
+    assert joined["b"].series_equal(Series("", [1, 3, 2, 2]))
+    joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
+    assert joined["c_right"].is_null().sum() == 1
+    assert joined["b"].series_equal(Series("", [1, 3, 2, 2, 4]))
+    joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
+    assert joined["c_right"].null_count() == 1
+    assert joined["c"].null_count() == 2
+    assert joined["b"].null_count() == 2
