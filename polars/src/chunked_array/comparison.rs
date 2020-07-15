@@ -100,6 +100,47 @@ where
     }
 }
 
+macro_rules! apply_operand_on_bool_iter {
+    ($self:ident, $rhs:ident, $operand:tt) => {
+    {
+        $self.into_iter()
+            .zip($rhs.into_iter())
+        .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
+            (None, None) => None,
+            (None, Some(_)) => None,
+            (Some(_), None) => None,
+            (Some(left), Some(right)) => Some(left $operand right),
+        })
+            .collect()
+    }}
+}
+
+impl CmpOps<&BooleanChunked> for BooleanChunked {
+    fn eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        apply_operand_on_bool_iter!(self, rhs, ==)
+    }
+
+    fn neq(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        apply_operand_on_bool_iter!(self, rhs, !=)
+    }
+
+    fn gt(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        apply_operand_on_bool_iter!(self, rhs, >)
+    }
+
+    fn gt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        apply_operand_on_bool_iter!(self, rhs, >=)
+    }
+
+    fn lt(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        apply_operand_on_bool_iter!(self, rhs, <)
+    }
+
+    fn lt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        apply_operand_on_bool_iter!(self, rhs, <=)
+    }
+}
+
 impl Utf8Chunked {
     fn comparison(
         &self,

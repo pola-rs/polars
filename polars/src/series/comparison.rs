@@ -28,7 +28,7 @@ impl CmpOps<&Series> for Series {
             Series::Date64(a) => compare!(Series::Date64, a, rhs, eq),
             Series::Time64Ns(a) => compare!(Series::Time64Ns, a, rhs, eq),
             Series::DurationNs(a) => compare!(Series::DurationNs, a, rhs, eq),
-            Series::Bool(_a) => unimplemented!(),
+            Series::Bool(a) => compare!(Series::Bool, a, rhs, eq),
         }
     }
 
@@ -45,7 +45,7 @@ impl CmpOps<&Series> for Series {
             Series::Date64(a) => compare!(Series::Date64, a, rhs, neq),
             Series::Time64Ns(a) => compare!(Series::Time64Ns, a, rhs, neq),
             Series::DurationNs(a) => compare!(Series::DurationNs, a, rhs, neq),
-            Series::Bool(_a) => unimplemented!(),
+            Series::Bool(a) => compare!(Series::Bool, a, rhs, neq),
         }
     }
 
@@ -62,7 +62,7 @@ impl CmpOps<&Series> for Series {
             Series::Date64(a) => compare!(Series::Date64, a, rhs, gt),
             Series::Time64Ns(a) => compare!(Series::Time64Ns, a, rhs, gt),
             Series::DurationNs(a) => compare!(Series::DurationNs, a, rhs, gt),
-            Series::Bool(_a) => unimplemented!(),
+            Series::Bool(a) => compare!(Series::Bool, a, rhs, gt),
         }
     }
 
@@ -79,7 +79,7 @@ impl CmpOps<&Series> for Series {
             Series::Date64(a) => compare!(Series::Date64, a, rhs, gt_eq),
             Series::Time64Ns(a) => compare!(Series::Time64Ns, a, rhs, gt_eq),
             Series::DurationNs(a) => compare!(Series::DurationNs, a, rhs, gt_eq),
-            Series::Bool(_a) => unimplemented!(),
+            Series::Bool(a) => compare!(Series::Bool, a, rhs, gt_eq),
         }
     }
 
@@ -96,7 +96,7 @@ impl CmpOps<&Series> for Series {
             Series::Date64(a) => compare!(Series::Date64, a, rhs, lt),
             Series::Time64Ns(a) => compare!(Series::Time64Ns, a, rhs, lt),
             Series::DurationNs(a) => compare!(Series::DurationNs, a, rhs, lt),
-            Series::Bool(_a) => unimplemented!(),
+            Series::Bool(a) => compare!(Series::Bool, a, rhs, lt),
         }
     }
 
@@ -113,7 +113,7 @@ impl CmpOps<&Series> for Series {
             Series::Date64(a) => compare!(Series::Date64, a, rhs, lt_eq),
             Series::Time64Ns(a) => compare!(Series::Time64Ns, a, rhs, lt_eq),
             Series::DurationNs(a) => compare!(Series::DurationNs, a, rhs, lt_eq),
-            Series::Bool(_a) => unimplemented!(),
+            Series::Bool(a) => compare!(Series::Bool, a, rhs, lt_eq),
         }
     }
 }
