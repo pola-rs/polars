@@ -444,7 +444,7 @@ impl DataFrame {
     }
 
     /// Sort DataFrame in place by a column.
-    pub fn sort(&mut self, by_column: &str) -> Result<()> {
+    pub fn sort_in_place(&mut self, by_column: &str) -> Result<()> {
         let s = match self.column(by_column) {
             Some(s) => s,
             None => return Err(PolarsError::NotFound),
@@ -458,6 +458,16 @@ impl DataFrame {
             .map(|s| s.take(&take))
             .collect::<Result<Vec<_>>>()?;
         Ok(())
+    }
+
+    pub fn sort(&self, by_column: &str) -> Result<Self> {
+        let s = match self.column(by_column) {
+            Some(s) => s,
+            None => return Err(PolarsError::NotFound),
+        };
+
+        let take = s.argsort();
+        self.take(&take)
     }
 
     /// Replace a column with a series.
@@ -572,7 +582,7 @@ mod test {
     #[test]
     fn test_sort() {
         let mut df = create_frame();
-        df.sort("temp").unwrap();
+        df.sort_in_place("temp").unwrap();
         println!("{:?}", df);
     }
 
