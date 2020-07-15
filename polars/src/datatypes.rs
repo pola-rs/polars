@@ -109,7 +109,7 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Float32 => "f32",
             ArrowDataType::Float64 => "f64",
             ArrowDataType::Utf8 => "str",
-            ArrowDataType::Date32(DateUnit::Millisecond) => "date32",
+            ArrowDataType::Date32(DateUnit::Day) => "date32",
             ArrowDataType::Date64(DateUnit::Millisecond) => "date64",
             ArrowDataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
             ArrowDataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",

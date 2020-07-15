@@ -77,3 +77,16 @@ def test_filter():
     assert a[a >= 1].len() == 19
     assert a[a == 1].len() == 1
     assert a[a != 1].len() == 19
+
+
+def test_cast():
+    a = Series("a", range(20))
+
+    assert a.cast_f32().dtype == "f32"
+    assert a.cast_f64().dtype == "f64"
+    assert a.cast_i32().dtype == "i32"
+    assert a.cast_u32().dtype == "u32"
+    assert a.cast_date64().dtype == "date64"
+    assert a.cast_time64ns().dtype == "time64(ns)"
+    assert a.cast_i32().cast_date32().dtype == "date32"
+    # TODO: duration type that is castable? Maybe requires u64?

@@ -418,7 +418,7 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Int64 => Series::Int64(mem::transmute(ca)),
             ArrowDataType::Float32 => Series::Float32(mem::transmute(ca)),
             ArrowDataType::Float64 => Series::Float64(mem::transmute(ca)),
-            ArrowDataType::Date32(DateUnit::Millisecond) => Series::Date32(mem::transmute(ca)),
+            ArrowDataType::Date32(DateUnit::Day) => Series::Date32(mem::transmute(ca)),
             ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(mem::transmute(ca)),
             ArrowDataType::Time64(datatypes::TimeUnit::Nanosecond) => {
                 Series::Time64Ns(mem::transmute(ca))
@@ -426,7 +426,7 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Duration(datatypes::TimeUnit::Nanosecond) => {
                 Series::DurationNs(mem::transmute(ca))
             }
-            _ => unimplemented!(),
+            _ => panic!("Not implemented: {:?}", N::get_data_type()),
         }
     }
 }

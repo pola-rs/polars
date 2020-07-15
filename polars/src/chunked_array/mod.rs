@@ -158,9 +158,7 @@ where
     /// Downcast
     pub fn date32(self) -> Result<Date32Chunked> {
         match T::get_data_type() {
-            ArrowDataType::Date32(DateUnit::Millisecond) => unsafe {
-                Ok(std::mem::transmute(self))
-            },
+            ArrowDataType::Date32(DateUnit::Day) => unsafe { Ok(std::mem::transmute(self)) },
             _ => Err(PolarsError::DataTypeMisMatch),
         }
     }

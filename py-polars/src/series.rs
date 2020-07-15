@@ -181,6 +181,28 @@ impl PySeries {
     }
 }
 
+macro_rules! impl_cast {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PySeries {
+            pub fn $name(&self) -> PyResult<PySeries> {
+                let s = self.series.cast::<$type>().map_err(PyPolarsEr::from)?;
+                Ok(PySeries::new(s))
+            }
+        }
+    };
+}
+
+impl_cast!(cast_u32, UInt32Type);
+impl_cast!(cast_i32, Int32Type);
+impl_cast!(cast_i64, Int64Type);
+impl_cast!(cast_f32, Float32Type);
+impl_cast!(cast_f64, Float64Type);
+impl_cast!(cast_date32, Date32Type);
+impl_cast!(cast_date64, Date64Type);
+impl_cast!(cast_time64ns, Time64NanosecondType);
+impl_cast!(cast_duration_ns, DurationNanosecondType);
+
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {
         #[pymethods]

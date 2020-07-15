@@ -428,3 +428,30 @@ class Series:
 
     def __len__(self):
         return self.len()
+
+    def cast_u32(self):
+        return wrap_s(self._s.cast_u32())
+
+    def cast_i32(self):
+        return wrap_s(self._s.cast_i32())
+
+    def cast_i64(self):
+        return wrap_s(self._s.cast_i64())
+
+    def cast_f32(self):
+        return wrap_s(self._s.cast_f32())
+
+    def cast_f64(self):
+        return wrap_s(self._s.cast_f64())
+
+    def cast_date32(self):
+        return wrap_s(self._s.cast_date32())
+
+    def cast_date64(self):
+        return wrap_s(self._s.cast_date64())
+
+    def cast_time64ns(self):
+        return wrap_s(self._s.cast_time64ns())
+
+    def cast_duration_ns(self):
+        return wrap_s(self._s.cast_duration_ns())
