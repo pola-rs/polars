@@ -77,3 +77,24 @@ class DataFrame:
     @property
     def columns(self) -> List[str]:
         return self._df.columns()
+
+    def sort(self, by_column: str):
+        self._df.sort(by_column)
+
+    def frame_equal(self, other: DataFrame) -> bool:
+        return self._df.frame_equal(other._df)
+
+    def replace(self, column: str, new_col: Series):
+        self._df.replace(column, new_col.inner())
+
+    def slice(self, offset: int, length: int) -> DataFrame:
+        return wrap_df(self._df.slice(offset, length))
+
+    def head(self, length: int = 5) -> DataFrame:
+        return wrap_df(self._df.head(length))
+
+    def tail(self, length: int = 5) -> DataFrame:
+        return wrap_df(self._df.tail(length))
+
+    def groupby(self, by: str, select: str, agg: str) -> DataFrame:
+        return wrap_df(self._df.groupby(by, select, agg))
