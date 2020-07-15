@@ -380,11 +380,26 @@ impl DataFrame {
     /// ```
     /// use polars::prelude::*;
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
-    ///     let iterator = (0..9).into_iter().map(|idx| Some(idx));
+    ///     let iterator = (0..9).into_iter();
     ///     df.take_iter(iterator, None)
     /// }
     /// ```
     pub fn take_iter<I>(&self, iter: I, capacity: Option<usize>) -> Result<Self>
+    where
+        I: Iterator<Item = usize> + Clone + Sync,
+    {
+        let new_col = self
+            .columns
+            .par_iter()
+            .map(|s| {
+                let mut i = iter.clone();
+                s.take_iter(&mut i, capacity)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        DataFrame::new_with_schema(self.schema.clone(), new_col)
+    }
+
+    pub fn take_opt_iter<I>(&self, iter: I, capacity: Option<usize>) -> Result<Self>
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
@@ -393,7 +408,7 @@ impl DataFrame {
             .par_iter()
             .map(|s| {
                 let mut i = iter.clone();
-                s.take_iter(&mut i, capacity)
+                s.take_opt_iter(&mut i, capacity)
             })
             .collect::<Result<Vec<_>>>()?;
         DataFrame::new_with_schema(self.schema.clone(), new_col)

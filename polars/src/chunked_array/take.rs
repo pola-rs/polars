@@ -3,7 +3,11 @@ use crate::prelude::*;
 use arrow::array::{Array, BooleanArray, PrimitiveArray, StringArray};
 
 pub trait Take {
-    fn take(
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+
+    fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
@@ -12,19 +16,38 @@ pub trait Take {
         Self: std::marker::Sized;
 }
 
-macro_rules! impl_take_builder {
-    ($self:ident, $indices:ident, $builder:ident, $chunks:ident) => {{
-        for opt_idx in $indices {
-            match opt_idx {
-                Some(idx) => {
-                    let (chunk_idx, i) = $self.index_to_chunked_index(idx);
-                    let arr = unsafe { $chunks.get_unchecked(chunk_idx) };
-                    $builder.append_value(arr.value(i))?
-                }
-                None => $builder.append_null()?,
+macro_rules! impl_take {
+    ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
+        let capacity = $capacity.unwrap_or($indices.size_hint().0);
+        let mut builder = $builder::new($self.name(), capacity);
+
+        let taker = $self.take_rand();
+        for idx in $indices {
+            match taker.get(idx) {
+                Some(v) => builder.append_value(v)?,
+                None => builder.append_null()?,
             }
         }
-        Ok($builder.finish())
+        Ok(builder.finish())
+    }};
+}
+
+macro_rules! impl_take_opt {
+    ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
+        let capacity = $capacity.unwrap_or($indices.size_hint().0);
+        let mut builder = $builder::new($self.name(), capacity);
+        let taker = $self.take_rand();
+
+        for opt_idx in $indices {
+            match opt_idx {
+                Some(idx) => match taker.get(idx) {
+                    Some(v) => builder.append_value(v)?,
+                    None => builder.append_null()?,
+                },
+                None => builder.append_null()?,
+            };
+        }
+        Ok(builder.finish())
     }};
 }
 
@@ -32,44 +55,45 @@ impl<T> Take for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn take(
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
+        impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
+    }
+
+    fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Result<Self> {
-        let capacity = capacity.unwrap_or(1024);
-        let mut builder = PrimitiveChunkedBuilder::new(self.name(), capacity);
-
-        let chunks = self.downcast_chunks();
-        if let Ok(slice) = self.cont_slice() {
-            for opt_idx in indices {
-                match opt_idx {
-                    Some(idx) => builder.append_value(slice[idx])?,
-                    None => builder.append_null()?,
-                };
-            }
-            Ok(builder.finish())
-        } else {
-            impl_take_builder!(self, indices, builder, chunks)
-        }
+        impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 }
 
 impl Take for BooleanChunked {
-    fn take(
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
+    }
+
+    fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Result<Self> {
-        let capacity = capacity.unwrap_or(1024);
-        let mut builder = PrimitiveChunkedBuilder::new(self.name(), capacity);
-        let chunks = self.downcast_chunks();
-        impl_take_builder!(self, indices, builder, chunks)
+        impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 }
 
 impl Take for Utf8Chunked {
-    fn take(
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        impl_take!(self, indices, capacity, Utf8ChunkedBuilder)
+    }
+
+    fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
@@ -77,21 +101,28 @@ impl Take for Utf8Chunked {
     where
         Self: std::marker::Sized,
     {
-        let capacity = capacity.unwrap_or(1024);
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity);
-        let chunks = self.downcast_chunks();
-        impl_take_builder!(self, indices, builder, chunks)
+        impl_take_opt!(self, indices, capacity, Utf8ChunkedBuilder)
     }
 }
 
 pub trait TakeIndex {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a>;
+    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a>;
+
+    fn as_opt_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
+        unimplemented!()
+    }
 
     fn take_index_len(&self) -> usize;
 }
 
 impl TakeIndex for &UInt32Chunked {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
+    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
+        Box::new(
+            self.into_iter()
+                .filter_map(|opt_val| opt_val.map(|val| val as usize)),
+        )
+    }
+    fn as_opt_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
         Box::new(
             self.into_iter()
                 .map(|opt_val| opt_val.map(|val| val as usize)),
@@ -103,8 +134,8 @@ impl TakeIndex for &UInt32Chunked {
 }
 
 impl TakeIndex for [usize] {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
-        Box::new(self.iter().map(|&v| Some(v)))
+    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
+        Box::new(self.iter().filter_map(|&v| Some(v)))
     }
     fn take_index_len(&self) -> usize {
         self.len()
@@ -112,8 +143,8 @@ impl TakeIndex for [usize] {
 }
 
 impl TakeIndex for Vec<usize> {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
-        Box::new(self.iter().map(|&v| Some(v)))
+    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
+        Box::new(self.iter().copied())
     }
     fn take_index_len(&self) -> usize {
         self.len()
@@ -121,8 +152,8 @@ impl TakeIndex for Vec<usize> {
 }
 
 impl TakeIndex for [u32] {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
-        Box::new(self.iter().map(|&v| Some(v as usize)))
+    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
+        Box::new(self.iter().map(|&v| v as usize))
     }
     fn take_index_len(&self) -> usize {
         self.len()

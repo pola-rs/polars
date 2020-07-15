@@ -307,10 +307,19 @@ impl Series {
     /// Take by index from an iterator. This operation clones the data.
     pub fn take_iter(
         &self,
-        iter: impl Iterator<Item = Option<usize>>,
+        iter: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Result<Self> {
         Ok(apply_method_and_return!(self, take, [iter,  capacity], ?))
+    }
+
+    /// Take by index from an iterator. This operation clones the data.
+    pub fn take_opt_iter(
+        &self,
+        iter: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Result<Self> {
+        Ok(apply_method_and_return!(self, take_opt, [iter,  capacity], ?))
     }
 
     /// Take by index. This operation is clone.
@@ -377,7 +386,7 @@ impl Series {
 
     /// Retrieve the indexes needed for a sort.
     pub fn argsort(&self) -> Vec<usize> {
-        apply_method_arrowprimitive_series!(self, argsort,)
+        apply_method_all_series!(self, argsort,)
     }
 
     /// Count the null values.

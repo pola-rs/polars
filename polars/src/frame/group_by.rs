@@ -348,7 +348,7 @@ impl<'a> GroupBy<'a> {
 
     fn keys(&self) -> Result<Series> {
         self.df.f_column(&self.by).take_iter(
-            self.groups.iter().map(|(idx, _)| Some(*idx)),
+            self.groups.iter().map(|(idx, _)| *idx),
             Some(self.groups.len()),
         )
     }

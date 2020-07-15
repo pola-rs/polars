@@ -665,6 +665,17 @@ where
     }
 }
 
+macro_rules! argsort {
+    ($self:ident) => {{
+        $self
+            .into_iter()
+            .enumerate()
+            .sorted_by(|(_idx_a, a), (_idx_b, b)| a.cmp(b))
+            .map(|(idx, _v)| idx)
+            .collect()
+    }};
+}
+
 impl ChunkSort<Utf8Type> for Utf8Chunked {
     fn sort(&self) -> Utf8Chunked {
         self.into_iter().sorted_by(|a, b| a.cmp(b)).collect()
@@ -676,11 +687,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 
     fn argsort(&self) -> Vec<usize> {
-        self.into_iter()
-            .enumerate()
-            .sorted_by(|(_idx_a, a), (_idx_b, b)| a.cmp(b))
-            .map(|(idx, _v)| idx)
-            .collect()
+        argsort!(self)
     }
 }
 
@@ -695,11 +702,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 
     fn argsort(&self) -> Vec<usize> {
-        self.into_iter()
-            .enumerate()
-            .sorted_by(|(_idx_a, a), (_idx_b, b)| a.cmp(b))
-            .map(|(idx, _v)| idx)
-            .collect()
+        argsort!(self)
     }
 }
 

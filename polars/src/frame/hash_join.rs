@@ -327,7 +327,7 @@ impl DataFrame {
 
     fn create_left_df<B: Sync>(&self, join_tuples: &[(usize, B)]) -> Result<DataFrame> {
         self.take_iter(
-            join_tuples.iter().map(|(left, _right)| Some(*left)),
+            join_tuples.iter().map(|(left, _right)| *left),
             Some(join_tuples.len()),
         )
     }
@@ -359,7 +359,7 @@ impl DataFrame {
                     .drop_pure(right_on)
                     .unwrap()
                     .take_iter(
-                        join_tuples.iter().map(|(_left, right)| Some(*right)),
+                        join_tuples.iter().map(|(_left, right)| *right),
                         Some(join_tuples.len()),
                     )
                     .expect("could not take")
@@ -392,7 +392,7 @@ impl DataFrame {
                 other
                     .drop_pure(right_on)
                     .unwrap()
-                    .take_iter(
+                    .take_opt_iter(
                         opt_join_tuples.iter().map(|(_left, right)| *right),
                         Some(opt_join_tuples.len()),
                     )
@@ -429,7 +429,7 @@ impl DataFrame {
             {
                 self.drop_pure(left_on)
                     .unwrap()
-                    .take_iter(
+                    .take_opt_iter(
                         opt_join_tuples.iter().map(|(left, _right)| *left),
                         Some(opt_join_tuples.len()),
                     )
@@ -439,7 +439,7 @@ impl DataFrame {
                 other
                     .drop_pure(right_on)
                     .unwrap()
-                    .take_iter(
+                    .take_opt_iter(
                         opt_join_tuples.iter().map(|(_left, right)| *right),
                         Some(opt_join_tuples.len()),
                     )
