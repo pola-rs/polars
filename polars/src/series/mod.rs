@@ -527,4 +527,10 @@ mod test {
             _ => assert!(false),
         }
     }
+
+    #[test]
+    fn new_series() {
+        Series::new("", &vec![true, false, true]);
+        Series::new("", &vec![1, 2, 3]);
+    }
 }

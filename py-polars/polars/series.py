@@ -4,8 +4,16 @@ import numpy as np
 from typing import Optional, List, Sequence, Union
 
 
+def wrap_s(s: PySeries) -> Series:
+    return Series.from_pyseries(s)
+
+
 class Series:
     def __init__(self, name: str, values: np.array):
+        if isinstance(values, Series):
+            values.rename(name)
+            self._s = values._s
+            return
         if not isinstance(values, np.ndarray):
             values = np.array(values)
 
@@ -14,26 +22,32 @@ class Series:
         dtype = values.dtype
         if dtype == np.int64:
             self._s = PySeries.new_i64(name, values)
-        if dtype == np.int32:
+        elif dtype == np.int32:
             self._s = PySeries.new_i32(name, values)
-        if dtype == np.float32:
+        elif dtype == np.float32:
             self._s = PySeries.new_f32(name, values)
-        if dtype == np.float64:
+        elif dtype == np.float64:
             self._s = PySeries.new_f64(name, values)
-        if isinstance(values[0], str):
+        elif isinstance(values[0], str):
             self._s = PySeries.new_str(name, values)
-        if dtype == np.bool:
-            self._s = PySeries.new_bool(name, values)
-        if dtype == np.uint32:
+        elif dtype == np.bool:
+            # TODO: use rust numpy (numpy bools are converted)
+            self._s = PySeries.new_bool(name, values.tolist())
+        elif dtype == np.uint32:
             self._s = PySeries.new_u32(name, values)
-        if dtype == np.uint64:
+        elif dtype == np.uint64:
             self._s = PySeries.new_u32(name, np.array(values, dtype=np.uint32))
+        else:
+            raise ValueError(f"dtype: {dtype} not known")
 
     @staticmethod
     def from_pyseries(s: PySeries) -> Series:
         self = Series.__new__(Series)
         self._s = s
         return self
+
+    def inner(self) -> PySeries:
+        return self._s
 
     def __str__(self):
         return self._s.as_str()

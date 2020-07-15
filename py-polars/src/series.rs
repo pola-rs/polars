@@ -130,6 +130,12 @@ impl PySeries {
         Ok(PySeries::new(take))
     }
 
+    pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+        let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
+        let take = self.series.take(&idx).map_err(PyPolarsEr::from)?;
+        Ok(PySeries::new(take))
+    }
+
     pub fn null_count(&self) -> PyResult<usize> {
         Ok(self.series.null_count())
     }

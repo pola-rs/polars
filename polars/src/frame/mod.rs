@@ -105,8 +105,13 @@ impl DataFrame {
     }
 
     /// Get a reference to the DataFrame columns.
-    pub fn columns(&self) -> &DfColumns {
+    pub fn get_columns(&self) -> &DfColumns {
         &self.columns
+    }
+
+    /// Get the column labels of the DataFrame.
+    pub fn columns(&self) -> Vec<&str> {
+        self.columns.iter().map(|s| s.name()).collect()
     }
 
     /// The number of chunks per column

@@ -55,9 +55,13 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn columns(&self) -> Vec<PySeries> {
-        let cols = self.df.columns().clone();
+    pub fn get_columns(&self) -> Vec<PySeries> {
+        let cols = self.df.get_columns().clone();
         to_pyseries_collection(cols)
+    }
+
+    pub fn columns(&self) -> Vec<&str> {
+        self.df.columns()
     }
 
     pub fn n_chunks(&self) -> PyResult<usize> {
@@ -122,6 +126,12 @@ impl PyDataFrame {
 
     pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
         let df = self.df.take(&indices).map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+        let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
+        let df = self.df.take(&idx).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
