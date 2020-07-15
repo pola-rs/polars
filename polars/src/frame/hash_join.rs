@@ -356,7 +356,7 @@ impl DataFrame {
             { self.create_left_df(&join_tuples).expect("could not take") },
             {
                 other
-                    .drop_pure(right_on)
+                    .drop(right_on)
                     .unwrap()
                     .take_iter(
                         join_tuples.iter().map(|(_left, right)| *right),
@@ -390,7 +390,7 @@ impl DataFrame {
             },
             {
                 other
-                    .drop_pure(right_on)
+                    .drop(right_on)
                     .unwrap()
                     .take_opt_iter(
                         opt_join_tuples.iter().map(|(_left, right)| *right),
@@ -427,7 +427,7 @@ impl DataFrame {
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = exec_concurrent!(
             {
-                self.drop_pure(left_on)
+                self.drop(left_on)
                     .unwrap()
                     .take_opt_iter(
                         opt_join_tuples.iter().map(|(left, _right)| *left),
@@ -437,7 +437,7 @@ impl DataFrame {
             },
             {
                 other
-                    .drop_pure(right_on)
+                    .drop(right_on)
                     .unwrap()
                     .take_opt_iter(
                         opt_join_tuples.iter().map(|(_left, right)| *right),

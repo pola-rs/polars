@@ -114,3 +114,15 @@ class DataFrame:
         else:
             raise NotImplemented
         return wrap_df(inner)
+
+    def hstack(self, columns: List[Series]):
+        self._df.hstack([s.inner() for s in columns])
+
+    def drop(self, name: str) -> DataFrame:
+        return wrap_df(self._df.drop(name))
+
+    def drop_in_place(self, name: str) -> Series:
+        return wrap_s(self._df.drop_in_place(name))
+
+    def select_idx(self, idx: int) -> Series:
+        return wrap_s(self._df.select_idx(idx))

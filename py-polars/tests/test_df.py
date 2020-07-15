@@ -25,6 +25,7 @@ def test_selection():
 
     assert df[[0, 1], "b"].shape == (2, 1)
     assert df[[2], ["a", "b"]].shape == (1, 2)
+    assert df.select_idx(0).name == "a"
 
 
 def test_sort():
@@ -107,3 +108,19 @@ def test_join():
     assert joined["c_right"].null_count() == 1
     assert joined["c"].null_count() == 2
     assert joined["b"].null_count() == 2
+
+
+def test_hstack():
+    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
+    df.hstack([Series("stacked", [-1, -1, -1])])
+    assert df.shape == (3, 3)
+    assert df.columns == ["a", "b", "stacked"]
+
+
+def test_drop():
+    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
+    df = df.drop("a")
+    assert df.shape == (3, 2)
+    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
+    s = df.drop_in_place("a")
+    assert s.name == "a"

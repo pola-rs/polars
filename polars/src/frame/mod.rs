@@ -214,10 +214,10 @@ impl DataFrame {
     /// ```
     /// use polars::prelude::*;
     /// fn drop_column(df: &mut DataFrame, name: &str) -> Result<Series> {
-    ///     df.drop(name)
+    ///     df.drop_in_place(name)
     /// }
     /// ```
-    pub fn drop(&mut self, name: &str) -> Result<DfSeries> {
+    pub fn drop_in_place(&mut self, name: &str) -> Result<DfSeries> {
         let idx = self.name_to_idx(name)?;
         let result = Ok(self.columns.remove(idx));
         self.register_mutation()?;
@@ -227,7 +227,7 @@ impl DataFrame {
     /// Drop a column by name.
     /// This is a pure method and will return a new DataFrame instead of modifying
     /// the current one in place.
-    pub fn drop_pure(&self, name: &str) -> Result<DataFrame> {
+    pub fn drop(&self, name: &str) -> Result<DataFrame> {
         let idx = self.name_to_idx(name)?;
         let mut new_cols = Vec::with_capacity(self.columns.len() - 1);
 

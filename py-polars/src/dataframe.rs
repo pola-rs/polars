@@ -87,13 +87,13 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn drop(&mut self, name: &str) -> PyResult<PySeries> {
-        let s = self.df.drop(name).map_err(PyPolarsEr::from)?;
+    pub fn drop_in_place(&mut self, name: &str) -> PyResult<PySeries> {
+        let s = self.df.drop_in_place(name).map_err(PyPolarsEr::from)?;
         Ok(PySeries { series: s })
     }
 
-    pub fn drop_pure(&self, name: &str) -> PyResult<Self> {
-        let df = self.df.drop_pure(name).map_err(PyPolarsEr::from)?;
+    pub fn drop(&self, name: &str) -> PyResult<Self> {
+        let df = self.df.drop(name).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -101,7 +101,7 @@ impl PyDataFrame {
         self.df.select_idx(idx).map(|s| PySeries::new(s.clone()))
     }
 
-    pub fn find_idx_by_bane(&self, name: &str) -> Option<usize> {
+    pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
         self.df.find_idx_by_name(name)
     }
 
