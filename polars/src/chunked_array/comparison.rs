@@ -175,75 +175,45 @@ impl Utf8Chunked {
 
 impl CmpOps<&Utf8Chunked> for Utf8Chunked {
     fn eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::eq_utf8)
-                .expect("should not fail")
-        } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left == right)
-                .collect()
-        }
+        self.into_iter()
+            .zip(rhs.into_iter())
+            .map(|(left, right)| left == right)
+            .collect()
     }
 
     fn neq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::neq_utf8)
-                .expect("should not fail")
-        } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left != right)
-                .collect()
-        }
+        self.into_iter()
+            .zip(rhs.into_iter())
+            .map(|(left, right)| left != right)
+            .collect()
     }
 
     fn gt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::gt_utf8)
-                .expect("should not fail")
-        } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left > right)
-                .collect()
-        }
+        self.into_iter()
+            .zip(rhs.into_iter())
+            .map(|(left, right)| left > right)
+            .collect()
     }
 
     fn gt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::gt_eq_utf8)
-                .expect("should not fail")
-        } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left >= right)
-                .collect()
-        }
+        self.into_iter()
+            .zip(rhs.into_iter())
+            .map(|(left, right)| left >= right)
+            .collect()
     }
 
     fn lt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::lt_utf8)
-                .expect("should not fail")
-        } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left < right)
-                .collect()
-        }
+        self.into_iter()
+            .zip(rhs.into_iter())
+            .map(|(left, right)| left < right)
+            .collect()
     }
 
     fn lt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::lt_eq_utf8)
-                .expect("should not fail")
-        } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left <= right)
-                .collect()
-        }
+        self.into_iter()
+            .zip(rhs.into_iter())
+            .map(|(left, right)| left <= right)
+            .collect()
     }
 }
 
@@ -524,6 +494,16 @@ mod test {
         let a1: Int32Chunked = (&[Some(1), Some(2)]).iter().copied().collect();
         let a1 = a1.slice(1, 1).unwrap();
         let a2: Int32Chunked = (&[Some(2)]).iter().copied().collect();
+        assert_eq!(a1.eq(&a2).sum(), a2.eq(&a1).sum());
+        assert_eq!(a1.neq(&a2).sum(), a2.neq(&a1).sum());
+        assert_eq!(a1.gt(&a2).sum(), a2.gt(&a1).sum());
+        assert_eq!(a1.lt(&a2).sum(), a2.lt(&a1).sum());
+        assert_eq!(a1.lt_eq(&a2).sum(), a2.lt_eq(&a1).sum());
+        assert_eq!(a1.gt_eq(&a2).sum(), a2.gt_eq(&a1).sum());
+
+        let a1: Utf8Chunked = (&["a", "b"]).iter().copied().collect();
+        let a1 = a1.slice(1, 1).unwrap();
+        let a2: Utf8Chunked = (&["b"]).iter().copied().collect();
         assert_eq!(a1.eq(&a2).sum(), a2.eq(&a1).sum());
         assert_eq!(a1.neq(&a2).sum(), a2.neq(&a1).sum());
         assert_eq!(a1.gt(&a2).sum(), a2.gt(&a1).sum());
