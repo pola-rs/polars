@@ -3,6 +3,7 @@ pub use crate::{
         aggregate::Agg,
         apply::Apply,
         builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
+        cast::ChunkCast,
         chunkops::ChunkOps,
         comparison::{CmpOps, NumComp},
         take::{IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeIndex},

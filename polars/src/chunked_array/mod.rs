@@ -21,6 +21,7 @@ pub mod apply;
 #[macro_use]
 mod arithmetic;
 pub mod builder;
+pub mod cast;
 pub(crate) mod chunkops;
 pub mod comparison;
 pub mod iterator;
@@ -401,25 +402,6 @@ where
     /// Recompute the chunk_id / chunk_lenghts.
     fn set_chunk_id(&mut self) {
         self.chunk_id = create_chunk_id(&self.chunks)
-    }
-
-    /// Cast the underlying data type.
-    pub fn cast<N>(&self) -> Result<ChunkedArray<N>>
-    where
-        N: PolarsNumericType,
-        // TODO: check if this works
-        // ChunkedArray<N>: ChunkOps
-    {
-        let chunks = self
-            .chunks
-            .iter()
-            .map(|arr| compute::cast(arr, &N::get_data_type()))
-            .collect::<arrow::error::Result<Vec<_>>>()?;
-
-        Ok(ChunkedArray::<N>::new_from_chunks(
-            self.field.name(),
-            chunks,
-        ))
     }
 }
 
