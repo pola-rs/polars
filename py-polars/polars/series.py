@@ -31,8 +31,7 @@ class Series:
         elif isinstance(values[0], str):
             self._s = PySeries.new_str(name, values)
         elif dtype == np.bool:
-            # TODO: use rust numpy (numpy bools are converted)
-            self._s = PySeries.new_bool(name, values.tolist())
+            self._s = PySeries.new_bool(name, values)
         elif dtype == np.uint32:
             self._s = PySeries.new_u32(name, values)
         elif dtype == np.uint64:
@@ -401,12 +400,20 @@ class Series:
     def sort(self):
         self._s.sort()
 
-    def argsort(self) -> List[int]:
-        # todo: numpy
+    def argsort(self) -> Sequence[int]:
+        """
+        Returns
+        -------
+        indexes: np.ndarray[int]
+        """
         return self._s.argsort()
 
     def arg_unique(self) -> List[int]:
-        # todo: numpy
+        """
+        Returns
+        -------
+        indexes: np.ndarray[int]
+        """
         return self._s.arg_unique()
 
     def take(self, indices: Union[np.ndarray, List[int]]) -> Series:

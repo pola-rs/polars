@@ -10,6 +10,7 @@ edition = "2018"
 polars = {path = "../polars"}
 pyo3 = {version = "0.11.1", features = ["extension-module"] }
 thiserror = "1.0.20"
+numpy = "0.10.0"
 
 
 [lib]

@@ -1,4 +1,5 @@
 use crate::error::PyPolarsEr;
+use numpy::PyArray1;
 use polars::prelude::*;
 use pyo3::{exceptions::RuntimeError, prelude::*};
 
@@ -20,9 +21,11 @@ macro_rules! init_method {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            pub fn $name(name: &str, val: Vec<$type>) -> PySeries {
-                PySeries {
-                    series: Series::new(name, &val),
+            pub fn $name(name: &str, val: &PyArray1<$type>) -> PySeries {
+                unsafe {
+                    PySeries {
+                        series: Series::new(name, val.as_slice().unwrap()),
+                    }
                 }
             }
         }
@@ -39,10 +42,14 @@ init_method!(new_date32, i32);
 init_method!(new_date64, i64);
 init_method!(new_duration_ns, i64);
 init_method!(new_time_ns, i64);
-init_method!(new_str, &str);
 
 #[pymethods]
 impl PySeries {
+    #[staticmethod]
+    pub fn new_str(name: &str, val: Vec<&str>) -> Self {
+        PySeries::new(Series::new(name, &val))
+    }
+
     pub fn name(&self) -> &str {
         self.series.name()
     }
@@ -117,12 +124,16 @@ impl PySeries {
         self.series.sort_in_place();
     }
 
-    pub fn argsort(&self) -> PyResult<Vec<usize>> {
-        Ok(self.series.argsort())
+    pub fn argsort(&self) -> Py<PyArray1<usize>> {
+        let gil = pyo3::Python::acquire_gil();
+        let pyarray = PyArray1::from_vec(gil.python(), self.series.argsort());
+        pyarray.to_owned()
     }
 
-    pub fn arg_unique(&self) -> PyResult<Vec<usize>> {
-        Ok(self.series.arg_unique())
+    pub fn arg_unique(&self) -> Py<PyArray1<usize>> {
+        let gil = pyo3::Python::acquire_gil();
+        let pyarray = PyArray1::from_vec(gil.python(), self.series.arg_unique());
+        pyarray.to_owned()
     }
 
     pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
