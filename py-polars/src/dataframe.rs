@@ -29,6 +29,8 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn from_csv(path: &str, infer_schema_length: usize, batch_size: usize) -> PyResult<Self> {
+        // TODO: use python file objects:
+        // https://github.com/mre/hyperjson/blob/e1a0515f8d033f24b9fba64a0a4c77df841bbd1b/src/lib.rs#L20
         let file = std::fs::File::open(path)?;
 
         let df = CsvReader::new(file)
@@ -38,6 +40,17 @@ impl PyDataFrame {
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
+    }
+
+    pub fn to_csv(&self, path: &str, has_headers: bool, delimiter: u8) -> PyResult<()> {
+        // TODO: use python file objects:
+        let mut buf = std::fs::File::create(path)?;
+        CsvWriter::new(&mut buf)
+            .has_headers(has_headers)
+            .with_delimiter(delimiter)
+            .finish(&self.df)
+            .map_err(PyPolarsEr::from)?;
+        Ok(())
     }
 
     pub fn as_str(&self) -> String {

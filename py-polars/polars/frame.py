@@ -31,6 +31,9 @@ class DataFrame:
         self._df = PyDataFrame.from_csv(path, infer_schema_length, batch_size)
         return self
 
+    def to_csv(self, path: str, has_headers: bool = True, delimiter: str = ","):
+        self._df.to_csv(path, has_headers, ord(delimiter))
+
     def __str__(self) -> str:
         return self._df.as_str()
 
