@@ -49,6 +49,23 @@ pub struct ChunkedArray<T> {
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
+{
+    /// Create a new ChunkedArray from existing chunks.
+    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
+        let field = Arc::new(Field::new(name, T::get_data_type(), true));
+        let chunk_id = create_chunk_id(&chunks);
+        ChunkedArray {
+            field,
+            chunks,
+            chunk_id,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
     ChunkedArray<T>: ChunkOps,
 {
     /// Get the index of the chunk and the index of the value in that chunk
@@ -374,18 +391,6 @@ where
             self.field.data_type().clone(),
             self.field.is_nullable(),
         ))
-    }
-
-    /// Create a new ChunkedArray from existing chunks.
-    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
-        let field = Arc::new(Field::new(name, T::get_data_type(), true));
-        let chunk_id = create_chunk_id(&chunks);
-        ChunkedArray {
-            field,
-            chunks,
-            chunk_id,
-            phantom: PhantomData,
-        }
     }
 
     /// Create a new ChunkedArray from self, where the chunks are replaced.

@@ -88,5 +88,4 @@ def test_cast():
     assert a.cast_u32().dtype == "u32"
     assert a.cast_date64().dtype == "date64"
     assert a.cast_time64ns().dtype == "time64(ns)"
-    assert a.cast_i32().cast_date32().dtype == "date32"
-    # TODO: duration type that is castable? Maybe requires u64?
+    assert a.cast_date32().dtype == "date32"

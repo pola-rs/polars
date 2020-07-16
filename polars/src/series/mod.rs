@@ -352,7 +352,7 @@ impl Series {
     /// Cast to an some primitive type.
     pub fn cast<N>(&self) -> Result<Self>
     where
-        N: PolarsNumericType,
+        N: PolarsDataType,
     {
         let s = match self {
             Series::UInt32(arr) => pack_ca_to_series(arr.cast::<N>()?),
@@ -364,7 +364,8 @@ impl Series {
             Series::Date64(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Time64Ns(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::DurationNs(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            _ => return Err(PolarsError::DataTypeMisMatch),
+            Series::Bool(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Utf8(arr) => pack_ca_to_series(arr.cast::<N>()?),
         };
         Ok(s)
     }
@@ -410,7 +411,7 @@ impl Series {
     }
 }
 
-fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
+fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
     unsafe {
         match N::get_data_type() {
             ArrowDataType::UInt32 => Series::UInt32(mem::transmute(ca)),
@@ -426,6 +427,8 @@ fn pack_ca_to_series<N: ArrowPrimitiveType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Duration(datatypes::TimeUnit::Nanosecond) => {
                 Series::DurationNs(mem::transmute(ca))
             }
+            ArrowDataType::Boolean => Series::Bool(mem::transmute(ca)),
+            ArrowDataType::Utf8 => Series::Utf8(mem::transmute(ca)),
             _ => panic!("Not implemented: {:?}", N::get_data_type()),
         }
     }
