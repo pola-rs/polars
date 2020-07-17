@@ -100,6 +100,9 @@ where
 
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
+        if self.null_count() == 0 {
+            return BooleanChunked::fill("is_null", false, self.len());
+        }
         let chunks = self
             .chunks
             .iter()
@@ -688,6 +691,42 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 
     fn argsort(&self) -> Vec<usize> {
         argsort!(self)
+    }
+}
+
+/// Fill a ChunkedArray with one value.
+pub trait ChunkFull<T> {
+    /// Create a ChunkedArray with a single value.
+    fn full(name: &str, value: T, length: usize) -> Self
+    where
+        Self: std::marker::Sized;
+}
+
+impl<T> ChunkFull<T::Native> for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn full(name: &str, value: T::Native, length: usize) -> Self
+    where
+        T::Native: Copy,
+    {
+        let mut builder = PrimitiveChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_value(value).expect("could not append?")
+        }
+        builder.finish()
+    }
+}
+
+impl<'a> ChunkFull<&'a str> for Utf8Chunked {
+    fn full(name: &str, value: &'a str, length: usize) -> Self {
+        let mut builder = Utf8ChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_value(value).expect("could not append?")
+        }
+        builder.finish()
     }
 }
 
