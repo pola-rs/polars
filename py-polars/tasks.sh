@@ -23,4 +23,10 @@ function build-run-tests {
   pytest tests
 }
 
+function build-docker-base {
+  cd ..
+  docker build -f py-polars/Dockerfile_base -t ritchie46/py-polars-base .
+
+}
+
 "$@"

@@ -16,3 +16,7 @@ numpy = "0.10.0"
 [lib]
 name = "polars"
 crate-type = ["cdylib"]
+
+
+[package.metadata.maturin]
+requires-dist = ["numpy"]

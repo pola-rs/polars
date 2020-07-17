@@ -101,7 +101,7 @@ where
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
         if self.null_count() == 0 {
-            return BooleanChunked::fill("is_null", false, self.len());
+            return BooleanChunked::full("is_null", false, self.len());
         }
         let chunks = self
             .chunks

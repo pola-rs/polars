@@ -1,0 +1,15 @@
+FROM konstin2/maturin as build
+
+COPY . .
+
+RUN cd py-polars \
+&& rustup default nightly \
+&& echo we are in $(pwd) \
+&& mkdir wheels \
+&& maturin build --release -o wheels -i /opt/python/cp37-cp37m/bin/python
+
+FROM python:3.7-slim-buster
+
+COPY --from=build /io/py-polars/wheels /wheels
+
+RUN pip install /wheels/*
