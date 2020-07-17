@@ -21,7 +21,7 @@ impl Debug for Series {
                             write!(f, "\t{}\n", v).ok();
                         }
                         None => {
-                            write!(f, "\tnull").ok();
+                            write!(f, "\tnull\n").ok();
                         }
                     };
                 });

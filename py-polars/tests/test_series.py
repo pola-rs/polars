@@ -96,3 +96,7 @@ def test_to_python():
     b = a.to_list()
     assert isinstance(b, list)
     assert len(b) == 20
+
+    a = Series("a", [1, None, 2], nullable=True)
+    assert a.null_count() == 1
+    assert a.to_list() == [1, None, 2]

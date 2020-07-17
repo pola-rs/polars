@@ -17,6 +17,7 @@ impl PySeries {
     }
 }
 
+// Init with numpy arrays
 macro_rules! init_method {
     ($name:ident, $type:ty) => {
         #[pymethods]
@@ -44,10 +45,41 @@ init_method!(new_date64, i64);
 init_method!(new_duration_ns, i64);
 init_method!(new_time_ns, i64);
 
+// Init with lists that can contain Nones
+macro_rules! init_method_opt {
+    ($name:ident, $type:ty) => {
+        #[pymethods]
+        impl PySeries {
+            #[staticmethod]
+            pub fn $name(name: &str, val: Vec<Option<$type>>) -> PySeries {
+                PySeries {
+                    series: Series::new(name, &val),
+                }
+            }
+        }
+    };
+}
+
+init_method_opt!(new_opt_i32, i32);
+init_method_opt!(new_opt_i64, i64);
+init_method_opt!(new_opt_f32, f32);
+init_method_opt!(new_opt_f64, f64);
+init_method_opt!(new_opt_bool, bool);
+init_method_opt!(new_opt_u32, u32);
+init_method_opt!(new_opt_date32, i32);
+init_method_opt!(new_opt_date64, i64);
+init_method_opt!(new_opt_duration_ns, i64);
+init_method_opt!(new_opt_time_ns, i64);
+
 #[pymethods]
 impl PySeries {
     #[staticmethod]
     pub fn new_str(name: &str, val: Vec<&str>) -> Self {
+        PySeries::new(Series::new(name, &val))
+    }
+
+    #[staticmethod]
+    pub fn new_opt_str(name: &str, val: Vec<Option<&str>>) -> Self {
         PySeries::new(Series::new(name, &val))
     }
 

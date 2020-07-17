@@ -9,35 +9,64 @@ def wrap_s(s: PySeries) -> Series:
 
 
 class Series:
-    def __init__(self, name: str, values: np.array):
+    def __init__(
+        self,
+        name: str,
+        values: Union[np.array, List[Optional[Any]]],
+        nullable: bool = False,
+    ):
+        """
+
+        Parameters
+        ----------
+        name
+            Name of the series
+        values
+            Values of the series
+        nullable
+            If nullable. List[Optional[Any]] will remain lists where None values will be interpreted as nulls
+        """
         if isinstance(values, Series):
             values.rename(name)
             self._s = values._s
             return
-        if not isinstance(values, np.ndarray):
-            values = np.array(values)
 
         self._s: PySeries
+        # numpy path
+        if not isinstance(values, np.ndarray) and not nullable:
+            values = np.array(values)
 
-        dtype = values.dtype
-        if dtype == np.int64:
-            self._s = PySeries.new_i64(name, values)
-        elif dtype == np.int32:
-            self._s = PySeries.new_i32(name, values)
-        elif dtype == np.float32:
-            self._s = PySeries.new_f32(name, values)
-        elif dtype == np.float64:
-            self._s = PySeries.new_f64(name, values)
-        elif isinstance(values[0], str):
-            self._s = PySeries.new_str(name, values)
-        elif dtype == np.bool:
-            self._s = PySeries.new_bool(name, values)
-        elif dtype == np.uint32:
-            self._s = PySeries.new_u32(name, values)
-        elif dtype == np.uint64:
-            self._s = PySeries.new_u32(name, np.array(values, dtype=np.uint32))
+            dtype = values.dtype
+            if dtype == np.int64:
+                self._s = PySeries.new_i64(name, values)
+            elif dtype == np.int32:
+                self._s = PySeries.new_i32(name, values)
+            elif dtype == np.float32:
+                self._s = PySeries.new_f32(name, values)
+            elif dtype == np.float64:
+                self._s = PySeries.new_f64(name, values)
+            elif isinstance(values[0], str):
+                self._s = PySeries.new_str(name, values)
+            elif dtype == np.bool:
+                self._s = PySeries.new_bool(name, values)
+            elif dtype == np.uint32:
+                self._s = PySeries.new_u32(name, values)
+            elif dtype == np.uint64:
+                self._s = PySeries.new_u32(name, np.array(values, dtype=np.uint32))
+            else:
+                raise ValueError(f"dtype: {dtype} not known")
+
+        # list path
         else:
-            raise ValueError(f"dtype: {dtype} not known")
+            dtype = values[0]
+            if isinstance(dtype, int):
+                self._s = PySeries.new_opt_i64(name, values)
+            if isinstance(dtype, float):
+                self._s = PySeries.new_opt_f64(name, values)
+            if isinstance(dtype, str):
+                self._s = PySeries.new_opt_str(name, values)
+            if isinstance(dtype, bool):
+                self._s = PySeries.new_opt_bool(name, values)
 
     @staticmethod
     def from_pyseries(s: PySeries) -> Series:
