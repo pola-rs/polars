@@ -26,7 +26,20 @@ function build-run-tests {
 function build-docker-base {
   cd ..
   docker build -f py-polars/Dockerfile_base -t ritchie46/py-polars-base .
+}
 
+function build-and-push-base {
+  build-docker-base
+  docker push ritchie46/py-polars-base
+}
+
+function build-docker {
+  docker build -t ritchie46/py-polars .
+}
+
+function build-and-push {
+  build-docker
+  docker push ritchie46/py-polars
 }
 
 "$@"

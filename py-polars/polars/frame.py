@@ -10,10 +10,10 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
 
 
 class DataFrame:
-    def __init__(self, data: Dict[str, Sequence]):
+    def __init__(self, data: Dict[str, Sequence], nullable: bool = False):
         columns = []
         for k, v in data.items():
-            columns.append(Series(k, v).inner())
+            columns.append(Series(k, v, nullable=nullable).inner())
 
         self._df = PyDataFrame(columns)
 

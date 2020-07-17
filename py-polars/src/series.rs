@@ -415,6 +415,7 @@ impl_eq_num!(eq_i32, i32);
 impl_eq_num!(eq_i64, i64);
 impl_eq_num!(eq_f32, f32);
 impl_eq_num!(eq_f64, f64);
+impl_eq_num!(eq_str, &str);
 
 macro_rules! impl_neq_num {
     ($name:ident, $type:ty) => {
@@ -432,6 +433,7 @@ impl_neq_num!(neq_i32, i32);
 impl_neq_num!(neq_i64, i64);
 impl_neq_num!(neq_f32, f32);
 impl_neq_num!(neq_f64, f64);
+impl_neq_num!(neq_str, &str);
 
 macro_rules! impl_gt_num {
     ($name:ident, $type:ty) => {
@@ -449,6 +451,7 @@ impl_gt_num!(gt_i32, i32);
 impl_gt_num!(gt_i64, i64);
 impl_gt_num!(gt_f32, f32);
 impl_gt_num!(gt_f64, f64);
+impl_gt_num!(gt_str, &str);
 
 macro_rules! impl_gt_eq_num {
     ($name:ident, $type:ty) => {
@@ -466,6 +469,7 @@ impl_gt_eq_num!(gt_eq_i32, i32);
 impl_gt_eq_num!(gt_eq_i64, i64);
 impl_gt_eq_num!(gt_eq_f32, f32);
 impl_gt_eq_num!(gt_eq_f64, f64);
+impl_gt_eq_num!(gt_eq_str, &str);
 
 macro_rules! impl_lt_num {
     ($name:ident, $type:ty) => {
@@ -483,6 +487,7 @@ impl_lt_num!(lt_i32, i32);
 impl_lt_num!(lt_i64, i64);
 impl_lt_num!(lt_f32, f32);
 impl_lt_num!(lt_f64, f64);
+impl_lt_num!(lt_str, &str);
 
 macro_rules! impl_lt_eq_num {
     ($name:ident, $type:ty) => {
@@ -500,6 +505,7 @@ impl_lt_eq_num!(lt_eq_i32, i32);
 impl_lt_eq_num!(lt_eq_i64, i64);
 impl_lt_eq_num!(lt_eq_f32, f32);
 impl_lt_eq_num!(lt_eq_f64, f64);
+impl_lt_eq_num!(lt_eq_str, &str);
 
 pub(crate) fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
     // prevent destruction of ps

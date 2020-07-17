@@ -20,6 +20,9 @@ def test_equality():
     assert a.sum() == 3
     assert a.series_equal(b)
 
+    a = Series("name", ["ham", "foo", "bar"])
+    assert (a == "ham").to_list() == [True, False, False]
+
 
 def test_agg():
     a = create_series()

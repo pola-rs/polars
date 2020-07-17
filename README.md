@@ -18,6 +18,9 @@ DataFrame library that only supports core functionality.
 #### Joins
 ![](pandas_cmp/img/join_80_000.png)
 
+## Run the python bindings!
+`$ docker run --rm -p 8890:8890 ritchie46/py-polars` and open `http://localhost:8890` in your browser.
+
 ## Functionality
 
 ### Series
@@ -40,7 +43,7 @@ DataFrame library that only supports core functionality.
 - [x] concat (horizontal)
 - [x] read csv
 - [x] write csv
-- [ ] write json
+- [x] write json
 - [ ] read json
 - [ ] write parquet
 - [ ] read parquet

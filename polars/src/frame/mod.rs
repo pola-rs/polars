@@ -200,9 +200,14 @@ impl DataFrame {
     /// }
     /// ```
     pub fn hstack(&mut self, columns: &[DfSeries]) -> Result<()> {
-        columns
-            .iter()
-            .for_each(|column| self.columns.push(column.clone()));
+        let height = self.height();
+        for col in columns {
+            if col.len() != height {
+                return Err(PolarsError::LengthMismatch);
+            } else {
+                self.columns.push(col.clone());
+            }
+        }
         self.register_mutation()?;
         Ok(())
     }
