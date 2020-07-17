@@ -89,3 +89,10 @@ def test_cast():
     assert a.cast_date64().dtype == "date64"
     assert a.cast_time64ns().dtype == "time64(ns)"
     assert a.cast_date32().dtype == "date32"
+
+
+def test_to_python():
+    a = Series("a", range(20))
+    b = a.to_list()
+    assert isinstance(b, list)
+    assert len(b) == 20

@@ -484,7 +484,7 @@ where
     pub fn map_null_checks<'a, B, F>(
         &'a self,
         f: F,
-    ) -> Map<Box<dyn Iterator<Item = Option<T::Native>> + 'a>, F>
+    ) -> Map<Box<dyn ExactSizeIterator<Item = Option<T::Native>> + 'a>, F>
     where
         F: Fn(Option<T::Native>) -> B,
     {

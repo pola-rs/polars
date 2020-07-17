@@ -1,7 +1,7 @@
 from __future__ import annotations
 from .polars import PySeries
 import numpy as np
-from typing import Optional, List, Sequence, Union
+from typing import Optional, List, Sequence, Union, Any
 
 
 def wrap_s(s: PySeries) -> Series:
@@ -462,3 +462,6 @@ class Series:
 
     def cast_duration_ns(self):
         return wrap_s(self._s.cast_duration_ns())
+
+    def to_list(self) -> List[Optional[Any]]:
+        return self._s.to_list()

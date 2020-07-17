@@ -1,6 +1,7 @@
 use crate::error::PyPolarsEr;
 use numpy::PyArray1;
 use polars::prelude::*;
+use pyo3::types::PyList;
 use pyo3::{exceptions::RuntimeError, prelude::*};
 
 #[pyclass]
@@ -189,6 +190,26 @@ impl PySeries {
 
     pub fn len(&self) -> usize {
         self.series.len()
+    }
+
+    pub fn to_list(&self) -> PyObject {
+        let gil = pyo3::Python::acquire_gil();
+        let python = gil.python();
+
+        let pylist = match &self.series {
+            Series::UInt32(ca) => PyList::new(python, ca),
+            Series::Int32(ca) => PyList::new(python, ca),
+            Series::Int64(ca) => PyList::new(python, ca),
+            Series::Float32(ca) => PyList::new(python, ca),
+            Series::Float64(ca) => PyList::new(python, ca),
+            Series::Date32(ca) => PyList::new(python, ca),
+            Series::Date64(ca) => PyList::new(python, ca),
+            Series::Time64Ns(ca) => PyList::new(python, ca),
+            Series::DurationNs(ca) => PyList::new(python, ca),
+            Series::Bool(ca) => PyList::new(python, ca),
+            Series::Utf8(ca) => PyList::new(python, ca),
+        };
+        pylist.to_object(python)
     }
 }
 

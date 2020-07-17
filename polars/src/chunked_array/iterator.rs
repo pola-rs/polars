@@ -41,6 +41,8 @@ where
     }
 }
 
+impl<'a, T> ExactSizeIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
+
 /// Single chunk no null values
 pub struct NumIterSingleChunk<'a, T>
 where
@@ -64,6 +66,13 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+}
+
+impl<'a, T> ExactSizeIterator for NumIterSingleChunk<'a, T>
+where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
 }
 
 /// Many chunks with null checks
@@ -149,6 +158,7 @@ where
     }
 }
 
+impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
 /// Many chunks no null checks
 pub struct NumIterManyChunk<'a, T>
 where
@@ -215,12 +225,13 @@ where
     }
 }
 
+impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
 impl<'a, T> IntoIterator for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     type Item = Option<T::Native>;
-    type IntoIter = Box<dyn Iterator<Item = Option<T::Native>> + 'a>;
+    type IntoIter = Box<dyn ExactSizeIterator<Item = Option<T::Native>> + 'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         match self.cont_slice() {
@@ -325,6 +336,12 @@ impl<'a> Iterator for ChunkStringIter<'a> {
     }
 }
 
+impl<'a> ExactSizeIterator for ChunkStringIter<'a> {
+    fn len(&self) -> usize {
+        self.length
+    }
+}
+
 impl<'a> IntoIterator for &'a Utf8Chunked {
     type Item = &'a str;
     type IntoIter = ChunkStringIter<'a>;
@@ -398,6 +415,12 @@ impl<'a> Iterator for ChunkBoolIter<'a> {
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.length, Some(self.length))
+    }
+}
+
+impl<'a> ExactSizeIterator for ChunkBoolIter<'a> {
+    fn len(&self) -> usize {
+        self.length
     }
 }
 
@@ -487,6 +510,15 @@ where
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.length, Some(self.length))
+    }
+}
+
+impl<'a, T> ExactSizeIterator for ChunkNumIter<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn len(&self) -> usize {
+        self.length
     }
 }
 
