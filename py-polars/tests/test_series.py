@@ -40,7 +40,14 @@ def test_arithmetic():
     assert ((a + b) == [2, 4]).sum() == 2
     assert ((a - b) == [0, 0]).sum() == 2
     assert ((a + 1) == [2, 3]).sum() == 2
+    assert ((a - 1) == [0, 1]).sum() == 2
+    assert ((a / 1) == [1, 2]).sum() == 2
+    assert ((a * 2) == [2, 4]).sum() == 2
     assert ((1 + a) == [2, 3]).sum() == 2
+    assert ((1 - a) == [0, -1]).sum() == 2
+    assert ((1 * a) == [1, 2]).sum() == 2
+    # integer division
+    assert ((1 / a) == [1, 0]).sum() == 2
 
 
 def test_various():

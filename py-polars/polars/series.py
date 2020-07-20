@@ -273,6 +273,14 @@ class Series:
             return Series.from_pyseries(self._s.add_f32(other))
         if dtype == "f64":
             return Series.from_pyseries(self._s.add_f64(other))
+        if dtype == "date32":
+            return Series.from_pyseries(self._s.add_i32(other))
+        if dtype == "date64":
+            return Series.from_pyseries(self._s.add_i64(other))
+        if dtype == "time64(ns)":
+            return Series.from_pyseries(self._s.add_i64(other))
+        if dtype == "duration(ns)":
+            return Series.from_pyseries(self._s.add_i64(other))
         raise NotImplemented
 
     def __sub__(self, other) -> Series:
@@ -289,6 +297,14 @@ class Series:
             return Series.from_pyseries(self._s.sub_f32(other))
         if dtype == "f64":
             return Series.from_pyseries(self._s.sub_f64(other))
+        if dtype == "date32":
+            return Series.from_pyseries(self._s.sub_i32(other))
+        if dtype == "date64":
+            return Series.from_pyseries(self._s.sub_i64(other))
+        if dtype == "time64(ns)":
+            return Series.from_pyseries(self._s.sub_i64(other))
+        if dtype == "duration(ns)":
+            return Series.from_pyseries(self._s.sub_i64(other))
         raise NotImplemented
 
     def __truediv__(self, other) -> Series:
@@ -305,6 +321,14 @@ class Series:
             return Series.from_pyseries(self._s.div_f32(other))
         if dtype == "f64":
             return Series.from_pyseries(self._s.div_f64(other))
+        if dtype == "date32":
+            return Series.from_pyseries(self._s.div_i32(other))
+        if dtype == "date64":
+            return Series.from_pyseries(self._s.div_i64(other))
+        if dtype == "time64(ns)":
+            return Series.from_pyseries(self._s.div_i64(other))
+        if dtype == "duration(ns)":
+            return Series.from_pyseries(self._s.div_i64(other))
         raise NotImplemented
 
     def __mul__(self, other) -> Series:
@@ -321,6 +345,14 @@ class Series:
             return Series.from_pyseries(self._s.mul_f32(other))
         if dtype == "f64":
             return Series.from_pyseries(self._s.mul_f64(other))
+        if dtype == "date32":
+            return Series.from_pyseries(self._s.mul_i32(other))
+        if dtype == "date64":
+            return Series.from_pyseries(self._s.mul_i64(other))
+        if dtype == "time64(ns)":
+            return Series.from_pyseries(self._s.mul_i64(other))
+        if dtype == "duration(ns)":
+            return Series.from_pyseries(self._s.mul_i64(other))
         raise NotImplemented
 
     def __radd__(self, other):
@@ -337,11 +369,19 @@ class Series:
             return Series.from_pyseries(self._s.add_f32_rhs(other))
         if dtype == "f64":
             return Series.from_pyseries(self._s.add_f64_rhs(other))
+        if dtype == "date32":
+            return Series.from_pyseries(self._s.add_i32_rhs(other))
+        if dtype == "date64":
+            return Series.from_pyseries(self._s.add_i64_rhs(other))
+        if dtype == "time64(ns)":
+            return Series.from_pyseries(self._s.add_i64_rhs(other))
+        if dtype == "duration(ns)":
+            return Series.from_pyseries(self._s.add_i64_rhs(other))
         raise NotImplemented
 
     def __rsub__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.sub(other._s))
+            return Series.from_pyseries(other._s.sub(self._s))
         dtype = self.dtype
         if dtype == "u32":
             return Series.from_pyseries(self._s.sub_u32_rhs(other))
@@ -353,11 +393,19 @@ class Series:
             return Series.from_pyseries(self._s.sub_f32_rhs(other))
         if dtype == "f64":
             return Series.from_pyseries(self._s.sub_f64_rhs(other))
+        if dtype == "date32":
+            return Series.from_pyseries(self._s.sub_i32_rhs(other))
+        if dtype == "date64":
+            return Series.from_pyseries(self._s.sub_i64_rhs(other))
+        if dtype == "time64(ns)":
+            return Series.from_pyseries(self._s.sub_i64_rhs(other))
+        if dtype == "duration(ns)":
+            return Series.from_pyseries(self._s.sub_i64_rhs(other))
         raise NotImplemented
 
-    def __rdiv__(self, other):
+    def __rtruediv__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.div(other._s))
+            return Series.from_pyseries(other._s.div(self._s))
         dtype = self.dtype
         if dtype == "u32":
             return Series.from_pyseries(self._s.div_u32_rhs(other))
@@ -369,22 +417,38 @@ class Series:
             return Series.from_pyseries(self._s.div_f32_rhs(other))
         if dtype == "f64":
             return Series.from_pyseries(self._s.div_f64_rhs(other))
+        if dtype == "date32":
+            return Series.from_pyseries(self._s.div_i32_rhs(other))
+        if dtype == "date64":
+            return Series.from_pyseries(self._s.div_i64_rhs(other))
+        if dtype == "time64(ns)":
+            return Series.from_pyseries(self._s.div_i64_rhs(other))
+        if dtype == "duration(ns)":
+            return Series.from_pyseries(self._s.div_i64_rhs(other))
         raise NotImplemented
 
     def __rmul__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.div(other._s))
+            return Series.from_pyseries(self._s.mul(other._s))
         dtype = self.dtype
         if dtype == "u32":
-            return Series.from_pyseries(self._s.div_u32_rhs(other))
+            return Series.from_pyseries(self._s.mul_u32_rhs(other))
         if dtype == "i32":
-            return Series.from_pyseries(self._s.div_i32_rhs(other))
+            return Series.from_pyseries(self._s.mul_i32_rhs(other))
         if dtype == "i64":
-            return Series.from_pyseries(self._s.div_i64_rhs(other))
+            return Series.from_pyseries(self._s.mul_i64_rhs(other))
         if dtype == "f32":
-            return Series.from_pyseries(self._s.div_f32_rhs(other))
+            return Series.from_pyseries(self._s.mul_f32_rhs(other))
         if dtype == "f64":
-            return Series.from_pyseries(self._s.div_f64_rhs(other))
+            return Series.from_pyseries(self._s.mul_f64_rhs(other))
+        if dtype == "date32":
+            return Series.from_pyseries(self._s.mul_i32_rhs(other))
+        if dtype == "date64":
+            return Series.from_pyseries(self._s.mul_i64_rhs(other))
+        if dtype == "time64(ns)":
+            return Series.from_pyseries(self._s.mul_i64_rhs(other))
+        if dtype == "duration(ns)":
+            return Series.from_pyseries(self._s.mul_i64_rhs(other))
         raise NotImplemented
 
     def __getitem__(self, item):
