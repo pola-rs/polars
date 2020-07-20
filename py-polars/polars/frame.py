@@ -40,6 +40,12 @@ class DataFrame:
     def __repr__(self) -> str:
         return self.__str__()
 
+    def __getattr__(self, item) -> PySeries:
+        """
+        Access columns as attribute
+        """
+        return wrap_s(self._df.column(item))
+
     def __getitem__(self, item):
         # select rows and columns at once
         if isinstance(item, tuple):

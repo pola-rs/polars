@@ -26,6 +26,8 @@ def test_selection():
     assert df[[0, 1], "b"].shape == (2, 1)
     assert df[[2], ["a", "b"]].shape == (1, 2)
     assert df.select_idx(0).name == "a"
+    assert (df.a == df["a"]).sum() == 3
+    assert (df.c == df["a"]).sum() == 0
 
 
 def test_sort():

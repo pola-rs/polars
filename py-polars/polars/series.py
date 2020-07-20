@@ -452,8 +452,10 @@ class Series:
         raise NotImplemented
 
     def __getitem__(self, item):
+        # assume it is boolean mask
         if isinstance(item, Series):
             return Series.from_pyseries(self._s.filter(item._s))
+        # slice
         if type(item) == slice:
             start, stop, stride = item.indices(self.len())
             if stride != 1:
