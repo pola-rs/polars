@@ -1,5 +1,6 @@
 use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use crate::prelude::*;
+use crate::utils::Xob;
 use arrow::array::{Array, ArrayDataRef, BooleanArray, PrimitiveArray, StringArray};
 use arrow::datatypes::ArrowPrimitiveType;
 use std::iter::Copied;
@@ -575,8 +576,21 @@ where
         for opt_val in iter {
             builder.append_option(opt_val).expect("could not append");
         }
-
         builder.finish()
+    }
+}
+impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>
+where
+    T: ArrowPrimitiveType,
+{
+    fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for val in iter {
+            builder.append_value(val).expect("could not append");
+        }
+        Xob::new(builder.finish())
     }
 }
 

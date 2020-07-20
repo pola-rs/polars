@@ -1,4 +1,5 @@
 use std::mem;
+use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
 /// https://stackoverflow.com/questions/39638363/how-can-i-use-a-hashmap-with-f64-as-key-in-rust
@@ -32,4 +33,33 @@ macro_rules! exec_concurrent {
         })
         .expect("could not join threads or thread panicked")
     }};
+}
+
+/// Just a wrapper structure. Useful for certain impl specializations
+pub struct Xob<T> {
+    inner: T,
+}
+
+impl<T> Xob<T> {
+    pub fn new(inner: T) -> Self {
+        Xob { inner }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+}
+
+impl<T> Deref for Xob<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<T> DerefMut for Xob<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
 }

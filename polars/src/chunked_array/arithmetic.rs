@@ -1,5 +1,7 @@
 use crate::prelude::*;
+use crate::utils::Xob;
 use arrow::{array::ArrayRef, compute};
+use num::ToPrimitive;
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
 
@@ -207,6 +209,42 @@ where
     }
 }
 
+pub trait Pow {
+    fn pow_f32(&self, exp: f32) -> Float32Chunked;
+    fn pow_f64(&self, exp: f64) -> Float64Chunked;
+}
+
+macro_rules! power {
+    ($self:ident, $exp:ident, $to_primitive:ident, $return:ident) => {{
+        if let Ok(slice) = $self.cont_slice() {
+            slice
+                .iter()
+                .map(|&val| val.$to_primitive().unwrap().powf($exp))
+                .collect::<Xob<$return>>()
+                .into_inner()
+        } else {
+            $self
+                .into_iter()
+                .map(|val| val.map(|val| val.$to_primitive().unwrap().powf($exp)))
+                .collect()
+        }
+    }};
+}
+
+impl<T> Pow for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: ToPrimitive,
+{
+    fn pow_f32(&self, exp: f32) -> Float32Chunked {
+        power!(self, exp, to_f32, Float32Chunked)
+    }
+
+    fn pow_f64(&self, exp: f64) -> Float64Chunked {
+        power!(self, exp, to_f64, Float64Chunked)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
@@ -233,5 +271,12 @@ pub(crate) mod test {
         let _ = &a1 - &a1;
         let _ = &a1 / &a1;
         let _ = &a1 * &a1;
+    }
+
+    #[test]
+    fn test_power() {
+        let a = UInt32Chunked::new_from_slice("", &[1, 2, 3]);
+        let b: Float64Chunked = a.pow(2.);
+        println!("{:?}", b);
     }
 }

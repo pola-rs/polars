@@ -19,7 +19,7 @@ use std::sync::Arc;
 pub mod aggregate;
 pub mod apply;
 #[macro_use]
-mod arithmetic;
+pub mod arithmetic;
 pub mod builder;
 pub mod cast;
 pub(crate) mod chunkops;

@@ -2,6 +2,7 @@ pub use crate::{
     chunked_array::{
         aggregate::Agg,
         apply::Apply,
+        arithmetic::Pow,
         builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
         cast::ChunkCast,
         chunkops::ChunkOps,

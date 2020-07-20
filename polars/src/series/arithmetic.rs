@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use num::{Num, NumCast};
+use num::{Num, NumCast, ToPrimitive};
 use std::ops;
 
 impl Series {
@@ -396,6 +396,26 @@ where
             Series::Date64(ca) => op_num_lhs!(i64, ca, self, *),
             Series::Time64Ns(ca) => op_num_lhs!(i64, ca, self, *),
             Series::DurationNs(ca) => op_num_lhs!(i64, ca, self, *),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl Series {
+    fn pow<E: Num>(&self, exp: E) -> Series
+    where
+        E: ToPrimitive,
+    {
+        match self {
+            Series::UInt32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
+            Series::Int32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
+            Series::Int64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
+            Series::Float32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
+            Series::Float64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
+            Series::Date32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
+            Series::Date64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
+            Series::Time64Ns(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
+            Series::DurationNs(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
             _ => unimplemented!(),
         }
     }
