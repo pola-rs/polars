@@ -276,7 +276,7 @@ pub(crate) mod test {
     #[test]
     fn test_power() {
         let a = UInt32Chunked::new_from_slice("", &[1, 2, 3]);
-        let b: Float64Chunked = a.pow(2.);
+        let b = a.pow_f64(2.);
         println!("{:?}", b);
     }
 }

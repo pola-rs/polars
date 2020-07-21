@@ -6,6 +6,7 @@ use arrow::{
         ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, PrimitiveArray,
         PrimitiveBuilder, StringArray, StringBuilder, UInt32Array,
     },
+    buffer::Buffer,
     compute,
     datatypes::{ArrowPrimitiveType, DateUnit, Field, TimeUnit},
 };
@@ -60,6 +61,18 @@ where
             chunk_id,
             phantom: PhantomData,
         }
+    }
+
+    pub fn null_bits(&self) -> Vec<Option<Buffer>> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                arr.data().null_bitmap().as_ref().map(|bitmap| {
+                    let buff = bitmap.buffer_ref();
+                    buff.clone()
+                })
+            })
+            .collect()
     }
 }
 

@@ -1,6 +1,10 @@
 use crate::prelude::*;
-use arrow::array::{Array, PrimitiveBuilder, StringBuilder};
-use arrow::datatypes::{ArrowPrimitiveType, Field};
+use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
+use arrow::{
+    array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
+    buffer::Buffer,
+    util::bit_util,
+};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -109,4 +113,65 @@ where
     }
     let ca = builder.finish();
     ca
+}
+
+fn build_with_existing_null_bitmap<T>(
+    len: usize,
+    null_bit_buffer: Option<Buffer>,
+    null_count: usize,
+    values: Vec<T::Native>,
+) -> PrimitiveArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    // See:
+    // https://docs.rs/arrow/0.16.0/src/arrow/array/builder.rs.html#314
+    let mut builder = ArrayData::builder(T::get_data_type())
+        .len(len)
+        .add_buffer(Buffer::from(values.to_byte_slice()));
+
+    if null_count > 0 {
+        let null_bit_buffer =
+            null_bit_buffer.expect("implementation error. Should not be None if null_count > 0");
+        debug_assert!(null_count == len - bit_util::count_set_bits(null_bit_buffer.data()));
+        builder = builder
+            .null_count(null_count)
+            .null_bit_buffer(null_bit_buffer);
+    }
+
+    let data = builder.build();
+    PrimitiveArray::<T>::from(data)
+}
+
+fn get_bitmap<T: ArrowPrimitiveType>(arr: &PrimitiveArray<T>) -> (usize, Option<Buffer>) {
+    let data = arr.data();
+    (
+        data.null_count(),
+        data.null_bitmap().as_ref().map(|bitmap| {
+            let buff = bitmap.buffer_ref();
+            buff.clone()
+        }),
+    )
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::prelude::*;
+
+    #[test]
+    fn test_existing_null_bitmap() {
+        let mut builder = PrimitiveBuilder::<UInt32Type>::new(3);
+        for val in &[Some(1), None, Some(2)] {
+            builder.append_option(*val).unwrap();
+        }
+        let arr = builder.finish();
+        let (null_count, buf) = get_bitmap(&arr);
+
+        let new_arr =
+            build_with_existing_null_bitmap::<UInt32Type>(3, buf, null_count, vec![7, 8, 9]);
+        assert!(new_arr.is_valid(0));
+        assert!(new_arr.is_null(1));
+        assert!(new_arr.is_valid(2));
+    }
 }
