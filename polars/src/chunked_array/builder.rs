@@ -3,9 +3,11 @@ use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
     buffer::Buffer,
+    memory,
     util::bit_util,
 };
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -154,6 +156,56 @@ pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
     )
 }
 
+/// Returns the nearest number that is `>=` than `num` and is a multiple of 64
+#[inline]
+pub fn round_upto_multiple_of_64(num: usize) -> usize {
+    round_upto_power_of_2(num, 64)
+}
+
+/// Returns the nearest multiple of `factor` that is `>=` than `num`. Here `factor` must
+/// be a power of 2.
+fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
+    debug_assert!(factor > 0 && (factor & (factor - 1)) == 0);
+    (num + (factor - 1)) & !(factor - 1)
+}
+
+/// Take an owned Vec and create a zero copy PrimitiveArray
+pub fn vec_to_primitive_array<T: ArrowPrimitiveType>(values: Vec<T::Native>) -> PrimitiveArray<T> {
+    let vec_len = values.len();
+
+    let me = ManuallyDrop::new(values);
+    let ptr = me.as_ptr() as *const u8;
+    let len = me.len() * std::mem::size_of::<T::Native>();
+    let capacity = me.capacity() * std::mem::size_of::<T::Native>();
+
+    let buffer = unsafe { Buffer::from_raw_parts(ptr, len, capacity) };
+
+    let data = ArrayData::builder(T::get_data_type())
+        .len(vec_len)
+        .add_buffer(buffer)
+        .build();
+
+    PrimitiveArray::<T>::from(data)
+}
+
+pub trait AllignedAlloc<T> {
+    fn with_capacity_aligned(size: usize) -> Vec<T>;
+}
+
+impl<T> AllignedAlloc<T> for Vec<T> {
+    /// Create a new Vec where first bytes memory address has an alignment of 64 bytes, as described
+    /// by arrow spec.
+    /// Read more:
+    /// https://github.com/rust-ndarray/ndarray/issues/771
+    fn with_capacity_aligned(size: usize) -> Vec<T> {
+        // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
+        let t_size = std::mem::size_of::<T>();
+        let capacity = size * t_size;
+        let ptr = memory::allocate_aligned(capacity) as *mut T;
+        unsafe { Vec::from_raw_parts(ptr, 0, capacity) }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -172,5 +224,18 @@ mod test {
         assert!(new_arr.is_valid(0));
         assert!(new_arr.is_null(1));
         assert!(new_arr.is_valid(2));
+    }
+
+    #[test]
+    fn from_vec() {
+        // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
+        let mut v = Vec::with_capacity_aligned(2);
+        v.push(1);
+        v.push(2);
+
+        let ptr = v.as_ptr();
+        assert_eq!((ptr as usize) % 64, 0);
+        let a = vec_to_primitive_array::<Int32Type>(v);
+        assert_eq!(a.value_slice(0, 2), &[1, 2])
     }
 }

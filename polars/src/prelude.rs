@@ -3,7 +3,7 @@ pub use crate::{
         aggregate::Agg,
         apply::Apply,
         arithmetic::Pow,
-        builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
+        builder::{AllignedAlloc, PrimitiveChunkedBuilder, Utf8ChunkedBuilder},
         cast::ChunkCast,
         chunkops::ChunkOps,
         comparison::{CmpOps, NumComp},

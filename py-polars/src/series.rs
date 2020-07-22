@@ -552,22 +552,4 @@ mod test {
             vec![Some(6)]
         );
     }
-
-    #[test]
-    fn print() {
-        let ps = PySeries {
-            series: [1i32, 2, 3].iter().collect(),
-        };
-        let str = ps.__str__().unwrap();
-        println!("{}", str);
-        assert_eq!(
-            str,
-            "Series: i32
-[
-	1
-	2
-	3
-]"
-        )
-    }
 }
