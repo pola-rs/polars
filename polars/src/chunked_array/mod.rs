@@ -1,5 +1,7 @@
 //! The typed heart of every Series column.
-use crate::chunked_array::builder::{get_bitmap, PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
+use crate::chunked_array::builder::{
+    build_with_existing_null_bitmap, get_bitmap, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
+};
 use crate::prelude::*;
 use arrow::{
     array::{
@@ -64,7 +66,10 @@ where
     }
 
     pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
-        self.chunks.iter().map(|arr| get_bitmap(arr)).collect()
+        self.chunks
+            .iter()
+            .map(|arr| get_bitmap(arr.as_ref()))
+            .collect()
     }
 }
 
@@ -412,7 +417,7 @@ where
         }
     }
 
-    /// Recompute the chunk_id / chunk_lenghts.
+    /// Recompute the chunk_id / chunk_lengths.
     fn set_chunk_id(&mut self) {
         self.chunk_id = create_chunk_id(&self.chunks)
     }
@@ -435,6 +440,23 @@ where
             .iter()
             .for_each(|&opt| builder.append_option(opt).expect("append"));
         builder.finish()
+    }
+
+    /// Nullify values in slice with an existing null bitmap
+    pub fn new_with_null_bitmap(
+        name: &str,
+        v: &[T::Native],
+        buffer: Option<Buffer>,
+        null_count: usize,
+    ) -> Self {
+        let len = v.len();
+        let arr = Arc::new(build_with_existing_null_bitmap::<T>(buffer, null_count, v));
+        ChunkedArray {
+            field: Arc::new(Field::new(name, T::get_data_type(), true)),
+            chunks: vec![arr],
+            chunk_id: vec![len],
+            phantom: PhantomData,
+        }
     }
 }
 

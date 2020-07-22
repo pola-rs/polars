@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
-    array::{Array, ArrayData, ArrayRef, PrimitiveArray, PrimitiveBuilder, StringBuilder},
+    array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
     buffer::Buffer,
     util::bit_util,
 };
@@ -115,8 +115,7 @@ where
     ca
 }
 
-fn build_with_existing_null_bitmap<T>(
-    len: usize,
+pub fn build_with_existing_null_bitmap<T>(
     null_bit_buffer: Option<Buffer>,
     null_count: usize,
     values: &[T::Native],
@@ -124,6 +123,7 @@ fn build_with_existing_null_bitmap<T>(
 where
     T: ArrowPrimitiveType,
 {
+    let len = values.len();
     // See:
     // https://docs.rs/arrow/0.16.0/src/arrow/array/builder.rs.html#314
     let mut builder = ArrayData::builder(T::get_data_type())
@@ -143,7 +143,7 @@ where
     PrimitiveArray::<T>::from(data)
 }
 
-pub fn get_bitmap(arr: &ArrayRef) -> (usize, Option<Buffer>) {
+pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
     let data = arr.data();
     (
         data.null_count(),
@@ -168,8 +168,7 @@ mod test {
         let arr = builder.finish();
         let (null_count, buf) = get_bitmap(&arr);
 
-        let new_arr =
-            build_with_existing_null_bitmap::<UInt32Type>(3, buf, null_count, vec![7, 8, 9]);
+        let new_arr = build_with_existing_null_bitmap::<UInt32Type>(buf, null_count, &[7, 8, 9]);
         assert!(new_arr.is_valid(0));
         assert!(new_arr.is_null(1));
         assert!(new_arr.is_valid(2));
