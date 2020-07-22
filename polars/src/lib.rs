@@ -1,7 +1,5 @@
 //! # Polars DataFrames in Rust
 //!
-//! # WIP
-//!
 //! Read more in the [DataFrame](frame/struct.DataFrame.html) and [Series](series/index.html)
 //! modules.
 //!

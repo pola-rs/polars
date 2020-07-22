@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
-    array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
+    array::{Array, ArrayData, ArrayRef, PrimitiveArray, PrimitiveBuilder, StringBuilder},
     buffer::Buffer,
     util::bit_util,
 };
@@ -119,7 +119,7 @@ fn build_with_existing_null_bitmap<T>(
     len: usize,
     null_bit_buffer: Option<Buffer>,
     null_count: usize,
-    values: Vec<T::Native>,
+    values: &[T::Native],
 ) -> PrimitiveArray<T>
 where
     T: ArrowPrimitiveType,
@@ -143,7 +143,7 @@ where
     PrimitiveArray::<T>::from(data)
 }
 
-fn get_bitmap<T: ArrowPrimitiveType>(arr: &PrimitiveArray<T>) -> (usize, Option<Buffer>) {
+pub fn get_bitmap(arr: &ArrayRef) -> (usize, Option<Buffer>) {
     let data = arr.data();
     (
         data.null_count(),

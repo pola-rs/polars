@@ -75,7 +75,7 @@
 
 pub use crate::prelude::CmpOps;
 use crate::prelude::*;
-use arrow::array::ArrayRef;
+use arrow::{array::ArrayRef, buffer::Buffer};
 use std::mem;
 
 pub(crate) mod aggregate;
@@ -408,6 +408,10 @@ impl Series {
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
         apply_method_all_series!(self, is_null,)
+    }
+
+    pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+        apply_method_all_series!(self, null_bits,)
     }
 }
 

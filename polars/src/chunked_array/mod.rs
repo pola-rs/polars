@@ -1,5 +1,5 @@
 //! The typed heart of every Series column.
-use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
+use crate::chunked_array::builder::{get_bitmap, PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use crate::prelude::*;
 use arrow::{
     array::{
@@ -63,16 +63,8 @@ where
         }
     }
 
-    pub fn null_bits(&self) -> Vec<Option<Buffer>> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                arr.data().null_bitmap().as_ref().map(|bitmap| {
-                    let buff = bitmap.buffer_ref();
-                    buff.clone()
-                })
-            })
-            .collect()
+    pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+        self.chunks.iter().map(|arr| get_bitmap(arr)).collect()
     }
 }
 
