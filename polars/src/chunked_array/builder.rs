@@ -6,6 +6,7 @@ use arrow::{
     memory,
     util::bit_util,
 };
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
@@ -188,11 +189,11 @@ pub fn vec_to_primitive_array<T: ArrowPrimitiveType>(values: Vec<T::Native>) -> 
     PrimitiveArray::<T>::from(data)
 }
 
-pub trait AllignedAlloc<T> {
+pub trait AlignedAlloc<T> {
     fn with_capacity_aligned(size: usize) -> Vec<T>;
 }
 
-impl<T> AllignedAlloc<T> for Vec<T> {
+impl<T> AlignedAlloc<T> for Vec<T> {
     /// Create a new Vec where first bytes memory address has an alignment of 64 bytes, as described
     /// by arrow spec.
     /// Read more:
@@ -203,6 +204,26 @@ impl<T> AllignedAlloc<T> for Vec<T> {
         let capacity = size * t_size;
         let ptr = memory::allocate_aligned(capacity) as *mut T;
         unsafe { Vec::from_raw_parts(ptr, 0, capacity) }
+    }
+}
+
+pub struct AlignedVec<T>(pub Vec<T>);
+
+impl<T> FromIterator<T> for AlignedVec<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut iter = iter.into_iter();
+        let sh = iter.size_hint();
+        let size = sh.1.unwrap_or(sh.0);
+
+        let mut inner = Vec::with_capacity_aligned(size);
+
+        while let Some(v) = iter.next() {
+            inner.push(v)
+        }
+
+        // Iterator size hint wasn't correct and reallocation has occurred
+        assert!(inner.len() <= size);
+        AlignedVec(inner)
     }
 }
 

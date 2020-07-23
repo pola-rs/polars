@@ -676,7 +676,8 @@ where
                 (None, None) => Ordering::Equal,
             })
             .map(|(idx, _v)| idx)
-            .collect()
+            .collect::<AlignedVec<usize>>()
+            .0
     }
 }
 
@@ -687,7 +688,8 @@ macro_rules! argsort {
             .enumerate()
             .sorted_by(|(_idx_a, a), (_idx_b, b)| a.cmp(b))
             .map(|(idx, _v)| idx)
-            .collect()
+            .collect::<AlignedVec<usize>>()
+            .0
     }};
 }
 
