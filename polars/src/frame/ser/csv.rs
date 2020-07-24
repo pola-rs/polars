@@ -1,6 +1,6 @@
+use crate::frame::ser::finish_reader;
 use crate::prelude::*;
 pub use arrow::csv::{ReaderBuilder, WriterBuilder};
-use arrow::datatypes::Schema;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -93,6 +93,32 @@ where
     rechunk: bool,
 }
 
+impl<R> SerReader<R> for CsvReader<R>
+where
+    R: Read + Seek,
+{
+    /// Create a new CsvReader from a file/ stream
+    fn new(reader: R) -> Self {
+        CsvReader {
+            reader,
+            reader_builder: ReaderBuilder::new(),
+            rechunk: true,
+        }
+    }
+
+    /// Rechunk to one contiguous chunk of memory after all data is read
+    fn set_rechunk(mut self, rechunk: bool) -> Self {
+        self.rechunk = rechunk;
+        self
+    }
+
+    /// Read the file and create the DataFrame.
+    fn finish(self) -> Result<DataFrame> {
+        let rechunk = self.rechunk;
+        finish_reader(self.reader_builder.build(self.reader)?, rechunk)
+    }
+}
+
 impl<R> CsvReader<R>
 where
     R: Read + Seek,
@@ -114,21 +140,6 @@ where
     ///             .finish()
     /// }
     /// ```
-
-    /// Create a new CsvReader from a file/ stream
-    pub fn new(reader: R) -> Self {
-        CsvReader {
-            reader,
-            reader_builder: ReaderBuilder::new(),
-            rechunk: true,
-        }
-    }
-
-    /// Rechunk to one contiguous chunk of memory after all data is read
-    pub fn set_rechunk(mut self, rechunk: bool) -> Self {
-        self.rechunk = rechunk;
-        self
-    }
 
     /// Set the CSV file's schema
     pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
@@ -165,81 +176,12 @@ where
         self.reader_builder = self.reader_builder.with_projection(projection);
         self
     }
-
-    /// Read the file and create the DataFrame.
-    pub fn finish(self) -> Result<DataFrame> {
-        let mut csv_reader = self.reader_builder.build(self.reader)?;
-        let mut columns = csv_reader
-            .schema()
-            .fields()
-            .iter()
-            .map(|field| match field.data_type() {
-                ArrowDataType::UInt32 => {
-                    Series::UInt32(UInt32Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Int32 => {
-                    Series::Int32(Int32Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Int64 => {
-                    Series::Int64(Int64Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Float32 => {
-                    Series::Float32(Float32Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Float64 => {
-                    Series::Float64(Float64Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Utf8 => {
-                    Series::Utf8(Utf8Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Boolean => {
-                    Series::Bool(BooleanChunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Date32(DateUnit::Millisecond) => {
-                    Series::Date32(Date32Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Date64(DateUnit::Millisecond) => {
-                    Series::Date64(Date64Chunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                    Series::DurationNs(DurationNsChunked::new_from_chunks(field.name(), vec![]))
-                }
-                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                    Series::Time64Ns(Time64NsChunked::new_from_chunks(field.name(), vec![]))
-                }
-                _ => unimplemented!(),
-            })
-            .collect::<Vec<_>>();
-
-        while let Some(batch) = csv_reader.next()? {
-            batch
-                .columns()
-                .into_iter()
-                .zip(&mut columns)
-                .map(|(arr, ser)| ser.append_array(arr.clone()))
-                .collect::<Result<Vec<_>>>()?;
-        }
-
-        if self.rechunk {
-            columns = columns
-                .into_iter()
-                .map(|s| {
-                    let s = s.rechunk(None)?;
-                    Ok(s)
-                })
-                .collect::<Result<Vec<_>>>()?;
-        }
-
-        Ok(DataFrame {
-            schema: csv_reader.schema(),
-            columns,
-        })
-    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use std::io::Cursor;
 
     #[test]
     fn write_csv() {
@@ -253,5 +195,31 @@ mod test {
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
         assert_eq!("0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);
+    }
+
+    #[test]
+    fn read_csv() {
+        let s = r#"
+"sepal.length","sepal.width","petal.length","petal.width","variety"
+5.1,3.5,1.4,.2,"Setosa"
+4.9,3,1.4,.2,"Setosa"
+4.7,3.2,1.3,.2,"Setosa"
+4.6,3.1,1.5,.2,"Setosa"
+5,3.6,1.4,.2,"Setosa"
+5.4,3.9,1.7,.4,"Setosa"
+4.6,3.4,1.4,.3,"Setosa"
+"#;
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file)
+            .infer_schema(Some(100))
+            .has_header(true)
+            .with_batch_size(100)
+            .finish()
+            .unwrap();
+
+        assert_eq!("sepal.length", df.schema.fields()[0].name());
+        assert_eq!(1, df.f_column("sepal.length").chunks().len());
+        println!("{:?}", df)
     }
 }

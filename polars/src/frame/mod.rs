@@ -8,10 +8,10 @@ use rayon::prelude::*;
 use std::mem;
 use std::sync::Arc;
 
-pub mod csv;
 pub mod group_by;
 pub mod hash_join;
 pub mod select;
+pub mod ser;
 
 type DfSchema = Arc<Schema>;
 type DfSeries = Series;
@@ -551,7 +551,6 @@ impl DataFrame {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use std::io::Cursor;
 
     fn create_frame() -> DataFrame {
         let s0 = Series::new("days", [0, 1, 2].as_ref());
@@ -571,32 +570,6 @@ mod test {
         println!("{}", df.f_column("days"));
         println!("{:?}", df);
         println!("{:?}", df.filter(&df.f_column("days").eq(0)))
-    }
-
-    #[test]
-    fn read_csv() {
-        let s = r#"
-"sepal.length","sepal.width","petal.length","petal.width","variety"
-5.1,3.5,1.4,.2,"Setosa"
-4.9,3,1.4,.2,"Setosa"
-4.7,3.2,1.3,.2,"Setosa"
-4.6,3.1,1.5,.2,"Setosa"
-5,3.6,1.4,.2,"Setosa"
-5.4,3.9,1.7,.4,"Setosa"
-4.6,3.4,1.4,.3,"Setosa"
-"#;
-
-        let file = Cursor::new(s);
-        let df = CsvReader::new(file)
-            .infer_schema(Some(100))
-            .has_header(true)
-            .with_batch_size(100)
-            .finish()
-            .unwrap();
-
-        assert_eq!("sepal.length", df.schema.fields()[0].name());
-        assert_eq!(1, df.f_column("sepal.length").chunks().len());
-        println!("{:?}", df)
     }
 
     #[test]

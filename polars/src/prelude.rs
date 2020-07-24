@@ -15,13 +15,17 @@ pub use crate::{
     datatypes::*,
     error::{PolarsError, Result},
     frame::{
-        csv::{CsvReader, CsvWriter},
+        ser::{
+            csv::{CsvReader, CsvWriter},
+            json::JsonReader,
+            SerReader,
+        },
         DataFrame,
     },
     series::{arithmetic::LhsNumOps, NamedFrom, Series},
     testing::*,
 };
-pub use arrow::datatypes::{ArrowPrimitiveType, Field};
+pub use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
 
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {

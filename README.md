@@ -44,7 +44,7 @@ DataFrame library that only supports core functionality.
 - [x] read csv
 - [x] write csv
 - [x] write json
-- [ ] read json
+- [x] read json
 - [ ] write parquet
 - [ ] read parquet
 - [x] sorting
