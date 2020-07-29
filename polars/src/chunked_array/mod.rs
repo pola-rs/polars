@@ -791,6 +791,25 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     }
 }
 
+impl From<Utf8Chunked> for Vec<String> {
+    fn from(ca: Utf8Chunked) -> Self {
+        ca.into_iter().map(|s| s.to_string()).collect()
+    }
+}
+
+impl<T> From<ChunkedArray<T>> for Vec<Option<T::Native>>
+where
+    T: ArrowPrimitiveType,
+    ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
+    ChunkedArray<T>: ChunkOps,
+{
+    fn from(ca: ChunkedArray<T>) -> Self {
+        let mut vec = Vec::with_capacity_aligned(ca.len());
+        ca.into_iter().for_each(|opt| vec.push(opt));
+        vec
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
