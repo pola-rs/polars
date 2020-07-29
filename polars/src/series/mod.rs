@@ -72,6 +72,25 @@
 //!                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
 //!                     .collect();
 //! ```
+//!
+//! ## Creation
+//! Series can be create from different data structures. Below we'll show a few ways we can create
+//! a Series object.
+//!
+//! ```
+//! # use polars::prelude::*;
+//! // Series van be created from Vec's, slices and arrays
+//! Series::new("boolean series", &vec![true, false, true]);
+//! Series::new("int series", &[1, 2, 3]);
+//! // And can be nullable
+//! Series::new("got nulls", &[Some(1), None, Some(2)]);
+//!
+//! // Series can also be collected from iterators
+//! let from_iter: Series = (0..10)
+//!     .into_iter()
+//!     .collect();
+//!
+//! ```
 
 pub use crate::prelude::CmpOps;
 use crate::prelude::*;
@@ -438,53 +457,46 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
     }
 }
 
-pub trait NamedFrom<T> {
+pub trait NamedFrom<T, Phantom: ?Sized> {
     /// Initialize by name and values.
     fn new(name: &str, _: T) -> Self;
 }
 
 macro_rules! impl_named_from {
     ($type:ty, $series_var:ident, $method:ident) => {
-        impl NamedFrom<$type> for Series {
-            fn new(name: &str, v: $type) -> Self {
-                Series::$series_var(ChunkedArray::$method(name, v))
+        impl<T: AsRef<$type>> NamedFrom<T, $type> for Series {
+            fn new(name: &str, v: T) -> Self {
+                Series::$series_var(ChunkedArray::$method(name, v.as_ref()))
             }
         }
     };
 }
 
-impl_named_from!(&[&str], Utf8, new_utf8_from_slice);
-impl_named_from!(&Vec<&str>, Utf8, new_utf8_from_slice);
-impl_named_from!(&[String], Utf8, new_utf8_from_slice);
-impl_named_from!(&Vec<String>, Utf8, new_utf8_from_slice);
-impl_named_from!(&[bool], Bool, new_from_slice);
-impl_named_from!(&Vec<bool>, Bool, new_from_slice);
-impl_named_from!(&[u32], UInt32, new_from_slice);
-impl_named_from!(&Vec<u32>, UInt32, new_from_slice);
-impl_named_from!(&[i32], Int32, new_from_slice);
-impl_named_from!(&Vec<i32>, Int32, new_from_slice);
-impl_named_from!(&[i64], Int64, new_from_slice);
-impl_named_from!(&Vec<i64>, Int64, new_from_slice);
-impl_named_from!(&[f32], Float32, new_from_slice);
-impl_named_from!(&Vec<f32>, Float32, new_from_slice);
-impl_named_from!(&[f64], Float64, new_from_slice);
-impl_named_from!(&Vec<f64>, Float64, new_from_slice);
-impl_named_from!(&[Option<String>], Utf8, new_utf8_from_opt_slice);
-impl_named_from!(&Vec<Option<String>>, Utf8, new_utf8_from_opt_slice);
-impl_named_from!(&Vec<Option<&str>>, Utf8, new_utf8_from_opt_slice);
-impl_named_from!(&[Option<&str>], Utf8, new_utf8_from_opt_slice);
-impl_named_from!(&[Option<bool>], Bool, new_from_opt_slice);
-impl_named_from!(&Vec<Option<bool>>, Bool, new_from_opt_slice);
-impl_named_from!(&[Option<u32>], UInt32, new_from_opt_slice);
-impl_named_from!(&Vec<Option<u32>>, UInt32, new_from_opt_slice);
-impl_named_from!(&[Option<i32>], Int32, new_from_opt_slice);
-impl_named_from!(&Vec<Option<i32>>, Int32, new_from_opt_slice);
-impl_named_from!(&[Option<i64>], Int64, new_from_opt_slice);
-impl_named_from!(&Vec<Option<i64>>, Int64, new_from_opt_slice);
-impl_named_from!(&[Option<f32>], Float32, new_from_opt_slice);
-impl_named_from!(&Vec<Option<f32>>, Float32, new_from_opt_slice);
-impl_named_from!(&[Option<f64>], Float64, new_from_opt_slice);
-impl_named_from!(&Vec<Option<f64>>, Float64, new_from_opt_slice);
+impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Series::Utf8(ChunkedArray::new_utf8_from_slice(name, v.as_ref()))
+    }
+}
+impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Series::Utf8(ChunkedArray::new_utf8_from_opt_slice(name, v.as_ref()))
+    }
+}
+
+impl_named_from!([String], Utf8, new_utf8_from_slice);
+impl_named_from!([bool], Bool, new_from_slice);
+impl_named_from!([u32], UInt32, new_from_slice);
+impl_named_from!([i32], Int32, new_from_slice);
+impl_named_from!([i64], Int64, new_from_slice);
+impl_named_from!([f32], Float32, new_from_slice);
+impl_named_from!([f64], Float64, new_from_slice);
+impl_named_from!([Option<String>], Utf8, new_utf8_from_opt_slice);
+impl_named_from!([Option<bool>], Bool, new_from_opt_slice);
+impl_named_from!([Option<u32>], UInt32, new_from_opt_slice);
+impl_named_from!([Option<i32>], Int32, new_from_opt_slice);
+impl_named_from!([Option<i64>], Int64, new_from_opt_slice);
+impl_named_from!([Option<f32>], Float32, new_from_opt_slice);
+impl_named_from!([Option<f64>], Float64, new_from_opt_slice);
 
 macro_rules! impl_as_ref_ca {
     ($type:ident, $series_var:ident) => {
@@ -550,7 +562,7 @@ mod test {
 
     #[test]
     fn new_series() {
-        Series::new("", &vec![true, false, true]);
-        Series::new("", &vec![1, 2, 3]);
+        Series::new("boolean series", &vec![true, false, true]);
+        Series::new("int series", &[1, 2, 3]);
     }
 }
