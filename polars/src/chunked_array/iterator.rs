@@ -618,6 +618,18 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
     }
 }
 
+impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = &'a &'a str>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for val in iter {
+            builder.append_value(val).expect("could not append");
+        }
+        builder.finish()
+    }
+}
+
 impl FromIterator<String> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
         let iter = iter.into_iter();

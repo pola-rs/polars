@@ -638,11 +638,20 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
 }
 
 pub trait ChunkSort<T> {
-    fn sort(&self) -> ChunkedArray<T>;
+    fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 
-    fn sort_in_place(&mut self);
+    fn sort_in_place(&mut self, reverse: bool);
 
-    fn argsort(&self) -> Vec<usize>;
+    fn argsort(&self, reverse: bool) -> Vec<usize>;
+}
+
+fn sort_partial<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+    match (a, b) {
+        (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
 }
 
 impl<T> ChunkSort<T> for ChunkedArray<T>
@@ -650,76 +659,99 @@ where
     T: PolarsNumericType,
     T::Native: std::cmp::PartialOrd,
 {
-    fn sort(&self) -> ChunkedArray<T> {
-        self.into_iter()
-            .sorted_by(|a, b| match (a, b) {
-                (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
-                (None, Some(_)) => Ordering::Less,
-                (Some(_), None) => Ordering::Greater,
-                (None, None) => Ordering::Equal,
-            })
-            .collect()
+    fn sort(&self, reverse: bool) -> ChunkedArray<T> {
+        if reverse {
+            self.into_iter()
+                .sorted_by(|a, b| sort_partial(b, a))
+                .collect()
+        } else {
+            self.into_iter()
+                .sorted_by(|a, b| sort_partial(a, b))
+                .collect()
+        }
     }
 
-    fn sort_in_place(&mut self) {
-        let sorted = self.sort();
+    fn sort_in_place(&mut self, reverse: bool) {
+        let sorted = self.sort(reverse);
         self.chunks = sorted.chunks;
     }
 
-    fn argsort(&self) -> Vec<usize> {
-        self.into_iter()
-            .enumerate()
-            .sorted_by(|(_idx_a, a), (_idx_b, b)| match (a, b) {
-                (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
-                (None, Some(_)) => Ordering::Less,
-                (Some(_), None) => Ordering::Greater,
-                (None, None) => Ordering::Equal,
-            })
-            .map(|(idx, _v)| idx)
-            .collect::<AlignedVec<usize>>()
-            .0
+    fn argsort(&self, reverse: bool) -> Vec<usize> {
+        if reverse {
+            self.into_iter()
+                .enumerate()
+                .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(b, a))
+                .map(|(idx, _v)| idx)
+                .collect::<AlignedVec<usize>>()
+                .0
+        } else {
+            self.into_iter()
+                .enumerate()
+                .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(a, b))
+                .map(|(idx, _v)| idx)
+                .collect::<AlignedVec<usize>>()
+                .0
+        }
     }
 }
 
 macro_rules! argsort {
-    ($self:ident) => {{
+    ($self:ident, $closure:expr) => {{
         $self
             .into_iter()
             .enumerate()
-            .sorted_by(|(_idx_a, a), (_idx_b, b)| a.cmp(b))
+            .sorted_by($closure)
             .map(|(idx, _v)| idx)
             .collect::<AlignedVec<usize>>()
             .0
     }};
 }
 
+macro_rules! sort {
+    ($self:ident, $reverse:ident) => {{
+        if $reverse {
+            $self.into_iter().sorted_by(|a, b| b.cmp(a)).collect()
+        } else {
+            $self.into_iter().sorted_by(|a, b| a.cmp(b)).collect()
+        }
+    }};
+}
+
 impl ChunkSort<Utf8Type> for Utf8Chunked {
-    fn sort(&self) -> Utf8Chunked {
-        self.into_iter().sorted_by(|a, b| a.cmp(b)).collect()
+    fn sort(&self, reverse: bool) -> Utf8Chunked {
+        sort!(self, reverse)
     }
 
-    fn sort_in_place(&mut self) {
-        let sorted = self.sort();
+    fn sort_in_place(&mut self, reverse: bool) {
+        let sorted = self.sort(reverse);
         self.chunks = sorted.chunks;
     }
 
-    fn argsort(&self) -> Vec<usize> {
-        argsort!(self)
+    fn argsort(&self, reverse: bool) -> Vec<usize> {
+        if reverse {
+            argsort!(self, |(_idx_a, a), (_idx_b, b)| b.cmp(a))
+        } else {
+            argsort!(self, |(_idx_a, a), (_idx_b, b)| a.cmp(b))
+        }
     }
 }
 
 impl ChunkSort<BooleanType> for BooleanChunked {
-    fn sort(&self) -> BooleanChunked {
-        self.into_iter().sorted_by(|a, b| a.cmp(b)).collect()
+    fn sort(&self, reverse: bool) -> BooleanChunked {
+        sort!(self, reverse)
     }
 
-    fn sort_in_place(&mut self) {
-        let sorted = self.sort();
+    fn sort_in_place(&mut self, reverse: bool) {
+        let sorted = self.sort(reverse);
         self.chunks = sorted.chunks;
     }
 
-    fn argsort(&self) -> Vec<usize> {
-        argsort!(self)
+    fn argsort(&self, reverse: bool) -> Vec<usize> {
+        if reverse {
+            argsort!(self, |(_idx_a, a), (_idx_b, b)| b.cmp(a))
+        } else {
+            argsort!(self, |(_idx_a, a), (_idx_b, b)| a.cmp(b))
+        }
     }
 }
 
@@ -771,13 +803,13 @@ pub(crate) mod test {
     fn test_sort() {
         let a = Int32Chunked::new_from_slice("a", &[1, 9, 3, 2]);
         let b = a
-            .sort()
+            .sort(false)
             .into_iter()
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
         let a = Utf8Chunked::new_utf8_from_slice("a", &["b", "a", "c"]);
-        let a = a.sort();
+        let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, ["a", "b", "c"]);
     }
@@ -874,5 +906,20 @@ pub(crate) mod test {
         assert_slice_equal(&first.slice(3, 2).unwrap(), &[3, 4]);
         assert_slice_equal(&first.slice(3, 3).unwrap(), &[3, 4, 5]);
         assert!(first.slice(3, 4).is_err());
+    }
+
+    #[test]
+    fn sorting() {
+        let s = UInt32Chunked::new_from_slice("", &[9, 2, 4]);
+        let sorted = s.sort(false);
+        assert_slice_equal(&sorted, &[2, 4, 9]);
+        let sorted = s.sort(true);
+        assert_slice_equal(&sorted, &[9, 4, 2]);
+
+        let s: Utf8Chunked = ["b", "a", "z"].iter().collect();
+        let sorted = s.sort(false);
+        assert_eq!(sorted.into_iter().collect::<Vec<_>>(), &["a", "b", "z"]);
+        let sorted = s.sort(true);
+        assert_eq!(sorted.into_iter().collect::<Vec<_>>(), &["z", "b", "a"]);
     }
 }

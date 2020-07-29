@@ -377,17 +377,17 @@ impl Series {
     }
 
     /// Sort in place.
-    pub fn sort_in_place(&mut self) {
-        apply_method_all_series!(self, sort_in_place,);
+    pub fn sort_in_place(&mut self, reverse: bool) {
+        apply_method_all_series!(self, sort_in_place, reverse);
     }
 
-    pub fn sort(&self) -> Self {
-        apply_method_and_return!(self, sort, [],)
+    pub fn sort(&self, reverse: bool) -> Self {
+        apply_method_and_return!(self, sort, [reverse],)
     }
 
     /// Retrieve the indexes needed for a sort.
-    pub fn argsort(&self) -> Vec<usize> {
-        apply_method_all_series!(self, argsort,)
+    pub fn argsort(&self, reverse: bool) -> Vec<usize> {
+        apply_method_all_series!(self, argsort, reverse)
     }
 
     /// Count the null values.

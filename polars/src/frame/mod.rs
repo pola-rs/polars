@@ -464,13 +464,13 @@ impl DataFrame {
     }
 
     /// Sort DataFrame in place by a column.
-    pub fn sort_in_place(&mut self, by_column: &str) -> Result<()> {
+    pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<()> {
         let s = match self.column(by_column) {
             Some(s) => s,
             None => return Err(PolarsError::NotFound),
         };
 
-        let take = s.argsort();
+        let take = s.argsort(reverse);
 
         self.columns = self
             .columns
@@ -480,13 +480,13 @@ impl DataFrame {
         Ok(())
     }
 
-    pub fn sort(&self, by_column: &str) -> Result<Self> {
+    pub fn sort(&self, by_column: &str, reverse: bool) -> Result<Self> {
         let s = match self.column(by_column) {
             Some(s) => s,
             None => return Err(PolarsError::NotFound),
         };
 
-        let take = s.argsort();
+        let take = s.argsort(reverse);
         self.take(&take)
     }
 
@@ -575,7 +575,7 @@ mod test {
     #[test]
     fn test_sort() {
         let mut df = create_frame();
-        df.sort_in_place("temp").unwrap();
+        df.sort_in_place("temp", false).unwrap();
         println!("{:?}", df);
     }
 
