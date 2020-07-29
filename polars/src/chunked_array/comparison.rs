@@ -1,5 +1,8 @@
 use crate::prelude::*;
-use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray};
+use arrow::{
+    array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray},
+    compute,
+};
 use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
 
@@ -75,27 +78,55 @@ where
     T: PolarsNumericType,
 {
     fn eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
+        if self.chunk_id == rhs.chunk_id {
+            // should not fail if arrays are equal
+            self.comparison(rhs, compute::eq).expect("should not fail.")
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
+        }
     }
 
     fn neq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::neq)
+                .expect("should not fail.")
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
+        }
     }
 
     fn gt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::gt).expect("should not fail.")
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
+        }
     }
 
     fn gt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::gt_eq)
+                .expect("should not fail.")
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
+        }
     }
 
     fn lt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::lt).expect("should not fail.")
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
+        }
     }
 
     fn lt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::lt_eq)
+                .expect("should not fail.")
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
+        }
     }
 }
 
@@ -174,45 +205,75 @@ impl Utf8Chunked {
 
 impl CmpOps<&Utf8Chunked> for Utf8Chunked {
     fn eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        self.into_iter()
-            .zip(rhs.into_iter())
-            .map(|(left, right)| left == right)
-            .collect()
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::eq_utf8)
+                .expect("should not fail")
+        } else {
+            self.into_iter()
+                .zip(rhs.into_iter())
+                .map(|(left, right)| left == right)
+                .collect()
+        }
     }
 
     fn neq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        self.into_iter()
-            .zip(rhs.into_iter())
-            .map(|(left, right)| left != right)
-            .collect()
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::neq_utf8)
+                .expect("should not fail")
+        } else {
+            self.into_iter()
+                .zip(rhs.into_iter())
+                .map(|(left, right)| left != right)
+                .collect()
+        }
     }
 
     fn gt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        self.into_iter()
-            .zip(rhs.into_iter())
-            .map(|(left, right)| left > right)
-            .collect()
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::gt_utf8)
+                .expect("should not fail")
+        } else {
+            self.into_iter()
+                .zip(rhs.into_iter())
+                .map(|(left, right)| left > right)
+                .collect()
+        }
     }
 
     fn gt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        self.into_iter()
-            .zip(rhs.into_iter())
-            .map(|(left, right)| left >= right)
-            .collect()
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::gt_eq_utf8)
+                .expect("should not fail")
+        } else {
+            self.into_iter()
+                .zip(rhs.into_iter())
+                .map(|(left, right)| left >= right)
+                .collect()
+        }
     }
 
     fn lt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        self.into_iter()
-            .zip(rhs.into_iter())
-            .map(|(left, right)| left < right)
-            .collect()
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::lt_utf8)
+                .expect("should not fail")
+        } else {
+            self.into_iter()
+                .zip(rhs.into_iter())
+                .map(|(left, right)| left < right)
+                .collect()
+        }
     }
 
     fn lt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        self.into_iter()
-            .zip(rhs.into_iter())
-            .map(|(left, right)| left <= right)
-            .collect()
+        if self.chunk_id == rhs.chunk_id {
+            self.comparison(rhs, compute::lt_eq_utf8)
+                .expect("should not fail")
+        } else {
+            self.into_iter()
+                .zip(rhs.into_iter())
+                .map(|(left, right)| left <= right)
+                .collect()
+        }
     }
 }
 
