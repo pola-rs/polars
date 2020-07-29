@@ -3,7 +3,7 @@
 //! Read more in the [DataFrame](frame/struct.DataFrame.html) and [Series](series/index.html)
 //! modules.
 //!
-//! ## Read and write csv
+//! ## Read and write CSV/ JSON
 //!
 //! ```
 //! use polars::prelude::*;
@@ -19,9 +19,12 @@
 //! }
 //! ```
 //!
-//! For more examples see: [the csv module](frame/csv/index.html).
+//! For more IO examples see:
+//!     * [the csv module](frame/ser/csv/index.html)
+//!     * [the json module](frame/ser/json/index.html)
 //!
-//! ## Join
+//!
+//! ## Joins
 //!
 //! ```
 //! use polars::prelude::*;
@@ -59,7 +62,7 @@
 //! +------+------+------+
 //! ```
 //!
-//! ## GroupBy
+//! ## GroupBys
 //!
 //! ```
 //! use polars::prelude::*;
@@ -94,7 +97,7 @@
 //!  }).collect();
 //! ```
 //!
-//! ## Comparison
+//! ## Comparisons
 //!
 //! ```
 //! use polars::prelude::*;
@@ -108,6 +111,8 @@
 //!     .zip(valid)
 //!     .all(|(a, b)| a == *b))
 //! ```
+//!
+//! ## And more...
 //!
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]

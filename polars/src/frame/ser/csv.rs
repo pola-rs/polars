@@ -1,3 +1,53 @@
+//! # (De)serializing CSV files
+//!
+//! ## Write a DataFrame to a csv file.
+//!
+//! ## Example
+//!
+//! ```
+//! use polars::prelude::*;
+//! use std::fs::File;
+//!
+//! fn example(df: &DataFrame) -> Result<()> {
+//!     let mut file = File::create("example.csv").expect("could not create file");
+//!
+//!     CsvWriter::new(&mut file)
+//!     .has_headers(true)
+//!     .with_delimiter(b',')
+//!     .finish(df)
+//! }
+//! ```
+//!
+//! ## Read a csv file to a DataFrame
+//!
+//! ## Example
+//!
+//! ```
+//! use polars::prelude::*;
+//! use std::io::Cursor;
+//!
+//! let s = r#"
+//! "sepal.length","sepal.width","petal.length","petal.width","variety"
+//! 5.1,3.5,1.4,.2,"Setosa"
+//! 4.9,3,1.4,.2,"Setosa"
+//! 4.7,3.2,1.3,.2,"Setosa"
+//! 4.6,3.1,1.5,.2,"Setosa"
+//! 5,3.6,1.4,.2,"Setosa"
+//! 5.4,3.9,1.7,.4,"Setosa"
+//! 4.6,3.4,1.4,.3,"Setosa"
+//! "#;
+//!
+//! let file = Cursor::new(s);
+//! let df = CsvReader::new(file)
+//! .infer_schema(Some(100))
+//! .has_header(true)
+//! .with_batch_size(100)
+//! .finish()
+//! .unwrap();
+//!
+//! assert_eq!("sepal.length", df.get_columns()[0].name());
+//! # assert_eq!(1, df.f_column("sepal.length").chunks().len());
+//! ```
 use crate::frame::ser::finish_reader;
 use crate::prelude::*;
 pub use arrow::csv::{ReaderBuilder, WriterBuilder};
@@ -14,23 +64,6 @@ impl<'a, W> CsvWriter<'a, W>
 where
     W: Write,
 {
-    /// Write a DataFrame to a csv file.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars::prelude::*;
-    /// use std::fs::File;
-    ///
-    /// fn example(df: &DataFrame) -> Result<()> {
-    ///     let mut file = File::create("example.csv").expect("could not create file");
-    ///
-    ///     CsvWriter::new(&mut file)
-    ///     .has_headers(true)
-    ///     .with_delimiter(b',')
-    ///     .finish(df)
-    /// }
-    /// ```
     pub fn new(writer: &'a mut W) -> Self {
         CsvWriter {
             writer,
@@ -181,7 +214,6 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use std::io::Cursor;
 
     #[test]
     fn write_csv() {
@@ -195,31 +227,5 @@ mod test {
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
         assert_eq!("0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);
-    }
-
-    #[test]
-    fn read_csv() {
-        let s = r#"
-"sepal.length","sepal.width","petal.length","petal.width","variety"
-5.1,3.5,1.4,.2,"Setosa"
-4.9,3,1.4,.2,"Setosa"
-4.7,3.2,1.3,.2,"Setosa"
-4.6,3.1,1.5,.2,"Setosa"
-5,3.6,1.4,.2,"Setosa"
-5.4,3.9,1.7,.4,"Setosa"
-4.6,3.4,1.4,.3,"Setosa"
-"#;
-
-        let file = Cursor::new(s);
-        let df = CsvReader::new(file)
-            .infer_schema(Some(100))
-            .has_header(true)
-            .with_batch_size(100)
-            .finish()
-            .unwrap();
-
-        assert_eq!("sepal.length", df.schema.fields()[0].name());
-        assert_eq!(1, df.f_column("sepal.length").chunks().len());
-        println!("{:?}", df)
     }
 }
