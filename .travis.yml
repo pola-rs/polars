@@ -9,7 +9,7 @@ script:
 
 after_success: |
   cd .. && \
-  cargo doc --no-deps \
+  cargo doc --no-deps --package polars \
   && echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
   sudo pip install ghp-import && \
   ghp-import -n target/doc && \
