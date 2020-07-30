@@ -3,6 +3,7 @@ use crate::chunked_array::builder::{
     build_with_existing_null_bitmap, get_bitmap, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::prelude::*;
+use crate::utils::Xob;
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, PrimitiveArray,
@@ -791,19 +792,55 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     }
 }
 
-impl From<Utf8Chunked> for Vec<String> {
-    fn from(ca: Utf8Chunked) -> Self {
+pub trait Reverse<T> {
+    fn reverse(&self) -> ChunkedArray<T>;
+}
+
+impl<T> Reverse<T> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: ChunkOps,
+{
+    fn reverse(&self) -> ChunkedArray<T> {
+        if let Ok(slice) = self.cont_slice() {
+            let ca: Xob<ChunkedArray<T>> = slice.iter().rev().copied().collect();
+            let mut ca = ca.into_inner();
+            ca.rename(self.name());
+            ca
+        } else {
+            self.take((0..self.len()).rev(), None)
+                .expect("implementation error, should not fail")
+        }
+    }
+}
+
+macro_rules! impl_reverse {
+    ($arrow_type:ident, $ca_type:ident) => {
+        impl Reverse<$arrow_type> for $ca_type {
+            fn reverse(&self) -> Self {
+                self.take((0..self.len()).rev(), None)
+                    .expect("implementation error, should not fail")
+            }
+        }
+    };
+}
+
+impl_reverse!(BooleanType, BooleanChunked);
+impl_reverse!(Utf8Type, Utf8Chunked);
+
+impl<'a> From<&'a Utf8Chunked> for Vec<String> {
+    fn from(ca: &'a Utf8Chunked) -> Self {
         ca.into_iter().map(|s| s.to_string()).collect()
     }
 }
 
-impl<T> From<ChunkedArray<T>> for Vec<Option<T::Native>>
+impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Native>>
 where
     T: ArrowPrimitiveType,
-    ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
+    &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
     ChunkedArray<T>: ChunkOps,
 {
-    fn from(ca: ChunkedArray<T>) -> Self {
+    fn from(ca: &'a ChunkedArray<T>) -> Self {
         let mut vec = Vec::with_capacity_aligned(ca.len());
         ca.into_iter().for_each(|opt| vec.push(opt));
         vec
@@ -940,5 +977,20 @@ pub(crate) mod test {
         assert_eq!(sorted.into_iter().collect::<Vec<_>>(), &["a", "b", "z"]);
         let sorted = s.sort(true);
         assert_eq!(sorted.into_iter().collect::<Vec<_>>(), &["z", "b", "a"]);
+    }
+
+    #[test]
+    fn reverse() {
+        let s = UInt32Chunked::new_from_slice("", &[1, 2, 3]);
+        // path with continuous slice
+        assert_slice_equal(&s.reverse(), &[3, 2, 1]);
+        // path with options
+        let s = UInt32Chunked::new_from_opt_slice("", &[Some(1), None, Some(3)]);
+        assert_eq!(Vec::from(&s.reverse()), &[Some(3), None, Some(1)]);
+        let s = BooleanChunked::new_from_slice("", &[true, false]);
+        assert_eq!(Vec::from(&s.reverse()), &[Some(false), Some(true)]);
+
+        let s = Utf8Chunked::new_utf8_from_slice("", &["a", "b", "c"]);
+        assert_eq!(Vec::from(&s.reverse()), &["c", "b", "a"]);
     }
 }

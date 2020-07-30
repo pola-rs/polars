@@ -227,6 +227,7 @@ where
 }
 
 impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
+
 impl<'a, T> IntoIterator for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,

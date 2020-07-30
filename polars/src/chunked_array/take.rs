@@ -1,12 +1,19 @@
+//! Traits to provide fast Random access to ChunkedArrays data.
+//! This prevents downcasting every iteration.
+//! IntoTakeRandom provides structs that implement the TakeRandom trait.
+//! There are several structs that implement the fastest path for random access.
+//!
 use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use crate::prelude::*;
 use arrow::array::{Array, BooleanArray, PrimitiveArray, StringArray};
 
 pub trait Take {
+    /// Take values from ChunkedArray by index.
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
     where
         Self: std::marker::Sized;
 
+    /// Take values from ChunkedArray by Option<index>.
     fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
@@ -159,11 +166,6 @@ impl TakeIndex for [u32] {
         self.len()
     }
 }
-
-// Traits to provide fast Random access to ChunkedArrays data.
-// This prevents downcasting every iteration.
-// IntoTakeRandom provides structs that implement the TakeRandom trait.
-// There are several structs that implement the fastest path for random access.
 
 pub trait IntoTakeRandom<'a> {
     type Item;

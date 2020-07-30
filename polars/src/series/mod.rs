@@ -429,8 +429,14 @@ impl Series {
         apply_method_all_series!(self, is_null,)
     }
 
+    /// Get the bits that represent the null values of the underlying ChunkedArray
     pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
         apply_method_all_series!(self, null_bits,)
+    }
+
+    /// return a Series in reversed order
+    pub fn reverse(&self) -> Self {
+        apply_method_and_return!(self, reverse, [],)
     }
 }
 

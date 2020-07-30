@@ -546,6 +546,12 @@ impl DataFrame {
         }
         Ok(record_batches)
     }
+
+    /// Get a DataFrame with all the columns in reversed order
+    pub fn reverse(&self) -> Self {
+        let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
+        DataFrame::new_with_schema(self.schema.clone(), col).unwrap()
+    }
 }
 
 #[cfg(test)]
