@@ -153,13 +153,17 @@ impl PySeries {
         Ok(PySeries::new(self.series.tail(length)))
     }
 
-    pub fn sort(&mut self) {
-        self.series.sort_in_place();
+    pub fn sort_in_place(&mut self, reverse: bool) {
+        self.series.sort_in_place(reverse);
     }
 
-    pub fn argsort(&self) -> Py<PyArray1<usize>> {
+    pub fn sort(&mut self, reverse: bool) -> Self {
+        PySeries::new(self.series.sort(reverse))
+    }
+
+    pub fn argsort(&self, reverse: bool) -> Py<PyArray1<usize>> {
         let gil = pyo3::Python::acquire_gil();
-        let pyarray = PyArray1::from_vec(gil.python(), self.series.argsort());
+        let pyarray = PyArray1::from_vec(gil.python(), self.series.argsort(reverse));
         pyarray.to_owned()
     }
 

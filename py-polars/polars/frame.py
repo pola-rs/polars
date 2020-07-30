@@ -98,11 +98,13 @@ class DataFrame:
     def columns(self) -> List[str]:
         return self._df.columns()
 
-    def sort(self, by_column: str, in_place: bool = False) -> Optional[DataFrame]:
+    def sort(
+        self, by_column: str, in_place: bool = False, reverse: bool = False
+    ) -> Optional[DataFrame]:
         if in_place:
-            self._df.sort_in_place(by_column)
+            self._df.sort_in_place(by_column, reverse)
         else:
-            return wrap_df(self._df.sort(by_column))
+            return wrap_df(self._df.sort(by_column, reverse))
 
     def frame_equal(self, other: DataFrame) -> bool:
         return self._df.frame_equal(other._df)

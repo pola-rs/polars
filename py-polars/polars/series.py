@@ -560,16 +560,19 @@ class Series:
     def tail(self, length: Optional[int] = None) -> Series:
         return Series.from_pyseries(self._s.tail(length))
 
-    def sort(self):
-        self._s.sort()
+    def sort(self, in_place: bool = False, reverse: bool = False) -> Optional[Series]:
+        if in_place:
+            self._s.sort_in_place(reverse)
+        else:
+            return wrap_s(self._s.sort(reverse))
 
-    def argsort(self) -> Sequence[int]:
+    def argsort(self, reverse: bool = False) -> Sequence[int]:
         """
         Returns
         -------
         indexes: np.ndarray[int]
         """
-        return self._s.argsort()
+        return self._s.argsort(reverse)
 
     def arg_unique(self) -> List[int]:
         """

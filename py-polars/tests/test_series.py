@@ -71,7 +71,7 @@ def test_various():
     assert a.head(5) != a.tail(5)
 
     a = Series("a", [2, 1, 4])
-    a.sort()
+    a.sort(in_place=True)
     assert a.series_equal(Series("", [1, 2, 4]))
     a = Series("a", [2, 1, 1, 4, 4, 4])
     assert list(a.arg_unique()) == [0, 1, 3]
@@ -110,3 +110,9 @@ def test_to_python():
     a = Series("a", [1, None, 2], nullable=True)
     assert a.null_count() == 1
     assert a.to_list() == [1, None, 2]
+
+
+def test_sort():
+    a = Series("a", [2, 1, 3])
+    assert a.sort().to_list() == [1, 2, 3]
+    assert a.sort(reverse=True) == [3, 2, 1]
