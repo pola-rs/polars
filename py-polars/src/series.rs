@@ -83,6 +83,16 @@ impl PySeries {
         PySeries::new(Series::new(name, &val))
     }
 
+    pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
+        let series = self.series.rechunk(None).expect("should not fail");
+        if in_place {
+            self.series = series;
+            None
+        } else {
+            Some(PySeries::new(series))
+        }
+    }
+
     pub fn name(&self) -> &str {
         self.series.name()
     }

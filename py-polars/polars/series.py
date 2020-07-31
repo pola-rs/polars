@@ -631,3 +631,8 @@ class Series:
 
     def to_list(self) -> List[Optional[Any]]:
         return self._s.to_list()
+
+    def rechunk(self, in_place: bool = False) -> Optional[Series]:
+        opt_s = self._s.rechunk(in_place)
+        if not in_place:
+            return wrap_s(opt_s)

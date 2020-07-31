@@ -116,3 +116,13 @@ def test_sort():
     a = Series("a", [2, 1, 3])
     assert a.sort().to_list() == [1, 2, 3]
     assert a.sort(reverse=True) == [3, 2, 1]
+
+
+def test_rechunk():
+    a = Series("a", [1, 2, 3])
+    b = Series("b", [4, 5, 6])
+    a.append(b)
+    assert a.n_chunks() == 2
+    assert a.rechunk(in_place=False).n_chunks() == 1
+    a.rechunk(in_place=True)
+    assert a.n_chunks() == 1
