@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use arrow::array::ArrayRef;
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
@@ -118,6 +119,7 @@ where
     ca
 }
 
+/// Take an existing slice and a null bitmap and construct an arrow array.
 pub fn build_with_existing_null_bitmap<T>(
     null_bit_buffer: Option<Buffer>,
     null_count: usize,
@@ -146,6 +148,7 @@ where
     PrimitiveArray::<T>::from(data)
 }
 
+/// Get the null count and the null bitmap of the arrow array
 pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
     let data = arr.data();
     (
@@ -155,6 +158,22 @@ pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
             buff.clone()
         }),
     )
+}
+
+impl<T, Slice: AsRef<[T::Native]>> FromIterator<(Slice, (usize, Option<Buffer>))>
+    for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    fn from_iter<I: IntoIterator<Item = (Slice, (usize, Option<Buffer>))>>(iter: I) -> Self {
+        let mut chunks = vec![];
+
+        for (slice, (null_count, opt_buffer)) in iter {
+            let arr = build_with_existing_null_bitmap::<T>(opt_buffer, null_count, slice.as_ref());
+            chunks.push(Arc::new(arr) as ArrayRef)
+        }
+        ChunkedArray::new_from_chunks("from_iter", chunks)
+    }
 }
 
 /// Returns the nearest number that is `>=` than `num` and is a multiple of 64

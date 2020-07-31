@@ -66,11 +66,17 @@ where
         }
     }
 
+    /// Get the null count and the buffer of bits representing null values
     pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
         self.chunks
             .iter()
             .map(|arr| get_bitmap(arr.as_ref()))
             .collect()
+    }
+
+    /// Wrap as Series
+    pub fn into_series(self) -> Series {
+        Series::from_chunked_array(self)
     }
 }
 
@@ -474,6 +480,16 @@ where
         }
     }
 
+    /// Get slices of the underlying arrow data.
+    /// NOTE: null values should be taken into account by the user of these slices as they are handled
+    /// separately
+    pub fn data_views(&self) -> Vec<&[T::Native]> {
+        self.downcast_chunks()
+            .iter()
+            .map(|arr| arr.value_slice(0, arr.len()))
+            .collect()
+    }
+
     /// If [cont_slice](#method.cont_slice) is successful a closure is mapped over the elements.
     ///
     /// # Example
@@ -834,9 +850,21 @@ impl<'a> From<&'a Utf8Chunked> for Vec<String> {
     }
 }
 
+impl<'a> From<&'a BooleanChunked> for Vec<Option<bool>> {
+    fn from(ca: &'a BooleanChunked) -> Self {
+        ca.into_iter().map(|opt_val| opt_val).collect()
+    }
+}
+
+impl From<BooleanChunked> for Vec<Option<bool>> {
+    fn from(ca: BooleanChunked) -> Self {
+        ca.into_iter().map(|opt_val| opt_val).collect()
+    }
+}
+
 impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Native>>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsNumericType,
     &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
     ChunkedArray<T>: ChunkOps,
 {
@@ -992,5 +1020,22 @@ pub(crate) mod test {
 
         let s = Utf8Chunked::new_utf8_from_slice("", &["a", "b", "c"]);
         assert_eq!(Vec::from(&s.reverse()), &["c", "b", "a"]);
+    }
+
+    #[test]
+    fn apply_on_buffer_and_build_with_bitmap() {
+        let s = Int32Chunked::new_from_opt_slice("a", &[Some(1), None, Some(3)]);
+
+        // Applies on data buffer and keeps null bits
+        let _s: Int32Chunked = s
+            .data_views()
+            .iter()
+            .copied()
+            .zip(s.null_bits())
+            .map(|a| a)
+            .collect();
+
+        // Apply implementation is the same principle.
+        let _s = s.apply(|v| v * 9);
     }
 }

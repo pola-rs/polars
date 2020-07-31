@@ -23,46 +23,23 @@ DataFrame library that only supports core functionality.
 
 ## Functionality
 
-### Series
-- [x] cast
-- [x] take by index/ boolean mask
-- [x] limit
-- [x] Rust iterators! (So any function you can think of)
-- [x] append
-- [x] aggregation: min, max, sum
-- [x] arithmetic
-- [x] comparison
-- [x] sorting
+### Read and write CSV/ JSON
 
-### DataFrame
-- [x] take by index/ boolean mask
-- [x] limit
-- [x] join: inner, left, and outer
-- [x] column ops: drop, select, rename
-- [x] group by: min, max, sum, mean, count
-- [x] concat (horizontal)
-- [x] read csv
-- [x] write csv
-- [x] write json
-- [x] read json
-- [ ] write parquet
-- [ ] read parquet
-- [x] sorting
+``` rust
+use polars::prelude::*;
+use std::fs::File;
 
-### Data types
-- [x] null
-- [x] boolean
-- [x] u32
-- [x] i32
-- [x] i64
-- [x] f32
-- [x] f64
-- [x] utf-8
-- [x] date
-- [x] time
+fn example() -> Result<DataFrame> {
+    let file = File::open("iris.csv").expect("could not open file");
 
+    CsvReader::new(file)
+            .infer_schema(None)
+            .has_header(true)
+            .finish()
+}
+```
 
-## Examples
+### Joins
 
 ```rust
 use polars::prelude::*;
@@ -70,12 +47,12 @@ use polars::prelude::*;
 // Create first df.
 let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
 let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
-let temp = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
+let temp = DataFrame::new(vec![s0, s1]).unwrap();
 
 // Create second df.
 let s0 = Series::new("days", &[1, 2]);
 let s1 = Series::new("rain", &[0.1, 0.2]);
-let rain = DataFrame::new_from_columns(vec![s0, s1]).unwrap();
+let rain = DataFrame::new(vec![s0, s1]).unwrap();
 
 // Left join on days column.
 let joined = temp.left_join(&rain, "days", "days");
@@ -100,19 +77,30 @@ println!("{}", joined.unwrap())
 +------+------+------+
 ```
 
+### GroupBys
+
+```rust
+use polars::prelude::*;
+fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
+    df.groupby("column_name")?
+    .select("agg_column_name")
+    .sum()
+}
+```
+
 ### Arithmetic
 ```rust
 use polars::prelude::*;
-
-let s: Series = [1, 2, 3].iter().collect(); 
+let s: Series = [1, 2, 3].iter().collect();
 let s_squared = &s * &s;
 ```
 
-### Custom functions
+### Rust iterators
+
 ```rust
 use polars::prelude::*;
 
-let s: Series = [1, 2, 3].iter().collect(); 
+let s: Series = [1, 2, 3].iter().collect();
 let s_squared: Series = s.i32()
      .expect("datatype mismatch")
      .into_iter()
@@ -124,4 +112,30 @@ let s_squared: Series = s.i32()
  }).collect();
 ```
 
+### Apply custom closures
+```rust
+use polars::prelude::*;
 
+let s: Series = Series::new("values", [Some(1.0), None, Some(3.0)]);
+// null values are ignored automatically
+let squared = s.f64()
+    .unwrap()
+    .apply(|value| value.powf(2.0))
+    .into_series();
+
+assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)])
+```
+
+### Comparisons
+
+```rust
+use polars::prelude::*;
+use itertools::Itertools;
+let s = Series::new("dollars", &[1, 2, 3]);
+let mask = s.eq(1);
+let valid = [true, false, false].iter();
+
+assert_eq!(Vec::from(mask.bool().unwrap()), &[Some(true), Some(false), Some(false)]);
+```
+
+### And more...

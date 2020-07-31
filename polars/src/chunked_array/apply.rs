@@ -3,13 +3,12 @@ use crate::prelude::*;
 pub trait Apply<'a, A, B> {
     fn apply<F>(&'a self, f: F) -> Self
     where
-        F: Fn(A) -> B;
+        F: Fn(A) -> B + Copy;
 }
 
 impl<'a, T> Apply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    // ChunkedArray<T>: IntoIterator,
 {
     /// Chooses the fastest path for closure application.
     /// Null values remain null.
@@ -24,20 +23,23 @@ where
     /// ```
     fn apply<F>(&'a self, f: F) -> Self
     where
-        F: Fn(T::Native) -> T::Native,
+        F: Fn(T::Native) -> T::Native + Copy,
     {
         if let Ok(slice) = self.cont_slice() {
             slice.iter().copied().map(f).map(Some).collect()
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    // Couldn't map due to movement of closure into map
-                    match opt_v {
-                        None => None,
-                        Some(v) => Some(f(v)),
-                    }
+            let mut ca: ChunkedArray<T> = self
+                .data_views()
+                .iter()
+                .copied()
+                .zip(self.null_bits())
+                .map(|(slice, (null_count, opt_buffer))| {
+                    let vec: Vec<_> = slice.iter().copied().map(f).collect();
+                    (vec, (null_count, opt_buffer))
                 })
-                .collect()
+                .collect();
+            ca.rename(self.name());
+            ca
         }
     }
 }

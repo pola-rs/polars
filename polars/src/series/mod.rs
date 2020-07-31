@@ -184,6 +184,10 @@ macro_rules! unpack_series {
 }
 
 impl Series {
+    pub fn from_chunked_array<T: PolarsDataType>(ca: ChunkedArray<T>) -> Self {
+        pack_ca_to_series(ca)
+    }
+
     /// Get the lengths of the underlying chunks
     pub fn chunk_lengths(&self) -> &Vec<usize> {
         apply_method_all_series!(self, chunk_id,)

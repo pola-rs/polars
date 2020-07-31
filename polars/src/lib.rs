@@ -97,6 +97,20 @@
 //!  }).collect();
 //! ```
 //!
+//! ## Apply custom closures
+//! ```
+//! # use polars::prelude::*;
+//!
+//! let s: Series = Series::new("values", [Some(1.0), None, Some(3.0)]);
+//! // null values are ignored automatically
+//! let squared = s.f64()
+//!     .unwrap()
+//!     .apply(|value| value.powf(2.0))
+//!     .into_series();
+//!
+//! assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)])
+//! ```
+//!
 //! ## Comparisons
 //!
 //! ```
@@ -105,11 +119,8 @@
 //! let s = Series::new("dollars", &[1, 2, 3]);
 //! let mask = s.eq(1);
 //! let valid = [true, false, false].iter();
-//! assert!(mask
-//!     .into_iter()
-//!     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
-//!     .zip(valid)
-//!     .all(|(a, b)| a == *b))
+//!
+//! assert_eq!(Vec::from(mask.bool().unwrap()), &[Some(true), Some(false), Some(false)]);
 //! ```
 //!
 //! ## And more...
