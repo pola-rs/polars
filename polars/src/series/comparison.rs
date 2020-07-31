@@ -1,7 +1,7 @@
 //! Comparison operations on Series.
 
 use super::Series;
-use crate::apply_method_arrowprimitive_series;
+use crate::apply_method_numeric_series;
 use crate::prelude::*;
 
 macro_rules! compare {
@@ -123,27 +123,27 @@ where
     Rhs: NumComp,
 {
     fn eq(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_arrowprimitive_series!(self, eq, rhs)
+        apply_method_numeric_series!(self, eq, rhs)
     }
 
     fn neq(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_arrowprimitive_series!(self, neq, rhs)
+        apply_method_numeric_series!(self, neq, rhs)
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_arrowprimitive_series!(self, gt, rhs)
+        apply_method_numeric_series!(self, gt, rhs)
     }
 
     fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_arrowprimitive_series!(self, gt_eq, rhs)
+        apply_method_numeric_series!(self, gt_eq, rhs)
     }
 
     fn lt(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_arrowprimitive_series!(self, lt, rhs)
+        apply_method_numeric_series!(self, lt, rhs)
     }
 
     fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_arrowprimitive_series!(self, lt_eq, rhs)
+        apply_method_numeric_series!(self, lt_eq, rhs)
     }
 }
 

@@ -1,4 +1,5 @@
 from polars import Series
+import numpy as np
 
 
 def create_series():
@@ -126,3 +127,9 @@ def test_rechunk():
     assert a.rechunk(in_place=False).n_chunks() == 1
     a.rechunk(in_place=True)
     assert a.n_chunks() == 1
+
+
+def test_view():
+    a = Series("a", [1.0, 2.0, 3.0])
+    assert isinstance(a.view(), np.ndarray)
+    assert np.all(a.view() == np.array([1, 2, 3]))

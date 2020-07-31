@@ -1,5 +1,5 @@
 use crate::error::PyPolarsEr;
-use numpy::PyArray1;
+use numpy::{Element, PyArray1};
 use polars::prelude::*;
 use pyo3::types::PyList;
 use pyo3::{exceptions::RuntimeError, prelude::*};
@@ -256,6 +256,12 @@ impl PySeries {
             Series::Utf8(ca) => PyList::new(python, ca),
         };
         pylist.to_object(python)
+    }
+
+    /// Rechunk and return a pointer to the start of the Series.
+    /// Only implemented for numeric types
+    pub fn as_single_ptr(&mut self) -> usize {
+        self.series.as_single_ptr()
     }
 }
 

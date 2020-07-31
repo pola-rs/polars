@@ -138,7 +138,7 @@ macro_rules! apply_method_all_series {
 
 // doesn't include Bool and Utf8
 #[macro_export]
-macro_rules! apply_method_arrowprimitive_series {
+macro_rules! apply_method_numeric_series {
     ($self:ident, $method:ident, $($args:ident),*) => {
         match $self {
             Series::UInt32(a) => a.$method($($args),*),
@@ -441,6 +441,12 @@ impl Series {
     /// return a Series in reversed order
     pub fn reverse(&self) -> Self {
         apply_method_and_return!(self, reverse, [],)
+    }
+
+    /// Rechunk and return a pointer to the start of the Series.
+    /// Only implemented for numeric types
+    pub fn as_single_ptr(&mut self) -> usize {
+        apply_method_numeric_series!(self, as_single_ptr,)
     }
 }
 

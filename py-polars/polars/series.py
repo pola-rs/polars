@@ -2,6 +2,8 @@ from __future__ import annotations
 from .polars import PySeries
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any
+from .ffi import ptr_to_numpy
+import ctypes
 
 
 def wrap_s(s: PySeries) -> Series:
@@ -281,7 +283,7 @@ class Series:
             return Series.from_pyseries(self._s.add_i64(other))
         if dtype == "duration(ns)":
             return Series.from_pyseries(self._s.add_i64(other))
-        raise NotImplemented
+        return NotImplemented
 
     def __sub__(self, other) -> Series:
         if isinstance(other, Series):
@@ -305,7 +307,7 @@ class Series:
             return Series.from_pyseries(self._s.sub_i64(other))
         if dtype == "duration(ns)":
             return Series.from_pyseries(self._s.sub_i64(other))
-        raise NotImplemented
+        return NotImplemented
 
     def __truediv__(self, other) -> Series:
         if isinstance(other, Series):
@@ -329,7 +331,7 @@ class Series:
             return Series.from_pyseries(self._s.div_i64(other))
         if dtype == "duration(ns)":
             return Series.from_pyseries(self._s.div_i64(other))
-        raise NotImplemented
+        return NotImplemented
 
     def __mul__(self, other) -> Series:
         if isinstance(other, Series):
@@ -353,7 +355,7 @@ class Series:
             return Series.from_pyseries(self._s.mul_i64(other))
         if dtype == "duration(ns)":
             return Series.from_pyseries(self._s.mul_i64(other))
-        raise NotImplemented
+        return NotImplemented
 
     def __radd__(self, other):
         if isinstance(other, Series):
@@ -377,7 +379,7 @@ class Series:
             return Series.from_pyseries(self._s.add_i64_rhs(other))
         if dtype == "duration(ns)":
             return Series.from_pyseries(self._s.add_i64_rhs(other))
-        raise NotImplemented
+        return NotImplemented
 
     def __rsub__(self, other):
         if isinstance(other, Series):
@@ -401,7 +403,7 @@ class Series:
             return Series.from_pyseries(self._s.sub_i64_rhs(other))
         if dtype == "duration(ns)":
             return Series.from_pyseries(self._s.sub_i64_rhs(other))
-        raise NotImplemented
+        return NotImplemented
 
     def __rtruediv__(self, other):
         if isinstance(other, Series):
@@ -425,7 +427,7 @@ class Series:
             return Series.from_pyseries(self._s.div_i64_rhs(other))
         if dtype == "duration(ns)":
             return Series.from_pyseries(self._s.div_i64_rhs(other))
-        raise NotImplemented
+        return NotImplemented
 
     def __rmul__(self, other):
         if isinstance(other, Series):
@@ -449,7 +451,7 @@ class Series:
             return Series.from_pyseries(self._s.mul_i64_rhs(other))
         if dtype == "duration(ns)":
             return Series.from_pyseries(self._s.mul_i64_rhs(other))
-        raise NotImplemented
+        return NotImplemented
 
     def __getitem__(self, item):
         # assume it is boolean mask
@@ -459,9 +461,9 @@ class Series:
         if type(item) == slice:
             start, stop, stride = item.indices(self.len())
             if stride != 1:
-                raise NotImplemented
+                return NotImplemented
             return self.slice(start, stop - start)
-        raise NotImplemented
+        return NotImplemented
 
     @property
     def dtype(self):
@@ -481,7 +483,7 @@ class Series:
             return self._s.sum_f64()
         if dtype == "bool":
             return self._s.sum_u32()
-        raise NotImplemented
+        return NotImplemented
 
     def mean(self):
         # use float type for mean aggregations no matter of base type
@@ -498,7 +500,7 @@ class Series:
             return self._s.mean_f64()
         if dtype == "bool":
             return self._s.mean_f32()
-        raise NotImplemented
+        return NotImplemented
 
     def min(self):
         dtype = self.dtype
@@ -514,7 +516,7 @@ class Series:
             return self._s.min_f64()
         if dtype == "bool":
             return self._s.min_u32()
-        raise NotImplemented
+        return NotImplemented
 
     def max(self):
         dtype = self.dtype
@@ -530,7 +532,7 @@ class Series:
             return self._s.max_f64()
         if dtype == "bool":
             return self._s.max_u32()
-        raise NotImplemented
+        return NotImplemented
 
     @property
     def name(self):
@@ -636,3 +638,52 @@ class Series:
         opt_s = self._s.rechunk(in_place)
         if not in_place:
             return wrap_s(opt_s)
+
+    def is_numeric(self) -> bool:
+        dtype = self.dtype
+        if dtype == "u32":
+            return True
+        if dtype == "i32":
+            return True
+        if dtype == "i64":
+            return True
+        if dtype == "f32":
+            return True
+        if dtype == "f64":
+            return True
+        if dtype == "date32":
+            return True
+        if dtype == "date64":
+            return True
+        if dtype == "time64(ns)":
+            return True
+        if dtype == "duration(ns)":
+            return True
+        return False
+
+    def view(self) -> np.ndarray:
+        dtype = self.dtype
+        if dtype == "u32":
+            ptr_type = ctypes.c_uint
+        elif dtype == "i32":
+            ptr_type = ctypes.c_int
+        elif dtype == "i64":
+            ptr_type = ctypes.c_long
+        elif dtype == "f32":
+            ptr_type = ctypes.c_float
+        elif dtype == "f64":
+            ptr_type = ctypes.c_double
+        elif dtype == "date32":
+            ptr_type = ctypes.c_int
+        elif dtype == "date64":
+            ptr_type = ctypes.c_long
+        elif dtype == "time64(ns)":
+            ptr_type = ctypes.c_long
+        elif dtype == "duration(ns)":
+            ptr_type = ctypes.c_long
+        else:
+            return NotImplemented
+        ptr = self._s.as_single_ptr()
+        array = ptr_to_numpy(ptr, self.len(), ptr_type)
+        array.setflags(write=False)
+        return array

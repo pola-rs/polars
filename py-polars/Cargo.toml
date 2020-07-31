@@ -11,6 +11,7 @@ polars = {path = "../polars"}
 pyo3 = {version = "0.11.1", features = ["extension-module"] }
 thiserror = "1.0.20"
 numpy = "0.10.0"
+ndarray = "0.13.1"
 
 
 [lib]

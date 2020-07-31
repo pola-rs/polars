@@ -31,6 +31,7 @@ pub mod comparison;
 pub mod iterator;
 pub mod take;
 pub mod unique;
+use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
@@ -488,6 +489,15 @@ where
             .iter()
             .map(|arr| arr.value_slice(0, arr.len()))
             .collect()
+    }
+
+    /// Rechunk and return a ptr to the start of the array
+    pub fn as_single_ptr(&mut self) -> usize {
+        let mut ca = self.rechunk(None).expect("should not fail");
+        mem::swap(&mut ca, self);
+        let a = self.data_views()[0];
+        let ptr = a.as_ptr();
+        ptr as usize
     }
 
     /// If [cont_slice](#method.cont_slice) is successful a closure is mapped over the elements.
