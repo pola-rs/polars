@@ -1,6 +1,7 @@
 //! The typed heart of every Series column.
 use crate::chunked_array::builder::{
-    build_with_existing_null_bitmap, get_bitmap, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
+    aligned_vec_to_primitive_array, build_with_existing_null_bitmap_and_slice, get_bitmap,
+    PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::prelude::*;
 use crate::utils::Xob;
@@ -453,12 +454,33 @@ where
     /// Nullify values in slice with an existing null bitmap
     pub fn new_with_null_bitmap(
         name: &str,
-        v: &[T::Native],
+        values: &[T::Native],
         buffer: Option<Buffer>,
         null_count: usize,
     ) -> Self {
-        let len = v.len();
-        let arr = Arc::new(build_with_existing_null_bitmap::<T>(buffer, null_count, v));
+        let len = values.len();
+        let arr = Arc::new(build_with_existing_null_bitmap_and_slice::<T>(
+            buffer, null_count, values,
+        ));
+        ChunkedArray {
+            field: Arc::new(Field::new(name, T::get_data_type(), true)),
+            chunks: vec![arr],
+            chunk_id: vec![len],
+            phantom: PhantomData,
+        }
+    }
+
+    /// Nullify values in slice with an existing null bitmap
+    pub fn new_from_owned_with_null_bitmap(
+        name: &str,
+        values: AlignedVec<T::Native>,
+        buffer: Option<Buffer>,
+        null_count: usize,
+    ) -> Self {
+        let len = values.0.len();
+        let arr = Arc::new(aligned_vec_to_primitive_array::<T>(
+            values, buffer, null_count,
+        ));
         ChunkedArray {
             field: Arc::new(Field::new(name, T::get_data_type(), true)),
             chunks: vec![arr],
@@ -1030,22 +1052,5 @@ pub(crate) mod test {
 
         let s = Utf8Chunked::new_utf8_from_slice("", &["a", "b", "c"]);
         assert_eq!(Vec::from(&s.reverse()), &["c", "b", "a"]);
-    }
-
-    #[test]
-    fn apply_on_buffer_and_build_with_bitmap() {
-        let s = Int32Chunked::new_from_opt_slice("a", &[Some(1), None, Some(3)]);
-
-        // Applies on data buffer and keeps null bits
-        let _s: Int32Chunked = s
-            .data_views()
-            .iter()
-            .copied()
-            .zip(s.null_bits())
-            .map(|a| a)
-            .collect();
-
-        // Apply implementation is the same principle.
-        let _s = s.apply(|v| v * 9);
     }
 }

@@ -34,7 +34,7 @@ where
                 .copied()
                 .zip(self.null_bits())
                 .map(|(slice, (null_count, opt_buffer))| {
-                    let vec: Vec<_> = slice.iter().copied().map(f).collect();
+                    let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
                     (vec, (null_count, opt_buffer))
                 })
                 .collect();

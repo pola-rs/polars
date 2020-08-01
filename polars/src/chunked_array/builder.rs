@@ -120,7 +120,7 @@ where
 }
 
 /// Take an existing slice and a null bitmap and construct an arrow array.
-pub fn build_with_existing_null_bitmap<T>(
+pub fn build_with_existing_null_bitmap_and_slice<T>(
     null_bit_buffer: Option<Buffer>,
     null_count: usize,
     values: &[T::Native],
@@ -131,6 +131,7 @@ where
     let len = values.len();
     // See:
     // https://docs.rs/arrow/0.16.0/src/arrow/array/builder.rs.html#314
+    // TODO: make implementation for aligned owned vector for zero copy creation.
     let mut builder = ArrayData::builder(T::get_data_type())
         .len(len)
         .add_buffer(Buffer::from(values.to_byte_slice()));
@@ -160,16 +161,18 @@ pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
     )
 }
 
-impl<T, Slice: AsRef<[T::Native]>> FromIterator<(Slice, (usize, Option<Buffer>))>
-    for ChunkedArray<T>
+// Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
+impl<T> FromIterator<(AlignedVec<T::Native>, (usize, Option<Buffer>))> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn from_iter<I: IntoIterator<Item = (Slice, (usize, Option<Buffer>))>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = (AlignedVec<T::Native>, (usize, Option<Buffer>))>>(
+        iter: I,
+    ) -> Self {
         let mut chunks = vec![];
 
-        for (slice, (null_count, opt_buffer)) in iter {
-            let arr = build_with_existing_null_bitmap::<T>(opt_buffer, null_count, slice.as_ref());
+        for (values, (null_count, opt_buffer)) in iter {
+            let arr = aligned_vec_to_primitive_array::<T>(values, opt_buffer, null_count);
             chunks.push(Arc::new(arr) as ArrayRef)
         }
         ChunkedArray::new_from_chunks("from_iter", chunks)
@@ -189,21 +192,39 @@ fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
     (num + (factor - 1)) & !(factor - 1)
 }
 
-/// Take an owned Vec and create a zero copy PrimitiveArray
-pub fn vec_to_primitive_array<T: ArrowPrimitiveType>(values: Vec<T::Native>) -> PrimitiveArray<T> {
+/// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
+/// Can also take a null bit buffer into account.
+pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
+    values: AlignedVec<T::Native>,
+    null_bit_buffer: Option<Buffer>,
+    null_count: usize,
+) -> PrimitiveArray<T> {
+    let values = values.into_inner();
     let vec_len = values.len();
 
     let me = ManuallyDrop::new(values);
     let ptr = me.as_ptr() as *const u8;
     let len = me.len() * std::mem::size_of::<T::Native>();
     let capacity = me.capacity() * std::mem::size_of::<T::Native>();
+    debug_assert_eq!((ptr as usize) % 64, 0);
 
     let buffer = unsafe { Buffer::from_raw_parts(ptr, len, capacity) };
 
-    let data = ArrayData::builder(T::get_data_type())
+    let mut builder = ArrayData::builder(T::get_data_type())
         .len(vec_len)
-        .add_buffer(buffer)
-        .build();
+        .add_buffer(buffer);
+
+    // TODO: dry
+    if null_count > 0 {
+        let null_bit_buffer =
+            null_bit_buffer.expect("implementation error. Should not be None if null_count > 0");
+        debug_assert!(null_count == vec_len - bit_util::count_set_bits(null_bit_buffer.data()));
+        builder = builder
+            .null_count(null_count)
+            .null_bit_buffer(null_bit_buffer);
+    }
+
+    let data = builder.build();
 
     PrimitiveArray::<T>::from(data)
 }
@@ -246,6 +267,19 @@ impl<T> FromIterator<T> for AlignedVec<T> {
     }
 }
 
+impl<T> AlignedVec<T> {
+    pub fn new(v: Vec<T>) -> Result<Self> {
+        if v.as_ptr() as usize % 64 != 0 {
+            Err(PolarsError::MemoryNotAligned)
+        } else {
+            Ok(AlignedVec(v))
+        }
+    }
+    pub fn into_inner(self) -> Vec<T> {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -260,7 +294,8 @@ mod test {
         let arr = builder.finish();
         let (null_count, buf) = get_bitmap(&arr);
 
-        let new_arr = build_with_existing_null_bitmap::<UInt32Type>(buf, null_count, &[7, 8, 9]);
+        let new_arr =
+            build_with_existing_null_bitmap_and_slice::<UInt32Type>(buf, null_count, &[7, 8, 9]);
         assert!(new_arr.is_valid(0));
         assert!(new_arr.is_null(1));
         assert!(new_arr.is_valid(2));
@@ -275,7 +310,7 @@ mod test {
 
         let ptr = v.as_ptr();
         assert_eq!((ptr as usize) % 64, 0);
-        let a = vec_to_primitive_array::<Int32Type>(v);
+        let a = aligned_vec_to_primitive_array::<Int32Type>(AlignedVec::new(v).unwrap(), None, 0);
         assert_eq!(a.value_slice(0, 2), &[1, 2])
     }
 }

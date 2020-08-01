@@ -24,6 +24,8 @@ pub enum PolarsError {
     NoSlice,
     #[error("Such empty...")]
     NoData,
+    #[error("Memory should be 64 byte aligned")]
+    MemoryNotAligned,
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
