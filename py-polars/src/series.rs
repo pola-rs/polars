@@ -1,5 +1,5 @@
 use crate::error::PyPolarsEr;
-use numpy::{Element, PyArray1};
+use numpy::PyArray1;
 use polars::prelude::*;
 use pyo3::types::PyList;
 use pyo3::{exceptions::RuntimeError, prelude::*};

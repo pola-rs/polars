@@ -1,4 +1,5 @@
 from polars import Series
+from polars.ffi import aligned_array_f32
 import numpy as np
 
 
@@ -133,3 +134,19 @@ def test_view():
     a = Series("a", [1.0, 2.0, 3.0])
     assert isinstance(a.view(), np.ndarray)
     assert np.all(a.view() == np.array([1, 2, 3]))
+
+
+def test_numpy_interface():
+    a = aligned_array_f32(10)
+    assert a.dtype == np.float32
+    assert a.shape == (10,)
+    pointer, read_only_flag = a.__array_interface__["data"]
+    # set read only flag to False
+    a.__array_interface__["data"] = (pointer, False)
+    # the __array_interface is used to create a new array (pointing to the same memory)
+    b = np.array(a)
+    # now the memory is writeable
+    b[0] = 1
+
+    # TODO: sent pointer to Rust and take ownership of array.
+    # https://stackoverflow.com/questions/37988849/safer-way-to-expose-a-c-allocated-memory-buffer-using-numpy-ctypes

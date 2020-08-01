@@ -2,6 +2,12 @@ import numpy as np
 from numpy import ctypeslib
 import ctypes
 from typing import Any
+from .polars import (
+    aligned_array_f32,
+    aligned_array_f64,
+    aligned_array_i32,
+    aligned_array_i64,
+)
 
 
 def ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
@@ -12,7 +18,7 @@ def ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     ptr
         C/Rust ptr casted to usize
     len
-        Lenght of the array values
+        Length of the array values
     ptr_type
         Example:
             f32: ctypes.c_float)
