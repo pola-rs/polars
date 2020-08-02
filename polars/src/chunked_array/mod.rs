@@ -876,9 +876,11 @@ macro_rules! impl_reverse {
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
 
-impl<'a> From<&'a Utf8Chunked> for Vec<String> {
+// Only the one which takes Utf8Chunked by reference is implemented.
+// We cannot return a & str owned by this function.
+impl<'a> From<&'a Utf8Chunked> for Vec<Option<&'a str>> {
     fn from(ca: &'a Utf8Chunked) -> Self {
-        ca.into_iter().map(|s| s.to_string()).collect()
+        ca.into_iter().map(|opt_s| opt_s.map(|s| s)).collect()
     }
 }
 
@@ -927,7 +929,7 @@ pub(crate) mod test {
         let a = Utf8Chunked::new_utf8_from_slice("a", &["b", "a", "c"]);
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
-        assert_eq!(b, ["a", "b", "c"]);
+        assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
     }
 
     #[test]
@@ -1034,9 +1036,15 @@ pub(crate) mod test {
 
         let s: Utf8Chunked = ["b", "a", "z"].iter().collect();
         let sorted = s.sort(false);
-        assert_eq!(sorted.into_iter().collect::<Vec<_>>(), &["a", "b", "z"]);
+        assert_eq!(
+            sorted.into_iter().collect::<Vec<_>>(),
+            &[Some("a"), Some("b"), Some("z")]
+        );
         let sorted = s.sort(true);
-        assert_eq!(sorted.into_iter().collect::<Vec<_>>(), &["z", "b", "a"]);
+        assert_eq!(
+            sorted.into_iter().collect::<Vec<_>>(),
+            &[Some("z"), Some("b"), Some("a")]
+        );
     }
 
     #[test]
@@ -1051,6 +1059,9 @@ pub(crate) mod test {
         assert_eq!(Vec::from(&s.reverse()), &[Some(false), Some(true)]);
 
         let s = Utf8Chunked::new_utf8_from_slice("", &["a", "b", "c"]);
-        assert_eq!(Vec::from(&s.reverse()), &["c", "b", "a"]);
+        assert_eq!(Vec::from(&s.reverse()), &[Some("c"), Some("b"), Some("a")]);
+
+        let s = Utf8Chunked::new_utf8_from_opt_slice("", &[Some("a"), None, Some("c")]);
+        assert_eq!(Vec::from(&s.reverse()), &[Some("c"), None, Some("a")]);
     }
 }

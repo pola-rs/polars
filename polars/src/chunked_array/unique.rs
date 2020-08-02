@@ -73,10 +73,8 @@ where
 impl Unique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> Self {
         let set = fill_set(self.into_iter(), self.len());
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), set.len());
-        self.into_iter()
-            .for_each(|val| builder.append_value(val).expect("could not append"));
-        builder.finish()
+        let builder = Utf8ChunkedBuilder::new(self.name(), set.len());
+        builder.new_from_iter(set.iter().copied())
     }
 
     fn arg_unique(&self) -> Vec<usize> {
@@ -219,6 +217,12 @@ mod test {
             ca.unique().into_iter().collect_vec(),
             vec![Some(true), Some(false)]
         );
+
+        let ca = Utf8Chunked::new_utf8_from_opt_slice(
+            "",
+            &[Some("a"), None, Some("a"), Some("b"), None],
+        );
+        assert_eq!(Vec::from(&ca.unique()), &[Some("a"), None, Some("b")]);
     }
 
     #[test]

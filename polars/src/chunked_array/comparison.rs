@@ -338,7 +338,12 @@ where
 }
 
 fn cmp_utf8chunked_to_str(ca: &Utf8Chunked, cmp_fn: &dyn Fn(&str) -> bool) -> BooleanChunked {
-    ca.into_iter().map(cmp_fn).collect()
+    ca.into_iter()
+        .map(|opt_s| match opt_s {
+            None => false,
+            Some(s) => cmp_fn(s),
+        })
+        .collect()
 }
 
 impl CmpOps<&str> for Utf8Chunked {

@@ -80,6 +80,14 @@ impl Utf8ChunkedBuilder {
         }
     }
 
+    pub fn new_from_iter<'a>(mut self, it: impl Iterator<Item = Option<&'a str>>) -> Utf8Chunked {
+        it.for_each(|opt_s| match opt_s {
+            None => self.append_null().expect("should not fail"),
+            Some(s) => self.append_value(s).expect("should not fail"),
+        });
+        self.finish()
+    }
+
     pub fn finish(mut self) -> Utf8Chunked {
         let arr = Arc::new(self.builder.finish());
         let len = arr.len();

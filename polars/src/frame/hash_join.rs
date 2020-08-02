@@ -501,13 +501,13 @@ mod test {
     use crate::prelude::*;
 
     fn create_frames() -> (DataFrame, DataFrame) {
-        let s0 = Series::new("days", [0, 1, 2].as_ref());
-        let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
-        let s2 = Series::new("rain", [0.2, 0.1, 0.3].as_ref());
+        let s0 = Series::new("days", &[0, 1, 2]);
+        let s1 = Series::new("temp", &[22.1, 19.9, 7.]);
+        let s2 = Series::new("rain", &[0.2, 0.1, 0.3]);
         let temp = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
-        let s0 = Series::new("days", [1, 2, 3, 1].as_ref());
-        let s1 = Series::new("rain", [0.1, 0.2, 0.3, 0.4].as_ref());
+        let s0 = Series::new("days", &[1, 2, 3, 1]);
+        let s1 = Series::new("rain", &[0.1, 0.2, 0.3, 0.4]);
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
         (temp, rain)
     }
@@ -517,9 +517,9 @@ mod test {
         let (temp, rain) = create_frames();
         let joined = temp.inner_join(&rain, "days", "days").unwrap();
 
-        let join_col_days = Series::new("days", [1, 2, 1].as_ref());
-        let join_col_temp = Series::new("temp", [19.9, 7., 19.9].as_ref());
-        let join_col_rain = Series::new("rain", [0.1, 0.3, 0.1].as_ref());
+        let join_col_days = Series::new("days", &[1, 2, 1]);
+        let join_col_temp = Series::new("temp", &[19.9, 7., 19.9]);
+        let join_col_rain = Series::new("rain", &[0.1, 0.3, 0.1]);
         let join_col_rain_right = Series::new("rain_right", [0.1, 0.2, 0.4].as_ref());
         let true_df = DataFrame::new(vec![
             join_col_days,
@@ -529,18 +529,18 @@ mod test {
         ])
         .unwrap();
 
+        println!("{}", joined);
         assert!(joined.frame_equal(&true_df));
-        println!("{}", joined)
     }
 
     #[test]
     fn test_left_join() {
-        let s0 = Series::new("days", [0, 1, 2, 3, 4].as_ref());
-        let s1 = Series::new("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
+        let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
+        let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
         let temp = DataFrame::new(vec![s0, s1]).unwrap();
 
-        let s0 = Series::new("days", [1, 2].as_ref());
-        let s1 = Series::new("rain", [0.1, 0.2].as_ref());
+        let s0 = Series::new("days", &[1, 2]);
+        let s1 = Series::new("rain", &[0.1, 0.2]);
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, "days", "days").unwrap();
         println!("{}", &joined);
@@ -548,7 +548,23 @@ mod test {
             (joined.f_column("rain").sum::<f32>().unwrap() * 10.).round(),
             3.
         );
-        assert_eq!(joined.f_column("rain").null_count(), 3)
+        assert_eq!(joined.f_column("rain").null_count(), 3);
+
+        // test join on utf8
+        let s0 = Series::new("days", &["mo", "tue", "wed", "thu", "fri"]);
+        let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
+        let temp = DataFrame::new(vec![s0, s1]).unwrap();
+
+        let s0 = Series::new("days", &["tue", "wed"]);
+        let s1 = Series::new("rain", &[0.1, 0.2]);
+        let rain = DataFrame::new(vec![s0, s1]).unwrap();
+        let joined = temp.left_join(&rain, "days", "days").unwrap();
+        println!("{}", &joined);
+        assert_eq!(
+            (joined.f_column("rain").sum::<f32>().unwrap() * 10.).round(),
+            3.
+        );
+        assert_eq!(joined.f_column("rain").null_count(), 3);
     }
 
     #[test]

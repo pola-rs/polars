@@ -30,20 +30,29 @@ impl Debug for Series {
         }
 
         match self {
+            // TODO: insert new datatypes
             Series::Int32(a) => format_series!(a, "i32"),
             Series::Int64(a) => format_series!(a, "i64"),
             Series::UInt32(a) => format_series!(a, "u32"),
             Series::Bool(a) => format_series!(a, "bool"),
             Series::Float32(a) => format_series!(a, "f32"),
             Series::Float64(a) => format_series!(a, "f64"),
+            Series::Date32(a) => format_series!(a, "date32"),
+            Series::Date64(a) => format_series!(a, "date64"),
+            Series::DurationNs(a) => format_series!(a, "date64"),
             Series::Utf8(a) => {
                 write![f, "Series: str \n[\n"]?;
-                a.into_iter().take(LIMIT).for_each(|v| {
-                    write!(f, "\t\"{}\"\n", &v[..std::cmp::min(LIMIT, v.len())]).ok();
+                a.into_iter().take(LIMIT).for_each(|opt_s| match opt_s {
+                    None => {
+                        write!(f, "\tnull\n").ok();
+                    }
+                    Some(s) => {
+                        write!(f, "\t\"{}\"\n", &s[..std::cmp::min(LIMIT, s.len())]).ok();
+                    }
                 });
                 write![f, "]"]
             }
-            _ => write!(f, "hello"),
+            _ => write!(f, "no supported"),
         }
     }
 }

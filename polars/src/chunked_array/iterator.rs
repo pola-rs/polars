@@ -285,6 +285,7 @@ macro_rules! set_indexes {
 
 pub struct ChunkStringIter<'a> {
     array_chunks: Vec<&'a StringArray>,
+    current_data: Option<ArrayDataRef>,
     current_array: Option<&'a StringArray>,
     current_len: usize,
     chunk_i: usize,
@@ -296,19 +297,7 @@ pub struct ChunkStringIter<'a> {
 impl<'a> ChunkStringIter<'a> {
     #[inline]
     fn set_indexes(&mut self) {
-        self.array_i += 1;
-        if self.array_i >= self.current_len {
-            // go to next array in the chunks
-            self.array_i = 0;
-            self.chunk_i += 1;
-
-            if self.chunk_i < self.array_chunks.len() {
-                // not yet at last chunk
-                let arr = unsafe { *self.array_chunks.get_unchecked(self.chunk_i) };
-                self.current_array = Some(arr);
-                self.current_len = arr.len();
-            }
-        }
+        set_indexes!(self)
     }
 
     #[inline]
@@ -318,20 +307,27 @@ impl<'a> ChunkStringIter<'a> {
 }
 
 impl<'a> Iterator for ChunkStringIter<'a> {
-    type Item = &'a str;
+    type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.out_of_bounds() {
             return None;
         }
 
+        let current_data = unsafe { self.current_data.as_ref().unsafe_unwrap() };
         let current_array = unsafe { self.current_array.unsafe_unwrap() };
 
         debug_assert!(self.chunk_i < self.array_chunks.len());
+        let ret;
 
-        let v = current_array.value(self.array_i);
+        if current_data.is_null(self.array_i) {
+            ret = Some(None)
+        } else {
+            let v = current_array.value(self.array_i);
+            ret = Some(Some(v));
+        }
         self.set_indexes();
-        Some(v)
+        ret
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.length, Some(self.length))
@@ -345,13 +341,14 @@ impl<'a> ExactSizeIterator for ChunkStringIter<'a> {
 }
 
 impl<'a> IntoIterator for &'a Utf8Chunked {
-    type Item = &'a str;
+    type Item = Option<&'a str>;
     type IntoIter = ChunkStringIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         let arrays = self.downcast_chunks();
 
         let arr = arrays.get(0).map(|v| *v);
+        let data = arr.map(|arr| arr.data());
         let current_len = match arr {
             Some(arr) => arr.len(),
             None => 0,
@@ -359,6 +356,7 @@ impl<'a> IntoIterator for &'a Utf8Chunked {
 
         ChunkStringIter {
             array_chunks: arrays,
+            current_data: data,
             current_array: arr,
             current_len,
             chunk_i: 0,
@@ -580,6 +578,8 @@ where
         builder.finish()
     }
 }
+
+// Xob is only a wrapper needed for specialization
 impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>
 where
     T: ArrowPrimitiveType,
@@ -607,6 +607,8 @@ impl FromIterator<bool> for BooleanChunked {
     }
 }
 
+// FromIterator for Utf8Chunked variants.
+
 impl<'a> FromIterator<&'a str> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
         let iter = iter.into_iter();
@@ -631,6 +633,21 @@ impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
     }
 }
 
+impl<'a> FromIterator<Option<&'a str>> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for opt_val in iter {
+            match opt_val {
+                None => builder.append_null().expect("should not fail"),
+                Some(val) => builder.append_value(val).expect("should not fail"),
+            }
+        }
+        builder.finish()
+    }
+}
+
 impl FromIterator<String> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
         let iter = iter.into_iter();
@@ -640,6 +657,21 @@ impl FromIterator<String> for Utf8Chunked {
             builder
                 .append_value(val.as_str())
                 .expect("could not append");
+        }
+        builder.finish()
+    }
+}
+
+impl FromIterator<Option<String>> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = Option<String>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for opt_val in iter {
+            match opt_val {
+                None => builder.append_null().expect("should not fail"),
+                Some(val) => builder.append_value(val.as_str()).expect("should not fail"),
+            }
         }
         builder.finish()
     }

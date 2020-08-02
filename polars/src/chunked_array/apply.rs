@@ -52,6 +52,7 @@ impl<'a> Apply<'a, bool, bool> for BooleanChunked {
         self.into_iter()
             .map(|opt_v| {
                 // Couldn't map due to movement of closure into map
+                // TODO: make closure copy?
                 match opt_v {
                     None => None,
                     Some(v) => Some(f(v)),
@@ -66,6 +67,6 @@ impl<'a> Apply<'a, &'a str, String> for Utf8Chunked {
     where
         F: Fn(&'a str) -> String,
     {
-        self.into_iter().map(f).collect()
+        self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
     }
 }
