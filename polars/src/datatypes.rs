@@ -1,6 +1,7 @@
 pub use arrow::datatypes::{
     BooleanType, Date32Type, Date64Type, DateUnit, DurationNanosecondType, Float32Type,
-    Float64Type, Int32Type, Int64Type, Time64NanosecondType, TimeUnit, UInt32Type,
+    Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, Time64NanosecondType, TimeUnit,
+    UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
 
 use crate::chunked_array::ChunkedArray;
@@ -46,7 +47,12 @@ impl<'a> PolarsDataType for Utf8Type {
 }
 
 pub type BooleanChunked = ChunkedArray<BooleanType>;
+pub type UInt8Chunked = ChunkedArray<UInt8Type>;
+pub type UInt16Chunked = ChunkedArray<UInt16Type>;
 pub type UInt32Chunked = ChunkedArray<UInt32Type>;
+pub type UInt64Chunked = ChunkedArray<UInt64Type>;
+pub type Int8Chunked = ChunkedArray<Int8Type>;
+pub type Int16Chunked = ChunkedArray<Int16Type>;
 pub type Int32Chunked = ChunkedArray<Int32Type>;
 pub type Int64Chunked = ChunkedArray<Int64Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
@@ -59,7 +65,12 @@ pub type Time64NsChunked = ChunkedArray<Time64NanosecondType>;
 
 pub trait PolarsNumericType: ArrowNumericType {}
 
+impl PolarsNumericType for UInt8Type {}
+impl PolarsNumericType for UInt16Type {}
 impl PolarsNumericType for UInt32Type {}
+impl PolarsNumericType for UInt64Type {}
+impl PolarsNumericType for Int8Type {}
+impl PolarsNumericType for Int16Type {}
 impl PolarsNumericType for Int32Type {}
 impl PolarsNumericType for Int64Type {}
 impl PolarsNumericType for Float32Type {}
@@ -70,7 +81,12 @@ impl PolarsNumericType for Time64NanosecondType {}
 impl PolarsNumericType for DurationNanosecondType {}
 
 pub trait PolarsIntegerType: PolarsNumericType {}
+impl PolarsIntegerType for UInt8Type {}
+impl PolarsIntegerType for UInt16Type {}
 impl PolarsIntegerType for UInt32Type {}
+impl PolarsIntegerType for UInt64Type {}
+impl PolarsIntegerType for Int8Type {}
+impl PolarsIntegerType for Int16Type {}
 impl PolarsIntegerType for Int32Type {}
 impl PolarsIntegerType for Int64Type {}
 impl PolarsIntegerType for Date32Type {}
@@ -81,16 +97,27 @@ impl PolarsIntegerType for DurationNanosecondType {}
 #[derive(Debug, PartialEq)]
 pub enum AnyType<'a> {
     Null,
-    Bool(bool),
-    I32(i32),
-    I64(i64),
-    F32(f32),
-    F64(f64),
-    U32(u32),
-    Str(&'a str),
-    Date64(i64),
+    Boolean(bool),
+    UInt8(u8),
+    UInt16(u16),
+    UInt32(u32),
+    UInt64(u64),
+    Int8(i8),
+    Int16(i16),
+    Int32(i32),
+    Int64(i64),
+    Float32(f32),
+    Float64(f64),
+    Utf8(&'a str),
+    /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
+    /// in days (32 bits).
     Date32(i32),
+    /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
+    /// in milliseconds (64 bits).
+    Date64(i64),
+    /// A 64-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     Time64(i64, TimeUnit),
+    /// Measure of elapsed time in either seconds, milliseconds, microseconds or nanoseconds.
     Duration(i64, TimeUnit),
 }
 
@@ -100,10 +127,16 @@ pub trait ToStr {
 
 impl ToStr for ArrowDataType {
     fn to_str(&self) -> &'static str {
+        // TODO: add types here
         match self {
             ArrowDataType::Null => "null",
             ArrowDataType::Boolean => "bool",
+            ArrowDataType::UInt8 => "u8",
+            ArrowDataType::UInt16 => "u16",
             ArrowDataType::UInt32 => "u32",
+            ArrowDataType::UInt64 => "u64",
+            ArrowDataType::Int8 => "i8",
+            ArrowDataType::Int16 => "i16",
             ArrowDataType::Int32 => "i32",
             ArrowDataType::Int64 => "i64",
             ArrowDataType::Float32 => "f32",

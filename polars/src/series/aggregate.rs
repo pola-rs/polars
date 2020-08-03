@@ -9,12 +9,27 @@ macro_rules! apply_agg_fn {
             Series::Bool(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast bool to T")),
-            Series::Int32(a) => a
+            Series::UInt8(a) => a
                 .$agg()
-                .map(|v| T::from(v).expect("could not cast i32 to T")),
+                .map(|v| T::from(v).expect("could not cast u8 to T")),
+            Series::UInt16(a) => a
+                .$agg()
+                .map(|v| T::from(v).expect("could not cast u16 to T")),
             Series::UInt32(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast u32 to T")),
+            Series::UInt64(a) => a
+                .$agg()
+                .map(|v| T::from(v).expect("could not cast u64 to T")),
+            Series::Int8(a) => a
+                .$agg()
+                .map(|v| T::from(v).expect("could not cast i8 to T")),
+            Series::Int16(a) => a
+                .$agg()
+                .map(|v| T::from(v).expect("could not cast i16 to T")),
+            Series::Int32(a) => a
+                .$agg()
+                .map(|v| T::from(v).expect("could not cast i32 to T")),
             Series::Int64(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast i64 to T")),

@@ -18,7 +18,12 @@ impl CmpOps<&Series> for Series {
     /// Create a boolean mask by checking for equality.
     fn eq(&self, rhs: &Series) -> BooleanChunked {
         match self {
+            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, eq),
+            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, eq),
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, eq),
+            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, eq),
+            Series::Int8(a) => compare!(Series::Int8, a, rhs, eq),
+            Series::Int16(a) => compare!(Series::Int16, a, rhs, eq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, eq),
             Series::Int64(a) => compare!(Series::Int64, a, rhs, eq),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, eq),
@@ -35,7 +40,12 @@ impl CmpOps<&Series> for Series {
     /// Create a boolean mask by checking for inequality.
     fn neq(&self, rhs: &Series) -> BooleanChunked {
         match self {
+            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, neq),
+            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, neq),
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, neq),
+            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, neq),
+            Series::Int8(a) => compare!(Series::Int8, a, rhs, neq),
+            Series::Int16(a) => compare!(Series::Int16, a, rhs, neq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, neq),
             Series::Int64(a) => compare!(Series::Int64, a, rhs, neq),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, neq),
@@ -52,7 +62,12 @@ impl CmpOps<&Series> for Series {
     /// Create a boolean mask by checking if lhs > rhs.
     fn gt(&self, rhs: &Series) -> BooleanChunked {
         match self {
+            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, gt),
+            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, gt),
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt),
+            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, gt),
+            Series::Int8(a) => compare!(Series::Int8, a, rhs, gt),
+            Series::Int16(a) => compare!(Series::Int16, a, rhs, gt),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, gt),
             Series::Int64(a) => compare!(Series::Int64, a, rhs, gt),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, gt),
@@ -69,7 +84,12 @@ impl CmpOps<&Series> for Series {
     /// Create a boolean mask by checking if lhs >= rhs.
     fn gt_eq(&self, rhs: &Series) -> BooleanChunked {
         match self {
+            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, gt_eq),
+            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, gt_eq),
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt_eq),
+            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, gt_eq),
+            Series::Int8(a) => compare!(Series::Int8, a, rhs, gt_eq),
+            Series::Int16(a) => compare!(Series::Int16, a, rhs, gt_eq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, gt_eq),
             Series::Int64(a) => compare!(Series::Int64, a, rhs, gt_eq),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, gt_eq),
@@ -86,7 +106,12 @@ impl CmpOps<&Series> for Series {
     /// Create a boolean mask by checking if lhs < rhs.
     fn lt(&self, rhs: &Series) -> BooleanChunked {
         match self {
+            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, lt),
+            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, lt),
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt),
+            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, lt),
+            Series::Int8(a) => compare!(Series::Int8, a, rhs, lt),
+            Series::Int16(a) => compare!(Series::Int16, a, rhs, lt),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, lt),
             Series::Int64(a) => compare!(Series::Int64, a, rhs, lt),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, lt),
@@ -103,7 +128,12 @@ impl CmpOps<&Series> for Series {
     /// Create a boolean mask by checking if lhs <= rhs.
     fn lt_eq(&self, rhs: &Series) -> BooleanChunked {
         match self {
+            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, lt_eq),
+            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, lt_eq),
             Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt_eq),
+            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, lt_eq),
+            Series::Int8(a) => compare!(Series::Int8, a, rhs, lt_eq),
+            Series::Int16(a) => compare!(Series::Int16, a, rhs, lt_eq),
             Series::Int32(a) => compare!(Series::Int32, a, rhs, lt_eq),
             Series::Int64(a) => compare!(Series::Int64, a, rhs, lt_eq),
             Series::Float32(a) => compare!(Series::Float32, a, rhs, lt_eq),

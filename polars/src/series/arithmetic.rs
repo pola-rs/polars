@@ -14,7 +14,12 @@ impl Series {
             }};
         }
         match self {
+            Series::UInt8(lhs) => subtract!(Series::UInt8, lhs),
+            Series::UInt16(lhs) => subtract!(Series::UInt16, lhs),
             Series::UInt32(lhs) => subtract!(Series::UInt32, lhs),
+            Series::UInt64(lhs) => subtract!(Series::UInt64, lhs),
+            Series::Int8(lhs) => subtract!(Series::Int8, lhs),
+            Series::Int16(lhs) => subtract!(Series::Int16, lhs),
             Series::Int32(lhs) => subtract!(Series::Int32, lhs),
             Series::Int64(lhs) => subtract!(Series::Int64, lhs),
             Series::Float32(lhs) => subtract!(Series::Float32, lhs),
@@ -38,7 +43,12 @@ impl Series {
             }};
         }
         match self {
+            Series::UInt8(lhs) => add!(Series::UInt8, lhs),
+            Series::UInt16(lhs) => add!(Series::UInt16, lhs),
             Series::UInt32(lhs) => add!(Series::UInt32, lhs),
+            Series::UInt64(lhs) => add!(Series::UInt64, lhs),
+            Series::Int8(lhs) => add!(Series::Int8, lhs),
+            Series::Int16(lhs) => add!(Series::Int16, lhs),
             Series::Int32(lhs) => add!(Series::Int32, lhs),
             Series::Int64(lhs) => add!(Series::Int64, lhs),
             Series::Float32(lhs) => add!(Series::Float32, lhs),
@@ -62,7 +72,12 @@ impl Series {
             }};
         }
         match self {
+            Series::UInt8(lhs) => multiply!(Series::UInt8, lhs),
+            Series::UInt16(lhs) => multiply!(Series::UInt16, lhs),
             Series::UInt32(lhs) => multiply!(Series::UInt32, lhs),
+            Series::UInt64(lhs) => multiply!(Series::UInt64, lhs),
+            Series::Int8(lhs) => multiply!(Series::Int8, lhs),
+            Series::Int16(lhs) => multiply!(Series::Int16, lhs),
             Series::Int32(lhs) => multiply!(Series::Int32, lhs),
             Series::Int64(lhs) => multiply!(Series::Int64, lhs),
             Series::Float32(lhs) => multiply!(Series::Float32, lhs),
@@ -86,7 +101,12 @@ impl Series {
             }};
         }
         match self {
+            Series::UInt8(lhs) => divide!(Series::UInt8, lhs),
+            Series::UInt16(lhs) => divide!(Series::UInt16, lhs),
             Series::UInt32(lhs) => divide!(Series::UInt32, lhs),
+            Series::UInt64(lhs) => divide!(Series::UInt64, lhs),
+            Series::Int8(lhs) => divide!(Series::Int8, lhs),
+            Series::Int16(lhs) => divide!(Series::Int16, lhs),
             Series::Int32(lhs) => divide!(Series::Int32, lhs),
             Series::Int64(lhs) => divide!(Series::Int64, lhs),
             Series::Float32(lhs) => divide!(Series::Float32, lhs),
@@ -195,7 +215,12 @@ where
 
     fn sub(self, rhs: T) -> Self::Output {
         match self {
+            Series::UInt8(ca) => op_num_rhs!(u8, ca, rhs, -),
+            Series::UInt16(ca) => op_num_rhs!(u16, ca, rhs, -),
             Series::UInt32(ca) => op_num_rhs!(u32, ca, rhs, -),
+            Series::UInt64(ca) => op_num_rhs!(u64, ca, rhs, -),
+            Series::Int8(ca) => op_num_rhs!(i8, ca, rhs, -),
+            Series::Int16(ca) => op_num_rhs!(i16, ca, rhs, -),
             Series::Int32(ca) => op_num_rhs!(i32, ca, rhs, -),
             Series::Int64(ca) => op_num_rhs!(i64, ca, rhs, -),
             Series::Float32(ca) => op_num_rhs!(f32, ca, rhs, -),
@@ -228,7 +253,12 @@ where
 
     fn add(self, rhs: T) -> Self::Output {
         match self {
+            Series::UInt8(ca) => op_num_rhs!(u8, ca, rhs, +),
+            Series::UInt16(ca) => op_num_rhs!(u16, ca, rhs, +),
             Series::UInt32(ca) => op_num_rhs!(u32, ca, rhs, +),
+            Series::UInt64(ca) => op_num_rhs!(u64, ca, rhs, +),
+            Series::Int8(ca) => op_num_rhs!(i8, ca, rhs, +),
+            Series::Int16(ca) => op_num_rhs!(i16, ca, rhs, +),
             Series::Int32(ca) => op_num_rhs!(i32, ca, rhs, +),
             Series::Int64(ca) => op_num_rhs!(i64, ca, rhs, +),
             Series::Float32(ca) => op_num_rhs!(f32, ca, rhs, +),
@@ -261,7 +291,12 @@ where
 
     fn div(self, rhs: T) -> Self::Output {
         match self {
+            Series::UInt8(ca) => op_num_rhs!(u8, ca, rhs, /),
+            Series::UInt16(ca) => op_num_rhs!(u16, ca, rhs, /),
             Series::UInt32(ca) => op_num_rhs!(u32, ca, rhs, /),
+            Series::UInt64(ca) => op_num_rhs!(u64, ca, rhs, /),
+            Series::Int8(ca) => op_num_rhs!(i8, ca, rhs, /),
+            Series::Int16(ca) => op_num_rhs!(i16, ca, rhs, /),
             Series::Int32(ca) => op_num_rhs!(i32, ca, rhs, /),
             Series::Int64(ca) => op_num_rhs!(i64, ca, rhs, /),
             Series::Float32(ca) => op_num_rhs!(f32, ca, rhs, /),
@@ -294,7 +329,12 @@ where
 
     fn mul(self, rhs: T) -> Self::Output {
         match self {
+            Series::UInt8(ca) => op_num_rhs!(u8, ca, rhs, *),
+            Series::UInt16(ca) => op_num_rhs!(u16, ca, rhs, *),
             Series::UInt32(ca) => op_num_rhs!(u32, ca, rhs, *),
+            Series::UInt64(ca) => op_num_rhs!(u64, ca, rhs, *),
+            Series::Int8(ca) => op_num_rhs!(i8, ca, rhs, *),
+            Series::Int16(ca) => op_num_rhs!(i16, ca, rhs, *),
             Series::Int32(ca) => op_num_rhs!(i32, ca, rhs, *),
             Series::Int64(ca) => op_num_rhs!(i64, ca, rhs, *),
             Series::Float32(ca) => op_num_rhs!(f32, ca, rhs, *),
@@ -345,7 +385,12 @@ where
 
     fn add(self, rhs: &Series) -> Self::Output {
         match rhs {
+            Series::UInt8(ca) => op_num_lhs!(u8, ca, self, +),
+            Series::UInt16(ca) => op_num_lhs!(u16, ca, self, +),
             Series::UInt32(ca) => op_num_lhs!(u32, ca, self, +),
+            Series::UInt64(ca) => op_num_lhs!(u64, ca, self, +),
+            Series::Int8(ca) => op_num_lhs!(i8, ca, self, +),
+            Series::Int16(ca) => op_num_lhs!(i16, ca, self, +),
             Series::Int32(ca) => op_num_lhs!(i32, ca, self, +),
             Series::Int64(ca) => op_num_lhs!(i64, ca, self, +),
             Series::Float32(ca) => op_num_lhs!(f32, ca, self, +),
@@ -359,7 +404,12 @@ where
     }
     fn sub(self, rhs: &Series) -> Self::Output {
         match rhs {
+            Series::UInt8(ca) => op_num_lhs!(u8, ca, self, -),
+            Series::UInt16(ca) => op_num_lhs!(u16, ca, self, -),
             Series::UInt32(ca) => op_num_lhs!(u32, ca, self, -),
+            Series::UInt64(ca) => op_num_lhs!(u64, ca, self, -),
+            Series::Int8(ca) => op_num_lhs!(i8, ca, self, -),
+            Series::Int16(ca) => op_num_lhs!(i16, ca, self, -),
             Series::Int32(ca) => op_num_lhs!(i32, ca, self, -),
             Series::Int64(ca) => op_num_lhs!(i64, ca, self, -),
             Series::Float32(ca) => op_num_lhs!(f32, ca, self, -),
@@ -373,7 +423,12 @@ where
     }
     fn div(self, rhs: &Series) -> Self::Output {
         match rhs {
+            Series::UInt8(ca) => op_num_lhs!(u8, ca, self, /),
+            Series::UInt16(ca) => op_num_lhs!(u16, ca, self, /),
             Series::UInt32(ca) => op_num_lhs!(u32, ca, self, /),
+            Series::UInt64(ca) => op_num_lhs!(u64, ca, self, /),
+            Series::Int8(ca) => op_num_lhs!(i8, ca, self, /),
+            Series::Int16(ca) => op_num_lhs!(i16, ca, self, /),
             Series::Int32(ca) => op_num_lhs!(i32, ca, self, /),
             Series::Int64(ca) => op_num_lhs!(i64, ca, self, /),
             Series::Float32(ca) => op_num_lhs!(f32, ca, self, /),
@@ -387,7 +442,12 @@ where
     }
     fn mul(self, rhs: &Series) -> Self::Output {
         match rhs {
+            Series::UInt8(ca) => op_num_lhs!(u8, ca, self, *),
+            Series::UInt16(ca) => op_num_lhs!(u16, ca, self, *),
             Series::UInt32(ca) => op_num_lhs!(u32, ca, self, *),
+            Series::UInt64(ca) => op_num_lhs!(u64, ca, self, *),
+            Series::Int8(ca) => op_num_lhs!(i8, ca, self, *),
+            Series::Int16(ca) => op_num_lhs!(i16, ca, self, *),
             Series::Int32(ca) => op_num_lhs!(i32, ca, self, *),
             Series::Int64(ca) => op_num_lhs!(i64, ca, self, *),
             Series::Float32(ca) => op_num_lhs!(f32, ca, self, *),
@@ -407,7 +467,12 @@ impl Series {
         E: ToPrimitive,
     {
         match self {
+            Series::UInt8(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
+            Series::UInt16(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
             Series::UInt32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
+            Series::UInt64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
+            Series::Int8(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
+            Series::Int16(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
             Series::Int32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
             Series::Int64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
             Series::Float32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),

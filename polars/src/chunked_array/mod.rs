@@ -7,8 +7,9 @@ use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::{
     array::{
-        ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, PrimitiveArray,
-        PrimitiveBuilder, StringArray, StringBuilder, UInt32Array,
+        ArrayRef, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array,
+        Int8Array, PrimitiveArray, PrimitiveBuilder, StringArray, StringBuilder, UInt16Array,
+        UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
     compute,
@@ -140,9 +141,49 @@ where
     }
 
     /// Downcast
+    pub fn u8(self) -> Result<UInt8Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::UInt8 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast
+    pub fn u16(self) -> Result<UInt16Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::UInt16 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast
     pub fn u32(self) -> Result<UInt32Chunked> {
         match T::get_data_type() {
             ArrowDataType::UInt32 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast
+    pub fn u64(self) -> Result<UInt64Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::UInt64 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast
+    pub fn i8(self) -> Result<Int8Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Int8 => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast
+    pub fn i16(self) -> Result<Int16Chunked> {
+        match T::get_data_type() {
+            ArrowDataType::Int16 => unsafe { Ok(std::mem::transmute(self)) },
             _ => Err(PolarsError::DataTypeMisMatch),
         }
     }
@@ -290,14 +331,20 @@ where
                 AnyType::$variant(v)
             }};
         }
+        // TODO: insert types
         match T::get_data_type() {
-            ArrowDataType::Boolean => downcast_and_pack!(BooleanArray, Bool),
-            ArrowDataType::UInt32 => downcast_and_pack!(UInt32Array, U32),
-            ArrowDataType::Int32 => downcast_and_pack!(Int32Array, I32),
-            ArrowDataType::Int64 => downcast_and_pack!(Int64Array, I64),
-            ArrowDataType::Float32 => downcast_and_pack!(Float32Array, F32),
-            ArrowDataType::Float64 => downcast_and_pack!(Float64Array, F64),
-            ArrowDataType::Utf8 => downcast_and_pack!(StringArray, Str),
+            ArrowDataType::Utf8 => downcast_and_pack!(StringArray, Utf8),
+            ArrowDataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
+            ArrowDataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
+            ArrowDataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
+            ArrowDataType::UInt32 => downcast_and_pack!(UInt32Array, UInt32),
+            ArrowDataType::UInt64 => downcast_and_pack!(UInt64Array, UInt64),
+            ArrowDataType::Int8 => downcast_and_pack!(Int8Array, Int8),
+            ArrowDataType::Int16 => downcast_and_pack!(Int16Array, Int16),
+            ArrowDataType::Int32 => downcast_and_pack!(Int32Array, Int32),
+            ArrowDataType::Int64 => downcast_and_pack!(Int64Array, Int64),
+            ArrowDataType::Float32 => downcast_and_pack!(Float32Array, Float32),
+            ArrowDataType::Float64 => downcast_and_pack!(Float64Array, Float64),
             _ => unimplemented!(),
         }
     }
@@ -989,10 +1036,10 @@ pub(crate) mod test {
     #[test]
     fn get() {
         let mut a = get_chunked_array();
-        assert_eq!(AnyType::I32(2), a.get(1));
+        assert_eq!(AnyType::Int32(2), a.get(1));
         // check if chunks indexes are properly determined
         a.append_array(a.chunks[0].clone()).unwrap();
-        assert_eq!(AnyType::I32(1), a.get(3));
+        assert_eq!(AnyType::Int32(1), a.get(3));
     }
 
     #[test]

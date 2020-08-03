@@ -26,7 +26,12 @@ macro_rules! from_iterator {
     };
 }
 
+from_iterator!(u8, UInt8);
+from_iterator!(u16, UInt16);
 from_iterator!(u32, UInt32);
+from_iterator!(u64, UInt64);
+from_iterator!(i8, Int8);
+from_iterator!(i16, Int16);
 from_iterator!(i32, Int32);
 from_iterator!(i64, Int64);
 from_iterator!(f32, Float32);

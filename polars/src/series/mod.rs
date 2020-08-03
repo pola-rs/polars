@@ -104,7 +104,12 @@ pub(crate) mod iterator;
 
 #[derive(Clone)]
 pub enum Series {
+    UInt8(ChunkedArray<datatypes::UInt8Type>),
+    UInt16(ChunkedArray<datatypes::UInt16Type>),
     UInt32(ChunkedArray<datatypes::UInt32Type>),
+    UInt64(ChunkedArray<datatypes::UInt64Type>),
+    Int8(ChunkedArray<datatypes::Int8Type>),
+    Int16(ChunkedArray<datatypes::Int16Type>),
     Int32(ChunkedArray<datatypes::Int32Type>),
     Int64(ChunkedArray<datatypes::Int64Type>),
     Float32(ChunkedArray<datatypes::Float32Type>),
@@ -121,7 +126,12 @@ pub enum Series {
 macro_rules! apply_method_all_series {
     ($self:ident, $method:ident, $($args:expr),*) => {
         match $self {
+            Series::UInt8(a) => a.$method($($args),*),
+            Series::UInt16(a) => a.$method($($args),*),
             Series::UInt32(a) => a.$method($($args),*),
+            Series::UInt64(a) => a.$method($($args),*),
+            Series::Int8(a) => a.$method($($args),*),
+            Series::Int16(a) => a.$method($($args),*),
             Series::Int32(a) => a.$method($($args),*),
             Series::Int64(a) => a.$method($($args),*),
             Series::Float32(a) => a.$method($($args),*),
@@ -141,7 +151,12 @@ macro_rules! apply_method_all_series {
 macro_rules! apply_method_numeric_series {
     ($self:ident, $method:ident, $($args:ident),*) => {
         match $self {
+            Series::UInt8(a) => a.$method($($args),*),
+            Series::UInt16(a) => a.$method($($args),*),
             Series::UInt32(a) => a.$method($($args),*),
+            Series::UInt64(a) => a.$method($($args),*),
+            Series::Int8(a) => a.$method($($args),*),
+            Series::Int16(a) => a.$method($($args),*),
             Series::Int32(a) => a.$method($($args),*),
             Series::Int64(a) => a.$method($($args),*),
             Series::Float32(a) => a.$method($($args),*),
@@ -158,7 +173,12 @@ macro_rules! apply_method_numeric_series {
 macro_rules! apply_method_and_return {
     ($self:ident, $method:ident, [$($args:expr),*], $($opt_question_mark:tt)*) => {
         match $self {
+            Series::UInt8(a) => Series::UInt8(a.$method($($args),*)$($opt_question_mark)*),
+            Series::UInt16(a) => Series::UInt16(a.$method($($args),*)$($opt_question_mark)*),
             Series::UInt32(a) => Series::UInt32(a.$method($($args),*)$($opt_question_mark)*),
+            Series::UInt64(a) => Series::UInt64(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Int8(a) => Series::Int8(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Int16(a) => Series::Int16(a.$method($($args),*)$($opt_question_mark)*),
             Series::Int32(a) => Series::Int32(a.$method($($args),*)$($opt_question_mark)*),
             Series::Int64(a) => Series::Int64(a.$method($($args),*)$($opt_question_mark)*),
             Series::Float32(a) => Series::Float32(a.$method($($args),*)$($opt_question_mark)*),
@@ -222,6 +242,14 @@ impl Series {
         self.chunks().len()
     }
 
+    pub fn i8(&self) -> Result<&Int8Chunked> {
+        unpack_series!(self, Int8)
+    }
+
+    pub fn i16(&self) -> Result<&Int16Chunked> {
+        unpack_series!(self, Int16)
+    }
+
     /// Unpack to ChunkedArray
     /// ```
     /// # use polars::prelude::*;
@@ -256,8 +284,23 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray
+    pub fn u8(&self) -> Result<&UInt8Chunked> {
+        unpack_series!(self, UInt8)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn u16(&self) -> Result<&UInt16Chunked> {
+        unpack_series!(self, UInt16)
+    }
+
+    /// Unpack to ChunkedArray
     pub fn u32(&self) -> Result<&UInt32Chunked> {
         unpack_series!(self, UInt32)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn u64(&self) -> Result<&UInt64Chunked> {
+        unpack_series!(self, UInt64)
     }
 
     /// Unpack to ChunkedArray
@@ -307,7 +350,12 @@ impl Series {
     /// Append a Series of the same type in place.
     pub fn append(&mut self, other: &Self) -> Result<()> {
         match self {
+            Series::UInt8(arr) => arr.append(other.u8()?),
+            Series::UInt16(arr) => arr.append(other.u16()?),
             Series::UInt32(arr) => arr.append(other.u32()?),
+            Series::UInt64(arr) => arr.append(other.u64()?),
+            Series::Int8(arr) => arr.append(other.i8()?),
+            Series::Int16(arr) => arr.append(other.i16()?),
             Series::Int32(arr) => arr.append(other.i32()?),
             Series::Int64(arr) => arr.append(other.i64()?),
             Series::Float32(arr) => arr.append(other.f32()?),
@@ -378,7 +426,12 @@ impl Series {
         N: PolarsDataType,
     {
         let s = match self {
+            Series::UInt8(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::UInt16(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::UInt32(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::UInt64(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Int8(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Int16(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Int32(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Int64(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Float32(arr) => pack_ca_to_series(arr.cast::<N>()?),
@@ -453,7 +506,12 @@ impl Series {
 fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
     unsafe {
         match N::get_data_type() {
+            ArrowDataType::UInt8 => Series::UInt8(mem::transmute(ca)),
+            ArrowDataType::UInt16 => Series::UInt16(mem::transmute(ca)),
             ArrowDataType::UInt32 => Series::UInt32(mem::transmute(ca)),
+            ArrowDataType::UInt64 => Series::UInt64(mem::transmute(ca)),
+            ArrowDataType::Int8 => Series::Int8(mem::transmute(ca)),
+            ArrowDataType::Int16 => Series::Int16(mem::transmute(ca)),
             ArrowDataType::Int32 => Series::Int32(mem::transmute(ca)),
             ArrowDataType::Int64 => Series::Int64(mem::transmute(ca)),
             ArrowDataType::Float32 => Series::Float32(mem::transmute(ca)),
@@ -501,14 +559,24 @@ impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series
 
 impl_named_from!([String], Utf8, new_utf8_from_slice);
 impl_named_from!([bool], Bool, new_from_slice);
+impl_named_from!([u8], UInt8, new_from_slice);
+impl_named_from!([u16], UInt16, new_from_slice);
 impl_named_from!([u32], UInt32, new_from_slice);
+impl_named_from!([u64], UInt64, new_from_slice);
+impl_named_from!([i8], Int8, new_from_slice);
+impl_named_from!([i16], Int16, new_from_slice);
 impl_named_from!([i32], Int32, new_from_slice);
 impl_named_from!([i64], Int64, new_from_slice);
 impl_named_from!([f32], Float32, new_from_slice);
 impl_named_from!([f64], Float64, new_from_slice);
 impl_named_from!([Option<String>], Utf8, new_utf8_from_opt_slice);
 impl_named_from!([Option<bool>], Bool, new_from_opt_slice);
+impl_named_from!([Option<u8>], UInt8, new_from_opt_slice);
+impl_named_from!([Option<u16>], UInt16, new_from_opt_slice);
 impl_named_from!([Option<u32>], UInt32, new_from_opt_slice);
+impl_named_from!([Option<u64>], UInt64, new_from_opt_slice);
+impl_named_from!([Option<i8>], Int8, new_from_opt_slice);
+impl_named_from!([Option<i16>], Int16, new_from_opt_slice);
 impl_named_from!([Option<i32>], Int32, new_from_opt_slice);
 impl_named_from!([Option<i64>], Int64, new_from_opt_slice);
 impl_named_from!([Option<f32>], Float32, new_from_opt_slice);
@@ -527,7 +595,12 @@ macro_rules! impl_as_ref_ca {
     };
 }
 
+impl_as_ref_ca!(UInt8Type, UInt8);
+impl_as_ref_ca!(UInt16Type, UInt16);
 impl_as_ref_ca!(UInt32Type, UInt32);
+impl_as_ref_ca!(UInt64Type, UInt64);
+impl_as_ref_ca!(Int8Type, Int8);
+impl_as_ref_ca!(Int16Type, Int16);
 impl_as_ref_ca!(Int32Type, Int32);
 impl_as_ref_ca!(Int64Type, Int64);
 impl_as_ref_ca!(Float32Type, Float32);
@@ -548,7 +621,12 @@ macro_rules! impl_as_mut_ca {
     };
 }
 
+impl_as_mut_ca!(UInt8Type, UInt8);
+impl_as_mut_ca!(UInt16Type, UInt16);
 impl_as_mut_ca!(UInt32Type, UInt32);
+impl_as_mut_ca!(UInt64Type, UInt64);
+impl_as_mut_ca!(Int8Type, Int8);
+impl_as_mut_ca!(Int16Type, Int16);
 impl_as_mut_ca!(Int32Type, Int32);
 impl_as_mut_ca!(Int64Type, Int64);
 impl_as_mut_ca!(Float32Type, Float32);

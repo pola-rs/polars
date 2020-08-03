@@ -47,18 +47,9 @@ where
 impl<'a> Apply<'a, bool, bool> for BooleanChunked {
     fn apply<F>(&self, f: F) -> Self
     where
-        F: Fn(bool) -> bool,
+        F: Fn(bool) -> bool + Copy,
     {
-        self.into_iter()
-            .map(|opt_v| {
-                // Couldn't map due to movement of closure into map
-                // TODO: make closure copy?
-                match opt_v {
-                    None => None,
-                    Some(v) => Some(f(v)),
-                }
-            })
-            .collect()
+        self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
     }
 }
 
