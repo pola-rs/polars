@@ -283,6 +283,20 @@ macro_rules! set_indexes {
     }};
 }
 
+macro_rules! get_opt_value_and_set_indexes {
+    ($self:ident, $current_data:ident, $current_array:ident) => {{
+        let ret;
+        if $current_data.is_null($self.array_i) {
+            ret = Some(None)
+        } else {
+            let v = $current_array.value($self.array_i);
+            ret = Some(Some(v));
+        };
+        $self.set_indexes();
+        ret
+    }};
+}
+
 pub struct ChunkStringIter<'a> {
     array_chunks: Vec<&'a StringArray>,
     current_data: Option<ArrayDataRef>,
@@ -318,16 +332,7 @@ impl<'a> Iterator for ChunkStringIter<'a> {
         let current_array = unsafe { self.current_array.unsafe_unwrap() };
 
         debug_assert!(self.chunk_i < self.array_chunks.len());
-        let ret;
-
-        if current_data.is_null(self.array_i) {
-            ret = Some(None)
-        } else {
-            let v = current_array.value(self.array_i);
-            ret = Some(Some(v));
-        }
-        self.set_indexes();
-        ret
+        get_opt_value_and_set_indexes!(self, current_data, current_array)
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.length, Some(self.length))
@@ -402,16 +407,7 @@ impl<'a> Iterator for ChunkBoolIter<'a> {
         let current_array = unsafe { self.current_array.unsafe_unwrap() };
 
         debug_assert!(self.chunk_i < self.array_chunks.len());
-        let ret;
-
-        if current_data.is_null(self.array_i) {
-            ret = Some(None)
-        } else {
-            let v = current_array.value(self.array_i);
-            ret = Some(Some(v));
-        }
-        self.set_indexes();
-        ret
+        get_opt_value_and_set_indexes!(self, current_data, current_array)
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.length, Some(self.length))
@@ -497,16 +493,7 @@ where
         let current_array = unsafe { self.current_array.unsafe_unwrap() };
 
         debug_assert!(self.chunk_i < self.array_chunks.len());
-        let ret;
-
-        if current_data.is_null(self.array_i) {
-            ret = Some(None)
-        } else {
-            let v = current_array.value(self.array_i);
-            ret = Some(Some(v));
-        }
-        self.set_indexes();
-        ret
+        get_opt_value_and_set_indexes!(self, current_data, current_array)
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.length, Some(self.length))
