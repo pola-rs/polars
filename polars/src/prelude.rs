@@ -7,6 +7,7 @@ pub use crate::{
         cast::ChunkCast,
         chunkops::ChunkOps,
         comparison::{CmpOps, NumComp},
+        iterator::ExactSizeDoubleEndedIterator,
         take::{IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeIndex},
         unique::Unique,
         ChunkSort, ChunkedArray, Downcast, Reverse,

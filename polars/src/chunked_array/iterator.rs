@@ -8,6 +8,23 @@ use std::iter::FromIterator;
 use std::slice::Iter;
 use unsafe_unwrap::UnsafeUnwrap;
 
+pub trait ExactSizeDoubleEndedIterator: ExactSizeIterator + DoubleEndedIterator {}
+
+impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterSingleChunk<'a, T> {}
+impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterSingleChunkNullCheck<'a, T> {}
+impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterManyChunk<'a, T> {}
+impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterManyChunkNullCheck<'a, T> {}
+
+impl<'a, T> ExactSizeIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
+impl<'a, T> ExactSizeIterator for NumIterSingleChunk<'a, T>
+where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
+}
+impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
+impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
+
 /// Single chunk with null values
 pub struct NumIterSingleChunkNullCheck<'a, T>
 where
@@ -15,6 +32,20 @@ where
 {
     arr: &'a PrimitiveArray<T>,
     idx: usize,
+    back_idx: usize,
+}
+
+impl<'a, T> NumIterSingleChunkNullCheck<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn return_opt_val(&self, index: usize) -> Option<Option<T::Native>> {
+        if self.arr.is_null(index) {
+            Some(None)
+        } else {
+            Some(Some(self.arr.value(index)))
+        }
+    }
 }
 
 impl<'a, T> Iterator for NumIterSingleChunkNullCheck<'a, T>
@@ -24,15 +55,11 @@ where
     type Item = Option<T::Native>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx == self.arr.len() {
+        if self.idx == self.back_idx {
             None
         } else {
             self.idx += 1;
-            if self.arr.is_null(self.idx - 1) {
-                Some(None)
-            } else {
-                Some(Some(self.arr.value(self.idx - 1)))
-            }
+            self.return_opt_val(self.idx - 1)
         }
     }
 
@@ -42,7 +69,19 @@ where
     }
 }
 
-impl<'a, T> ExactSizeIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
+impl<'a, T> DoubleEndedIterator for NumIterSingleChunkNullCheck<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.idx == self.back_idx {
+            None
+        } else {
+            self.back_idx -= 1;
+            self.return_opt_val(self.back_idx)
+        }
+    }
+}
 
 /// Single chunk no null values
 pub struct NumIterSingleChunk<'a, T>
@@ -69,11 +108,14 @@ where
     }
 }
 
-impl<'a, T> ExactSizeIterator for NumIterSingleChunk<'a, T>
+impl<'a, T> DoubleEndedIterator for NumIterSingleChunk<'a, T>
 where
     T: PolarsNumericType,
     T::Native: Copy,
 {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        unimplemented!()
+    }
 }
 
 /// Many chunks with null checks
@@ -159,7 +201,15 @@ where
     }
 }
 
-impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
+impl<'a, T> DoubleEndedIterator for NumIterManyChunkNullCheck<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        unimplemented!()
+    }
+}
+
 /// Many chunks no null checks
 pub struct NumIterManyChunk<'a, T>
 where
@@ -226,14 +276,21 @@ where
     }
 }
 
-impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
+impl<'a, T> DoubleEndedIterator for NumIterManyChunk<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        unimplemented!()
+    }
+}
 
 impl<'a, T> IntoIterator for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     type Item = Option<T::Native>;
-    type IntoIter = Box<dyn ExactSizeIterator<Item = Option<T::Native>> + 'a>;
+    type IntoIter = Box<dyn ExactSizeDoubleEndedIterator<Item = Option<T::Native>> + 'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         match self.cont_slice() {
@@ -247,10 +304,15 @@ where
             Err(_) => {
                 let chunks = self.downcast_chunks();
                 match chunks.len() {
-                    1 => Box::new(NumIterSingleChunkNullCheck {
-                        arr: chunks[0],
-                        idx: 0,
-                    }),
+                    1 => {
+                        let arr = chunks[0];
+                        let len = arr.len();
+                        Box::new(NumIterSingleChunkNullCheck {
+                            arr,
+                            idx: 0,
+                            back_idx: len,
+                        })
+                    }
                     _ => {
                         if self.null_count() == 0 {
                             Box::new(NumIterManyChunk::new(self))
@@ -679,5 +741,39 @@ mod test {
             vec![Some(1u32), Some(2), Some(3), Some(1), Some(2), Some(3)],
             v
         )
+    }
+
+    #[test]
+    fn test_iter_numitersinglechunknullcheck() {
+        let a = UInt32Chunked::new_from_opt_slice("a", &[Some(1), None, Some(3)]);
+        let mut it = a.into_iter();
+
+        // normal iterator
+        assert_eq!(it.next(), Some(Some(1)));
+        assert_eq!(it.next(), Some(None));
+        assert_eq!(it.next(), Some(Some(3)));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(3)));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), Some(Some(1)));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(3)));
+        assert_eq!(it.next(), Some(Some(1)));
+        assert_eq!(it.next(), Some(None));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(1)));
+        assert_eq!(it.next_back(), Some(Some(3)));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), None);
     }
 }
