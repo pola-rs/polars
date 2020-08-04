@@ -255,7 +255,7 @@ where
     }
 
     /// Downcast
-    pub fn time64ns(self) -> Result<Time64NsChunked> {
+    pub fn time64_ns(self) -> Result<Time64NsChunked> {
         match T::get_data_type() {
             ArrowDataType::Time64(TimeUnit::Nanosecond) => unsafe { Ok(std::mem::transmute(self)) },
             _ => Err(PolarsError::DataTypeMisMatch),
