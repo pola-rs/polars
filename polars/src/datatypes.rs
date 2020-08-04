@@ -1,3 +1,11 @@
+//! # Data types supported by Polars
+//!
+//! At the moment Polars doesn't include all data types available by Arrow. The goal is to
+//! incrementally support more data types and prioritize these by usability.
+//!
+//! [See the AnyType variants](enum.AnyType.html#variants) for the data types that
+//! are currently supported.
+//!
 pub use arrow::datatypes::{
     BooleanType, Date32Type, Date64Type, DateUnit, DurationNanosecondType, Float32Type,
     Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, Time64NanosecondType, TimeUnit,
@@ -98,17 +106,28 @@ impl PolarsIntegerType for DurationNanosecondType {}
 pub enum AnyType<'a> {
     Null,
     Boolean(bool),
-    UInt8(u8),
-    UInt16(u16),
-    UInt32(u32),
-    UInt64(u64),
-    Int8(i8),
-    Int16(i16),
-    Int32(i32),
-    Int64(i64),
-    Float32(f32),
-    Float64(f64),
+    /// A UTF8 encoded string type.
     Utf8(&'a str),
+    /// An unsigned 8-bit integer number.
+    UInt8(u8),
+    /// An unsigned 16-bit integer number.
+    UInt16(u16),
+    /// An unsigned 32-bit integer number.
+    UInt32(u32),
+    /// An unsigned 64-bit integer number.
+    UInt64(u64),
+    /// An 8-bit integer number.
+    Int8(i8),
+    /// A 16-bit integer number.
+    Int16(i16),
+    /// A 32-bit integer number.
+    Int32(i32),
+    /// A 64-bit integer number.
+    Int64(i64),
+    /// A 32-bit floating point number.
+    Float32(f32),
+    /// A 64-bit floating point number.
+    Float64(f64),
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date32(i32),

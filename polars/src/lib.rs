@@ -20,8 +20,9 @@
 //! ```
 //!
 //! For more IO examples see:
-//!     * [the csv module](frame/ser/csv/index.html)
-//!     * [the json module](frame/ser/json/index.html)
+//!
+//! * [the csv module](frame/ser/csv/index.html)
+//! * [the json module](frame/ser/json/index.html)
 //!
 //!
 //! ## Joins
