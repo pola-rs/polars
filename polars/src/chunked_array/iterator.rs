@@ -114,7 +114,7 @@ where
     T::Native: Copy,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        unimplemented!()
+        self.iter.next_back().map(Some)
     }
 }
 
@@ -774,6 +774,40 @@ mod test {
         assert_eq!(it.next(), Some(Some(1)));
         assert_eq!(it.next_back(), Some(Some(3)));
         assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_numitersinglechunk() {
+        let a = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(1)));
+        assert_eq!(it.next(), Some(Some(2)));
+        assert_eq!(it.next(), Some(Some(3)));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(3)));
+        assert_eq!(it.next_back(), Some(Some(2)));
+        assert_eq!(it.next_back(), Some(Some(1)));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(3)));
+        assert_eq!(it.next(), Some(Some(1)));
+        assert_eq!(it.next(), Some(Some(2)));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(1)));
+        assert_eq!(it.next_back(), Some(Some(3)));
+        assert_eq!(it.next_back(), Some(Some(2)));
         assert_eq!(it.next_back(), None);
     }
 }
