@@ -8,13 +8,7 @@ use std::iter::FromIterator;
 use std::slice::Iter;
 use unsafe_unwrap::UnsafeUnwrap;
 
-pub trait ExactSizeDoubleEndedIterator: ExactSizeIterator + DoubleEndedIterator {}
-
-impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterSingleChunk<'a, T> {}
-impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterSingleChunkNullCheck<'a, T> {}
-impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterManyChunk<'a, T> {}
-impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterManyChunkNullCheck<'a, T> {}
-
+// ExactSizeIterator trait implementations for all Iterator structs in this file
 impl<'a, T> ExactSizeIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
 impl<'a, T> ExactSizeIterator for NumIterSingleChunk<'a, T>
 where
@@ -24,6 +18,22 @@ where
 }
 impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
 impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
+impl<'a> ExactSizeIterator for Utf8IterSingleChunk<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterSingleChunkNullCheck<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterManyChunk<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterManyChunkNullCheck<'a> {}
+
+// Helper trait needed for dynamic dispatch
+pub trait ExactSizeDoubleEndedIterator: ExactSizeIterator + DoubleEndedIterator {}
+
+impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterSingleChunk<'a, T> {}
+impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterSingleChunkNullCheck<'a, T> {}
+impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterManyChunk<'a, T> {}
+impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterManyChunkNullCheck<'a, T> {}
+impl<'a> ExactSizeDoubleEndedIterator for Utf8IterSingleChunk<'a> {}
+impl<'a> ExactSizeDoubleEndedIterator for Utf8IterSingleChunkNullCheck<'a> {}
+impl<'a> ExactSizeDoubleEndedIterator for Utf8IterManyChunk<'a> {}
+impl<'a> ExactSizeDoubleEndedIterator for Utf8IterManyChunkNullCheck<'a> {}
 
 /// Single chunk with null values
 pub struct NumIterSingleChunkNullCheck<'a, T>
@@ -470,6 +480,380 @@ where
     }
 }
 
+/// No null checks
+pub struct Utf8IterSingleChunk<'a> {
+    current_array: &'a StringArray,
+    idx_left: usize,
+    idx_right: usize,
+}
+
+impl<'a> Utf8IterSingleChunk<'a> {
+    fn new(ca: &'a Utf8Chunked) -> Self {
+        let chunks = ca.downcast_chunks();
+        let current_array = chunks[0];
+        let idx_left = 0;
+        let idx_right = current_array.len();
+
+        Utf8IterSingleChunk {
+            current_array,
+            idx_left,
+            idx_right,
+        }
+    }
+}
+
+impl<'a> Iterator for Utf8IterSingleChunk<'a> {
+    type Item = Option<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+
+        let v = self.current_array.value(self.idx_left);
+        self.idx_left += 1;
+        Some(Some(v))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.current_array.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a> DoubleEndedIterator for Utf8IterSingleChunk<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+        self.idx_right -= 1;
+        Some(Some(self.current_array.value(self.idx_right)))
+    }
+}
+
+pub struct Utf8IterSingleChunkNullCheck<'a> {
+    current_data: ArrayDataRef,
+    current_array: &'a StringArray,
+    idx_left: usize,
+    idx_right: usize,
+}
+
+impl<'a> Utf8IterSingleChunkNullCheck<'a> {
+    fn new(ca: &'a Utf8Chunked) -> Self {
+        let chunks = ca.downcast_chunks();
+        let current_array = chunks[0];
+        let current_data = current_array.data();
+        let idx_left = 0;
+        let idx_right = current_array.len();
+
+        Utf8IterSingleChunkNullCheck {
+            current_data,
+            current_array,
+            idx_left,
+            idx_right,
+        }
+    }
+}
+
+impl<'a> Iterator for Utf8IterSingleChunkNullCheck<'a> {
+    type Item = Option<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+        let ret;
+        if self.current_data.is_null(self.idx_left) {
+            ret = Some(None)
+        } else {
+            let v = self.current_array.value(self.idx_left);
+            ret = Some(Some(v))
+        }
+        self.idx_left += 1;
+        ret
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.current_array.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a> DoubleEndedIterator for Utf8IterSingleChunkNullCheck<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+        self.idx_right -= 1;
+        if self.current_data.is_null(self.idx_right) {
+            Some(None)
+        } else {
+            Some(Some(self.current_array.value(self.idx_right)))
+        }
+    }
+}
+
+/// Many chunks no nulls
+pub struct Utf8IterManyChunk<'a> {
+    ca: &'a Utf8Chunked,
+    chunks: Vec<&'a StringArray>,
+    current_array_left: &'a StringArray,
+    current_array_right: &'a StringArray,
+    current_array_idx_left: usize,
+    current_array_idx_right: usize,
+    current_array_left_len: usize,
+    idx_left: usize,
+    idx_right: usize,
+    chunk_idx_left: usize,
+    chunk_idx_right: usize,
+}
+
+impl<'a> Utf8IterManyChunk<'a> {
+    fn new(ca: &'a Utf8Chunked) -> Self {
+        let chunks = ca.downcast_chunks();
+        let current_array_left = chunks[0];
+        let idx_left = 0;
+        let chunk_idx_left = 0;
+        let chunk_idx_right = chunks.len() - 1;
+        let current_array_right = chunks[chunk_idx_right];
+        let idx_right = ca.len();
+        let current_array_idx_left = 0;
+        let current_array_idx_right = current_array_right.len();
+        let current_array_left_len = current_array_left.len();
+
+        Utf8IterManyChunk {
+            ca,
+            chunks,
+            current_array_left,
+            current_array_right,
+            current_array_idx_left,
+            current_array_idx_right,
+            current_array_left_len,
+            idx_left,
+            idx_right,
+            chunk_idx_left,
+            chunk_idx_right,
+        }
+    }
+}
+
+impl<'a> Iterator for Utf8IterManyChunk<'a> {
+    type Item = Option<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+
+        // return value
+        let ret = self.current_array_left.value(self.current_array_idx_left);
+
+        // increment index pointers
+        self.idx_left += 1;
+        self.current_array_idx_left += 1;
+
+        // we've reached the end of the chunk
+        if self.current_array_idx_left == self.current_array_left_len {
+            // Set a new chunk as current data
+            self.chunk_idx_left += 1;
+
+            // if this evaluates to False, next call will be end of iterator
+            if self.chunk_idx_left < self.chunks.len() {
+                // reset to new array
+                self.current_array_idx_left = 0;
+                self.current_array_left = self.chunks[self.chunk_idx_left];
+                self.current_array_left_len = self.current_array_left.len();
+            }
+        }
+        Some(Some(ret))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.ca.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a> DoubleEndedIterator for Utf8IterManyChunk<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+        self.idx_right -= 1;
+        self.current_array_idx_right -= 1;
+
+        let ret = self.current_array_right.value(self.current_array_idx_right);
+
+        // we've reached the end of the chunk from the right
+        if self.current_array_idx_right == 0 && self.idx_right > 0 {
+            // set a new chunk as current data
+            self.chunk_idx_right -= 1;
+            // reset to new array
+            self.current_array_right = self.chunks[self.chunk_idx_right];
+            self.current_array_idx_right = self.current_array_right.len();
+        }
+        Some(Some(ret))
+    }
+}
+
+/// Many chunks no nulls
+pub struct Utf8IterManyChunkNullCheck<'a> {
+    ca: &'a Utf8Chunked,
+    chunks: Vec<&'a StringArray>,
+    current_data_left: ArrayDataRef,
+    current_array_left: &'a StringArray,
+    current_data_right: ArrayDataRef,
+    current_array_right: &'a StringArray,
+    current_array_idx_left: usize,
+    current_array_idx_right: usize,
+    current_array_left_len: usize,
+    idx_left: usize,
+    idx_right: usize,
+    chunk_idx_left: usize,
+    chunk_idx_right: usize,
+}
+
+impl<'a> Utf8IterManyChunkNullCheck<'a> {
+    fn new(ca: &'a Utf8Chunked) -> Self {
+        let chunks = ca.downcast_chunks();
+        let current_array_left = chunks[0];
+        let current_data_left = current_array_left.data();
+        let idx_left = 0;
+        let chunk_idx_left = 0;
+        let chunk_idx_right = chunks.len() - 1;
+        let current_array_right = chunks[chunk_idx_right];
+        let current_data_right = current_array_right.data();
+        let idx_right = ca.len();
+        let current_array_idx_left = 0;
+        let current_array_idx_right = current_data_right.len();
+        let current_array_left_len = current_array_left.len();
+
+        Utf8IterManyChunkNullCheck {
+            ca,
+            chunks,
+            current_data_left,
+            current_array_left,
+            current_data_right,
+            current_array_right,
+            current_array_idx_left,
+            current_array_idx_right,
+            current_array_left_len,
+            idx_left,
+            idx_right,
+            chunk_idx_left,
+            chunk_idx_right,
+        }
+    }
+}
+
+impl<'a> Iterator for Utf8IterManyChunkNullCheck<'a> {
+    type Item = Option<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+
+        // return value
+        let ret;
+        if self.current_array_left.is_null(self.current_array_idx_left) {
+            ret = None
+        } else {
+            ret = Some(self.current_array_left.value(self.current_array_idx_left));
+        }
+
+        // increment index pointers
+        self.idx_left += 1;
+        self.current_array_idx_left += 1;
+
+        // we've reached the end of the chunk
+        if self.current_array_idx_left == self.current_array_left_len {
+            // Set a new chunk as current data
+            self.chunk_idx_left += 1;
+
+            // if this evaluates to False, next call will be end of iterator
+            if self.chunk_idx_left < self.chunks.len() {
+                // reset to new array
+                self.current_array_idx_left = 0;
+                self.current_array_left = self.chunks[self.chunk_idx_left];
+                self.current_data_left = self.current_array_left.data();
+                self.current_array_left_len = self.current_array_left.len();
+            }
+        }
+        Some(ret)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.ca.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a> DoubleEndedIterator for Utf8IterManyChunkNullCheck<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+        self.idx_right -= 1;
+        self.current_array_idx_right -= 1;
+
+        let ret = if self
+            .current_data_right
+            .is_null(self.current_array_idx_right)
+        {
+            Some(None)
+        } else {
+            Some(Some(
+                self.current_array_right.value(self.current_array_idx_right),
+            ))
+        };
+
+        // we've reached the end of the chunk from the right
+        if self.current_array_idx_right == 0 && self.idx_right > 0 {
+            // set a new chunk as current data
+            self.chunk_idx_right -= 1;
+            // reset to new array
+            self.current_array_right = self.chunks[self.chunk_idx_right];
+            self.current_data_right = self.current_array_right.data();
+            self.current_array_idx_right = self.current_array_right.len();
+        }
+        ret
+    }
+}
+
+impl<'a> IntoIterator for &'a Utf8Chunked {
+    type Item = Option<&'a str>;
+    type IntoIter = Box<dyn ExactSizeDoubleEndedIterator<Item = Option<&'a str>> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let chunks = self.downcast_chunks();
+        match chunks.len() {
+            1 => {
+                if self.null_count() == 0 {
+                    Box::new(Utf8IterSingleChunk::new(self))
+                } else {
+                    Box::new(Utf8IterSingleChunkNullCheck::new(self))
+                }
+            }
+            _ => {
+                if self.null_count() == 0 {
+                    Box::new(Utf8IterManyChunk::new(self))
+                } else {
+                    Box::new(Utf8IterManyChunkNullCheck::new(self))
+                }
+            }
+        }
+    }
+}
+
 macro_rules! set_indexes {
     ($self:ident) => {{
         $self.array_i += 1;
@@ -501,81 +885,6 @@ macro_rules! get_opt_value_and_set_indexes {
         $self.set_indexes();
         ret
     }};
-}
-
-pub struct ChunkStringIter<'a> {
-    array_chunks: Vec<&'a StringArray>,
-    current_data: Option<ArrayDataRef>,
-    current_array: Option<&'a StringArray>,
-    current_len: usize,
-    chunk_i: usize,
-    array_i: usize,
-    length: usize,
-    n_chunks: usize,
-}
-
-impl<'a> ChunkStringIter<'a> {
-    #[inline]
-    fn set_indexes(&mut self) {
-        set_indexes!(self)
-    }
-
-    #[inline]
-    fn out_of_bounds(&self) -> bool {
-        self.chunk_i >= self.n_chunks
-    }
-}
-
-impl<'a> Iterator for ChunkStringIter<'a> {
-    type Item = Option<&'a str>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.out_of_bounds() {
-            return None;
-        }
-
-        let current_data = unsafe { self.current_data.as_ref().unsafe_unwrap() };
-        let current_array = unsafe { self.current_array.unsafe_unwrap() };
-
-        debug_assert!(self.chunk_i < self.array_chunks.len());
-        get_opt_value_and_set_indexes!(self, current_data, current_array)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.length, Some(self.length))
-    }
-}
-
-impl<'a> ExactSizeIterator for ChunkStringIter<'a> {
-    fn len(&self) -> usize {
-        self.length
-    }
-}
-
-impl<'a> IntoIterator for &'a Utf8Chunked {
-    type Item = Option<&'a str>;
-    type IntoIter = ChunkStringIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let arrays = self.downcast_chunks();
-
-        let arr = arrays.get(0).map(|v| *v);
-        let data = arr.map(|arr| arr.data());
-        let current_len = match arr {
-            Some(arr) => arr.len(),
-            None => 0,
-        };
-
-        ChunkStringIter {
-            array_chunks: arrays,
-            current_data: data,
-            current_array: arr,
-            current_len,
-            chunk_i: 0,
-            array_i: 0,
-            length: self.len(),
-            n_chunks: self.chunks.len(),
-        }
-    }
 }
 
 pub struct ChunkBoolIter<'a> {
@@ -927,6 +1236,146 @@ mod test {
         let mut it = a.into_iter();
         assert_eq!(it.next(), Some(Some(1)));
         assert_eq!(it.next_back(), Some(Some(3)));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_utf8itersinglechunknullcheck() {
+        let a = Utf8Chunked::new_utf8_from_opt_slice("a", &[Some("a"), None, Some("c")]);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next(), Some(None));
+        assert_eq!(it.next(), Some(Some("c")));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), Some(Some("a")));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next(), Some(None));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_utf8itersinglechunk() {
+        let a = Utf8Chunked::new_utf8_from_slice("a", &["a", "b", "c"]);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next(), Some(Some("b")));
+        assert_eq!(it.next(), Some(Some("c")));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next_back(), Some(Some("b")));
+        assert_eq!(it.next_back(), Some(Some("a")));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next(), Some(Some("b")));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next_back(), Some(Some("b")));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_utf8itermanychunk() {
+        let mut a = Utf8Chunked::new_utf8_from_slice("a", &["a", "b"]);
+        let a_b = Utf8Chunked::new_utf8_from_slice("", &["c"]);
+        a.append(&a_b);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next(), Some(Some("b")));
+        assert_eq!(it.next(), Some(Some("c")));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next_back(), Some(Some("b")));
+        assert_eq!(it.next_back(), Some(Some("a")));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next(), Some(Some("b")));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next_back(), Some(Some("b")));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_utf8itermanychunknullcheck() {
+        let mut a = Utf8Chunked::new_utf8_from_opt_slice("a", &[Some("a"), None]);
+        let a_b = Utf8Chunked::new_utf8_from_opt_slice("", &[Some("c")]);
+        a.append(&a_b);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next(), Some(None));
+        assert_eq!(it.next(), Some(Some("c")));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), Some(Some("a")));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next(), Some(None));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some("a")));
+        assert_eq!(it.next_back(), Some(Some("c")));
         assert_eq!(it.next_back(), Some(None));
         assert_eq!(it.next_back(), None);
     }
