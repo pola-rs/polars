@@ -28,7 +28,7 @@ pub mod apply;
 pub mod arithmetic;
 pub mod builder;
 pub mod cast;
-pub(crate) mod chunkops;
+pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
 pub mod take;
@@ -44,6 +44,95 @@ fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
     chunk_id
 }
 
+/// # ChunkedArray
+///
+/// Every Series contains a `ChunkedArray<T>`. Unlike Series, ChunkedArray's are typed. This allows
+/// us to apply closures to the data and collect the results to a `ChunkedArray` of te same type `T`.
+/// Below we use an apply to use the cosine function to the values of a `ChunkedArray`.
+///
+/// ```rust
+/// # use polars::prelude::*;
+/// fn apply_cosine(ca: &Float32Chunked) -> Float32Chunked {
+///     ca.apply(|v| v.cos())
+/// }
+/// ```
+///
+/// If we would like to cast the result we could use a Rust Iterator instead of an `apply` method.
+/// Note that Iterators are slightly slower as the null values aren't ignored implicitly.
+///
+/// ```rust
+/// # use polars::prelude::*;
+/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
+///     ca.into_iter()
+///         .map(|opt_v| {
+///         opt_v.map(|v| v.cos() as f64)
+///     }).collect()
+/// }
+/// ```
+///
+/// Another Option is to first cast and then use an apply.
+///
+/// ```rust
+/// # use polars::prelude::*;
+/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
+///     ca.cast::<Float64Type>()
+///         .unwrap()
+///         .apply(|v| v.cos())
+/// }
+/// ```
+///
+/// ## Conversion between Series and ChunkedArray's
+/// Conversion from a `Series` to a `ChunkedArray` is effortless.
+///
+/// ```rust
+/// # use polars::prelude::*;
+/// fn to_chunked_array(series: &Series) -> Result<&Int32Chunked>{
+///     series.i32()
+/// }
+///
+/// fn to_series(ca: Int32Chunked) -> Series {
+///     ca.into_series()
+/// }
+/// ```
+///
+/// # Iterators
+///
+/// `ChunkedArrays` fully support Rust native [Iterator](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
+/// and [DoubleEndedIterator](https://doc.rust-lang.org/std/iter/trait.DoubleEndedIterator.html) traits, thereby
+/// giving access to all the excelent methods available for [Iterators](https://doc.rust-lang.org/std/iter/trait.Iterator.html).
+///
+/// ```rust
+/// # use polars::prelude::*;
+///
+/// fn iter_forward(ca: &Float32Chunked) {
+///     ca.into_iter()
+///         .for_each(|opt_v| println!("{:?}", opt_v))
+/// }
+///
+/// fn iter_backward(ca: &Float32Chunked) {
+///     ca.into_iter()
+///         .rev()
+///         .for_each(|opt_v| println!("{:?}", opt_v))
+/// }
+/// ```
+///
+/// # Memory layout
+///
+/// `ChunkedArray`'s use [Apache Arrow](https://github.com/apache/arrow) as backend for the memory layout.
+/// Arrows memory is immutable which makes it possible to make mutliple zero copy (sub)-views from a single array.
+///
+/// To be able to append data, Polars uses chunks to append new memory locations, hence the `ChunkedArray<T>` data structure.
+/// Appends are cheap, because it will not lead to a full reallocation of the whole array (as could be the case with a Rust Vec).
+///
+/// However, multiple chunks in a `ChunkArray` will slow down the Iterators, arithmetic and other operations.
+/// When multiplying two `ChunkArray'`s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
+/// However, when chunk size don't match, Iterators will be used to do the operation (instead of arrows upstream implementation, which may utilize SIMD) and
+/// the result will be a single chunked array.
+///
+/// **The key takeaway is that by applying operations on a `ChunkArray` of multiple chunks, the results will converge to
+/// a `ChunkArray` of a single chunk!** It is recommended to leave them as is. If you want to have predictable performance
+/// (no unexpected re-allocation of memory), it is adviced to call the [rechunk](chunked_array/chunkops/trait.ChunkOps.html) after
+/// multiple append operations.
 pub struct ChunkedArray<T> {
     pub(crate) field: Arc<Field>,
     // For now settle with dynamic generics until we are more confident about the api
@@ -140,7 +229,7 @@ where
         BooleanChunked::new_from_chunks("is_null", chunks)
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to u8.
     pub fn u8(self) -> Result<UInt8Chunked> {
         match T::get_data_type() {
             ArrowDataType::UInt8 => unsafe { Ok(std::mem::transmute(self)) },
@@ -148,7 +237,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to u16.
     pub fn u16(self) -> Result<UInt16Chunked> {
         match T::get_data_type() {
             ArrowDataType::UInt16 => unsafe { Ok(std::mem::transmute(self)) },
@@ -156,7 +245,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to u32.
     pub fn u32(self) -> Result<UInt32Chunked> {
         match T::get_data_type() {
             ArrowDataType::UInt32 => unsafe { Ok(std::mem::transmute(self)) },
@@ -164,7 +253,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to u64.
     pub fn u64(self) -> Result<UInt64Chunked> {
         match T::get_data_type() {
             ArrowDataType::UInt64 => unsafe { Ok(std::mem::transmute(self)) },
@@ -172,7 +261,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to i8.
     pub fn i8(self) -> Result<Int8Chunked> {
         match T::get_data_type() {
             ArrowDataType::Int8 => unsafe { Ok(std::mem::transmute(self)) },
@@ -180,7 +269,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to i16.
     pub fn i16(self) -> Result<Int16Chunked> {
         match T::get_data_type() {
             ArrowDataType::Int16 => unsafe { Ok(std::mem::transmute(self)) },
@@ -188,7 +277,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to i32.
     pub fn i32(self) -> Result<Int32Chunked> {
         match T::get_data_type() {
             ArrowDataType::Int32 => unsafe { Ok(std::mem::transmute(self)) },
@@ -196,7 +285,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to i64.
     pub fn i64(self) -> Result<Int64Chunked> {
         match T::get_data_type() {
             ArrowDataType::Int64 => unsafe { Ok(std::mem::transmute(self)) },
@@ -204,7 +293,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to f32.
     pub fn f32(self) -> Result<Float32Chunked> {
         match T::get_data_type() {
             ArrowDataType::Float32 => unsafe { Ok(std::mem::transmute(self)) },
@@ -212,7 +301,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to f64.
     pub fn f64(self) -> Result<Float64Chunked> {
         match T::get_data_type() {
             ArrowDataType::Float64 => unsafe { Ok(std::mem::transmute(self)) },
@@ -220,7 +309,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to bool.
     pub fn bool(self) -> Result<BooleanChunked> {
         match T::get_data_type() {
             ArrowDataType::Boolean => unsafe { Ok(std::mem::transmute(self)) },
@@ -228,7 +317,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to UTF-8 encoded string.
     pub fn utf8(self) -> Result<Utf8Chunked> {
         match T::get_data_type() {
             ArrowDataType::Utf8 => unsafe { Ok(std::mem::transmute(self)) },
@@ -236,7 +325,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to date32.
     pub fn date32(self) -> Result<Date32Chunked> {
         match T::get_data_type() {
             ArrowDataType::Date32(DateUnit::Day) => unsafe { Ok(std::mem::transmute(self)) },
@@ -244,7 +333,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to date32.
     pub fn date64(self) -> Result<Date64Chunked> {
         match T::get_data_type() {
             ArrowDataType::Date64(DateUnit::Millisecond) => unsafe {
@@ -254,7 +343,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to time64 with nanoseconds unit.
     pub fn time64_ns(self) -> Result<Time64NsChunked> {
         match T::get_data_type() {
             ArrowDataType::Time64(TimeUnit::Nanosecond) => unsafe { Ok(std::mem::transmute(self)) },
@@ -262,7 +351,7 @@ where
         }
     }
 
-    /// Downcast
+    /// Downcast generic `ChunkedArray<T>` to duration with nanoseconds unit.
     pub fn duration_ns(self) -> Result<DurationNsChunked> {
         match T::get_data_type() {
             ArrowDataType::Duration(TimeUnit::Nanosecond) => unsafe {
@@ -277,7 +366,16 @@ where
         self.slice(0, num_elements)
     }
 
-    /// Chunk sizes should match or rhs should have one chunk
+    /// Filter values in the ChunkedArray with a boolean mask.
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// let array = Int32Chunked::new_from_slice("array", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new_from_slice("mask", &[true, false, true]);
+    ///
+    /// let filtered = array.filter(&mask).unwrap();
+    /// assert_eq!(Vec::from(&filtered), [Some(1), Some(3)])
+    /// ```
     pub fn filter(&self, filter: &BooleanChunked) -> Result<Self> {
         let opt = self.optional_rechunk(filter)?;
         let left = match &opt {
@@ -298,6 +396,15 @@ where
     }
 
     /// Append arrow array in place.
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// let mut array = Int32Chunked::new_from_slice("array", &[1, 2]);
+    /// let array_2 = Int32Chunked::new_from_slice("2nd", &[3]);
+    ///
+    /// array.append(&array_2);
+    /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
+    /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         if other.data_type() == self.field.data_type() {
             self.chunks.push(other);
@@ -923,23 +1030,39 @@ macro_rules! impl_reverse {
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
 
+// TODO: use macro
 // Only the one which takes Utf8Chunked by reference is implemented.
 // We cannot return a & str owned by this function.
 impl<'a> From<&'a Utf8Chunked> for Vec<Option<&'a str>> {
     fn from(ca: &'a Utf8Chunked) -> Self {
-        ca.into_iter().map(|opt_s| opt_s.map(|s| s)).collect()
+        let mut vec = Vec::with_capacity_aligned(ca.len());
+        ca.into_iter().for_each(|opt| vec.push(opt));
+        vec
+    }
+}
+
+impl From<Utf8Chunked> for Vec<Option<String>> {
+    fn from(ca: Utf8Chunked) -> Self {
+        let mut vec = Vec::with_capacity_aligned(ca.len());
+        ca.into_iter()
+            .for_each(|opt| vec.push(opt.map(|s| s.to_string())));
+        vec
     }
 }
 
 impl<'a> From<&'a BooleanChunked> for Vec<Option<bool>> {
     fn from(ca: &'a BooleanChunked) -> Self {
-        ca.into_iter().map(|opt_val| opt_val).collect()
+        let mut vec = Vec::with_capacity_aligned(ca.len());
+        ca.into_iter().for_each(|opt| vec.push(opt));
+        vec
     }
 }
 
 impl From<BooleanChunked> for Vec<Option<bool>> {
     fn from(ca: BooleanChunked) -> Self {
-        ca.into_iter().map(|opt_val| opt_val).collect()
+        let mut vec = Vec::with_capacity_aligned(ca.len());
+        ca.into_iter().for_each(|opt| vec.push(opt));
+        vec
     }
 }
 
@@ -955,6 +1078,9 @@ where
         vec
     }
 }
+
+// TODO: macro implementation of Vec From for all types. ChunkedArray<T> (no reference) doesn't implement
+//    &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
 
 #[cfg(test)]
 pub(crate) mod test {

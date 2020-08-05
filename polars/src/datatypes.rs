@@ -105,6 +105,7 @@ impl PolarsIntegerType for DurationNanosecondType {}
 #[derive(Debug, PartialEq)]
 pub enum AnyType<'a> {
     Null,
+    /// A binary true or false.
     Boolean(bool),
     /// A UTF8 encoded string type.
     Utf8(&'a str),

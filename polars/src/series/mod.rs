@@ -1,97 +1,4 @@
-//! # Series
-//! The columnar data type for a DataFrame. The [Series enum](enum.Series.html) consists
-//! of typed [ChunkedArray](../chunked_array/struct.ChunkedArray.html)'s. To quickly cast
-//! a `Series` to a `ChunkedArray` you can call the method with the name of the type:
-//!
-//! ```
-//! # use polars::prelude::*;
-//! let s: Series = [1, 2, 3].iter().collect();
-//! // Quickly obtain the ChunkedArray wrapped by the Series.
-//! let chunked_array = s.i32().unwrap();
-//! ```
-//!
-//! ## Arithmetic
-//!
-//! You can do standard arithmetic on series.
-//! ```
-//! # use polars::prelude::*;
-//! let s: Series = [1, 2, 3].iter().collect();
-//! let out_add = &s + &s;
-//! let out_sub = &s - &s;
-//! let out_div = &s / &s;
-//! let out_mul = &s * &s;
-//! ```
-//!
-//! Or with series and numbers.
-//!
-//! ```
-//! # use polars::prelude::*;
-//! let s: Series = (1..3).collect();
-//! let out_add_one = &s + 1;
-//! let out_multiply = &s * 10;
-//!
-//! // Could not overload left hand side operator.
-//! let out_divide = 1.div(&s);
-//! let out_add = 1.add(&s);
-//! let out_subtract = 1.sub(&s);
-//! let out_multiply = 1.mul(&s);
-//! ```
-//!
-//! ## Comparison
-//! You can obtain boolean mask by comparing series.
-//!
-//! ```
-//! # use polars::prelude::*;
-//! use itertools::Itertools;
-//! let s = Series::new("dollars", [1, 2, 3].as_ref());
-//! let mask = s.eq(1);
-//! let valid = [true, false, false].iter();
-//! assert!(mask
-//!     .into_iter()
-//!     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
-//!     .zip(valid)
-//!     .all(|(a, b)| a == *b))
-//! ```
-//!
-//! See all the comparison operators in the [CmpOps trait](../chunked_array/comparison/trait.CmpOps.html)
-//!
-//! ## Iterators
-//! The Series variants contain differently typed [ChunkedArray's](../chunked_array/struct.ChunkedArray.html).
-//! These structs can be turned into iterators, making it possible to use any function/ closure you want
-//! on a Series.
-//!
-//! These iteratiors return an `Option<T>` because the values of a series may be null.
-//!
-//! ```
-//! use polars::prelude::*;
-//! let pi = 3.14;
-//! let s = Series::new("angle", [2f32 * pi, pi, 1.5 * pi].as_ref());
-//! let s_cos: Series = s.f32()
-//!                     .expect("series was not an f32 dtype")
-//!                     .into_iter()
-//!                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
-//!                     .collect();
-//! ```
-//!
-//! ## Creation
-//! Series can be create from different data structures. Below we'll show a few ways we can create
-//! a Series object.
-//!
-//! ```
-//! # use polars::prelude::*;
-//! // Series van be created from Vec's, slices and arrays
-//! Series::new("boolean series", &vec![true, false, true]);
-//! Series::new("int series", &[1, 2, 3]);
-//! // And can be nullable
-//! Series::new("got nulls", &[Some(1), None, Some(2)]);
-//!
-//! // Series can also be collected from iterators
-//! let from_iter: Series = (0..10)
-//!     .into_iter()
-//!     .collect();
-//!
-//! ```
-
+//! Type agnostic columnar data structure.
 pub use crate::prelude::CmpOps;
 use crate::prelude::*;
 use arrow::{array::ArrayRef, buffer::Buffer};
@@ -102,6 +9,99 @@ pub(crate) mod arithmetic;
 mod comparison;
 pub(crate) mod iterator;
 
+/// # Series
+/// The columnar data type for a DataFrame. The [Series enum](enum.Series.html) consists
+/// of typed [ChunkedArray](../chunked_array/struct.ChunkedArray.html)'s. To quickly cast
+/// a `Series` to a `ChunkedArray` you can call the method with the name of the type:
+///
+/// ```
+/// # use polars::prelude::*;
+/// let s: Series = [1, 2, 3].iter().collect();
+/// // Quickly obtain the ChunkedArray wrapped by the Series.
+/// let chunked_array = s.i32().unwrap();
+/// ```
+///
+/// ## Arithmetic
+///
+/// You can do standard arithmetic on series.
+/// ```
+/// # use polars::prelude::*;
+/// let s: Series = [1, 2, 3].iter().collect();
+/// let out_add = &s + &s;
+/// let out_sub = &s - &s;
+/// let out_div = &s / &s;
+/// let out_mul = &s * &s;
+/// ```
+///
+/// Or with series and numbers.
+///
+/// ```
+/// # use polars::prelude::*;
+/// let s: Series = (1..3).collect();
+/// let out_add_one = &s + 1;
+/// let out_multiply = &s * 10;
+///
+/// // Could not overload left hand side operator.
+/// let out_divide = 1.div(&s);
+/// let out_add = 1.add(&s);
+/// let out_subtract = 1.sub(&s);
+/// let out_multiply = 1.mul(&s);
+/// ```
+///
+/// ## Comparison
+/// You can obtain boolean mask by comparing series.
+///
+/// ```
+/// # use polars::prelude::*;
+/// use itertools::Itertools;
+/// let s = Series::new("dollars", &[1, 2, 3]);
+/// let mask = s.eq(1);
+/// let valid = [true, false, false].iter();
+/// assert!(mask
+///     .into_iter()
+///     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
+///     .zip(valid)
+///     .all(|(a, b)| a == *b))
+/// ```
+///
+/// See all the comparison operators in the [CmpOps trait](../chunked_array/comparison/trait.CmpOps.html)
+///
+/// ## Iterators
+/// The Series variants contain differently typed [ChunkedArray's](../chunked_array/struct.ChunkedArray.html).
+/// These structs can be turned into iterators, making it possible to use any function/ closure you want
+/// on a Series.
+///
+/// These iterators return an `Option<T>` because the values of a series may be null.
+///
+/// ```
+/// use polars::prelude::*;
+/// let pi = 3.14;
+/// let s = Series::new("angle", [2f32 * pi, pi, 1.5 * pi].as_ref());
+/// let s_cos: Series = s.f32()
+///                     .expect("series was not an f32 dtype")
+///                     .into_iter()
+///                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
+///                     .collect();
+/// ```
+///
+/// ## Creation
+/// Series can be create from different data structures. Below we'll show a few ways we can create
+/// a Series object.
+///
+/// ```
+/// # use polars::prelude::*;
+/// // Series van be created from Vec's, slices and arrays
+/// Series::new("boolean series", &vec![true, false, true]);
+/// Series::new("int series", &[1, 2, 3]);
+/// // And can be nullable
+/// Series::new("got nulls", &[Some(1), None, Some(2)]);
+///
+/// // Series can also be collected from iterators
+/// let from_iter: Series = (0..10)
+///     .into_iter()
+///     .collect();
+///
+/// ```
 #[derive(Clone)]
 pub enum Series {
     UInt8(ChunkedArray<datatypes::UInt8Type>),

@@ -6,7 +6,6 @@ use arrow::datatypes::ArrowPrimitiveType;
 use std::iter::Copied;
 use std::iter::FromIterator;
 use std::slice::Iter;
-use unsafe_unwrap::UnsafeUnwrap;
 
 // ExactSizeIterator trait implementations for all Iterator structs in this file
 impl<'a, T> ExactSizeIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}

@@ -1,3 +1,4 @@
+//! Everything you need to get started with Polars
 pub use crate::{
     chunked_array::{
         aggregate::Agg,

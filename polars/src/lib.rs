@@ -1,7 +1,7 @@
 //! # Polars DataFrames in Rust
 //!
-//! Read more in the [DataFrame](frame/struct.DataFrame.html) and [Series](series/index.html)
-//! modules.
+//! Read more in the [DataFrame](frame/struct.DataFrame.html), [Series](series/enum.Series.html), and
+//! [ChunkedArray](chunked_array/struct.ChunkedArray.html) data structures.
 //!
 //! ## Read and write CSV/ JSON
 //!
@@ -99,9 +99,13 @@
 //! ```
 //!
 //! ## Apply custom closures
+//!
+//! Besides running custom iterators, custom closures can be applied on the values of [ChunkedArray](chunked_array/struct.ChunkedArray.html)
+//! by using the [apply](chunked_array/apply/trait.Apply.html) method. This method accepts
+//! a closure that will be applied on all values of `Option<T>` that are non null. Note that this is the
+//! **fastest** way to apply a custom closure on `ChunkedArray`'s.
 //! ```
 //! # use polars::prelude::*;
-//!
 //! let s: Series = Series::new("values", [Some(1.0), None, Some(3.0)]);
 //! // null values are ignored automatically
 //! let squared = s.f64()
@@ -126,6 +130,18 @@
 //!
 //! ## And more...
 //!
+//! * [DataFrame](frame/struct.DataFrame.html)
+//! * [Series](series/enum.Series.html)
+//! * [ChunkedArray](chunked_array/struct.ChunkedArray.html)
+//!
+//! ## Features
+//!
+//! Additional cargo features:
+//!
+//! * `pretty` (default)
+//!     - pretty printing of DataFrames
+//! * `simd`
+//!     - SIMD operations
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #[macro_use]
