@@ -854,113 +854,404 @@ impl<'a> IntoIterator for &'a Utf8Chunked {
     }
 }
 
-macro_rules! set_indexes {
-    ($self:ident) => {{
-        $self.array_i += 1;
-        if $self.array_i >= $self.current_len {
-            // go to next array in the chunks
-            $self.array_i = 0;
-            $self.chunk_i += 1;
+macro_rules! impl_iterator_traits {
+    ($ca_type:ident, $arrow_array:ident, $single_chunk_ident:ident, $single_chunk_null_ident:ident, $many_chunk_ident:ident,
+    $many_chunk_null_ident:ident, $iter_item:ty) => {
+        impl<'a> ExactSizeIterator for $single_chunk_ident<'a> {}
+        impl<'a> ExactSizeIterator for $single_chunk_null_ident<'a> {}
+        impl<'a> ExactSizeIterator for $many_chunk_ident<'a> {}
+        impl<'a> ExactSizeIterator for $many_chunk_null_ident<'a> {}
 
-            if $self.chunk_i < $self.array_chunks.len() {
-                // not yet at last chunk
-                let arr = unsafe { *$self.array_chunks.get_unchecked($self.chunk_i) };
-                $self.current_data = Some(arr.data());
-                $self.current_array = Some(arr);
-                $self.current_len = arr.len();
+        impl<'a> ExactSizeDoubleEndedIterator for $single_chunk_ident<'a> {}
+        impl<'a> ExactSizeDoubleEndedIterator for $single_chunk_null_ident<'a> {}
+        impl<'a> ExactSizeDoubleEndedIterator for $many_chunk_ident<'a> {}
+        impl<'a> ExactSizeDoubleEndedIterator for $many_chunk_null_ident<'a> {}
+
+        /// No null checks
+        pub struct $single_chunk_ident<'a> {
+            current_array: &'a $arrow_array,
+            idx_left: usize,
+            idx_right: usize,
+        }
+
+        impl<'a> $single_chunk_ident<'a> {
+            fn new(ca: &'a $ca_type) -> Self {
+                let chunks = ca.downcast_chunks();
+                let current_array = chunks[0];
+                let idx_left = 0;
+                let idx_right = current_array.len();
+
+                $single_chunk_ident {
+                    current_array,
+                    idx_left,
+                    idx_right,
+                }
             }
         }
-    }};
-}
 
-macro_rules! get_opt_value_and_set_indexes {
-    ($self:ident, $current_data:ident, $current_array:ident) => {{
-        let ret;
-        if $current_data.is_null($self.array_i) {
-            ret = Some(None)
-        } else {
-            let v = $current_array.value($self.array_i);
-            ret = Some(Some(v));
-        };
-        $self.set_indexes();
-        ret
-    }};
-}
+        impl<'a> Iterator for $single_chunk_ident<'a> {
+            type Item = $iter_item;
 
-pub struct ChunkBoolIter<'a> {
-    array_chunks: Vec<&'a BooleanArray>,
-    current_data: Option<ArrayDataRef>,
-    current_array: Option<&'a BooleanArray>,
-    current_len: usize,
-    chunk_i: usize,
-    array_i: usize,
-    length: usize,
-    n_chunks: usize,
-}
+            fn next(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
 
-impl<'a> ChunkBoolIter<'a> {
-    #[inline]
-    fn set_indexes(&mut self) {
-        set_indexes!(self)
-    }
+                let v = self.current_array.value(self.idx_left);
+                self.idx_left += 1;
+                Some(Some(v))
+            }
 
-    #[inline]
-    fn out_of_bounds(&self) -> bool {
-        self.chunk_i >= self.n_chunks
-    }
-}
-
-impl<'a> Iterator for ChunkBoolIter<'a> {
-    type Item = Option<bool>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.out_of_bounds() {
-            return None;
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let len = self.current_array.len();
+                (len, Some(len))
+            }
         }
 
-        let current_data = unsafe { self.current_data.as_ref().unsafe_unwrap() };
-        let current_array = unsafe { self.current_array.unsafe_unwrap() };
-
-        debug_assert!(self.chunk_i < self.array_chunks.len());
-        get_opt_value_and_set_indexes!(self, current_data, current_array)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.length, Some(self.length))
-    }
-}
-
-impl<'a> ExactSizeIterator for ChunkBoolIter<'a> {
-    fn len(&self) -> usize {
-        self.length
-    }
-}
-
-impl<'a> IntoIterator for &'a BooleanChunked {
-    type Item = Option<bool>;
-    type IntoIter = ChunkBoolIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let arrays = self.downcast_chunks();
-
-        let arr = arrays.get(0).map(|v| *v);
-        let data = arr.map(|arr| arr.data());
-        let current_len = match arr {
-            Some(arr) => arr.len(),
-            None => 0,
-        };
-
-        ChunkBoolIter {
-            array_chunks: arrays,
-            current_data: data,
-            current_array: arr,
-            current_len,
-            chunk_i: 0,
-            array_i: 0,
-            length: self.len(),
-            n_chunks: self.chunks.len(),
+        impl<'a> DoubleEndedIterator for $single_chunk_ident<'a> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
+                self.idx_right -= 1;
+                Some(Some(self.current_array.value(self.idx_right)))
+            }
         }
-    }
+
+        pub struct $single_chunk_null_ident<'a> {
+            current_data: ArrayDataRef,
+            current_array: &'a $arrow_array,
+            idx_left: usize,
+            idx_right: usize,
+        }
+
+        impl<'a> $single_chunk_null_ident<'a> {
+            fn new(ca: &'a $ca_type) -> Self {
+                let chunks = ca.downcast_chunks();
+                let current_array = chunks[0];
+                let current_data = current_array.data();
+                let idx_left = 0;
+                let idx_right = current_array.len();
+
+                $single_chunk_null_ident {
+                    current_data,
+                    current_array,
+                    idx_left,
+                    idx_right,
+                }
+            }
+        }
+
+        impl<'a> Iterator for $single_chunk_null_ident<'a> {
+            type Item = $iter_item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
+                let ret;
+                if self.current_data.is_null(self.idx_left) {
+                    ret = Some(None)
+                } else {
+                    let v = self.current_array.value(self.idx_left);
+                    ret = Some(Some(v))
+                }
+                self.idx_left += 1;
+                ret
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let len = self.current_array.len();
+                (len, Some(len))
+            }
+        }
+
+        impl<'a> DoubleEndedIterator for $single_chunk_null_ident<'a> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
+                self.idx_right -= 1;
+                if self.current_data.is_null(self.idx_right) {
+                    Some(None)
+                } else {
+                    Some(Some(self.current_array.value(self.idx_right)))
+                }
+            }
+        }
+
+        /// Many chunks no nulls
+        pub struct $many_chunk_ident<'a> {
+            ca: &'a $ca_type,
+            chunks: Vec<&'a $arrow_array>,
+            current_array_left: &'a $arrow_array,
+            current_array_right: &'a $arrow_array,
+            current_array_idx_left: usize,
+            current_array_idx_right: usize,
+            current_array_left_len: usize,
+            idx_left: usize,
+            idx_right: usize,
+            chunk_idx_left: usize,
+            chunk_idx_right: usize,
+        }
+
+        impl<'a> $many_chunk_ident<'a> {
+            fn new(ca: &'a $ca_type) -> Self {
+                let chunks = ca.downcast_chunks();
+                let current_array_left = chunks[0];
+                let idx_left = 0;
+                let chunk_idx_left = 0;
+                let chunk_idx_right = chunks.len() - 1;
+                let current_array_right = chunks[chunk_idx_right];
+                let idx_right = ca.len();
+                let current_array_idx_left = 0;
+                let current_array_idx_right = current_array_right.len();
+                let current_array_left_len = current_array_left.len();
+
+                $many_chunk_ident {
+                    ca,
+                    chunks,
+                    current_array_left,
+                    current_array_right,
+                    current_array_idx_left,
+                    current_array_idx_right,
+                    current_array_left_len,
+                    idx_left,
+                    idx_right,
+                    chunk_idx_left,
+                    chunk_idx_right,
+                }
+            }
+        }
+
+        impl<'a> Iterator for $many_chunk_ident<'a> {
+            type Item = $iter_item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
+
+                // return value
+                let ret = self.current_array_left.value(self.current_array_idx_left);
+
+                // increment index pointers
+                self.idx_left += 1;
+                self.current_array_idx_left += 1;
+
+                // we've reached the end of the chunk
+                if self.current_array_idx_left == self.current_array_left_len {
+                    // Set a new chunk as current data
+                    self.chunk_idx_left += 1;
+
+                    // if this evaluates to False, next call will be end of iterator
+                    if self.chunk_idx_left < self.chunks.len() {
+                        // reset to new array
+                        self.current_array_idx_left = 0;
+                        self.current_array_left = self.chunks[self.chunk_idx_left];
+                        self.current_array_left_len = self.current_array_left.len();
+                    }
+                }
+                Some(Some(ret))
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let len = self.ca.len();
+                (len, Some(len))
+            }
+        }
+
+        impl<'a> DoubleEndedIterator for $many_chunk_ident<'a> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
+                self.idx_right -= 1;
+                self.current_array_idx_right -= 1;
+
+                let ret = self.current_array_right.value(self.current_array_idx_right);
+
+                // we've reached the end of the chunk from the right
+                if self.current_array_idx_right == 0 && self.idx_right > 0 {
+                    // set a new chunk as current data
+                    self.chunk_idx_right -= 1;
+                    // reset to new array
+                    self.current_array_right = self.chunks[self.chunk_idx_right];
+                    self.current_array_idx_right = self.current_array_right.len();
+                }
+                Some(Some(ret))
+            }
+        }
+
+        /// Many chunks no nulls
+        pub struct $many_chunk_null_ident<'a> {
+            ca: &'a $ca_type,
+            chunks: Vec<&'a $arrow_array>,
+            current_data_left: ArrayDataRef,
+            current_array_left: &'a $arrow_array,
+            current_data_right: ArrayDataRef,
+            current_array_right: &'a $arrow_array,
+            current_array_idx_left: usize,
+            current_array_idx_right: usize,
+            current_array_left_len: usize,
+            idx_left: usize,
+            idx_right: usize,
+            chunk_idx_left: usize,
+            chunk_idx_right: usize,
+        }
+
+        impl<'a> $many_chunk_null_ident<'a> {
+            fn new(ca: &'a $ca_type) -> Self {
+                let chunks = ca.downcast_chunks();
+                let current_array_left = chunks[0];
+                let current_data_left = current_array_left.data();
+                let idx_left = 0;
+                let chunk_idx_left = 0;
+                let chunk_idx_right = chunks.len() - 1;
+                let current_array_right = chunks[chunk_idx_right];
+                let current_data_right = current_array_right.data();
+                let idx_right = ca.len();
+                let current_array_idx_left = 0;
+                let current_array_idx_right = current_data_right.len();
+                let current_array_left_len = current_array_left.len();
+
+                $many_chunk_null_ident {
+                    ca,
+                    chunks,
+                    current_data_left,
+                    current_array_left,
+                    current_data_right,
+                    current_array_right,
+                    current_array_idx_left,
+                    current_array_idx_right,
+                    current_array_left_len,
+                    idx_left,
+                    idx_right,
+                    chunk_idx_left,
+                    chunk_idx_right,
+                }
+            }
+        }
+
+        impl<'a> Iterator for $many_chunk_null_ident<'a> {
+            type Item = $iter_item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
+
+                // return value
+                let ret;
+                if self.current_array_left.is_null(self.current_array_idx_left) {
+                    ret = None
+                } else {
+                    ret = Some(self.current_array_left.value(self.current_array_idx_left));
+                }
+
+                // increment index pointers
+                self.idx_left += 1;
+                self.current_array_idx_left += 1;
+
+                // we've reached the end of the chunk
+                if self.current_array_idx_left == self.current_array_left_len {
+                    // Set a new chunk as current data
+                    self.chunk_idx_left += 1;
+
+                    // if this evaluates to False, next call will be end of iterator
+                    if self.chunk_idx_left < self.chunks.len() {
+                        // reset to new array
+                        self.current_array_idx_left = 0;
+                        self.current_array_left = self.chunks[self.chunk_idx_left];
+                        self.current_data_left = self.current_array_left.data();
+                        self.current_array_left_len = self.current_array_left.len();
+                    }
+                }
+                Some(ret)
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let len = self.ca.len();
+                (len, Some(len))
+            }
+        }
+
+        impl<'a> DoubleEndedIterator for $many_chunk_null_ident<'a> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
+                self.idx_right -= 1;
+                self.current_array_idx_right -= 1;
+
+                let ret = if self
+                    .current_data_right
+                    .is_null(self.current_array_idx_right)
+                {
+                    Some(None)
+                } else {
+                    Some(Some(
+                        self.current_array_right.value(self.current_array_idx_right),
+                    ))
+                };
+
+                // we've reached the end of the chunk from the right
+                if self.current_array_idx_right == 0 && self.idx_right > 0 {
+                    // set a new chunk as current data
+                    self.chunk_idx_right -= 1;
+                    // reset to new array
+                    self.current_array_right = self.chunks[self.chunk_idx_right];
+                    self.current_data_right = self.current_array_right.data();
+                    self.current_array_idx_right = self.current_array_right.len();
+                }
+                ret
+            }
+        }
+
+        impl<'a> IntoIterator for &'a $ca_type {
+            type Item = $iter_item;
+            type IntoIter = Box<dyn ExactSizeDoubleEndedIterator<Item = $iter_item> + 'a>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                let chunks = self.downcast_chunks();
+                match chunks.len() {
+                    1 => {
+                        if self.null_count() == 0 {
+                            Box::new($single_chunk_ident::new(self))
+                        } else {
+                            Box::new($single_chunk_null_ident::new(self))
+                        }
+                    }
+                    _ => {
+                        if self.null_count() == 0 {
+                            Box::new($many_chunk_ident::new(self))
+                        } else {
+                            Box::new($many_chunk_null_ident::new(self))
+                        }
+                    }
+                }
+            }
+        }
+    };
 }
+
+impl_iterator_traits!(
+    BooleanChunked,
+    BooleanArray,
+    BooleanIterSingleChunk,
+    BooleanIterSingleChunkNullCheck,
+    BooleanIterManyChunk,
+    BooleanIterManyChunkNullCheck,
+    Option<bool>
+);
 
 fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
     match iter.size_hint() {
@@ -1376,6 +1667,146 @@ mod test {
         let mut it = a.into_iter();
         assert_eq!(it.next(), Some(Some("a")));
         assert_eq!(it.next_back(), Some(Some("c")));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_boolitersinglechunknullcheck() {
+        let a = BooleanChunked::new_from_opt_slice("", &[Some(true), None, Some(false)]);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(None));
+        assert_eq!(it.next(), Some(Some(false)));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), Some(Some(true)));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(None));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_boolitersinglechunk() {
+        let a = BooleanChunked::new_from_slice("", &[true, true, false]);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(Some(false)));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next_back(), Some(Some(true)));
+        assert_eq!(it.next_back(), Some(Some(true)));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(Some(true)));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next_back(), Some(Some(true)));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_boolitermanychunk() {
+        let mut a = BooleanChunked::new_from_slice("", &[true, true]);
+        let a_b = BooleanChunked::new_from_slice("", &[false]);
+        a.append(&a_b);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(Some(false)));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next_back(), Some(Some(true)));
+        assert_eq!(it.next_back(), Some(Some(true)));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(Some(true)));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next_back(), Some(Some(true)));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_boolitermanychunknullcheck() {
+        let mut a = BooleanChunked::new_from_opt_slice("a", &[Some(true), None]);
+        let a_b = BooleanChunked::new_from_opt_slice("", &[Some(false)]);
+        a.append(&a_b);
+
+        // normal iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(None));
+        assert_eq!(it.next(), Some(Some(false)));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next_back(), Some(None));
+        assert_eq!(it.next_back(), Some(Some(true)));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_iter();
+        assert_eq!(it.next_back(), Some(Some(false)));
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next(), Some(None));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_iter();
+        assert_eq!(it.next(), Some(Some(true)));
+        assert_eq!(it.next_back(), Some(Some(false)));
         assert_eq!(it.next_back(), Some(None));
         assert_eq!(it.next_back(), None);
     }
