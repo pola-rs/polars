@@ -7,9 +7,9 @@ use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::{
     array::{
-        ArrayRef, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array,
-        Int8Array, PrimitiveArray, PrimitiveBuilder, StringArray, StringBuilder, UInt16Array,
-        UInt32Array, UInt64Array, UInt8Array,
+        ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
+        Int64Array, Int8Array, PrimitiveArray, PrimitiveBuilder, StringArray, StringBuilder,
+        Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
     compute,
@@ -32,7 +32,10 @@ pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
 pub mod take;
+pub mod temporal;
 pub mod unique;
+use crate::datatypes::AnyType::Time64;
+use arrow::array::Date32Array;
 use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
@@ -70,7 +73,7 @@ fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
 /// }
 /// ```
 ///
-/// Another Option is to first cast and then use an apply.
+/// Another option is to first cast and then use an apply.
 ///
 /// ```rust
 /// # use polars::prelude::*;
@@ -452,6 +455,16 @@ where
             ArrowDataType::Int64 => downcast_and_pack!(Int64Array, Int64),
             ArrowDataType::Float32 => downcast_and_pack!(Float32Array, Float32),
             ArrowDataType::Float64 => downcast_and_pack!(Float64Array, Float64),
+            ArrowDataType::Date32(DateUnit::Day) => downcast_and_pack!(Date32Array, Date32),
+            ArrowDataType::Date64(DateUnit::Millisecond) => downcast_and_pack!(Date64Array, Date64),
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+                let arr = arr
+                    .as_any()
+                    .downcast_ref::<Time64NanosecondArray>()
+                    .expect("could not downcast one of the chunks");
+                let v = arr.value(idx);
+                Time64(v, TimeUnit::Nanosecond)
+            }
             _ => unimplemented!(),
         }
     }

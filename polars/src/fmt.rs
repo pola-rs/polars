@@ -1,5 +1,9 @@
-use crate::datatypes::{AnyType, ToStr};
+use crate::chunked_array::temporal::{date64_as_datetime, time64_ns_as_time};
 use crate::prelude::*;
+use crate::{
+    chunked_array::temporal::date32_as_datetime,
+    datatypes::{AnyType, ToStr},
+};
 use num::{Num, NumCast};
 #[cfg(feature = "pretty")]
 use prettytable::Table;
@@ -11,20 +15,17 @@ use std::{
 impl Debug for Series {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         const LIMIT: usize = 10;
+        let limit = std::cmp::min(self.len(), LIMIT);
 
         macro_rules! format_series {
             ($a:ident, $name:expr) => {{
-                write![f, "Series: {} \n[\n", $name]?;
-                $a.into_iter().take(LIMIT).for_each(|v| {
-                    match v {
-                        Some(v) => {
-                            write!(f, "\t{}\n", v).ok();
-                        }
-                        None => {
-                            write!(f, "\tnull\n").ok();
-                        }
-                    };
-                });
+                write![f, "Series: {}\n[\n", $name]?;
+
+                for i in 0..limit {
+                    let v = $a.get(i);
+                    write!(f, "\t{}\n", v)?;
+                }
+
                 write![f, "]"]
             }};
         }
@@ -42,9 +43,10 @@ impl Debug for Series {
             Series::Bool(a) => format_series!(a, "bool"),
             Series::Float32(a) => format_series!(a, "f32"),
             Series::Float64(a) => format_series!(a, "f64"),
-            Series::Date32(a) => format_series!(a, "date32"),
-            Series::Date64(a) => format_series!(a, "date64"),
-            Series::DurationNs(a) => format_series!(a, "date64"),
+            Series::Date32(a) => format_series!(a, "date32(day)"),
+            Series::Date64(a) => format_series!(a, "date64(ms)"),
+            Series::DurationNs(a) => format_series!(a, "duration64(ns)"),
+            Series::Time64Ns(a) => format_series!(a, "time64(ns)"),
             Series::Utf8(a) => {
                 write![f, "Series: str \n[\n"]?;
                 a.into_iter().take(LIMIT).for_each(|opt_s| match opt_s {
@@ -168,10 +170,18 @@ impl Display for AnyType<'_> {
             AnyType::Float64(v) => fmt_float(f, width, *v),
             AnyType::Boolean(v) => write!(f, "{:>width$}", v, width = width),
             AnyType::Utf8(v) => write!(f, "{:>width$}", format!("\"{}\"", v), width = width),
-            AnyType::Date64(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::Date32(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::Time64(v, _) => write!(f, "{:>width$}", v, width = width),
-            AnyType::Duration(v, _) => write!(f, "{:>width$}", v, width = width),
+            AnyType::Date32(v) => write!(
+                f,
+                "{:>width$}",
+                date32_as_datetime(*v).date(),
+                width = width
+            ),
+            AnyType::Date64(v) => write!(f, "{:>width$}", date64_as_datetime(*v), width = width),
+            AnyType::Time64(v, TimeUnit::Nanosecond) => {
+                write!(f, "{:>width$}", time_64_ns_as_time(*v), width = width)
+            }
+            AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{:>width$}", v, width = width),
+            _ => unimplemented!(),
         }
     }
 }
@@ -194,10 +204,54 @@ impl Display for AnyType<'_> {
             AnyType::Float64(v) => fmt_float(f, width, *v),
             AnyType::Boolean(v) => write!(f, "{}", *v),
             AnyType::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
-            AnyType::Date64(v) => write!(f, "{}", v),
-            AnyType::Date32(v) => write!(f, "{}", v),
-            AnyType::Time64(v, _) => write!(f, "{}", v),
-            AnyType::Duration(v, _) => write!(f, "{}", v),
+            AnyType::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
+            AnyType::Date64(v) => write!(f, "{}", date64_as_datetime(*v)),
+            AnyType::Time64(v, TimeUnit::Nanosecond) => write!(f, "{}", time64_ns_as_time(*v)),
+            AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
+            _ => unimplemented!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn temporal() {
+        let s = Date32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
+        assert_eq!(
+            r#"Series: date32(day)
+[
+	1970-01-02
+	null
+	1970-01-04
+]"#,
+            format!("{:?}", s.into_series())
+        );
+
+        let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1000_000_000_000)]);
+        assert_eq!(
+            r#"Series: date64(ms)
+[
+	1970-01-01 00:00:00.001
+	null
+	2001-09-09 01:46:40
+]"#,
+            format!("{:?}", s.into_series())
+        );
+        let s = Time64NsChunked::new_from_slice(
+            "",
+            &[1_000_000, 37_800_005_000_000, 86_399_210_000_000],
+        );
+        assert_eq!(
+            r#"Series: time64(ns)
+[
+	00:00:00.001
+	10:30:00.005
+	23:59:59.210
+]"#,
+            format!("{:?}", s.into_series())
+        )
     }
 }
