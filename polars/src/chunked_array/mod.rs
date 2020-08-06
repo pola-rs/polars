@@ -34,8 +34,12 @@ pub mod iterator;
 pub mod take;
 pub mod temporal;
 pub mod unique;
-use crate::datatypes::AnyType::Time64;
-use arrow::array::Date32Array;
+use arrow::array::{
+    Date32Array, DurationMicrosecondArray, DurationMillisecondArray, DurationNanosecondArray,
+    DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray, Time32MillisecondArray,
+    Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
+    TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+};
 use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
@@ -347,7 +351,7 @@ where
     }
 
     /// Downcast generic `ChunkedArray<T>` to time64 with nanoseconds unit.
-    pub fn time64_ns(self) -> Result<Time64NsChunked> {
+    pub fn time64_ns(self) -> Result<Time64NanosecondChunked> {
         match T::get_data_type() {
             ArrowDataType::Time64(TimeUnit::Nanosecond) => unsafe { Ok(std::mem::transmute(self)) },
             _ => Err(PolarsError::DataTypeMisMatch),
@@ -355,7 +359,7 @@ where
     }
 
     /// Downcast generic `ChunkedArray<T>` to duration with nanoseconds unit.
-    pub fn duration_ns(self) -> Result<DurationNsChunked> {
+    pub fn duration_ns(self) -> Result<DurationNanosecondChunked> {
         match T::get_data_type() {
             ArrowDataType::Duration(TimeUnit::Nanosecond) => unsafe {
                 Ok(std::mem::transmute(self))
@@ -441,6 +445,15 @@ where
                 AnyType::$variant(v)
             }};
         }
+        macro_rules! downcast {
+            ($casttype:ident) => {{
+                let arr = arr
+                    .as_any()
+                    .downcast_ref::<$casttype>()
+                    .expect("could not downcast one of the chunks");
+                arr.value(idx)
+            }};
+        }
         // TODO: insert types
         match T::get_data_type() {
             ArrowDataType::Utf8 => downcast_and_pack!(StringArray, Utf8),
@@ -457,13 +470,59 @@ where
             ArrowDataType::Float64 => downcast_and_pack!(Float64Array, Float64),
             ArrowDataType::Date32(DateUnit::Day) => downcast_and_pack!(Date32Array, Date32),
             ArrowDataType::Date64(DateUnit::Millisecond) => downcast_and_pack!(Date64Array, Date64),
+            ArrowDataType::Time32(TimeUnit::Millisecond) => {
+                let v = downcast!(Time32MillisecondArray);
+                AnyType::Time32(v, TimeUnit::Millisecond)
+            }
+            ArrowDataType::Time32(TimeUnit::Second) => {
+                let v = downcast!(Time32SecondArray);
+                AnyType::Time32(v, TimeUnit::Second)
+            }
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                let arr = arr
-                    .as_any()
-                    .downcast_ref::<Time64NanosecondArray>()
-                    .expect("could not downcast one of the chunks");
-                let v = arr.value(idx);
-                Time64(v, TimeUnit::Nanosecond)
+                let v = downcast!(Time64NanosecondArray);
+                AnyType::Time64(v, TimeUnit::Nanosecond)
+            }
+            ArrowDataType::Time64(TimeUnit::Microsecond) => {
+                let v = downcast!(Time64MicrosecondArray);
+                AnyType::Time64(v, TimeUnit::Microsecond)
+            }
+            ArrowDataType::Interval(IntervalUnit::DayTime) => {
+                downcast_and_pack!(IntervalDayTimeArray, IntervalDayTime)
+            }
+            ArrowDataType::Interval(IntervalUnit::YearMonth) => {
+                downcast_and_pack!(IntervalYearMonthArray, IntervalYearMonth)
+            }
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                let v = downcast!(DurationNanosecondArray);
+                AnyType::Duration(v, TimeUnit::Nanosecond)
+            }
+            ArrowDataType::Duration(TimeUnit::Microsecond) => {
+                let v = downcast!(DurationMicrosecondArray);
+                AnyType::Duration(v, TimeUnit::Microsecond)
+            }
+            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+                let v = downcast!(DurationMillisecondArray);
+                AnyType::Duration(v, TimeUnit::Millisecond)
+            }
+            ArrowDataType::Duration(TimeUnit::Second) => {
+                let v = downcast!(DurationSecondArray);
+                AnyType::Duration(v, TimeUnit::Second)
+            }
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                let v = downcast!(TimestampNanosecondArray);
+                AnyType::TimeStamp(v, TimeUnit::Nanosecond)
+            }
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+                let v = downcast!(TimestampMicrosecondArray);
+                AnyType::TimeStamp(v, TimeUnit::Microsecond)
+            }
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
+                let v = downcast!(TimestampMillisecondArray);
+                AnyType::TimeStamp(v, TimeUnit::Millisecond)
+            }
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
+                let v = downcast!(TimestampSecondArray);
+                AnyType::TimeStamp(v, TimeUnit::Second)
             }
             _ => unimplemented!(),
         }

@@ -59,7 +59,6 @@ impl Debug for Series {
                 });
                 write![f, "]"]
             }
-            _ => write!(f, "no supported"),
         }
     }
 }
@@ -240,7 +239,7 @@ mod test {
 ]"#,
             format!("{:?}", s.into_series())
         );
-        let s = Time64NsChunked::new_from_slice(
+        let s = Time64NanosecondChunked::new_from_slice(
             "",
             &[1_000_000, 37_800_005_000_000, 86_399_210_000_000],
         );

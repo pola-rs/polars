@@ -324,12 +324,12 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray
-    pub fn time64ns(&self) -> Result<&Time64NsChunked> {
+    pub fn time64ns(&self) -> Result<&Time64NanosecondChunked> {
         unpack_series!(self, Time64Ns)
     }
 
     /// Unpack to ChunkedArray
-    pub fn duration_ns(&self) -> Result<&DurationNsChunked> {
+    pub fn duration_ns(&self) -> Result<&DurationNanosecondChunked> {
         unpack_series!(self, DurationNs)
     }
 
