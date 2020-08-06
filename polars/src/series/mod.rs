@@ -104,28 +104,42 @@ pub(crate) mod iterator;
 /// ```
 #[derive(Clone)]
 pub enum Series {
-    UInt8(ChunkedArray<datatypes::UInt8Type>),
-    UInt16(ChunkedArray<datatypes::UInt16Type>),
-    UInt32(ChunkedArray<datatypes::UInt32Type>),
-    UInt64(ChunkedArray<datatypes::UInt64Type>),
-    Int8(ChunkedArray<datatypes::Int8Type>),
-    Int16(ChunkedArray<datatypes::Int16Type>),
-    Int32(ChunkedArray<datatypes::Int32Type>),
-    Int64(ChunkedArray<datatypes::Int64Type>),
-    Float32(ChunkedArray<datatypes::Float32Type>),
-    Float64(ChunkedArray<datatypes::Float64Type>),
-    Utf8(ChunkedArray<datatypes::Utf8Type>),
-    Bool(ChunkedArray<datatypes::BooleanType>),
-    Date32(ChunkedArray<datatypes::Date32Type>),
-    Date64(ChunkedArray<datatypes::Date64Type>),
-    Time64Ns(ChunkedArray<datatypes::Time64NanosecondType>),
-    DurationNs(ChunkedArray<datatypes::DurationNanosecondType>),
+    UInt8(ChunkedArray<UInt8Type>),
+    UInt16(ChunkedArray<UInt16Type>),
+    UInt32(ChunkedArray<UInt32Type>),
+    UInt64(ChunkedArray<UInt64Type>),
+    Int8(ChunkedArray<Int8Type>),
+    Int16(ChunkedArray<Int16Type>),
+    Int32(ChunkedArray<Int32Type>),
+    Int64(ChunkedArray<Int64Type>),
+    Float32(ChunkedArray<Float32Type>),
+    Float64(ChunkedArray<Float64Type>),
+    Utf8(ChunkedArray<Utf8Type>),
+    Bool(ChunkedArray<BooleanType>),
+    Date32(ChunkedArray<Date32Type>),
+    Date64(ChunkedArray<Date64Type>),
+    Time32Millisecond(Time32MillisecondChunked),
+    Time32Second(Time32SecondChunked),
+    Time64Nanosecond(ChunkedArray<Time64NanosecondType>),
+    Time64Microsecond(ChunkedArray<Time64MicrosecondType>),
+    DurationNanosecond(ChunkedArray<DurationNanosecondType>),
+    DurationMicrosecond(DurationMicrosecondChunked),
+    DurationMillisecond(DurationMillisecondChunked),
+    DurationSecond(DurationSecondChunked),
+    IntervalDayTime(IntervalDayTimeChunked),
+    IntervalYearMonth(IntervalYearMonthChunked),
+    TimestampNanosecond(TimestampNanosecondChunked),
+    TimestampMicrosecond(TimestampMicrosecondChunked),
+    TimestampMillisecond(TimestampMillisecondChunked),
+    TimestampSecond(TimestampSecondChunked),
 }
 
 #[macro_export]
 macro_rules! apply_method_all_series {
     ($self:ident, $method:ident, $($args:expr),*) => {
         match $self {
+            Series::Utf8(a) => a.$method($($args),*),
+            Series::Bool(a) => a.$method($($args),*),
             Series::UInt8(a) => a.$method($($args),*),
             Series::UInt16(a) => a.$method($($args),*),
             Series::UInt32(a) => a.$method($($args),*),
@@ -136,12 +150,22 @@ macro_rules! apply_method_all_series {
             Series::Int64(a) => a.$method($($args),*),
             Series::Float32(a) => a.$method($($args),*),
             Series::Float64(a) => a.$method($($args),*),
-            Series::Utf8(a) => a.$method($($args),*),
-            Series::Bool(a) => a.$method($($args),*),
             Series::Date32(a) => a.$method($($args),*),
             Series::Date64(a) => a.$method($($args),*),
-            Series::Time64Ns(a) => a.$method($($args),*),
-            Series::DurationNs(a) => a.$method($($args),*),
+            Series::Time32Millisecond(a) => a.$method($($args),*),
+            Series::Time32Second(a) => a.$method($($args),*),
+            Series::Time64Nanosecond(a) => a.$method($($args),*),
+            Series::Time64Microsecond(a) => a.$method($($args),*),
+            Series::DurationNanosecond(a) => a.$method($($args),*),
+            Series::DurationMicrosecond(a) => a.$method($($args),*),
+            Series::DurationMillisecond(a) => a.$method($($args),*),
+            Series::DurationSecond(a) => a.$method($($args),*),
+            Series::TimestampNanosecond(a) => a.$method($($args),*),
+            Series::TimestampMicrosecond(a) => a.$method($($args),*),
+            Series::TimestampMillisecond(a) => a.$method($($args),*),
+            Series::TimestampSecond(a) => a.$method($($args),*),
+            Series::IntervalDayTime(a) => a.$method($($args),*),
+            Series::IntervalYearMonth(a) => a.$method($($args),*),
         }
     }
 }
@@ -163,14 +187,61 @@ macro_rules! apply_method_numeric_series {
             Series::Float64(a) => a.$method($($args),*),
             Series::Date32(a) => a.$method($($args),*),
             Series::Date64(a) => a.$method($($args),*),
-            Series::Time64Ns(a) => a.$method($($args),*),
-            Series::DurationNs(a) => a.$method($($args),*),
+            Series::Time32Millisecond(a) => a.$method($($args),*),
+            Series::Time32Second(a) => a.$method($($args),*),
+            Series::Time64Nanosecond(a) => a.$method($($args),*),
+            Series::Time64Microsecond(a) => a.$method($($args),*),
+            Series::DurationNanosecond(a) => a.$method($($args),*),
+            Series::DurationMicrosecond(a) => a.$method($($args),*),
+            Series::DurationMillisecond(a) => a.$method($($args),*),
+            Series::DurationSecond(a) => a.$method($($args),*),
+            Series::TimestampNanosecond(a) => a.$method($($args),*),
+            Series::TimestampMicrosecond(a) => a.$method($($args),*),
+            Series::TimestampMillisecond(a) => a.$method($($args),*),
+            Series::TimestampSecond(a) => a.$method($($args),*),
+            Series::IntervalDayTime(a) => a.$method($($args),*),
+            Series::IntervalYearMonth(a) => a.$method($($args),*),
             _ => unimplemented!(),
         }
     }
 }
 
-macro_rules! apply_method_and_return {
+#[macro_export]
+macro_rules! apply_method_numeric_series_and_return {
+    ($self:ident, $method:ident, [$($args:expr),*], $($opt_question_mark:tt)*) => {
+        match $self {
+            Series::UInt8(a) => Series::UInt8(a.$method($($args),*)$($opt_question_mark)*),
+            Series::UInt16(a) => Series::UInt16(a.$method($($args),*)$($opt_question_mark)*),
+            Series::UInt32(a) => Series::UInt32(a.$method($($args),*)$($opt_question_mark)*),
+            Series::UInt64(a) => Series::UInt64(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Int8(a) => Series::Int8(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Int16(a) => Series::Int16(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Int32(a) => Series::Int32(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Int64(a) => Series::Int64(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Float32(a) => Series::Float32(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Float64(a) => Series::Float64(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Date32(a) => Series::Date32(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Date64(a) => Series::Date64(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Time32Millisecond(a) => Series::Time32Millisecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Time32Second(a) => Series::Time32Second(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Time64Nanosecond(a) => Series::Time64Nanosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Time64Microsecond(a) => Series::Time64Microsecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationNanosecond(a) => Series::DurationNanosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationMicrosecond(a) => Series::DurationMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationMillisecond(a) => Series::DurationMillisecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationSecond(a) => Series::DurationSecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::TimestampNanosecond(a) => Series::TimestampNanosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::TimestampMicrosecond(a) => Series::TimestampMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::TimestampMillisecond(a) => Series::TimestampMillisecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
+            Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
+            _ => unimplemented!()
+        }
+    }
+}
+
+macro_rules! apply_method_all_series_and_return {
     ($self:ident, $method:ident, [$($args:expr),*], $($opt_question_mark:tt)*) => {
         match $self {
             Series::UInt8(a) => Series::UInt8(a.$method($($args),*)$($opt_question_mark)*),
@@ -187,8 +258,20 @@ macro_rules! apply_method_and_return {
             Series::Bool(a) => Series::Bool(a.$method($($args),*)$($opt_question_mark)*),
             Series::Date32(a) => Series::Date32(a.$method($($args),*)$($opt_question_mark)*),
             Series::Date64(a) => Series::Date64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time64Ns(a) => Series::Time64Ns(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationNs(a) => Series::DurationNs(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Time32Millisecond(a) => Series::Time32Millisecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Time32Second(a) => Series::Time32Second(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Time64Nanosecond(a) => Series::Time64Nanosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Time64Microsecond(a) => Series::Time64Microsecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationNanosecond(a) => Series::DurationNanosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationMicrosecond(a) => Series::DurationMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationMillisecond(a) => Series::DurationMillisecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::DurationSecond(a) => Series::DurationSecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::TimestampNanosecond(a) => Series::TimestampNanosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::TimestampMicrosecond(a) => Series::TimestampMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::TimestampMillisecond(a) => Series::TimestampMillisecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
+            Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
+            Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
         }
     }
 }
@@ -324,13 +407,73 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray
-    pub fn time64ns(&self) -> Result<&Time64NanosecondChunked> {
-        unpack_series!(self, Time64Ns)
+    pub fn time32_millisecond(&self) -> Result<&Time32MillisecondChunked> {
+        unpack_series!(self, Time32Millisecond)
     }
 
     /// Unpack to ChunkedArray
-    pub fn duration_ns(&self) -> Result<&DurationNanosecondChunked> {
-        unpack_series!(self, DurationNs)
+    pub fn time32_second(&self) -> Result<&Time32SecondChunked> {
+        unpack_series!(self, Time32Second)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
+        unpack_series!(self, Time64Nanosecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn time64_microsecond(&self) -> Result<&Time64MicrosecondChunked> {
+        unpack_series!(self, Time64Microsecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
+        unpack_series!(self, DurationNanosecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn duration_microsecond(&self) -> Result<&DurationMicrosecondChunked> {
+        unpack_series!(self, DurationMicrosecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
+        unpack_series!(self, DurationMillisecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn duration_second(&self) -> Result<&DurationSecondChunked> {
+        unpack_series!(self, DurationSecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn timestamp_nanosecond(&self) -> Result<&TimestampNanosecondChunked> {
+        unpack_series!(self, TimestampNanosecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn timestamp_microsecond(&self) -> Result<&TimestampMicrosecondChunked> {
+        unpack_series!(self, TimestampMicrosecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn timestamp_millisecond(&self) -> Result<&TimestampMillisecondChunked> {
+        unpack_series!(self, TimestampMillisecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn timestamp_second(&self) -> Result<&TimestampSecondChunked> {
+        unpack_series!(self, TimestampSecond)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn interval_daytime(&self) -> Result<&IntervalDayTimeChunked> {
+        unpack_series!(self, IntervalDayTime)
+    }
+
+    /// Unpack to ChunkedArray
+    pub fn interval_year_month(&self) -> Result<&IntervalYearMonthChunked> {
+        unpack_series!(self, IntervalYearMonth)
     }
 
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
@@ -339,17 +482,19 @@ impl Series {
 
     /// Take `num_elements` from the top as a zero copy view.
     pub fn limit(&self, num_elements: usize) -> Result<Self> {
-        Ok(apply_method_and_return!(self, limit, [num_elements], ?))
+        Ok(apply_method_all_series_and_return!(self, limit, [num_elements], ?))
     }
 
     /// Get a zero copy view of the data.
     pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
-        Ok(apply_method_and_return!(self, slice, [offset, length], ?))
+        Ok(apply_method_all_series_and_return!(self, slice, [offset, length], ?))
     }
 
     /// Append a Series of the same type in place.
     pub fn append(&mut self, other: &Self) -> Result<()> {
         match self {
+            Series::Utf8(arr) => arr.append(other.utf8()?),
+            Series::Bool(arr) => arr.append(other.bool()?),
             Series::UInt8(arr) => arr.append(other.u8()?),
             Series::UInt16(arr) => arr.append(other.u16()?),
             Series::UInt32(arr) => arr.append(other.u32()?),
@@ -360,19 +505,29 @@ impl Series {
             Series::Int64(arr) => arr.append(other.i64()?),
             Series::Float32(arr) => arr.append(other.f32()?),
             Series::Float64(arr) => arr.append(other.f64()?),
-            Series::Utf8(arr) => arr.append(other.utf8()?),
             Series::Date32(arr) => arr.append(other.date32()?),
             Series::Date64(arr) => arr.append(other.date64()?),
-            Series::Time64Ns(arr) => arr.append(other.time64ns()?),
-            Series::Bool(arr) => arr.append(other.bool()?),
-            Series::DurationNs(arr) => arr.append(other.duration_ns()?),
+            Series::Time32Millisecond(arr) => arr.append(other.time32_millisecond()?),
+            Series::Time32Second(arr) => arr.append(other.time32_second()?),
+            Series::Time64Nanosecond(arr) => arr.append(other.time64_nanosecond()?),
+            Series::Time64Microsecond(arr) => arr.append(other.time64_microsecond()?),
+            Series::DurationNanosecond(arr) => arr.append(other.duration_nanosecond()?),
+            Series::DurationMillisecond(arr) => arr.append(other.duration_millisecond()?),
+            Series::DurationMicrosecond(arr) => arr.append(other.duration_microsecond()?),
+            Series::DurationSecond(arr) => arr.append(other.duration_second()?),
+            Series::TimestampNanosecond(arr) => arr.append(other.timestamp_nanosecond()?),
+            Series::TimestampMicrosecond(arr) => arr.append(other.timestamp_microsecond()?),
+            Series::TimestampMillisecond(arr) => arr.append(other.timestamp_millisecond()?),
+            Series::TimestampSecond(arr) => arr.append(other.timestamp_second()?),
+            Series::IntervalDayTime(arr) => arr.append(other.interval_daytime()?),
+            Series::IntervalYearMonth(arr) => arr.append(other.interval_year_month()?),
         };
         Ok(())
     }
 
     /// Filter by boolean mask. This operation clones data.
     pub fn filter<T: AsRef<BooleanChunked>>(&self, filter: T) -> Result<Self> {
-        Ok(apply_method_and_return!(self, filter, [filter.as_ref()], ?))
+        Ok(apply_method_all_series_and_return!(self, filter, [filter.as_ref()], ?))
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -381,7 +536,7 @@ impl Series {
         iter: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Result<Self> {
-        Ok(apply_method_and_return!(self, take, [iter,  capacity], ?))
+        Ok(apply_method_all_series_and_return!(self, take, [iter,  capacity], ?))
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -390,7 +545,7 @@ impl Series {
         iter: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Result<Self> {
-        Ok(apply_method_and_return!(self, take_opt, [iter,  capacity], ?))
+        Ok(apply_method_all_series_and_return!(self, take_opt, [iter,  capacity], ?))
     }
 
     /// Take by index. This operation is clone.
@@ -407,17 +562,17 @@ impl Series {
 
     /// Aggregate all chunks to a contiguous array of memory.
     pub fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
-        Ok(apply_method_and_return!(self, rechunk, [chunk_lengths], ?))
+        Ok(apply_method_all_series_and_return!(self, rechunk, [chunk_lengths], ?))
     }
 
     /// Get the head of the Series.
     pub fn head(&self, length: Option<usize>) -> Self {
-        apply_method_and_return!(self, head, [length],)
+        apply_method_all_series_and_return!(self, head, [length],)
     }
 
     /// Get the tail of the Series.
     pub fn tail(&self, length: Option<usize>) -> Self {
-        apply_method_and_return!(self, tail, [length],)
+        apply_method_all_series_and_return!(self, tail, [length],)
     }
 
     /// Cast to an some primitive type.
@@ -426,6 +581,8 @@ impl Series {
         N: PolarsDataType,
     {
         let s = match self {
+            Series::Bool(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Utf8(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::UInt8(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::UInt16(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::UInt32(arr) => pack_ca_to_series(arr.cast::<N>()?),
@@ -438,10 +595,20 @@ impl Series {
             Series::Float64(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Date32(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Date64(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Time64Ns(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::DurationNs(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Bool(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Utf8(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Time32Millisecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Time32Second(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Time64Nanosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Time64Microsecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::DurationNanosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::DurationMicrosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::DurationMillisecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::DurationSecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::TimestampNanosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::TimestampMicrosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::TimestampMillisecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::TimestampSecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::IntervalDayTime(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::IntervalYearMonth(arr) => pack_ca_to_series(arr.cast::<N>()?),
         };
         Ok(s)
     }
@@ -458,7 +625,7 @@ impl Series {
     }
 
     pub fn sort(&self, reverse: bool) -> Self {
-        apply_method_and_return!(self, sort, [reverse],)
+        apply_method_all_series_and_return!(self, sort, [reverse],)
     }
 
     /// Retrieve the indexes needed for a sort.
@@ -473,7 +640,7 @@ impl Series {
 
     /// Get unique values in the Series.
     pub fn unique(&self) -> Self {
-        apply_method_and_return!(self, unique, [],)
+        apply_method_all_series_and_return!(self, unique, [],)
     }
 
     /// Get first indexes of unique values.
@@ -493,7 +660,7 @@ impl Series {
 
     /// return a Series in reversed order
     pub fn reverse(&self) -> Self {
-        apply_method_and_return!(self, reverse, [],)
+        apply_method_all_series_and_return!(self, reverse, [],)
     }
 
     /// Rechunk and return a pointer to the start of the Series.
@@ -519,10 +686,10 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Date32(DateUnit::Day) => Series::Date32(mem::transmute(ca)),
             ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(mem::transmute(ca)),
             ArrowDataType::Time64(datatypes::TimeUnit::Nanosecond) => {
-                Series::Time64Ns(mem::transmute(ca))
+                Series::Time64Nanosecond(mem::transmute(ca))
             }
             ArrowDataType::Duration(datatypes::TimeUnit::Nanosecond) => {
-                Series::DurationNs(mem::transmute(ca))
+                Series::DurationNanosecond(mem::transmute(ca))
             }
             ArrowDataType::Boolean => Series::Bool(mem::transmute(ca)),
             ArrowDataType::Utf8 => Series::Utf8(mem::transmute(ca)),

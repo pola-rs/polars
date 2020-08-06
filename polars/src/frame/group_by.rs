@@ -45,6 +45,7 @@ impl DataFrame {
                 }};
             }
 
+            // TODO: Use trait and enum_dispatch
             match s {
                 Series::UInt32(ca) => create_iter!(ca),
                 Series::Int32(ca) => create_iter!(ca),
@@ -53,8 +54,8 @@ impl DataFrame {
                 Series::Utf8(ca) => groupby(ca.into_iter()),
                 Series::Date32(ca) => create_iter!(ca),
                 Series::Date64(ca) => create_iter!(ca),
-                Series::Time64Ns(ca) => create_iter!(ca),
-                Series::DurationNs(ca) => create_iter!(ca),
+                Series::Time64Nanosecond(ca) => create_iter!(ca),
+                Series::DurationNanosecond(ca) => create_iter!(ca),
                 _ => unimplemented!(),
             }
         } else {
@@ -105,239 +106,129 @@ where
         .collect()
 }
 
-fn agg_mean<T>(
-    ca: &ChunkedArray<T>,
-    groups: &Vec<(usize, Vec<usize>)>,
-    agg_col: &Series,
-) -> Vec<Option<f64>>
+impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast + ToPrimitive,
 {
-    groups
-        .par_iter()
-        .map(|(_first, idx)| {
-            if let Ok(slice) = ca.cont_slice() {
-                let mut sum = 0.;
-                for i in idx {
-                    sum = sum + slice[*i].to_f64().unwrap()
+    // TODO: use aligned vecs or return ca, Implement rayon::iter::FromParallelIterator<std::option::Option<<T as arrow::datatypes::ArrowPrimitiveType>
+    fn agg_mean(&self, groups: &Vec<(usize, Vec<usize>)>) -> Vec<Option<f64>>
+    where
+        T::Native: std::ops::Add<Output = T::Native> + Num + NumCast + ToPrimitive,
+    {
+        groups
+            .par_iter()
+            .map(|(_first, idx)| {
+                if let Ok(slice) = self.cont_slice() {
+                    let mut sum = 0.;
+                    for i in idx {
+                        sum = sum + slice[*i].to_f64().unwrap()
+                    }
+                    Some(sum / idx.len() as f64)
+                } else {
+                    let take = self
+                        .take(idx.into_iter().copied(), Some(self.len()))
+                        .unwrap();
+                    let opt_sum: Option<T::Native> = take.sum();
+                    opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                 }
-                Some(sum / idx.len() as f64)
-            } else {
-                let take = agg_col.take(idx).unwrap();
-                let opt_sum: Option<T::Native> = take.sum();
-                opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
-            }
-        })
-        .collect()
-}
+            })
+            .collect()
+    }
 
-fn agg_min<T>(
-    ca: &ChunkedArray<T>,
-    groups: &Vec<(usize, Vec<usize>)>,
-    agg_col: &Series,
-) -> Vec<Option<T::Native>>
-where
-    T: PolarsNumericType + Sync,
-    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
-{
-    groups
-        .par_iter()
-        .map(|(_first, idx)| {
-            if let Ok(slice) = ca.cont_slice() {
-                let mut min = None;
-                for i in idx {
-                    let v = slice[*i];
+    fn agg_min(&self, groups: &Vec<(usize, Vec<usize>)>, new_name: &str) -> Self
+    where
+        T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
+    {
+        let v: Vec<_> = groups
+            .par_iter()
+            .map(|(_first, idx)| {
+                if let Ok(slice) = self.cont_slice() {
+                    let mut min = None;
+                    for i in idx {
+                        let v = slice[*i];
 
-                    min = match min {
-                        Some(min) => {
-                            if min < v {
-                                Some(min)
-                            } else {
-                                Some(v)
+                        min = match min {
+                            Some(min) => {
+                                if min < v {
+                                    Some(min)
+                                } else {
+                                    Some(v)
+                                }
                             }
-                        }
-                        None => Some(v),
-                    };
+                            None => Some(v),
+                        };
+                    }
+                    min
+                } else {
+                    let take = self
+                        .take(idx.into_iter().copied(), Some(self.len()))
+                        .unwrap();
+                    take.min()
                 }
-                min
-            } else {
-                let take = agg_col.take(idx).unwrap();
-                take.min()
-            }
-        })
-        .collect()
-}
+            })
+            .collect();
+        Self::new_from_opt_slice(new_name, &v)
+    }
 
-fn agg_max<T>(
-    ca: &ChunkedArray<T>,
-    groups: &Vec<(usize, Vec<usize>)>,
-    agg_col: &Series,
-) -> Vec<Option<T::Native>>
-where
-    T: PolarsNumericType + Sync,
-    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
-{
-    groups
-        .par_iter()
-        .map(|(_first, idx)| {
-            if let Ok(slice) = ca.cont_slice() {
-                let mut max = None;
-                for i in idx {
-                    let v = slice[*i];
+    fn agg_max(&self, groups: &Vec<(usize, Vec<usize>)>, new_name: &str) -> Self
+    where
+        T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
+    {
+        let v: Vec<_> = groups
+            .par_iter()
+            .map(|(_first, idx)| {
+                if let Ok(slice) = self.cont_slice() {
+                    let mut max = None;
+                    for i in idx {
+                        let v = slice[*i];
 
-                    max = match max {
-                        Some(max) => {
-                            if max > v {
-                                Some(max)
-                            } else {
-                                Some(v)
+                        max = match max {
+                            Some(max) => {
+                                if max > v {
+                                    Some(max)
+                                } else {
+                                    Some(v)
+                                }
                             }
-                        }
-                        None => Some(v),
-                    };
+                            None => Some(v),
+                        };
+                    }
+                    max
+                } else {
+                    let take = self
+                        .take(idx.into_iter().copied(), Some(self.len()))
+                        .unwrap();
+                    take.max()
                 }
-                max
-            } else {
-                let take = agg_col.take(idx).unwrap();
-                take.max()
-            }
-        })
-        .collect()
-}
+            })
+            .collect();
+        Self::new_from_opt_slice(new_name, &v)
+    }
 
-macro_rules! apply_agg_fn {
-    // agg_fn
-    //     function take as input:
-    //     ca: &ChunkedArray<T>,
-    //     groups: &Vec<(usize, Vec<usize>)>,
-    //     agg_col: &Series,
-    ($self:ident, $agg_fn:ident, $agg_col:ident, $new_name:ident) => {
-        match $agg_col.dtype() {
-            ArrowDataType::Int32 => {
-                let ca = $agg_col.i32().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::Int32(ca)
-            }
-            ArrowDataType::Int64 => {
-                let ca = $agg_col.i64().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::Int64(ca)
-            }
-            ArrowDataType::UInt32 => {
-                let ca = $agg_col.u32().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::UInt32(ca)
-            }
-            ArrowDataType::Float32 => {
-                let ca = $agg_col.f32().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::Float32(ca)
-            }
-            ArrowDataType::Float64 => {
-                let ca = $agg_col.f64().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::Float64(ca)
-            }
-            ArrowDataType::Date32(DateUnit::Millisecond) => {
-                let ca = $agg_col.date32().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::Date32(ca)
-            }
-            ArrowDataType::Date64(DateUnit::Millisecond) => {
-                let ca = $agg_col.date64().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::Date64(ca)
-            }
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                let ca = $agg_col.time64ns().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::Time64Ns(ca)
-            }
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                let ca = $agg_col.duration_ns().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::DurationNs(ca)
-            }
-            _ => return Err(PolarsError::DataTypeMisMatch),
-        }
-    };
-}
-
-macro_rules! apply_agg_fn_return_single_variant {
-    // agg_fn
-    //     function take as input:
-    //     ca: &ChunkedArray<T>,
-    //     groups: &Vec<(usize, Vec<usize>)>,
-    //     agg_col: &Series,
-    ($self:ident, $agg_fn:ident, $agg_col:ident, $new_name:ident, $variant:ident) => {
-        match $agg_col.dtype() {
-            ArrowDataType::Int32 => {
-                let ca = $agg_col.i32().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            ArrowDataType::Int64 => {
-                let ca = $agg_col.i64().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            ArrowDataType::UInt32 => {
-                let ca = $agg_col.u32().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            ArrowDataType::Float32 => {
-                let ca = $agg_col.f32().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            ArrowDataType::Float64 => {
-                let ca = $agg_col.f64().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            ArrowDataType::Date32(DateUnit::Millisecond) => {
-                let ca = $agg_col.date32().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            ArrowDataType::Date64(DateUnit::Millisecond) => {
-                let ca = $agg_col.date64().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                let ca = $agg_col.time64ns().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                let ca = $agg_col.duration_ns().unwrap();
-                let vec_opts = $agg_fn(ca, &$self.groups, $agg_col);
-                let ca = build_primitive_ca_with_opt(&vec_opts, &$new_name);
-                Series::$variant(ca)
-            }
-            _ => return Err(PolarsError::DataTypeMisMatch),
-        }
-    };
+    fn agg_sum(&self, groups: &Vec<(usize, Vec<usize>)>, new_name: &str) -> Self
+    where
+        T: PolarsNumericType + Sync,
+        T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
+    {
+        let v: Vec<_> = groups
+            .par_iter()
+            .map(|(_first, idx)| {
+                if let Ok(slice) = self.cont_slice() {
+                    let mut sum = Zero::zero();
+                    for i in idx {
+                        sum = sum + slice[*i]
+                    }
+                    Some(sum)
+                } else {
+                    let take = self
+                        .take(idx.into_iter().copied(), Some(self.len()))
+                        .unwrap();
+                    take.sum()
+                }
+            })
+            .collect();
+        Self::new_from_opt_slice(new_name, &v)
+    }
 }
 
 impl<'a> GroupBy<'a> {
@@ -368,7 +259,11 @@ impl<'a> GroupBy<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_mean", name];
-        let agg = apply_agg_fn_return_single_variant!(self, agg_mean, agg_col, new_name, Float64);
+
+        let groups = &self.groups;
+        let agg = apply_method_numeric_series!(agg_col, agg_mean, groups);
+
+        let agg = Float64Chunked::new_from_opt_slice(&new_name, &agg).into_series();
         DataFrame::new(vec![keys, agg])
     }
 
@@ -376,7 +271,8 @@ impl<'a> GroupBy<'a> {
     pub fn sum(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_sum", name];
-        let agg = apply_agg_fn!(self, agg_sum, agg_col, new_name);
+        let agg =
+            apply_method_numeric_series_and_return!(agg_col, agg_sum, [&self.groups, &new_name],);
         DataFrame::new(vec![keys, agg])
     }
 
@@ -384,7 +280,8 @@ impl<'a> GroupBy<'a> {
     pub fn min(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_min", name];
-        let agg = apply_agg_fn!(self, agg_min, agg_col, new_name);
+        let agg =
+            apply_method_numeric_series_and_return!(agg_col, agg_min, [&self.groups, &new_name],);
         DataFrame::new(vec![keys, agg])
     }
 
@@ -392,7 +289,8 @@ impl<'a> GroupBy<'a> {
     pub fn max(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_max", name];
-        let agg = apply_agg_fn!(self, agg_max, agg_col, new_name);
+        let agg =
+            apply_method_numeric_series_and_return!(agg_col, agg_max, [&self.groups, &new_name],);
         DataFrame::new(vec![keys, agg])
     }
 

@@ -1,7 +1,10 @@
-use crate::chunked_array::temporal::{date64_as_datetime, time64_ns_as_time};
+use crate::chunked_array::temporal::time64_microsecond_as_time;
 use crate::prelude::*;
 use crate::{
-    chunked_array::temporal::date32_as_datetime,
+    chunked_array::temporal::{
+        date32_as_datetime, date64_as_datetime, time32_millisecond_as_time, time32_second_as_time,
+        time64_nanosecond_as_time,
+    },
     datatypes::{AnyType, ToStr},
 };
 use num::{Num, NumCast};
@@ -31,7 +34,6 @@ impl Debug for Series {
         }
 
         match self {
-            // TODO: insert new datatypes
             Series::UInt8(a) => format_series!(a, "u8"),
             Series::UInt16(a) => format_series!(a, "u16"),
             Series::UInt32(a) => format_series!(a, "u32"),
@@ -45,8 +47,20 @@ impl Debug for Series {
             Series::Float64(a) => format_series!(a, "f64"),
             Series::Date32(a) => format_series!(a, "date32(day)"),
             Series::Date64(a) => format_series!(a, "date64(ms)"),
-            Series::DurationNs(a) => format_series!(a, "duration64(ns)"),
-            Series::Time64Ns(a) => format_series!(a, "time64(ns)"),
+            Series::Time32Millisecond(a) => format_series!(a, "time32(ms)"),
+            Series::Time32Second(a) => format_series!(a, "time32(s)"),
+            Series::Time64Nanosecond(a) => format_series!(a, "time64(ns)"),
+            Series::Time64Microsecond(a) => format_series!(a, "time64(μs)"),
+            Series::DurationNanosecond(a) => format_series!(a, "duration(ns)"),
+            Series::DurationMicrosecond(a) => format_series!(a, "duration(μs)"),
+            Series::DurationMillisecond(a) => format_series!(a, "duration(ms)"),
+            Series::DurationSecond(a) => format_series!(a, "duration(s)"),
+            Series::IntervalDayTime(a) => format_series!(a, "interval(daytime)"),
+            Series::IntervalYearMonth(a) => format_series!(a, "interval(year-month)"),
+            Series::TimestampNanosecond(a) => format_series!(a, "timestamp(ns)"),
+            Series::TimestampMicrosecond(a) => format_series!(a, "timestamp(μs)"),
+            Series::TimestampMillisecond(a) => format_series!(a, "timestamp(ms)"),
+            Series::TimestampSecond(a) => format_series!(a, "timestamp(s)"),
             Series::Utf8(a) => {
                 write![f, "Series: str \n[\n"]?;
                 a.into_iter().take(LIMIT).for_each(|opt_s| match opt_s {
@@ -176,10 +190,39 @@ impl Display for AnyType<'_> {
                 width = width
             ),
             AnyType::Date64(v) => write!(f, "{:>width$}", date64_as_datetime(*v), width = width),
-            AnyType::Time64(v, TimeUnit::Nanosecond) => {
-                write!(f, "{:>width$}", time_64_ns_as_time(*v), width = width)
+            AnyType::Time32(v, TimeUnit::Millisecond) => write!(
+                f,
+                "{:>width$}",
+                time32_millisecond_as_time(*v),
+                width = width
+            ),
+            AnyType::Time32(v, TimeUnit::Second) => {
+                write!(f, "{:>width$}", time32_second_as_time(*v), width = width)
             }
+            AnyType::Time64(v, TimeUnit::Nanosecond) => write!(
+                f,
+                "{:>width$}",
+                time_64_nanosecond_as_time(*v),
+                width = width
+            ),
+            AnyType::Time64(v, TimeUnit::Microsecond) => write!(
+                f,
+                "{:>width$}",
+                time_64_nanosecond_as_time(*v),
+                width = width
+            ),
             AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{:>width$}", v, width = width),
+            AnyType::Duration(v, TimeUnit::Microsecond) => {
+                write!(f, "{:>width$}", v, width = width)
+            }
+            AnyType::Duration(v, TimeUnit::Millisecond) => {
+                write!(f, "{:>width$}", v, width = width)
+            }
+            AnyType::Duration(v, TimeUnit::Second) => write!(f, "{:>width$}", v, width = width),
+            AnyType::TimeStamp(v, _) => todo!(),
+            AnyType::IntervalYearMonth(v) => write!(f, "{:>width$}", v, width = width),
+            AnyType::IntervalDayTime(v) => write!(f, "{:>width$}", v, width = width),
+
             _ => unimplemented!(),
         }
     }
@@ -205,8 +248,23 @@ impl Display for AnyType<'_> {
             AnyType::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
             AnyType::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
             AnyType::Date64(v) => write!(f, "{}", date64_as_datetime(*v)),
-            AnyType::Time64(v, TimeUnit::Nanosecond) => write!(f, "{}", time64_ns_as_time(*v)),
+            AnyType::Time32(v, TimeUnit::Millisecond) => {
+                write!(f, "{}", time32_millisecond_as_time(*v))
+            }
+            AnyType::Time32(v, TimeUnit::Second) => write!(f, "{}", time32_second_as_time(*v)),
+            AnyType::Time64(v, TimeUnit::Nanosecond) => {
+                write!(f, "{}", time64_nanosecond_as_time(*v))
+            }
+            AnyType::Time64(v, TimeUnit::Microsecond) => {
+                write!(f, "{}", time64_microsecond_as_time(*v))
+            }
             AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
+            AnyType::Duration(v, TimeUnit::Microsecond) => write!(f, "{}", v),
+            AnyType::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
+            AnyType::Duration(v, TimeUnit::Second) => write!(f, "{}", v),
+            AnyType::TimeStamp(_, _) => todo!(),
+            AnyType::IntervalDayTime(v) => write!(f, "{}", v),
+            AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
             _ => unimplemented!(),
         }
     }

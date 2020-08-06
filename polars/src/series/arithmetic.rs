@@ -2,6 +2,8 @@ use crate::prelude::*;
 use num::{Num, NumCast, ToPrimitive};
 use std::ops;
 
+// TODO: implement type
+
 impl Series {
     fn subtract(&self, rhs: &Series) -> Result<Self> {
         macro_rules! subtract {
@@ -26,8 +28,8 @@ impl Series {
             Series::Float64(lhs) => subtract!(Series::Float64, lhs),
             Series::Date32(lhs) => subtract!(Series::Date32, lhs),
             Series::Date64(lhs) => subtract!(Series::Date64, lhs),
-            Series::Time64Ns(lhs) => subtract!(Series::Time64Ns, lhs),
-            Series::DurationNs(lhs) => subtract!(Series::DurationNs, lhs),
+            Series::Time64Nanosecond(lhs) => subtract!(Series::Time64Nanosecond, lhs),
+            Series::DurationNanosecond(lhs) => subtract!(Series::DurationNanosecond, lhs),
             _ => Err(PolarsError::InvalidOperation),
         }
     }
@@ -55,8 +57,8 @@ impl Series {
             Series::Float64(lhs) => add!(Series::Float64, lhs),
             Series::Date32(lhs) => add!(Series::Date32, lhs),
             Series::Date64(lhs) => add!(Series::Date64, lhs),
-            Series::Time64Ns(lhs) => add!(Series::Time64Ns, lhs),
-            Series::DurationNs(lhs) => add!(Series::DurationNs, lhs),
+            Series::Time64Nanosecond(lhs) => add!(Series::Time64Nanosecond, lhs),
+            Series::DurationNanosecond(lhs) => add!(Series::DurationNanosecond, lhs),
             _ => Err(PolarsError::InvalidOperation),
         }
     }
@@ -84,8 +86,8 @@ impl Series {
             Series::Float64(lhs) => multiply!(Series::Float64, lhs),
             Series::Date32(lhs) => multiply!(Series::Date32, lhs),
             Series::Date64(lhs) => multiply!(Series::Date64, lhs),
-            Series::Time64Ns(lhs) => multiply!(Series::Time64Ns, lhs),
-            Series::DurationNs(lhs) => multiply!(Series::DurationNs, lhs),
+            Series::Time64Nanosecond(lhs) => multiply!(Series::Time64Nanosecond, lhs),
+            Series::DurationNanosecond(lhs) => multiply!(Series::DurationNanosecond, lhs),
             _ => Err(PolarsError::InvalidOperation),
         }
     }
@@ -113,8 +115,8 @@ impl Series {
             Series::Float64(lhs) => divide!(Series::Float64, lhs),
             Series::Date32(lhs) => divide!(Series::Date32, lhs),
             Series::Date64(lhs) => divide!(Series::Date64, lhs),
-            Series::Time64Ns(lhs) => divide!(Series::Time64Ns, lhs),
-            Series::DurationNs(lhs) => divide!(Series::DurationNs, lhs),
+            Series::Time64Nanosecond(lhs) => divide!(Series::Time64Nanosecond, lhs),
+            Series::DurationNanosecond(lhs) => divide!(Series::DurationNanosecond, lhs),
             _ => Err(PolarsError::InvalidOperation),
         }
     }
@@ -227,8 +229,8 @@ where
             Series::Float64(ca) => op_num_rhs!(f64, ca, rhs, -),
             Series::Date32(ca) => op_num_rhs!(i32, ca, rhs, -),
             Series::Date64(ca) => op_num_rhs!(i64, ca, rhs, -),
-            Series::Time64Ns(ca) => op_num_rhs!(i64, ca, rhs, -),
-            Series::DurationNs(ca) => op_num_rhs!(i64, ca, rhs, -),
+            Series::Time64Nanosecond(ca) => op_num_rhs!(i64, ca, rhs, -),
+            Series::DurationNanosecond(ca) => op_num_rhs!(i64, ca, rhs, -),
             _ => unimplemented!(),
         }
     }
@@ -265,8 +267,8 @@ where
             Series::Float64(ca) => op_num_rhs!(f64, ca, rhs, +),
             Series::Date32(ca) => op_num_rhs!(i32, ca, rhs, +),
             Series::Date64(ca) => op_num_rhs!(i64, ca, rhs, +),
-            Series::Time64Ns(ca) => op_num_rhs!(i64, ca, rhs, +),
-            Series::DurationNs(ca) => op_num_rhs!(i64, ca, rhs, +),
+            Series::Time64Nanosecond(ca) => op_num_rhs!(i64, ca, rhs, +),
+            Series::DurationNanosecond(ca) => op_num_rhs!(i64, ca, rhs, +),
             _ => unimplemented!(),
         }
     }
@@ -303,8 +305,8 @@ where
             Series::Float64(ca) => op_num_rhs!(f64, ca, rhs, /),
             Series::Date32(ca) => op_num_rhs!(i32, ca, rhs, /),
             Series::Date64(ca) => op_num_rhs!(i64, ca, rhs, /),
-            Series::Time64Ns(ca) => op_num_rhs!(i64, ca, rhs, /),
-            Series::DurationNs(ca) => op_num_rhs!(i64, ca, rhs, /),
+            Series::Time64Nanosecond(ca) => op_num_rhs!(i64, ca, rhs, /),
+            Series::DurationNanosecond(ca) => op_num_rhs!(i64, ca, rhs, /),
             _ => unimplemented!(),
         }
     }
@@ -341,8 +343,8 @@ where
             Series::Float64(ca) => op_num_rhs!(f64, ca, rhs, *),
             Series::Date32(ca) => op_num_rhs!(i32, ca, rhs, *),
             Series::Date64(ca) => op_num_rhs!(i64, ca, rhs, *),
-            Series::Time64Ns(ca) => op_num_rhs!(i64, ca, rhs, *),
-            Series::DurationNs(ca) => op_num_rhs!(i64, ca, rhs, *),
+            Series::Time64Nanosecond(ca) => op_num_rhs!(i64, ca, rhs, *),
+            Series::DurationNanosecond(ca) => op_num_rhs!(i64, ca, rhs, *),
             _ => unimplemented!(),
         }
     }
@@ -397,8 +399,8 @@ where
             Series::Float64(ca) => op_num_lhs!(f64, ca, self, +),
             Series::Date32(ca) => op_num_lhs!(i32, ca, self, +),
             Series::Date64(ca) => op_num_lhs!(i64, ca, self, +),
-            Series::Time64Ns(ca) => op_num_lhs!(i64, ca, self, +),
-            Series::DurationNs(ca) => op_num_lhs!(i64, ca, self, +),
+            Series::Time64Nanosecond(ca) => op_num_lhs!(i64, ca, self, +),
+            Series::DurationNanosecond(ca) => op_num_lhs!(i64, ca, self, +),
             _ => unimplemented!(),
         }
     }
@@ -416,8 +418,8 @@ where
             Series::Float64(ca) => op_num_lhs!(f64, ca, self, -),
             Series::Date32(ca) => op_num_lhs!(i32, ca, self, -),
             Series::Date64(ca) => op_num_lhs!(i64, ca, self, -),
-            Series::Time64Ns(ca) => op_num_lhs!(i64, ca, self, -),
-            Series::DurationNs(ca) => op_num_lhs!(i64, ca, self, -),
+            Series::Time64Nanosecond(ca) => op_num_lhs!(i64, ca, self, -),
+            Series::DurationNanosecond(ca) => op_num_lhs!(i64, ca, self, -),
             _ => unimplemented!(),
         }
     }
@@ -435,8 +437,8 @@ where
             Series::Float64(ca) => op_num_lhs!(f64, ca, self, /),
             Series::Date32(ca) => op_num_lhs!(i32, ca, self, /),
             Series::Date64(ca) => op_num_lhs!(i64, ca, self, /),
-            Series::Time64Ns(ca) => op_num_lhs!(i64, ca, self, /),
-            Series::DurationNs(ca) => op_num_lhs!(i64, ca, self, /),
+            Series::Time64Nanosecond(ca) => op_num_lhs!(i64, ca, self, /),
+            Series::DurationNanosecond(ca) => op_num_lhs!(i64, ca, self, /),
             _ => unimplemented!(),
         }
     }
@@ -454,8 +456,8 @@ where
             Series::Float64(ca) => op_num_lhs!(f64, ca, self, *),
             Series::Date32(ca) => op_num_lhs!(i32, ca, self, *),
             Series::Date64(ca) => op_num_lhs!(i64, ca, self, *),
-            Series::Time64Ns(ca) => op_num_lhs!(i64, ca, self, *),
-            Series::DurationNs(ca) => op_num_lhs!(i64, ca, self, *),
+            Series::Time64Nanosecond(ca) => op_num_lhs!(i64, ca, self, *),
+            Series::DurationNanosecond(ca) => op_num_lhs!(i64, ca, self, *),
             _ => unimplemented!(),
         }
     }
@@ -479,8 +481,8 @@ impl Series {
             Series::Float64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
             Series::Date32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
             Series::Date64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
-            Series::Time64Ns(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
-            Series::DurationNs(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
+            Series::Time64Nanosecond(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
+            Series::DurationNanosecond(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
             _ => unimplemented!(),
         }
     }

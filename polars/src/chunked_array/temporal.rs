@@ -25,11 +25,36 @@ pub fn date64_as_datetime(v: i64) -> NaiveDateTime {
     )
 }
 
-pub fn time64_ns_as_time(v: i64) -> NaiveTime {
+pub fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
     NaiveTime::from_num_seconds_from_midnight(
         // extract seconds from nanoseconds
         (v / NANOSECONDS_IN_SECOND) as u32,
         // discard extracted seconds
         (v % NANOSECONDS_IN_SECOND) as u32,
+    )
+}
+
+pub fn time64_microsecond_as_time(v: i64) -> NaiveTime {
+    NaiveTime::from_num_seconds_from_midnight(
+        // extract seconds from microseconds
+        (v / MICROSECONDS_IN_SECOND) as u32,
+        // discard extracted seconds and convert microseconds to
+        // nanoseconds
+        (v % MICROSECONDS_IN_SECOND * MILLISECONDS_IN_SECOND) as u32,
+    )
+}
+
+pub fn time32_second_as_time(v: i32) -> NaiveTime {
+    NaiveTime::from_num_seconds_from_midnight(v as u32, 0)
+}
+
+pub fn time32_millisecond_as_time(v: i32) -> NaiveTime {
+    let v = v as u32;
+    NaiveTime::from_num_seconds_from_midnight(
+        // extract seconds from milliseconds
+        v / MILLISECONDS_IN_SECOND as u32,
+        // discard extracted seconds and convert milliseconds to
+        // nanoseconds
+        v % MILLISECONDS_IN_SECOND as u32 * MICROSECONDS_IN_SECOND as u32,
     )
 }
