@@ -447,6 +447,7 @@ impl DataFrame {
             }
         );
 
+        // TODO: implement type
         // Create the column used to join. This column has values from both left and right.
         macro_rules! downcast_and_replace_joined_column {
             ($type:ident) => {{
@@ -474,6 +475,7 @@ impl DataFrame {
             }};
         }
 
+        // TODO: implement type
         match s_left.dtype() {
             ArrowDataType::UInt32 => downcast_and_replace_joined_column!(u32),
             ArrowDataType::Int32 => downcast_and_replace_joined_column!(i32),

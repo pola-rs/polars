@@ -78,10 +78,10 @@ pub fn finish_reader<R: ArrowReader>(mut reader: R, rechunk: bool) -> Result<Dat
             ArrowDataType::Date64(DateUnit::Millisecond) => {
                 Series::Date64(Date64Chunked::new_from_chunks(field.name(), vec![]))
             }
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => Series::DurationNs(
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => Series::DurationNanosecond(
                 DurationNanosecondChunked::new_from_chunks(field.name(), vec![]),
             ),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => Series::Time64Ns(
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => Series::Time64Nanosecond(
                 Time64NanosecondChunked::new_from_chunks(field.name(), vec![]),
             ),
             _ => unimplemented!(),

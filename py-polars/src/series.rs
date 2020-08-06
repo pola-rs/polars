@@ -250,8 +250,8 @@ impl PySeries {
             Series::Float64(ca) => PyList::new(python, ca),
             Series::Date32(ca) => PyList::new(python, ca),
             Series::Date64(ca) => PyList::new(python, ca),
-            Series::Time64Ns(ca) => PyList::new(python, ca),
-            Series::DurationNs(ca) => PyList::new(python, ca),
+            Series::Time64Nanosecond(ca) => PyList::new(python, ca),
+            Series::DurationNanosecond(ca) => PyList::new(python, ca),
             Series::Bool(ca) => PyList::new(python, ca),
             Series::Utf8(ca) => PyList::new(python, ca),
         };

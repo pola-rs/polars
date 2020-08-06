@@ -6,18 +6,16 @@
 //! [See the AnyType variants](enum.AnyType.html#variants) for the data types that
 //! are currently supported.
 //!
-pub use arrow::datatypes::{
-    BooleanType, Date32Type, Date64Type, DateUnit, DurationNanosecondType, Float32Type,
-    Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, IntervalUnit, Time64NanosecondType,
-    TimeUnit, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
-};
-
 use crate::chunked_array::ChunkedArray;
 pub use arrow::datatypes::DataType as ArrowDataType;
-use arrow::datatypes::{
-    ArrowNumericType, ArrowPrimitiveType, DurationMicrosecondType, DurationMillisecondType,
-    DurationSecondType, IntervalDayTimeType, IntervalYearMonthType, Time32MillisecondType,
-    Time32SecondType, Time64MicrosecondType,
+pub use arrow::datatypes::{
+    ArrowNumericType, ArrowPrimitiveType, BooleanType, Date32Type, Date64Type, DateUnit,
+    DurationMicrosecondType, DurationMillisecondType, DurationNanosecondType, DurationSecondType,
+    Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, IntervalDayTimeType,
+    IntervalUnit, IntervalYearMonthType, Time32MillisecondType, Time32SecondType,
+    Time64MicrosecondType, Time64NanosecondType, TimeUnit, TimestampMicrosecondType,
+    TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt16Type, UInt32Type,
+    UInt64Type, UInt8Type,
 };
 use std::ops::{Deref, DerefMut};
 
@@ -84,6 +82,11 @@ pub type Time32SecondChunked = ChunkedArray<Time32SecondType>;
 pub type IntervalDayTimeChunked = ChunkedArray<IntervalDayTimeType>;
 pub type IntervalYearMonthChunked = ChunkedArray<IntervalYearMonthType>;
 
+pub type TimestampNanosecondChunked = ChunkedArray<TimestampNanosecondType>;
+pub type TimestampMicrosecondChunked = ChunkedArray<TimestampMicrosecondType>;
+pub type TimestampMillisecondChunked = ChunkedArray<TimestampMillisecondType>;
+pub type TimestampSecondChunked = ChunkedArray<TimestampSecondType>;
+
 pub trait PolarsNumericType: ArrowNumericType {}
 
 impl PolarsNumericType for UInt8Type {}
@@ -108,6 +111,10 @@ impl PolarsNumericType for DurationMillisecondType {}
 impl PolarsNumericType for DurationSecondType {}
 impl PolarsNumericType for IntervalYearMonthType {}
 impl PolarsNumericType for IntervalDayTimeType {}
+impl PolarsNumericType for TimestampNanosecondType {}
+impl PolarsNumericType for TimestampMicrosecondType {}
+impl PolarsNumericType for TimestampMillisecondType {}
+impl PolarsNumericType for TimestampSecondType {}
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -130,6 +137,10 @@ impl PolarsIntegerType for DurationMillisecondType {}
 impl PolarsIntegerType for DurationSecondType {}
 impl PolarsIntegerType for IntervalYearMonthType {}
 impl PolarsIntegerType for IntervalDayTimeType {}
+impl PolarsIntegerType for TimestampNanosecondType {}
+impl PolarsIntegerType for TimestampMicrosecondType {}
+impl PolarsIntegerType for TimestampMillisecondType {}
+impl PolarsIntegerType for TimestampSecondType {}
 
 #[derive(Debug, PartialEq)]
 pub enum AnyType<'a> {

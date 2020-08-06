@@ -349,19 +349,106 @@ where
             _ => Err(PolarsError::DataTypeMisMatch),
         }
     }
+    // TODO: insert types
+
+    /// Downcast generic `ChunkedArray<T>` to time32 with milliseconds unit.
+    pub fn time32_second(self) -> Result<Time32SecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Time32(TimeUnit::Second) => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast generic `ChunkedArray<T>` to time32 with milliseconds unit.
+    pub fn time32_millisecond(self) -> Result<Time32MillisecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Time32(TimeUnit::Millisecond) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
 
     /// Downcast generic `ChunkedArray<T>` to time64 with nanoseconds unit.
-    pub fn time64_ns(self) -> Result<Time64NanosecondChunked> {
+    pub fn time64_nanosecond(self) -> Result<Time64NanosecondChunked> {
         match T::get_data_type() {
             ArrowDataType::Time64(TimeUnit::Nanosecond) => unsafe { Ok(std::mem::transmute(self)) },
             _ => Err(PolarsError::DataTypeMisMatch),
         }
     }
 
+    /// Downcast generic `ChunkedArray<T>` to time64 with microseconds unit.
+    pub fn time64_microsecond(self) -> Result<Time64MicrosecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Time64(TimeUnit::Microsecond) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
     /// Downcast generic `ChunkedArray<T>` to duration with nanoseconds unit.
-    pub fn duration_ns(self) -> Result<DurationNanosecondChunked> {
+    pub fn duration_nanosecond(self) -> Result<DurationNanosecondChunked> {
         match T::get_data_type() {
             ArrowDataType::Duration(TimeUnit::Nanosecond) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast generic `ChunkedArray<T>` to duration with microseconds unit.
+    pub fn duration_microsecond(self) -> Result<DurationMicrosecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Duration(TimeUnit::Microsecond) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast generic `ChunkedArray<T>` to duration with seconds unit.
+    pub fn duration_second(self) -> Result<DurationSecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Duration(TimeUnit::Second) => unsafe { Ok(std::mem::transmute(self)) },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast generic `ChunkedArray<T>` to timestamp with nanoseconds unit.
+    pub fn timestamp_nanosecond(self) -> Result<TimestampNanosecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast generic `ChunkedArray<T>` to timestamp with microseconds unit.
+    pub fn timestamp_microsecond(self) -> Result<TimestampMicrosecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast generic `ChunkedArray<T>` to timestamp with milliseconds unit.
+    pub fn timestamp_millisecond(self) -> Result<TimestampMillisecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => unsafe {
+                Ok(std::mem::transmute(self))
+            },
+            _ => Err(PolarsError::DataTypeMisMatch),
+        }
+    }
+
+    /// Downcast generic `ChunkedArray<T>` to timestamp with seconds unit.
+    pub fn timestamp_second(self) -> Result<TimestampSecondChunked> {
+        match T::get_data_type() {
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => unsafe {
                 Ok(std::mem::transmute(self))
             },
             _ => Err(PolarsError::DataTypeMisMatch),
