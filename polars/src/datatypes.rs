@@ -8,13 +8,17 @@
 //!
 pub use arrow::datatypes::{
     BooleanType, Date32Type, Date64Type, DateUnit, DurationNanosecondType, Float32Type,
-    Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, Time64NanosecondType, TimeUnit,
-    UInt16Type, UInt32Type, UInt64Type, UInt8Type,
+    Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, IntervalUnit, Time64NanosecondType,
+    TimeUnit, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
 
 use crate::chunked_array::ChunkedArray;
 pub use arrow::datatypes::DataType as ArrowDataType;
-use arrow::datatypes::{ArrowNumericType, ArrowPrimitiveType};
+use arrow::datatypes::{
+    ArrowNumericType, ArrowPrimitiveType, DurationMicrosecondType, DurationMillisecondType,
+    DurationSecondType, IntervalDayTimeType, IntervalYearMonthType, Time32MillisecondType,
+    Time32SecondType, Time64MicrosecondType,
+};
 use std::ops::{Deref, DerefMut};
 
 pub struct Utf8Type {
@@ -68,8 +72,17 @@ pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
 pub type Date32Chunked = ChunkedArray<Date32Type>;
 pub type Date64Chunked = ChunkedArray<Date64Type>;
-pub type DurationNsChunked = ChunkedArray<DurationNanosecondType>;
-pub type Time64NsChunked = ChunkedArray<Time64NanosecondType>;
+pub type DurationNanosecondChunked = ChunkedArray<DurationNanosecondType>;
+pub type DurationMicrosecondChunked = ChunkedArray<DurationMicrosecondType>;
+pub type DurationMillisecondChunked = ChunkedArray<DurationMillisecondType>;
+pub type DurationSecondChunked = ChunkedArray<DurationSecondType>;
+
+pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
+pub type Time64MicrosecondChunked = ChunkedArray<Time64MicrosecondType>;
+pub type Time32MillisecondChunked = ChunkedArray<Time32MillisecondType>;
+pub type Time32SecondChunked = ChunkedArray<Time32SecondType>;
+pub type IntervalDayTimeChunked = ChunkedArray<IntervalDayTimeType>;
+pub type IntervalYearMonthChunked = ChunkedArray<IntervalYearMonthType>;
 
 pub trait PolarsNumericType: ArrowNumericType {}
 
@@ -86,7 +99,15 @@ impl PolarsNumericType for Float64Type {}
 impl PolarsNumericType for Date32Type {}
 impl PolarsNumericType for Date64Type {}
 impl PolarsNumericType for Time64NanosecondType {}
+impl PolarsNumericType for Time64MicrosecondType {}
+impl PolarsNumericType for Time32MillisecondType {}
+impl PolarsNumericType for Time32SecondType {}
 impl PolarsNumericType for DurationNanosecondType {}
+impl PolarsNumericType for DurationMicrosecondType {}
+impl PolarsNumericType for DurationMillisecondType {}
+impl PolarsNumericType for DurationSecondType {}
+impl PolarsNumericType for IntervalYearMonthType {}
+impl PolarsNumericType for IntervalDayTimeType {}
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -100,7 +121,15 @@ impl PolarsIntegerType for Int64Type {}
 impl PolarsIntegerType for Date32Type {}
 impl PolarsIntegerType for Date64Type {}
 impl PolarsIntegerType for Time64NanosecondType {}
+impl PolarsIntegerType for Time64MicrosecondType {}
+impl PolarsIntegerType for Time32MillisecondType {}
+impl PolarsIntegerType for Time32SecondType {}
 impl PolarsIntegerType for DurationNanosecondType {}
+impl PolarsIntegerType for DurationMicrosecondType {}
+impl PolarsIntegerType for DurationMillisecondType {}
+impl PolarsIntegerType for DurationSecondType {}
+impl PolarsIntegerType for IntervalYearMonthType {}
+impl PolarsIntegerType for IntervalDayTimeType {}
 
 #[derive(Debug, PartialEq)]
 pub enum AnyType<'a> {
@@ -137,8 +166,13 @@ pub enum AnyType<'a> {
     Date64(i64),
     /// A 64-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     Time64(i64, TimeUnit),
+    /// A 32-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
+    Time32(i32, TimeUnit),
     /// Measure of elapsed time in either seconds, milliseconds, microseconds or nanoseconds.
     Duration(i64, TimeUnit),
+    TimeStamp(i64, TimeUnit),
+    IntervalDayTime(i64),
+    IntervalYearMonth(i32),
 }
 
 pub trait ToStr {
@@ -164,8 +198,20 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Utf8 => "str",
             ArrowDataType::Date32(DateUnit::Day) => "date32",
             ArrowDataType::Date64(DateUnit::Millisecond) => "date64",
+            ArrowDataType::Time32(TimeUnit::Second) => "time64(s)",
+            ArrowDataType::Time32(TimeUnit::Millisecond) => "time64(ms)",
             ArrowDataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
+            ArrowDataType::Time64(TimeUnit::Microsecond) => "time64(μs)",
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => "timestamp(ns)",
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => "timestamp(μs)",
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => "timestamp(ms)",
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => "timestamp(s)",
             ArrowDataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
+            ArrowDataType::Duration(TimeUnit::Microsecond) => "duration(μs)",
+            ArrowDataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
+            ArrowDataType::Duration(TimeUnit::Second) => "duration(s)",
+            ArrowDataType::Interval(IntervalUnit::DayTime) => "interval(daytime)",
+            ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
             _ => unimplemented!(),
         }
     }
