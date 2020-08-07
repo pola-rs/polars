@@ -673,9 +673,10 @@ impl Series {
 }
 
 fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
-    // TODO: use From trait
     unsafe {
         match N::get_data_type() {
+            ArrowDataType::Boolean => Series::Bool(mem::transmute(ca)),
+            ArrowDataType::Utf8 => Series::Utf8(mem::transmute(ca)),
             ArrowDataType::UInt8 => Series::UInt8(mem::transmute(ca)),
             ArrowDataType::UInt16 => Series::UInt16(mem::transmute(ca)),
             ArrowDataType::UInt32 => Series::UInt32(mem::transmute(ca)),
@@ -688,14 +689,48 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Float64 => Series::Float64(mem::transmute(ca)),
             ArrowDataType::Date32(DateUnit::Day) => Series::Date32(mem::transmute(ca)),
             ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(mem::transmute(ca)),
+            ArrowDataType::Time64(datatypes::TimeUnit::Microsecond) => {
+                Series::Time64Microsecond(mem::transmute(ca))
+            }
             ArrowDataType::Time64(datatypes::TimeUnit::Nanosecond) => {
                 Series::Time64Nanosecond(mem::transmute(ca))
+            }
+            ArrowDataType::Time32(datatypes::TimeUnit::Millisecond) => {
+                Series::Time32Millisecond(mem::transmute(ca))
+            }
+            ArrowDataType::Time32(datatypes::TimeUnit::Second) => {
+                Series::Time32Second(mem::transmute(ca))
             }
             ArrowDataType::Duration(datatypes::TimeUnit::Nanosecond) => {
                 Series::DurationNanosecond(mem::transmute(ca))
             }
-            ArrowDataType::Boolean => Series::Bool(mem::transmute(ca)),
-            ArrowDataType::Utf8 => Series::Utf8(mem::transmute(ca)),
+            ArrowDataType::Duration(datatypes::TimeUnit::Microsecond) => {
+                Series::DurationMicrosecond(mem::transmute(ca))
+            }
+            ArrowDataType::Duration(datatypes::TimeUnit::Millisecond) => {
+                Series::DurationMillisecond(mem::transmute(ca))
+            }
+            ArrowDataType::Duration(datatypes::TimeUnit::Second) => {
+                Series::DurationSecond(mem::transmute(ca))
+            }
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                Series::TimestampNanosecond(mem::transmute(ca))
+            }
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+                Series::TimestampMicrosecond(mem::transmute(ca))
+            }
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
+                Series::TimestampMillisecond(mem::transmute(ca))
+            }
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
+                Series::TimestampSecond(mem::transmute(ca))
+            }
+            ArrowDataType::Interval(IntervalUnit::YearMonth) => {
+                Series::IntervalYearMonth(mem::transmute(ca))
+            }
+            ArrowDataType::Interval(IntervalUnit::DayTime) => {
+                Series::IntervalDayTime(mem::transmute(ca))
+            }
             _ => panic!("Not implemented: {:?}", N::get_data_type()),
         }
     }
