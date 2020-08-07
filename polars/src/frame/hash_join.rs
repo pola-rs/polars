@@ -32,11 +32,50 @@ macro_rules! hash_join_outer {
 macro_rules! apply_hash_join_on_series {
     ($s_left:ident, $s_right:ident, $join_macro:ident) => {{
         match $s_left {
+            Series::UInt8(ca_left) => $join_macro!($s_right, ca_left, u8),
+            Series::UInt16(ca_left) => $join_macro!($s_right, ca_left, u16),
             Series::UInt32(ca_left) => $join_macro!($s_right, ca_left, u32),
+            Series::UInt64(ca_left) => $join_macro!($s_right, ca_left, u64),
+            Series::Int8(ca_left) => $join_macro!($s_right, ca_left, i8),
+            Series::Int16(ca_left) => $join_macro!($s_right, ca_left, i16),
             Series::Int32(ca_left) => $join_macro!($s_right, ca_left, i32),
             Series::Int64(ca_left) => $join_macro!($s_right, ca_left, i64),
             Series::Bool(ca_left) => $join_macro!($s_right, ca_left, bool),
             Series::Utf8(ca_left) => $join_macro!($s_right, ca_left, utf8),
+            Series::Date32(ca_left) => $join_macro!($s_right, ca_left, date32),
+            Series::Date64(ca_left) => $join_macro!($s_right, ca_left, date64),
+            Series::Time32Millisecond(ca_left) => {
+                $join_macro!($s_right, ca_left, time32_millisecond)
+            }
+            Series::Time32Second(ca_left) => $join_macro!($s_right, ca_left, time32_second),
+            Series::Time64Nanosecond(ca_left) => $join_macro!($s_right, ca_left, time64_nanosecond),
+            Series::Time64Microsecond(ca_left) => {
+                $join_macro!($s_right, ca_left, time64_microsecond)
+            }
+            Series::DurationMillisecond(ca_left) => {
+                $join_macro!($s_right, ca_left, duration_millisecond)
+            }
+            Series::DurationSecond(ca_left) => $join_macro!($s_right, ca_left, duration_second),
+            Series::DurationNanosecond(ca_left) => {
+                $join_macro!($s_right, ca_left, duration_nanosecond)
+            }
+            Series::DurationMicrosecond(ca_left) => {
+                $join_macro!($s_right, ca_left, duration_microsecond)
+            }
+            Series::TimestampMillisecond(ca_left) => {
+                $join_macro!($s_right, ca_left, timestamp_millisecond)
+            }
+            Series::TimestampSecond(ca_left) => $join_macro!($s_right, ca_left, timestamp_second),
+            Series::TimestampNanosecond(ca_left) => {
+                $join_macro!($s_right, ca_left, timestamp_nanosecond)
+            }
+            Series::TimestampMicrosecond(ca_left) => {
+                $join_macro!($s_right, ca_left, timestamp_microsecond)
+            }
+            Series::IntervalDayTime(ca_left) => $join_macro!($s_right, ca_left, interval_daytime),
+            Series::IntervalYearMonth(ca_left) => {
+                $join_macro!($s_right, ca_left, interval_year_month)
+            }
             _ => unimplemented!(),
         }
     }};
