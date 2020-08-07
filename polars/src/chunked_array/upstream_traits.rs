@@ -1,6 +1,9 @@
 //! Implementations of upstream traits for ChunkedArray<T>
 use crate::prelude::*;
 use crate::utils::Xob;
+use rayon::iter::{FromParallelIterator, IntoParallelIterator};
+use rayon::prelude::*;
+use std::collections::LinkedList;
 use std::iter::FromIterator;
 
 /// FromIterator trait
@@ -122,6 +125,145 @@ impl FromIterator<Option<String>> for Utf8Chunked {
                 Some(val) => builder.append_value(val.as_str()).expect("should not fail"),
             }
         }
+        builder.finish()
+    }
+}
+
+/// FromParallelIterator trait
+
+// Code taken from https://docs.rs/rayon/1.3.1/src/rayon/iter/extend.rs.html#356-366
+fn vec_push<T>(mut vec: Vec<T>, elem: T) -> Vec<T> {
+    vec.push(elem);
+    vec
+}
+
+fn as_list<T>(item: T) -> LinkedList<T> {
+    let mut list = LinkedList::new();
+    list.push_back(item);
+    list
+}
+
+fn list_append<T>(mut list1: LinkedList<T>, mut list2: LinkedList<T>) -> LinkedList<T> {
+    list1.append(&mut list2);
+    list1
+}
+
+fn collect_into_linked_list<I>(par_iter: I) -> LinkedList<Vec<I::Item>>
+where
+    I: IntoParallelIterator,
+{
+    par_iter
+        .into_par_iter()
+        .fold(Vec::new, vec_push)
+        .map(as_list)
+        .reduce(LinkedList::new, list_append)
+}
+
+fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
+    ll.iter().map(|list| list.len()).sum()
+}
+
+impl<T> FromParallelIterator<Option<T::Native>> for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
+        // Get linkedlist filled with different vec result from different threads
+        let vectors = collect_into_linked_list(iter);
+        let capacity: usize = get_capacity_from_par_results(&vectors);
+
+        let mut builder = PrimitiveChunkedBuilder::new("", capacity);
+        // Unpack all these results and append them single threaded
+        vectors.iter().for_each(|vec| {
+            for opt_val in vec {
+                builder.append_option(*opt_val).expect("could not append");
+            }
+        });
+
+        builder.finish()
+    }
+}
+
+impl FromParallelIterator<bool> for BooleanChunked {
+    fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
+        let vectors = collect_into_linked_list(iter);
+        let capacity: usize = get_capacity_from_par_results(&vectors);
+
+        let mut builder = PrimitiveChunkedBuilder::new("", capacity);
+        // Unpack all these results and append them single threaded
+        vectors.iter().for_each(|vec| {
+            for val in vec {
+                builder.append_value(*val).expect("could not append");
+            }
+        });
+
+        builder.finish()
+    }
+}
+
+impl FromParallelIterator<String> for Utf8Chunked {
+    fn from_par_iter<I: IntoParallelIterator<Item = String>>(iter: I) -> Self {
+        let vectors = collect_into_linked_list(iter);
+        let capacity: usize = get_capacity_from_par_results(&vectors);
+
+        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        // Unpack all these results and append them single threaded
+        vectors.iter().for_each(|vec| {
+            for val in vec {
+                builder
+                    .append_value(val.as_str())
+                    .expect("could not append");
+            }
+        });
+
+        builder.finish()
+    }
+}
+
+impl FromParallelIterator<Option<String>> for Utf8Chunked {
+    fn from_par_iter<I: IntoParallelIterator<Item = Option<String>>>(iter: I) -> Self {
+        let vectors = collect_into_linked_list(iter);
+        let capacity: usize = get_capacity_from_par_results(&vectors);
+
+        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        // Unpack all these results and append them single threaded
+        vectors.iter().for_each(|vec| {
+            for val in vec {
+                builder.append_option(val.as_ref());
+            }
+        });
+        builder.finish()
+    }
+}
+
+impl<'a> FromParallelIterator<Option<&'a str>> for Utf8Chunked {
+    fn from_par_iter<I: IntoParallelIterator<Item = Option<&'a str>>>(iter: I) -> Self {
+        let vectors = collect_into_linked_list(iter);
+        let capacity: usize = get_capacity_from_par_results(&vectors);
+
+        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        // Unpack all these results and append them single threaded
+        vectors.iter().for_each(|vec| {
+            for val in vec {
+                builder.append_option(val.as_ref());
+            }
+        });
+        builder.finish()
+    }
+}
+
+impl<'a> FromParallelIterator<&'a str> for Utf8Chunked {
+    fn from_par_iter<I: IntoParallelIterator<Item = &'a str>>(iter: I) -> Self {
+        let vectors = collect_into_linked_list(iter);
+        let capacity: usize = get_capacity_from_par_results(&vectors);
+
+        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        // Unpack all these results and append them single threaded
+        vectors.iter().for_each(|vec| {
+            for val in vec {
+                builder.append_value(val).expect("should not fail");
+            }
+        });
         builder.finish()
     }
 }

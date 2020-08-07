@@ -80,6 +80,13 @@ impl Utf8ChunkedBuilder {
         }
     }
 
+    pub fn append_option<S: AsRef<str>>(&mut self, opt: Option<S>) {
+        match opt {
+            Some(s) => self.append_value(s.as_ref()).expect("should not fail"),
+            None => self.append_null().expect("should not fail"),
+        }
+    }
+
     pub fn new_from_iter<'a>(mut self, it: impl Iterator<Item = Option<&'a str>>) -> Utf8Chunked {
         it.for_each(|opt_s| match opt_s {
             None => self.append_null().expect("should not fail"),
