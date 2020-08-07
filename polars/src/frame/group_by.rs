@@ -28,7 +28,7 @@ trait IntoGroupTuples {
     }
 }
 
-impl<T> IntoGroupTuples for &ChunkedArray<T>
+impl<T> IntoGroupTuples for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Eq + Hash,
@@ -41,8 +41,19 @@ where
         }
     }
 }
+impl IntoGroupTuples for BooleanChunked {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        groupby(self.into_iter())
+    }
+}
 
-impl<T> IntoGroupTuples for ChunkedArray<T> {}
+impl IntoGroupTuples for Utf8Chunked {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        groupby(self.into_iter())
+    }
+}
+impl IntoGroupTuples for Float64Chunked {}
+impl IntoGroupTuples for Float32Chunked {}
 
 impl DataFrame {
     /// Group DataFrame using a Series column.
@@ -99,9 +110,10 @@ trait NumericAggSync {
 }
 
 // default catch all impl, use autoref as specialization
-impl<T> NumericAggSync for ChunkedArray<T> {}
+impl NumericAggSync for BooleanChunked {}
+impl NumericAggSync for Utf8Chunked {}
 
-impl<T> NumericAggSync for &ChunkedArray<T>
+impl<T> NumericAggSync for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
     T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
