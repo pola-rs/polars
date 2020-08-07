@@ -34,6 +34,7 @@ pub mod iterator;
 pub mod take;
 pub mod temporal;
 pub mod unique;
+pub mod upstream_traits;
 use arrow::array::{
     Date32Array, DurationMicrosecondArray, DurationMillisecondArray, DurationNanosecondArray,
     DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray, Time32MillisecondArray,
@@ -1188,58 +1189,6 @@ macro_rules! impl_reverse {
 
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
-
-// TODO: use macro
-// Only the one which takes Utf8Chunked by reference is implemented.
-// We cannot return a & str owned by this function.
-impl<'a> From<&'a Utf8Chunked> for Vec<Option<&'a str>> {
-    fn from(ca: &'a Utf8Chunked) -> Self {
-        let mut vec = Vec::with_capacity_aligned(ca.len());
-        ca.into_iter().for_each(|opt| vec.push(opt));
-        vec
-    }
-}
-
-impl From<Utf8Chunked> for Vec<Option<String>> {
-    fn from(ca: Utf8Chunked) -> Self {
-        let mut vec = Vec::with_capacity_aligned(ca.len());
-        ca.into_iter()
-            .for_each(|opt| vec.push(opt.map(|s| s.to_string())));
-        vec
-    }
-}
-
-impl<'a> From<&'a BooleanChunked> for Vec<Option<bool>> {
-    fn from(ca: &'a BooleanChunked) -> Self {
-        let mut vec = Vec::with_capacity_aligned(ca.len());
-        ca.into_iter().for_each(|opt| vec.push(opt));
-        vec
-    }
-}
-
-impl From<BooleanChunked> for Vec<Option<bool>> {
-    fn from(ca: BooleanChunked) -> Self {
-        let mut vec = Vec::with_capacity_aligned(ca.len());
-        ca.into_iter().for_each(|opt| vec.push(opt));
-        vec
-    }
-}
-
-impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Native>>
-where
-    T: PolarsNumericType,
-    &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
-    ChunkedArray<T>: ChunkOps,
-{
-    fn from(ca: &'a ChunkedArray<T>) -> Self {
-        let mut vec = Vec::with_capacity_aligned(ca.len());
-        ca.into_iter().for_each(|opt| vec.push(opt));
-        vec
-    }
-}
-
-// TODO: macro implementation of Vec From for all types. ChunkedArray<T> (no reference) doesn't implement
-//    &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
 
 #[cfg(test)]
 pub(crate) mod test {
