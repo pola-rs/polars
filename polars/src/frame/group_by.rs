@@ -20,6 +20,35 @@ where
         .collect()
 }
 
+trait IntoGroupTuples {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)>;
+}
+
+impl<T> IntoGroupTuples for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Eq + Hash,
+{
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        if let Ok(slice) = self.cont_slice() {
+            groupby(slice.iter())
+        } else {
+            groupby(self.into_iter())
+        }
+    }
+}
+
+impl IntoGroupTuples for BooleanChunked {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        groupby(self.into_iter())
+    }
+}
+impl IntoGroupTuples for Utf8Chunked {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        groupby(self.into_iter())
+    }
+}
+
 impl DataFrame {
     /// Group DataFrame using a Series column.
     ///
@@ -35,29 +64,7 @@ impl DataFrame {
     /// ```
     pub fn groupby(&self, by: &str) -> Result<GroupBy> {
         let groups = if let Some(s) = self.column(by) {
-            macro_rules! create_iter {
-                ($ca:ident) => {{
-                    if let Ok(slice) = $ca.cont_slice() {
-                        groupby(slice.iter())
-                    } else {
-                        groupby($ca.into_iter())
-                    }
-                }};
-            }
-
-            // TODO: Use trait and enum_dispatch
-            match s {
-                Series::UInt32(ca) => create_iter!(ca),
-                Series::Int32(ca) => create_iter!(ca),
-                Series::Int64(ca) => create_iter!(ca),
-                Series::Bool(ca) => groupby(ca.into_iter()),
-                Series::Utf8(ca) => groupby(ca.into_iter()),
-                Series::Date32(ca) => create_iter!(ca),
-                Series::Date64(ca) => create_iter!(ca),
-                Series::Time64Nanosecond(ca) => create_iter!(ca),
-                Series::DurationNanosecond(ca) => create_iter!(ca),
-                _ => unimplemented!(),
-            }
+            apply_method_all_hash_series!(s, group_tuples,)
         } else {
             return Err(PolarsError::NotFound);
         };
