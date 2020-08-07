@@ -577,7 +577,7 @@ impl Series {
         apply_method_all_series_and_return!(self, tail, [length],)
     }
 
-    /// Cast to an some primitive type.
+    /// Cast to some primitive type.
     pub fn cast<N>(&self) -> Result<Self>
     where
         N: PolarsDataType,
@@ -673,6 +673,7 @@ impl Series {
 }
 
 fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
+    // TODO: use From trait
     unsafe {
         match N::get_data_type() {
             ArrowDataType::UInt8 => Series::UInt8(mem::transmute(ca)),
@@ -802,6 +803,47 @@ impl_as_mut_ca!(Float32Type, Float32);
 impl_as_mut_ca!(Float64Type, Float64);
 impl_as_mut_ca!(BooleanType, Bool);
 impl_as_mut_ca!(Utf8Type, Utf8);
+
+macro_rules! from_series_to_ca {
+    ($variant:ident, $ca:ident) => {
+        impl<'a> From<&'a Series> for &'a $ca {
+            fn from(s: &'a Series) -> Self {
+                match s {
+                    Series::$variant(ca) => ca,
+                    _ => unimplemented!(),
+                }
+            }
+        }
+    };
+}
+from_series_to_ca!(UInt8, UInt8Chunked);
+from_series_to_ca!(UInt16, UInt16Chunked);
+from_series_to_ca!(UInt32, UInt32Chunked);
+from_series_to_ca!(UInt64, UInt64Chunked);
+from_series_to_ca!(Int8, Int8Chunked);
+from_series_to_ca!(Int16, Int16Chunked);
+from_series_to_ca!(Int32, Int32Chunked);
+from_series_to_ca!(Int64, Int64Chunked);
+from_series_to_ca!(Float32, Float32Chunked);
+from_series_to_ca!(Float64, Float64Chunked);
+from_series_to_ca!(Bool, BooleanChunked);
+from_series_to_ca!(Utf8, Utf8Chunked);
+from_series_to_ca!(Date32, Date32Chunked);
+from_series_to_ca!(Date64, Date64Chunked);
+from_series_to_ca!(Time32Millisecond, Time32MillisecondChunked);
+from_series_to_ca!(Time32Second, Time32SecondChunked);
+from_series_to_ca!(Time64Microsecond, Time64MicrosecondChunked);
+from_series_to_ca!(Time64Nanosecond, Time64NanosecondChunked);
+from_series_to_ca!(DurationMillisecond, DurationMillisecondChunked);
+from_series_to_ca!(DurationSecond, DurationSecondChunked);
+from_series_to_ca!(DurationMicrosecond, DurationMicrosecondChunked);
+from_series_to_ca!(DurationNanosecond, DurationNanosecondChunked);
+from_series_to_ca!(TimestampMillisecond, TimestampMillisecondChunked);
+from_series_to_ca!(TimestampSecond, TimestampSecondChunked);
+from_series_to_ca!(TimestampMicrosecond, TimestampMicrosecondChunked);
+from_series_to_ca!(TimestampNanosecond, TimestampNanosecondChunked);
+from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
+from_series_to_ca!(IntervalYearMonth, IntervalYearMonthChunked);
 
 #[cfg(test)]
 mod test {
