@@ -98,37 +98,38 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
 {
-    // TODO: use aligned vecs or return ca, Implement rayon::iter::FromParallelIterator<std::option::Option<<T as arrow::datatypes::ArrowPrimitiveType>
-    fn agg_mean(&self, groups: &Vec<(usize, Vec<usize>)>) -> Vec<Option<f64>>
+    fn agg_mean(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series
     where
         T::Native: std::ops::Add<Output = T::Native> + Num + NumCast + ToPrimitive,
     {
-        groups
-            .par_iter()
-            .map(|(_first, idx)| {
-                // Fast path
-                if let Ok(slice) = self.cont_slice() {
-                    let mut sum = 0.;
-                    for i in idx {
-                        sum = sum + slice[*i].to_f64().unwrap()
+        Series::Float64(
+            groups
+                .par_iter()
+                .map(|(_first, idx)| {
+                    // Fast path
+                    if let Ok(slice) = self.cont_slice() {
+                        let mut sum = 0.;
+                        for i in idx {
+                            sum = sum + slice[*i].to_f64().unwrap()
+                        }
+                        Some(sum / idx.len() as f64)
+                    } else {
+                        let take = self
+                            .take(idx.into_iter().copied(), Some(self.len()))
+                            .unwrap();
+                        let opt_sum: Option<T::Native> = take.sum();
+                        opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                     }
-                    Some(sum / idx.len() as f64)
-                } else {
-                    let take = self
-                        .take(idx.into_iter().copied(), Some(self.len()))
-                        .unwrap();
-                    let opt_sum: Option<T::Native> = take.sum();
-                    opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
-                }
-            })
-            .collect()
+                })
+                .collect(),
+        )
     }
 
-    fn agg_min(&self, groups: &Vec<(usize, Vec<usize>)>, new_name: &str) -> Self
+    fn agg_min(&self, groups: &Vec<(usize, Vec<usize>)>) -> Self
     where
         T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
     {
-        let v: Vec<_> = groups
+        groups
             .par_iter()
             .map(|(_first, idx)| {
                 if let Ok(slice) = self.cont_slice() {
@@ -155,15 +156,14 @@ where
                     take.min()
                 }
             })
-            .collect();
-        Self::new_from_opt_slice(new_name, &v)
+            .collect()
     }
 
-    fn agg_max(&self, groups: &Vec<(usize, Vec<usize>)>, new_name: &str) -> Self
+    fn agg_max(&self, groups: &Vec<(usize, Vec<usize>)>) -> Self
     where
         T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
     {
-        let v: Vec<_> = groups
+        groups
             .par_iter()
             .map(|(_first, idx)| {
                 if let Ok(slice) = self.cont_slice() {
@@ -190,16 +190,15 @@ where
                     take.max()
                 }
             })
-            .collect();
-        Self::new_from_opt_slice(new_name, &v)
+            .collect()
     }
 
-    fn agg_sum(&self, groups: &Vec<(usize, Vec<usize>)>, new_name: &str) -> Self
+    fn agg_sum(&self, groups: &Vec<(usize, Vec<usize>)>) -> Self
     where
         T: PolarsNumericType + Sync,
         T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
     {
-        let v: Vec<_> = groups
+        groups
             .par_iter()
             .map(|(_first, idx)| {
                 if let Ok(slice) = self.cont_slice() {
@@ -215,8 +214,7 @@ where
                     take.sum()
                 }
             })
-            .collect();
-        Self::new_from_opt_slice(new_name, &v)
+            .collect()
     }
 }
 
@@ -250,9 +248,8 @@ impl<'a> GroupBy<'a> {
         let new_name = format!["{}_mean", name];
 
         let groups = &self.groups;
-        let agg = apply_method_numeric_series!(agg_col, agg_mean, groups);
-
-        let agg = Float64Chunked::new_from_opt_slice(&new_name, &agg).into_series();
+        let mut agg = apply_method_numeric_series!(agg_col, agg_mean, groups);
+        agg.rename(&new_name);
         DataFrame::new(vec![keys, agg])
     }
 
@@ -260,8 +257,8 @@ impl<'a> GroupBy<'a> {
     pub fn sum(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_sum", name];
-        let agg =
-            apply_method_numeric_series_and_return!(agg_col, agg_sum, [&self.groups, &new_name],);
+        let mut agg = apply_method_numeric_series_and_return!(agg_col, agg_sum, [&self.groups],);
+        agg.rename(&new_name);
         DataFrame::new(vec![keys, agg])
     }
 
@@ -269,8 +266,8 @@ impl<'a> GroupBy<'a> {
     pub fn min(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_min", name];
-        let agg =
-            apply_method_numeric_series_and_return!(agg_col, agg_min, [&self.groups, &new_name],);
+        let mut agg = apply_method_numeric_series_and_return!(agg_col, agg_min, [&self.groups],);
+        agg.rename(&new_name);
         DataFrame::new(vec![keys, agg])
     }
 
@@ -278,8 +275,8 @@ impl<'a> GroupBy<'a> {
     pub fn max(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_max", name];
-        let agg =
-            apply_method_numeric_series_and_return!(agg_col, agg_max, [&self.groups, &new_name],);
+        let mut agg = apply_method_numeric_series_and_return!(agg_col, agg_max, [&self.groups],);
+        agg.rename(&new_name);
         DataFrame::new(vec![keys, agg])
     }
 
