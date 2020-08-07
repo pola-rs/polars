@@ -175,7 +175,7 @@ macro_rules! apply_method_all_series {
 // doesn't include Bool and Utf8
 #[macro_export]
 macro_rules! apply_method_numeric_series {
-    ($self:ident, $method:ident, $($args:ident),*) => {
+    ($self:ident, $method:ident, $($args:expr),*) => {
         match $self {
             Series::UInt8(a) => a.$method($($args),*),
             Series::UInt16(a) => a.$method($($args),*),

@@ -28,7 +28,7 @@ trait IntoGroupTuples {
     }
 }
 
-impl<T> IntoGroupTuples for ChunkedArray<T>
+impl<T> IntoGroupTuples for &ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Eq + Hash,
@@ -42,19 +42,7 @@ where
     }
 }
 
-impl IntoGroupTuples for Float32Chunked {}
-impl IntoGroupTuples for Float64Chunked {}
-
-impl IntoGroupTuples for BooleanChunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        groupby(self.into_iter())
-    }
-}
-impl IntoGroupTuples for Utf8Chunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        groupby(self.into_iter())
-    }
-}
+impl<T> IntoGroupTuples for ChunkedArray<T> {}
 
 impl DataFrame {
     /// Group DataFrame using a Series column.
@@ -94,14 +82,31 @@ pub struct GroupBy<'a> {
     selection: Option<String>,
 }
 
-impl<T> ChunkedArray<T>
+#[enum_dispatch(Series)]
+trait NumericAggSync {
+    fn agg_mean(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        unimplemented!()
+    }
+    fn agg_min(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        unimplemented!()
+    }
+    fn agg_max(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        unimplemented!()
+    }
+    fn agg_sum(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        unimplemented!()
+    }
+}
+
+// default catch all impl, use autoref as specialization
+impl<T> NumericAggSync for ChunkedArray<T> {}
+
+impl<T> NumericAggSync for &ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
+    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
 {
-    fn agg_mean(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series
-    where
-        T::Native: std::ops::Add<Output = T::Native> + Num + NumCast + ToPrimitive,
-    {
+    fn agg_mean(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
         Series::Float64(
             groups
                 .par_iter()
@@ -125,10 +130,7 @@ where
         )
     }
 
-    fn agg_min(&self, groups: &Vec<(usize, Vec<usize>)>) -> Self
-    where
-        T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
-    {
+    fn agg_min(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
         groups
             .par_iter()
             .map(|(_first, idx)| {
@@ -156,13 +158,11 @@ where
                     take.min()
                 }
             })
-            .collect()
+            .collect::<ChunkedArray<T>>()
+            .into_series()
     }
 
-    fn agg_max(&self, groups: &Vec<(usize, Vec<usize>)>) -> Self
-    where
-        T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
-    {
+    fn agg_max(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
         groups
             .par_iter()
             .map(|(_first, idx)| {
@@ -190,14 +190,11 @@ where
                     take.max()
                 }
             })
-            .collect()
+            .collect::<ChunkedArray<T>>()
+            .into_series()
     }
 
-    fn agg_sum(&self, groups: &Vec<(usize, Vec<usize>)>) -> Self
-    where
-        T: PolarsNumericType + Sync,
-        T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
-    {
+    fn agg_sum(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
         groups
             .par_iter()
             .map(|(_first, idx)| {
@@ -214,7 +211,8 @@ where
                     take.sum()
                 }
             })
-            .collect()
+            .collect::<ChunkedArray<T>>()
+            .into_series()
     }
 }
 
@@ -247,8 +245,7 @@ impl<'a> GroupBy<'a> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_mean", name];
 
-        let groups = &self.groups;
-        let mut agg = apply_method_numeric_series!(agg_col, agg_mean, groups);
+        let mut agg = agg_col.agg_mean(&self.groups);
         agg.rename(&new_name);
         DataFrame::new(vec![keys, agg])
     }
@@ -257,7 +254,7 @@ impl<'a> GroupBy<'a> {
     pub fn sum(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_sum", name];
-        let mut agg = apply_method_numeric_series_and_return!(agg_col, agg_sum, [&self.groups],);
+        let mut agg = agg_col.agg_sum(&self.groups);
         agg.rename(&new_name);
         DataFrame::new(vec![keys, agg])
     }
@@ -266,7 +263,7 @@ impl<'a> GroupBy<'a> {
     pub fn min(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_min", name];
-        let mut agg = apply_method_numeric_series_and_return!(agg_col, agg_min, [&self.groups],);
+        let mut agg = apply_method_numeric_series!(agg_col, agg_min, &self.groups);
         agg.rename(&new_name);
         DataFrame::new(vec![keys, agg])
     }
@@ -275,7 +272,7 @@ impl<'a> GroupBy<'a> {
     pub fn max(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_max", name];
-        let mut agg = apply_method_numeric_series_and_return!(agg_col, agg_max, [&self.groups],);
+        let mut agg = agg_col.agg_max(&self.groups);
         agg.rename(&new_name);
         DataFrame::new(vec![keys, agg])
     }
