@@ -1,6 +1,7 @@
 use super::hash_join::prepare_hashed_relation;
-use crate::chunked_array::builder::{build_primitive_ca_with_opt, PrimitiveChunkedBuilder};
+use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::prelude::*;
+use enum_dispatch::enum_dispatch;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::hash::Hash;
@@ -20,13 +21,16 @@ where
         .collect()
 }
 
+#[enum_dispatch(Series)]
 trait IntoGroupTuples {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)>;
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        unimplemented!()
+    }
 }
 
 impl<T> IntoGroupTuples for ChunkedArray<T>
 where
-    T: PolarsNumericType,
+    T: PolarsIntegerType,
     T::Native: Eq + Hash,
 {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
@@ -37,6 +41,9 @@ where
         }
     }
 }
+
+impl IntoGroupTuples for Float32Chunked {}
+impl IntoGroupTuples for Float64Chunked {}
 
 impl IntoGroupTuples for BooleanChunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
@@ -64,7 +71,7 @@ impl DataFrame {
     /// ```
     pub fn groupby(&self, by: &str) -> Result<GroupBy> {
         let groups = if let Some(s) = self.column(by) {
-            apply_method_all_hash_series!(s, group_tuples,)
+            s.group_tuples()
         } else {
             return Err(PolarsError::NotFound);
         };
@@ -87,32 +94,6 @@ pub struct GroupBy<'a> {
     selection: Option<String>,
 }
 
-fn agg_sum<T>(
-    ca: &ChunkedArray<T>,
-    groups: &Vec<(usize, Vec<usize>)>,
-    agg_col: &Series,
-) -> Vec<Option<T::Native>>
-where
-    T: PolarsNumericType + Sync,
-    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
-{
-    groups
-        .par_iter()
-        .map(|(_first, idx)| {
-            if let Ok(slice) = ca.cont_slice() {
-                let mut sum = Zero::zero();
-                for i in idx {
-                    sum = sum + slice[*i]
-                }
-                Some(sum)
-            } else {
-                let take = agg_col.take(idx).unwrap();
-                take.sum()
-            }
-        })
-        .collect()
-}
-
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
@@ -125,6 +106,7 @@ where
         groups
             .par_iter()
             .map(|(_first, idx)| {
+                // Fast path
                 if let Ok(slice) = self.cont_slice() {
                     let mut sum = 0.;
                     for i in idx {

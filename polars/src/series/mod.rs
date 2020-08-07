@@ -8,6 +8,7 @@ pub(crate) mod aggregate;
 pub(crate) mod arithmetic;
 mod comparison;
 pub(crate) mod iterator;
+use enum_dispatch::enum_dispatch;
 
 /// # Series
 /// The columnar data type for a DataFrame. The [Series enum](enum.Series.html) consists
@@ -102,6 +103,7 @@ pub(crate) mod iterator;
 ///     .collect();
 ///
 /// ```
+#[enum_dispatch]
 #[derive(Clone)]
 pub enum Series {
     UInt8(ChunkedArray<UInt8Type>),
@@ -166,42 +168,6 @@ macro_rules! apply_method_all_series {
             Series::TimestampSecond(a) => a.$method($($args),*),
             Series::IntervalDayTime(a) => a.$method($($args),*),
             Series::IntervalYearMonth(a) => a.$method($($args),*),
-        }
-    }
-}
-
-// doesn't include Floats
-#[macro_export]
-macro_rules! apply_method_all_hash_series {
-    ($self:ident, $method:ident, $($args:expr),*) => {
-        match $self {
-            Series::Utf8(a) => a.$method($($args),*),
-            Series::Bool(a) => a.$method($($args),*),
-            Series::UInt8(a) => a.$method($($args),*),
-            Series::UInt16(a) => a.$method($($args),*),
-            Series::UInt32(a) => a.$method($($args),*),
-            Series::UInt64(a) => a.$method($($args),*),
-            Series::Int8(a) => a.$method($($args),*),
-            Series::Int16(a) => a.$method($($args),*),
-            Series::Int32(a) => a.$method($($args),*),
-            Series::Int64(a) => a.$method($($args),*),
-            Series::Date32(a) => a.$method($($args),*),
-            Series::Date64(a) => a.$method($($args),*),
-            Series::Time32Millisecond(a) => a.$method($($args),*),
-            Series::Time32Second(a) => a.$method($($args),*),
-            Series::Time64Nanosecond(a) => a.$method($($args),*),
-            Series::Time64Microsecond(a) => a.$method($($args),*),
-            Series::DurationNanosecond(a) => a.$method($($args),*),
-            Series::DurationMicrosecond(a) => a.$method($($args),*),
-            Series::DurationMillisecond(a) => a.$method($($args),*),
-            Series::DurationSecond(a) => a.$method($($args),*),
-            Series::TimestampNanosecond(a) => a.$method($($args),*),
-            Series::TimestampMicrosecond(a) => a.$method($($args),*),
-            Series::TimestampMillisecond(a) => a.$method($($args),*),
-            Series::TimestampSecond(a) => a.$method($($args),*),
-            Series::IntervalDayTime(a) => a.$method($($args),*),
-            Series::IntervalYearMonth(a) => a.$method($($args),*),
-            _ => unimplemented!()
         }
     }
 }
