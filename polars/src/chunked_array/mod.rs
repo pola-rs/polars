@@ -178,6 +178,50 @@ where
     pub fn into_series(self) -> Series {
         Series::from_chunked_array(self)
     }
+
+    pub fn unpack_series_matching_type(&self, series: &Series) -> Result<&ChunkedArray<T>> {
+        macro_rules! unpack {
+            ($variant:ident) => {{
+                if let Series::$variant(ca) = series {
+                    let ca = unsafe { mem::transmute::<_, &ChunkedArray<T>>(ca) };
+                    Ok(ca)
+                } else {
+                    Err(PolarsError::DataTypeMisMatch)
+                }
+            }};
+        }
+        match T::get_data_type() {
+            ArrowDataType::Utf8 => unpack!(UInt8),
+            ArrowDataType::Boolean => unpack!(Bool),
+            ArrowDataType::UInt8 => unpack!(UInt8),
+            ArrowDataType::UInt16 => unpack!(UInt16),
+            ArrowDataType::UInt32 => unpack!(UInt32),
+            ArrowDataType::UInt64 => unpack!(UInt64),
+            ArrowDataType::Int8 => unpack!(Int8),
+            ArrowDataType::Int16 => unpack!(Int16),
+            ArrowDataType::Int32 => unpack!(Int32),
+            ArrowDataType::Int64 => unpack!(Int64),
+            ArrowDataType::Float32 => unpack!(Float32),
+            ArrowDataType::Float64 => unpack!(Float64),
+            ArrowDataType::Date32(DateUnit::Day) => unpack!(Date32),
+            ArrowDataType::Date64(DateUnit::Millisecond) => unpack!(Date64),
+            ArrowDataType::Time32(TimeUnit::Millisecond) => unpack!(Time32Millisecond),
+            ArrowDataType::Time32(TimeUnit::Second) => unpack!(Time32Second),
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => unpack!(Time64Nanosecond),
+            ArrowDataType::Time64(TimeUnit::Microsecond) => unpack!(Time64Microsecond),
+            ArrowDataType::Interval(IntervalUnit::DayTime) => unpack!(IntervalDayTime),
+            ArrowDataType::Interval(IntervalUnit::YearMonth) => unpack!(IntervalYearMonth),
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => unpack!(DurationNanosecond),
+            ArrowDataType::Duration(TimeUnit::Microsecond) => unpack!(DurationMicrosecond),
+            ArrowDataType::Duration(TimeUnit::Millisecond) => unpack!(DurationMillisecond),
+            ArrowDataType::Duration(TimeUnit::Second) => unpack!(DurationSecond),
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => unpack!(TimestampNanosecond),
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => unpack!(TimestampMicrosecond),
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => unpack!(Time32Millisecond),
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => unpack!(TimestampSecond),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 impl<T> ChunkedArray<T>

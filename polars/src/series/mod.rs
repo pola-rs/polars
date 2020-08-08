@@ -8,7 +8,10 @@ pub(crate) mod aggregate;
 pub(crate) mod arithmetic;
 mod comparison;
 pub(crate) mod iterator;
+use arithmetic::{LhsNumOpsDispatch, NumOpsDispatch, NumOpsDispatchSeriesSingleNumber};
+// needed for enum dispatch
 use enum_dispatch::enum_dispatch;
+use num::{Num, NumCast};
 
 /// # Series
 /// The columnar data type for a DataFrame. The [Series enum](enum.Series.html) consists

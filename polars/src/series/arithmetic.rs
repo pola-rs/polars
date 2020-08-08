@@ -1,126 +1,58 @@
 use crate::prelude::*;
+use enum_dispatch::enum_dispatch;
 use num::{Num, NumCast, ToPrimitive};
 use std::ops;
 
-// TODO: implement type
-
-impl Series {
-    fn subtract(&self, rhs: &Series) -> Result<Self> {
-        macro_rules! subtract {
-            ($variant:path, $lhs:ident) => {{
-                if let $variant(rhs_) = rhs {
-                    Ok($variant($lhs - rhs_))
-                } else {
-                    Err(PolarsError::DataTypeMisMatch)
-                }
-            }};
-        }
-        match self {
-            Series::UInt8(lhs) => subtract!(Series::UInt8, lhs),
-            Series::UInt16(lhs) => subtract!(Series::UInt16, lhs),
-            Series::UInt32(lhs) => subtract!(Series::UInt32, lhs),
-            Series::UInt64(lhs) => subtract!(Series::UInt64, lhs),
-            Series::Int8(lhs) => subtract!(Series::Int8, lhs),
-            Series::Int16(lhs) => subtract!(Series::Int16, lhs),
-            Series::Int32(lhs) => subtract!(Series::Int32, lhs),
-            Series::Int64(lhs) => subtract!(Series::Int64, lhs),
-            Series::Float32(lhs) => subtract!(Series::Float32, lhs),
-            Series::Float64(lhs) => subtract!(Series::Float64, lhs),
-            Series::Date32(lhs) => subtract!(Series::Date32, lhs),
-            Series::Date64(lhs) => subtract!(Series::Date64, lhs),
-            Series::Time64Nanosecond(lhs) => subtract!(Series::Time64Nanosecond, lhs),
-            Series::DurationNanosecond(lhs) => subtract!(Series::DurationNanosecond, lhs),
-            _ => Err(PolarsError::InvalidOperation),
-        }
+#[enum_dispatch(Series)]
+pub(super) trait NumOpsDispatch {
+    fn subtract(&self, _rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation)
     }
-
-    fn add_to(&self, rhs: &Series) -> Result<Self> {
-        macro_rules! add {
-            ($variant:path, $lhs:ident) => {{
-                if let $variant(rhs_) = rhs {
-                    Ok($variant($lhs + rhs_))
-                } else {
-                    Err(PolarsError::DataTypeMisMatch)
-                }
-            }};
-        }
-        match self {
-            Series::UInt8(lhs) => add!(Series::UInt8, lhs),
-            Series::UInt16(lhs) => add!(Series::UInt16, lhs),
-            Series::UInt32(lhs) => add!(Series::UInt32, lhs),
-            Series::UInt64(lhs) => add!(Series::UInt64, lhs),
-            Series::Int8(lhs) => add!(Series::Int8, lhs),
-            Series::Int16(lhs) => add!(Series::Int16, lhs),
-            Series::Int32(lhs) => add!(Series::Int32, lhs),
-            Series::Int64(lhs) => add!(Series::Int64, lhs),
-            Series::Float32(lhs) => add!(Series::Float32, lhs),
-            Series::Float64(lhs) => add!(Series::Float64, lhs),
-            Series::Date32(lhs) => add!(Series::Date32, lhs),
-            Series::Date64(lhs) => add!(Series::Date64, lhs),
-            Series::Time64Nanosecond(lhs) => add!(Series::Time64Nanosecond, lhs),
-            Series::DurationNanosecond(lhs) => add!(Series::DurationNanosecond, lhs),
-            _ => Err(PolarsError::InvalidOperation),
-        }
+    fn add_to(&self, _rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation)
     }
-
-    fn multiply(&self, rhs: &Series) -> Result<Self> {
-        macro_rules! multiply {
-            ($variant:path, $lhs:ident) => {{
-                if let $variant(rhs_) = rhs {
-                    Ok($variant($lhs * rhs_))
-                } else {
-                    Err(PolarsError::DataTypeMisMatch)
-                }
-            }};
-        }
-        match self {
-            Series::UInt8(lhs) => multiply!(Series::UInt8, lhs),
-            Series::UInt16(lhs) => multiply!(Series::UInt16, lhs),
-            Series::UInt32(lhs) => multiply!(Series::UInt32, lhs),
-            Series::UInt64(lhs) => multiply!(Series::UInt64, lhs),
-            Series::Int8(lhs) => multiply!(Series::Int8, lhs),
-            Series::Int16(lhs) => multiply!(Series::Int16, lhs),
-            Series::Int32(lhs) => multiply!(Series::Int32, lhs),
-            Series::Int64(lhs) => multiply!(Series::Int64, lhs),
-            Series::Float32(lhs) => multiply!(Series::Float32, lhs),
-            Series::Float64(lhs) => multiply!(Series::Float64, lhs),
-            Series::Date32(lhs) => multiply!(Series::Date32, lhs),
-            Series::Date64(lhs) => multiply!(Series::Date64, lhs),
-            Series::Time64Nanosecond(lhs) => multiply!(Series::Time64Nanosecond, lhs),
-            Series::DurationNanosecond(lhs) => multiply!(Series::DurationNanosecond, lhs),
-            _ => Err(PolarsError::InvalidOperation),
-        }
+    fn multiply(&self, _rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation)
     }
-
-    fn divide(&self, rhs: &Series) -> Result<Self> {
-        macro_rules! divide {
-            ($variant:path, $lhs:ident) => {{
-                if let $variant(rhs_) = rhs {
-                    Ok($variant($lhs / rhs_))
-                } else {
-                    Err(PolarsError::DataTypeMisMatch)
-                }
-            }};
-        }
-        match self {
-            Series::UInt8(lhs) => divide!(Series::UInt8, lhs),
-            Series::UInt16(lhs) => divide!(Series::UInt16, lhs),
-            Series::UInt32(lhs) => divide!(Series::UInt32, lhs),
-            Series::UInt64(lhs) => divide!(Series::UInt64, lhs),
-            Series::Int8(lhs) => divide!(Series::Int8, lhs),
-            Series::Int16(lhs) => divide!(Series::Int16, lhs),
-            Series::Int32(lhs) => divide!(Series::Int32, lhs),
-            Series::Int64(lhs) => divide!(Series::Int64, lhs),
-            Series::Float32(lhs) => divide!(Series::Float32, lhs),
-            Series::Float64(lhs) => divide!(Series::Float64, lhs),
-            Series::Date32(lhs) => divide!(Series::Date32, lhs),
-            Series::Date64(lhs) => divide!(Series::Date64, lhs),
-            Series::Time64Nanosecond(lhs) => divide!(Series::Time64Nanosecond, lhs),
-            Series::DurationNanosecond(lhs) => divide!(Series::DurationNanosecond, lhs),
-            _ => Err(PolarsError::InvalidOperation),
-        }
+    fn divide(&self, _rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation)
     }
 }
+
+impl<T> NumOpsDispatch for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: ops::Add<Output = T::Native>
+        + ops::Sub<Output = T::Native>
+        + ops::Mul<Output = T::Native>
+        + ops::Div<Output = T::Native>
+        + num::Zero
+        + num::One,
+{
+    fn subtract(&self, rhs: &Series) -> Result<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self - rhs;
+        Ok(out.into_series())
+    }
+    fn add_to(&self, rhs: &Series) -> Result<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self + rhs;
+        Ok(out.into_series())
+    }
+    fn multiply(&self, rhs: &Series) -> Result<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self * rhs;
+        Ok(out.into_series())
+    }
+    fn divide(&self, rhs: &Series) -> Result<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self / rhs;
+        Ok(out.into_series())
+    }
+}
+
+impl NumOpsDispatch for Utf8Chunked {}
+impl NumOpsDispatch for BooleanChunked {}
 
 impl ops::Sub for Series {
     type Output = Self;
@@ -198,14 +130,73 @@ impl std::ops::Div for &Series {
     }
 }
 
-// Series +-/* number
+// Series +-/* numbers instead of Series
 
-macro_rules! op_num_rhs {
-    ($typ:ty, $ca:ident, $rhs:ident, $operand:tt) => {
-    {
-            let rhs: $typ = NumCast::from($rhs).expect(&format!("could not cast"));
-            $ca.into_iter().map(|opt_v| opt_v.map(|v| v $operand rhs)).collect()
-            }
+#[enum_dispatch(Series)]
+pub(super) trait NumOpsDispatchSeriesSingleNumber {
+    fn subtract_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
+        unimplemented!()
+    }
+    fn add_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
+        unimplemented!()
+    }
+    fn multiply_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
+        unimplemented!()
+    }
+    fn divide_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
+        unimplemented!()
+    }
+}
+
+impl NumOpsDispatchSeriesSingleNumber for BooleanChunked {}
+impl NumOpsDispatchSeriesSingleNumber for Utf8Chunked {}
+
+impl<T> NumOpsDispatchSeriesSingleNumber for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Num
+        + NumCast
+        + ops::Add<Output = T::Native>
+        + ops::Sub<Output = T::Native>
+        + ops::Mul<Output = T::Native>
+        + ops::Div<Output = T::Native>,
+{
+    fn subtract_number<N: Num + NumCast>(&self, rhs: N) -> Series {
+        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let mut ca: ChunkedArray<T> = self
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| v - rhs))
+            .collect();
+        ca.rename(self.name());
+        ca.into_series()
+    }
+
+    fn add_number<N: Num + NumCast>(&self, rhs: N) -> Series {
+        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let mut ca: ChunkedArray<T> = self
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| v + rhs))
+            .collect();
+        ca.rename(self.name());
+        ca.into_series()
+    }
+    fn multiply_number<N: Num + NumCast>(&self, rhs: N) -> Series {
+        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let mut ca: ChunkedArray<T> = self
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| v * rhs))
+            .collect();
+        ca.rename(self.name());
+        ca.into_series()
+    }
+    fn divide_number<N: Num + NumCast>(&self, rhs: N) -> Series {
+        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let mut ca: ChunkedArray<T> = self
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| v / rhs))
+            .collect();
+        ca.rename(self.name());
+        ca.into_series()
     }
 }
 
@@ -216,23 +207,7 @@ where
     type Output = Series;
 
     fn sub(self, rhs: T) -> Self::Output {
-        match self {
-            Series::UInt8(ca) => op_num_rhs!(u8, ca, rhs, -),
-            Series::UInt16(ca) => op_num_rhs!(u16, ca, rhs, -),
-            Series::UInt32(ca) => op_num_rhs!(u32, ca, rhs, -),
-            Series::UInt64(ca) => op_num_rhs!(u64, ca, rhs, -),
-            Series::Int8(ca) => op_num_rhs!(i8, ca, rhs, -),
-            Series::Int16(ca) => op_num_rhs!(i16, ca, rhs, -),
-            Series::Int32(ca) => op_num_rhs!(i32, ca, rhs, -),
-            Series::Int64(ca) => op_num_rhs!(i64, ca, rhs, -),
-            Series::Float32(ca) => op_num_rhs!(f32, ca, rhs, -),
-            Series::Float64(ca) => op_num_rhs!(f64, ca, rhs, -),
-            Series::Date32(ca) => op_num_rhs!(i32, ca, rhs, -),
-            Series::Date64(ca) => op_num_rhs!(i64, ca, rhs, -),
-            Series::Time64Nanosecond(ca) => op_num_rhs!(i64, ca, rhs, -),
-            Series::DurationNanosecond(ca) => op_num_rhs!(i64, ca, rhs, -),
-            _ => unimplemented!(),
-        }
+        self.subtract_number(rhs)
     }
 }
 
@@ -254,23 +229,7 @@ where
     type Output = Series;
 
     fn add(self, rhs: T) -> Self::Output {
-        match self {
-            Series::UInt8(ca) => op_num_rhs!(u8, ca, rhs, +),
-            Series::UInt16(ca) => op_num_rhs!(u16, ca, rhs, +),
-            Series::UInt32(ca) => op_num_rhs!(u32, ca, rhs, +),
-            Series::UInt64(ca) => op_num_rhs!(u64, ca, rhs, +),
-            Series::Int8(ca) => op_num_rhs!(i8, ca, rhs, +),
-            Series::Int16(ca) => op_num_rhs!(i16, ca, rhs, +),
-            Series::Int32(ca) => op_num_rhs!(i32, ca, rhs, +),
-            Series::Int64(ca) => op_num_rhs!(i64, ca, rhs, +),
-            Series::Float32(ca) => op_num_rhs!(f32, ca, rhs, +),
-            Series::Float64(ca) => op_num_rhs!(f64, ca, rhs, +),
-            Series::Date32(ca) => op_num_rhs!(i32, ca, rhs, +),
-            Series::Date64(ca) => op_num_rhs!(i64, ca, rhs, +),
-            Series::Time64Nanosecond(ca) => op_num_rhs!(i64, ca, rhs, +),
-            Series::DurationNanosecond(ca) => op_num_rhs!(i64, ca, rhs, +),
-            _ => unimplemented!(),
-        }
+        self.add_number(rhs)
     }
 }
 
@@ -292,23 +251,7 @@ where
     type Output = Series;
 
     fn div(self, rhs: T) -> Self::Output {
-        match self {
-            Series::UInt8(ca) => op_num_rhs!(u8, ca, rhs, /),
-            Series::UInt16(ca) => op_num_rhs!(u16, ca, rhs, /),
-            Series::UInt32(ca) => op_num_rhs!(u32, ca, rhs, /),
-            Series::UInt64(ca) => op_num_rhs!(u64, ca, rhs, /),
-            Series::Int8(ca) => op_num_rhs!(i8, ca, rhs, /),
-            Series::Int16(ca) => op_num_rhs!(i16, ca, rhs, /),
-            Series::Int32(ca) => op_num_rhs!(i32, ca, rhs, /),
-            Series::Int64(ca) => op_num_rhs!(i64, ca, rhs, /),
-            Series::Float32(ca) => op_num_rhs!(f32, ca, rhs, /),
-            Series::Float64(ca) => op_num_rhs!(f64, ca, rhs, /),
-            Series::Date32(ca) => op_num_rhs!(i32, ca, rhs, /),
-            Series::Date64(ca) => op_num_rhs!(i64, ca, rhs, /),
-            Series::Time64Nanosecond(ca) => op_num_rhs!(i64, ca, rhs, /),
-            Series::DurationNanosecond(ca) => op_num_rhs!(i64, ca, rhs, /),
-            _ => unimplemented!(),
-        }
+        self.divide_number(rhs)
     }
 }
 
@@ -330,23 +273,7 @@ where
     type Output = Series;
 
     fn mul(self, rhs: T) -> Self::Output {
-        match self {
-            Series::UInt8(ca) => op_num_rhs!(u8, ca, rhs, *),
-            Series::UInt16(ca) => op_num_rhs!(u16, ca, rhs, *),
-            Series::UInt32(ca) => op_num_rhs!(u32, ca, rhs, *),
-            Series::UInt64(ca) => op_num_rhs!(u64, ca, rhs, *),
-            Series::Int8(ca) => op_num_rhs!(i8, ca, rhs, *),
-            Series::Int16(ca) => op_num_rhs!(i16, ca, rhs, *),
-            Series::Int32(ca) => op_num_rhs!(i32, ca, rhs, *),
-            Series::Int64(ca) => op_num_rhs!(i64, ca, rhs, *),
-            Series::Float32(ca) => op_num_rhs!(f32, ca, rhs, *),
-            Series::Float64(ca) => op_num_rhs!(f64, ca, rhs, *),
-            Series::Date32(ca) => op_num_rhs!(i32, ca, rhs, *),
-            Series::Date64(ca) => op_num_rhs!(i64, ca, rhs, *),
-            Series::Time64Nanosecond(ca) => op_num_rhs!(i64, ca, rhs, *),
-            Series::DurationNanosecond(ca) => op_num_rhs!(i64, ca, rhs, *),
-            _ => unimplemented!(),
-        }
+        self.multiply_number(rhs)
     }
 }
 
@@ -361,108 +288,107 @@ where
     }
 }
 
-pub trait LhsNumOps<Rhs> {
-    type Output;
+/// We cannot override the left hand side behaviour. So we create a trait Lhs num ops.
+/// This allows for 1.add(&Series)
 
-    fn add(self, rhs: Rhs) -> Self::Output;
-    fn sub(self, rhs: Rhs) -> Self::Output;
-    fn div(self, rhs: Rhs) -> Self::Output;
-    fn mul(self, rhs: Rhs) -> Self::Output;
-}
-
-macro_rules! op_num_lhs {
-    ($typ:ty, $ca:ident, $lhs:ident, $operand:tt) => {
-    {
-            let lhs: $typ = NumCast::from($lhs).expect(&format!("could not cast"));
-            $ca.into_iter().map(|opt_v| opt_v.map(|v| lhs $operand v)).collect()
-            }
+#[enum_dispatch(Series)]
+pub(super) trait LhsNumOpsDispatch {
+    fn lhs_subtract_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
+        unimplemented!()
+    }
+    fn lhs_add_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
+        unimplemented!()
+    }
+    fn lhs_multiply_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
+        unimplemented!()
+    }
+    fn lhs_divide_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
+        unimplemented!()
     }
 }
 
-impl<T> LhsNumOps<&Series> for T
+impl LhsNumOpsDispatch for BooleanChunked {}
+impl LhsNumOpsDispatch for Utf8Chunked {}
+
+impl<T> LhsNumOpsDispatch for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Num
+        + NumCast
+        + ops::Add<Output = T::Native>
+        + ops::Sub<Output = T::Native>
+        + ops::Mul<Output = T::Native>
+        + ops::Div<Output = T::Native>,
+{
+    fn lhs_subtract_number<N: Num + NumCast>(&self, lhs: N) -> Series {
+        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let mut ca: ChunkedArray<T> = self
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| lhs - v))
+            .collect();
+        ca.rename(self.name());
+        ca.into_series()
+    }
+
+    fn lhs_add_number<N: Num + NumCast>(&self, lhs: N) -> Series {
+        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let mut ca: ChunkedArray<T> = self
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| lhs + v))
+            .collect();
+        ca.rename(self.name());
+        ca.into_series()
+    }
+    fn lhs_multiply_number<N: Num + NumCast>(&self, lhs: N) -> Series {
+        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let mut ca: ChunkedArray<T> = self
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| lhs * v))
+            .collect();
+        ca.rename(self.name());
+        ca.into_series()
+    }
+    fn lhs_divide_number<N: Num + NumCast>(&self, lhs: N) -> Series {
+        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let mut ca: ChunkedArray<T> = self
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| lhs / v))
+            .collect();
+        ca.rename(self.name());
+        ca.into_series()
+    }
+}
+
+pub trait LhsNumOps {
+    type Output;
+
+    fn add(self, rhs: &Series) -> Self::Output;
+    fn sub(self, rhs: &Series) -> Self::Output;
+    fn div(self, rhs: &Series) -> Self::Output;
+    fn mul(self, rhs: &Series) -> Self::Output;
+}
+
+impl<T> LhsNumOps for T
 where
     T: Num + NumCast,
 {
     type Output = Series;
 
     fn add(self, rhs: &Series) -> Self::Output {
-        match rhs {
-            Series::UInt8(ca) => op_num_lhs!(u8, ca, self, +),
-            Series::UInt16(ca) => op_num_lhs!(u16, ca, self, +),
-            Series::UInt32(ca) => op_num_lhs!(u32, ca, self, +),
-            Series::UInt64(ca) => op_num_lhs!(u64, ca, self, +),
-            Series::Int8(ca) => op_num_lhs!(i8, ca, self, +),
-            Series::Int16(ca) => op_num_lhs!(i16, ca, self, +),
-            Series::Int32(ca) => op_num_lhs!(i32, ca, self, +),
-            Series::Int64(ca) => op_num_lhs!(i64, ca, self, +),
-            Series::Float32(ca) => op_num_lhs!(f32, ca, self, +),
-            Series::Float64(ca) => op_num_lhs!(f64, ca, self, +),
-            Series::Date32(ca) => op_num_lhs!(i32, ca, self, +),
-            Series::Date64(ca) => op_num_lhs!(i64, ca, self, +),
-            Series::Time64Nanosecond(ca) => op_num_lhs!(i64, ca, self, +),
-            Series::DurationNanosecond(ca) => op_num_lhs!(i64, ca, self, +),
-            _ => unimplemented!(),
-        }
+        rhs.lhs_add_number(self)
     }
     fn sub(self, rhs: &Series) -> Self::Output {
-        match rhs {
-            Series::UInt8(ca) => op_num_lhs!(u8, ca, self, -),
-            Series::UInt16(ca) => op_num_lhs!(u16, ca, self, -),
-            Series::UInt32(ca) => op_num_lhs!(u32, ca, self, -),
-            Series::UInt64(ca) => op_num_lhs!(u64, ca, self, -),
-            Series::Int8(ca) => op_num_lhs!(i8, ca, self, -),
-            Series::Int16(ca) => op_num_lhs!(i16, ca, self, -),
-            Series::Int32(ca) => op_num_lhs!(i32, ca, self, -),
-            Series::Int64(ca) => op_num_lhs!(i64, ca, self, -),
-            Series::Float32(ca) => op_num_lhs!(f32, ca, self, -),
-            Series::Float64(ca) => op_num_lhs!(f64, ca, self, -),
-            Series::Date32(ca) => op_num_lhs!(i32, ca, self, -),
-            Series::Date64(ca) => op_num_lhs!(i64, ca, self, -),
-            Series::Time64Nanosecond(ca) => op_num_lhs!(i64, ca, self, -),
-            Series::DurationNanosecond(ca) => op_num_lhs!(i64, ca, self, -),
-            _ => unimplemented!(),
-        }
+        rhs.lhs_subtract_number(self)
     }
     fn div(self, rhs: &Series) -> Self::Output {
-        match rhs {
-            Series::UInt8(ca) => op_num_lhs!(u8, ca, self, /),
-            Series::UInt16(ca) => op_num_lhs!(u16, ca, self, /),
-            Series::UInt32(ca) => op_num_lhs!(u32, ca, self, /),
-            Series::UInt64(ca) => op_num_lhs!(u64, ca, self, /),
-            Series::Int8(ca) => op_num_lhs!(i8, ca, self, /),
-            Series::Int16(ca) => op_num_lhs!(i16, ca, self, /),
-            Series::Int32(ca) => op_num_lhs!(i32, ca, self, /),
-            Series::Int64(ca) => op_num_lhs!(i64, ca, self, /),
-            Series::Float32(ca) => op_num_lhs!(f32, ca, self, /),
-            Series::Float64(ca) => op_num_lhs!(f64, ca, self, /),
-            Series::Date32(ca) => op_num_lhs!(i32, ca, self, /),
-            Series::Date64(ca) => op_num_lhs!(i64, ca, self, /),
-            Series::Time64Nanosecond(ca) => op_num_lhs!(i64, ca, self, /),
-            Series::DurationNanosecond(ca) => op_num_lhs!(i64, ca, self, /),
-            _ => unimplemented!(),
-        }
+        rhs.lhs_divide_number(self)
     }
     fn mul(self, rhs: &Series) -> Self::Output {
-        match rhs {
-            Series::UInt8(ca) => op_num_lhs!(u8, ca, self, *),
-            Series::UInt16(ca) => op_num_lhs!(u16, ca, self, *),
-            Series::UInt32(ca) => op_num_lhs!(u32, ca, self, *),
-            Series::UInt64(ca) => op_num_lhs!(u64, ca, self, *),
-            Series::Int8(ca) => op_num_lhs!(i8, ca, self, *),
-            Series::Int16(ca) => op_num_lhs!(i16, ca, self, *),
-            Series::Int32(ca) => op_num_lhs!(i32, ca, self, *),
-            Series::Int64(ca) => op_num_lhs!(i64, ca, self, *),
-            Series::Float32(ca) => op_num_lhs!(f32, ca, self, *),
-            Series::Float64(ca) => op_num_lhs!(f64, ca, self, *),
-            Series::Date32(ca) => op_num_lhs!(i32, ca, self, *),
-            Series::Date64(ca) => op_num_lhs!(i64, ca, self, *),
-            Series::Time64Nanosecond(ca) => op_num_lhs!(i64, ca, self, *),
-            Series::DurationNanosecond(ca) => op_num_lhs!(i64, ca, self, *),
-            _ => unimplemented!(),
-        }
+        rhs.lhs_multiply_number(self)
     }
 }
 
+// TODO: use enum dispatch
 impl Series {
     fn pow<E: Num>(&self, exp: E) -> Series
     where
@@ -485,5 +411,67 @@ impl Series {
             Series::DurationNanosecond(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
             _ => unimplemented!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_arithmetic_series() {
+        // Series +-/* Series
+        let s: Series = [1, 2, 3].iter().collect();
+        assert_eq!(
+            Vec::from((&s * &s).i32().unwrap()),
+            [Some(1), Some(4), Some(9)]
+        );
+        assert_eq!(
+            Vec::from((&s / &s).i32().unwrap()),
+            [Some(1), Some(1), Some(1)]
+        );
+        assert_eq!(
+            Vec::from((&s - &s).i32().unwrap()),
+            [Some(0), Some(0), Some(0)]
+        );
+        assert_eq!(
+            Vec::from((&s + &s).i32().unwrap()),
+            [Some(2), Some(4), Some(6)]
+        );
+        // Series +-/* Number
+        assert_eq!(
+            Vec::from((&s + 1).i32().unwrap()),
+            [Some(2), Some(3), Some(4)]
+        );
+        assert_eq!(
+            Vec::from((&s - 1).i32().unwrap()),
+            [Some(0), Some(1), Some(2)]
+        );
+        assert_eq!(
+            Vec::from((&s * 2).i32().unwrap()),
+            [Some(2), Some(4), Some(6)]
+        );
+        assert_eq!(
+            Vec::from((&s / 2).i32().unwrap()),
+            [Some(0), Some(1), Some(1)]
+        );
+
+        // Lhs operations
+        assert_eq!(
+            Vec::from((1.add(&s)).i32().unwrap()),
+            [Some(2), Some(3), Some(4)]
+        );
+        assert_eq!(
+            Vec::from((1.sub(&s)).i32().unwrap()),
+            [Some(0), Some(-1), Some(-2)]
+        );
+        assert_eq!(
+            Vec::from((1.div(&s)).i32().unwrap()),
+            [Some(1), Some(0), Some(0)]
+        );
+        assert_eq!(
+            Vec::from((1.mul(&s)).i32().unwrap()),
+            [Some(1), Some(2), Some(3)]
+        );
     }
 }
