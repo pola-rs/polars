@@ -19,8 +19,9 @@ pub use crate::{
     frame::{
         ser::{
             csv::{CsvReader, CsvWriter},
+            ipc::{IPCReader, IPCWriter},
             json::JsonReader,
-            SerReader,
+            SerReader, SerWriter,
         },
         DataFrame,
     },

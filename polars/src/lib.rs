@@ -23,6 +23,7 @@
 //!
 //! * [the csv module](frame/ser/csv/index.html)
 //! * [the json module](frame/ser/json/index.html)
+//! * [the IPC module](frame/ser/ipc/index.html)
 //!
 //!
 //! ## Joins

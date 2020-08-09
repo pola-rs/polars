@@ -56,21 +56,40 @@ use std::sync::Arc;
 
 /// Write a DataFrame to csv.
 pub struct CsvWriter<'a, W: Write> {
-    writer: &'a mut W,
+    /// File or Stream handler
+    buffer: &'a mut W,
+    /// Builds an Arrow CSV Writer
     writer_builder: WriterBuilder,
+}
+
+impl<'a, W> SerWriter<'a, W> for CsvWriter<'a, W>
+where
+    W: Write,
+{
+    fn new(buffer: &'a mut W) -> Self {
+        CsvWriter {
+            buffer,
+            writer_builder: WriterBuilder::new(),
+        }
+    }
+
+    fn finish(self, df: &DataFrame) -> Result<()> {
+        let mut csv_writer = self.writer_builder.build(self.buffer);
+
+        // TODO: use generator/ chunked iterator?
+        let record_batches = df.as_record_batches()?;
+
+        for batch in &record_batches {
+            csv_writer.write(batch)?
+        }
+        Ok(())
+    }
 }
 
 impl<'a, W> CsvWriter<'a, W>
 where
     W: Write,
 {
-    pub fn new(writer: &'a mut W) -> Self {
-        CsvWriter {
-            writer,
-            writer_builder: WriterBuilder::new(),
-        }
-    }
-
     /// Set whether to write headers
     pub fn has_headers(mut self, has_headers: bool) -> Self {
         self.writer_builder = self.writer_builder.has_headers(has_headers);
@@ -99,17 +118,6 @@ where
     pub fn with_timestamp_format(mut self, format: String) -> Self {
         self.writer_builder = self.writer_builder.with_timestamp_format(format);
         self
-    }
-
-    pub fn finish(self, df: &DataFrame) -> Result<()> {
-        let mut csv_writer = self.writer_builder.build(self.writer);
-        let record_batches = df.as_record_batches()?;
-
-        for batch in &record_batches {
-            csv_writer.write(batch)?
-        }
-
-        Ok(())
     }
 }
 

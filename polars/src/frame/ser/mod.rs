@@ -1,11 +1,12 @@
 pub mod csv;
+pub mod ipc;
 pub mod json;
 use crate::prelude::*;
 use arrow::{
     csv::Reader as ArrowCsvReader, error::Result as ArrowResult, json::Reader as ArrowJsonReader,
     record_batch::RecordBatch,
 };
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 pub trait SerReader<R>
@@ -19,6 +20,14 @@ where
 
     /// Take the SerReader and return a parsed DataFrame.
     fn finish(self) -> Result<DataFrame>;
+}
+
+pub trait SerWriter<'a, W>
+where
+    W: Write,
+{
+    fn new(writer: &'a mut W) -> Self;
+    fn finish(self, df: &DataFrame) -> Result<()>;
 }
 
 pub trait ArrowReader {
