@@ -880,25 +880,69 @@ impl<'a> DoubleEndedIterator for Utf8IterManyChunkNullCheck<'a> {
     }
 }
 
+pub enum Utf8ChunkIterDispatch<'a> {
+    SingleChunk(Utf8IterSingleChunk<'a>),
+    SingleChunkNullCheck(Utf8IterSingleChunkNullCheck<'a>),
+    ManyChunk(Utf8IterManyChunk<'a>),
+    ManyChunkNullCheck(Utf8IterManyChunkNullCheck<'a>),
+}
+
+impl<'a> Iterator for Utf8ChunkIterDispatch<'a> {
+    type Item = Option<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Utf8ChunkIterDispatch::SingleChunk(a) => a.next(),
+            Utf8ChunkIterDispatch::SingleChunkNullCheck(a) => a.next(),
+            Utf8ChunkIterDispatch::ManyChunk(a) => a.next(),
+            Utf8ChunkIterDispatch::ManyChunkNullCheck(a) => a.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Utf8ChunkIterDispatch::SingleChunk(a) => a.size_hint(),
+            Utf8ChunkIterDispatch::SingleChunkNullCheck(a) => a.size_hint(),
+            Utf8ChunkIterDispatch::ManyChunk(a) => a.size_hint(),
+            Utf8ChunkIterDispatch::ManyChunkNullCheck(a) => a.size_hint(),
+        }
+    }
+}
+
+impl<'a> DoubleEndedIterator for Utf8ChunkIterDispatch<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Utf8ChunkIterDispatch::SingleChunk(a) => a.next_back(),
+            Utf8ChunkIterDispatch::SingleChunkNullCheck(a) => a.next_back(),
+            Utf8ChunkIterDispatch::ManyChunk(a) => a.next_back(),
+            Utf8ChunkIterDispatch::ManyChunkNullCheck(a) => a.next_back(),
+        }
+    }
+}
+
+impl<'a> ExactSizeIterator for Utf8ChunkIterDispatch<'a> {}
+
 impl<'a> IntoIterator for &'a Utf8Chunked {
     type Item = Option<&'a str>;
-    type IntoIter = Box<dyn ExactSizeDoubleEndedIterator<Item = Option<&'a str>> + 'a>;
+    type IntoIter = Utf8ChunkIterDispatch<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         let chunks = self.downcast_chunks();
         match chunks.len() {
             1 => {
                 if self.null_count() == 0 {
-                    Box::new(Utf8IterSingleChunk::new(self))
+                    Utf8ChunkIterDispatch::SingleChunk(Utf8IterSingleChunk::new(self))
                 } else {
-                    Box::new(Utf8IterSingleChunkNullCheck::new(self))
+                    Utf8ChunkIterDispatch::SingleChunkNullCheck(Utf8IterSingleChunkNullCheck::new(
+                        self,
+                    ))
                 }
             }
             _ => {
                 if self.null_count() == 0 {
-                    Box::new(Utf8IterManyChunk::new(self))
+                    Utf8ChunkIterDispatch::ManyChunk(Utf8IterManyChunk::new(self))
                 } else {
-                    Box::new(Utf8IterManyChunkNullCheck::new(self))
+                    Utf8ChunkIterDispatch::ManyChunkNullCheck(Utf8IterManyChunkNullCheck::new(self))
                 }
             }
         }
