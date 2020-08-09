@@ -951,16 +951,11 @@ impl<'a> IntoIterator for &'a Utf8Chunked {
 
 macro_rules! impl_iterator_traits {
     ($ca_type:ident, $arrow_array:ident, $single_chunk_ident:ident, $single_chunk_null_ident:ident, $many_chunk_ident:ident,
-    $many_chunk_null_ident:ident, $iter_item:ty) => {
+    $many_chunk_null_ident:ident, $chunkdispatch:ident, $iter_item:ty) => {
         impl<'a> ExactSizeIterator for $single_chunk_ident<'a> {}
         impl<'a> ExactSizeIterator for $single_chunk_null_ident<'a> {}
         impl<'a> ExactSizeIterator for $many_chunk_ident<'a> {}
         impl<'a> ExactSizeIterator for $many_chunk_null_ident<'a> {}
-
-        impl<'a> ExactSizeDoubleEndedIterator for $single_chunk_ident<'a> {}
-        impl<'a> ExactSizeDoubleEndedIterator for $single_chunk_null_ident<'a> {}
-        impl<'a> ExactSizeDoubleEndedIterator for $many_chunk_ident<'a> {}
-        impl<'a> ExactSizeDoubleEndedIterator for $many_chunk_null_ident<'a> {}
 
         /// No null checks
         pub struct $single_chunk_ident<'a> {
@@ -1311,25 +1306,69 @@ macro_rules! impl_iterator_traits {
             }
         }
 
+        pub enum $chunkdispatch<'a> {
+            SingleChunk($single_chunk_ident<'a>),
+            SingleChunkNullCheck($single_chunk_null_ident<'a>),
+            ManyChunk($many_chunk_ident<'a>),
+            ManyChunkNullCheck($many_chunk_null_ident<'a>),
+        }
+
+        impl<'a> Iterator for $chunkdispatch<'a> {
+            type Item = $iter_item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    $chunkdispatch::SingleChunk(a) => a.next(),
+                    $chunkdispatch::SingleChunkNullCheck(a) => a.next(),
+                    $chunkdispatch::ManyChunk(a) => a.next(),
+                    $chunkdispatch::ManyChunkNullCheck(a) => a.next(),
+                }
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                match self {
+                    $chunkdispatch::SingleChunk(a) => a.size_hint(),
+                    $chunkdispatch::SingleChunkNullCheck(a) => a.size_hint(),
+                    $chunkdispatch::ManyChunk(a) => a.size_hint(),
+                    $chunkdispatch::ManyChunkNullCheck(a) => a.size_hint(),
+                }
+            }
+        }
+
+        impl<'a> DoubleEndedIterator for $chunkdispatch<'a> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                match self {
+                    $chunkdispatch::SingleChunk(a) => a.next_back(),
+                    $chunkdispatch::SingleChunkNullCheck(a) => a.next_back(),
+                    $chunkdispatch::ManyChunk(a) => a.next_back(),
+                    $chunkdispatch::ManyChunkNullCheck(a) => a.next_back(),
+                }
+            }
+        }
+
+        impl<'a> ExactSizeIterator for $chunkdispatch<'a> {}
+
         impl<'a> IntoIterator for &'a $ca_type {
             type Item = $iter_item;
-            type IntoIter = Box<dyn ExactSizeDoubleEndedIterator<Item = $iter_item> + 'a>;
+            type IntoIter = $chunkdispatch<'a>;
 
             fn into_iter(self) -> Self::IntoIter {
                 let chunks = self.downcast_chunks();
                 match chunks.len() {
                     1 => {
                         if self.null_count() == 0 {
-                            Box::new($single_chunk_ident::new(self))
+                            $chunkdispatch::SingleChunk($single_chunk_ident::new(self))
                         } else {
-                            Box::new($single_chunk_null_ident::new(self))
+                            $chunkdispatch::SingleChunkNullCheck($single_chunk_null_ident::new(
+                                self,
+                            ))
                         }
                     }
                     _ => {
                         if self.null_count() == 0 {
-                            Box::new($many_chunk_ident::new(self))
+                            $chunkdispatch::ManyChunk($many_chunk_ident::new(self))
                         } else {
-                            Box::new($many_chunk_null_ident::new(self))
+                            $chunkdispatch::ManyChunkNullCheck($many_chunk_null_ident::new(self))
                         }
                     }
                 }
@@ -1345,6 +1384,7 @@ impl_iterator_traits!(
     BooleanIterSingleChunkNullCheck,
     BooleanIterManyChunk,
     BooleanIterManyChunkNullCheck,
+    BooleanIterDispatch,
     Option<bool>
 );
 
