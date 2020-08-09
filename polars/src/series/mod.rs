@@ -497,37 +497,12 @@ impl Series {
 
     /// Append a Series of the same type in place.
     pub fn append(&mut self, other: &Self) -> Result<()> {
-        match self {
-            Series::Utf8(arr) => arr.append(other.utf8()?),
-            Series::Bool(arr) => arr.append(other.bool()?),
-            Series::UInt8(arr) => arr.append(other.u8()?),
-            Series::UInt16(arr) => arr.append(other.u16()?),
-            Series::UInt32(arr) => arr.append(other.u32()?),
-            Series::UInt64(arr) => arr.append(other.u64()?),
-            Series::Int8(arr) => arr.append(other.i8()?),
-            Series::Int16(arr) => arr.append(other.i16()?),
-            Series::Int32(arr) => arr.append(other.i32()?),
-            Series::Int64(arr) => arr.append(other.i64()?),
-            Series::Float32(arr) => arr.append(other.f32()?),
-            Series::Float64(arr) => arr.append(other.f64()?),
-            Series::Date32(arr) => arr.append(other.date32()?),
-            Series::Date64(arr) => arr.append(other.date64()?),
-            Series::Time32Millisecond(arr) => arr.append(other.time32_millisecond()?),
-            Series::Time32Second(arr) => arr.append(other.time32_second()?),
-            Series::Time64Nanosecond(arr) => arr.append(other.time64_nanosecond()?),
-            Series::Time64Microsecond(arr) => arr.append(other.time64_microsecond()?),
-            Series::DurationNanosecond(arr) => arr.append(other.duration_nanosecond()?),
-            Series::DurationMillisecond(arr) => arr.append(other.duration_millisecond()?),
-            Series::DurationMicrosecond(arr) => arr.append(other.duration_microsecond()?),
-            Series::DurationSecond(arr) => arr.append(other.duration_second()?),
-            Series::TimestampNanosecond(arr) => arr.append(other.timestamp_nanosecond()?),
-            Series::TimestampMicrosecond(arr) => arr.append(other.timestamp_microsecond()?),
-            Series::TimestampMillisecond(arr) => arr.append(other.timestamp_millisecond()?),
-            Series::TimestampSecond(arr) => arr.append(other.timestamp_second()?),
-            Series::IntervalDayTime(arr) => arr.append(other.interval_daytime()?),
-            Series::IntervalYearMonth(arr) => arr.append(other.interval_year_month()?),
-        };
-        Ok(())
+        if self.dtype() == other.dtype() {
+            apply_method_all_series!(self, append, other.as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::DataTypeMisMatch)
+        }
     }
 
     /// Filter by boolean mask. This operation clones data.
@@ -815,6 +790,22 @@ impl_as_ref_ca!(Float32Type, Float32);
 impl_as_ref_ca!(Float64Type, Float64);
 impl_as_ref_ca!(BooleanType, Bool);
 impl_as_ref_ca!(Utf8Type, Utf8);
+impl_as_ref_ca!(Date32Type, Date32);
+impl_as_ref_ca!(Date64Type, Date64);
+impl_as_ref_ca!(Time64NanosecondType, Time64Nanosecond);
+impl_as_ref_ca!(Time64MicrosecondType, Time64Microsecond);
+impl_as_ref_ca!(Time32MillisecondType, Time32Millisecond);
+impl_as_ref_ca!(Time32SecondType, Time32Second);
+impl_as_ref_ca!(DurationNanosecondType, DurationNanosecond);
+impl_as_ref_ca!(DurationMicrosecondType, DurationMicrosecond);
+impl_as_ref_ca!(DurationMillisecondType, DurationMillisecond);
+impl_as_ref_ca!(DurationSecondType, DurationSecond);
+impl_as_ref_ca!(TimestampNanosecondType, TimestampNanosecond);
+impl_as_ref_ca!(TimestampMicrosecondType, TimestampMicrosecond);
+impl_as_ref_ca!(TimestampMillisecondType, TimestampMillisecond);
+impl_as_ref_ca!(TimestampSecondType, TimestampSecond);
+impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
+impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
 
 macro_rules! impl_as_mut_ca {
     ($type:ident, $series_var:ident) => {
@@ -841,6 +832,22 @@ impl_as_mut_ca!(Float32Type, Float32);
 impl_as_mut_ca!(Float64Type, Float64);
 impl_as_mut_ca!(BooleanType, Bool);
 impl_as_mut_ca!(Utf8Type, Utf8);
+impl_as_mut_ca!(Date32Type, Date32);
+impl_as_mut_ca!(Date64Type, Date64);
+impl_as_mut_ca!(Time64NanosecondType, Time64Nanosecond);
+impl_as_mut_ca!(Time64MicrosecondType, Time64Microsecond);
+impl_as_mut_ca!(Time32MillisecondType, Time32Millisecond);
+impl_as_mut_ca!(Time32SecondType, Time32Second);
+impl_as_mut_ca!(DurationNanosecondType, DurationNanosecond);
+impl_as_mut_ca!(DurationMicrosecondType, DurationMicrosecond);
+impl_as_mut_ca!(DurationMillisecondType, DurationMillisecond);
+impl_as_mut_ca!(DurationSecondType, DurationSecond);
+impl_as_mut_ca!(TimestampNanosecondType, TimestampNanosecond);
+impl_as_mut_ca!(TimestampMicrosecondType, TimestampMicrosecond);
+impl_as_mut_ca!(TimestampMillisecondType, TimestampMillisecond);
+impl_as_mut_ca!(TimestampSecondType, TimestampSecond);
+impl_as_mut_ca!(IntervalDayTimeType, IntervalDayTime);
+impl_as_mut_ca!(IntervalYearMonthType, IntervalYearMonth);
 
 macro_rules! from_series_to_ca {
     ($variant:ident, $ca:ident) => {
@@ -907,5 +914,19 @@ mod test {
     fn new_series() {
         Series::new("boolean series", &vec![true, false, true]);
         Series::new("int series", &[1, 2, 3]);
+        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+        Series::from(ca);
+    }
+
+    #[test]
+    fn series_append() {
+        let mut s1 = Series::new("a", &[1, 2]);
+        let s2 = Series::new("b", &[3]);
+        s1.append(&s2).unwrap();
+        assert_eq!(s1.len(), 3);
+
+        // add wrong type
+        let s2 = Series::new("b", &[3.0]);
+        assert!(s1.append(&s2).is_err())
     }
 }
