@@ -434,12 +434,63 @@ where
     }
 }
 
+pub enum NumericChunkIterDispatch<'a, T>
+where
+    T: PolarsNumericType,
+{
+    SingleChunk(NumIterSingleChunk<'a, T>),
+    SingleChunkNullCheck(NumIterSingleChunkNullCheck<'a, T>),
+    ManyChunk(NumIterManyChunk<'a, T>),
+    ManyChunkNullCheck(NumIterManyChunkNullCheck<'a, T>),
+}
+
+impl<'a, T> Iterator for NumericChunkIterDispatch<'a, T>
+where
+    T: PolarsNumericType,
+{
+    type Item = Option<T::Native>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            NumericChunkIterDispatch::SingleChunk(a) => a.next(),
+            NumericChunkIterDispatch::SingleChunkNullCheck(a) => a.next(),
+            NumericChunkIterDispatch::ManyChunk(a) => a.next(),
+            NumericChunkIterDispatch::ManyChunkNullCheck(a) => a.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            NumericChunkIterDispatch::SingleChunk(a) => a.size_hint(),
+            NumericChunkIterDispatch::SingleChunkNullCheck(a) => a.size_hint(),
+            NumericChunkIterDispatch::ManyChunk(a) => a.size_hint(),
+            NumericChunkIterDispatch::ManyChunkNullCheck(a) => a.size_hint(),
+        }
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for NumericChunkIterDispatch<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            NumericChunkIterDispatch::SingleChunk(a) => a.next_back(),
+            NumericChunkIterDispatch::SingleChunkNullCheck(a) => a.next_back(),
+            NumericChunkIterDispatch::ManyChunk(a) => a.next_back(),
+            NumericChunkIterDispatch::ManyChunkNullCheck(a) => a.next_back(),
+        }
+    }
+}
+
+impl<'a, T> ExactSizeIterator for NumericChunkIterDispatch<'a, T> where T: PolarsNumericType {}
+
 impl<'a, T> IntoIterator for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     type Item = Option<T::Native>;
-    type IntoIter = Box<dyn ExactSizeDoubleEndedIterator<Item = Option<T::Native>> + 'a>;
+    type IntoIter = NumericChunkIterDispatch<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         match self.cont_slice() {
@@ -448,7 +499,7 @@ where
                 let a: NumIterSingleChunk<'_, T> = NumIterSingleChunk {
                     iter: slice.iter().copied(),
                 };
-                Box::new(a)
+                NumericChunkIterDispatch::SingleChunk(a)
             }
             Err(_) => {
                 let chunks = self.downcast_chunks();
@@ -456,17 +507,22 @@ where
                     1 => {
                         let arr = chunks[0];
                         let len = arr.len();
-                        Box::new(NumIterSingleChunkNullCheck {
-                            arr,
-                            idx: 0,
-                            back_idx: len,
-                        })
+
+                        NumericChunkIterDispatch::SingleChunkNullCheck(
+                            NumIterSingleChunkNullCheck {
+                                arr,
+                                idx: 0,
+                                back_idx: len,
+                            },
+                        )
                     }
                     _ => {
                         if self.null_count() == 0 {
-                            Box::new(NumIterManyChunk::new(self))
+                            NumericChunkIterDispatch::ManyChunk(NumIterManyChunk::new(self))
                         } else {
-                            Box::new(NumIterManyChunkNullCheck::new(self))
+                            NumericChunkIterDispatch::ManyChunkNullCheck(
+                                NumIterManyChunkNullCheck::new(self),
+                            )
                         }
                     }
                 }
