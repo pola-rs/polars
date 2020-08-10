@@ -18,18 +18,6 @@ impl<'a> ExactSizeIterator for Utf8IterSingleChunkNullCheck<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterManyChunk<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterManyChunkNullCheck<'a> {}
 
-// Helper trait needed for dynamic dispatch
-pub trait ExactSizeDoubleEndedIterator: ExactSizeIterator + DoubleEndedIterator {}
-
-impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterSingleChunk<'a, T> {}
-impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterSingleChunkNullCheck<'a, T> {}
-impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterManyChunk<'a, T> {}
-impl<'a, T: PolarsNumericType> ExactSizeDoubleEndedIterator for NumIterManyChunkNullCheck<'a, T> {}
-impl<'a> ExactSizeDoubleEndedIterator for Utf8IterSingleChunk<'a> {}
-impl<'a> ExactSizeDoubleEndedIterator for Utf8IterSingleChunkNullCheck<'a> {}
-impl<'a> ExactSizeDoubleEndedIterator for Utf8IterManyChunk<'a> {}
-impl<'a> ExactSizeDoubleEndedIterator for Utf8IterManyChunkNullCheck<'a> {}
-
 /// Single chunk with null values
 pub struct NumIterSingleChunkNullCheck<'a, T>
 where
