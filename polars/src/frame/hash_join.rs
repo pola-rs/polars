@@ -1,5 +1,7 @@
 use crate::prelude::*;
+use crate::utils::Xob;
 use crossbeam::thread;
+use enum_dispatch::enum_dispatch;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -339,6 +341,86 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[enum_dispatch(Series)]
+trait ZipOuterJoinColumn {
+    fn zip_outer_join_column(
+        &self,
+        _right_column: &Series,
+        _opt_join_tuples: &HashSet<(Option<usize>, Option<usize>), FnvBuildHasher>,
+    ) -> Series {
+        unimplemented!()
+    }
+}
+
+impl<T> ZipOuterJoinColumn for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+{
+    fn zip_outer_join_column(
+        &self,
+        right_column: &Series,
+        opt_join_tuples: &HashSet<(Option<usize>, Option<usize>), FnvBuildHasher>,
+    ) -> Series {
+        let right_ca = self.unpack_series_matching_type(right_column).unwrap();
+
+        let left_rand_access = self.take_rand();
+        let right_rand_access = right_ca.take_rand();
+
+        opt_join_tuples
+            .iter()
+            .map(|(opt_left_idx, opt_right_idx)| {
+                if let Some(left_idx) = opt_left_idx {
+                    unsafe { left_rand_access.get_unchecked(*left_idx) }
+                } else {
+                    unsafe {
+                        let right_idx = opt_right_idx.unsafe_unwrap();
+                        right_rand_access.get_unchecked(right_idx)
+                    }
+                }
+            })
+            .collect::<Xob<ChunkedArray<T>>>()
+            .into_inner()
+            .into_series()
+    }
+}
+
+impl ZipOuterJoinColumn for Float32Chunked {}
+impl ZipOuterJoinColumn for Float64Chunked {}
+
+macro_rules! impl_zip_outer_join {
+    ($chunkedtype:ident) => {
+        impl ZipOuterJoinColumn for $chunkedtype {
+            fn zip_outer_join_column(
+                &self,
+                right_column: &Series,
+                opt_join_tuples: &HashSet<(Option<usize>, Option<usize>), FnvBuildHasher>,
+            ) -> Series {
+                let right_ca = self.unpack_series_matching_type(right_column).unwrap();
+
+                let left_rand_access = self.take_rand();
+                let right_rand_access = right_ca.take_rand();
+
+                opt_join_tuples
+                    .iter()
+                    .map(|(opt_left_idx, opt_right_idx)| {
+                        if let Some(left_idx) = opt_left_idx {
+                            unsafe { left_rand_access.get_unchecked(*left_idx) }
+                        } else {
+                            unsafe {
+                                let right_idx = opt_right_idx.unsafe_unwrap();
+                                right_rand_access.get_unchecked(right_idx)
+                            }
+                        }
+                    })
+                    .collect::<$chunkedtype>()
+                    .into_series()
+            }
+        }
+    };
+}
+impl_zip_outer_join!(BooleanChunked);
+impl_zip_outer_join!(Utf8Chunked);
+
 impl DataFrame {
     /// Utility method to finish a join.
     fn finish_join(&self, mut df_left: DataFrame, mut df_right: DataFrame) -> Result<DataFrame> {
@@ -485,54 +567,9 @@ impl DataFrame {
                     .expect("could not take")
             }
         );
-
-        // TODO: implement type
-        // Create the column used to join. This column has values from both left and right.
-        macro_rules! downcast_and_replace_joined_column {
-            ($type:ident) => {{
-                let left_join_col = s_left.$type().unwrap();
-                let right_join_col = s_right.$type().unwrap();
-
-                let left_rand_access = left_join_col.take_rand();
-                let right_rand_access = right_join_col.take_rand();
-
-                let mut s: Series = opt_join_tuples
-                    .iter()
-                    .map(|(opt_left_idx, opt_right_idx)| {
-                        if let Some(left_idx) = opt_left_idx {
-                            unsafe { left_rand_access.get_unchecked(*left_idx) }
-                        } else {
-                            unsafe {
-                                let right_idx = opt_right_idx.unsafe_unwrap();
-                                right_rand_access.get_unchecked(right_idx)
-                            }
-                        }
-                    })
-                    .collect();
-                s.rename(left_on);
-                df_left.hstack(&[s])?;
-            }};
-        }
-
-        // TODO: implement type
-        match s_left.dtype() {
-            ArrowDataType::UInt32 => downcast_and_replace_joined_column!(u32),
-            ArrowDataType::Int32 => downcast_and_replace_joined_column!(i32),
-            ArrowDataType::Int64 => downcast_and_replace_joined_column!(i64),
-            ArrowDataType::Date32(DateUnit::Millisecond) => {
-                downcast_and_replace_joined_column!(i32)
-            }
-            ArrowDataType::Date64(DateUnit::Millisecond) => {
-                downcast_and_replace_joined_column!(i64)
-            }
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                downcast_and_replace_joined_column!(i64)
-            }
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => downcast_and_replace_joined_column!(i64),
-            ArrowDataType::Boolean => downcast_and_replace_joined_column!(bool),
-            ArrowDataType::Utf8 => downcast_and_replace_joined_column!(utf8),
-            _ => unimplemented!(),
-        }
+        let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
+        s.rename(left_on);
+        df_left.hstack(&[s])?;
         self.finish_join(df_left, df_right)
     }
 }

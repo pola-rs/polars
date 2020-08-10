@@ -1,4 +1,4 @@
-//! # Polars DataFrames in Rust
+//! # Polars: *<small>DataFrames in Rust</small>*
 //!
 //! Read more in the [DataFrame](frame/struct.DataFrame.html), [Series](series/enum.Series.html), and
 //! [ChunkedArray](chunked_array/struct.ChunkedArray.html) data structures.
