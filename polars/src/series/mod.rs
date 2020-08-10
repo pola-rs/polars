@@ -529,7 +529,7 @@ impl Series {
     }
 
     /// Take by index. This operation is clone.
-    pub fn take<T: TakeIndex>(&self, indices: &T) -> Result<Self> {
+    pub fn take<T: AsTakeIndex>(&self, indices: &T) -> Result<Self> {
         let mut iter = indices.as_take_iter();
         let capacity = indices.take_index_len();
         self.take_iter(&mut iter, Some(capacity))

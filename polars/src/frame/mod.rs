@@ -430,7 +430,7 @@ impl DataFrame {
     ///     df.take(&idx)
     /// }
     /// ```
-    pub fn take<T: TakeIndex + Sync>(&self, indices: &T) -> Result<Self> {
+    pub fn take<T: AsTakeIndex + Sync>(&self, indices: &T) -> Result<Self> {
         let new_col = self
             .columns
             .par_iter()
@@ -441,7 +441,7 @@ impl DataFrame {
     }
 
     /// Force take
-    pub fn f_take<T: TakeIndex + Sync>(&self, indices: &T) -> Self {
+    pub fn f_take<T: AsTakeIndex + Sync>(&self, indices: &T) -> Self {
         self.take(indices).expect("could not take")
     }
 

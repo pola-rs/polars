@@ -112,7 +112,7 @@ impl Take for Utf8Chunked {
     }
 }
 
-pub trait TakeIndex {
+pub trait AsTakeIndex {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a>;
 
     fn as_opt_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
@@ -122,12 +122,15 @@ pub trait TakeIndex {
     fn take_index_len(&self) -> usize;
 }
 
-impl TakeIndex for &UInt32Chunked {
+impl AsTakeIndex for &UInt32Chunked {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
-        Box::new(
-            self.into_iter()
-                .filter_map(|opt_val| opt_val.map(|val| val as usize)),
-        )
+        match self.cont_slice() {
+            Ok(slice) => Box::new(slice.into_iter().map(|&val| val as usize)),
+            Err(_) => Box::new(
+                self.into_iter()
+                    .filter_map(|opt_val| opt_val.map(|val| val as usize)),
+            ),
+        }
     }
     fn as_opt_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
         Box::new(
@@ -140,7 +143,7 @@ impl TakeIndex for &UInt32Chunked {
     }
 }
 
-impl TakeIndex for [usize] {
+impl AsTakeIndex for [usize] {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
         Box::new(self.iter().filter_map(|&v| Some(v)))
     }
@@ -149,7 +152,7 @@ impl TakeIndex for [usize] {
     }
 }
 
-impl TakeIndex for Vec<usize> {
+impl AsTakeIndex for Vec<usize> {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
         Box::new(self.iter().copied())
     }
@@ -158,7 +161,7 @@ impl TakeIndex for Vec<usize> {
     }
 }
 
-impl TakeIndex for [u32] {
+impl AsTakeIndex for [u32] {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
         Box::new(self.iter().map(|&v| v as usize))
     }
