@@ -43,13 +43,21 @@ where
 }
 impl IntoGroupTuples for BooleanChunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        groupby(self.into_iter())
+        if self.is_optimal_aligned() {
+            groupby(self.into_no_null_iter())
+        } else {
+            groupby(self.into_iter())
+        }
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        groupby(self.into_iter())
+        if self.is_optimal_aligned() {
+            groupby(self.into_no_null_iter())
+        } else {
+            groupby(self.into_iter())
+        }
     }
 }
 impl IntoGroupTuples for Float64Chunked {}

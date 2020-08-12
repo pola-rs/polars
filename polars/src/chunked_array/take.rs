@@ -145,7 +145,7 @@ impl AsTakeIndex for &UInt32Chunked {
 
 impl AsTakeIndex for [usize] {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
-        Box::new(self.iter().filter_map(|&v| Some(v)))
+        Box::new(self.iter().copied())
     }
     fn take_index_len(&self) -> usize {
         self.len()

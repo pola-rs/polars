@@ -235,15 +235,17 @@ where
     ChunkedArray<T>: ChunkOps,
 {
     /// Get the index of the chunk and the index of the value in that chunk
+    #[inline]
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
         let mut index_remainder = index;
         let mut current_chunk_idx = 0;
 
         for chunk in &self.chunks {
-            if chunk.len() - 1 >= index_remainder {
+            let chunk_len = chunk.len();
+            if chunk_len - 1 >= index_remainder {
                 break;
             } else {
-                index_remainder -= chunk.len();
+                index_remainder -= chunk_len;
                 current_chunk_idx += 1;
             }
         }
@@ -257,6 +259,11 @@ where
     /// A reference to the chunks
     pub fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
+    }
+
+    /// Returns true if contains a single chunk and has no null values
+    pub fn is_optimal_aligned(&self) -> bool {
+        self.chunks.len() == 0 && self.null_count() == 0
     }
 
     /// Count the null values.

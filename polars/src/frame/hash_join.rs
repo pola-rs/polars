@@ -304,12 +304,23 @@ where
 impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(usize, usize)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
+
         // Create the join tuples
-        hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap)
+        match (a.is_optimal_aligned(), b.is_optimal_aligned()) {
+            (true, true) => {
+                hash_join_tuples_inner(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+            }
+            _ => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
+        }
     }
 
     fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(usize, Option<usize>)> {
-        hash_join_tuples_left(self.into_iter(), other.into_iter())
+        match (self.is_optimal_aligned(), other.is_optimal_aligned()) {
+            (true, true) => {
+                hash_join_tuples_left(self.into_no_null_iter(), other.into_no_null_iter())
+            }
+            _ => hash_join_tuples_left(self.into_iter(), other.into_iter()),
+        }
     }
 
     fn hash_join_outer(
@@ -317,19 +328,35 @@ impl HashJoin<BooleanType> for BooleanChunked {
         other: &BooleanChunked,
     ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
-        hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap)
+        match (a.is_optimal_aligned(), b.is_optimal_aligned()) {
+            (true, true) => {
+                hash_join_tuples_outer(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+            }
+            _ => hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap),
+        }
     }
 }
 
 impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(usize, usize)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
+
         // Create the join tuples
-        hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap)
+        match (a.is_optimal_aligned(), b.is_optimal_aligned()) {
+            (true, true) => {
+                hash_join_tuples_inner(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+            }
+            _ => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
+        }
     }
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
-        hash_join_tuples_left(self.into_iter(), other.into_iter())
+        match (self.is_optimal_aligned(), other.is_optimal_aligned()) {
+            (true, true) => {
+                hash_join_tuples_left(self.into_no_null_iter(), other.into_no_null_iter())
+            }
+            _ => hash_join_tuples_left(self.into_iter(), other.into_iter()),
+        }
     }
 
     fn hash_join_outer(
@@ -337,7 +364,12 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         other: &Utf8Chunked,
     ) -> HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
-        hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap)
+        match (a.is_optimal_aligned(), b.is_optimal_aligned()) {
+            (true, true) => {
+                hash_join_tuples_outer(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+            }
+            _ => hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap),
+        }
     }
 }
 

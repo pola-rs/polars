@@ -18,6 +18,14 @@ impl<'a> ExactSizeIterator for Utf8IterSingleChunkNullCheck<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterManyChunk<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterManyChunkNullCheck<'a> {}
 
+/// Trait for ChunkedArrays that don't have null values.
+pub trait IntoNoNullIterator {
+    type Item;
+    type IntoIter: Iterator<Item = Self::Item>;
+
+    fn into_no_null_iter(self) -> Self::IntoIter;
+}
+
 /// Single chunk with null values
 pub struct NumIterSingleChunkNullCheck<'a, T>
 where
@@ -519,6 +527,58 @@ where
     }
 }
 
+/// No null checks and dont return Option<T> but T directly. So this struct is not return by the
+/// IntoIterator trait
+pub struct Utf8IterCont<'a> {
+    current_array: &'a StringArray,
+    idx_left: usize,
+    idx_right: usize,
+}
+
+impl<'a> Utf8IterCont<'a> {
+    fn new(ca: &'a Utf8Chunked) -> Self {
+        let chunks = ca.downcast_chunks();
+        let current_array = chunks[0];
+        let idx_left = 0;
+        let idx_right = current_array.len();
+
+        Utf8IterCont {
+            current_array,
+            idx_left,
+            idx_right,
+        }
+    }
+}
+
+impl<'a> Iterator for Utf8IterCont<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+
+        let v = self.current_array.value(self.idx_left);
+        self.idx_left += 1;
+        Some(v)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.current_array.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a> IntoNoNullIterator for &'a Utf8Chunked {
+    type Item = &'a str;
+    type IntoIter = Utf8IterCont<'a>;
+
+    fn into_no_null_iter(self) -> Self::IntoIter {
+        Utf8IterCont::new(self)
+    }
+}
+
 /// No null checks
 pub struct Utf8IterSingleChunk<'a> {
     current_array: &'a StringArray,
@@ -938,12 +998,64 @@ impl<'a> IntoIterator for &'a Utf8Chunked {
 }
 
 macro_rules! impl_iterator_traits {
-    ($ca_type:ident, $arrow_array:ident, $single_chunk_ident:ident, $single_chunk_null_ident:ident, $many_chunk_ident:ident,
-    $many_chunk_null_ident:ident, $chunkdispatch:ident, $iter_item:ty) => {
+    ($ca_type:ident, $arrow_array:ident, $no_null_iter_struct:ident, $single_chunk_ident:ident, $single_chunk_null_ident:ident, $many_chunk_ident:ident,
+    $many_chunk_null_ident:ident, $chunkdispatch:ident, $iter_item:ty, $iter_item_no_null:ty) => {
         impl<'a> ExactSizeIterator for $single_chunk_ident<'a> {}
         impl<'a> ExactSizeIterator for $single_chunk_null_ident<'a> {}
         impl<'a> ExactSizeIterator for $many_chunk_ident<'a> {}
         impl<'a> ExactSizeIterator for $many_chunk_null_ident<'a> {}
+
+        /// No null checks and dont return Option<T> but T directly. So this struct is not return by the
+        /// IntoIterator trait
+        pub struct $no_null_iter_struct<'a> {
+            current_array: &'a $arrow_array,
+            idx_left: usize,
+            idx_right: usize,
+        }
+
+        impl<'a> $no_null_iter_struct<'a> {
+            fn new(ca: &'a $ca_type) -> Self {
+                let chunks = ca.downcast_chunks();
+                let current_array = chunks[0];
+                let idx_left = 0;
+                let idx_right = current_array.len();
+
+                $no_null_iter_struct {
+                    current_array,
+                    idx_left,
+                    idx_right,
+                }
+            }
+        }
+
+        impl<'a> Iterator for $no_null_iter_struct<'a> {
+            type Item = $iter_item_no_null;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                // end of iterator or meet reversed iterator in the middle
+                if self.idx_left == self.idx_right {
+                    return None;
+                }
+
+                let v = self.current_array.value(self.idx_left);
+                self.idx_left += 1;
+                Some(v)
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let len = self.current_array.len();
+                (len, Some(len))
+            }
+        }
+
+        impl<'a> IntoNoNullIterator for &'a $ca_type {
+            type Item = $iter_item_no_null;
+            type IntoIter = $no_null_iter_struct<'a>;
+
+            fn into_no_null_iter(self) -> Self::IntoIter {
+                $no_null_iter_struct::new(self)
+            }
+        }
 
         /// No null checks
         pub struct $single_chunk_ident<'a> {
@@ -1368,12 +1480,14 @@ macro_rules! impl_iterator_traits {
 impl_iterator_traits!(
     BooleanChunked,
     BooleanArray,
+    BooleanIterCont,
     BooleanIterSingleChunk,
     BooleanIterSingleChunkNullCheck,
     BooleanIterManyChunk,
     BooleanIterManyChunkNullCheck,
     BooleanIterDispatch,
-    Option<bool>
+    Option<bool>,
+    bool
 );
 
 #[cfg(test)]

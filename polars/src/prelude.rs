@@ -8,7 +8,7 @@ pub use crate::{
         cast::ChunkCast,
         chunkops::ChunkOps,
         comparison::{CmpOps, NumComp},
-        iterator::NumericChunkIterDispatch,
+        iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
         },
