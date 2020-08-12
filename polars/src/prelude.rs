@@ -9,7 +9,9 @@ pub use crate::{
         chunkops::ChunkOps,
         comparison::{CmpOps, NumComp},
         iterator::NumericChunkIterDispatch,
-        take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take},
+        take::{
+            AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
+        },
         unique::Unique,
         ChunkSort, ChunkedArray, Downcast, Reverse,
     },

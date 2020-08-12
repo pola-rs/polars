@@ -170,9 +170,17 @@ impl AsTakeIndex for [u32] {
     }
 }
 
+pub trait TakeRandom {
+    type Item;
+    fn get(&self, index: usize) -> Option<Self::Item>;
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
+}
+
 pub trait IntoTakeRandom<'a> {
     type Item;
-    fn take_rand(&self) -> Box<dyn TakeRandom<Item = Self::Item> + 'a>;
+    type IntoTR;
+    fn take_rand(&self) -> Self::IntoTR;
 }
 
 /// Choose the Struct for multiple chunks or the struct for a single chunk.
@@ -190,41 +198,83 @@ macro_rules! many_or_single {
     }};
 }
 
+pub enum NumTakeRandomDispatch<'a, T>
+where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
+    Cont(NumTakeRandomCont<'a, T::Native>),
+    Single(NumTakeRandomSingleChunk<'a, T>),
+    Many(NumTakeRandomChunked<'a, T>),
+}
+
+impl<'a, T> TakeRandom for NumTakeRandomDispatch<'a, T>
+where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
+    type Item = T::Native;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        use NumTakeRandomDispatch::*;
+        match self {
+            Cont(a) => a.get(index),
+            Single(a) => a.get(index),
+            Many(a) => a.get(index),
+        }
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        use NumTakeRandomDispatch::*;
+        match self {
+            Cont(a) => a.get_unchecked(index),
+            Single(a) => a.get_unchecked(index),
+            Many(a) => a.get_unchecked(index),
+        }
+    }
+}
+
 impl<'a, T> IntoTakeRandom<'a> for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     type Item = T::Native;
+    type IntoTR = NumTakeRandomDispatch<'a, T>;
 
-    fn take_rand(&self) -> Box<dyn TakeRandom<Item = Self::Item> + 'a> {
+    fn take_rand(&self) -> Self::IntoTR {
         match self.cont_slice() {
-            Ok(slice) => Box::new(NumTakeRandomCont { slice }),
-            _ => many_or_single!(self, NumTakeRandomSingleChunk, NumTakeRandomChunked),
+            Ok(slice) => NumTakeRandomDispatch::Cont(NumTakeRandomCont { slice }),
+            _ => {
+                let chunks = self.downcast_chunks();
+                if chunks.len() == 1 {
+                    NumTakeRandomDispatch::Single(NumTakeRandomSingleChunk { arr: chunks[0] })
+                } else {
+                    NumTakeRandomDispatch::Many(NumTakeRandomChunked {
+                        ca: self,
+                        chunks: chunks,
+                    })
+                }
+            }
         }
     }
 }
 
 impl<'a> IntoTakeRandom<'a> for &'a Utf8Chunked {
     type Item = &'a str;
+    type IntoTR = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
-    fn take_rand(&self) -> Box<dyn TakeRandom<Item = Self::Item> + 'a> {
+    fn take_rand(&self) -> Self::IntoTR {
         many_or_single!(self, Utf8TakeRandomSingleChunk, Utf8TakeRandom)
     }
 }
 
 impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
     type Item = bool;
+    type IntoTR = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
-    fn take_rand(&self) -> Box<dyn TakeRandom<Item = Self::Item> + 'a> {
+    fn take_rand(&self) -> Self::IntoTR {
         many_or_single!(self, BoolTakeRandomSingleChunk, BoolTakeRandom)
     }
-}
-
-pub trait TakeRandom {
-    type Item;
-    fn get(&self, index: usize) -> Option<Self::Item>;
-
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
 }
 
 pub struct NumTakeRandomChunked<'a, T>
