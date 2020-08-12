@@ -154,6 +154,11 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    /// Get data type of ChunkedArray.
+    pub fn dtype(&self) -> &ArrowDataType {
+        self.field.data_type()
+    }
+
     /// Create a new ChunkedArray from existing chunks.
     pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
         let field = Arc::new(Field::new(name, T::get_data_type(), true));
@@ -191,7 +196,7 @@ where
             }};
         }
         match T::get_data_type() {
-            ArrowDataType::Utf8 => unpack!(UInt8),
+            ArrowDataType::Utf8 => unpack!(Utf8),
             ArrowDataType::Boolean => unpack!(Bool),
             ArrowDataType::UInt8 => unpack!(UInt8),
             ArrowDataType::UInt16 => unpack!(UInt16),
