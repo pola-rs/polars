@@ -117,7 +117,6 @@ trait NumericAggSync {
     }
 }
 
-// default catch all impl, use autoref as specialization
 impl NumericAggSync for BooleanChunked {}
 impl NumericAggSync for Utf8Chunked {}
 
@@ -139,9 +138,9 @@ where
                         }
                         Some(sum / idx.len() as f64)
                     } else {
-                        let take = self
-                            .take(idx.into_iter().copied(), Some(self.len()))
-                            .unwrap();
+                        let take = unsafe {
+                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
+                        };
                         let opt_sum: Option<T::Native> = take.sum();
                         opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                     }
@@ -172,9 +171,8 @@ where
                     }
                     min
                 } else {
-                    let take = self
-                        .take(idx.into_iter().copied(), Some(self.len()))
-                        .unwrap();
+                    let take =
+                        unsafe { self.take_unchecked(idx.into_iter().copied(), Some(self.len())) };
                     take.min()
                 }
             })
@@ -204,9 +202,8 @@ where
                     }
                     max
                 } else {
-                    let take = self
-                        .take(idx.into_iter().copied(), Some(self.len()))
-                        .unwrap();
+                    let take =
+                        unsafe { self.take_unchecked(idx.into_iter().copied(), Some(self.len())) };
                     take.max()
                 }
             })
@@ -225,9 +222,8 @@ where
                     }
                     Some(sum)
                 } else {
-                    let take = self
-                        .take(idx.into_iter().copied(), Some(self.len()))
-                        .unwrap();
+                    let take =
+                        unsafe { self.take_unchecked(idx.into_iter().copied(), Some(self.len())) };
                     take.sum()
                 }
             })
@@ -242,11 +238,13 @@ impl<'a> GroupBy<'a> {
         self
     }
 
-    fn keys(&self) -> Result<Series> {
-        self.df.f_column(&self.by).take_iter(
-            self.groups.iter().map(|(idx, _)| *idx),
-            Some(self.groups.len()),
-        )
+    fn keys(&self) -> Series {
+        unsafe {
+            self.df.f_column(&self.by).take_iter_unchecked(
+                self.groups.iter().map(|(idx, _)| *idx),
+                Some(self.groups.len()),
+            )
+        }
     }
 
     fn prepare_agg(&self) -> Result<(&String, Series, &Series)> {
@@ -255,7 +253,7 @@ impl<'a> GroupBy<'a> {
             None => return Err(PolarsError::NoSelection),
         };
 
-        let keys = self.keys()?;
+        let keys = self.keys();
         let agg_col = self.df.column(name).ok_or(PolarsError::NotFound)?;
         Ok((name, keys, agg_col))
     }
@@ -304,7 +302,8 @@ impl<'a> GroupBy<'a> {
 
         let mut builder = PrimitiveChunkedBuilder::new(&new_name, self.groups.len());
         for (_first, idx) in &self.groups {
-            let s = agg_col.take(idx)?;
+            let s =
+                unsafe { agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len())) };
             builder.append_value(s.len() as u32)?;
         }
         let ca = builder.finish();
