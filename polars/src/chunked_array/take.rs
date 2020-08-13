@@ -49,8 +49,8 @@ macro_rules! impl_take {
         let taker = $self.take_rand();
         for idx in $indices {
             match taker.get(idx) {
-                Some(v) => builder.append_value(v)?,
-                None => builder.append_null()?,
+                Some(v) => builder.append_value(v),
+                None => builder.append_null(),
             }
         }
         Ok(builder.finish())
@@ -66,10 +66,10 @@ macro_rules! impl_take_opt {
         for opt_idx in $indices {
             match opt_idx {
                 Some(idx) => match taker.get(idx) {
-                    Some(v) => builder.append_value(v)?,
-                    None => builder.append_null()?,
+                    Some(v) => builder.append_value(v),
+                    None => builder.append_null(),
                 },
-                None => builder.append_null()?,
+                None => builder.append_null(),
             };
         }
         Ok(builder.finish())
@@ -86,9 +86,9 @@ macro_rules! impl_take_opt_unchecked {
             match opt_idx {
                 Some(idx) => {
                     let v = taker.get_unchecked(idx);
-                    builder.append_value(v).unwrap();
+                    builder.append_value(v);
                 }
-                None => builder.append_null().unwrap(),
+                None => builder.append_null(),
             };
         }
         builder.finish()
@@ -103,7 +103,7 @@ macro_rules! impl_take_unchecked {
         let taker = $self.take_rand();
         for idx in $indices {
             let v = taker.get_unchecked(idx);
-            builder.append_value(v).unwrap();
+            builder.append_value(v);
         }
         builder.finish()
     }};

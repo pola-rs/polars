@@ -25,7 +25,7 @@ where
         let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for opt_val in iter {
-            builder.append_option(opt_val).expect("could not append");
+            builder.append_option(opt_val);
         }
         builder.finish()
     }
@@ -41,7 +41,7 @@ where
         let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
-            builder.append_value(val).expect("could not append");
+            builder.append_value(val);
         }
         Xob::new(builder.finish())
     }
@@ -53,7 +53,7 @@ impl FromIterator<bool> for BooleanChunked {
         let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
-            builder.append_value(val).expect("could not append");
+            builder.append_value(val);
         }
         builder.finish()
     }
@@ -67,7 +67,7 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
         let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
-            builder.append_value(val).expect("could not append");
+            builder.append_value(val);
         }
         builder.finish()
     }
@@ -79,7 +79,7 @@ impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
         let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
-            builder.append_value(val).expect("could not append");
+            builder.append_value(val);
         }
         builder.finish()
     }
@@ -92,8 +92,8 @@ impl<'a> FromIterator<Option<&'a str>> for Utf8Chunked {
 
         for opt_val in iter {
             match opt_val {
-                None => builder.append_null().expect("should not fail"),
-                Some(val) => builder.append_value(val).expect("should not fail"),
+                None => builder.append_null(),
+                Some(val) => builder.append_value(val),
             }
         }
         builder.finish()
@@ -107,8 +107,7 @@ impl FromIterator<String> for Utf8Chunked {
 
         for val in iter {
             builder
-                .append_value(val.as_str())
-                .expect("could not append");
+                .append_value(val.as_str());
         }
         builder.finish()
     }
@@ -121,8 +120,8 @@ impl FromIterator<Option<String>> for Utf8Chunked {
 
         for opt_val in iter {
             match opt_val {
-                None => builder.append_null().expect("should not fail"),
-                Some(val) => builder.append_value(val.as_str()).expect("should not fail"),
+                None => builder.append_null(),
+                Some(val) => builder.append_value(val.as_str()),
             }
         }
         builder.finish()
@@ -176,7 +175,7 @@ where
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for opt_val in vec {
-                builder.append_option(*opt_val).expect("could not append");
+                builder.append_option(*opt_val);
             }
         });
 
@@ -193,7 +192,7 @@ impl FromParallelIterator<bool> for BooleanChunked {
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
-                builder.append_value(*val).expect("could not append");
+                builder.append_value(*val);
             }
         });
 
@@ -211,8 +210,7 @@ impl FromParallelIterator<String> for Utf8Chunked {
         vectors.iter().for_each(|vec| {
             for val in vec {
                 builder
-                    .append_value(val.as_str())
-                    .expect("could not append");
+                    .append_value(val.as_str());
             }
         });
 
@@ -261,7 +259,7 @@ impl<'a> FromParallelIterator<&'a str> for Utf8Chunked {
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
-                builder.append_value(val).expect("should not fail");
+                builder.append_value(val);
             }
         });
         builder.finish()

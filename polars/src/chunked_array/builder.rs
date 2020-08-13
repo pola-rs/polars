@@ -34,8 +34,23 @@ where
         }
     }
 
+    /// Appends a value of type `T` into the builder
+    pub fn append_value(&mut self, v: T::Native)  {
+        self.builder.append_value(v).expect("could not append");
+    }
+
+    /// Appends a null slot into the builder
+    pub fn append_null(&mut self) {
+        self.builder.append_null().expect("could not append");
+    }
+
+    /// Appends an `Option<T>` into the builder
+    pub fn append_option(&mut self, v: Option<T::Native>) {
+        self.builder.append_option(v).expect("could not append");
+    }
+
     pub fn new_from_iter(mut self, it: impl Iterator<Item = Option<T::Native>>) -> ChunkedArray<T> {
-        it.for_each(|opt| self.append_option(opt).expect("could not append"));
+        it.for_each(|opt| self.append_option(opt));
         self.finish()
     }
 
@@ -80,17 +95,28 @@ impl Utf8ChunkedBuilder {
         }
     }
 
+    /// Appends a value of type `T` into the builder
+    pub fn append_value<S: AsRef<str>>(&mut self, v: S)  {
+        self.builder.append_value(v.as_ref()).expect("could not append");
+    }
+
+    /// Appends a null slot into the builder
+    pub fn append_null(&mut self) {
+        self.builder.append_null().expect("could not append");
+    }
+
+
     pub fn append_option<S: AsRef<str>>(&mut self, opt: Option<S>) {
         match opt {
-            Some(s) => self.append_value(s.as_ref()).expect("should not fail"),
-            None => self.append_null().expect("should not fail"),
+            Some(s) => self.append_value(s.as_ref()),
+            None => self.append_null()
         }
     }
 
     pub fn new_from_iter<'a>(mut self, it: impl Iterator<Item = Option<&'a str>>) -> Utf8Chunked {
         it.for_each(|opt_s| match opt_s {
-            None => self.append_null().expect("should not fail"),
-            Some(s) => self.append_value(s).expect("should not fail"),
+            None => self.append_null(),
+            Some(s) => self.append_value(s),
         });
         self.finish()
     }
@@ -128,7 +154,7 @@ where
 {
     let mut builder = PrimitiveChunkedBuilder::new(name, s.len());
     for opt in s {
-        builder.append_option(*opt).expect("could not append");
+        builder.append_option(*opt);
     }
     let ca = builder.finish();
     ca

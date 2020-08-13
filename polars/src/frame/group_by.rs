@@ -304,7 +304,7 @@ impl<'a> GroupBy<'a> {
         for (_first, idx) in &self.groups {
             let s =
                 unsafe { agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len())) };
-            builder.append_value(s.len() as u32)?;
+            builder.append_value(s.len() as u32);
         }
         let ca = builder.finish();
         let agg = Series::UInt32(ca);

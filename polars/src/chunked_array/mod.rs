@@ -754,8 +754,8 @@ impl Utf8Chunked {
         let mut builder = Utf8ChunkedBuilder::new(name, opt_v.len());
 
         opt_v.iter().for_each(|opt| match opt {
-            Some(v) => builder.append_value(v.as_ref()).expect("append value"),
-            None => builder.append_null().expect("append null"),
+            Some(v) => builder.append_value(v.as_ref()),
+            None => builder.append_null(),
         });
         builder.finish()
     }
@@ -809,7 +809,7 @@ where
     pub fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, v.len());
         v.iter()
-            .for_each(|&v| builder.append_value(v).expect("append"));
+            .for_each(|&v| builder.append_value(v));
         builder.finish()
     }
 
@@ -817,7 +817,7 @@ where
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, opt_v.len());
         opt_v
             .iter()
-            .for_each(|&opt| builder.append_option(opt).expect("append"));
+            .for_each(|&opt| builder.append_option(opt));
         builder.finish()
     }
 
@@ -1190,7 +1190,7 @@ where
         let mut builder = PrimitiveChunkedBuilder::new(name, length);
 
         for _ in 0..length {
-            builder.append_value(value).expect("could not append?")
+            builder.append_value(value)
         }
         builder.finish()
     }
@@ -1201,7 +1201,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
         let mut builder = Utf8ChunkedBuilder::new(name, length);
 
         for _ in 0..length {
-            builder.append_value(value).expect("could not append?")
+            builder.append_value(value);
         }
         builder.finish()
     }

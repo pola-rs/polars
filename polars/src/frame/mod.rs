@@ -404,15 +404,15 @@ impl DataFrame {
         DataFrame::new_with_schema(self.schema.clone(), new_col)
     }
 
-    /// Take DataFrame value by indexes from an iterator.
+    /// Take DataFrame values by indexes from an iterator. This doesn't do any bound checking.
     ///
     /// # Example
     ///
     /// ```
     /// use polars::prelude::*;
-    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    /// unsafe fn example(df: &DataFrame) -> DataFrame {
     ///     let iterator = (0..9).into_iter();
-    ///     df.take_iter(iterator, None)
+    ///     df.take_iter_unchecked(iterator, None)
     /// }
     /// ```
     pub unsafe fn take_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
@@ -430,6 +430,17 @@ impl DataFrame {
         DataFrame::new_with_schema(self.schema.clone(), new_col).unwrap()
     }
 
+    /// Take DataFrame values by indexes from an iterator that may contain None values.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    ///     let iterator = (0..9).into_iter().map(Some);
+    ///     df.take_opt_iter(iterator, None)
+    /// }
+    /// ```
     pub fn take_opt_iter<I>(&self, iter: I, capacity: Option<usize>) -> Result<Self>
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
@@ -445,6 +456,18 @@ impl DataFrame {
         DataFrame::new_with_schema(self.schema.clone(), new_col)
     }
 
+    /// Take DataFrame values by indexes from an iterator that may contain None values.
+    /// This doesn't do any bound checking.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// unsafe fn example(df: &DataFrame) -> DataFrame {
+    ///     let iterator = (0..9).into_iter().map(Some);
+    ///     df.take_opt_iter_unchecked(iterator, None)
+    /// }
+    /// ```
     pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
@@ -521,6 +544,7 @@ impl DataFrame {
         Ok(())
     }
 
+    /// Return a sorted clone of this DataFrame.
     pub fn sort(&self, by_column: &str, reverse: bool) -> Result<Self> {
         let s = match self.column(by_column) {
             Some(s) => s,
