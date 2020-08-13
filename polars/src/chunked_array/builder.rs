@@ -35,7 +35,7 @@ where
     }
 
     /// Appends a value of type `T` into the builder
-    pub fn append_value(&mut self, v: T::Native)  {
+    pub fn append_value(&mut self, v: T::Native) {
         self.builder.append_value(v).expect("could not append");
     }
 
@@ -96,8 +96,10 @@ impl Utf8ChunkedBuilder {
     }
 
     /// Appends a value of type `T` into the builder
-    pub fn append_value<S: AsRef<str>>(&mut self, v: S)  {
-        self.builder.append_value(v.as_ref()).expect("could not append");
+    pub fn append_value<S: AsRef<str>>(&mut self, v: S) {
+        self.builder
+            .append_value(v.as_ref())
+            .expect("could not append");
     }
 
     /// Appends a null slot into the builder
@@ -105,11 +107,10 @@ impl Utf8ChunkedBuilder {
         self.builder.append_null().expect("could not append");
     }
 
-
     pub fn append_option<S: AsRef<str>>(&mut self, opt: Option<S>) {
         match opt {
             Some(s) => self.append_value(s.as_ref()),
-            None => self.append_null()
+            None => self.append_null(),
         }
     }
 

@@ -808,16 +808,13 @@ where
 {
     pub fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, v.len());
-        v.iter()
-            .for_each(|&v| builder.append_value(v));
+        v.iter().for_each(|&v| builder.append_value(v));
         builder.finish()
     }
 
     pub fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, opt_v.len());
-        opt_v
-            .iter()
-            .for_each(|&opt| builder.append_option(opt));
+        opt_v.iter().for_each(|&opt| builder.append_option(opt));
         builder.finish()
     }
 

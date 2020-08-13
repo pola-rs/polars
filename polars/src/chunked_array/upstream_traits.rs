@@ -106,8 +106,7 @@ impl FromIterator<String> for Utf8Chunked {
         let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
-            builder
-                .append_value(val.as_str());
+            builder.append_value(val.as_str());
         }
         builder.finish()
     }
@@ -209,8 +208,7 @@ impl FromParallelIterator<String> for Utf8Chunked {
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
-                builder
-                    .append_value(val.as_str());
+                builder.append_value(val.as_str());
             }
         });
 

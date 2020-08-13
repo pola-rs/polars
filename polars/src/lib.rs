@@ -151,6 +151,8 @@ pub mod series;
 pub(crate) mod utils;
 pub mod chunked_array;
 pub mod datatypes;
+#[cfg(feature = "docs")]
+pub mod doc;
 pub mod error;
 mod fmt;
 pub mod frame;

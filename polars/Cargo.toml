@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -12,7 +12,8 @@ repository = "https://github.com/ritchie46/polars"
 [features]
 pretty = ["prettytable-rs"]
 simd = ["arrow/packed_simd"]
-default = ["pretty"]
+docs = []
+default = ["pretty", "docs"]
 
 [dependencies]
 arrow = {version = "1.0.0", default_features = false}
