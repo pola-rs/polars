@@ -520,6 +520,24 @@ impl Series {
     }
 
     /// Take by index from an iterator. This operation clones the data.
+    pub unsafe fn take_iter_unchecked(
+        &self,
+        iter: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self {
+        apply_method_all_series_and_return!(self, take_unchecked, [iter, capacity],)
+    }
+
+    /// Take by index from an iterator. This operation clones the data.
+    pub unsafe fn take_opt_iter_unchecked(
+        &self,
+        iter: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self {
+        apply_method_all_series_and_return!(self, take_opt_unchecked, [iter, capacity],)
+    }
+
+    /// Take by index from an iterator. This operation clones the data.
     pub fn take_opt_iter(
         &self,
         iter: impl Iterator<Item = Option<usize>>,

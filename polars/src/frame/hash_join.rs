@@ -478,11 +478,13 @@ impl DataFrame {
         Ok(df_left)
     }
 
-    fn create_left_df<B: Sync>(&self, join_tuples: &[(usize, B)]) -> Result<DataFrame> {
-        self.take_iter(
-            join_tuples.iter().map(|(left, _right)| *left),
-            Some(join_tuples.len()),
-        )
+    fn create_left_df<B: Sync>(&self, join_tuples: &[(usize, B)]) -> DataFrame {
+        unsafe {
+            self.take_iter_unchecked(
+                join_tuples.iter().map(|(left, _right)| *left),
+                Some(join_tuples.len()),
+            )
+        }
     }
 
     /// Perform an inner join on two DataFrames.
@@ -505,19 +507,14 @@ impl DataFrame {
         let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
         let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
 
-        let (df_left, df_right) = exec_concurrent!(
-            { self.create_left_df(&join_tuples).expect("could not take") },
-            {
-                other
-                    .drop(right_on)
-                    .unwrap()
-                    .take_iter(
-                        join_tuples.iter().map(|(_left, right)| *right),
-                        Some(join_tuples.len()),
-                    )
-                    .expect("could not take")
+        let (df_left, df_right) = exec_concurrent!({ self.create_left_df(&join_tuples) }, {
+            unsafe {
+                other.drop(right_on).unwrap().take_iter_unchecked(
+                    join_tuples.iter().map(|(_left, right)| *right),
+                    Some(join_tuples.len()),
+                )
             }
-        );
+        });
         self.finish_join(df_left, df_right)
     }
 
@@ -536,22 +533,14 @@ impl DataFrame {
         let opt_join_tuples: Vec<(usize, Option<usize>)> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_left);
 
-        let (df_left, df_right) = exec_concurrent!(
-            {
-                self.create_left_df(&opt_join_tuples)
-                    .expect("could not take")
-            },
-            {
-                other
-                    .drop(right_on)
-                    .unwrap()
-                    .take_opt_iter(
-                        opt_join_tuples.iter().map(|(_left, right)| *right),
-                        Some(opt_join_tuples.len()),
-                    )
-                    .expect("could not take")
+        let (df_left, df_right) = exec_concurrent!({ self.create_left_df(&opt_join_tuples) }, {
+            unsafe {
+                other.drop(right_on).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples.iter().map(|(_left, right)| *right),
+                    Some(opt_join_tuples.len()),
+                )
             }
-        );
+        });
         self.finish_join(df_left, df_right)
     }
 
@@ -580,23 +569,20 @@ impl DataFrame {
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = exec_concurrent!(
             {
-                self.drop(left_on)
-                    .unwrap()
-                    .take_opt_iter(
+                unsafe {
+                    self.drop(left_on).unwrap().take_opt_iter_unchecked(
                         opt_join_tuples.iter().map(|(left, _right)| *left),
                         Some(opt_join_tuples.len()),
                     )
-                    .expect("could not take")
+                }
             },
             {
-                other
-                    .drop(right_on)
-                    .unwrap()
-                    .take_opt_iter(
+                unsafe {
+                    other.drop(right_on).unwrap().take_opt_iter_unchecked(
                         opt_join_tuples.iter().map(|(_left, right)| *right),
                         Some(opt_join_tuples.len()),
                     )
-                    .expect("could not take")
+                }
             }
         );
         let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);

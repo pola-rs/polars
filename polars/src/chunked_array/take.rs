@@ -13,12 +13,30 @@ pub trait Take {
     where
         Self: std::marker::Sized;
 
+    /// Take values from ChunkedArray by index without checking bounds.
+    unsafe fn take_unchecked(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized;
+
     /// Take values from ChunkedArray by Option<index>.
     fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+
+    /// Take values from ChunkedArray by Option<index>.
+    unsafe fn take_opt_unchecked(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self
     where
         Self: std::marker::Sized;
 }
@@ -58,6 +76,39 @@ macro_rules! impl_take_opt {
     }};
 }
 
+macro_rules! impl_take_opt_unchecked {
+    ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
+        let capacity = $capacity.unwrap_or($indices.size_hint().0);
+        let mut builder = $builder::new($self.name(), capacity);
+        let taker = $self.take_rand();
+
+        for opt_idx in $indices {
+            match opt_idx {
+                Some(idx) => {
+                    let v = taker.get_unchecked(idx);
+                    builder.append_value(v).unwrap();
+                }
+                None => builder.append_null().unwrap(),
+            };
+        }
+        builder.finish()
+    }};
+}
+
+macro_rules! impl_take_unchecked {
+    ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
+        let capacity = $capacity.unwrap_or($indices.size_hint().0);
+        let mut builder = $builder::new($self.name(), capacity);
+
+        let taker = $self.take_rand();
+        for idx in $indices {
+            let v = taker.get_unchecked(idx);
+            builder.append_value(v).unwrap();
+        }
+        builder.finish()
+    }};
+}
+
 impl<T> Take for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -66,12 +117,28 @@ where
         impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
+    unsafe fn take_unchecked(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self {
+        impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
+    }
+
     fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Result<Self> {
         impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
+    }
+
+    unsafe fn take_opt_unchecked(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self {
+        impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 }
 
@@ -83,12 +150,28 @@ impl Take for BooleanChunked {
         impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
+    unsafe fn take_unchecked(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self {
+        impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
+    }
+
     fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Result<Self> {
         impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
+    }
+
+    unsafe fn take_opt_unchecked(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self {
+        impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 }
 
@@ -100,6 +183,14 @@ impl Take for Utf8Chunked {
         impl_take!(self, indices, capacity, Utf8ChunkedBuilder)
     }
 
+    unsafe fn take_unchecked(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self {
+        impl_take_unchecked!(self, indices, capacity, Utf8ChunkedBuilder)
+    }
+
     fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
@@ -109,6 +200,14 @@ impl Take for Utf8Chunked {
         Self: std::marker::Sized,
     {
         impl_take_opt!(self, indices, capacity, Utf8ChunkedBuilder)
+    }
+
+    unsafe fn take_opt_unchecked(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self {
+        impl_take_opt_unchecked!(self, indices, capacity, Utf8ChunkedBuilder)
     }
 }
 

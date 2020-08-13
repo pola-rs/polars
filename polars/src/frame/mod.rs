@@ -404,6 +404,32 @@ impl DataFrame {
         DataFrame::new_with_schema(self.schema.clone(), new_col)
     }
 
+    /// Take DataFrame value by indexes from an iterator.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars::prelude::*;
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    ///     let iterator = (0..9).into_iter();
+    ///     df.take_iter(iterator, None)
+    /// }
+    /// ```
+    pub unsafe fn take_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    where
+        I: Iterator<Item = usize> + Clone + Sync,
+    {
+        let new_col = self
+            .columns
+            .par_iter()
+            .map(|s| {
+                let mut i = iter.clone();
+                s.take_iter_unchecked(&mut i, capacity)
+            })
+            .collect::<Vec<_>>();
+        DataFrame::new_with_schema(self.schema.clone(), new_col).unwrap()
+    }
+
     pub fn take_opt_iter<I>(&self, iter: I, capacity: Option<usize>) -> Result<Self>
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
@@ -417,6 +443,21 @@ impl DataFrame {
             })
             .collect::<Result<Vec<_>>>()?;
         DataFrame::new_with_schema(self.schema.clone(), new_col)
+    }
+
+    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    where
+        I: Iterator<Item = Option<usize>> + Clone + Sync,
+    {
+        let new_col = self
+            .columns
+            .par_iter()
+            .map(|s| {
+                let mut i = iter.clone();
+                s.take_opt_iter_unchecked(&mut i, capacity)
+            })
+            .collect::<Vec<_>>();
+        DataFrame::new_with_schema(self.schema.clone(), new_col).unwrap()
     }
 
     /// Take DataFrame rows by index values.
