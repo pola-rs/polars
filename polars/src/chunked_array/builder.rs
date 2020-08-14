@@ -322,10 +322,64 @@ impl<T> AlignedVec<T> {
     }
 }
 
+pub trait NewChunkedArray<T, N> {
+    fn new_from_slice(name: &str, v: &[N]) -> Self;
+    fn new_from_opt_slice(name: &str, opt_v: &[Option<N>]) -> Self;
+}
+
+impl<T> NewChunkedArray<T, T::Native> for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, v.len());
+        v.iter().for_each(|&v| builder.append_value(v));
+        builder.finish()
+    }
+
+    fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, opt_v.len());
+        opt_v.iter().for_each(|&opt| builder.append_option(opt));
+        builder.finish()
+    }
+}
+
+impl<S> NewChunkedArray<Utf8Type, S> for Utf8Chunked
+where
+    S: AsRef<str>,
+{
+    fn new_from_slice(name: &str, v: &[S]) -> Self {
+        let mut builder = StringBuilder::new(v.len());
+        v.into_iter().for_each(|val| {
+            builder
+                .append_value(val.as_ref())
+                .expect("Could not append value");
+        });
+
+        let field = Arc::new(Field::new(name, ArrowDataType::Utf8, true));
+
+        ChunkedArray {
+            field,
+            chunks: vec![Arc::new(builder.finish())],
+            chunk_id: vec![v.len()],
+            phantom: PhantomData,
+        }
+    }
+
+    fn new_from_opt_slice(name: &str, opt_v: &[Option<S>]) -> Self {
+        let mut builder = Utf8ChunkedBuilder::new(name, opt_v.len());
+
+        opt_v.iter().for_each(|opt| match opt {
+            Some(v) => builder.append_value(v.as_ref()),
+            None => builder.append_null(),
+        });
+        builder.finish()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::prelude::*;
 
     #[test]
     fn test_existing_null_bitmap() {

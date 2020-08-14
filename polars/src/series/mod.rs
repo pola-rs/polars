@@ -749,16 +749,16 @@ macro_rules! impl_named_from {
 
 impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Series::Utf8(ChunkedArray::new_utf8_from_slice(name, v.as_ref()))
+        Series::Utf8(ChunkedArray::new_from_slice(name, v.as_ref()))
     }
 }
 impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Series::Utf8(ChunkedArray::new_utf8_from_opt_slice(name, v.as_ref()))
+        Series::Utf8(ChunkedArray::new_from_opt_slice(name, v.as_ref()))
     }
 }
 
-impl_named_from!([String], Utf8, new_utf8_from_slice);
+impl_named_from!([String], Utf8, new_from_slice);
 impl_named_from!([bool], Bool, new_from_slice);
 impl_named_from!([u8], UInt8, new_from_slice);
 impl_named_from!([u16], UInt16, new_from_slice);
@@ -770,7 +770,7 @@ impl_named_from!([i32], Int32, new_from_slice);
 impl_named_from!([i64], Int64, new_from_slice);
 impl_named_from!([f32], Float32, new_from_slice);
 impl_named_from!([f64], Float64, new_from_slice);
-impl_named_from!([Option<String>], Utf8, new_utf8_from_opt_slice);
+impl_named_from!([Option<String>], Utf8, new_from_opt_slice);
 impl_named_from!([Option<bool>], Bool, new_from_opt_slice);
 impl_named_from!([Option<u8>], UInt8, new_from_opt_slice);
 impl_named_from!([Option<u16>], UInt16, new_from_opt_slice);

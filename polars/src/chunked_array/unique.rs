@@ -218,10 +218,8 @@ mod test {
             vec![Some(true), Some(false)]
         );
 
-        let ca = Utf8Chunked::new_utf8_from_opt_slice(
-            "",
-            &[Some("a"), None, Some("a"), Some("b"), None],
-        );
+        let ca =
+            Utf8Chunked::new_from_opt_slice("", &[Some("a"), None, Some("a"), Some("b"), None]);
         assert_eq!(Vec::from(&ca.unique()), &[Some("a"), None, Some("b")]);
     }
 

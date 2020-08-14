@@ -8,7 +8,7 @@ use crate::utils::Xob;
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-        Int64Array, Int8Array, PrimitiveArray, PrimitiveBuilder, StringArray, StringBuilder,
+        Int64Array, Int8Array, PrimitiveArray, PrimitiveBuilder, StringArray,
         Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
@@ -732,32 +732,14 @@ where
 }
 
 impl Utf8Chunked {
+    #[deprecated(since = "3.1", note = "Use `new_from_slice`")]
     pub fn new_utf8_from_slice<S: AsRef<str>>(name: &str, v: &[S]) -> Self {
-        let mut builder = StringBuilder::new(v.len());
-        v.into_iter().for_each(|val| {
-            builder
-                .append_value(val.as_ref())
-                .expect("Could not append value");
-        });
-
-        let field = Arc::new(Field::new(name, ArrowDataType::Utf8, true));
-
-        ChunkedArray {
-            field,
-            chunks: vec![Arc::new(builder.finish())],
-            chunk_id: vec![v.len()],
-            phantom: PhantomData,
-        }
+        Utf8Chunked::new_from_slice(name, v)
     }
 
+    #[deprecated(since = "3.1", note = "Use `new_from_opt_slice`")]
     pub fn new_utf8_from_opt_slice<S: AsRef<str>>(name: &str, opt_v: &[Option<S>]) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new(name, opt_v.len());
-
-        opt_v.iter().for_each(|opt| match opt {
-            Some(v) => builder.append_value(v.as_ref()),
-            None => builder.append_null(),
-        });
-        builder.finish()
+        Utf8Chunked::new_from_opt_slice(name, opt_v)
     }
 }
 
@@ -806,18 +788,6 @@ impl<T> ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
-    pub fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, v.len());
-        v.iter().for_each(|&v| builder.append_value(v));
-        builder.finish()
-    }
-
-    pub fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, opt_v.len());
-        opt_v.iter().for_each(|&opt| builder.append_option(opt));
-        builder.finish()
-    }
-
     /// Nullify values in slice with an existing null bitmap
     pub fn new_with_null_bitmap(
         name: &str,
@@ -1257,7 +1227,7 @@ pub(crate) mod test {
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
-        let a = Utf8Chunked::new_utf8_from_slice("a", &["b", "a", "c"]);
+        let a = Utf8Chunked::new_from_slice("a", &["b", "a", "c"]);
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
@@ -1389,10 +1359,10 @@ pub(crate) mod test {
         let s = BooleanChunked::new_from_slice("", &[true, false]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(false), Some(true)]);
 
-        let s = Utf8Chunked::new_utf8_from_slice("", &["a", "b", "c"]);
+        let s = Utf8Chunked::new_from_slice("", &["a", "b", "c"]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), Some("b"), Some("a")]);
 
-        let s = Utf8Chunked::new_utf8_from_opt_slice("", &[Some("a"), None, Some("c")]);
+        let s = Utf8Chunked::new_from_opt_slice("", &[Some("a"), None, Some("c")]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), None, Some("a")]);
     }
 }
