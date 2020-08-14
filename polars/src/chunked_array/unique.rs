@@ -72,8 +72,7 @@ where
 impl Unique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> Self {
         let set = fill_set(self.into_iter(), self.len());
-        let builder = Utf8ChunkedBuilder::new(self.name(), set.len());
-        builder.new_from_iter(set.iter().copied())
+        Utf8Chunked::new_from_opt_iter(self.name(), set.iter().copied())
     }
 
     fn arg_unique(&self) -> Vec<usize> {

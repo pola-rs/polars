@@ -4,7 +4,7 @@ use crate::chunked_array::builder::{
     PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::prelude::*;
-use crate::utils::{get_iter_capacity, Xob};
+use crate::utils::Xob;
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
@@ -782,23 +782,6 @@ impl<T> ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
-    /// Create a new ChunkedArray from an iterator.
-    pub fn new_from_opt_iter(
-        name: &str,
-        it: impl Iterator<Item = Option<T::Native>>,
-    ) -> ChunkedArray<T> {
-        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
-        it.for_each(|opt| builder.append_option(opt));
-        builder.finish()
-    }
-
-    /// Create a new ChunkedArray from an iterator.
-    pub fn new_from_iter(name: &str, it: impl Iterator<Item = T::Native>) -> ChunkedArray<T> {
-        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
-        it.for_each(|opt| builder.append_value(opt));
-        builder.finish()
-    }
-
     /// Create a new ChunkedArray by taking ownershipt of the AlignedVec. This operation is zero copy.
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
         let arr = aligned_vec_to_primitive_array::<T>(v, None, 0);

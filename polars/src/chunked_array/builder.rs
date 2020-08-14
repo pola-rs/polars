@@ -1,5 +1,6 @@
 use super::temporal;
 use crate::prelude::*;
+use crate::utils::get_iter_capacity;
 use arrow::array::{ArrayDataBuilder, ArrayRef};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
@@ -109,14 +110,6 @@ impl Utf8ChunkedBuilder {
             Some(s) => self.append_value(s.as_ref()),
             None => self.append_null(),
         }
-    }
-
-    pub fn new_from_iter<'a>(mut self, it: impl Iterator<Item = Option<&'a str>>) -> Utf8Chunked {
-        it.for_each(|opt_s| match opt_s {
-            None => self.append_null(),
-            Some(s) => self.append_value(s),
-        });
-        self.finish()
     }
 
     pub fn finish(mut self) -> Utf8Chunked {
@@ -322,6 +315,12 @@ impl<T> AlignedVec<T> {
 pub trait NewChunkedArray<T, N> {
     fn new_from_slice(name: &str, v: &[N]) -> Self;
     fn new_from_opt_slice(name: &str, opt_v: &[Option<N>]) -> Self;
+
+    /// Create a new ChunkedArray from an iterator.
+    fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<N>>) -> Self;
+
+    /// Create a new ChunkedArray from an iterator.
+    fn new_from_iter(name: &str, it: impl Iterator<Item = N>) -> Self;
 }
 
 impl<T> NewChunkedArray<T, T::Native> for ChunkedArray<T>
@@ -337,6 +336,22 @@ where
     fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, opt_v.len());
         opt_v.iter().for_each(|&opt| builder.append_option(opt));
+        builder.finish()
+    }
+
+    fn new_from_opt_iter(
+        name: &str,
+        it: impl Iterator<Item = Option<T::Native>>,
+    ) -> ChunkedArray<T> {
+        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|opt| builder.append_option(opt));
+        builder.finish()
+    }
+
+    /// Create a new ChunkedArray from an iterator.
+    fn new_from_iter(name: &str, it: impl Iterator<Item = T::Native>) -> ChunkedArray<T> {
+        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|opt| builder.append_value(opt));
         builder.finish()
     }
 }
@@ -370,6 +385,19 @@ where
             Some(v) => builder.append_value(v.as_ref()),
             None => builder.append_null(),
         });
+        builder.finish()
+    }
+
+    fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
+        let mut builder = Utf8ChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|opt| builder.append_option(opt));
+        builder.finish()
+    }
+
+    /// Create a new ChunkedArray from an iterator.
+    fn new_from_iter(name: &str, it: impl Iterator<Item = S>) -> Self {
+        let mut builder = Utf8ChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|v| builder.append_value(v));
         builder.finish()
     }
 }
