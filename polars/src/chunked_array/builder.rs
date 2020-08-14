@@ -1,5 +1,6 @@
+use super::temporal;
 use crate::prelude::*;
-use arrow::array::ArrayRef;
+use arrow::array::{ArrayDataBuilder, ArrayRef};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
@@ -7,6 +8,7 @@ use arrow::{
     memory,
     util::bit_util,
 };
+use chrono::{NaiveTime, Timelike};
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -47,11 +49,6 @@ where
     /// Appends an `Option<T>` into the builder
     pub fn append_option(&mut self, v: Option<T::Native>) {
         self.builder.append_option(v).expect("could not append");
-    }
-
-    pub fn new_from_iter(mut self, it: impl Iterator<Item = Option<T::Native>>) -> ChunkedArray<T> {
-        it.for_each(|opt| self.append_option(opt));
-        self.finish()
     }
 
     pub fn finish(mut self) -> ChunkedArray<T> {
@@ -161,6 +158,23 @@ where
     ca
 }
 
+fn set_null_bits(
+    mut builder: ArrayDataBuilder,
+    null_bit_buffer: Option<Buffer>,
+    null_count: usize,
+    len: usize,
+) -> ArrayDataBuilder {
+    if null_count > 0 {
+        let null_bit_buffer =
+            null_bit_buffer.expect("implementation error. Should not be None if null_count > 0");
+        debug_assert!(null_count == len - bit_util::count_set_bits(null_bit_buffer.data()));
+        builder = builder
+            .null_count(null_count)
+            .null_bit_buffer(null_bit_buffer);
+    }
+    builder
+}
+
 /// Take an existing slice and a null bitmap and construct an arrow array.
 pub fn build_with_existing_null_bitmap_and_slice<T>(
     null_bit_buffer: Option<Buffer>,
@@ -174,19 +188,11 @@ where
     // See:
     // https://docs.rs/arrow/0.16.0/src/arrow/array/builder.rs.html#314
     // TODO: make implementation for aligned owned vector for zero copy creation.
-    let mut builder = ArrayData::builder(T::get_data_type())
+    let builder = ArrayData::builder(T::get_data_type())
         .len(len)
         .add_buffer(Buffer::from(values.to_byte_slice()));
 
-    if null_count > 0 {
-        let null_bit_buffer =
-            null_bit_buffer.expect("implementation error. Should not be None if null_count > 0");
-        debug_assert!(null_count == len - bit_util::count_set_bits(null_bit_buffer.data()));
-        builder = builder
-            .null_count(null_count)
-            .null_bit_buffer(null_bit_buffer);
-    }
-
+    let builder = set_null_bits(builder, null_bit_buffer, null_count, len);
     let data = builder.build();
     PrimitiveArray::<T>::from(data)
 }
@@ -252,20 +258,11 @@ pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
 
     let buffer = unsafe { Buffer::from_raw_parts(ptr, len, capacity) };
 
-    let mut builder = ArrayData::builder(T::get_data_type())
+    let builder = ArrayData::builder(T::get_data_type())
         .len(vec_len)
         .add_buffer(buffer);
 
-    // TODO: dry
-    if null_count > 0 {
-        let null_bit_buffer =
-            null_bit_buffer.expect("implementation error. Should not be None if null_count > 0");
-        debug_assert!(null_count == vec_len - bit_util::count_set_bits(null_bit_buffer.data()));
-        builder = builder
-            .null_count(null_count)
-            .null_bit_buffer(null_bit_buffer);
-    }
-
+    let builder = set_null_bits(builder, null_bit_buffer, null_count, vec_len);
     let data = builder.build();
 
     PrimitiveArray::<T>::from(data)
@@ -377,9 +374,60 @@ where
     }
 }
 
+pub trait FromTime<T, N> {
+    fn new_from_naivetime(name: &str, v: &[N]) -> Self;
+
+    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self;
+}
+
+fn parse_from_str(s: &str, fmt: &str) -> Option<NaiveTime> {
+    NaiveTime::parse_from_str(s, fmt).ok()
+}
+
+macro_rules! impl_from_time {
+    ($arrowtype:ident, $chunkedtype:ident, $func:ident) => {
+        impl FromTime<$arrowtype, NaiveTime> for $chunkedtype {
+            fn new_from_naivetime(name: &str, v: &[NaiveTime]) -> Self {
+                let unit = v.iter().map(temporal::$func).collect::<AlignedVec<_>>();
+                ChunkedArray::new_from_aligned_vec(name, unit)
+            }
+
+            fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
+                ChunkedArray::new_from_opt_iter(
+                    name,
+                    v.iter()
+                        .map(|s| parse_from_str(s, fmt).as_ref().map(temporal::$func)),
+                )
+            }
+        }
+    };
+}
+
+impl_from_time!(
+    Time64NanosecondType,
+    Time64NanosecondChunked,
+    naivetime_to_time64_nanoseconds
+);
+impl_from_time!(
+    Time64MicrosecondType,
+    Time64MicrosecondChunked,
+    naivetime_to_time64_microseconds
+);
+impl_from_time!(
+    Time32MillisecondType,
+    Time32MillisecondChunked,
+    naivetime_to_time32_milliseconds
+);
+impl_from_time!(
+    Time32SecondType,
+    Time32SecondChunked,
+    naivetime_to_time32_seconds
+);
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use chrono::NaiveTime;
 
     #[test]
     fn test_existing_null_bitmap() {
@@ -408,5 +456,22 @@ mod test {
         assert_eq!((ptr as usize) % 64, 0);
         let a = aligned_vec_to_primitive_array::<Int32Type>(AlignedVec::new(v).unwrap(), None, 0);
         assert_eq!(a.value_slice(0, 2), &[1, 2])
+    }
+
+    #[test]
+    fn from_time() {
+        let times: Vec<_> = ["23:56:04", "00:00:00"]
+            .iter()
+            .map(|s| NaiveTime::parse_from_str(s, "%H:%M:%S").unwrap())
+            .collect();
+        let t = Time64NanosecondChunked::new_from_naivetime("times", &times);
+        // NOTE: the values are checked and correct.
+        assert_eq!([86164000000000, 0], t.cont_slice().unwrap());
+        let t = Time64MicrosecondChunked::new_from_naivetime("times", &times);
+        assert_eq!([86164000000, 0], t.cont_slice().unwrap());
+        let t = Time32MillisecondChunked::new_from_naivetime("times", &times);
+        assert_eq!([86164000, 0], t.cont_slice().unwrap());
+        let t = Time32SecondChunked::new_from_naivetime("times", &times);
+        assert_eq!([86164, 0], t.cont_slice().unwrap());
     }
 }

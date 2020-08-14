@@ -4,7 +4,7 @@ use crate::chunked_array::builder::{
     PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::{get_iter_capacity, Xob};
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
@@ -729,25 +729,7 @@ where
     {
         self.chunks.extend(other.chunks.clone())
     }
-}
 
-impl Utf8Chunked {
-    #[deprecated(since = "3.1", note = "Use `new_from_slice`")]
-    pub fn new_utf8_from_slice<S: AsRef<str>>(name: &str, v: &[S]) -> Self {
-        Utf8Chunked::new_from_slice(name, v)
-    }
-
-    #[deprecated(since = "3.1", note = "Use `new_from_opt_slice`")]
-    pub fn new_utf8_from_opt_slice<S: AsRef<str>>(name: &str, opt_v: &[Option<S>]) -> Self {
-        Utf8Chunked::new_from_opt_slice(name, opt_v)
-    }
-}
-
-impl<T> ChunkedArray<T>
-where
-    T: datatypes::PolarsDataType,
-    ChunkedArray<T>: ChunkOps,
-{
     /// Name of the ChunkedArray.
     pub fn name(&self) -> &str {
         self.field.name()
@@ -784,10 +766,45 @@ where
     }
 }
 
+impl Utf8Chunked {
+    #[deprecated(since = "3.1", note = "Use `new_from_slice`")]
+    pub fn new_utf8_from_slice<S: AsRef<str>>(name: &str, v: &[S]) -> Self {
+        Utf8Chunked::new_from_slice(name, v)
+    }
+
+    #[deprecated(since = "3.1", note = "Use `new_from_opt_slice`")]
+    pub fn new_utf8_from_opt_slice<S: AsRef<str>>(name: &str, opt_v: &[Option<S>]) -> Self {
+        Utf8Chunked::new_from_opt_slice(name, opt_v)
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
+    /// Create a new ChunkedArray from an iterator.
+    pub fn new_from_opt_iter(
+        name: &str,
+        it: impl Iterator<Item = Option<T::Native>>,
+    ) -> ChunkedArray<T> {
+        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|opt| builder.append_option(opt));
+        builder.finish()
+    }
+
+    /// Create a new ChunkedArray from an iterator.
+    pub fn new_from_iter(name: &str, it: impl Iterator<Item = T::Native>) -> ChunkedArray<T> {
+        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|opt| builder.append_value(opt));
+        builder.finish()
+    }
+
+    /// Create a new ChunkedArray by taking ownershipt of the AlignedVec. This operation is zero copy.
+    pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
+        let arr = aligned_vec_to_primitive_array::<T>(v, None, 0);
+        Self::new_from_chunks(name, vec![Arc::new(arr)])
+    }
+
     /// Nullify values in slice with an existing null bitmap
     pub fn new_with_null_bitmap(
         name: &str,

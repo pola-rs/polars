@@ -1,4 +1,4 @@
-use chrono::{NaiveDateTime, NaiveTime};
+use chrono::{NaiveDateTime, NaiveTime, Timelike};
 
 // Conversion extracted from:
 // https://docs.rs/arrow/1.0.0/src/arrow/array/array.rs.html#589
@@ -34,6 +34,33 @@ pub fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
     )
 }
 
+pub fn naivetime_to_time64_nanoseconds(v: &NaiveTime) -> i64 {
+    // 3600 seconds in an hour
+    v.hour() as i64 * 3600 * NANOSECONDS_IN_SECOND
+        // 60 seconds in a minute
+        + v.minute() as i64 * 60 * NANOSECONDS_IN_SECOND
+        + v.second() as i64 * NANOSECONDS_IN_SECOND
+        + v.nanosecond() as i64
+}
+
+pub fn naivetime_to_time64_microseconds(v: &NaiveTime) -> i64 {
+    v.hour() as i64 * 3600 * MICROSECONDS_IN_SECOND
+        + v.minute() as i64 * 60 * MICROSECONDS_IN_SECOND
+        + v.second() as i64 * MICROSECONDS_IN_SECOND
+        + v.nanosecond() as i64 / 1000
+}
+
+pub fn naivetime_to_time32_milliseconds(v: &NaiveTime) -> i32 {
+    v.hour() as i32 * 3600 * MILLISECONDS_IN_SECOND as i32
+        + v.minute() as i32 * 60 * MILLISECONDS_IN_SECOND as i32
+        + v.second() as i32 * MILLISECONDS_IN_SECOND as i32
+        + v.nanosecond() as i32 / 1000_000
+}
+
+pub fn naivetime_to_time32_seconds(v: &NaiveTime) -> i32 {
+    v.hour() as i32 * 3600 + v.minute() as i32 * 60 + v.second() as i32 + v.nanosecond() as i32
+}
+
 pub fn time64_microsecond_as_time(v: i64) -> NaiveTime {
     NaiveTime::from_num_seconds_from_midnight(
         // extract seconds from microseconds
@@ -57,4 +84,8 @@ pub fn time32_millisecond_as_time(v: i32) -> NaiveTime {
         // nanoseconds
         v % MILLISECONDS_IN_SECOND as u32 * MICROSECONDS_IN_SECOND as u32,
     )
+}
+
+pub fn unix_time() -> NaiveDateTime {
+    NaiveDateTime::from_timestamp(0, 0)
 }

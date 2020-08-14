@@ -58,8 +58,7 @@ where
             Err(_) => fill_set(self.into_iter(), self.len()),
         };
 
-        let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
-        builder.new_from_iter(set.iter().copied())
+        Self::new_from_opt_iter(self.name(), set.iter().copied())
     }
 
     fn arg_unique(&self) -> Vec<usize> {
@@ -125,15 +124,18 @@ where
             ),
         };
 
-        let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
-        builder.new_from_iter(set.iter().copied().map(|opt| match opt {
-            Some((mantissa, exponent, sign)) => {
-                let flt = floating_encode_f64(mantissa, exponent, sign);
-                let val: T::Native = NumCast::from(flt).unwrap();
-                Some(val)
-            }
-            None => None,
-        }))
+        // let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
+        ChunkedArray::new_from_opt_iter(
+            self.name(),
+            set.iter().copied().map(|opt| match opt {
+                Some((mantissa, exponent, sign)) => {
+                    let flt = floating_encode_f64(mantissa, exponent, sign);
+                    let val: T::Native = NumCast::from(flt).unwrap();
+                    Some(val)
+                }
+                None => None,
+            }),
+        )
     }
 
     fn arg_unique(&self) -> Vec<usize> {

@@ -1,5 +1,6 @@
 //! Implementations of upstream traits for ChunkedArray<T>
 use crate::prelude::*;
+use crate::utils::get_iter_capacity;
 use crate::utils::Xob;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
@@ -7,14 +8,6 @@ use std::collections::LinkedList;
 use std::iter::FromIterator;
 
 /// FromIterator trait
-
-fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
-    match iter.size_hint() {
-        (_lower, Some(upper)) => upper,
-        (0, None) => 1024,
-        (lower, None) => lower,
-    }
-}
 
 impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
 where

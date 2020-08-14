@@ -63,3 +63,11 @@ impl<T> DerefMut for Xob<T> {
         &mut self.inner
     }
 }
+
+pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
+    match iter.size_hint() {
+        (_lower, Some(upper)) => upper,
+        (0, None) => 1024,
+        (lower, None) => lower,
+    }
+}
