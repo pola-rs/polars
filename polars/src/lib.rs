@@ -134,6 +134,7 @@
 //! * [DataFrame](frame/struct.DataFrame.html)
 //! * [Series](series/enum.Series.html)
 //! * [ChunkedArray](chunked_array/struct.ChunkedArray.html)
+//! * [Time/ DateTime utilities](doc/time/index.html)
 //!
 //! ## Features
 //!

@@ -307,6 +307,5 @@ where
         vec
     }
 }
-
 // TODO: macro implementation of Vec From for all types. ChunkedArray<T> (no reference) doesn't implement
 //    &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,

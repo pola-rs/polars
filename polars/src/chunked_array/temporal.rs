@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use chrono::{NaiveDateTime, NaiveTime, Timelike};
 
 // Conversion extracted from:
@@ -89,3 +90,26 @@ pub fn time32_millisecond_as_time(v: i32) -> NaiveTime {
 pub fn unix_time() -> NaiveDateTime {
     NaiveDateTime::from_timestamp(0, 0)
 }
+
+pub trait AsNaiveTime {
+    fn as_naivetime(&self) -> Vec<Option<NaiveTime>>;
+}
+
+macro_rules! impl_as_naivetime {
+    ($ca:ty, $fun:ident) => {
+        impl AsNaiveTime for $ca {
+            fn as_naivetime(&self) -> Vec<Option<NaiveTime>> {
+                self.into_iter().map(|opt_t| opt_t.map($fun)).collect()
+            }
+        }
+    };
+}
+
+impl_as_naivetime!(Time32SecondChunked, time32_second_as_time);
+impl_as_naivetime!(&Time32SecondChunked, time32_second_as_time);
+impl_as_naivetime!(Time32MillisecondChunked, time32_millisecond_as_time);
+impl_as_naivetime!(&Time32MillisecondChunked, time32_millisecond_as_time);
+impl_as_naivetime!(Time64NanosecondChunked, time64_nanosecond_as_time);
+impl_as_naivetime!(&Time64NanosecondChunked, time64_nanosecond_as_time);
+impl_as_naivetime!(Time64MicrosecondChunked, time64_microsecond_as_time);
+impl_as_naivetime!(&Time64MicrosecondChunked, time64_microsecond_as_time);
