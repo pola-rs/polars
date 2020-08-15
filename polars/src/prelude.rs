@@ -5,8 +5,7 @@ pub use crate::{
         apply::Apply,
         arithmetic::Pow,
         builder::{
-            AlignedAlloc, AlignedVec, FromTime, NewChunkedArray, PrimitiveChunkedBuilder,
-            Utf8ChunkedBuilder,
+            AlignedAlloc, AlignedVec, NewChunkedArray, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
         cast::ChunkCast,
         chunkops::ChunkOps,
@@ -15,7 +14,7 @@ pub use crate::{
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
         },
-        temporal::AsNaiveTime,
+        temporal::{AsNaiveTime, FromNaiveTime},
         unique::Unique,
         ChunkSort, ChunkedArray, Downcast, Reverse,
     },

@@ -17,13 +17,13 @@
 //! use polars::prelude::*;;
 //!
 //! // We can create a ChunkedArray from NaiveTime objects
-//! fn from_naivetime_to_time32(time_values: &[NaiveTime]) -> Time32SecondChunked {
-//!     Time32SecondChunked::new_from_naivetime("name", time_values)
+//! fn from_naive_time_to_time32(time_values: &[NaiveTime]) -> Time32SecondChunked {
+//!     Time32SecondChunked::new_from_naive_time("name", time_values)
 //! }
 //!
 //! // Or from a ChunkedArray to NaiveTime objects
-//! fn from_time32_to_naivetime(ca: &Time32SecondChunked) -> Vec<Option<NaiveTime>> {
-//!     ca.as_naivetime()
+//! fn from_time32_to_naive_time(ca: &Time32SecondChunked) -> Vec<Option<NaiveTime>> {
+//!     ca.as_naive_time()
 //! }
 //! ```
 //!
@@ -48,7 +48,7 @@
 //! let ca = Time64NanosecondChunked::parse_from_str_slice("name", time_values, fmt);
 //!
 //! // Assert that we've got a ChunkedArray with a single None value.
-//! assert_eq!(ca.as_naivetime(),
+//! assert_eq!(ca.as_naive_time(),
 //!     &[NaiveTime::parse_from_str(time_values[0], fmt).ok(),
 //!     None,
 //!     NaiveTime::parse_from_str(time_values[2], fmt).ok()]);
