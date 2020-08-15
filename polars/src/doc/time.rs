@@ -5,10 +5,17 @@
 //! a duration in seconds since the *Unix Epoch: 00:00:00 1 january 1970*.
 //!
 //! ## Chrono
-//! I can image that thinking of an integer isn't most intuitive when dealing with dates and times.
+//! I can imagine that integer values aren't the most intuitive when dealing with dates and times.
 //! For this reason, Polars supports conversion from **chrono's** [NaiveTime](https://docs.rs/chrono/0.4.13/chrono/naive/struct.NaiveTime.html)
 //! and [NaiveDate](https://docs.rs/chrono/0.4.13/chrono/naive/struct.NaiveDate.html) structs to
 //! Polars and vice versa.
+//!
+//! `ChunkedArray<T>`'s initialization is represented by the the following traits:
+//! * [FromNaiveTime](../../chunked_array/temporal/trait.FromNaiveTime.html)
+//! * [FromNaiveDateTime](../../chunked_array/temporal/trait.FromNaiveDateTime.html)
+//!
+//! To cast a `ChunkedArray<T>` to a `Vec<NaiveTime>` or a `Vec<NaiveDateTime>` see:
+//! * [AsNaiveTime](../../chunked_array/temporal/trait.AsNaiveTime.html)
 //!
 //! ### Example
 //!
@@ -34,7 +41,7 @@
 //! under the hood. So look there for the different formatting options. If the string parsing is not
 //! succesful, the value will be `None`.
 //!
-//! ## Example
+//! ### Example
 //!
 //! ```rust
 //! use polars::prelude::*;
@@ -54,16 +61,22 @@
 //!     NaiveTime::parse_from_str(time_values[2], fmt).ok()]);
 //! ```
 //!
-//! ## Time Data Types
+//! ## Temporal Data Types
 //! Polars supports all the time datatypes supported by Apache Arrow. These store the time values in
 //! different precisions and bytes:
 //!
+//! ### Time
 //! * **Time64NanosecondChunked**
-//!     - A ChunkedArray which store time with nanosecond precision as 64 bit integer.
+//!     - A ChunkedArray which stores time with nanosecond precision as 64 bit signed integer.
 //! * **Time64MicrosecondChunked**
-//!     - A ChunkedArray which store time with microsecond precision as 64 bit integer.
+//!     - A ChunkedArray which stores time with microsecond precision as 64 bit signed integer.
 //! * **Time32MillisecondChunked**
-//!     - A ChunkedArray which store time with millisecond precision as 32 bit integer.
+//!     - A ChunkedArray which stores time with millisecond precision as 32 bit signed integer.
 //! * **Time32SecondChunked**
-//!     - A ChunkedArray which store time with second precision as 32 bit integer.
+//!     - A ChunkedArray which stores time with second precision as 32 bit signed integer.
 //!
+//! ### Date
+//! * **Date32Chunked**
+//!     - A ChunkedArray storing the elapsed days since the Unix Epoch as 32 bit signed integer.
+//! * **Date64Chunked**
+//!     - A ChunkedArray storing the elapsed milliseconds since the Unix Epoch as 64 bit signed integer.

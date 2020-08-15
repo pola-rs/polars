@@ -14,7 +14,7 @@ pub use crate::{
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
         },
-        temporal::{AsNaiveTime, FromNaiveTime},
+        temporal::{AsNaiveTime, FromNaiveDateTime, FromNaiveTime},
         unique::Unique,
         ChunkSort, ChunkedArray, Downcast, Reverse,
     },

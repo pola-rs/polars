@@ -1,3 +1,4 @@
+//! Traits and utilities for temporal data.
 use crate::prelude::*;
 use chrono::{NaiveDateTime, NaiveTime, Timelike};
 
@@ -26,13 +27,15 @@ pub fn date64_as_datetime(v: i64) -> NaiveDateTime {
     )
 }
 
-pub fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
-    NaiveTime::from_num_seconds_from_midnight(
-        // extract seconds from nanoseconds
-        (v / NANOSECONDS_IN_SECOND) as u32,
-        // discard extracted seconds
-        (v % NANOSECONDS_IN_SECOND) as u32,
-    )
+// date32 is number of days since the Unix Epoch
+pub fn naive_datetime_to_date32(v: &NaiveDateTime) -> i32 {
+    // 86400 seconds in a day
+    (v.timestamp() / 86400 as i64) as i32
+}
+
+// date64 is number of milliseconds since the Unix Epoch
+pub fn naive_datetime_to_date64(v: &NaiveDateTime) -> i64 {
+    v.timestamp_millis()
 }
 
 pub fn naive_time_to_time64_nanoseconds(v: &NaiveTime) -> i64 {
@@ -60,6 +63,14 @@ pub fn naive_time_to_time32_milliseconds(v: &NaiveTime) -> i32 {
 
 pub fn naive_time_to_time32_seconds(v: &NaiveTime) -> i32 {
     v.hour() as i32 * 3600 + v.minute() as i32 * 60 + v.second() as i32 + v.nanosecond() as i32
+}
+pub fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
+    NaiveTime::from_num_seconds_from_midnight(
+        // extract seconds from nanoseconds
+        (v / NANOSECONDS_IN_SECOND) as u32,
+        // discard extracted seconds
+        (v % NANOSECONDS_IN_SECOND) as u32,
+    )
 }
 
 pub fn time64_microsecond_as_time(v: i64) -> NaiveTime {
@@ -97,7 +108,7 @@ pub trait FromNaiveTime<T, N> {
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self;
 }
 
-fn parse_from_str(s: &str, fmt: &str) -> Option<NaiveTime> {
+fn parse_naive_time_from_str(s: &str, fmt: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s, fmt).ok()
 }
 
@@ -112,7 +123,8 @@ macro_rules! impl_from_naive_time {
             fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
                 ChunkedArray::new_from_opt_iter(
                     name,
-                    v.iter().map(|s| parse_from_str(s, fmt).as_ref().map($func)),
+                    v.iter()
+                        .map(|s| parse_naive_time_from_str(s, fmt).as_ref().map($func)),
                 )
             }
         }
@@ -163,10 +175,42 @@ impl_as_naivetime!(&Time64NanosecondChunked, time64_nanosecond_as_time);
 impl_as_naivetime!(Time64MicrosecondChunked, time64_microsecond_as_time);
 impl_as_naivetime!(&Time64MicrosecondChunked, time64_microsecond_as_time);
 
+fn parse_naive_datetime_from_str(s: &str, fmt: &str) -> Option<NaiveDateTime> {
+    NaiveDateTime::parse_from_str(s, fmt).ok()
+}
+
+pub trait FromNaiveDateTime<T, N> {
+    fn new_from_naive_datetime(name: &str, v: &[N]) -> Self;
+
+    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self;
+}
+
+macro_rules! impl_from_naive_datetime {
+    ($arrowtype:ident, $chunkedtype:ident, $func:ident) => {
+        impl FromNaiveDateTime<$arrowtype, NaiveDateTime> for $chunkedtype {
+            fn new_from_naive_datetime(name: &str, v: &[NaiveDateTime]) -> Self {
+                let unit = v.iter().map($func).collect::<AlignedVec<_>>();
+                ChunkedArray::new_from_aligned_vec(name, unit)
+            }
+
+            fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
+                ChunkedArray::new_from_opt_iter(
+                    name,
+                    v.iter()
+                        .map(|s| parse_naive_datetime_from_str(s, fmt).as_ref().map($func)),
+                )
+            }
+        }
+    };
+}
+
+impl_from_naive_datetime!(Date32Type, Date32Chunked, naive_datetime_to_date32);
+impl_from_naive_datetime!(Date64Type, Date64Chunked, naive_datetime_to_date64);
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use chrono::NaiveTime;
+    use chrono::{NaiveDateTime, NaiveTime};
 
     #[test]
     fn from_time() {
@@ -183,5 +227,26 @@ mod test {
         assert_eq!([86164000, 0], t.cont_slice().unwrap());
         let t = Time32SecondChunked::new_from_naive_time("times", &times);
         assert_eq!([86164, 0], t.cont_slice().unwrap());
+    }
+
+    #[test]
+    fn from_datetime() {
+        let datetimes: Vec<_> = [
+            "1988-08-25 00:00:16",
+            "2015-09-05 23:56:04",
+            "2012-12-21 00:00:00",
+        ]
+        .iter()
+        .map(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap())
+        .collect();
+
+        // NOTE: the values are checked and correct.
+        let dt = Date32Chunked::new_from_naive_datetime("name", &datetimes);
+        assert_eq!([6811, 16683, 15695], dt.cont_slice().unwrap());
+        let dt = Date64Chunked::new_from_naive_datetime("name", &datetimes);
+        assert_eq!(
+            [588470416000, 1441497364000, 1356048000000],
+            dt.cont_slice().unwrap()
+        );
     }
 }
