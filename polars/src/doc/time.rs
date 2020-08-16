@@ -54,7 +54,7 @@
 //! // Parsing fmt
 //! let fmt = "%H:%M:%S";
 //! // Create the ChunkedArray
-//! let ca = Time64NanosecondChunked::parse_from_str_slice("name", time_values, fmt);
+//! let ca = Time64NanosecondChunked::parse_from_str_slice("Time as ns since midnight", time_values, fmt);
 //!
 //! // Assert that we've got a ChunkedArray with a single None value.
 //! assert_eq!(ca.as_naive_time(),
@@ -78,10 +78,21 @@
 //! let fmt = "%Y-%m-%d %H:%M:%S";
 //!
 //! // Create the ChunkedArray
-//! let ca = Date32Chunked::parse_from_str_slice("name", datetime_values, fmt);
+//! let ca = TimestampSecondChunked::parse_from_str_slice("datetime as s since Epoch", datetime_values, fmt);
 //!
 //! // Or collect into a Vec<NaiveDateTime>
 //! let vec = ca.as_naive_datetime();
+//!
+//! // We could also parse these datetime strings as the following data types:
+//!
+//! // date and time timestamps in different precisions
+//! let ca = TimestampNanosecondChunked::parse_from_str_slice("datetime as ns since Epoch", datetime_values, fmt);
+//! let ca = TimestampMicrosecondChunked::parse_from_str_slice("datetime as μs since Epoch", datetime_values, fmt);
+//! let ca = TimestampMillisecondChunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt);
+//!
+//! // or dates in different precisions (days and milliseconds)
+//! let ca = Date32Chunked::parse_from_str_slice("date as days since Epoch", datetime_values, fmt);
+//! let ca = Date64Chunked::parse_from_str_slice("date as ms since Epoch", datetime_values, fmt);
 //! ```
 //!
 //! ## Temporal Data Types
@@ -100,6 +111,16 @@
 //!
 //! ### Date
 //! * **Date32Chunked**
-//!     - A ChunkedArray storing the elapsed days since the Unix Epoch as 32 bit signed integer.
+//!     - A ChunkedArray storing the date as elapsed days since the Unix Epoch as 32 bit signed integer.
 //! * **Date64Chunked**
-//!     - A ChunkedArray storing the elapsed milliseconds since the Unix Epoch as 64 bit signed integer.
+//!     - A ChunkedArray storing the date as elapsed milliseconds since the Unix Epoch as 64 bit signed integer.
+//!
+//! ### DateTime
+//! * **TimestampNanosecondChunked**
+//!     - A ChunkedArray storing the date and time as elapsed nanoseconds since the Unix Epoch as 64 bit signed integer.
+//! * **TimestampMicrosecondChunked**
+//!     - A ChunkedArray storing the date and time as elapsed microseconds since the Unix Epoch as 64 bit signed integer.
+//! * **TimestampMillisecondChunked**
+//!     - A ChunkedArray storing the date and time as elapsed milliseconds since the Unix Epoch as 64 bit signed integer.
+//! * **TimestampSecondChunked**
+//!     - A ChunkedArray storing the date and time as elapsed seconds since the Unix Epoch as 64 bit signed integer.

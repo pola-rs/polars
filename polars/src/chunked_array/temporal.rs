@@ -14,11 +14,11 @@ const MICROSECONDS_IN_SECOND: i64 = 1_000_000;
 /// Number of nanoseconds in a second
 const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 
-pub fn date32_as_datetime(v: i32) -> NaiveDateTime {
+pub(crate) fn date32_as_datetime(v: i32) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(v as i64 * SECONDS_IN_DAY, 0)
 }
 
-pub fn date64_as_datetime(v: i64) -> NaiveDateTime {
+pub(crate) fn date64_as_datetime(v: i64) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(
         // extract seconds from milliseconds
         v / MILLISECONDS_IN_SECOND,
@@ -27,7 +27,7 @@ pub fn date64_as_datetime(v: i64) -> NaiveDateTime {
     )
 }
 
-pub fn timestamp_nanoseconds_as_datetime(v: i64) -> NaiveDateTime {
+pub(crate) fn timestamp_nanoseconds_as_datetime(v: i64) -> NaiveDateTime {
     // some nanoseconds will be truncated down as integer division rounds downwards
     let seconds = v / 1_000_000_000;
     // we can use that to compute the remaining nanoseconds
@@ -36,7 +36,7 @@ pub fn timestamp_nanoseconds_as_datetime(v: i64) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(seconds, nanoseconds)
 }
 
-pub fn timestamp_microseconds_as_datetime(v: i64) -> NaiveDateTime {
+pub(crate) fn timestamp_microseconds_as_datetime(v: i64) -> NaiveDateTime {
     // see nanoseconds for the logic
     let seconds = v / 1_000_000;
     let microseconds = (v - (seconds * 1_000_000)) as u32;
@@ -44,7 +44,7 @@ pub fn timestamp_microseconds_as_datetime(v: i64) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(seconds, microseconds)
 }
 
-pub fn timestamp_milliseconds_as_datetime(v: i64) -> NaiveDateTime {
+pub(crate) fn timestamp_milliseconds_as_datetime(v: i64) -> NaiveDateTime {
     // see nanoseconds for the logic
     let seconds = v / 1000;
     let milliseconds = (v - (seconds * 1000)) as u32;
@@ -52,22 +52,38 @@ pub fn timestamp_milliseconds_as_datetime(v: i64) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(seconds, milliseconds)
 }
 
-pub fn timestamp_seconds_as_datetime(seconds: i64) -> NaiveDateTime {
+pub(crate) fn timestamp_seconds_as_datetime(seconds: i64) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(seconds, 0)
 }
 
 // date32 is number of days since the Unix Epoch
-pub fn naive_datetime_to_date32(v: &NaiveDateTime) -> i32 {
+pub(crate) fn naive_datetime_to_date32(v: &NaiveDateTime) -> i32 {
     // 86400 seconds in a day
     (v.timestamp() / 86400 as i64) as i32
 }
 
 // date64 is number of milliseconds since the Unix Epoch
-pub fn naive_datetime_to_date64(v: &NaiveDateTime) -> i64 {
+pub(crate) fn naive_datetime_to_date64(v: &NaiveDateTime) -> i64 {
     v.timestamp_millis()
 }
 
-pub fn naive_time_to_time64_nanoseconds(v: &NaiveTime) -> i64 {
+pub(crate) fn naive_datetime_to_timestamp_nanoseconds(v: &NaiveDateTime) -> i64 {
+    v.timestamp_nanos()
+}
+
+pub(crate) fn naive_datetime_to_timestamp_microseconds(v: &NaiveDateTime) -> i64 {
+    v.timestamp() * 1_000_000 + v.timestamp_subsec_micros() as i64
+}
+
+pub(crate) fn naive_datetime_to_timestamp_milliseconds(v: &NaiveDateTime) -> i64 {
+    v.timestamp_millis()
+}
+
+pub(crate) fn naive_datetime_to_timestamp_seconds(v: &NaiveDateTime) -> i64 {
+    v.timestamp()
+}
+
+pub(crate) fn naive_time_to_time64_nanoseconds(v: &NaiveTime) -> i64 {
     // 3600 seconds in an hour
     v.hour() as i64 * 3600 * NANOSECONDS_IN_SECOND
         // 60 seconds in a minute
@@ -76,24 +92,24 @@ pub fn naive_time_to_time64_nanoseconds(v: &NaiveTime) -> i64 {
         + v.nanosecond() as i64
 }
 
-pub fn naive_time_to_time64_microseconds(v: &NaiveTime) -> i64 {
+pub(crate) fn naive_time_to_time64_microseconds(v: &NaiveTime) -> i64 {
     v.hour() as i64 * 3600 * MICROSECONDS_IN_SECOND
         + v.minute() as i64 * 60 * MICROSECONDS_IN_SECOND
         + v.second() as i64 * MICROSECONDS_IN_SECOND
         + v.nanosecond() as i64 / 1000
 }
 
-pub fn naive_time_to_time32_milliseconds(v: &NaiveTime) -> i32 {
+pub(crate) fn naive_time_to_time32_milliseconds(v: &NaiveTime) -> i32 {
     v.hour() as i32 * 3600 * MILLISECONDS_IN_SECOND as i32
         + v.minute() as i32 * 60 * MILLISECONDS_IN_SECOND as i32
         + v.second() as i32 * MILLISECONDS_IN_SECOND as i32
         + v.nanosecond() as i32 / 1000_000
 }
 
-pub fn naive_time_to_time32_seconds(v: &NaiveTime) -> i32 {
+pub(crate) fn naive_time_to_time32_seconds(v: &NaiveTime) -> i32 {
     v.hour() as i32 * 3600 + v.minute() as i32 * 60 + v.second() as i32 + v.nanosecond() as i32
 }
-pub fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
+pub(crate) fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
     NaiveTime::from_num_seconds_from_midnight(
         // extract seconds from nanoseconds
         (v / NANOSECONDS_IN_SECOND) as u32,
@@ -102,7 +118,7 @@ pub fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
     )
 }
 
-pub fn time64_microsecond_as_time(v: i64) -> NaiveTime {
+pub(crate) fn time64_microsecond_as_time(v: i64) -> NaiveTime {
     NaiveTime::from_num_seconds_from_midnight(
         // extract seconds from microseconds
         (v / MICROSECONDS_IN_SECOND) as u32,
@@ -112,11 +128,11 @@ pub fn time64_microsecond_as_time(v: i64) -> NaiveTime {
     )
 }
 
-pub fn time32_second_as_time(v: i32) -> NaiveTime {
+pub(crate) fn time32_second_as_time(v: i32) -> NaiveTime {
     NaiveTime::from_num_seconds_from_midnight(v as u32, 0)
 }
 
-pub fn time32_millisecond_as_time(v: i32) -> NaiveTime {
+pub(crate) fn time32_millisecond_as_time(v: i32) -> NaiveTime {
     let v = v as u32;
     NaiveTime::from_num_seconds_from_midnight(
         // extract seconds from milliseconds
@@ -231,6 +247,26 @@ macro_rules! impl_from_naive_datetime {
 
 impl_from_naive_datetime!(Date32Type, Date32Chunked, naive_datetime_to_date32);
 impl_from_naive_datetime!(Date64Type, Date64Chunked, naive_datetime_to_date64);
+impl_from_naive_datetime!(
+    TimestampNanosecondType,
+    TimestampNanosecondChunked,
+    naive_datetime_to_timestamp_nanoseconds
+);
+impl_from_naive_datetime!(
+    TimestampMicrosecondType,
+    TimestampMicrosecondChunked,
+    naive_datetime_to_timestamp_microseconds
+);
+impl_from_naive_datetime!(
+    TimestampMillisecondType,
+    TimestampMillisecondChunked,
+    naive_datetime_to_timestamp_milliseconds
+);
+impl_from_naive_datetime!(
+    TimestampSecondType,
+    TimestampSecondChunked,
+    naive_datetime_to_timestamp_seconds
+);
 
 pub trait AsNaiveDateTime {
     fn as_naive_datetime(&self) -> Vec<Option<NaiveDateTime>>;
@@ -248,6 +284,19 @@ macro_rules! impl_as_naive_datetime {
 
 impl_as_naive_datetime!(Date32Chunked, date32_as_datetime);
 impl_as_naive_datetime!(Date64Chunked, date64_as_datetime);
+impl_as_naive_datetime!(
+    TimestampNanosecondChunked,
+    timestamp_nanoseconds_as_datetime
+);
+impl_as_naive_datetime!(
+    TimestampMicrosecondChunked,
+    timestamp_microseconds_as_datetime
+);
+impl_as_naive_datetime!(
+    TimestampMillisecondChunked,
+    timestamp_milliseconds_as_datetime
+);
+impl_as_naive_datetime!(TimestampSecondChunked, timestamp_seconds_as_datetime);
 
 #[cfg(all(test, feature = "temporal"))]
 mod test {
@@ -288,6 +337,26 @@ mod test {
         let dt = Date64Chunked::new_from_naive_datetime("name", &datetimes);
         assert_eq!(
             [588470416000, 1441497364000, 1356048000000],
+            dt.cont_slice().unwrap()
+        );
+        let dt = TimestampNanosecondChunked::new_from_naive_datetime("name", &datetimes);
+        assert_eq!(
+            [588470416000000000, 1441497364000000000, 1356048000000000000],
+            dt.cont_slice().unwrap()
+        );
+        let dt = TimestampMicrosecondChunked::new_from_naive_datetime("name", &datetimes);
+        assert_eq!(
+            [588470416000000, 1441497364000000, 1356048000000000],
+            dt.cont_slice().unwrap()
+        );
+        let dt = TimestampMillisecondChunked::new_from_naive_datetime("name", &datetimes);
+        assert_eq!(
+            [588470416000, 1441497364000, 1356048000000],
+            dt.cont_slice().unwrap()
+        );
+        let dt = TimestampSecondChunked::new_from_naive_datetime("name", &datetimes);
+        assert_eq!(
+            [588470416, 1441497364, 1356048000],
             dt.cont_slice().unwrap()
         );
     }
