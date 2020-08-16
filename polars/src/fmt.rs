@@ -171,29 +171,10 @@ impl Display for DataFrame {
 #[cfg(not(feature = "pretty"))]
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for field in self.schema().fields() {
-            write!(f, "{:>15}", field.name())?;
-        }
-        write!(f, "\n")?;
-        for field in self.schema().fields() {
-            write!(f, "{:>15}", field.data_type().to_str())?;
-        }
-        write!(f, "\n")?;
-        for _ in self.schema().fields() {
-            write!(f, "{:>15}", "---")?;
-        }
-        write!(f, "\n\n")?;
-
-        for i in 0..10 {
-            let opt = self.get(i);
-            if let Some(row) = opt {
-                for v in row {
-                    write!(f, "{}", v)?;
-                }
-                write!(f, "\n")?;
-            }
-        }
-        Ok(())
+        write!(
+            f,
+            "DataFrame. NOTE: compile with the feature 'pretty' for pretty printing."
+        )
     }
 }
 
@@ -219,65 +200,7 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
 #[cfg(not(feature = "pretty"))]
 impl Display for AnyType<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let width = 15;
-        match self {
-            AnyType::Null => write!(f, "{:>width$}", "null", width = width),
-            AnyType::UInt8(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::UInt16(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::UInt32(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::UInt64(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::Int8(v) => fmt_integer(f, width, *v),
-            AnyType::Int16(v) => fmt_integer(f, width, *v),
-            AnyType::Int32(v) => fmt_integer(f, width, *v),
-            AnyType::Int64(v) => fmt_integer(f, width, *v),
-            AnyType::Float32(v) => fmt_float(f, width, *v),
-            AnyType::Float64(v) => fmt_float(f, width, *v),
-            AnyType::Boolean(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::Utf8(v) => write!(f, "{:>width$}", format!("\"{}\"", v), width = width),
-            AnyType::Date32(v) => write!(
-                f,
-                "{:>width$}",
-                date32_as_datetime(*v).date(),
-                width = width
-            ),
-            AnyType::Date64(v) => {
-                write!(f, "{:>width$}", date64_as_datetime(*v), width = width).date()
-            }
-            AnyType::Time32(v, TimeUnit::Millisecond) => write!(
-                f,
-                "{:>width$}",
-                time32_millisecond_as_time(*v),
-                width = width
-            ),
-            AnyType::Time32(v, TimeUnit::Second) => {
-                write!(f, "{:>width$}", time32_second_as_time(*v), width = width)
-            }
-            AnyType::Time64(v, TimeUnit::Nanosecond) => write!(
-                f,
-                "{:>width$}",
-                time_64_nanosecond_as_time(*v),
-                width = width
-            ),
-            AnyType::Time64(v, TimeUnit::Microsecond) => write!(
-                f,
-                "{:>width$}",
-                time_64_nanosecond_as_time(*v),
-                width = width
-            ),
-            AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{:>width$}", v, width = width),
-            AnyType::Duration(v, TimeUnit::Microsecond) => {
-                write!(f, "{:>width$}", v, width = width)
-            }
-            AnyType::Duration(v, TimeUnit::Millisecond) => {
-                write!(f, "{:>width$}", v, width = width)
-            }
-            AnyType::Duration(v, TimeUnit::Second) => write!(f, "{:>width$}", v, width = width),
-            AnyType::TimeStamp(v, _) => todo!(),
-            AnyType::IntervalYearMonth(v) => write!(f, "{:>width$}", v, width = width),
-            AnyType::IntervalDayTime(v) => write!(f, "{:>width$}", v, width = width),
-
-            _ => unimplemented!(),
-        }
+        write!(f, "{:?}", self)
     }
 }
 
