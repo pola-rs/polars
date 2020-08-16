@@ -144,6 +144,8 @@
 //!     - pretty printing of DataFrames
 //! * `simd`
 //!     - SIMD operations
+//! * `temporal`
+//!     - Conversions between Chrono and Polars for temporal data
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #[macro_use]

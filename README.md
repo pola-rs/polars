@@ -25,7 +25,7 @@ DataFrame library that only supports core functionality.
 
 ### Read and write CSV/ JSON
 
-``` rust
+```rust
 use polars::prelude::*;
 use std::fs::File;
 
@@ -138,4 +138,20 @@ let valid = [true, false, false].iter();
 assert_eq!(Vec::from(mask.bool().unwrap()), &[Some(true), Some(false), Some(false)]);
 ```
 
-### And more...
+## And more...
+
+* [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html)
+* [Series](https://ritchie46.github.io/polars/polars/series/enum.Series.html)
+* [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
+* [Time/ DateTime utilities](https://ritchie46.github.io/polars/polars/doc/time/index.html)
+
+## Features
+
+Additional cargo features:
+
+* `pretty` (default)
+    - pretty printing of DataFrames
+* `simd`
+    - SIMD operations
+* `temporal`
+    - Conversions between [Chrono](https://docs.rs/chrono/latest/chrono/) and Polars for temporal data

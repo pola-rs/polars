@@ -1,11 +1,10 @@
-use crate::chunked_array::temporal::time64_microsecond_as_time;
+use crate::datatypes::{AnyType, ToStr};
 use crate::prelude::*;
-use crate::{
-    chunked_array::temporal::{
-        date32_as_datetime, date64_as_datetime, time32_millisecond_as_time, time32_second_as_time,
-        time64_nanosecond_as_time,
-    },
-    datatypes::{AnyType, ToStr},
+
+#[cfg(temporal)]
+use crate::chunked_array::temporal::{
+    date32_as_datetime, date64_as_datetime, time32_millisecond_as_time, time32_second_as_time,
+    time64_microsecond_as_time, time64_nanosecond_as_time,
 };
 use num::{Num, NumCast};
 #[cfg(feature = "pretty")]
@@ -14,6 +13,44 @@ use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
 };
+
+/// Some unit functions that just pass the integer values if we don't want all chrono functionality
+#[cfg(not(temporal))]
+mod temporal {
+    pub struct DateTime<T>(T)
+    where
+        T: Copy;
+
+    impl<T> DateTime<T>
+    where
+        T: Copy,
+    {
+        pub fn date(&self) -> T {
+            self.0
+        }
+    }
+
+    pub fn date32_as_datetime(v: i32) -> DateTime<i32> {
+        DateTime(v)
+    }
+    pub fn date64_as_datetime(v: i64) -> DateTime<i64> {
+        DateTime(v)
+    }
+    pub fn time32_millisecond_as_time(v: i32) -> i32 {
+        v
+    }
+    pub fn time32_second_as_time(v: i32) -> i32 {
+        v
+    }
+    pub fn time64_nanosecond_as_time(v: i64) -> i64 {
+        v
+    }
+    pub fn time64_microsecond_as_time(v: i64) -> i64 {
+        v
+    }
+}
+#[cfg(not(temporal))]
+use temporal::*;
 
 impl Debug for Series {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -189,7 +226,9 @@ impl Display for AnyType<'_> {
                 date32_as_datetime(*v).date(),
                 width = width
             ),
-            AnyType::Date64(v) => write!(f, "{:>width$}", date64_as_datetime(*v), width = width),
+            AnyType::Date64(v) => {
+                write!(f, "{:>width$}", date64_as_datetime(*v), width = width).date()
+            }
             AnyType::Time32(v, TimeUnit::Millisecond) => write!(
                 f,
                 "{:>width$}",
@@ -247,7 +286,7 @@ impl Display for AnyType<'_> {
             AnyType::Boolean(v) => write!(f, "{}", *v),
             AnyType::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
             AnyType::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
-            AnyType::Date64(v) => write!(f, "{}", date64_as_datetime(*v)),
+            AnyType::Date64(v) => write!(f, "{}", date64_as_datetime(*v).date()),
             AnyType::Time32(v, TimeUnit::Millisecond) => {
                 write!(f, "{}", time32_millisecond_as_time(*v))
             }
@@ -270,7 +309,7 @@ impl Display for AnyType<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, temporal))]
 mod test {
     use crate::prelude::*;
 

@@ -14,7 +14,6 @@ pub use crate::{
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
         },
-        temporal::{AsNaiveTime, FromNaiveDateTime, FromNaiveTime},
         unique::Unique,
         ChunkSort, ChunkedArray, Downcast, Reverse,
     },
@@ -34,6 +33,11 @@ pub use crate::{
     testing::*,
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
+
+#[cfg(temporal)]
+pub use crate::chunked_array::temporal::{
+    AsNaiveDateTime, AsNaiveTime, FromNaiveDateTime, FromNaiveTime,
+};
 
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {

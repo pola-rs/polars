@@ -1,3 +1,4 @@
+#![cfg(temporal)]
 //! # DateTime related functionality
 //!
 //! Polars supports all data types in Arrow related to time and dates in any kind.
@@ -41,7 +42,9 @@
 //! under the hood. So look there for the different formatting options. If the string parsing is not
 //! succesful, the value will be `None`.
 //!
-//! ### Example
+//! ### Examples
+//!
+//! #### NaiveTime
 //!
 //! ```rust
 //! use polars::prelude::*;
@@ -59,6 +62,27 @@
 //!     &[NaiveTime::parse_from_str(time_values[0], fmt).ok(),
 //!     None,
 //!     NaiveTime::parse_from_str(time_values[2], fmt).ok()]);
+//! ```
+//! #### NaiveDateTime
+//!
+//! ```rust
+//! use polars::prelude::*;
+//! use chrono::NaiveDateTime;
+//!
+//! // String values to parse, Note that the 2nd value is not a correct time value.
+//! let datetime_values = &[
+//!             "1988-08-25 00:00:16",
+//!             "2015-09-05 23:56:04",
+//!             "2012-12-21 00:00:00",
+//!         ];
+//! // Parsing fmt
+//! let fmt = "%Y-%m-%d %H:%M:%S";
+//!
+//! // Create the ChunkedArray
+//! let ca = Date32Chunked::parse_from_str_slice("name", datetime_values, fmt);
+//!
+//! // Or collect into a Vec<NaiveDateTime>
+//! let vec = ca.as_naive_datetime();
 //! ```
 //!
 //! ## Temporal Data Types

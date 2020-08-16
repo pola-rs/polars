@@ -1,4 +1,5 @@
 //! Traits and utilities for temporal data.
+#![cfg(temporal)]
 use crate::prelude::*;
 use chrono::{NaiveDateTime, NaiveTime, Timelike};
 
@@ -167,13 +168,9 @@ macro_rules! impl_as_naivetime {
 }
 
 impl_as_naivetime!(Time32SecondChunked, time32_second_as_time);
-impl_as_naivetime!(&Time32SecondChunked, time32_second_as_time);
 impl_as_naivetime!(Time32MillisecondChunked, time32_millisecond_as_time);
-impl_as_naivetime!(&Time32MillisecondChunked, time32_millisecond_as_time);
 impl_as_naivetime!(Time64NanosecondChunked, time64_nanosecond_as_time);
-impl_as_naivetime!(&Time64NanosecondChunked, time64_nanosecond_as_time);
 impl_as_naivetime!(Time64MicrosecondChunked, time64_microsecond_as_time);
-impl_as_naivetime!(&Time64MicrosecondChunked, time64_microsecond_as_time);
 
 fn parse_naive_datetime_from_str(s: &str, fmt: &str) -> Option<NaiveDateTime> {
     NaiveDateTime::parse_from_str(s, fmt).ok()
@@ -207,7 +204,24 @@ macro_rules! impl_from_naive_datetime {
 impl_from_naive_datetime!(Date32Type, Date32Chunked, naive_datetime_to_date32);
 impl_from_naive_datetime!(Date64Type, Date64Chunked, naive_datetime_to_date64);
 
-#[cfg(test)]
+pub trait AsNaiveDateTime {
+    fn as_naive_datetime(&self) -> Vec<Option<NaiveDateTime>>;
+}
+
+macro_rules! impl_as_naive_datetime {
+    ($ca:ty, $fun:ident) => {
+        impl AsNaiveDateTime for $ca {
+            fn as_naive_datetime(&self) -> Vec<Option<NaiveDateTime>> {
+                self.into_iter().map(|opt_t| opt_t.map($fun)).collect()
+            }
+        }
+    };
+}
+
+impl_as_naive_datetime!(Date32Chunked, date32_as_datetime);
+impl_as_naive_datetime!(Date64Chunked, date64_as_datetime);
+
+#[cfg(all(test, temporal))]
 mod test {
     use crate::prelude::*;
     use chrono::{NaiveDateTime, NaiveTime};
