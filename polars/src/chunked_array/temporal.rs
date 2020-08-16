@@ -1,5 +1,4 @@
 //! Traits and utilities for temporal data.
-#![cfg(temporal)]
 use crate::prelude::*;
 use chrono::{NaiveDateTime, NaiveTime, Timelike};
 
@@ -26,6 +25,35 @@ pub fn date64_as_datetime(v: i64) -> NaiveDateTime {
         // discard extracted seconds and convert milliseconds to nanoseconds
         (v % MILLISECONDS_IN_SECOND * MICROSECONDS_IN_SECOND) as u32,
     )
+}
+
+pub fn timestamp_nanoseconds_as_datetime(v: i64) -> NaiveDateTime {
+    // some nanoseconds will be truncated down as integer division rounds downwards
+    let seconds = v / 1_000_000_000;
+    // we can use that to compute the remaining nanoseconds
+    let nanoseconds = (v - (seconds * 1_000_000_000)) as u32;
+
+    NaiveDateTime::from_timestamp(seconds, nanoseconds)
+}
+
+pub fn timestamp_microseconds_as_datetime(v: i64) -> NaiveDateTime {
+    // see nanoseconds for the logic
+    let seconds = v / 1_000_000;
+    let microseconds = (v - (seconds * 1_000_000)) as u32;
+
+    NaiveDateTime::from_timestamp(seconds, microseconds)
+}
+
+pub fn timestamp_milliseconds_as_datetime(v: i64) -> NaiveDateTime {
+    // see nanoseconds for the logic
+    let seconds = v / 1000;
+    let milliseconds = (v - (seconds * 1000)) as u32;
+
+    NaiveDateTime::from_timestamp(seconds, milliseconds)
+}
+
+pub fn timestamp_seconds_as_datetime(seconds: i64) -> NaiveDateTime {
+    NaiveDateTime::from_timestamp(seconds, 0)
 }
 
 // date32 is number of days since the Unix Epoch
@@ -221,7 +249,7 @@ macro_rules! impl_as_naive_datetime {
 impl_as_naive_datetime!(Date32Chunked, date32_as_datetime);
 impl_as_naive_datetime!(Date64Chunked, date64_as_datetime);
 
-#[cfg(all(test, temporal))]
+#[cfg(all(test, feature = "temporal"))]
 mod test {
     use crate::prelude::*;
     use chrono::{NaiveDateTime, NaiveTime};

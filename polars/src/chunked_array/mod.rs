@@ -32,6 +32,7 @@ pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
 pub mod take;
+#[cfg(feature = "temporal")]
 pub mod temporal;
 pub mod unique;
 pub mod upstream_traits;

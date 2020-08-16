@@ -1,10 +1,12 @@
 use crate::datatypes::{AnyType, ToStr};
 use crate::prelude::*;
 
-#[cfg(temporal)]
+#[cfg(feature = "temporal")]
 use crate::chunked_array::temporal::{
     date32_as_datetime, date64_as_datetime, time32_millisecond_as_time, time32_second_as_time,
-    time64_microsecond_as_time, time64_nanosecond_as_time,
+    time64_microsecond_as_time, time64_nanosecond_as_time, timestamp_microseconds_as_datetime,
+    timestamp_milliseconds_as_datetime, timestamp_nanoseconds_as_datetime,
+    timestamp_seconds_as_datetime,
 };
 use num::{Num, NumCast};
 #[cfg(feature = "pretty")]
@@ -15,7 +17,7 @@ use std::{
 };
 
 /// Some unit functions that just pass the integer values if we don't want all chrono functionality
-#[cfg(not(temporal))]
+#[cfg(not(feature = "temporal"))]
 mod temporal {
     pub struct DateTime<T>(T)
     where
@@ -48,8 +50,20 @@ mod temporal {
     pub fn time64_microsecond_as_time(v: i64) -> i64 {
         v
     }
+    pub fn timestamp_nanoseconds_as_datetime(v: i64) -> i64 {
+        v
+    }
+    pub fn timestamp_microseconds_as_datetime(v: i64) -> i64 {
+        v
+    }
+    pub fn timestamp_milliseconds_as_datetime(v: i64) -> i64 {
+        v
+    }
+    pub fn timestamp_seconds_as_datetime(v: i64) -> i64 {
+        v
+    }
 }
-#[cfg(not(temporal))]
+#[cfg(not(feature = "temporal"))]
 use temporal::*;
 
 impl Debug for Series {
@@ -301,7 +315,18 @@ impl Display for AnyType<'_> {
             AnyType::Duration(v, TimeUnit::Microsecond) => write!(f, "{}", v),
             AnyType::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
             AnyType::Duration(v, TimeUnit::Second) => write!(f, "{}", v),
-            AnyType::TimeStamp(_, _) => todo!(),
+            AnyType::TimeStamp(v, TimeUnit::Nanosecond) => {
+                write!(f, "{}", timestamp_nanoseconds_as_datetime(*v))
+            }
+            AnyType::TimeStamp(v, TimeUnit::Microsecond) => {
+                write!(f, "{}", timestamp_microseconds_as_datetime(*v))
+            }
+            AnyType::TimeStamp(v, TimeUnit::Millisecond) => {
+                write!(f, "{}", timestamp_milliseconds_as_datetime(*v))
+            }
+            AnyType::TimeStamp(v, TimeUnit::Second) => {
+                write!(f, "{}", timestamp_seconds_as_datetime(*v))
+            }
             AnyType::IntervalDayTime(v) => write!(f, "{}", v),
             AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
             _ => unimplemented!(),
@@ -309,7 +334,7 @@ impl Display for AnyType<'_> {
     }
 }
 
-#[cfg(all(test, temporal))]
+#[cfg(all(test, feature = "temporal"))]
 mod test {
     use crate::prelude::*;
 
@@ -330,9 +355,9 @@ mod test {
         assert_eq!(
             r#"Series: date64(ms)
 [
-	1970-01-01 00:00:00.001
+	1970-01-01
 	null
-	2001-09-09 01:46:40
+	2001-09-09
 ]"#,
             format!("{:?}", s.into_series())
         );

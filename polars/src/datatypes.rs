@@ -181,7 +181,11 @@ pub enum AnyType<'a> {
     Time32(i32, TimeUnit),
     /// Measure of elapsed time in either seconds, milliseconds, microseconds or nanoseconds.
     Duration(i64, TimeUnit),
+    /// Naive Time elapsed from the Unix epoch, 00:00:00.000 on 1 January 1970, excluding leap seconds, as a 64-bit integer.
+    /// Note that UNIX time does not include leap seconds.
     TimeStamp(i64, TimeUnit),
+    /// A "calendar" interval which models types that don't necessarily have a precise duration without the context of a base timestamp
+    /// (e.g. days can differ in length during day light savings time transitions).
     IntervalDayTime(i64),
     IntervalYearMonth(i32),
 }
@@ -213,6 +217,7 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Time32(TimeUnit::Millisecond) => "time64(ms)",
             ArrowDataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
             ArrowDataType::Time64(TimeUnit::Microsecond) => "time64(μs)",
+            // NOte: Polars doesn't support the optional TimeZone in the timestamps.
             ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => "timestamp(ns)",
             ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => "timestamp(μs)",
             ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => "timestamp(ms)",

@@ -1,4 +1,3 @@
-#![cfg(temporal)]
 //! # DateTime related functionality
 //!
 //! Polars supports all data types in Arrow related to time and dates in any kind.

@@ -34,7 +34,7 @@ pub use crate::{
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
 
-#[cfg(temporal)]
+#[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::{
     AsNaiveDateTime, AsNaiveTime, FromNaiveDateTime, FromNaiveTime,
 };
