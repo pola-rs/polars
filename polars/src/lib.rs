@@ -1,5 +1,10 @@
 //! # Polars: *<small>DataFrames in Rust</small>*
 //!
+//! Polars is a DataFrame library for Rust. It is based on [Apache Arrows](https://arrow.apache.org/) memory model.
+//! This means that operations on Polars array's *(called `Series` or `ChunkedArray<T>` {if the type `T` is known})* are
+//! optimally aligned cache friendly operations and SIMD. Sadly, Apache Arrow needs **nightly Rust**,
+//! which means that Polars cannot run on stable.
+//!
 //! Read more in the [DataFrame](frame/struct.DataFrame.html), [Series](series/enum.Series.html), and
 //! [ChunkedArray](chunked_array/struct.ChunkedArray.html) data structures.
 //!
