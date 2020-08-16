@@ -2,8 +2,6 @@ language: rust
 rust:
   - nightly
 
-cache: cargo
-
 script:
   - cd polars && cargo test
 
