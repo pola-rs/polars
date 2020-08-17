@@ -62,37 +62,84 @@ pub fn finish_reader<R: ArrowReader>(mut reader: R, rechunk: bool) -> Result<Dat
         .fields()
         .iter()
         .map(|field| match field.data_type() {
+            ArrowDataType::UInt8 => {
+                Series::UInt8(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::UInt16 => {
+                Series::UInt16(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
             ArrowDataType::UInt32 => {
-                Series::UInt32(UInt32Chunked::new_from_chunks(field.name(), vec![]))
+                Series::UInt32(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::UInt64 => {
+                Series::UInt64(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Int8 => {
+                Series::Int8(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Int16 => {
+                Series::Int16(ChunkedArray::new_from_chunks(field.name(), vec![]))
             }
             ArrowDataType::Int32 => {
-                Series::Int32(Int32Chunked::new_from_chunks(field.name(), vec![]))
+                Series::Int32(ChunkedArray::new_from_chunks(field.name(), vec![]))
             }
             ArrowDataType::Int64 => {
-                Series::Int64(Int64Chunked::new_from_chunks(field.name(), vec![]))
+                Series::Int64(ChunkedArray::new_from_chunks(field.name(), vec![]))
             }
             ArrowDataType::Float32 => {
-                Series::Float32(Float32Chunked::new_from_chunks(field.name(), vec![]))
+                Series::Float32(ChunkedArray::new_from_chunks(field.name(), vec![]))
             }
             ArrowDataType::Float64 => {
-                Series::Float64(Float64Chunked::new_from_chunks(field.name(), vec![]))
+                Series::Float64(ChunkedArray::new_from_chunks(field.name(), vec![]))
             }
-            ArrowDataType::Utf8 => Series::Utf8(Utf8Chunked::new_from_chunks(field.name(), vec![])),
+            ArrowDataType::Utf8 => {
+                Series::Utf8(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
             ArrowDataType::Boolean => {
-                Series::Bool(BooleanChunked::new_from_chunks(field.name(), vec![]))
+                Series::Bool(ChunkedArray::new_from_chunks(field.name(), vec![]))
             }
             ArrowDataType::Date32(DateUnit::Millisecond) => {
-                Series::Date32(Date32Chunked::new_from_chunks(field.name(), vec![]))
+                Series::Date32(ChunkedArray::new_from_chunks(field.name(), vec![]))
             }
             ArrowDataType::Date64(DateUnit::Millisecond) => {
-                Series::Date64(Date64Chunked::new_from_chunks(field.name(), vec![]))
+                Series::Date64(ChunkedArray::new_from_chunks(field.name(), vec![]))
             }
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => Series::DurationNanosecond(
-                DurationNanosecondChunked::new_from_chunks(field.name(), vec![]),
-            ),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => Series::Time64Nanosecond(
-                Time64NanosecondChunked::new_from_chunks(field.name(), vec![]),
-            ),
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                Series::DurationNanosecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Duration(TimeUnit::Microsecond) => {
+                Series::DurationMicrosecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+                Series::DurationMillisecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Duration(TimeUnit::Second) => {
+                Series::DurationSecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+                Series::Time64Nanosecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Time64(TimeUnit::Microsecond) => {
+                Series::Time64Microsecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Time32(TimeUnit::Millisecond) => {
+                Series::Time32Millisecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Time32(TimeUnit::Second) => {
+                Series::Time32Second(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                Series::TimestampNanosecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+                Series::TimestampMicrosecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
+                Series::TimestampMillisecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
+                Series::TimestampSecond(ChunkedArray::new_from_chunks(field.name(), vec![]))
+            }
             _ => unimplemented!(),
         })
         .collect::<Vec<_>>();
