@@ -8,7 +8,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! fn example(df: &DataFrame) -> Result<()> {
+//! fn example(df: &mut DataFrame) -> Result<()> {
 //!     let mut file = File::create("example.csv").expect("could not create file");
 //!
 //!     CsvWriter::new(&mut file)
@@ -60,6 +60,7 @@ pub struct CsvWriter<'a, W: Write> {
     buffer: &'a mut W,
     /// Builds an Arrow CSV Writer
     writer_builder: WriterBuilder,
+    buffer_size: usize,
 }
 
 impl<'a, W> SerWriter<'a, W> for CsvWriter<'a, W>
@@ -70,17 +71,16 @@ where
         CsvWriter {
             buffer,
             writer_builder: WriterBuilder::new(),
+            buffer_size: 1000,
         }
     }
 
-    fn finish(self, df: &DataFrame) -> Result<()> {
+    fn finish(self, df: &mut DataFrame) -> Result<()> {
         let mut csv_writer = self.writer_builder.build(self.buffer);
 
-        // TODO: use generator/ chunked iterator?
-        let record_batches = df.as_record_batches()?;
-
-        for batch in &record_batches {
-            csv_writer.write(batch)?
+        let iter = df.iter_record_batches(self.buffer_size);
+        for batch in iter {
+            csv_writer.write(&batch)?
         }
         Ok(())
     }
@@ -117,6 +117,12 @@ where
     /// Set the CSV file's timestamp formatch array in
     pub fn with_timestamp_format(mut self, format: String) -> Self {
         self.writer_builder = self.writer_builder.with_timestamp_format(format);
+        self
+    }
+
+    /// Set the size of the write buffers. Buffer size is the amount of rows written at once.
+    pub fn with_buffer_size(mut self, buffer_size: usize) -> Self {
+        self.buffer_size = buffer_size;
         self
     }
 }
@@ -226,11 +232,11 @@ mod test {
     #[test]
     fn write_csv() {
         let mut buf: Vec<u8> = Vec::new();
-        let df = create_df();
+        let mut df = create_df();
 
         CsvWriter::new(&mut buf)
             .has_headers(true)
-            .finish(&df)
+            .finish(&mut df)
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
         assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);

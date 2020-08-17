@@ -13,7 +13,7 @@
 //!
 //! let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
 //! let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
-//! let df = DataFrame::new(vec![s0, s1]).unwrap();
+//! let mut df = DataFrame::new(vec![s0, s1]).unwrap();
 //!
 //! // Create an in memory file handler.
 //! // Vec<u8>: Read + Write
@@ -22,7 +22,7 @@
 //! let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
 //!
 //! // write to the in memory buffer
-//! IPCWriter::new(&mut buf).finish(&df).expect("ipc writer");
+//! IPCWriter::new(&mut buf).finish(&mut df).expect("ipc writer");
 //!
 //! // reset the buffers index after writing to the beginning of the buffer
 //! buf.set_position(0);
@@ -86,6 +86,15 @@ where
 /// Write a DataFrame to Arrow's IPC format
 pub struct IPCWriter<'a, W> {
     writer: &'a mut W,
+    buffer_size: usize,
+}
+
+impl<'a, W> IPCWriter<'a, W> {
+    /// Set the size of the write buffers. Buffer size is the amount of rows written at once.
+    pub fn with_buffer_size(mut self, buffer_size: usize) -> Self {
+        self.buffer_size = buffer_size;
+        self
+    }
 }
 
 impl<'a, W> SerWriter<'a, W> for IPCWriter<'a, W>
@@ -93,15 +102,19 @@ where
     W: Write,
 {
     fn new(writer: &'a mut W) -> Self {
-        IPCWriter { writer }
+        IPCWriter {
+            writer,
+            buffer_size: 1000,
+        }
     }
 
-    fn finish(self, df: &DataFrame) -> Result<()> {
+    fn finish(self, df: &mut DataFrame) -> Result<()> {
         let mut ipc_writer = ArrowIPCFileWriter::try_new(self.writer, &df.schema)?;
-        let record_batches = df.as_record_batches()?;
 
-        for batch in &record_batches {
-            ipc_writer.write(batch)?
+        let iter = df.iter_record_batches(self.buffer_size);
+
+        for batch in iter {
+            ipc_writer.write(&batch)?
         }
         Ok(())
     }
@@ -117,9 +130,11 @@ mod test {
         // Vec<T> : Write + Read
         // Cursor<Vec<_>>: Seek
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = create_df();
+        let mut df = create_df();
 
-        IPCWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        IPCWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
 
         buf.set_position(0);
 
