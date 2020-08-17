@@ -612,10 +612,69 @@ impl DataFrame {
         Ok(record_batches)
     }
 
+    pub fn iter_record_batches(
+        &mut self,
+        buffer_size: usize,
+    ) -> impl Iterator<Item = RecordBatch> + '_ {
+        match self.n_chunks() {
+            Ok(1) => {}
+            Ok(_) => {
+                self.columns = self
+                    .columns
+                    .iter()
+                    .map(|s| s.rechunk(None).unwrap())
+                    .collect();
+            }
+            Err(_) => {} // no data. So iterator will be empty
+        }
+        RecordBatchIter {
+            columns: &self.columns,
+            schema: &self.schema,
+            buffer_size,
+            idx: 0,
+            len: self.height(),
+        }
+    }
+
     /// Get a DataFrame with all the columns in reversed order
     pub fn reverse(&self) -> Self {
         let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
         DataFrame::new_with_schema(self.schema.clone(), col).unwrap()
+    }
+}
+
+pub struct RecordBatchIter<'a> {
+    columns: &'a Vec<Series>,
+    schema: &'a Arc<Schema>,
+    buffer_size: usize,
+    idx: usize,
+    len: usize,
+}
+
+impl<'a> Iterator for RecordBatchIter<'a> {
+    type Item = RecordBatch;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx >= self.len {
+            return None;
+        }
+        // most iterations the slice length will be buffer_size, except for the last. That one
+        // may be shorter
+        let length = if self.idx + self.buffer_size < self.len {
+            self.buffer_size
+        } else {
+            self.len - self.idx
+        };
+
+        let mut rb_cols = Vec::with_capacity(self.columns.len());
+        // take a slice from all columns and add the the current RecordBatch
+        self.columns.iter().for_each(|s| {
+            let slice = s.slice(self.idx, length).unwrap();
+            rb_cols.push(Arc::clone(&slice.chunks()[0]))
+        });
+        let rb = RecordBatch::try_new(Arc::clone(self.schema), rb_cols).unwrap();
+        self.idx += length;
+        Some(rb)
     }
 }
 
@@ -654,6 +713,7 @@ mod test {
     fn slice() {
         let df = create_frame();
         let sliced_df = df.slice(0, 2).expect("slice");
-        assert_eq!(sliced_df.shape(), (2, 2))
+        assert_eq!(sliced_df.shape(), (2, 2));
+        println!("{:?}", df)
     }
 }
