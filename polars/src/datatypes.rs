@@ -17,25 +17,8 @@ pub use arrow::datatypes::{
     TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt16Type, UInt32Type,
     UInt64Type, UInt8Type,
 };
-use std::ops::{Deref, DerefMut};
 
-pub struct Utf8Type {
-    data: String,
-}
-
-impl Deref for Utf8Type {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl DerefMut for Utf8Type {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
-    }
-}
+pub struct Utf8Type {}
 
 pub trait PolarsDataType {
     fn get_data_type() -> ArrowDataType;
