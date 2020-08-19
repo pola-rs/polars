@@ -31,6 +31,7 @@ pub mod cast;
 pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
+pub mod list;
 pub mod take;
 #[cfg(feature = "temporal")]
 pub mod temporal;
@@ -196,7 +197,7 @@ where
                 }
             }};
         }
-        match T::get_data_type() {
+        match self.field.data_type() {
             ArrowDataType::Utf8 => unpack!(Utf8),
             ArrowDataType::Boolean => unpack!(Bool),
             ArrowDataType::UInt8 => unpack!(UInt8),
