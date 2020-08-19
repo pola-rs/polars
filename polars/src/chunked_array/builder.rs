@@ -3,7 +3,7 @@ use crate::utils::get_iter_capacity;
 use arrow::array::{ArrayDataBuilder, ArrayRef};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
-    array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
+    array::{Array, ArrayData, ListBuilder, PrimitiveArray, PrimitiveBuilder, StringBuilder},
     buffer::Buffer,
     memory,
     util::bit_util,
@@ -400,9 +400,64 @@ where
     }
 }
 
+pub struct ListChunkedBuilder<T>
+where
+    T: ArrowPrimitiveType,
+{
+    pub builder: ListBuilder<PrimitiveBuilder<T>>,
+    field: Field,
+}
+
+impl<T> ListChunkedBuilder<T>
+where
+    T: ArrowPrimitiveType,
+{
+    pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
+        let builder = ListBuilder::with_capacity(values_builder, capacity);
+        let field = Field::new(
+            name,
+            ArrowDataType::List(Box::new(T::get_data_type())),
+            true,
+        );
+
+        ListChunkedBuilder { builder, field }
+    }
+
+    pub fn append_slice(&mut self, values: &[T::Native], is_valid: bool) {
+        self.builder
+            .values()
+            .append_slice(values)
+            .expect("could not append");
+        self.builder.append(is_valid).expect("should not fail");
+    }
+
+    pub fn append_opt_slice(&mut self, values: &[Option<T::Native>], is_valid: bool) {
+        values.iter().for_each(|opt| {
+            self.builder
+                .values()
+                .append_option(*opt)
+                .expect("could not append")
+        });
+        self.builder.append(is_valid).expect("should not fail");
+    }
+
+    pub fn finish(mut self) -> ListChunked {
+        let arr = Arc::new(self.builder.finish());
+        let len = arr.len();
+        ListChunked {
+            field: Arc::new(self.field),
+            chunks: vec![arr],
+            chunk_id: vec![len],
+            phantom: PhantomData,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use arrow::array::Int32Array;
+    use itertools::Itertools;
 
     #[test]
     fn test_existing_null_bitmap() {
@@ -431,5 +486,15 @@ mod test {
         assert_eq!((ptr as usize) % 64, 0);
         let a = aligned_vec_to_primitive_array::<Int32Type>(AlignedVec::new(v).unwrap(), None, 0);
         assert_eq!(a.value_slice(0, 2), &[1, 2])
+    }
+
+    #[test]
+    fn test_list_builder() {
+        let values_builder = Int32Array::builder(10);
+        let mut builder = ListChunkedBuilder::new("a", values_builder, 10);
+        builder.append_slice(&[1, 2, 3], true);
+        builder.append_slice(&[1, 2, 3], false);
+        let ls = builder.finish();
+        println!("{:?}", ls);
     }
 }

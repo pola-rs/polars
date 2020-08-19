@@ -18,7 +18,18 @@ pub use arrow::datatypes::{
     UInt64Type, UInt8Type,
 };
 
+#[derive(Clone)]
 pub struct Utf8Type {}
+
+#[derive(Clone)]
+pub struct ListType {}
+
+impl PolarsDataType for ListType {
+    fn get_data_type() -> ArrowDataType {
+        // null as we cannot no anything without self.
+        ArrowDataType::List(Box::new(ArrowDataType::Null))
+    }
+}
 
 pub trait PolarsDataType {
     fn get_data_type() -> ArrowDataType;
@@ -33,12 +44,13 @@ where
     }
 }
 
-impl<'a> PolarsDataType for Utf8Type {
+impl PolarsDataType for Utf8Type {
     fn get_data_type() -> ArrowDataType {
         ArrowDataType::Utf8
     }
 }
 
+pub type ListChunked = ChunkedArray<ListType>;
 pub type BooleanChunked = ChunkedArray<BooleanType>;
 pub type UInt8Chunked = ChunkedArray<UInt8Type>;
 pub type UInt16Chunked = ChunkedArray<UInt16Type>;
@@ -171,16 +183,17 @@ pub enum AnyType<'a> {
     /// (e.g. days can differ in length during day light savings time transitions).
     IntervalDayTime(i64),
     IntervalYearMonth(i32),
+    List(Box<AnyType<'a>>),
 }
 
 pub trait ToStr {
-    fn to_str(&self) -> &'static str;
+    fn to_str(&self) -> String;
 }
 
 impl ToStr for ArrowDataType {
-    fn to_str(&self) -> &'static str {
+    fn to_str(&self) -> String {
         // TODO: add types here
-        match self {
+        let s = match self {
             ArrowDataType::Null => "null",
             ArrowDataType::Boolean => "bool",
             ArrowDataType::UInt8 => "u8",
@@ -211,7 +224,9 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Duration(TimeUnit::Second) => "duration(s)",
             ArrowDataType::Interval(IntervalUnit::DayTime) => "interval(daytime)",
             ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
+            ArrowDataType::List(tp) => return format!("list {}", tp.to_str()),
             _ => unimplemented!(),
-        }
+        };
+        s.into()
     }
 }
