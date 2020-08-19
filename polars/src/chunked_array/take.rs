@@ -5,7 +5,7 @@
 //!
 use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use crate::prelude::*;
-use arrow::array::{Array, BooleanArray, PrimitiveArray, StringArray};
+use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, StringArray};
 
 pub trait Take {
     /// Take values from ChunkedArray by index.
@@ -211,6 +211,36 @@ impl Take for Utf8Chunked {
     }
 }
 
+impl Take for ListChunked {
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
+        todo!()
+    }
+
+    unsafe fn take_unchecked(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self {
+        todo!()
+    }
+
+    fn take_opt(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Result<Self> {
+        todo!()
+    }
+
+    unsafe fn take_opt_unchecked(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self {
+        todo!()
+    }
+}
+
 pub trait AsTakeIndex {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a>;
 
@@ -376,6 +406,15 @@ impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
     }
 }
 
+impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
+    type Item = Series;
+    type IntoTR = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
+
+    fn take_rand(&self) -> Self::IntoTR {
+        many_or_single!(self, ListTakeRandomSingleChunk, ListTakeRandom)
+    }
+}
+
 pub struct NumTakeRandomChunked<'a, T>
 where
     T: PolarsNumericType,
@@ -537,5 +576,37 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         self.arr.value(index)
+    }
+}
+pub struct ListTakeRandom<'a> {
+    ca: &'a ListChunked,
+    chunks: Vec<&'a ListArray>,
+}
+
+impl<'a> TakeRandom for ListTakeRandom<'a> {
+    type Item = Series;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        todo!()
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        todo!()
+    }
+}
+
+pub struct ListTakeRandomSingleChunk<'a> {
+    arr: &'a ListArray,
+}
+
+impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
+    type Item = Series;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        todo!()
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        todo!()
     }
 }

@@ -39,8 +39,8 @@ pub mod unique;
 pub mod upstream_traits;
 use arrow::array::{
     Date32Array, DurationMicrosecondArray, DurationMillisecondArray, DurationNanosecondArray,
-    DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray, Time32MillisecondArray,
-    Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
+    DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray, ListArray,
+    Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
     TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
 };
 use std::mem;
@@ -1016,6 +1016,19 @@ impl Downcast<BooleanArray> for BooleanChunked {
     }
 }
 
+impl Downcast<ListArray> for ListChunked {
+    fn downcast_chunks(&self) -> Vec<&ListArray> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                arr.as_any()
+                    .downcast_ref()
+                    .expect("could not downcast one of the chunks")
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
 impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
     fn as_ref(&self) -> &ChunkedArray<T> {
         self
@@ -1121,6 +1134,22 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
+impl ChunkSort<ListType> for ListChunked {
+    fn sort(&self, reverse: bool) -> Self {
+        println!("A ListChunked cannot be sorted. Doing nothing");
+        self.clone()
+    }
+
+    fn sort_in_place(&mut self, reverse: bool) {
+        println!("A ListChunked cannot be sorted. Doing nothing");
+    }
+
+    fn argsort(&self, reverse: bool) -> Vec<usize> {
+        println!("A ListChunked cannot be sorted. Doing nothing");
+        (0..self.len()).collect()
+    }
+}
+
 impl ChunkSort<BooleanType> for BooleanChunked {
     fn sort(&self, reverse: bool) -> BooleanChunked {
         sort!(self, reverse)
@@ -1211,6 +1240,7 @@ macro_rules! impl_reverse {
 
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
+impl_reverse!(ListType, ListChunked);
 
 #[cfg(test)]
 pub(crate) mod test {

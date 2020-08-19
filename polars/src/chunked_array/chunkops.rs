@@ -145,3 +145,16 @@ impl ChunkOps for Utf8Chunked {
         optional_rechunk!(self, rhs)
     }
 }
+impl ChunkOps for ListChunked {
+    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
+        match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
+            (1, Some(1)) | (1, None) => Ok(self.clone()),
+            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (_, Some(_)) | (_, None) => todo!(),
+        }
+    }
+
+    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>> {
+        optional_rechunk!(self, rhs)
+    }
+}

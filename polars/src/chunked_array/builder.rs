@@ -400,7 +400,7 @@ where
     }
 }
 
-pub struct ListChunkedBuilder<T>
+pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
@@ -408,7 +408,7 @@ where
     field: Field,
 }
 
-impl<T> ListChunkedBuilder<T>
+impl<T> ListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
@@ -420,7 +420,7 @@ where
             true,
         );
 
-        ListChunkedBuilder { builder, field }
+        ListPrimitiveChunkedBuilder { builder, field }
     }
 
     pub fn append_slice(&mut self, values: &[T::Native], is_valid: bool) {
@@ -491,7 +491,7 @@ mod test {
     #[test]
     fn test_list_builder() {
         let values_builder = Int32Array::builder(10);
-        let mut builder = ListChunkedBuilder::new("a", values_builder, 10);
+        let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
         builder.append_slice(&[1, 2, 3], true);
         builder.append_slice(&[1, 2, 3], false);
         let ls = builder.finish();

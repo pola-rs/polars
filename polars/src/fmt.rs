@@ -124,6 +124,7 @@ impl Debug for Series {
                 });
                 write![f, "]"]
             }
+            Series::List(a) => todo!(),
         }
     }
 }

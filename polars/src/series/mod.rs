@@ -137,6 +137,7 @@ pub enum Series {
     TimestampMicrosecond(TimestampMicrosecondChunked),
     TimestampMillisecond(TimestampMillisecondChunked),
     TimestampSecond(TimestampSecondChunked),
+    List(ListChunked),
 }
 
 #[macro_export]
@@ -171,6 +172,7 @@ macro_rules! apply_method_all_series {
             Series::TimestampSecond(a) => a.$method($($args),*),
             Series::IntervalDayTime(a) => a.$method($($args),*),
             Series::IntervalYearMonth(a) => a.$method($($args),*),
+            Series::List(a) => a.$method($($args),*),
         }
     }
 }
@@ -277,6 +279,7 @@ macro_rules! apply_method_all_series_and_return {
             Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
             Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
             Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
+            Series::List(a) => Series::List(a.$method($($args),*)$($opt_question_mark)*),
         }
     }
 }
@@ -607,6 +610,7 @@ impl Series {
             Series::TimestampSecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::IntervalDayTime(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::IntervalYearMonth(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::List(arr) => pack_ca_to_series(arr.cast::<N>()?),
         };
         Ok(s)
     }
@@ -727,6 +731,7 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Interval(IntervalUnit::DayTime) => {
                 Series::IntervalDayTime(mem::transmute(ca))
             }
+            ArrowDataType::List(_) => Series::List(mem::transmute(ca)),
             _ => panic!("Not implemented: {:?}", N::get_data_type()),
         }
     }
@@ -824,6 +829,7 @@ impl_as_ref_ca!(TimestampMillisecondType, TimestampMillisecond);
 impl_as_ref_ca!(TimestampSecondType, TimestampSecond);
 impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
 impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
+impl_as_ref_ca!(ListType, List);
 
 macro_rules! impl_as_mut_ca {
     ($type:ident, $series_var:ident) => {
@@ -866,6 +872,7 @@ impl_as_mut_ca!(TimestampMillisecondType, TimestampMillisecond);
 impl_as_mut_ca!(TimestampSecondType, TimestampSecond);
 impl_as_mut_ca!(IntervalDayTimeType, IntervalDayTime);
 impl_as_mut_ca!(IntervalYearMonthType, IntervalYearMonth);
+impl_as_mut_ca!(ListType, List);
 
 macro_rules! from_series_to_ca {
     ($variant:ident, $ca:ident) => {
@@ -907,6 +914,7 @@ from_series_to_ca!(TimestampMicrosecond, TimestampMicrosecondChunked);
 from_series_to_ca!(TimestampNanosecond, TimestampNanosecondChunked);
 from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
 from_series_to_ca!(IntervalYearMonth, IntervalYearMonthChunked);
+from_series_to_ca!(List, ListChunked);
 
 #[cfg(test)]
 mod test {
