@@ -214,7 +214,7 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Time32(TimeUnit::Millisecond) => "time64(ms)",
             ArrowDataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
             ArrowDataType::Time64(TimeUnit::Microsecond) => "time64(μs)",
-            // NOte: Polars doesn't support the optional TimeZone in the timestamps.
+            // Note: Polars doesn't support the optional TimeZone in the timestamps.
             ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => "timestamp(ns)",
             ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => "timestamp(μs)",
             ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => "timestamp(ms)",
@@ -229,5 +229,12 @@ impl ToStr for ArrowDataType {
             _ => unimplemented!(),
         };
         s.into()
+    }
+}
+
+impl<'a> PartialEq for AnyType<'a> {
+    // Everything of Any is slow. Don't use.
+    fn eq(&self, other: &Self) -> bool {
+        format!("{}", self) == format!("{}", other)
     }
 }

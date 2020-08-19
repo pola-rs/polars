@@ -411,7 +411,18 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
     type IntoTR = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
     fn take_rand(&self) -> Self::IntoTR {
-        many_or_single!(self, ListTakeRandomSingleChunk, ListTakeRandom)
+        let chunks = self.downcast_chunks();
+        if chunks.len() == 1 {
+            Box::new(ListTakeRandomSingleChunk {
+                arr: chunks[0],
+                name: self.name(),
+            })
+        } else {
+            Box::new(ListTakeRandom {
+                ca: self,
+                chunks: chunks,
+            })
+        }
     }
 }
 
@@ -587,26 +598,30 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
     type Item = Series;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
-        todo!()
+        let v = take_random_get!(self, index);
+        v.map(|v| (self.ca.name(), v).into())
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        todo!()
+        let v = take_random_get_unchecked!(self, index);
+        (self.ca.name(), v).into()
     }
 }
 
 pub struct ListTakeRandomSingleChunk<'a> {
     arr: &'a ListArray,
+    name: &'a str,
 }
 
 impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
     type Item = Series;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
-        todo!()
+        let v = take_random_get_single!(self, index);
+        v.map(|v| (self.name, v).into())
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        todo!()
+        (self.name, self.arr.value(index)).into()
     }
 }
