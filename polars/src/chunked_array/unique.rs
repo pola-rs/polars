@@ -17,11 +17,11 @@ pub trait Unique<T> {
 
 impl Unique<ListType> for ListChunked {
     fn unique(&self) -> ChunkedArray<ListType> {
-        todo!()
+        unimplemented!()
     }
 
     fn arg_unique(&self) -> Vec<usize> {
-        todo!()
+        unimplemented!()
     }
 }
 

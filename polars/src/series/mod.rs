@@ -10,6 +10,7 @@ mod comparison;
 pub(crate) mod iterator;
 use arithmetic::{LhsNumOpsDispatch, NumOpsDispatch, NumOpsDispatchSeriesSingleNumber};
 // needed for enum dispatch
+use arrow::array::ArrayDataRef;
 use enum_dispatch::enum_dispatch;
 use num::{Num, NumCast};
 
@@ -295,6 +296,11 @@ macro_rules! unpack_series {
 }
 
 impl Series {
+    /// Get Arrow ArrayData
+    pub fn array_data(&self) -> Vec<ArrayDataRef> {
+        apply_method_all_series!(self, array_data,)
+    }
+
     pub fn from_chunked_array<T: PolarsDataType>(ca: ChunkedArray<T>) -> Self {
         pack_ca_to_series(ca)
     }

@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
-use arrow::array::{ArrayDataBuilder, ArrayRef};
+use arrow::array::{ArrayBuilder, ArrayDataBuilder, ArrayRef};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
     array::{Array, ArrayData, ListBuilder, PrimitiveArray, PrimitiveBuilder, StringBuilder},
@@ -423,22 +423,55 @@ where
         ListPrimitiveChunkedBuilder { builder, field }
     }
 
-    pub fn append_slice(&mut self, values: &[T::Native], is_valid: bool) {
-        self.builder
-            .values()
-            .append_slice(values)
-            .expect("could not append");
-        self.builder.append(is_valid).expect("should not fail");
+    pub fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        match opt_s {
+            Some(s) => {
+                let data = s.array_data();
+                self.builder
+                    .values()
+                    .append_data(&data)
+                    .expect("should not fail");
+                self.builder.append(true).expect("should not fail");
+            }
+            None => {
+                self.builder.append(false).expect("should not fail");
+            }
+        }
     }
 
-    pub fn append_opt_slice(&mut self, values: &[Option<T::Native>], is_valid: bool) {
-        values.iter().for_each(|opt| {
-            self.builder
-                .values()
-                .append_option(*opt)
-                .expect("could not append")
-        });
-        self.builder.append(is_valid).expect("should not fail");
+    pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
+        match opt_v {
+            Some(v) => {
+                self.builder
+                    .values()
+                    .append_slice(v)
+                    .expect("could not append");
+                self.builder.append(true).expect("should not fail");
+            }
+            None => {
+                self.builder.append(false).expect("should not fail");
+            }
+        }
+    }
+    pub fn append_opt_slice(&mut self, opt_v: Option<&[Option<T::Native>]>) {
+        match opt_v {
+            Some(v) => {
+                v.iter().for_each(|opt| {
+                    self.builder
+                        .values()
+                        .append_option(*opt)
+                        .expect("could not append")
+                });
+                self.builder.append(true).expect("should not fail");
+            }
+            None => {
+                self.builder.append(false).expect("should not fail");
+            }
+        }
+    }
+
+    pub fn append_null(&mut self) {
+        self.builder.append(false).expect("should not fail");
     }
 
     pub fn finish(mut self) -> ListChunked {
@@ -492,9 +525,25 @@ mod test {
     fn test_list_builder() {
         let values_builder = Int32Array::builder(10);
         let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
-        builder.append_slice(&[1, 2, 3], true);
-        builder.append_slice(&[1, 2, 3], false);
+
+        // create a series containing two chunks
+        let mut s1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]).into_series();
+        let s2 = Int32Chunked::new_from_slice("b", &[4, 5, 6]).into_series();
+        s1.append(&s2);
+
+        builder.append_opt_series(Some(&s1));
+        builder.append_opt_series(Some(&s2));
         let ls = builder.finish();
-        println!("{:?}", ls);
+        if let AnyType::LargeList(s) = ls.get(0) {
+            // many chunks are aggregated to one in the ListArray
+            assert_eq!(s.len(), 6)
+        } else {
+            assert!(false)
+        }
+        if let AnyType::LargeList(s) = ls.get(1) {
+            assert_eq!(s.len(), 3)
+        } else {
+            assert!(false)
+        }
     }
 }

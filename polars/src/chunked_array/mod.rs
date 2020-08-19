@@ -38,10 +38,11 @@ pub mod temporal;
 pub mod unique;
 pub mod upstream_traits;
 use arrow::array::{
-    Date32Array, DurationMicrosecondArray, DurationMillisecondArray, DurationNanosecondArray,
-    DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray, ListArray,
-    Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
-    TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+    ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
+    DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
+    ListArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
+    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    TimestampSecondArray,
 };
 use std::mem;
 
@@ -173,6 +174,11 @@ where
         }
     }
 
+    /// Get Arrow ArrayData
+    pub fn array_data(&self) -> Vec<ArrayDataRef> {
+        self.chunks.iter().map(|arr| arr.data()).collect()
+    }
+
     /// Get the null count and the buffer of bits representing null values
     pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
         self.chunks
@@ -186,6 +192,7 @@ where
         Series::from_chunked_array(self)
     }
 
+    /// Series to ChunkedArray<T>
     pub fn unpack_series_matching_type(&self, series: &Series) -> Result<&ChunkedArray<T>> {
         macro_rules! unpack {
             ($variant:ident) => {{
@@ -669,6 +676,10 @@ where
             ArrowDataType::Timestamp(TimeUnit::Second, _) => {
                 let v = downcast!(TimestampSecondArray);
                 AnyType::TimeStamp(v, TimeUnit::Second)
+            }
+            ArrowDataType::LargeList(_) => {
+                let v = downcast!(LargeListArray);
+                AnyType::LargeList(("", v).into())
             }
             _ => unimplemented!(),
         }
