@@ -1,5 +1,7 @@
 use crate::prelude::*;
-use arrow::array::{Array, ArrayDataRef, BooleanArray, PrimitiveArray, StringArray};
+use arrow::array::{
+    Array, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray, StringArray,
+};
 use std::iter::Copied;
 use std::slice::Iter;
 
@@ -801,7 +803,7 @@ impl<'a> DoubleEndedIterator for Utf8IterManyChunk<'a> {
     }
 }
 
-/// Many chunks no nulls
+/// Many chunks with nulls
 pub struct Utf8IterManyChunkNullCheck<'a> {
     ca: &'a Utf8Chunked,
     chunks: Vec<&'a StringArray>,
@@ -998,8 +1000,20 @@ impl<'a> IntoIterator for &'a Utf8Chunked {
 }
 
 macro_rules! impl_iterator_traits {
-    ($ca_type:ident, $arrow_array:ident, $no_null_iter_struct:ident, $single_chunk_ident:ident, $single_chunk_null_ident:ident, $many_chunk_ident:ident,
-    $many_chunk_null_ident:ident, $chunkdispatch:ident, $iter_item:ty, $iter_item_no_null:ty) => {
+    ($ca_type:ident, // ChunkedArray type
+     $arrow_array:ident, // Arrow array Type
+     $no_null_iter_struct:ident, // Name of Iterator in case of no null checks and return type is T instead of Option<T>
+     $single_chunk_ident:ident, // Name of Iterator in case of single chunk
+     $single_chunk_null_ident:ident, // Name of Iterator in case of single chunk and nulls
+     $many_chunk_ident:ident, // Name of Iterator in case of many chunks
+     $many_chunk_null_ident:ident, // Name of Iterator in case of many chunks and null
+     $chunkdispatch:ident, // Name of Dispatch struct
+     $iter_item:ty, // Item returned by Iterator e.g. Option<bool>
+     $iter_item_no_null:ty, // Iterm return by Iterator that doesn't do null checks. e.g. bool
+     $return_function: ident, // function that is called upon returning from the iterator with the inner type
+                              // So in case of both Option<T> and T function is called with T
+                              // Fn(method_name: &str, type: T) -> ?
+     ) => {
         impl<'a> ExactSizeIterator for $single_chunk_ident<'a> {}
         impl<'a> ExactSizeIterator for $single_chunk_null_ident<'a> {}
         impl<'a> ExactSizeIterator for $many_chunk_ident<'a> {}
@@ -1039,7 +1053,7 @@ macro_rules! impl_iterator_traits {
 
                 let v = self.current_array.value(self.idx_left);
                 self.idx_left += 1;
-                Some(v)
+                Some($return_function("next", v))
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -1090,7 +1104,7 @@ macro_rules! impl_iterator_traits {
 
                 let v = self.current_array.value(self.idx_left);
                 self.idx_left += 1;
-                Some(Some(v))
+                Some(Some($return_function("next", v)))
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -1106,7 +1120,8 @@ macro_rules! impl_iterator_traits {
                     return None;
                 }
                 self.idx_right -= 1;
-                Some(Some(self.current_array.value(self.idx_right)))
+                let v = self.current_array.value(self.idx_right);
+                Some(Some($return_function("next_back", v)))
             }
         }
 
@@ -1144,13 +1159,13 @@ macro_rules! impl_iterator_traits {
                 }
                 let ret;
                 if self.current_data.is_null(self.idx_left) {
-                    ret = Some(None)
+                    ret = None
                 } else {
                     let v = self.current_array.value(self.idx_left);
-                    ret = Some(Some(v))
+                    ret = Some($return_function("next", v))
                 }
                 self.idx_left += 1;
-                ret
+                Some(ret)
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -1169,7 +1184,8 @@ macro_rules! impl_iterator_traits {
                 if self.current_data.is_null(self.idx_right) {
                     Some(None)
                 } else {
-                    Some(Some(self.current_array.value(self.idx_right)))
+                    let v = self.current_array.value(self.idx_right);
+                    Some(Some($return_function("next_back", v)))
                 }
             }
         }
@@ -1228,7 +1244,8 @@ macro_rules! impl_iterator_traits {
                 }
 
                 // return value
-                let ret = self.current_array_left.value(self.current_array_idx_left);
+                let v = self.current_array_left.value(self.current_array_idx_left);
+                let ret = $return_function("next", v);
 
                 // increment index pointers
                 self.idx_left += 1;
@@ -1275,7 +1292,7 @@ macro_rules! impl_iterator_traits {
                     self.current_array_right = self.chunks[self.chunk_idx_right];
                     self.current_array_idx_right = self.current_array_right.len();
                 }
-                Some(Some(ret))
+                Some(Some($return_function("next_back", ret)))
             }
         }
 
@@ -1343,7 +1360,8 @@ macro_rules! impl_iterator_traits {
                 if self.current_array_left.is_null(self.current_array_idx_left) {
                     ret = None
                 } else {
-                    ret = Some(self.current_array_left.value(self.current_array_idx_left));
+                    let v = self.current_array_left.value(self.current_array_idx_left);
+                    ret = Some($return_function("next", v));
                 }
 
                 // increment index pointers
@@ -1388,9 +1406,8 @@ macro_rules! impl_iterator_traits {
                 {
                     Some(None)
                 } else {
-                    Some(Some(
-                        self.current_array_right.value(self.current_array_idx_right),
-                    ))
+                    let v = self.current_array_right.value(self.current_array_idx_right);
+                    Some(Some($return_function("next_back", v)))
                 };
 
                 // we've reached the end of the chunk from the right
@@ -1477,6 +1494,11 @@ macro_rules! impl_iterator_traits {
     };
 }
 
+// Used for macro. method_name is ignored
+fn return_from_bool_iter(method_name: &str, v: bool) -> bool {
+    v
+}
+
 impl_iterator_traits!(
     BooleanChunked,
     BooleanArray,
@@ -1487,16 +1509,28 @@ impl_iterator_traits!(
     BooleanIterManyChunkNullCheck,
     BooleanIterDispatch,
     Option<bool>,
-    bool
+    bool,
+    return_from_bool_iter,
 );
 
-impl Iterator for ListChunked {
-    type Item = Series;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        unimplemented!()
-    }
+// used for macro
+fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
+    (method_name, v).into()
 }
+
+impl_iterator_traits!(
+    ListChunked,
+    ListArray,
+    ListIterCont,
+    ListIterSingleChunk,
+    ListIterSingleChunkNullCheck,
+    ListIterManyChunk,
+    ListIterManyChunkNullCheck,
+    ListIterDispatch,
+    Option<Series>,
+    Series,
+    return_from_list_iter,
+);
 
 #[cfg(test)]
 mod test {
