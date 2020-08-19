@@ -7,6 +7,7 @@
 //! are currently supported.
 //!
 use crate::chunked_array::ChunkedArray;
+use crate::series::Series;
 pub use arrow::datatypes::DataType as ArrowDataType;
 pub use arrow::datatypes::{
     ArrowNumericType, ArrowPrimitiveType, BooleanType, Date32Type, Date64Type, DateUnit,
@@ -137,7 +138,7 @@ impl PolarsIntegerType for TimestampMicrosecondType {}
 impl PolarsIntegerType for TimestampMillisecondType {}
 impl PolarsIntegerType for TimestampSecondType {}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum AnyType<'a> {
     Null,
     /// A binary true or false.
@@ -183,7 +184,7 @@ pub enum AnyType<'a> {
     /// (e.g. days can differ in length during day light savings time transitions).
     IntervalDayTime(i64),
     IntervalYearMonth(i32),
-    List(Box<AnyType<'a>>),
+    List(Series),
 }
 
 pub trait ToStr {
@@ -224,7 +225,7 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Duration(TimeUnit::Second) => "duration(s)",
             ArrowDataType::Interval(IntervalUnit::DayTime) => "interval(daytime)",
             ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
-            ArrowDataType::List(tp) => return format!("list {}", tp.to_str()),
+            ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
             _ => unimplemented!(),
         };
         s.into()

@@ -124,7 +124,28 @@ impl Debug for Series {
                 });
                 write![f, "]"]
             }
-            Series::List(a) => todo!(),
+            Series::List(a) => {
+                let limit = 3;
+                write![f, "Series: list \n[\n"]?;
+                a.into_iter().take(limit).for_each(|opt_s| match opt_s {
+                    None => {
+                        write!(f, "\tnull\n").ok();
+                    }
+                    Some(s) => {
+                        // Inner series are indented one level
+                        let series_formatted = format!("{:?}", s);
+
+                        // now prepend a tab before every line.
+                        let mut with_tab = String::with_capacity(series_formatted.len() + 10);
+                        for line in series_formatted.split("\n") {
+                            with_tab.push_str(&format!("\t{}\n", line))
+                        }
+
+                        write!(f, "\t{}\n", with_tab).ok();
+                    }
+                });
+                write![f, "]"]
+            }
         }
     }
 }
@@ -253,6 +274,7 @@ impl Display for AnyType<'_> {
             }
             AnyType::IntervalDayTime(v) => write!(f, "{}", v),
             AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
+            AnyType::List(s) => write!(f, "List [{:?}]", s.dtype()),
             _ => unimplemented!(),
         }
     }
@@ -261,6 +283,18 @@ impl Display for AnyType<'_> {
 #[cfg(all(test, feature = "temporal"))]
 mod test {
     use crate::prelude::*;
+
+    #[test]
+    fn list() {
+        use arrow::array::Int32Array;
+        let values_builder = Int32Array::builder(10);
+        let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
+        builder.append_slice(&[1, 2, 3], true);
+        builder.append_slice(&[1, 2, 3], false);
+        let list = builder.finish().into_series();
+
+        println!("{:?}", list)
+    }
 
     #[test]
     fn temporal() {
