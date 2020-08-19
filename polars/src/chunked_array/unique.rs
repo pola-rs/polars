@@ -15,6 +15,16 @@ pub trait Unique<T> {
     fn arg_unique(&self) -> Vec<usize>;
 }
 
+impl Unique<ListType> for ListChunked {
+    fn unique(&self) -> ChunkedArray<ListType> {
+        todo!()
+    }
+
+    fn arg_unique(&self) -> Vec<usize> {
+        todo!()
+    }
+}
+
 fn fill_set<A>(
     a: impl Iterator<Item = A>,
     capacity: usize,

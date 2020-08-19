@@ -1490,6 +1490,14 @@ impl_iterator_traits!(
     bool
 );
 
+impl Iterator for ListChunked {
+    type Item = Series;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unimplemented!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
