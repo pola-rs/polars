@@ -916,6 +916,78 @@ from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
 from_series_to_ca!(IntervalYearMonth, IntervalYearMonthChunked);
 from_series_to_ca!(List, ListChunked);
 
+// TODO: add types
+impl From<(&str, ArrayRef)> for Series {
+    fn from(name_arr: (&str, ArrayRef)) -> Self {
+        let (name, arr) = name_arr;
+        let chunk = vec![arr];
+        match chunk[0].data_type() {
+            ArrowDataType::Utf8 => Utf8Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::Boolean => BooleanChunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::UInt8 => UInt8Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::UInt16 => UInt16Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::UInt32 => UInt32Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::UInt64 => UInt64Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::Int8 => Int8Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::Int16 => Int16Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::Int32 => Int32Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::Int64 => Int64Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::Float32 => Float32Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::Float64 => Float64Chunked::new_from_chunks(name, chunk).into_series(),
+            ArrowDataType::Date32(DateUnit::Day) => {
+                Date32Chunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Date64(DateUnit::Millisecond) => {
+                Date64Chunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Time32(TimeUnit::Millisecond) => {
+                Time32MillisecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Time32(TimeUnit::Second) => {
+                Time32SecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+                Time64NanosecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Time64(TimeUnit::Microsecond) => {
+                Time64MicrosecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Interval(IntervalUnit::DayTime) => {
+                IntervalDayTimeChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Interval(IntervalUnit::YearMonth) => {
+                IntervalYearMonthChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                DurationNanosecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Duration(TimeUnit::Microsecond) => {
+                DurationMicrosecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+                DurationMillisecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Duration(TimeUnit::Second) => {
+                DurationSecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                TimestampNanosecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+                TimestampMicrosecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
+                TimestampMillisecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
+                TimestampSecondChunked::new_from_chunks(name, chunk).into_series()
+            }
+            ArrowDataType::List(_) => ListChunked::new_from_chunks(name, chunk).into_series(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
