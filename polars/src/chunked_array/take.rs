@@ -5,7 +5,7 @@
 //!
 use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
 use crate::prelude::*;
-use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, StringArray};
+use arrow::array::{Array, BooleanArray, LargeListArray, PrimitiveArray, StringArray};
 
 pub trait Take {
     /// Take values from ChunkedArray by index.
@@ -211,7 +211,7 @@ impl Take for Utf8Chunked {
     }
 }
 
-impl Take for ListChunked {
+impl Take for LargeListChunked {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
         todo!()
     }
@@ -406,7 +406,7 @@ impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
     }
 }
 
-impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
+impl<'a> IntoTakeRandom<'a> for &'a LargeListChunked {
     type Item = Series;
     type IntoTR = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
@@ -590,8 +590,8 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
     }
 }
 pub struct ListTakeRandom<'a> {
-    ca: &'a ListChunked,
-    chunks: Vec<&'a ListArray>,
+    ca: &'a LargeListChunked,
+    chunks: Vec<&'a LargeListArray>,
 }
 
 impl<'a> TakeRandom for ListTakeRandom<'a> {
@@ -609,7 +609,7 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
 }
 
 pub struct ListTakeRandomSingleChunk<'a> {
-    arr: &'a ListArray,
+    arr: &'a LargeListArray,
     name: &'a str,
 }
 

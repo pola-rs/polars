@@ -145,7 +145,7 @@ impl ChunkOps for Utf8Chunked {
         optional_rechunk!(self, rhs)
     }
 }
-impl ChunkOps for ListChunked {
+impl ChunkOps for LargeListChunked {
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
             (1, Some(1)) | (1, None) => Ok(self.clone()),

@@ -3,7 +3,7 @@ use crate::utils::get_iter_capacity;
 use arrow::array::{ArrayBuilder, ArrayDataBuilder, ArrayRef};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 use arrow::{
-    array::{Array, ArrayData, ListBuilder, PrimitiveArray, PrimitiveBuilder, StringBuilder},
+    array::{Array, ArrayData, LargeListBuilder, PrimitiveArray, PrimitiveBuilder, StringBuilder},
     buffer::Buffer,
     memory,
     util::bit_util,
@@ -404,7 +404,7 @@ pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
-    pub builder: ListBuilder<PrimitiveBuilder<T>>,
+    pub builder: LargeListBuilder<PrimitiveBuilder<T>>,
     field: Field,
 }
 
@@ -413,7 +413,7 @@ where
     T: ArrowPrimitiveType,
 {
     pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
-        let builder = ListBuilder::with_capacity(values_builder, capacity);
+        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(
             name,
             ArrowDataType::List(Box::new(T::get_data_type())),
@@ -474,10 +474,10 @@ where
         self.builder.append(false).expect("should not fail");
     }
 
-    pub fn finish(mut self) -> ListChunked {
+    pub fn finish(mut self) -> LargeListChunked {
         let arr = Arc::new(self.builder.finish());
         let len = arr.len();
-        ListChunked {
+        LargeListChunked {
             field: Arc::new(self.field),
             chunks: vec![arr],
             chunk_id: vec![len],

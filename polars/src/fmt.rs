@@ -124,7 +124,7 @@ impl Debug for Series {
                 });
                 write![f, "]"]
             }
-            Series::List(a) => {
+            Series::LargeList(a) => {
                 let limit = 3;
                 write![f, "Series: list \n[\n"]?;
                 a.into_iter().take(limit).for_each(|opt_s| match opt_s {
@@ -274,7 +274,7 @@ impl Display for AnyType<'_> {
             }
             AnyType::IntervalDayTime(v) => write!(f, "{}", v),
             AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
-            AnyType::List(s) => write!(f, "List [{:?}]", s.dtype()),
+            AnyType::LargeList(s) => write!(f, "List [{:?}]", s.dtype()),
             _ => unimplemented!(),
         }
     }
