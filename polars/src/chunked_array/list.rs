@@ -1,3 +1,3 @@
 use crate::prelude::*;
 
-impl ListChunked {}
+impl LargeListChunked {}

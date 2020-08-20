@@ -46,7 +46,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, eq),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, eq),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, eq),
-            Series::List(a) => todo!(),
+            Series::LargeList(a) => todo!(),
         }
     }
 
@@ -81,7 +81,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, neq),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, neq),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, neq),
-            Series::List(a) => todo!(),
+            Series::LargeList(a) => todo!(),
         }
     }
 
@@ -116,7 +116,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, gt),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, gt),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, gt),
-            Series::List(a) => todo!(),
+            Series::LargeList(a) => todo!(),
         }
     }
 
@@ -155,7 +155,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, gt_eq),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, gt_eq),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, gt_eq),
-            Series::List(a) => todo!(),
+            Series::LargeList(a) => todo!(),
         }
     }
 
@@ -190,7 +190,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, lt),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, lt),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, lt),
-            Series::List(a) => todo!(),
+            Series::LargeList(a) => todo!(),
         }
     }
 
@@ -229,7 +229,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, lt_eq),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, lt_eq),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, lt_eq),
-            Series::List(a) => todo!(),
+            Series::LargeList(a) => todo!(),
         }
     }
 }

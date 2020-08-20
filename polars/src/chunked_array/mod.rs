@@ -40,7 +40,7 @@ pub mod upstream_traits;
 use arrow::array::{
     ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
     DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
-    ListArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
+    LargeListArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     TimestampSecondArray,
 };
@@ -1027,8 +1027,8 @@ impl Downcast<BooleanArray> for BooleanChunked {
     }
 }
 
-impl Downcast<ListArray> for ListChunked {
-    fn downcast_chunks(&self) -> Vec<&ListArray> {
+impl Downcast<LargeListArray> for LargeListChunked {
+    fn downcast_chunks(&self) -> Vec<&LargeListArray> {
         self.chunks
             .iter()
             .map(|arr| {
@@ -1145,7 +1145,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
-impl ChunkSort<ListType> for ListChunked {
+impl ChunkSort<LargeListType> for LargeListChunked {
     fn sort(&self, reverse: bool) -> Self {
         println!("A ListChunked cannot be sorted. Doing nothing");
         self.clone()
@@ -1251,7 +1251,7 @@ macro_rules! impl_reverse {
 
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
-impl_reverse!(ListType, ListChunked);
+impl_reverse!(LargeListType, LargeListChunked);
 
 #[cfg(test)]
 pub(crate) mod test {

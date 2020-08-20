@@ -15,8 +15,8 @@ pub trait Unique<T> {
     fn arg_unique(&self) -> Vec<usize>;
 }
 
-impl Unique<ListType> for ListChunked {
-    fn unique(&self) -> ChunkedArray<ListType> {
+impl Unique<LargeListType> for LargeListChunked {
+    fn unique(&self) -> ChunkedArray<LargeListType> {
         unimplemented!()
     }
 

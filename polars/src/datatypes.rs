@@ -19,16 +19,14 @@ pub use arrow::datatypes::{
     UInt64Type, UInt8Type,
 };
 
-#[derive(Clone)]
 pub struct Utf8Type {}
 
-#[derive(Clone)]
-pub struct ListType {}
+pub struct LargeListType {}
 
-impl PolarsDataType for ListType {
+impl PolarsDataType for LargeListType {
     fn get_data_type() -> ArrowDataType {
         // null as we cannot no anything without self.
-        ArrowDataType::List(Box::new(ArrowDataType::Null))
+        ArrowDataType::LargeList(Box::new(ArrowDataType::Null))
     }
 }
 
@@ -51,7 +49,7 @@ impl PolarsDataType for Utf8Type {
     }
 }
 
-pub type ListChunked = ChunkedArray<ListType>;
+pub type LargeListChunked = ChunkedArray<LargeListType>;
 pub type BooleanChunked = ChunkedArray<BooleanType>;
 pub type UInt8Chunked = ChunkedArray<UInt8Type>;
 pub type UInt16Chunked = ChunkedArray<UInt16Type>;
@@ -184,7 +182,7 @@ pub enum AnyType<'a> {
     /// (e.g. days can differ in length during day light savings time transitions).
     IntervalDayTime(i64),
     IntervalYearMonth(i32),
-    List(Series),
+    LargeList(Series),
 }
 
 pub trait ToStr {

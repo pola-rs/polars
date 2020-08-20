@@ -63,7 +63,7 @@ impl IntoGroupTuples for Utf8Chunked {
 
 impl IntoGroupTuples for Float64Chunked {}
 impl IntoGroupTuples for Float32Chunked {}
-impl IntoGroupTuples for ListChunked {}
+impl IntoGroupTuples for LargeListChunked {}
 
 impl DataFrame {
     /// Group DataFrame using a Series column.
@@ -121,7 +121,7 @@ trait NumericAggSync {
 
 impl NumericAggSync for BooleanChunked {}
 impl NumericAggSync for Utf8Chunked {}
-impl NumericAggSync for ListChunked {}
+impl NumericAggSync for LargeListChunked {}
 
 impl<T> NumericAggSync for ChunkedArray<T>
 where

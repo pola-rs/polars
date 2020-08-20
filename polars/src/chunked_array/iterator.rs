@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use arrow::array::{
-    Array, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray, StringArray,
+    Array, ArrayDataRef, ArrayRef, BooleanArray, LargeListArray, PrimitiveArray, StringArray,
 };
 use std::iter::Copied;
 use std::slice::Iter;
@@ -1519,8 +1519,8 @@ fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
 }
 
 impl_iterator_traits!(
-    ListChunked,
-    ListArray,
+    LargeListChunked,
+    LargeListArray,
     ListIterCont,
     ListIterSingleChunk,
     ListIterSingleChunkNullCheck,
