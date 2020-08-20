@@ -4,12 +4,16 @@ use super::Series;
 use crate::apply_method_numeric_series;
 use crate::prelude::*;
 
+fn fill_bool(val: bool, len: usize) -> BooleanChunked {
+    std::iter::repeat(val).take(len).collect()
+}
+
 macro_rules! compare {
     ($variant:path, $lhs:ident, $rhs:ident, $cmp_method:ident) => {{
         if let $variant(rhs_) = $rhs {
             $lhs.$cmp_method(rhs_)
         } else {
-            std::iter::repeat(false).take($lhs.len()).collect()
+            fill_bool(false, $lhs.len())
         }
     }};
 }
@@ -46,7 +50,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, eq),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, eq),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, eq),
-            Series::LargeList(a) => todo!(),
+            Series::LargeList(_a) => fill_bool(true, self.len()),
         }
     }
 
@@ -81,7 +85,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, neq),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, neq),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, neq),
-            Series::LargeList(a) => todo!(),
+            Series::LargeList(_a) => fill_bool(true, self.len()),
         }
     }
 
@@ -116,7 +120,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, gt),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, gt),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, gt),
-            Series::LargeList(a) => todo!(),
+            Series::LargeList(_a) => fill_bool(true, self.len()),
         }
     }
 
@@ -155,7 +159,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, gt_eq),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, gt_eq),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, gt_eq),
-            Series::LargeList(a) => todo!(),
+            Series::LargeList(_a) => fill_bool(true, self.len()),
         }
     }
 
@@ -190,7 +194,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, lt),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, lt),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, lt),
-            Series::LargeList(a) => todo!(),
+            Series::LargeList(_a) => fill_bool(true, self.len()),
         }
     }
 
@@ -229,7 +233,7 @@ impl CmpOps<&Series> for Series {
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, lt_eq),
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, lt_eq),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, lt_eq),
-            Series::LargeList(a) => todo!(),
+            Series::LargeList(_a) => fill_bool(true, self.len()),
         }
     }
 }
