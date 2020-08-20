@@ -1,6 +1,7 @@
 use super::hash_join::prepare_hashed_relation;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::prelude::*;
+use arrow::array::PrimitiveBuilder;
 use enum_dispatch::enum_dispatch;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
@@ -235,6 +236,46 @@ where
     }
 }
 
+macro_rules! impl_list_groupby_macro {
+    ($obj:ident, $gb_macro:ident) => {{
+        match $obj.dtype() {
+            ArrowDataType::Utf8 => todo!(),
+            ArrowDataType::Boolean => $gb_macro!(BooleanType),
+            ArrowDataType::UInt8 => $gb_macro!(UInt8Type),
+            ArrowDataType::UInt16 => $gb_macro!(UInt16Type),
+            ArrowDataType::UInt32 => $gb_macro!(UInt32Type),
+            ArrowDataType::UInt64 => $gb_macro!(UInt64Type),
+            ArrowDataType::Int8 => $gb_macro!(Int8Type),
+            ArrowDataType::Int16 => $gb_macro!(Int16Type),
+            ArrowDataType::Int32 => $gb_macro!(Int32Type),
+            ArrowDataType::Int64 => $gb_macro!(Int64Type),
+            ArrowDataType::Float32 => $gb_macro!(Float32Type),
+            ArrowDataType::Float64 => $gb_macro!(Float64Type),
+            ArrowDataType::Date32(DateUnit::Day) => $gb_macro!(Date32Type),
+            ArrowDataType::Date64(DateUnit::Millisecond) => $gb_macro!(Date64Type),
+            ArrowDataType::Time32(TimeUnit::Millisecond) => $gb_macro!(Time32MillisecondType),
+            ArrowDataType::Time32(TimeUnit::Second) => $gb_macro!(Time32SecondType),
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => $gb_macro!(Time64NanosecondType),
+            ArrowDataType::Time64(TimeUnit::Microsecond) => $gb_macro!(Time64MicrosecondType),
+            ArrowDataType::Interval(IntervalUnit::DayTime) => $gb_macro!(IntervalDayTimeType),
+            ArrowDataType::Interval(IntervalUnit::YearMonth) => $gb_macro!(IntervalYearMonthType),
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => $gb_macro!(DurationNanosecondType),
+            ArrowDataType::Duration(TimeUnit::Microsecond) => $gb_macro!(DurationMicrosecondType),
+            ArrowDataType::Duration(TimeUnit::Millisecond) => $gb_macro!(DurationMillisecondType),
+            ArrowDataType::Duration(TimeUnit::Second) => $gb_macro!(DurationSecondType),
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                $gb_macro!(TimestampNanosecondType)
+            }
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+                $gb_macro!(TimestampMicrosecondType)
+            }
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => $gb_macro!(Time32MillisecondType),
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => $gb_macro!(TimestampSecondType),
+            _ => unimplemented!(),
+        }
+    }};
+}
+
 impl<'a> GroupBy<'a> {
     pub fn select(mut self, name: &str) -> Self {
         self.selection = Some(name.to_string());
@@ -313,6 +354,59 @@ impl<'a> GroupBy<'a> {
         let agg = Series::UInt32(ca);
         DataFrame::new(vec![keys, agg])
     }
+
+    /// Aggregate the groups of the groupby operation into lists.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    ///
+    /// // first create a DataFrame
+    /// let s0 = Series::new("days", &["mo", "mo", "tue", "wed", "tue"]);
+    /// let s1 = Series::new("temp", &[20, 10, 7, 9, 1]);
+    /// let s2 = Series::new("rain", &[0.2, 0.1, 0.3, 0.1, 0.01]);
+    /// let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
+    ///
+    /// // GroupBy and aggregate to Lists
+    /// let gb = df.groupby("days").unwrap().select("temp").agg_list().unwrap();
+    /// println!("{:?}", gb);
+    /// ```
+    /// Outputs:
+    /// ```text
+    /// +-------+---------------+
+    /// | days  | temp_agg_list |
+    /// | ---   | ---           |
+    /// | str   | list [i32]    |
+    /// +=======+===============+
+    /// | "mo"  | List [Int32]  |
+    /// +-------+---------------+
+    /// | "wed" | List [Int32]  |
+    /// +-------+---------------+
+    /// | "tue" | List [Int32]  |
+    /// +-------+---------------+
+    /// ```
+    pub fn agg_list(&self) -> Result<DataFrame> {
+        let (name, keys, agg_col) = self.prepare_agg()?;
+        let new_name = format!["{}_agg_list", name];
+
+        macro_rules! impl_gb {
+            ($type:ty) => {{
+                let values_builder = PrimitiveBuilder::<$type>::new(self.groups.len());
+                let mut builder =
+                    ListPrimitiveChunkedBuilder::new(&new_name, values_builder, self.groups.len());
+                for (_first, idx) in &self.groups {
+                    let s = unsafe {
+                        agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
+                    };
+                    builder.append_opt_series(Some(&s))
+                }
+                let list = builder.finish().into_series();
+                DataFrame::new(vec![keys, list])
+            }};
+        }
+        impl_list_groupby_macro!(agg_col, impl_gb)
+    }
 }
 
 #[cfg(test)]
@@ -345,6 +439,14 @@ mod test {
         println!(
             "{:?}",
             df.groupby("days").unwrap().select("temp").max().unwrap()
+        );
+        println!(
+            "{:?}",
+            df.groupby("days")
+                .unwrap()
+                .select("temp")
+                .agg_list()
+                .unwrap()
         );
     }
 }

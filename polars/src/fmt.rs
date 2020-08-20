@@ -274,7 +274,7 @@ impl Display for AnyType<'_> {
             }
             AnyType::IntervalDayTime(v) => write!(f, "{}", v),
             AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
-            AnyType::LargeList(s) => write!(f, "List [{:?}]", s.dtype()),
+            AnyType::LargeList(s) => write!(f, "list [{:?}]", s.dtype()),
             _ => unimplemented!(),
         }
     }
