@@ -529,7 +529,7 @@ mod test {
         // create a series containing two chunks
         let mut s1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]).into_series();
         let s2 = Int32Chunked::new_from_slice("b", &[4, 5, 6]).into_series();
-        s1.append(&s2);
+        s1.append(&s2).unwrap();
 
         builder.append_opt_series(Some(&s1));
         builder.append_opt_series(Some(&s2));

@@ -1495,7 +1495,7 @@ macro_rules! impl_iterator_traits {
 }
 
 // Used for macro. method_name is ignored
-fn return_from_bool_iter(method_name: &str, v: bool) -> bool {
+fn return_from_bool_iter(_method_name: &str, v: bool) -> bool {
     v
 }
 

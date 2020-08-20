@@ -216,6 +216,69 @@ impl Take for Utf8Chunked {
 // TODO: Use nested macro to clean this mess up a bit.
 // TODO: Utf8 largelist take
 
+macro_rules! impl_list_take_apply_macro {
+    ($self:ident, $impl_list_take:ident) => {{
+        match $self.dtype() {
+            ArrowDataType::LargeList(dt) => match **dt {
+                ArrowDataType::Utf8 => todo!(),
+                ArrowDataType::Boolean => $impl_list_take!(BooleanType),
+                ArrowDataType::UInt8 => $impl_list_take!(UInt8Type),
+                ArrowDataType::UInt16 => $impl_list_take!(UInt16Type),
+                ArrowDataType::UInt32 => $impl_list_take!(UInt32Type),
+                ArrowDataType::UInt64 => $impl_list_take!(UInt64Type),
+                ArrowDataType::Int8 => $impl_list_take!(Int8Type),
+                ArrowDataType::Int16 => $impl_list_take!(Int16Type),
+                ArrowDataType::Int32 => $impl_list_take!(Int32Type),
+                ArrowDataType::Int64 => $impl_list_take!(Int64Type),
+                ArrowDataType::Float32 => $impl_list_take!(Float32Type),
+                ArrowDataType::Float64 => $impl_list_take!(Float64Type),
+                ArrowDataType::Date32(DateUnit::Day) => $impl_list_take!(Date32Type),
+                ArrowDataType::Date64(DateUnit::Millisecond) => $impl_list_take!(Date64Type),
+                ArrowDataType::Time32(TimeUnit::Millisecond) => {
+                    $impl_list_take!(Time32MillisecondType)
+                }
+                ArrowDataType::Time32(TimeUnit::Second) => $impl_list_take!(Time32SecondType),
+                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+                    $impl_list_take!(Time64NanosecondType)
+                }
+                ArrowDataType::Time64(TimeUnit::Microsecond) => {
+                    $impl_list_take!(Time64MicrosecondType)
+                }
+                ArrowDataType::Interval(IntervalUnit::DayTime) => {
+                    $impl_list_take!(IntervalDayTimeType)
+                }
+                ArrowDataType::Interval(IntervalUnit::YearMonth) => {
+                    $impl_list_take!(IntervalYearMonthType)
+                }
+                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                    $impl_list_take!(DurationNanosecondType)
+                }
+                ArrowDataType::Duration(TimeUnit::Microsecond) => {
+                    $impl_list_take!(DurationMicrosecondType)
+                }
+                ArrowDataType::Duration(TimeUnit::Millisecond) => {
+                    $impl_list_take!(DurationMillisecondType)
+                }
+                ArrowDataType::Duration(TimeUnit::Second) => $impl_list_take!(DurationSecondType),
+                ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                    $impl_list_take!(TimestampNanosecondType)
+                }
+                ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+                    $impl_list_take!(TimestampMicrosecondType)
+                }
+                ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
+                    $impl_list_take!(Time32MillisecondType)
+                }
+                ArrowDataType::Timestamp(TimeUnit::Second, _) => {
+                    $impl_list_take!(TimestampSecondType)
+                }
+                _ => unimplemented!(),
+            },
+            _ => unimplemented!(),
+        }
+    }};
+}
+
 impl Take for LargeListChunked {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
@@ -233,65 +296,7 @@ impl Take for LargeListChunked {
                 Ok(builder.finish())
             }};
         }
-
-        match self.dtype() {
-            ArrowDataType::LargeList(dt) => match **dt {
-                ArrowDataType::Utf8 => todo!(),
-                ArrowDataType::Boolean => impl_list_take!(BooleanType),
-                ArrowDataType::UInt8 => impl_list_take!(UInt8Type),
-                ArrowDataType::UInt16 => impl_list_take!(UInt16Type),
-                ArrowDataType::UInt32 => impl_list_take!(UInt32Type),
-                ArrowDataType::UInt64 => impl_list_take!(UInt64Type),
-                ArrowDataType::Int8 => impl_list_take!(Int8Type),
-                ArrowDataType::Int16 => impl_list_take!(Int16Type),
-                ArrowDataType::Int32 => impl_list_take!(Int32Type),
-                ArrowDataType::Int64 => impl_list_take!(Int64Type),
-                ArrowDataType::Float32 => impl_list_take!(Float32Type),
-                ArrowDataType::Float64 => impl_list_take!(Float64Type),
-                ArrowDataType::Date32(DateUnit::Day) => impl_list_take!(Date32Type),
-                ArrowDataType::Date64(DateUnit::Millisecond) => impl_list_take!(Date64Type),
-                ArrowDataType::Time32(TimeUnit::Millisecond) => {
-                    impl_list_take!(Time32MillisecondType)
-                }
-                ArrowDataType::Time32(TimeUnit::Second) => impl_list_take!(Time32SecondType),
-                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                    impl_list_take!(Time64NanosecondType)
-                }
-                ArrowDataType::Time64(TimeUnit::Microsecond) => {
-                    impl_list_take!(Time64MicrosecondType)
-                }
-                ArrowDataType::Interval(IntervalUnit::DayTime) => {
-                    impl_list_take!(IntervalDayTimeType)
-                }
-                ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-                    impl_list_take!(IntervalYearMonthType)
-                }
-                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                    impl_list_take!(DurationNanosecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Microsecond) => {
-                    impl_list_take!(DurationMicrosecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Millisecond) => {
-                    impl_list_take!(DurationMillisecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Second) => impl_list_take!(DurationSecondType),
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                    impl_list_take!(TimestampNanosecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                    impl_list_take!(TimestampMicrosecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-                    impl_list_take!(Time32MillisecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-                    impl_list_take!(TimestampSecondType)
-                }
-                _ => unimplemented!(),
-            },
-            _ => unimplemented!(),
-        }
+        impl_list_take_apply_macro!(self, impl_list_take)
     }
 
     unsafe fn take_unchecked(
@@ -315,64 +320,7 @@ impl Take for LargeListChunked {
             }};
         }
 
-        match self.dtype() {
-            ArrowDataType::LargeList(dt) => match **dt {
-                ArrowDataType::Utf8 => todo!(),
-                ArrowDataType::Boolean => impl_list_take!(BooleanType),
-                ArrowDataType::UInt8 => impl_list_take!(UInt8Type),
-                ArrowDataType::UInt16 => impl_list_take!(UInt16Type),
-                ArrowDataType::UInt32 => impl_list_take!(UInt32Type),
-                ArrowDataType::UInt64 => impl_list_take!(UInt64Type),
-                ArrowDataType::Int8 => impl_list_take!(Int8Type),
-                ArrowDataType::Int16 => impl_list_take!(Int16Type),
-                ArrowDataType::Int32 => impl_list_take!(Int32Type),
-                ArrowDataType::Int64 => impl_list_take!(Int64Type),
-                ArrowDataType::Float32 => impl_list_take!(Float32Type),
-                ArrowDataType::Float64 => impl_list_take!(Float64Type),
-                ArrowDataType::Date32(DateUnit::Day) => impl_list_take!(Date32Type),
-                ArrowDataType::Date64(DateUnit::Millisecond) => impl_list_take!(Date64Type),
-                ArrowDataType::Time32(TimeUnit::Millisecond) => {
-                    impl_list_take!(Time32MillisecondType)
-                }
-                ArrowDataType::Time32(TimeUnit::Second) => impl_list_take!(Time32SecondType),
-                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                    impl_list_take!(Time64NanosecondType)
-                }
-                ArrowDataType::Time64(TimeUnit::Microsecond) => {
-                    impl_list_take!(Time64MicrosecondType)
-                }
-                ArrowDataType::Interval(IntervalUnit::DayTime) => {
-                    impl_list_take!(IntervalDayTimeType)
-                }
-                ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-                    impl_list_take!(IntervalYearMonthType)
-                }
-                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                    impl_list_take!(DurationNanosecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Microsecond) => {
-                    impl_list_take!(DurationMicrosecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Millisecond) => {
-                    impl_list_take!(DurationMillisecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Second) => impl_list_take!(DurationSecondType),
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                    impl_list_take!(TimestampNanosecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                    impl_list_take!(TimestampMicrosecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-                    impl_list_take!(Time32MillisecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-                    impl_list_take!(TimestampSecondType)
-                }
-                _ => unimplemented!(),
-            },
-            _ => unimplemented!(),
-        }
+        impl_list_take_apply_macro!(self, impl_list_take)
     }
 
     fn take_opt(
@@ -402,64 +350,7 @@ impl Take for LargeListChunked {
             }};
         }
 
-        match self.dtype() {
-            ArrowDataType::LargeList(dt) => match **dt {
-                ArrowDataType::Utf8 => todo!(),
-                ArrowDataType::Boolean => impl_list_take!(BooleanType),
-                ArrowDataType::UInt8 => impl_list_take!(UInt8Type),
-                ArrowDataType::UInt16 => impl_list_take!(UInt16Type),
-                ArrowDataType::UInt32 => impl_list_take!(UInt32Type),
-                ArrowDataType::UInt64 => impl_list_take!(UInt64Type),
-                ArrowDataType::Int8 => impl_list_take!(Int8Type),
-                ArrowDataType::Int16 => impl_list_take!(Int16Type),
-                ArrowDataType::Int32 => impl_list_take!(Int32Type),
-                ArrowDataType::Int64 => impl_list_take!(Int64Type),
-                ArrowDataType::Float32 => impl_list_take!(Float32Type),
-                ArrowDataType::Float64 => impl_list_take!(Float64Type),
-                ArrowDataType::Date32(DateUnit::Day) => impl_list_take!(Date32Type),
-                ArrowDataType::Date64(DateUnit::Millisecond) => impl_list_take!(Date64Type),
-                ArrowDataType::Time32(TimeUnit::Millisecond) => {
-                    impl_list_take!(Time32MillisecondType)
-                }
-                ArrowDataType::Time32(TimeUnit::Second) => impl_list_take!(Time32SecondType),
-                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                    impl_list_take!(Time64NanosecondType)
-                }
-                ArrowDataType::Time64(TimeUnit::Microsecond) => {
-                    impl_list_take!(Time64MicrosecondType)
-                }
-                ArrowDataType::Interval(IntervalUnit::DayTime) => {
-                    impl_list_take!(IntervalDayTimeType)
-                }
-                ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-                    impl_list_take!(IntervalYearMonthType)
-                }
-                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                    impl_list_take!(DurationNanosecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Microsecond) => {
-                    impl_list_take!(DurationMicrosecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Millisecond) => {
-                    impl_list_take!(DurationMillisecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Second) => impl_list_take!(DurationSecondType),
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                    impl_list_take!(TimestampNanosecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                    impl_list_take!(TimestampMicrosecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-                    impl_list_take!(Time32MillisecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-                    impl_list_take!(TimestampSecondType)
-                }
-                _ => unimplemented!(),
-            },
-            _ => unimplemented!(),
-        }
+        impl_list_take_apply_macro!(self, impl_list_take)
     }
 
     unsafe fn take_opt_unchecked(
@@ -489,64 +380,7 @@ impl Take for LargeListChunked {
             }};
         }
 
-        match self.dtype() {
-            ArrowDataType::LargeList(dt) => match **dt {
-                ArrowDataType::Utf8 => todo!(),
-                ArrowDataType::Boolean => impl_list_take!(BooleanType),
-                ArrowDataType::UInt8 => impl_list_take!(UInt8Type),
-                ArrowDataType::UInt16 => impl_list_take!(UInt16Type),
-                ArrowDataType::UInt32 => impl_list_take!(UInt32Type),
-                ArrowDataType::UInt64 => impl_list_take!(UInt64Type),
-                ArrowDataType::Int8 => impl_list_take!(Int8Type),
-                ArrowDataType::Int16 => impl_list_take!(Int16Type),
-                ArrowDataType::Int32 => impl_list_take!(Int32Type),
-                ArrowDataType::Int64 => impl_list_take!(Int64Type),
-                ArrowDataType::Float32 => impl_list_take!(Float32Type),
-                ArrowDataType::Float64 => impl_list_take!(Float64Type),
-                ArrowDataType::Date32(DateUnit::Day) => impl_list_take!(Date32Type),
-                ArrowDataType::Date64(DateUnit::Millisecond) => impl_list_take!(Date64Type),
-                ArrowDataType::Time32(TimeUnit::Millisecond) => {
-                    impl_list_take!(Time32MillisecondType)
-                }
-                ArrowDataType::Time32(TimeUnit::Second) => impl_list_take!(Time32SecondType),
-                ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                    impl_list_take!(Time64NanosecondType)
-                }
-                ArrowDataType::Time64(TimeUnit::Microsecond) => {
-                    impl_list_take!(Time64MicrosecondType)
-                }
-                ArrowDataType::Interval(IntervalUnit::DayTime) => {
-                    impl_list_take!(IntervalDayTimeType)
-                }
-                ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-                    impl_list_take!(IntervalYearMonthType)
-                }
-                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                    impl_list_take!(DurationNanosecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Microsecond) => {
-                    impl_list_take!(DurationMicrosecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Millisecond) => {
-                    impl_list_take!(DurationMillisecondType)
-                }
-                ArrowDataType::Duration(TimeUnit::Second) => impl_list_take!(DurationSecondType),
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                    impl_list_take!(TimestampNanosecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                    impl_list_take!(TimestampMicrosecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-                    impl_list_take!(Time32MillisecondType)
-                }
-                ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-                    impl_list_take!(TimestampSecondType)
-                }
-                _ => unimplemented!(),
-            },
-            _ => unimplemented!(),
-        }
+        impl_list_take_apply_macro!(self, impl_list_take)
     }
 }
 

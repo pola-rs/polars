@@ -1146,16 +1146,16 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
 }
 
 impl ChunkSort<LargeListType> for LargeListChunked {
-    fn sort(&self, reverse: bool) -> Self {
+    fn sort(&self, _reverse: bool) -> Self {
         println!("A ListChunked cannot be sorted. Doing nothing");
         self.clone()
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
+    fn sort_in_place(&mut self, _reverse: bool) {
         println!("A ListChunked cannot be sorted. Doing nothing");
     }
 
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
+    fn argsort(&self, _reverse: bool) -> Vec<usize> {
         println!("A ListChunked cannot be sorted. Doing nothing");
         (0..self.len()).collect()
     }
