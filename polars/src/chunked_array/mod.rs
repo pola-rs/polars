@@ -31,7 +31,6 @@ pub mod cast;
 pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
-pub mod list;
 pub mod take;
 #[cfg(feature = "temporal")]
 pub mod temporal;

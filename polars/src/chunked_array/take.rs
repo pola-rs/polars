@@ -287,7 +287,7 @@ impl Take for LargeListChunked {
             ($type:ty) => {{
                 let values_builder = PrimitiveBuilder::<$type>::new(capacity);
                 let mut builder =
-                    ListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
+                    LargeListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
                 let taker = self.take_rand();
 
                 for idx in indices {
@@ -310,7 +310,7 @@ impl Take for LargeListChunked {
             ($type:ty) => {{
                 let values_builder = PrimitiveBuilder::<$type>::new(capacity);
                 let mut builder =
-                    ListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
+                    LargeListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
                 let taker = self.take_rand();
                 for idx in indices {
                     let v = taker.get_unchecked(idx);
@@ -334,7 +334,7 @@ impl Take for LargeListChunked {
             ($type:ty) => {{
                 let values_builder = PrimitiveBuilder::<$type>::new(capacity);
                 let mut builder =
-                    ListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
+                    LargeListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
                 let taker = self.take_rand();
 
                 for opt_idx in indices {
@@ -364,7 +364,7 @@ impl Take for LargeListChunked {
             ($type:ty) => {{
                 let values_builder = PrimitiveBuilder::<$type>::new(capacity);
                 let mut builder =
-                    ListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
+                    LargeListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
                 let taker = self.take_rand();
 
                 for opt_idx in indices {

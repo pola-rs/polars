@@ -400,7 +400,7 @@ where
     }
 }
 
-pub struct ListPrimitiveChunkedBuilder<T>
+pub struct LargeListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
@@ -408,7 +408,39 @@ where
     field: Field,
 }
 
-impl<T> ListPrimitiveChunkedBuilder<T>
+macro_rules! append_opt_series {
+    ($self:ident, $opt_s: ident) => {{
+        match $opt_s {
+            Some(s) => {
+                let data = s.array_data();
+                $self
+                    .builder
+                    .values()
+                    .append_data(&data)
+                    .expect("should not fail");
+                $self.builder.append(true).expect("should not fail");
+            }
+            None => {
+                $self.builder.append(false).expect("should not fail");
+            }
+        }
+    }};
+}
+
+macro_rules! finish_largelist_builder {
+    ($self:ident) => {{
+        let arr = Arc::new($self.builder.finish());
+        let len = arr.len();
+        LargeListChunked {
+            field: Arc::new($self.field),
+            chunks: vec![arr],
+            chunk_id: vec![len],
+            phantom: PhantomData,
+        }
+    }};
+}
+
+impl<T> LargeListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
@@ -416,27 +448,15 @@ where
         let builder = LargeListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(
             name,
-            ArrowDataType::List(Box::new(T::get_data_type())),
+            ArrowDataType::LargeList(Box::new(T::get_data_type())),
             true,
         );
 
-        ListPrimitiveChunkedBuilder { builder, field }
+        LargeListPrimitiveChunkedBuilder { builder, field }
     }
 
     pub fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => {
-                let data = s.array_data();
-                self.builder
-                    .values()
-                    .append_data(&data)
-                    .expect("should not fail");
-                self.builder.append(true).expect("should not fail");
-            }
-            None => {
-                self.builder.append(false).expect("should not fail");
-            }
-        }
+        append_opt_series!(self, opt_s)
     }
 
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
@@ -475,14 +495,33 @@ where
     }
 
     pub fn finish(mut self) -> LargeListChunked {
-        let arr = Arc::new(self.builder.finish());
-        let len = arr.len();
-        LargeListChunked {
-            field: Arc::new(self.field),
-            chunks: vec![arr],
-            chunk_id: vec![len],
-            phantom: PhantomData,
-        }
+        finish_largelist_builder!(self)
+    }
+}
+
+pub struct LargeListUtf8ChunkedBuilder {
+    builder: LargeListBuilder<StringBuilder>,
+    field: Field,
+}
+
+impl LargeListUtf8ChunkedBuilder {
+    pub fn new(name: &str, values_builder: StringBuilder, capacity: usize) -> Self {
+        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
+        let field = Field::new(
+            name,
+            ArrowDataType::LargeList(Box::new(ArrowDataType::Utf8)),
+            true,
+        );
+
+        LargeListUtf8ChunkedBuilder { builder, field }
+    }
+
+    pub fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        append_opt_series!(self, opt_s)
+    }
+
+    pub fn finish(mut self) -> LargeListChunked {
+        finish_largelist_builder!(self)
     }
 }
 
@@ -524,7 +563,7 @@ mod test {
     #[test]
     fn test_list_builder() {
         let values_builder = Int32Array::builder(10);
-        let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
+        let mut builder = LargeListPrimitiveChunkedBuilder::new("a", values_builder, 10);
 
         // create a series containing two chunks
         let mut s1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]).into_series();

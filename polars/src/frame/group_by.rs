@@ -1,7 +1,7 @@
 use super::hash_join::prepare_hashed_relation;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::prelude::*;
-use arrow::array::PrimitiveBuilder;
+use arrow::array::{PrimitiveBuilder, StringBuilder};
 use enum_dispatch::enum_dispatch;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
@@ -287,9 +287,9 @@ where
 }
 
 macro_rules! impl_list_groupby_macro {
-    ($obj:ident, $gb_macro:ident) => {{
+    ($obj:ident, $gb_macro:ident, $gb_macro_utf8:ident) => {{
         match $obj.dtype() {
-            ArrowDataType::Utf8 => todo!(),
+            ArrowDataType::Utf8 => $gb_macro_utf8!(),
             ArrowDataType::Boolean => $gb_macro!(BooleanType),
             ArrowDataType::UInt8 => $gb_macro!(UInt8Type),
             ArrowDataType::UInt16 => $gb_macro!(UInt16Type),
@@ -559,8 +559,11 @@ impl<'a> GroupBy<'a> {
         macro_rules! impl_gb {
             ($type:ty) => {{
                 let values_builder = PrimitiveBuilder::<$type>::new(self.groups.len());
-                let mut builder =
-                    ListPrimitiveChunkedBuilder::new(&new_name, values_builder, self.groups.len());
+                let mut builder = LargeListPrimitiveChunkedBuilder::new(
+                    &new_name,
+                    values_builder,
+                    self.groups.len(),
+                );
                 for (_first, idx) in &self.groups {
                     let s = unsafe {
                         agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
@@ -571,7 +574,23 @@ impl<'a> GroupBy<'a> {
                 DataFrame::new(vec![keys, list])
             }};
         }
-        impl_list_groupby_macro!(agg_col, impl_gb)
+
+        macro_rules! impl_gb_utf8 {
+            () => {{
+                let values_builder = StringBuilder::new(self.groups.len());
+                let mut builder =
+                    LargeListUtf8ChunkedBuilder::new(&new_name, values_builder, self.groups.len());
+                for (_first, idx) in &self.groups {
+                    let s = unsafe {
+                        agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
+                    };
+                    builder.append_opt_series(Some(&s))
+                }
+                let list = builder.finish().into_series();
+                DataFrame::new(vec![keys, list])
+            }};
+        }
+        impl_list_groupby_macro!(agg_col, impl_gb, impl_gb_utf8)
     }
 }
 

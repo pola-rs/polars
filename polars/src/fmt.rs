@@ -288,7 +288,7 @@ mod test {
     fn list() {
         use arrow::array::Int32Array;
         let values_builder = Int32Array::builder(10);
-        let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
+        let mut builder = LargeListPrimitiveChunkedBuilder::new("a", values_builder, 10);
         builder.append_slice(Some(&[1, 2, 3]));
         builder.append_slice(None);
         let list = builder.finish().into_series();

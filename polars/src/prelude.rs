@@ -5,8 +5,9 @@ pub use crate::{
         apply::Apply,
         arithmetic::Pow,
         builder::{
-            AlignedAlloc, AlignedVec, ListPrimitiveChunkedBuilder, NewChunkedArray,
-            PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
+            AlignedAlloc, AlignedVec, LargeListPrimitiveChunkedBuilder,
+            LargeListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder,
+            Utf8ChunkedBuilder,
         },
         cast::ChunkCast,
         chunkops::ChunkOps,
