@@ -286,46 +286,6 @@ where
     }
 }
 
-macro_rules! impl_list_groupby_macro {
-    ($obj:ident, $gb_macro:ident, $gb_macro_utf8:ident) => {{
-        match $obj.dtype() {
-            ArrowDataType::Utf8 => $gb_macro_utf8!(),
-            ArrowDataType::Boolean => $gb_macro!(BooleanType),
-            ArrowDataType::UInt8 => $gb_macro!(UInt8Type),
-            ArrowDataType::UInt16 => $gb_macro!(UInt16Type),
-            ArrowDataType::UInt32 => $gb_macro!(UInt32Type),
-            ArrowDataType::UInt64 => $gb_macro!(UInt64Type),
-            ArrowDataType::Int8 => $gb_macro!(Int8Type),
-            ArrowDataType::Int16 => $gb_macro!(Int16Type),
-            ArrowDataType::Int32 => $gb_macro!(Int32Type),
-            ArrowDataType::Int64 => $gb_macro!(Int64Type),
-            ArrowDataType::Float32 => $gb_macro!(Float32Type),
-            ArrowDataType::Float64 => $gb_macro!(Float64Type),
-            ArrowDataType::Date32(DateUnit::Day) => $gb_macro!(Date32Type),
-            ArrowDataType::Date64(DateUnit::Millisecond) => $gb_macro!(Date64Type),
-            ArrowDataType::Time32(TimeUnit::Millisecond) => $gb_macro!(Time32MillisecondType),
-            ArrowDataType::Time32(TimeUnit::Second) => $gb_macro!(Time32SecondType),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => $gb_macro!(Time64NanosecondType),
-            ArrowDataType::Time64(TimeUnit::Microsecond) => $gb_macro!(Time64MicrosecondType),
-            ArrowDataType::Interval(IntervalUnit::DayTime) => $gb_macro!(IntervalDayTimeType),
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => $gb_macro!(IntervalYearMonthType),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => $gb_macro!(DurationNanosecondType),
-            ArrowDataType::Duration(TimeUnit::Microsecond) => $gb_macro!(DurationMicrosecondType),
-            ArrowDataType::Duration(TimeUnit::Millisecond) => $gb_macro!(DurationMillisecondType),
-            ArrowDataType::Duration(TimeUnit::Second) => $gb_macro!(DurationSecondType),
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                $gb_macro!(TimestampNanosecondType)
-            }
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                $gb_macro!(TimestampMicrosecondType)
-            }
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => $gb_macro!(Time32MillisecondType),
-            ArrowDataType::Timestamp(TimeUnit::Second, _) => $gb_macro!(TimestampSecondType),
-            _ => unimplemented!(),
-        }
-    }};
-}
-
 impl<'a> GroupBy<'a> {
     /// Select the column by which the determine the groups.
     pub fn select(mut self, name: &str) -> Self {
@@ -590,7 +550,7 @@ impl<'a> GroupBy<'a> {
                 DataFrame::new(vec![keys, list])
             }};
         }
-        impl_list_groupby_macro!(agg_col, impl_gb, impl_gb_utf8)
+        match_arrow_data_type_apply_macro!(agg_col.dtype(), impl_gb, impl_gb_utf8)
     }
 }
 

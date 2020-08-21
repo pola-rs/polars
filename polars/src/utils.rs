@@ -71,3 +71,40 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
         (lower, None) => lower,
     }
 }
+
+#[macro_export]
+macro_rules! match_arrow_data_type_apply_macro {
+    ($obj:expr, $macro:ident, $macro_utf8:ident) => {{
+        match $obj {
+            ArrowDataType::Utf8 => $macro_utf8!(),
+            ArrowDataType::Boolean => $macro!(BooleanType),
+            ArrowDataType::UInt8 => $macro!(UInt8Type),
+            ArrowDataType::UInt16 => $macro!(UInt16Type),
+            ArrowDataType::UInt32 => $macro!(UInt32Type),
+            ArrowDataType::UInt64 => $macro!(UInt64Type),
+            ArrowDataType::Int8 => $macro!(Int8Type),
+            ArrowDataType::Int16 => $macro!(Int16Type),
+            ArrowDataType::Int32 => $macro!(Int32Type),
+            ArrowDataType::Int64 => $macro!(Int64Type),
+            ArrowDataType::Float32 => $macro!(Float32Type),
+            ArrowDataType::Float64 => $macro!(Float64Type),
+            ArrowDataType::Date32(DateUnit::Day) => $macro!(Date32Type),
+            ArrowDataType::Date64(DateUnit::Millisecond) => $macro!(Date64Type),
+            ArrowDataType::Time32(TimeUnit::Millisecond) => $macro!(Time32MillisecondType),
+            ArrowDataType::Time32(TimeUnit::Second) => $macro!(Time32SecondType),
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => $macro!(Time64NanosecondType),
+            ArrowDataType::Time64(TimeUnit::Microsecond) => $macro!(Time64MicrosecondType),
+            ArrowDataType::Interval(IntervalUnit::DayTime) => $macro!(IntervalDayTimeType),
+            ArrowDataType::Interval(IntervalUnit::YearMonth) => $macro!(IntervalYearMonthType),
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => $macro!(DurationNanosecondType),
+            ArrowDataType::Duration(TimeUnit::Microsecond) => $macro!(DurationMicrosecondType),
+            ArrowDataType::Duration(TimeUnit::Millisecond) => $macro!(DurationMillisecondType),
+            ArrowDataType::Duration(TimeUnit::Second) => $macro!(DurationSecondType),
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => $macro!(TimestampNanosecondType),
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => $macro!(TimestampMicrosecondType),
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => $macro!(Time32MillisecondType),
+            ArrowDataType::Timestamp(TimeUnit::Second, _) => $macro!(TimestampSecondType),
+            _ => unimplemented!(),
+        }
+    }};
+}
