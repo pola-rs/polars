@@ -400,6 +400,11 @@ where
     }
 }
 
+pub trait LargListBuilderTrait {
+    fn append_opt_series(&mut self, opt_s: Option<&Series>);
+    fn finish(&mut self) -> LargeListChunked;
+}
+
 pub struct LargeListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
@@ -432,7 +437,7 @@ macro_rules! finish_largelist_builder {
         let arr = Arc::new($self.builder.finish());
         let len = arr.len();
         LargeListChunked {
-            field: Arc::new($self.field),
+            field: Arc::new($self.field.clone()),
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
@@ -453,10 +458,6 @@ where
         );
 
         LargeListPrimitiveChunkedBuilder { builder, field }
-    }
-
-    pub fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        append_opt_series!(self, opt_s)
     }
 
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
@@ -493,8 +494,17 @@ where
     pub fn append_null(&mut self) {
         self.builder.append(false).expect("should not fail");
     }
+}
 
-    pub fn finish(mut self) -> LargeListChunked {
+impl<T> LargListBuilderTrait for LargeListPrimitiveChunkedBuilder<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        append_opt_series!(self, opt_s)
+    }
+
+    fn finish(&mut self) -> LargeListChunked {
         finish_largelist_builder!(self)
     }
 }
@@ -523,6 +533,38 @@ impl LargeListUtf8ChunkedBuilder {
     pub fn finish(mut self) -> LargeListChunked {
         finish_largelist_builder!(self)
     }
+}
+
+impl LargListBuilderTrait for LargeListUtf8ChunkedBuilder {
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        append_opt_series!(self, opt_s)
+    }
+
+    fn finish(&mut self) -> LargeListChunked {
+        finish_largelist_builder!(self)
+    }
+}
+
+pub fn get_large_list_builder(
+    dt: &ArrowDataType,
+    capacity: usize,
+    name: &str,
+) -> Box<dyn LargListBuilderTrait> {
+    macro_rules! get_primitive_builder {
+        ($type:ty) => {{
+            let values_builder = PrimitiveBuilder::<$type>::new(capacity);
+            let builder = LargeListPrimitiveChunkedBuilder::new(&name, values_builder, capacity);
+            Box::new(builder)
+        }};
+    }
+    macro_rules! get_utf8_builder {
+        () => {{
+            let values_builder = StringBuilder::new(capacity);
+            let builder = LargeListUtf8ChunkedBuilder::new(&name, values_builder, capacity);
+            Box::new(builder)
+        }};
+    }
+    match_arrow_data_type_apply_macro!(dt, get_primitive_builder, get_utf8_builder)
 }
 
 #[cfg(test)]

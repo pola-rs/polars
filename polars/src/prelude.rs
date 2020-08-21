@@ -5,7 +5,7 @@ pub use crate::{
         apply::Apply,
         arithmetic::Pow,
         builder::{
-            AlignedAlloc, AlignedVec, LargeListPrimitiveChunkedBuilder,
+            AlignedAlloc, AlignedVec, LargListBuilderTrait, LargeListPrimitiveChunkedBuilder,
             LargeListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder,
             Utf8ChunkedBuilder,
         },

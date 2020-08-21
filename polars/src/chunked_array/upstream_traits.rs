@@ -1,4 +1,5 @@
 //! Implementations of upstream traits for ChunkedArray<T>
+use crate::chunked_array::builder::get_large_list_builder;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use crate::utils::Xob;
@@ -116,6 +117,56 @@ impl FromIterator<Option<String>> for Utf8Chunked {
                 Some(val) => builder.append_value(val.as_str()),
             }
         }
+        builder.finish()
+    }
+}
+
+impl<'a> FromIterator<Option<&'a Series>> for LargeListChunked {
+    fn from_iter<I: IntoIterator<Item = Option<&'a Series>>>(iter: I) -> Self {
+        // we don't know the type of the series until we get Some(Series) from the iterator.
+        // until that happens we count the number of None's so that we can first fill the None's until
+        // we know the type
+
+        let mut it = iter.into_iter();
+
+        let v;
+        let mut cnt = 0;
+
+        loop {
+            let opt_v = it.next();
+
+            match opt_v {
+                Some(opt_v) => match opt_v {
+                    Some(val) => {
+                        v = val;
+                        break;
+                    }
+                    None => cnt += 1,
+                },
+                // end of iterator
+                None => {
+                    // type is not known
+                    panic!("Type of Series cannot be determined as they are all null")
+                }
+            }
+        }
+        let capacity = get_iter_capacity(&it);
+        let mut builder = get_large_list_builder(v.dtype(), capacity, "collected");
+
+        // first fill all None's we encountered
+        while cnt > 0 {
+            builder.append_opt_series(None);
+            cnt -= 1;
+        }
+
+        // now the first non None
+        builder.append_opt_series(Some(v));
+
+        // now we have added all Nones, we can consume the rest of the iterator.
+        while let Some(opt_s) = it.next() {
+            builder.append_opt_series(opt_s);
+        }
+
         builder.finish()
     }
 }
@@ -309,3 +360,21 @@ where
 }
 // TODO: macro implementation of Vec From for all types. ChunkedArray<T> (no reference) doesn't implement
 //    &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_collect_into_large_listt() {
+        let s1 = Series::new("", &[true, false, true]);
+        let s2 = Series::new("", &[true, false, true]);
+
+        let ll: LargeListChunked = [Some(&s1), Some(&s2)].iter().copied().collect();
+        assert_eq!(ll.len(), 2);
+        assert_eq!(ll.null_count(), 0);
+        let ll: LargeListChunked = [None, Some(&s2)].iter().copied().collect();
+        assert_eq!(ll.len(), 2);
+        assert_eq!(ll.null_count(), 1);
+    }
+}
