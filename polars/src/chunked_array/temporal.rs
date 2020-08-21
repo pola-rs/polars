@@ -1,6 +1,6 @@
 //! Traits and utilities for temporal data.
 use crate::prelude::*;
-use chrono::{NaiveDateTime, NaiveTime, Timelike};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
 // Conversion extracted from:
 // https://docs.rs/arrow/1.0.0/src/arrow/array/array.rs.html#589
@@ -54,12 +54,6 @@ pub(crate) fn timestamp_milliseconds_as_datetime(v: i64) -> NaiveDateTime {
 
 pub(crate) fn timestamp_seconds_as_datetime(seconds: i64) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(seconds, 0)
-}
-
-// date32 is number of days since the Unix Epoch
-pub(crate) fn naive_datetime_to_date32(v: &NaiveDateTime) -> i32 {
-    // 86400 seconds in a day
-    (v.timestamp() / 86400 as i64) as i32
 }
 
 // date64 is number of milliseconds since the Unix Epoch
@@ -245,7 +239,6 @@ macro_rules! impl_from_naive_datetime {
     };
 }
 
-impl_from_naive_datetime!(Date32Type, Date32Chunked, naive_datetime_to_date32);
 impl_from_naive_datetime!(Date64Type, Date64Chunked, naive_datetime_to_date64);
 impl_from_naive_datetime!(
     TimestampNanosecondType,
@@ -267,6 +260,49 @@ impl_from_naive_datetime!(
     TimestampSecondChunked,
     naive_datetime_to_timestamp_seconds
 );
+
+pub trait FromNaiveDate<T, N> {
+    fn new_from_naive_date(name: &str, v: &[N]) -> Self;
+
+    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self;
+}
+
+fn naive_date_to_date32(nd: NaiveDate, unix_time: NaiveDate) -> i32 {
+    nd.signed_duration_since(unix_time).num_days() as i32
+}
+
+fn parse_naive_date_from_str(s: &str, fmt: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(s, fmt).ok()
+}
+
+fn unix_time_naive_date() -> NaiveDate {
+    NaiveDate::from_ymd(1970, 1, 1)
+}
+
+impl FromNaiveDate<Date32Type, NaiveDate> for Date32Chunked {
+    fn new_from_naive_date(name: &str, v: &[NaiveDate]) -> Self {
+        let unix_date = unix_time_naive_date();
+
+        let unit = v
+            .iter()
+            .map(|v| naive_date_to_date32(*v, unix_date))
+            .collect::<AlignedVec<_>>();
+        ChunkedArray::new_from_aligned_vec(name, unit)
+    }
+
+    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
+        let unix_date = unix_time_naive_date();
+
+        ChunkedArray::new_from_opt_iter(
+            name,
+            v.iter().map(|s| {
+                parse_naive_date_from_str(s, fmt)
+                    .as_ref()
+                    .map(|v| naive_date_to_date32(*v, unix_date))
+            }),
+        )
+    }
+}
 
 pub trait AsNaiveDateTime {
     fn as_naive_datetime(&self) -> Vec<Option<NaiveDateTime>>;
@@ -297,6 +333,23 @@ impl_as_naive_datetime!(
     timestamp_milliseconds_as_datetime
 );
 impl_as_naive_datetime!(TimestampSecondChunked, timestamp_seconds_as_datetime);
+
+pub trait AsNaiveDate {
+    fn as_naive_date(&self) -> Vec<Option<NaiveDate>>;
+}
+
+impl AsNaiveDate for Date32Chunked {
+    fn as_naive_date(&self) -> Vec<Option<NaiveDate>> {
+        self.into_iter()
+            .map(|opt_t| {
+                opt_t.map(|v| {
+                    let dt = date32_as_datetime(v);
+                    NaiveDate::from_ymd(dt.year(), dt.month(), dt.day())
+                })
+            })
+            .collect()
+    }
+}
 
 #[cfg(all(test, feature = "temporal"))]
 mod test {
@@ -332,8 +385,6 @@ mod test {
         .collect();
 
         // NOTE: the values are checked and correct.
-        let dt = Date32Chunked::new_from_naive_datetime("name", &datetimes);
-        assert_eq!([6811, 16683, 15695], dt.cont_slice().unwrap());
         let dt = Date64Chunked::new_from_naive_datetime("name", &datetimes);
         assert_eq!(
             [588470416000, 1441497364000, 1356048000000],
@@ -358,6 +409,23 @@ mod test {
         assert_eq!(
             [588470416, 1441497364, 1356048000],
             dt.cont_slice().unwrap()
+        );
+    }
+
+    #[test]
+    fn from_date() {
+        let dates = &[
+            "2020-08-21",
+            "2020-08-21",
+            "2020-08-22",
+            "2020-08-23",
+            "2020-08-22",
+        ];
+        let fmt = "%Y-%m-%d";
+        let ca = Date32Chunked::parse_from_str_slice("dates", dates, fmt);
+        assert_eq!(
+            [18495, 18495, 18496, 18497, 18496],
+            ca.cont_slice().unwrap()
         );
     }
 }

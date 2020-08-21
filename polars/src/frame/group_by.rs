@@ -95,9 +95,59 @@ impl DataFrame {
     }
 }
 
+/// Returned by a groupby operation on a DataFrame. This struct supports
+/// several aggregations.
+///
+/// Until described otherwise, the examples in this struct are performed on the following DataFrame:
+///
+/// ```rust
+/// use polars::prelude::*;
+///
+/// let dates = &[
+/// "2020-08-21",
+/// "2020-08-21",
+/// "2020-08-22",
+/// "2020-08-23",
+/// "2020-08-22",
+/// ];
+/// // date format
+/// let fmt = "%Y-%m-%d";
+/// // create date series
+/// let s0 = Date32Chunked::parse_from_str_slice("date", dates, fmt)
+///         .into_series();
+/// // create temperature series
+/// let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
+/// // create rain series
+/// let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
+/// // create a new DataFrame
+/// let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
+/// println!("{:?}", df);
+/// ```
+///
+/// Outputs:
+///
+/// ```text
+/// +------------+------+------+
+/// | date       | temp | rain |
+/// | ---        | ---  | ---  |
+/// | date32     | i32  | f64  |
+/// +============+======+======+
+/// | 2020-08-21 | 20   | 0.2  |
+/// +------------+------+------+
+/// | 2020-08-21 | 10   | 0.1  |
+/// +------------+------+------+
+/// | 2020-08-22 | 7    | 0.3  |
+/// +------------+------+------+
+/// | 2020-08-23 | 9    | 0.1  |
+/// +------------+------+------+
+/// | 2020-08-22 | 1    | 0.01 |
+/// +------------+------+------+
+/// ```
+///
 #[derive(Debug, Clone)]
 pub struct GroupBy<'a> {
     df: &'a DataFrame,
+    /// By which column should the grouping operation be performed.
     pub by: String,
     // [first idx, [other idx]]
     groups: Vec<(usize, Vec<usize>)>,
@@ -277,6 +327,7 @@ macro_rules! impl_list_groupby_macro {
 }
 
 impl<'a> GroupBy<'a> {
+    /// Select the column by which the determine the groups.
     pub fn select(mut self, name: &str) -> Self {
         self.selection = Some(name.to_string());
         self
@@ -303,6 +354,30 @@ impl<'a> GroupBy<'a> {
     }
 
     /// Aggregate grouped series and compute the mean per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").mean()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +------------+-----------+
+    /// | date       | temp_mean |
+    /// | ---        | ---       |
+    /// | date32     | f64       |
+    /// +============+===========+
+    /// | 2020-08-23 | 9         |
+    /// +------------+-----------+
+    /// | 2020-08-22 | 4         |
+    /// +------------+-----------+
+    /// | 2020-08-21 | 15        |
+    /// +------------+-----------+
+    /// ```
     pub fn mean(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_mean", name];
@@ -313,6 +388,30 @@ impl<'a> GroupBy<'a> {
     }
 
     /// Aggregate grouped series and compute the sum per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").sum()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +------------+----------+
+    /// | date       | temp_sum |
+    /// | ---        | ---      |
+    /// | date32     | i32      |
+    /// +============+==========+
+    /// | 2020-08-23 | 9        |
+    /// +------------+----------+
+    /// | 2020-08-22 | 8        |
+    /// +------------+----------+
+    /// | 2020-08-21 | 30       |
+    /// +------------+----------+
+    /// ```
     pub fn sum(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_sum", name];
@@ -322,6 +421,30 @@ impl<'a> GroupBy<'a> {
     }
 
     /// Aggregate grouped series and compute the minimal value per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").min()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +------------+----------+
+    /// | date       | temp_min |
+    /// | ---        | ---      |
+    /// | date32     | i32      |
+    /// +============+==========+
+    /// | 2020-08-23 | 9        |
+    /// +------------+----------+
+    /// | 2020-08-22 | 1        |
+    /// +------------+----------+
+    /// | 2020-08-21 | 10       |
+    /// +------------+----------+
+    /// ```
     pub fn min(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_min", name];
@@ -331,6 +454,30 @@ impl<'a> GroupBy<'a> {
     }
 
     /// Aggregate grouped series and compute the maximum value per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").max()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +------------+----------+
+    /// | date       | temp_max |
+    /// | ---        | ---      |
+    /// | date32     | i32      |
+    /// +============+==========+
+    /// | 2020-08-23 | 9        |
+    /// +------------+----------+
+    /// | 2020-08-22 | 7        |
+    /// +------------+----------+
+    /// | 2020-08-21 | 20       |
+    /// +------------+----------+
+    /// ```
     pub fn max(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_max", name];
@@ -340,6 +487,30 @@ impl<'a> GroupBy<'a> {
     }
 
     /// Aggregate grouped series and compute the number of values per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").count()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +------------+------------+
+    /// | date       | temp_count |
+    /// | ---        | ---        |
+    /// | date32     | u32        |
+    /// +============+============+
+    /// | 2020-08-23 | 1          |
+    /// +------------+------------+
+    /// | 2020-08-22 | 2          |
+    /// +------------+------------+
+    /// | 2020-08-21 | 2          |
+    /// +------------+------------+
+    /// ```
     pub fn count(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
         let new_name = format!["{}_count", name];
@@ -361,30 +532,25 @@ impl<'a> GroupBy<'a> {
     ///
     /// ```rust
     /// # use polars::prelude::*;
-    ///
-    /// // first create a DataFrame
-    /// let s0 = Series::new("days", &["mo", "mo", "tue", "wed", "tue"]);
-    /// let s1 = Series::new("temp", &[20, 10, 7, 9, 1]);
-    /// let s2 = Series::new("rain", &[0.2, 0.1, 0.3, 0.1, 0.01]);
-    /// let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
-    ///
-    /// // GroupBy and aggregate to Lists
-    /// let gb = df.groupby("days").unwrap().select("temp").agg_list().unwrap();
-    /// println!("{:?}", gb);
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     // GroupBy and aggregate to Lists
+    ///     df.groupby("date")?.select("temp").agg_list()
+    /// }
     /// ```
-    /// Outputs:
+    /// Returns:
+    ///
     /// ```text
-    /// +-------+---------------+
-    /// | days  | temp_agg_list |
-    /// | ---   | ---           |
-    /// | str   | list [i32]    |
-    /// +=======+===============+
-    /// | "mo"  | List [Int32]  |
-    /// +-------+---------------+
-    /// | "wed" | List [Int32]  |
-    /// +-------+---------------+
-    /// | "tue" | List [Int32]  |
-    /// +-------+---------------+
+    ///  +------------+---------------+
+    ///  | date       | temp_agg_list |
+    ///  | ---        | ---           |
+    ///  | date32     | list [i32]    |
+    ///  +============+===============+
+    ///  | 2020-08-23 | list [Int32]  |
+    ///  +------------+---------------+
+    ///  | 2020-08-22 | list [Int32]  |
+    ///  +------------+---------------+
+    ///  | 2020-08-21 | list [Int32]  |
+    ///  +------------+---------------+
     /// ```
     pub fn agg_list(&self) -> Result<DataFrame> {
         let (name, keys, agg_col) = self.prepare_agg()?;
@@ -415,34 +581,46 @@ mod test {
 
     #[test]
     fn test_group_by() {
-        let s0 = Series::new("days", ["mo", "mo", "tue", "wed", "tue"].as_ref());
+        let s0 = Date32Chunked::parse_from_str_slice(
+            "date",
+            &[
+                "2020-08-21",
+                "2020-08-21",
+                "2020-08-22",
+                "2020-08-23",
+                "2020-08-22",
+            ],
+            "%Y-%m-%d",
+        )
+        .into_series();
         let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
         let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
         let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
+        println!("{:?}", df);
 
         println!(
             "{:?}",
-            df.groupby("days").unwrap().select("temp").count().unwrap()
+            df.groupby("date").unwrap().select("temp").count().unwrap()
         );
         println!(
             "{:?}",
-            df.groupby("days").unwrap().select("temp").mean().unwrap()
+            df.groupby("date").unwrap().select("temp").mean().unwrap()
         );
         println!(
             "{:?}",
-            df.groupby("days").unwrap().select("temp").sum().unwrap()
+            df.groupby("date").unwrap().select("temp").sum().unwrap()
         );
         println!(
             "{:?}",
-            df.groupby("days").unwrap().select("temp").min().unwrap()
+            df.groupby("date").unwrap().select("temp").min().unwrap()
         );
         println!(
             "{:?}",
-            df.groupby("days").unwrap().select("temp").max().unwrap()
+            df.groupby("date").unwrap().select("temp").max().unwrap()
         );
         println!(
             "{:?}",
-            df.groupby("days")
+            df.groupby("date")
                 .unwrap()
                 .select("temp")
                 .agg_list()
