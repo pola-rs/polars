@@ -121,6 +121,24 @@ impl FromIterator<Option<String>> for Utf8Chunked {
     }
 }
 
+impl<'a> FromIterator<&'a Series> for LargeListChunked {
+    fn from_iter<I: IntoIterator<Item = &'a Series>>(iter: I) -> Self {
+        let mut it = iter.into_iter();
+        let capacity = get_iter_capacity(&it);
+
+        // first take one to get the dtype. We panic if we have an empty iterator
+        let v = it.next().unwrap();
+        let mut builder = get_large_list_builder(v.dtype(), capacity, "collected");
+
+        builder.append_opt_series(Some(v));
+        while let Some(s) = it.next() {
+            builder.append_opt_series(Some(s));
+        }
+
+        builder.finish()
+    }
+}
+
 impl<'a> FromIterator<Option<&'a Series>> for LargeListChunked {
     fn from_iter<I: IntoIterator<Item = Option<&'a Series>>>(iter: I) -> Self {
         // we don't know the type of the series until we get Some(Series) from the iterator.

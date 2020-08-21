@@ -1,3 +1,4 @@
+use crate::chunked_array::builder::get_large_list_builder;
 use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
 use std::sync::Arc;
@@ -27,6 +28,7 @@ macro_rules! optional_rechunk {
     };
 }
 
+#[inline]
 fn mimic_chunks<T>(arr: &ArrayRef, chunk_lengths: &[usize], name: &str) -> Result<ChunkedArray<T>>
 where
     T: PolarsDataType,
@@ -150,7 +152,24 @@ impl ChunkOps for LargeListChunked {
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
             (1, Some(1)) | (1, None) => Ok(self.clone()),
             (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
-            (_, Some(_)) | (_, None) => todo!(),
+            (_, Some(_)) | (_, None) => {
+                let default = &[self.len()];
+                let chunk_id = chunk_lengths.unwrap_or(default);
+                let mut iter = self.into_iter();
+                let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
+
+                for &chunk_length in chunk_id {
+                    let mut builder =
+                        get_large_list_builder(self.dtype(), chunk_length, self.name());
+                    while let Some(v) = iter.next() {
+                        builder.append_opt_series(v.as_ref())
+                    }
+                    let list = builder.finish();
+                    // cheap clone of Arc
+                    chunks.push(list.chunks[0].clone())
+                }
+                Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            }
         }
     }
 
