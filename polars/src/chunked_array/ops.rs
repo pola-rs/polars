@@ -1,16 +1,95 @@
+//! Traits for miscellaneous operations on ChunkedArray
 use crate::chunked_array::builder::get_large_list_builder;
-/// Traits for miscellaneous operations on ChunkedArray
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::compute;
 use itertools::Itertools;
 use std::cmp::Ordering;
 
+/// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
+pub trait ChunkCast {
+    /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
+    fn cast<N>(&self) -> Result<ChunkedArray<N>>
+    where
+        N: PolarsDataType;
+}
+
+/// Fastest way to do elementwise operations on a ChunkedArray<T>
+pub trait ChunkApply<'a, A, B> {
+    /// Apply a closure `F` elementwise.
+    fn apply<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(A) -> B + Copy;
+}
+
+/// Aggregation operations
+pub trait ChunkAgg<T> {
+    /// Returns `None` if the array is empty or only contains null values.
+    fn sum(&self) -> Option<T>;
+    /// Returns the minimum value in the array, according to the natural order.
+    /// Returns an option because the array is nullable.
+    fn min(&self) -> Option<T>;
+    /// Returns the maximum value in the array, according to the natural order.
+    /// Returns an option because the array is nullable.
+    fn max(&self) -> Option<T>;
+}
+
+/// Compare [Series](series/series/enum.Series.html)
+/// and [ChunkedArray](series/chunked_array/struct.ChunkedArray.html)'s and get a `boolean` mask that
+/// can be used to filter rows.
+///
+/// # Example
+///
+/// ```
+/// use polars::prelude::*;
+/// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
+///     let mask = df
+///     .column("column_a")
+///     .ok_or(PolarsError::NotFound)?
+///     .eq(1);
+///
+///     df.filter(&mask)
+/// }
+/// ```
+pub trait ChunkCompare<Rhs> {
+    /// Check for equality.
+    fn eq(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Check for inequality.
+    fn neq(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Greater than comparison.
+    fn gt(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Greater than or equal comparison.
+    fn gt_eq(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Less than comparison.
+    fn lt(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Less than or equal comparison
+    fn lt_eq(&self, rhs: Rhs) -> BooleanChunked;
+}
+
+/// Get unique values in a ChunkedArray<T>
+pub trait ChunkUnique<T> {
+    // We don't return Self to be able to use AutoRef specialization
+    /// Get unique values of a ChunkedArray
+    fn unique(&self) -> ChunkedArray<T>;
+
+    /// Get first index of the unique values in a ChunkedArray.
+    fn arg_unique(&self) -> Vec<usize>;
+}
+
+/// Sort operations on ChunkedArray<T>
 pub trait ChunkSort<T> {
+    /// Returned a sorted ChunkedArray<T>.
     fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 
+    /// Sort this array in place.
     fn sort_in_place(&mut self, reverse: bool);
 
+    /// Retrieve the indexes needed to sort this array.
     fn argsort(&self, reverse: bool) -> Vec<usize>;
 }
 
@@ -176,7 +255,9 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     }
 }
 
+/// Reverse a ChunkedArray<T>
 pub trait ChunkReverse<T> {
+    /// Return a reversed version of this array.
     fn reverse(&self) -> ChunkedArray<T>;
 }
 
@@ -213,6 +294,7 @@ impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
 impl_reverse!(LargeListType, LargeListChunked);
 
+/// Filter values by a boolean mask.
 pub trait ChunkFilter<T> {
     /// Filter values in the ChunkedArray with a boolean mask.
     ///
@@ -250,28 +332,27 @@ where
 
 impl ChunkFilter<LargeListType> for LargeListChunked {
     fn filter(&self, filter: &BooleanChunked) -> Result<LargeListChunked> {
-        match self.dtype() {
-            ArrowDataType::LargeList(dt) => {
-                let mut builder = get_large_list_builder(dt, self.len(), self.name());
-                filter
-                    .into_iter()
-                    .zip(self.into_iter())
-                    .for_each(|(opt_bool_val, opt_series)| {
-                        let bool_val = opt_bool_val.unwrap_or(false);
-                        let opt_val = match bool_val {
-                            true => opt_series,
-                            false => None,
-                        };
-                        builder.append_opt_series(opt_val.as_ref())
-                    });
-                Ok(builder.finish())
-            }
-            _ => panic!("should not happen"),
-        }
+        let dt = self.get_inner_dtype();
+        let mut builder = get_large_list_builder(dt, self.len(), self.name());
+        filter
+            .into_iter()
+            .zip(self.into_iter())
+            .for_each(|(opt_bool_val, opt_series)| {
+                let bool_val = opt_bool_val.unwrap_or(false);
+                let opt_val = match bool_val {
+                    true => opt_series,
+                    false => None,
+                };
+                builder.append_opt_series(opt_val.as_ref())
+            });
+        Ok(builder.finish())
     }
 }
 
+/// Shift the values of a ChunkedArray by a number of periods.
 pub trait ChunkShift<T, V> {
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with `fill_value`.
     fn shift(&self, periods: i32, fill_value: Option<V>) -> Result<ChunkedArray<T>>;
 }
 
@@ -328,7 +409,10 @@ where
 }
 
 macro_rules! impl_shift {
-    ($self:ident, $builder:ident, $periods:ident, $fill_value:ident, $append_method:ident) => {{
+    // append_method and append_fn do almost the same. Only for largelist type, the closure
+    // accepts an owned value, while fill_value is a reference. That's why we have two options.
+    ($self:ident, $builder:ident, $periods:ident, $fill_value:ident,
+    $append_method:ident, $append_fn:expr) => {{
         let amount = $self.len() - $periods.abs() as usize;
 
         // Fill the front of the array
@@ -339,13 +423,13 @@ macro_rules! impl_shift {
             $self
                 .into_iter()
                 .take(amount)
-                .for_each(|opt| $builder.$append_method(opt));
+                .for_each(|opt| $append_fn(&mut $builder, opt));
         // Fill the back of the array
         } else {
             $self
                 .into_iter()
                 .take(amount)
-                .for_each(|opt| $builder.$append_method(opt));
+                .for_each(|opt| $append_fn(&mut $builder, opt));
             for _ in 0..$periods.abs() {
                 $builder.$append_method($fill_value)
             }
@@ -361,7 +445,11 @@ impl ChunkShift<BooleanType, bool> for BooleanChunked {
         }
         let mut builder = PrimitiveChunkedBuilder::<BooleanType>::new(self.name(), self.len());
 
-        impl_shift!(self, builder, periods, fill_value, append_option)
+        fn append_fn(builder: &mut PrimitiveChunkedBuilder<BooleanType>, v: Option<bool>) {
+            builder.append_option(v);
+        }
+
+        impl_shift!(self, builder, periods, fill_value, append_option, append_fn)
     }
 }
 
@@ -371,8 +459,33 @@ impl ChunkShift<Utf8Type, &str> for Utf8Chunked {
             return Err(PolarsError::OutOfBounds);
         }
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        fn append_fn(builder: &mut Utf8ChunkedBuilder, v: Option<&str>) {
+            builder.append_option(v);
+        }
 
-        impl_shift!(self, builder, periods, fill_value, append_option)
+        impl_shift!(self, builder, periods, fill_value, append_option, append_fn)
+    }
+}
+
+impl ChunkShift<LargeListType, &Series> for LargeListChunked {
+    fn shift(&self, periods: i32, fill_value: Option<&Series>) -> Result<LargeListChunked> {
+        if periods.abs() >= self.len() as i32 {
+            return Err(PolarsError::OutOfBounds);
+        }
+        let dt = self.get_inner_dtype();
+        let mut builder = get_large_list_builder(dt, self.len(), self.name());
+        fn append_fn(builder: &mut Box<dyn LargListBuilderTrait>, v: Option<Series>) {
+            builder.append_opt_series(v.as_ref());
+        }
+
+        impl_shift!(
+            self,
+            builder,
+            periods,
+            fill_value,
+            append_opt_series,
+            append_fn
+        )
     }
 }
 

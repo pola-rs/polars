@@ -1,3 +1,4 @@
+//! Implementations of arithmetic operations on ChunkedArray's.
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::{array::ArrayRef, compute};

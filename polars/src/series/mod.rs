@@ -1,5 +1,5 @@
 //! Type agnostic columnar data structure.
-pub use crate::prelude::CmpOps;
+pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::{array::ArrayRef, buffer::Buffer};
 use std::mem;

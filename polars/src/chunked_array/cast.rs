@@ -1,11 +1,6 @@
+//! Implementations of the ChunkCast Trait.
 use crate::prelude::*;
 use arrow::compute;
-
-pub trait ChunkCast {
-    fn cast<N>(&self) -> Result<ChunkedArray<N>>
-    where
-        N: PolarsDataType;
-}
 
 fn cast_ca<N, T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<N>>
 where

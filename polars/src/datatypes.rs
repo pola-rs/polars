@@ -1,4 +1,4 @@
-//! # Data types supported by Polars
+//! # Data types supported by Polars.
 //!
 //! At the moment Polars doesn't include all data types available by Arrow. The goal is to
 //! incrementally support more data types and prioritize these by usability.
