@@ -13,11 +13,12 @@ pub use crate::{
         chunkops::ChunkOps,
         comparison::{CmpOps, NumComp},
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
+        ops::{ChunkFilter, ChunkFull, ChunkReverse, ChunkSort},
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
         },
         unique::Unique,
-        ChunkSort, ChunkedArray, Downcast, Reverse,
+        ChunkedArray, Downcast,
     },
     datatypes,
     datatypes::*,

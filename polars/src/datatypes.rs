@@ -23,13 +23,6 @@ pub struct Utf8Type {}
 
 pub struct LargeListType {}
 
-impl PolarsDataType for LargeListType {
-    fn get_data_type() -> ArrowDataType {
-        // null as we cannot no anything without self.
-        ArrowDataType::LargeList(Box::new(ArrowDataType::Null))
-    }
-}
-
 pub trait PolarsDataType {
     fn get_data_type() -> ArrowDataType;
 }
@@ -48,6 +41,20 @@ impl PolarsDataType for Utf8Type {
         ArrowDataType::Utf8
     }
 }
+
+impl PolarsDataType for LargeListType {
+    fn get_data_type() -> ArrowDataType {
+        // null as we cannot no anything without self.
+        ArrowDataType::LargeList(Box::new(ArrowDataType::Null))
+    }
+}
+
+/// Any type that is not nested
+pub trait PolarsSingleType: PolarsDataType {}
+
+impl<T> PolarsSingleType for T where T: ArrowPrimitiveType + PolarsDataType {}
+
+impl PolarsSingleType for Utf8Type {}
 
 pub type LargeListChunked = ChunkedArray<LargeListType>;
 pub type BooleanChunked = ChunkedArray<BooleanType>;
