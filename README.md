@@ -5,11 +5,20 @@
 
 ## Blazingly fast in memory DataFrames in Rust
 
-Polars is a DataFrames library implemented in Rust, using Apache Arrow as backend. It's focus is being a fast in memory
-DataFrame library that only supports core functionality.
+Polars is a DataFrames library implemented in Rust, using Apache Arrow as backend. 
+It's focus is being a fast in memory DataFrame library. 
+
+Polars is in rapid development, but it already supports most features needed for a useful DataFrame library. Do you
+mis something, please make an issue and/or sent a PR.
 
 ## Documentation
-[Read more in the docs. (master branch)](https://ritchie46.github.io/polars)
+Want to know what features Polars support? [Check the current master docs](https://ritchie46.github.io/polars). 
+
+Most
+features are described on the [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html), 
+[Series](https://ritchie46.github.io/polars/polars/series/enum.Series.html), and [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
+structs in that order. For `ChunkedArray` a lot of functionality is also defined by `Traits` in the 
+[ops module](https://ritchie46.github.io/polars/polars/chunked_array/ops/index.html).
 
 ### Performance
 
@@ -18,9 +27,6 @@ DataFrame library that only supports core functionality.
 
 #### Joins
 ![](pandas_cmp/img/join_80_000.png)
-
-## Run the python bindings!
-`$ docker run --rm -p 8890:8890 ritchie46/py-polars` and open `http://localhost:8890` in your browser.
 
 ## Functionality
 
