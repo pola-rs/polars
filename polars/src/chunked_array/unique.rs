@@ -6,16 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
 use unsafe_unwrap::UnsafeUnwrap;
 
-pub trait Unique<T> {
-    // We don't return Self to be able to use AutoRef specialization
-    /// Get unique values of a ChunkedArray
-    fn unique(&self) -> ChunkedArray<T>;
-
-    /// Get first index of the unique values in a ChunkedArray.
-    fn arg_unique(&self) -> Vec<usize>;
-}
-
-impl Unique<LargeListType> for LargeListChunked {
+impl ChunkUnique<LargeListType> for LargeListChunked {
     fn unique(&self) -> ChunkedArray<LargeListType> {
         unimplemented!()
     }
@@ -56,7 +47,7 @@ where
     unique
 }
 
-impl<T> Unique<T> for ChunkedArray<T>
+impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq,
@@ -79,7 +70,7 @@ where
     }
 }
 
-impl Unique<Utf8Type> for Utf8Chunked {
+impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> Self {
         let set = fill_set(self.into_iter(), self.len());
         Utf8Chunked::new_from_opt_iter(self.name(), set.iter().copied())
@@ -90,7 +81,7 @@ impl Unique<Utf8Type> for Utf8Chunked {
     }
 }
 
-impl Unique<BooleanType> for BooleanChunked {
+impl ChunkUnique<BooleanType> for BooleanChunked {
     fn unique(&self) -> Self {
         // can be None, Some(true), Some(false)
         let mut unique = Vec::with_capacity(3);
@@ -112,7 +103,7 @@ impl Unique<BooleanType> for BooleanChunked {
 
 // Use stable form of specialization using autoref
 // https://github.com/dtolnay/case-studies/blob/master/autoref-specialization/README.md
-impl<T> Unique<T> for &ChunkedArray<T>
+impl<T> ChunkUnique<T> for &ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: NumCast + ToPrimitive,

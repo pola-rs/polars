@@ -6,44 +6,6 @@ use arrow::{
 use num::{Num, NumCast, ToPrimitive};
 use std::sync::Arc;
 
-/// Compare [Series](series/series/enum.Series.html)
-///
-/// and [ChunkedArray](series/chunked_array/struct.ChunkedArray.html)'s and get a `boolean` mask that
-/// can be use to filter rows.
-///
-/// # Example
-///
-/// ```
-/// use polars::prelude::*;
-/// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
-///     let mask = df
-///     .column("column_a")
-///     .ok_or(PolarsError::NotFound)?
-///     .eq(1);
-///
-///     df.filter(&mask)
-/// }
-/// ```
-pub trait CmpOps<Rhs> {
-    /// Check for equality.
-    fn eq(&self, rhs: Rhs) -> BooleanChunked;
-
-    /// Check for inequality.
-    fn neq(&self, rhs: Rhs) -> BooleanChunked;
-
-    /// Greater than comparison.
-    fn gt(&self, rhs: Rhs) -> BooleanChunked;
-
-    /// Greater than or equal comparison.
-    fn gt_eq(&self, rhs: Rhs) -> BooleanChunked;
-
-    /// Less than comparison.
-    fn lt(&self, rhs: Rhs) -> BooleanChunked;
-
-    /// Less than or equal comparison
-    fn lt_eq(&self, rhs: Rhs) -> BooleanChunked;
-}
-
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -73,7 +35,7 @@ where
     }
 }
 
-impl<T> CmpOps<&ChunkedArray<T>> for ChunkedArray<T>
+impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
@@ -145,7 +107,7 @@ macro_rules! apply_operand_on_bool_iter {
     }}
 }
 
-impl CmpOps<&BooleanChunked> for BooleanChunked {
+impl ChunkCompare<&BooleanChunked> for BooleanChunked {
     fn eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
         apply_operand_on_bool_iter!(self, rhs, ==)
     }
@@ -203,7 +165,7 @@ impl Utf8Chunked {
     }
 }
 
-impl CmpOps<&Utf8Chunked> for Utf8Chunked {
+impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     fn eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
         if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::eq_utf8)
@@ -300,7 +262,7 @@ impl NumComp for u16 {}
 impl NumComp for u32 {}
 impl NumComp for u64 {}
 
-impl<T, Rhs> CmpOps<Rhs> for ChunkedArray<T>
+impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: NumCast,
@@ -346,7 +308,7 @@ fn cmp_utf8chunked_to_str(ca: &Utf8Chunked, cmp_fn: &dyn Fn(&str) -> bool) -> Bo
         .collect()
 }
 
-impl CmpOps<&str> for Utf8Chunked {
+impl ChunkCompare<&str> for Utf8Chunked {
     fn eq(&self, rhs: &str) -> BooleanChunked {
         cmp_utf8chunked_to_str(self, &|lhs| lhs == rhs)
     }

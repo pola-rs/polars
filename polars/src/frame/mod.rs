@@ -1,4 +1,4 @@
-//! DataFrame module
+//! DataFrame module.
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};

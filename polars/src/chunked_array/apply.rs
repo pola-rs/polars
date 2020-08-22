@@ -1,12 +1,7 @@
+//! Implementations of the ChunkApply Trait.
 use crate::prelude::*;
 
-pub trait Apply<'a, A, B> {
-    fn apply<F>(&'a self, f: F) -> Self
-    where
-        F: Fn(A) -> B + Copy;
-}
-
-impl<'a, T> Apply<'a, T::Native, T::Native> for ChunkedArray<T>
+impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
@@ -44,7 +39,7 @@ where
     }
 }
 
-impl<'a> Apply<'a, bool, bool> for BooleanChunked {
+impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     fn apply<F>(&self, f: F) -> Self
     where
         F: Fn(bool) -> bool + Copy,
@@ -53,7 +48,7 @@ impl<'a> Apply<'a, bool, bool> for BooleanChunked {
     }
 }
 
-impl<'a> Apply<'a, &'a str, String> for Utf8Chunked {
+impl<'a> ChunkApply<'a, &'a str, String> for Utf8Chunked {
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(&'a str) -> String,

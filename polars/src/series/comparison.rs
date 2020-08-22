@@ -18,7 +18,7 @@ macro_rules! compare {
     }};
 }
 
-impl CmpOps<&Series> for Series {
+impl ChunkCompare<&Series> for Series {
     /// Create a boolean mask by checking for equality.
     fn eq(&self, rhs: &Series) -> BooleanChunked {
         match self {
@@ -238,7 +238,7 @@ impl CmpOps<&Series> for Series {
     }
 }
 
-impl<Rhs> CmpOps<Rhs> for Series
+impl<Rhs> ChunkCompare<Rhs> for Series
 where
     Rhs: NumComp,
 {
@@ -267,7 +267,7 @@ where
     }
 }
 
-impl CmpOps<&str> for Series {
+impl ChunkCompare<&str> for Series {
     fn eq(&self, rhs: &str) -> BooleanChunked {
         match self {
             Series::Utf8(a) => a.eq(rhs),

@@ -5,7 +5,7 @@
 //! optimally aligned cache friendly operations and SIMD. Sadly, Apache Arrow needs **nightly Rust**,
 //! which means that Polars cannot run on stable.
 //!
-//! Read more in the [DataFrame](frame/struct.DataFrame.html), [Series](series/enum.Series.html), and
+//! Read more in the pages of the [DataFrame](frame/struct.DataFrame.html), [Series](series/enum.Series.html), and
 //! [ChunkedArray](chunked_array/struct.ChunkedArray.html) data structures.
 //!
 //! ## Read and write CSV/ JSON
@@ -139,6 +139,7 @@
 //! * [DataFrame](frame/struct.DataFrame.html)
 //! * [Series](series/enum.Series.html)
 //! * [ChunkedArray](chunked_array/struct.ChunkedArray.html)
+//!     - [Operations implemented by Traits](chunked_array/ops/index.html)
 //! * [Time/ DateTime utilities](doc/time/index.html)
 //! * [Groupby and aggregations](frame/group_by/struct.GroupBy.html)
 //!

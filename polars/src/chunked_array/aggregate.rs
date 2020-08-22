@@ -1,15 +1,10 @@
+//! Implementations of the ChunkAgg trait.
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*};
 use arrow::compute;
 
-pub trait Agg<T> {
-    fn sum(&self) -> Option<T>;
-    fn min(&self) -> Option<T>;
-    fn max(&self) -> Option<T>;
-}
-
-impl<T> Agg<T::Native> for ChunkedArray<T>
+impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: std::ops::Add<Output = T::Native> + std::cmp::PartialOrd,
@@ -71,7 +66,7 @@ fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u64> {
 }
 
 /// Booleans are casted to 1 or 0.
-impl Agg<u64> for BooleanChunked {
+impl ChunkAgg<u64> for BooleanChunked {
     /// Returns `None` if the array is empty or only contains null values.
     fn sum(&self) -> Option<u64> {
         if self.len() == 0 {

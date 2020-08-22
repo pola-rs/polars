@@ -1,3 +1,4 @@
+//! Testing utilities.
 use crate::prelude::*;
 
 impl Series {

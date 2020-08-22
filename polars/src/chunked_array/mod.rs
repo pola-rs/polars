@@ -931,6 +931,15 @@ where
     }
 }
 
+impl LargeListChunked {
+    pub(crate) fn get_inner_dtype(&self) -> &Box<ArrowDataType> {
+        match self.dtype() {
+            ArrowDataType::LargeList(dt) => dt,
+            _ => panic!("should not happen"),
+        }
+    }
+}
+
 impl<T> Debug for ChunkedArray<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("{:?}", self.chunks))
