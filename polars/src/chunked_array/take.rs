@@ -3,12 +3,11 @@
 //! IntoTakeRandom provides structs that implement the TakeRandom trait.
 //! There are several structs that implement the fastest path for random access.
 //!
-use crate::chunked_array::builder::{PrimitiveChunkedBuilder, Utf8ChunkedBuilder};
-use crate::prelude::*;
-use arrow::array::{
-    Array, BooleanArray, LargeListArray, PrimitiveArray, PrimitiveBuilder, StringArray,
-    StringBuilder,
+use crate::chunked_array::builder::{
+    get_large_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
+use crate::prelude::*;
+use arrow::array::{Array, BooleanArray, LargeListArray, PrimitiveArray, StringArray};
 
 pub trait Take {
     /// Take values from ChunkedArray by index.
@@ -218,35 +217,15 @@ impl Take for LargeListChunked {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
-        macro_rules! impl_list_take {
-            ($type:ty) => {{
-                let values_builder = PrimitiveBuilder::<$type>::new(capacity);
-                let mut builder =
-                    LargeListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
-                let taker = self.take_rand();
-
-                for idx in indices {
-                    builder.append_opt_series(taker.get(idx).as_ref());
-                }
-                Ok(builder.finish())
-            }};
-        }
-        macro_rules! impl_list_utf8_take {
-            () => {{
-                let values_builder = StringBuilder::new(capacity);
-                let mut builder =
-                    LargeListUtf8ChunkedBuilder::new("take", values_builder, capacity);
-                let taker = self.take_rand();
-
-                for idx in indices {
-                    builder.append_opt_series(taker.get(idx).as_ref());
-                }
-                Ok(builder.finish())
-            }};
-        }
         match self.dtype() {
             ArrowDataType::LargeList(dt) => {
-                match_arrow_data_type_apply_macro!(**dt, impl_list_take, impl_list_utf8_take)
+                let mut builder = get_large_list_builder(&**dt, capacity, self.name());
+                let taker = self.take_rand();
+
+                for idx in indices {
+                    builder.append_opt_series(taker.get(idx).as_ref());
+                }
+                Ok(builder.finish())
             }
             _ => unimplemented!(),
         }
@@ -258,37 +237,15 @@ impl Take for LargeListChunked {
         capacity: Option<usize>,
     ) -> Self {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
-
-        macro_rules! impl_list_take {
-            ($type:ty) => {{
-                let values_builder = PrimitiveBuilder::<$type>::new(capacity);
-                let mut builder =
-                    LargeListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
-                let taker = self.take_rand();
-                for idx in indices {
-                    let v = taker.get_unchecked(idx);
-                    builder.append_opt_series(Some(&v));
-                }
-                builder.finish()
-            }};
-        }
-        macro_rules! impl_list_utf8_take {
-            () => {{
-                let values_builder = StringBuilder::new(capacity);
-                let mut builder =
-                    LargeListUtf8ChunkedBuilder::new("take", values_builder, capacity);
-                let taker = self.take_rand();
-                for idx in indices {
-                    let v = taker.get_unchecked(idx);
-                    builder.append_opt_series(Some(&v));
-                }
-                builder.finish()
-            }};
-        }
-
         match self.dtype() {
             ArrowDataType::LargeList(dt) => {
-                match_arrow_data_type_apply_macro!(**dt, impl_list_take, impl_list_utf8_take)
+                let mut builder = get_large_list_builder(&**dt, capacity, self.name());
+                let taker = self.take_rand();
+                for idx in indices {
+                    let v = taker.get_unchecked(idx);
+                    builder.append_opt_series(Some(&v));
+                }
+                builder.finish()
             }
             _ => unimplemented!(),
         }
@@ -301,31 +258,10 @@ impl Take for LargeListChunked {
     ) -> Result<Self> {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
-        macro_rules! impl_list_take {
-            ($type:ty) => {{
-                let values_builder = PrimitiveBuilder::<$type>::new(capacity);
-                let mut builder =
-                    LargeListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
-                let taker = self.take_rand();
+        match self.dtype() {
+            ArrowDataType::LargeList(dt) => {
+                let mut builder = get_large_list_builder(&**dt, capacity, self.name());
 
-                for opt_idx in indices {
-                    match opt_idx {
-                        Some(idx) => {
-                            let opt_s = taker.get(idx);
-                            builder.append_opt_series(opt_s.as_ref())
-                        }
-                        None => builder.append_null(),
-                    };
-                }
-                Ok(builder.finish())
-            }};
-        }
-
-        macro_rules! impl_list_utf8_take {
-            () => {{
-                let values_builder = StringBuilder::new(capacity);
-                let mut builder =
-                    LargeListUtf8ChunkedBuilder::new("take", values_builder, capacity);
                 let taker = self.take_rand();
 
                 for opt_idx in indices {
@@ -338,12 +274,6 @@ impl Take for LargeListChunked {
                     };
                 }
                 Ok(builder.finish())
-            }};
-        }
-
-        match self.dtype() {
-            ArrowDataType::LargeList(dt) => {
-                match_arrow_data_type_apply_macro!(**dt, impl_list_take, impl_list_utf8_take)
             }
             _ => unimplemented!(),
         }
@@ -356,31 +286,9 @@ impl Take for LargeListChunked {
     ) -> Self {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
-        macro_rules! impl_list_take {
-            ($type:ty) => {{
-                let values_builder = PrimitiveBuilder::<$type>::new(capacity);
-                let mut builder =
-                    LargeListPrimitiveChunkedBuilder::new("take", values_builder, capacity);
-                let taker = self.take_rand();
-
-                for opt_idx in indices {
-                    match opt_idx {
-                        Some(idx) => {
-                            let s = taker.get_unchecked(idx);
-                            builder.append_opt_series(Some(&s))
-                        }
-                        None => builder.append_null(),
-                    };
-                }
-                builder.finish()
-            }};
-        }
-
-        macro_rules! impl_list_utf8_take {
-            () => {{
-                let values_builder = StringBuilder::new(capacity);
-                let mut builder =
-                    LargeListUtf8ChunkedBuilder::new("take", values_builder, capacity);
+        match self.dtype() {
+            ArrowDataType::LargeList(dt) => {
+                let mut builder = get_large_list_builder(&**dt, capacity, self.name());
                 let taker = self.take_rand();
 
                 for opt_idx in indices {
@@ -393,12 +301,6 @@ impl Take for LargeListChunked {
                     };
                 }
                 builder.finish()
-            }};
-        }
-
-        match self.dtype() {
-            ArrowDataType::LargeList(dt) => {
-                match_arrow_data_type_apply_macro!(**dt, impl_list_take, impl_list_utf8_take)
             }
             _ => unimplemented!(),
         }
