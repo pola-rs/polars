@@ -13,7 +13,7 @@ pub use crate::{
         chunkops::ChunkOps,
         comparison::{CmpOps, NumComp},
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
-        ops::{ChunkFilter, ChunkFull, ChunkReverse, ChunkSort},
+        ops::{ChunkFilter, ChunkFull, ChunkReverse, ChunkShift, ChunkSort},
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
         },
