@@ -270,3 +270,76 @@ impl ChunkFilter<LargeListType> for LargeListChunked {
         }
     }
 }
+
+pub trait ChunkShift<T, V> {
+    fn shift(&self, periods: i32, fill_value: Option<V>) -> Result<ChunkedArray<T>>;
+}
+
+fn chunk_shift_helper<T>(
+    ca: &ChunkedArray<T>,
+    builder: &mut PrimitiveChunkedBuilder<T>,
+    amount: usize,
+) where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
+    match ca.cont_slice() {
+        // fast path
+        Ok(slice) => slice
+            .iter()
+            .take(amount)
+            .for_each(|v| builder.append_value(*v)),
+        // slower path
+        _ => {
+            ca.into_iter()
+                .take(amount)
+                .for_each(|opt| builder.append_option(opt));
+        }
+    }
+}
+
+impl<T> ChunkShift<T, T::Native> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
+    fn shift(&self, periods: i32, fill_value: Option<T::Native>) -> Result<ChunkedArray<T>> {
+        if periods.abs() >= self.len() as i32 {
+            return Err(PolarsError::OutOfBounds);
+        }
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
+        let amount = self.len() - periods.abs() as usize;
+
+        // Fill the front of the array
+        if periods > 0 {
+            for _ in 0..periods {
+                builder.append_option(fill_value)
+            }
+            chunk_shift_helper(self, &mut builder, amount);
+        // Fill the back of the array
+        } else {
+            chunk_shift_helper(self, &mut builder, amount);
+            for _ in 0..periods.abs() {
+                builder.append_option(fill_value)
+            }
+        }
+        Ok(builder.finish())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_shift() {
+        let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
+        let shifted = ca.shift(1, Some(0)).unwrap();
+        assert_eq!(shifted.cont_slice().unwrap(), &[0, 1, 2]);
+        let shifted = ca.shift(1, None).unwrap();
+        assert_eq!(Vec::from(&shifted), &[None, Some(1), Some(2)]);
+        let shifted = ca.shift(-1, None).unwrap();
+        assert_eq!(Vec::from(&shifted), &[Some(1), Some(2), None]);
+        assert!(ca.shift(3, None).is_err());
+    }
+}
