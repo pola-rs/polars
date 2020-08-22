@@ -327,6 +327,55 @@ where
     }
 }
 
+macro_rules! impl_shift {
+    ($self:ident, $builder:ident, $periods:ident, $fill_value:ident, $append_method:ident) => {{
+        let amount = $self.len() - $periods.abs() as usize;
+
+        // Fill the front of the array
+        if $periods > 0 {
+            for _ in 0..$periods {
+                $builder.$append_method($fill_value)
+            }
+            $self
+                .into_iter()
+                .take(amount)
+                .for_each(|opt| $builder.$append_method(opt));
+        // Fill the back of the array
+        } else {
+            $self
+                .into_iter()
+                .take(amount)
+                .for_each(|opt| $builder.$append_method(opt));
+            for _ in 0..$periods.abs() {
+                $builder.$append_method($fill_value)
+            }
+        }
+        Ok($builder.finish())
+    }};
+}
+
+impl ChunkShift<BooleanType, bool> for BooleanChunked {
+    fn shift(&self, periods: i32, fill_value: Option<bool>) -> Result<BooleanChunked> {
+        if periods.abs() >= self.len() as i32 {
+            return Err(PolarsError::OutOfBounds);
+        }
+        let mut builder = PrimitiveChunkedBuilder::<BooleanType>::new(self.name(), self.len());
+
+        impl_shift!(self, builder, periods, fill_value, append_option)
+    }
+}
+
+impl ChunkShift<Utf8Type, &str> for Utf8Chunked {
+    fn shift(&self, periods: i32, fill_value: Option<&str>) -> Result<Utf8Chunked> {
+        if periods.abs() >= self.len() as i32 {
+            return Err(PolarsError::OutOfBounds);
+        }
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+
+        impl_shift!(self, builder, periods, fill_value, append_option)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
