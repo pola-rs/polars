@@ -4,7 +4,9 @@ use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::compute;
 use itertools::Itertools;
+use num::{Num, NumCast};
 use std::cmp::Ordering;
+use std::ops::{Add, Div};
 
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
@@ -32,6 +34,10 @@ pub trait ChunkAgg<T> {
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
     fn max(&self) -> Option<T>;
+
+    /// Returns the mean value in the array.
+    /// Returns an option because the array is nullable.
+    fn mean(&self) -> Option<T>;
 }
 
 /// Compare [Series](series/series/enum.Series.html)
@@ -216,6 +222,101 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         } else {
             argsort!(self, |(_idx_a, a), (_idx_b, b)| a.cmp(b))
         }
+    }
+}
+
+pub enum FillNoneStrategy<T> {
+    Backward,
+    Forward,
+    Mean,
+    Min,
+    Max,
+    Value(T),
+}
+
+/// Replace None values with various strategies
+pub trait ChunkFillNone<T> {
+    /// Replace None values with one of the following strategies:
+    /// * Forward fill (replace None with the previous value)
+    /// * Backward fill (replace None with the next value)
+    /// * Mean fill (replace None with the mean of the whole array)
+    /// * Min fill (replace None with the minimum of the whole array)
+    /// * Max fill (replace None with the maximum of the whole array)
+    /// * Value fill (replace None with a given value)
+    fn fill_none(&self, strategy: FillNoneStrategy<T>) -> Result<Self>
+    where
+        Self: Sized;
+}
+
+fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    ca.into_iter()
+        .scan(None, |previous, opt_v| {
+            let val = match opt_v {
+                Some(_) => Some(opt_v),
+                None => Some(*previous),
+            };
+            *previous = opt_v;
+            val
+        })
+        .collect()
+}
+
+fn fill_backward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    let mut iter = ca.into_iter().peekable();
+
+    let mut builder = PrimitiveChunkedBuilder::<T>::new(ca.name(), ca.len());
+    while let Some(opt_v) = iter.next() {
+        match opt_v {
+            Some(v) => builder.append_value(v),
+            None => {
+                match iter.peek() {
+                    // end of iterator
+                    None => builder.append_null(),
+                    Some(opt_v) => builder.append_option(*opt_v),
+                }
+            }
+        }
+    }
+    builder.finish()
+}
+
+fn fill_value<T>(ca: &ChunkedArray<T>, value: Option<T::Native>) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    ca.into_iter()
+        .map(|opt_v| match opt_v {
+            Some(_) => opt_v,
+            None => value,
+        })
+        .collect()
+}
+
+impl<T> ChunkFillNone<T::Native> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Add<Output = T::Native> + PartialOrd + Div<Output = T::Native> + Num + NumCast,
+{
+    fn fill_none(&self, strategy: FillNoneStrategy<T::Native>) -> Result<Self> {
+        // nothing to fill
+        if self.null_count() == 0 {
+            return Ok(self.clone());
+        }
+        let ca = match strategy {
+            FillNoneStrategy::Forward => fill_forward(self),
+            FillNoneStrategy::Backward => fill_backward(self),
+            FillNoneStrategy::Min => fill_value(self, self.min()),
+            FillNoneStrategy::Max => fill_value(self, self.max()),
+            FillNoneStrategy::Mean => fill_value(self, self.mean()),
+            FillNoneStrategy::Value(val) => fill_value(self, Some(val)),
+        };
+        Ok(ca)
     }
 }
 
@@ -503,5 +604,37 @@ mod test {
         let shifted = ca.shift(-1, None).unwrap();
         assert_eq!(Vec::from(&shifted), &[Some(1), Some(2), None]);
         assert!(ca.shift(3, None).is_err());
+    }
+
+    #[test]
+    fn test_fill_none() {
+        let ca =
+            Int32Chunked::new_from_opt_slice("", &[None, Some(2), Some(3), None, Some(4), None]);
+        let filled = ca.fill_none(FillNoneStrategy::Forward).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[None, Some(2), Some(3), Some(3), Some(4), Some(4)]
+        );
+        let filled = ca.fill_none(FillNoneStrategy::Backward).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(2), Some(2), Some(3), Some(4), Some(4), None]
+        );
+        let filled = ca.fill_none(FillNoneStrategy::Min).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(2), Some(2), Some(3), Some(2), Some(4), Some(2)]
+        );
+        let filled = ca.fill_none(FillNoneStrategy::Value(10)).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(10), Some(2), Some(3), Some(10), Some(4), Some(10)]
+        );
+        let filled = ca.fill_none(FillNoneStrategy::Mean).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(3), Some(2), Some(3), Some(3), Some(4), Some(3)]
+        );
+        println!("{:?}", filled);
     }
 }
