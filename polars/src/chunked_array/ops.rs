@@ -225,13 +225,12 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 }
 
-pub enum FillNoneStrategy<T> {
+pub enum FillNoneStrategy {
     Backward,
     Forward,
     Mean,
     Min,
     Max,
-    Value(T),
 }
 
 /// Replace None values with various strategies
@@ -242,8 +241,12 @@ pub trait ChunkFillNone<T> {
     /// * Mean fill (replace None with the mean of the whole array)
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
-    /// * Value fill (replace None with a given value)
-    fn fill_none(&self, strategy: FillNoneStrategy<T>) -> Result<Self>
+    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// Replace None values with a give value `T`.
+    fn fill_none_with_value(&self, value: T) -> Result<Self>
     where
         Self: Sized;
 }
@@ -351,7 +354,7 @@ where
     T: PolarsNumericType,
     T::Native: Add<Output = T::Native> + PartialOrd + Div<Output = T::Native> + Num + NumCast,
 {
-    fn fill_none(&self, strategy: FillNoneStrategy<T::Native>) -> Result<Self> {
+    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         // nothing to fill
         if self.null_count() == 0 {
             return Ok(self.clone());
@@ -362,14 +365,16 @@ where
             FillNoneStrategy::Min => impl_fill_value!(self, self.min()),
             FillNoneStrategy::Max => impl_fill_value!(self, self.max()),
             FillNoneStrategy::Mean => impl_fill_value!(self, self.mean()),
-            FillNoneStrategy::Value(val) => impl_fill_value!(self, Some(val)),
         };
         Ok(ca)
+    }
+    fn fill_none_with_value(&self, value: T::Native) -> Result<Self> {
+        Ok(impl_fill_value!(self, Some(value)))
     }
 }
 
 impl ChunkFillNone<bool> for BooleanChunked {
-    fn fill_none(&self, strategy: FillNoneStrategy<bool>) -> Result<Self> {
+    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         // nothing to fill
         if self.null_count() == 0 {
             return Ok(self.clone());
@@ -381,13 +386,16 @@ impl ChunkFillNone<bool> for BooleanChunked {
             FillNoneStrategy::Min => Ok(impl_fill_value!(self, self.min().map(|v| v != 0))),
             FillNoneStrategy::Max => Ok(impl_fill_value!(self, self.max().map(|v| v != 0))),
             FillNoneStrategy::Mean => Ok(impl_fill_value!(self, self.mean().map(|v| v != 0))),
-            FillNoneStrategy::Value(val) => Ok(impl_fill_value!(self, Some(val))),
         }
+    }
+
+    fn fill_none_with_value(&self, value: bool) -> Result<Self> {
+        Ok(impl_fill_value!(self, Some(value)))
     }
 }
 
 impl ChunkFillNone<&str> for Utf8Chunked {
-    fn fill_none(&self, strategy: FillNoneStrategy<&str>) -> Result<Self> {
+    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         // nothing to fill
         if self.null_count() == 0 {
             return Ok(self.clone());
@@ -396,14 +404,20 @@ impl ChunkFillNone<&str> for Utf8Chunked {
         match strategy {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
             FillNoneStrategy::Backward => impl_fill_backward!(self, builder),
-            FillNoneStrategy::Value(val) => Ok(impl_fill_value!(self, Some(val))),
             _ => Err(PolarsError::InvalidOperation),
         }
     }
+
+    fn fill_none_with_value(&self, value: &str) -> Result<Self> {
+        Ok(impl_fill_value!(self, Some(value)))
+    }
 }
 
-impl ChunkFillNone<Series> for LargeListChunked {
-    fn fill_none(&self, strategy: FillNoneStrategy<Series>) -> Result<Self> {
+impl ChunkFillNone<&Series> for LargeListChunked {
+    fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Self> {
+        Err(PolarsError::InvalidOperation)
+    }
+    fn fill_none_with_value(&self, _value: &Series) -> Result<Self> {
         Err(PolarsError::InvalidOperation)
     }
 }
@@ -713,7 +727,7 @@ mod test {
             Vec::from(&filled),
             &[Some(2), Some(2), Some(3), Some(2), Some(4), Some(2)]
         );
-        let filled = ca.fill_none(FillNoneStrategy::Value(10)).unwrap();
+        let filled = ca.fill_none_with_value(10).unwrap();
         assert_eq!(
             Vec::from(&filled),
             &[Some(10), Some(2), Some(3), Some(10), Some(4), Some(10)]
