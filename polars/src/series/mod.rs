@@ -680,9 +680,21 @@ impl Series {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `Nones`.
     ///
-    /// *NOTE: If you want to fill the Nones with a value use the shift operation on `ChunkedArray<T>`.
+    /// *NOTE: If you want to fill the Nones with a value use the `shift` operation on `ChunkedArray<T>`.
     fn shift(&self, periods: i32) -> Result<Self> {
         Ok(apply_method_all_series_and_return!(self, shift, [periods, None],?))
+    }
+
+    /// Replace None values with one of the following strategies:
+    /// * Forward fill (replace None with the previous value)
+    /// * Backward fill (replace None with the next value)
+    /// * Mean fill (replace None with the mean of the whole array)
+    /// * Min fill (replace None with the minimum of the whole array)
+    /// * Max fill (replace None with the maximum of the whole array)
+    ///
+    /// *NOTE: If you want to fill the Nones with a value use the `fill_none` operation on `ChunkedArray<T>`.
+    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
+        Ok(apply_method_all_series_and_return!(self, fill_none, [strategy],?))
     }
 }
 
