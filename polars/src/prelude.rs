@@ -11,8 +11,8 @@ pub use crate::{
         comparison::NumComp,
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
         ops::{
-            ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkFilter, ChunkFull, ChunkReverse,
-            ChunkShift, ChunkSort, ChunkUnique,
+            ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkFillNone, ChunkFilter, ChunkFull,
+            ChunkReverse, ChunkShift, ChunkSort, ChunkUnique, FillNoneStrategy,
         },
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,

@@ -571,7 +571,6 @@ pub fn get_large_list_builder(
 mod test {
     use super::*;
     use arrow::array::Int32Array;
-    use itertools::Itertools;
 
     #[test]
     fn test_existing_null_bitmap() {
