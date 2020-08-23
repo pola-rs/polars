@@ -676,6 +676,14 @@ impl Series {
     pub fn as_single_ptr(&mut self) -> usize {
         apply_method_numeric_series!(self, as_single_ptr,)
     }
+
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with `Nones`.
+    ///
+    /// *NOTE: If you want to fill the Nones with a value use the shift operation on `ChunkedArray<T>`.
+    fn shift(&self, periods: i32) -> Result<Self> {
+        Ok(apply_method_all_series_and_return!(self, shift, [periods, None],?))
+    }
 }
 
 fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
