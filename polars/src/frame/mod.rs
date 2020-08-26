@@ -641,6 +641,36 @@ impl DataFrame {
         let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
         DataFrame::new_with_schema(self.schema.clone(), col).unwrap()
     }
+
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with `Nones`.
+    ///
+    /// See the method on [Series](../series/enum.Series.html#method.shift) for more info on the `shift` operation.
+    pub fn shift(&self, periods: i32) -> Result<Self> {
+        let col = self
+            .columns
+            .iter()
+            .map(|s| s.shift(periods))
+            .collect::<Result<Vec<_>>>()?;
+        DataFrame::new_with_schema(self.schema.clone(), col)
+    }
+
+    /// Replace None values with one of the following strategies:
+    /// * Forward fill (replace None with the previous value)
+    /// * Backward fill (replace None with the next value)
+    /// * Mean fill (replace None with the mean of the whole array)
+    /// * Min fill (replace None with the minimum of the whole array)
+    /// * Max fill (replace None with the maximum of the whole array)
+    ///
+    /// See the method on [Series](../series/enum.Series.html#method.fill_none) for more info on the `fill_none` operation.
+    pub fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
+        let col = self
+            .columns
+            .iter()
+            .map(|s| s.fill_none(strategy))
+            .collect::<Result<Vec<_>>>()?;
+        DataFrame::new_with_schema(self.schema.clone(), col)
+    }
 }
 
 pub struct RecordBatchIter<'a> {

@@ -225,6 +225,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 }
 
+#[derive(Copy, Clone)]
 pub enum FillNoneStrategy {
     Backward,
     Forward,

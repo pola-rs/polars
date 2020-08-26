@@ -680,7 +680,8 @@ impl Series {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `Nones`.
     ///
-    /// *NOTE: If you want to fill the Nones with a value use the `shift` operation on `ChunkedArray<T>`.*
+    /// *NOTE: If you want to fill the Nones with a value use the
+    /// [`shift` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkShift.html).*
     ///
     /// # Example
     ///
@@ -713,7 +714,8 @@ impl Series {
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
     ///
-    /// *NOTE: If you want to fill the Nones with a value use the `fill_none` operation on `ChunkedArray<T>`*.
+    /// *NOTE: If you want to fill the Nones with a value use the
+    /// [`fill_none` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkFillNone.html)*.
     ///
     /// # Example
     ///
@@ -740,8 +742,6 @@ impl Series {
     ///     Ok(())
     /// }
     /// example();
-    ///
-    ///
     /// ```
     pub fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         Ok(apply_method_all_series_and_return!(self, fill_none, [strategy],?))
