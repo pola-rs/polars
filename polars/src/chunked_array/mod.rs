@@ -149,27 +149,7 @@ pub struct ChunkedArray<T> {
     phantom: PhantomData<T>,
 }
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsDataType,
-{
-    /// Get data type of ChunkedArray.
-    pub fn dtype(&self) -> &ArrowDataType {
-        self.field.data_type()
-    }
-
-    /// Create a new ChunkedArray from existing chunks.
-    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
-        let field = Arc::new(Field::new(name, T::get_data_type(), true));
-        let chunk_id = create_chunk_id(&chunks);
-        ChunkedArray {
-            field,
-            chunks,
-            chunk_id,
-            phantom: PhantomData,
-        }
-    }
-
+impl<T> ChunkedArray<T> {
     /// Get Arrow ArrayData
     pub fn array_data(&self) -> Vec<ArrayDataRef> {
         self.chunks.iter().map(|arr| arr.data()).collect()
@@ -181,11 +161,6 @@ where
             .iter()
             .map(|arr| get_bitmap(arr.as_ref()))
             .collect()
-    }
-
-    /// Wrap as Series
-    pub fn into_series(self) -> Series {
-        Series::from_chunked_array(self)
     }
 
     /// Series to ChunkedArray<T>
@@ -232,31 +207,13 @@ where
             _ => unimplemented!(),
         }
     }
-}
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsDataType,
-    ChunkedArray<T>: ChunkOps,
-{
-    /// Get the index of the chunk and the index of the value in that chunk
-    #[inline]
-    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
-        let mut index_remainder = index;
-        let mut current_chunk_idx = 0;
-
-        for chunk in &self.chunks {
-            let chunk_len = chunk.len();
-            if chunk_len - 1 >= index_remainder {
-                break;
-            } else {
-                index_remainder -= chunk_len;
-                current_chunk_idx += 1;
-            }
-        }
-        (current_chunk_idx, index_remainder)
+    /// Combined length of all the chunks.
+    pub fn len(&self) -> usize {
+        self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
     }
 
+    /// Unique id representing the number of chunks
     pub fn chunk_id(&self) -> &Vec<usize> {
         &self.chunk_id
     }
@@ -274,6 +231,78 @@ where
     /// Count the null values.
     pub fn null_count(&self) -> usize {
         self.chunks.iter().map(|arr| arr.null_count()).sum()
+    }
+
+    /// Take a view of top n elements
+    pub fn limit(&self, num_elements: usize) -> Result<Self> {
+        self.slice(0, num_elements)
+    }
+
+    /// Append arrow array in place.
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// let mut array = Int32Chunked::new_from_slice("array", &[1, 2]);
+    /// let array_2 = Int32Chunked::new_from_slice("2nd", &[3]);
+    ///
+    /// array.append(&array_2);
+    /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
+    /// ```
+    pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+        if other.data_type() == self.field.data_type() {
+            self.chunks.push(other);
+            Ok(())
+        } else {
+            Err(PolarsError::DataTypeMisMatch)
+        }
+    }
+
+    /// Create a new ChunkedArray from self, where the chunks are replaced.
+    fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        let chunk_id = create_chunk_id(&chunks);
+        ChunkedArray {
+            field: self.field.clone(),
+            chunks,
+            chunk_id,
+            phantom: PhantomData,
+        }
+    }
+
+    /// Recompute the chunk_id / chunk_lengths.
+    fn set_chunk_id(&mut self) {
+        self.chunk_id = create_chunk_id(&self.chunks)
+    }
+
+    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
+    pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
+        if offset + length > self.len() {
+            return Err(PolarsError::OutOfBounds);
+        }
+        let mut remaining_length = length;
+        let mut remaining_offset = offset;
+        let mut new_chunks = vec![];
+
+        for chunk in &self.chunks {
+            let chunk_len = chunk.len();
+            if remaining_offset >= chunk_len {
+                remaining_offset -= chunk_len;
+                continue;
+            }
+            let take_len;
+            if remaining_length + remaining_offset > chunk_len {
+                take_len = chunk_len - remaining_offset;
+            } else {
+                take_len = remaining_length;
+            }
+
+            new_chunks.push(chunk.slice(remaining_offset, take_len));
+            remaining_length -= take_len;
+            remaining_offset = 0;
+            if remaining_length == 0 {
+                break;
+            }
+        }
+        Ok(self.copy_with_chunks(new_chunks))
     }
 
     /// Get a mask of the null values.
@@ -296,6 +325,96 @@ where
             })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_null", chunks)
+    }
+
+    /// Get data type of ChunkedArray.
+    pub fn dtype(&self) -> &ArrowDataType {
+        self.field.data_type()
+    }
+
+    /// Get the index of the chunk and the index of the value in that chunk
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        let mut index_remainder = index;
+        let mut current_chunk_idx = 0;
+
+        for chunk in &self.chunks {
+            let chunk_len = chunk.len();
+            if chunk_len - 1 >= index_remainder {
+                break;
+            } else {
+                index_remainder -= chunk_len;
+                current_chunk_idx += 1;
+            }
+        }
+        (current_chunk_idx, index_remainder)
+    }
+
+    /// Get the head of the ChunkedArray
+    pub fn head(&self, length: Option<usize>) -> Self {
+        let res_ca = match length {
+            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
+            None => self.slice(0, std::cmp::min(10, self.len())),
+        };
+        res_ca.unwrap()
+    }
+
+    /// Get the tail of the ChunkedArray
+    pub fn tail(&self, length: Option<usize>) -> Self {
+        let len = match length {
+            Some(len) => std::cmp::min(len, self.len()),
+            None => std::cmp::min(10, self.len()),
+        };
+        self.slice(self.len() - len, len).unwrap()
+    }
+
+    /// Append in place.
+    pub fn append(&mut self, other: &Self)
+    where
+        Self: std::marker::Sized,
+    {
+        self.chunks.extend(other.chunks.clone())
+    }
+
+    /// Name of the ChunkedArray.
+    pub fn name(&self) -> &str {
+        self.field.name()
+    }
+
+    /// Get a reference to the field.
+    pub fn ref_field(&self) -> &Field {
+        &self.field
+    }
+
+    /// Rename this ChunkedArray.
+    pub fn rename(&mut self, name: &str) {
+        self.field = Arc::new(Field::new(
+            name,
+            self.field.data_type().clone(),
+            self.field.is_nullable(),
+        ))
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    /// Create a new ChunkedArray from existing chunks.
+    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
+        let field = Arc::new(Field::new(name, T::get_data_type(), true));
+        let chunk_id = create_chunk_id(&chunks);
+        ChunkedArray {
+            field,
+            chunks,
+            chunk_id,
+            phantom: PhantomData,
+        }
+    }
+
+    /// Wrap as Series
+    pub fn into_series(self) -> Series {
+        Series::from_chunked_array(self)
     }
 
     /// Downcast generic `ChunkedArray<T>` to u8.
@@ -517,35 +636,6 @@ where
         }
     }
 
-    /// Take a view of top n elements
-    pub fn limit(&self, num_elements: usize) -> Result<Self> {
-        self.slice(0, num_elements)
-    }
-
-    /// Append arrow array in place.
-    ///
-    /// ```rust
-    /// # use polars::prelude::*;
-    /// let mut array = Int32Chunked::new_from_slice("array", &[1, 2]);
-    /// let array_2 = Int32Chunked::new_from_slice("2nd", &[3]);
-    ///
-    /// array.append(&array_2);
-    /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
-    /// ```
-    pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        if other.data_type() == self.field.data_type() {
-            self.chunks.push(other);
-            Ok(())
-        } else {
-            Err(PolarsError::DataTypeMisMatch)
-        }
-    }
-
-    /// Combined length of all the chunks.
-    pub fn len(&self) -> usize {
-        self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
-    }
-
     /// Get a single value. Beware this is slow.
     pub fn get(&self, index: usize) -> AnyType {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
@@ -650,99 +740,6 @@ where
             }
             _ => unimplemented!(),
         }
-    }
-
-    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
-    pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
-        if offset + length > self.len() {
-            return Err(PolarsError::OutOfBounds);
-        }
-        let mut remaining_length = length;
-        let mut remaining_offset = offset;
-        let mut new_chunks = vec![];
-
-        for chunk in &self.chunks {
-            let chunk_len = chunk.len();
-            if remaining_offset >= chunk_len {
-                remaining_offset -= chunk_len;
-                continue;
-            }
-            let take_len;
-            if remaining_length + remaining_offset > chunk_len {
-                take_len = chunk_len - remaining_offset;
-            } else {
-                take_len = remaining_length;
-            }
-
-            new_chunks.push(chunk.slice(remaining_offset, take_len));
-            remaining_length -= take_len;
-            remaining_offset = 0;
-            if remaining_length == 0 {
-                break;
-            }
-        }
-        Ok(self.copy_with_chunks(new_chunks))
-    }
-
-    /// Get the head of the ChunkedArray
-    pub fn head(&self, length: Option<usize>) -> Self {
-        let res_ca = match length {
-            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
-            None => self.slice(0, std::cmp::min(10, self.len())),
-        };
-        res_ca.unwrap()
-    }
-
-    /// Get the tail of the ChunkedArray
-    pub fn tail(&self, length: Option<usize>) -> Self {
-        let len = match length {
-            Some(len) => std::cmp::min(len, self.len()),
-            None => std::cmp::min(10, self.len()),
-        };
-        self.slice(self.len() - len, len).unwrap()
-    }
-
-    /// Append in place.
-    pub fn append(&mut self, other: &Self)
-    where
-        Self: std::marker::Sized,
-    {
-        self.chunks.extend(other.chunks.clone())
-    }
-
-    /// Name of the ChunkedArray.
-    pub fn name(&self) -> &str {
-        self.field.name()
-    }
-
-    /// Get a reference to the field.
-    pub fn ref_field(&self) -> &Field {
-        &self.field
-    }
-
-    /// Rename this ChunkedArray.
-    pub fn rename(&mut self, name: &str) {
-        self.field = Arc::new(Field::new(
-            name,
-            self.field.data_type().clone(),
-            self.field.is_nullable(),
-        ))
-    }
-
-    /// Create a new ChunkedArray from self, where the chunks are replaced.
-    fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
-        let chunk_id = create_chunk_id(&chunks);
-        ChunkedArray {
-            field: self.field.clone(),
-            chunks,
-            chunk_id,
-            phantom: PhantomData,
-        }
-    }
-
-    /// Recompute the chunk_id / chunk_lengths.
-    fn set_chunk_id(&mut self) {
-        self.chunk_id = create_chunk_id(&self.chunks)
     }
 }
 

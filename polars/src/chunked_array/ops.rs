@@ -79,19 +79,24 @@ pub trait ChunkCompare<Rhs> {
     fn lt_eq(&self, rhs: Rhs) -> BooleanChunked;
 }
 
-/// Get unique values in a ChunkedArray<T>
+/// Get unique values in a `ChunkedArray`
 pub trait ChunkUnique<T> {
     // We don't return Self to be able to use AutoRef specialization
     /// Get unique values of a ChunkedArray
     fn unique(&self) -> ChunkedArray<T>;
 
-    /// Get first index of the unique values in a ChunkedArray.
+    /// Get first index of the unique values in a `ChunkedArray`.
     fn arg_unique(&self) -> Vec<usize>;
+
+    /// Number of unique values in the `ChunkedArray`
+    fn n_unique(&self) -> usize {
+        self.arg_unique().len()
+    }
 }
 
-/// Sort operations on ChunkedArray<T>
+/// Sort operations on `ChunkedArray`.
 pub trait ChunkSort<T> {
-    /// Returned a sorted ChunkedArray<T>.
+    /// Returned a sorted `ChunkedArray`.
     fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 
     /// Sort this array in place.
