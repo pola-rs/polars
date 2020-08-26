@@ -680,8 +680,29 @@ impl Series {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `Nones`.
     ///
-    /// *NOTE: If you want to fill the Nones with a value use the `shift` operation on `ChunkedArray<T>`.
-    fn shift(&self, periods: i32) -> Result<Self> {
+    /// *NOTE: If you want to fill the Nones with a value use the `shift` operation on `ChunkedArray<T>`.*
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example() -> Result<()> {
+    ///     let s = Series::new("series", &[1, 2, 3]);
+    ///
+    ///     let shifted = s.shift(1)?;
+    ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);
+    ///
+    ///     let shifted = s.shift(-1)?;
+    ///     assert_eq!(Vec::from(shifted.i32()?), &[Some(1), Some(2), None]);
+    ///
+    ///     let shifted = s.shift(2)?;
+    ///     assert_eq!(Vec::from(shifted.i32()?), &[None, None, Some(1)]);
+    ///
+    ///     Ok(())
+    /// }
+    /// example();
+    /// ```
+    pub fn shift(&self, periods: i32) -> Result<Self> {
         Ok(apply_method_all_series_and_return!(self, shift, [periods, None],?))
     }
 
@@ -692,8 +713,37 @@ impl Series {
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
     ///
-    /// *NOTE: If you want to fill the Nones with a value use the `fill_none` operation on `ChunkedArray<T>`.
-    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
+    /// *NOTE: If you want to fill the Nones with a value use the `fill_none` operation on `ChunkedArray<T>`*.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example() -> Result<()> {
+    ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Forward)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Backward)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Min)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Max)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Mean)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
+    ///
+    ///     Ok(())
+    /// }
+    /// example();
+    ///
+    ///
+    /// ```
+    pub fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         Ok(apply_method_all_series_and_return!(self, fill_none, [strategy],?))
     }
 }
