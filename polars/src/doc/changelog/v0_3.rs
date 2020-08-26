@@ -6,4 +6,3 @@
 //! * ARROW IPC Reader/ Writer [#50](https://github.com/ritchie46/polars/issues/50)
 //! * Implement DoubleEndedIterator trait for ChunkedArray's [#34](https://github.com/ritchie46/polars/issues/34)
 //!
-//!

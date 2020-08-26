@@ -150,6 +150,7 @@ assert_eq!(Vec::from(mask.bool().unwrap()), &[Some(true), Some(false), Some(fals
 * [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html)
 * [Series](https://ritchie46.github.io/polars/polars/series/enum.Series.html)
 * [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
+     - [Operations implemented by Traits](https://ritchie46.github.io/polars/polars/chunked_array/ops/index.html)
 * [Time/ DateTime utilities](https://ritchie46.github.io/polars/polars/doc/time/index.html)
 
 ## Features
