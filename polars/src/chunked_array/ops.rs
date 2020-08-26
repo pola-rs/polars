@@ -28,8 +28,6 @@ pub trait ChunkApply<'a, A, B> {
 pub trait ChunkAgg<T> {
     /// Returns `None` if the array is empty or only contains null values.
     fn sum(&self) -> Option<T>;
-    /// Returns the minimum value in the array, according to the natural order.
-    /// Returns an option because the array is nullable.
     fn min(&self) -> Option<T>;
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
@@ -38,6 +36,10 @@ pub trait ChunkAgg<T> {
     /// Returns the mean value in the array.
     /// Returns an option because the array is nullable.
     fn mean(&self) -> Option<T>;
+
+    /// Returns the mean value in the array.
+    /// Returns an option because the array is nullable.
+    fn median(&self) -> Option<T>;
 }
 
 /// Compare [Series](series/series/enum.Series.html)

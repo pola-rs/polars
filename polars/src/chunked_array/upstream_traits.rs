@@ -79,18 +79,27 @@ impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
     }
 }
 
-impl<'a> FromIterator<Option<&'a str>> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
+macro_rules! impl_from_iter_utf8 {
+    ($iter:ident) => {{
+        let iter = $iter.into_iter();
         let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for opt_val in iter {
-            match opt_val {
-                None => builder.append_null(),
-                Some(val) => builder.append_value(val),
-            }
+            builder.append_option(opt_val.as_ref())
         }
         builder.finish()
+    }};
+}
+
+impl<'a> FromIterator<Option<&'a str>> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
+        impl_from_iter_utf8!(iter)
+    }
+}
+
+impl<'a> FromIterator<&'a Option<&'a str>> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = &'a Option<&'a str>>>(iter: I) -> Self {
+        impl_from_iter_utf8!(iter)
     }
 }
 

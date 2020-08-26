@@ -44,6 +44,16 @@ where
         self.sum()
             .map(|v| NumCast::from(v.to_f64().unwrap() / len).unwrap())
     }
+
+    fn median(&self) -> Option<T::Native> {
+        let null_count = self.null_count();
+        self.sort(false)
+            .slice((self.len() - null_count) / 2 + null_count, 1)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+    }
 }
 
 fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u8> {
@@ -100,5 +110,47 @@ impl ChunkAgg<u8> for BooleanChunked {
     fn mean(&self) -> Option<u8> {
         let len = self.len() - self.null_count();
         self.sum().map(|v| (v as usize / len) as u8)
+    }
+
+    fn median(&self) -> Option<u8> {
+        let null_count = self.null_count();
+        let opt_v = self
+            .sort(false)
+            .slice((self.len() - null_count) / 2 + null_count, 1)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        opt_v.map(|v| v as u8)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_median() {
+        let ca = UInt32Chunked::new_from_opt_slice(
+            "a",
+            &[Some(2), Some(1), None, Some(3), Some(5), None, Some(4)],
+        );
+        assert_eq!(ca.median(), Some(3));
+        let ca = UInt32Chunked::new_from_opt_slice(
+            "a",
+            &[
+                None,
+                Some(7),
+                Some(6),
+                Some(2),
+                Some(1),
+                None,
+                Some(3),
+                Some(5),
+                None,
+                Some(4),
+            ],
+        );
+        assert_eq!(ca.median(), Some(4));
     }
 }
