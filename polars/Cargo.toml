@@ -6,6 +6,7 @@ edition = "2018"
 license = "MIT"
 description = "DataFrame library"
 repository = "https://github.com/ritchie46/polars"
+readme = "../README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,14 +18,14 @@ temporal = ["chrono"]
 default = ["pretty", "docs", "temporal"]
 
 [dependencies]
-arrow = {version = "1.0.0", default_features = false}
-thiserror = "1.0.16"
-num = "0.2.1"
-fnv = "1.0.7"
-itertools = "0.9.0"
-unsafe_unwrap = "0.1.0"
-rayon = "1.3.1"
-prettytable-rs = { version="0.8.0", features=["win_crlf"], optional = true, default_features = false}
-crossbeam = "0.7"
-chrono = {version = "0.4.13", optional = true}
-enum_dispatch = "0.3.2"
+arrow = {version = "1.0.1", default_features = false}
+thiserror = "^1.0.16"
+num = "^0.2.1"
+fnv = "^1.0.7"
+itertools = "^0.9.0"
+unsafe_unwrap = "^0.1.0"
+rayon = "^1.3.1"
+prettytable-rs = { version="^0.8.0", features=["win_crlf"], optional = true, default_features = false}
+crossbeam = "^0.7"
+chrono = {version = "^0.4.13", optional = true}
+enum_dispatch = "^0.3.2"
