@@ -273,11 +273,6 @@ impl DataFrame {
         self.columns.get(idx)
     }
 
-    /// Force select.
-    pub fn f_select_idx(&self, idx: usize) -> &Series {
-        self.select_at_idx(idx).expect("out of bounds")
-    }
-
     /// Select a mutable series by index.
     ///
     /// *Note: the length of the Series should remain the same otherwise the DataFrame is invalid.*
@@ -305,12 +300,6 @@ impl DataFrame {
             Some(idx) => self.select_at_idx(idx),
             None => None,
         }
-    }
-
-    /// Force select a single column.
-    pub fn f_column(&self, name: &str) -> &Series {
-        self.column(name)
-            .expect(&format!("name {} does not exist on dataframe", name))
     }
 
     /// Select column(s) from this DataFrame.
@@ -366,11 +355,6 @@ impl DataFrame {
             .map(|col| col.filter(mask))
             .collect::<Result<Vec<_>>>()?;
         DataFrame::new(new_col)
-    }
-
-    /// Force filter
-    pub fn f_filter(&self, mask: &BooleanChunked) -> Self {
-        self.filter(mask).expect("could not filter")
     }
 
     /// Take DataFrame value by indexes from an iterator.
@@ -497,11 +481,6 @@ impl DataFrame {
             .collect::<Result<Vec<_>>>()?;
 
         DataFrame::new_with_schema(self.schema.clone(), new_col)
-    }
-
-    /// Force take
-    pub fn f_take<T: AsTakeIndex + Sync>(&self, indices: &T) -> Self {
-        self.take(indices).expect("could not take")
     }
 
     /// Rename a column in the DataFrame
@@ -835,15 +814,15 @@ mod test {
     #[test]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(df.f_column("days").eq(1).sum(), Some(1));
+        assert_eq!(df.column("days").unwrap().eq(1).sum(), Some(1));
     }
 
     #[test]
     fn test_filter() {
         let df = create_frame();
-        println!("{}", df.f_column("days"));
+        println!("{}", df.column("days").unwrap());
         println!("{:?}", df);
-        println!("{:?}", df.filter(&df.f_column("days").eq(0)))
+        println!("{:?}", df.filter(&df.column("days").unwrap().eq(0)))
     }
 
     #[test]

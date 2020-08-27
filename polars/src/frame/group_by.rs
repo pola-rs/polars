@@ -295,7 +295,7 @@ impl<'a> GroupBy<'a> {
 
     fn keys(&self) -> Series {
         unsafe {
-            self.df.f_column(&self.by).take_iter_unchecked(
+            self.df.column(&self.by).unwrap().take_iter_unchecked(
                 self.groups.iter().map(|(idx, _)| *idx),
                 Some(self.groups.len()),
             )

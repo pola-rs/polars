@@ -642,10 +642,10 @@ mod test {
         let joined = temp.left_join(&rain, "days", "days").unwrap();
         println!("{}", &joined);
         assert_eq!(
-            (joined.f_column("rain").sum::<f32>().unwrap() * 10.).round(),
+            (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
             3.
         );
-        assert_eq!(joined.f_column("rain").null_count(), 3);
+        assert_eq!(joined.column("rain").unwrap().null_count(), 3);
 
         // test join on utf8
         let s0 = Series::new("days", &["mo", "tue", "wed", "thu", "fri"]);
@@ -658,10 +658,10 @@ mod test {
         let joined = temp.left_join(&rain, "days", "days").unwrap();
         println!("{}", &joined);
         assert_eq!(
-            (joined.f_column("rain").sum::<f32>().unwrap() * 10.).round(),
+            (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
             3.
         );
-        assert_eq!(joined.f_column("rain").null_count(), 3);
+        assert_eq!(joined.column("rain").unwrap().null_count(), 3);
     }
 
     #[test]

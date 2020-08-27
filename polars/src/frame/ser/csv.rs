@@ -46,7 +46,7 @@
 //! .unwrap();
 //!
 //! assert_eq!("sepal.length", df.get_columns()[0].name());
-//! # assert_eq!(1, df.f_column("sepal.length").chunks().len());
+//! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
 use crate::frame::ser::finish_reader;
 use crate::prelude::*;
