@@ -15,7 +15,8 @@
 //! use std::fs::File;
 //!
 //! fn example() -> Result<DataFrame> {
-//!     let file = File::open("iris.csv").expect("could not open file");
+//!     let file = File::open("iris.csv")
+//!                     .expect("could not read file");
 //!
 //!     CsvReader::new(file)
 //!             .infer_schema(None)
@@ -36,19 +37,22 @@
 //! ```
 //! use polars::prelude::*;
 //!
-//! // Create first df.
-//! let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
-//! let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
-//! let temp = DataFrame::new(vec![s0, s1]).unwrap();
+//! fn join() -> Result<DataFrame> {
+//!     // Create first df.
+//!     let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
+//!     let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
+//!     let temp = DataFrame::new(vec![s0, s1])?;
 //!
-//! // Create second df.
-//! let s0 = Series::new("days", &[1, 2]);
-//! let s1 = Series::new("rain", &[0.1, 0.2]);
-//! let rain = DataFrame::new(vec![s0, s1]).unwrap();
+//!     // Create second df.
+//!     let s0 = Series::new("days", &[1, 2]);
+//!     let s1 = Series::new("rain", &[0.1, 0.2]);
+//!     let rain = DataFrame::new(vec![s0, s1])?;
 //!
-//! // Left join on days column.
-//! let joined = temp.left_join(&rain, "days", "days");
-//! println!("{}", joined.unwrap())
+//!     // Left join on days column.
+//!     temp.left_join(&rain, "days", "days")
+//! }
+//!
+//! println!("{}", join().unwrap())
 //! ```
 //!
 //! ```text
@@ -132,6 +136,24 @@
 //! let valid = [true, false, false].iter();
 //!
 //! assert_eq!(Vec::from(mask.bool().unwrap()), &[Some(true), Some(false), Some(false)]);
+//! ```
+//!
+//! ## Temporal data types
+//!
+//! ```rust
+//! # use polars::prelude::*;
+//! let dates = &[
+//! "2020-08-21",
+//! "2020-08-21",
+//! "2020-08-22",
+//! "2020-08-23",
+//! "2020-08-22",
+//! ];
+//! // date format
+//! let fmt = "%Y-%m-%d";
+//! // create date series
+//! let s0 = Date32Chunked::parse_from_str_slice("date", dates, fmt)
+//!         .into_series();
 //! ```
 //!
 //! ## And more...

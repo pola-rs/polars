@@ -33,116 +33,136 @@ structs in that order. For `ChunkedArray` a lot of functionality is also defined
 ### Read and write CSV | JSON | IPC | Parquet
 
 ```rust
-use polars::prelude::*;
-use std::fs::File;
-
-fn example() -> Result<DataFrame> {
-    let file = File::open("iris.csv").expect("could not open file");
-
-    CsvReader::new(file)
-            .infer_schema(None)
-            .has_header(true)
-            .finish()
-}
+ use polars::prelude::*;
+ use std::fs::File;
+ 
+ fn example() -> Result<DataFrame> {
+     let file = File::open("iris.csv")
+                     .expect("could not open file");
+ 
+     CsvReader::new(file)
+             .infer_schema(None)
+             .has_header(true)
+             .finish()
+ }
 ```
 
 ### Joins
 
 ```rust
-use polars::prelude::*;
-
-// Create first df.
-let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
-let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
-let temp = DataFrame::new(vec![s0, s1]).unwrap();
-
-// Create second df.
-let s0 = Series::new("days", &[1, 2]);
-let s1 = Series::new("rain", &[0.1, 0.2]);
-let rain = DataFrame::new(vec![s0, s1]).unwrap();
-
-// Left join on days column.
-let joined = temp.left_join(&rain, "days", "days");
-println!("{}", joined.unwrap())
+ use polars::prelude::*;
+ 
+ fn join() -> Result<DataFrame> {
+     // Create first df.
+     let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
+     let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
+     let temp = DataFrame::new(vec![s0, s1])?;
+ 
+     // Create second df.
+     let s0 = Series::new("days", &[1, 2]);
+     let s1 = Series::new("rain", &[0.1, 0.2]);
+     let rain = DataFrame::new(vec![s0, s1])?;
+ 
+     // Left join on days column.
+     temp.left_join(&rain, "days", "days")
+ }
+ println!("{}", join().unwrap());
 ```
 
 ```text
-+------+------+------+
-| days | temp | rain |
-| ---  | ---  | ---  |
-| i32  | f64  | f64  |
-+======+======+======+
-| 0    | 22.1 | null |
-+------+------+------+
-| 1    | 19.9 | 0.1  |
-+------+------+------+
-| 2    | 7    | 0.2  |
-+------+------+------+
-| 3    | 2    | null |
-+------+------+------+
-| 4    | 3    | null |
-+------+------+------+
+ +------+------+------+
+ | days | temp | rain |
+ | ---  | ---  | ---  |
+ | i32  | f64  | f64  |
+ +======+======+======+
+ | 0    | 22.1 | null |
+ +------+------+------+
+ | 1    | 19.9 | 0.1  |
+ +------+------+------+
+ | 2    | 7    | 0.2  |
+ +------+------+------+
+ | 3    | 2    | null |
+ +------+------+------+
+ | 4    | 3    | null |
+ +------+------+------+
 ```
 
 ### GroupBys
 
 ```rust
-use polars::prelude::*;
-fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
-    df.groupby("column_name")?
-    .select("agg_column_name")
-    .sum()
-}
+ use polars::prelude::*;
+ fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
+     df.groupby("column_name")?
+     .select("agg_column_name")
+     .sum()
+ }
 ```
 
 ### Arithmetic
 ```rust
-use polars::prelude::*;
-let s: Series = [1, 2, 3].iter().collect();
-let s_squared = &s * &s;
+ use polars::prelude::*;
+ let s: Series = [1, 2, 3].iter().collect();
+ let s_squared = &s * &s;
 ```
 
 ### Rust iterators
 
 ```rust
-use polars::prelude::*;
-
-let s: Series = [1, 2, 3].iter().collect();
-let s_squared: Series = s.i32()
-     .expect("datatype mismatch")
-     .into_iter()
-     .map(|optional_v| {
-         match optional_v {
-             Some(v) => Some(v * v),
-             None => None, // null value
-         }
- }).collect();
+ use polars::prelude::*;
+ 
+ let s: Series = [1, 2, 3].iter().collect();
+ let s_squared: Series = s.i32()
+      .expect("datatype mismatch")
+      .into_iter()
+      .map(|optional_v| {
+              match optional_v {
+                  Some(v) => Some(v * v),
+                  None => None, // null value
+              }
+          }).collect();
 ```
 
 ### Apply custom closures
 ```rust
-use polars::prelude::*;
-
-let s: Series = Series::new("values", [Some(1.0), None, Some(3.0)]);
-// null values are ignored automatically
-let squared = s.f64()
-    .unwrap()
-    .apply(|value| value.powf(2.0))
-    .into_series();
-
-assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)])
+ use polars::prelude::*;
+ 
+ let s: Series = Series::new("values", [Some(1.0), None, Some(3.0)]);
+ // null values are ignored automatically
+ let squared = s.f64()
+     .unwrap()
+     .apply(|value| value.powf(2.0))
+     .into_series();
+ 
+ assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)])
 ```
 
 ### Comparisons
 
 ```rust
-use polars::prelude::*;
-use itertools::Itertools;
-let s = Series::new("dollars", &[1, 2, 3]);
-let mask = s.eq(1);
-let valid = [true, false, false].iter();
+ use polars::prelude::*;
+ use itertools::Itertools;
+ let s = Series::new("dollars", &[1, 2, 3]);
+ let mask = s.eq(1);
+ let valid = [true, false, false].iter();
+ 
+ assert_eq!(Vec::from(mask.bool().unwrap()), &[Some(true), Some(false), Some(false)]);
+```
 
-assert_eq!(Vec::from(mask.bool().unwrap()), &[Some(true), Some(false), Some(false)]);
+## Temporal data types
+
+```rust
+ let dates = &[
+ "2020-08-21",
+ "2020-08-21",
+ "2020-08-22",
+ "2020-08-23",
+ "2020-08-22",
+ ];
+ // date format
+ let fmt = "%Y-%m-%d";
+ // create date series
+ let s0 = Date32Chunked::parse_from_str_slice("date", dates, fmt)
+         .into_series();
 ```
 
 ## And more...
