@@ -4,6 +4,7 @@ use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
+use itertools::__std_iter::FromIterator;
 use rayon::prelude::*;
 use std::mem;
 use std::sync::Arc;
@@ -705,6 +706,16 @@ impl<'a> Iterator for RecordBatchIter<'a> {
         let rb = RecordBatch::try_new(Arc::clone(self.schema), rb_cols).unwrap();
         self.idx += length;
         Some(rb)
+    }
+}
+
+impl FromIterator<Series> for DataFrame {
+    /// # Panics
+    ///
+    /// Panics if Series have different lengths.
+    fn from_iter<T: IntoIterator<Item = Series>>(iter: T) -> Self {
+        let v = iter.into_iter().collect();
+        DataFrame::new(v).expect("could not create DataFrame from iterator")
     }
 }
 
