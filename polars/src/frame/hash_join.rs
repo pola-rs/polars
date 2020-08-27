@@ -472,7 +472,7 @@ impl DataFrame {
         }
 
         for name in rename_strs {
-            df_right.rename(&name, &format!("{}_right", name))?
+            df_right.rename(&name, &format!("{}_right", name))?;
         }
 
         df_left.hstack(&df_right.columns)?;

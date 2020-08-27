@@ -70,7 +70,7 @@ impl DataFrame {
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
-    fn rechunk(&mut self) -> Result<()> {
+    fn rechunk(&mut self) -> Result<&mut Self> {
         let chunk_lens = self
             .columns
             .iter()
@@ -97,7 +97,7 @@ impl DataFrame {
             let new_col = col.rechunk(Some(&chunk_id))?;
             self.columns[idx] = new_col;
         }
-        Ok(())
+        Ok(self)
     }
 
     /// Get a reference to the DataFrame schema.
@@ -200,7 +200,7 @@ impl DataFrame {
     ///     df.hstack(columns);
     /// }
     /// ```
-    pub fn hstack(&mut self, columns: &[DfSeries]) -> Result<()> {
+    pub fn hstack(&mut self, columns: &[DfSeries]) -> Result<&mut Self> {
         let height = self.height();
         for col in columns {
             if col.len() != height {
@@ -210,7 +210,7 @@ impl DataFrame {
             }
         }
         self.register_mutation()?;
-        Ok(())
+        Ok(self)
     }
 
     /// Remove column by name
@@ -233,7 +233,7 @@ impl DataFrame {
     /// Drop a column by name.
     /// This is a pure method and will return a new DataFrame instead of modifying
     /// the current one in place.
-    pub fn drop(&self, name: &str) -> Result<DataFrame> {
+    pub fn drop(&self, name: &str) -> Result<Self> {
         let idx = self.name_to_idx(name)?;
         let mut new_cols = Vec::with_capacity(self.columns.len() - 1);
 
@@ -318,7 +318,7 @@ impl DataFrame {
     ///     }
     /// }
     /// ```
-    pub fn select<'a, S>(&self, selection: S) -> Result<DataFrame>
+    pub fn select<'a, S>(&self, selection: S) -> Result<Self>
     where
         S: Selection<'a>,
     {
@@ -489,20 +489,21 @@ impl DataFrame {
     ///
     /// ```
     /// use polars::prelude::*;
-    /// fn example(df: &mut DataFrame) -> Result<()> {
+    /// fn example(df: &mut DataFrame) -> Result<&mut DataFrame> {
     ///     let original_name = "foo";
     ///     let new_name = "bar";
     ///     df.rename(original_name, new_name)
     /// }
     /// ```
-    pub fn rename(&mut self, column: &str, name: &str) -> Result<()> {
+    pub fn rename(&mut self, column: &str, name: &str) -> Result<&mut Self> {
         self.select_mut(column)
             .ok_or(PolarsError::NotFound)
-            .map(|s| s.rename(name))
+            .map(|s| s.rename(name))?;
+        Ok(self)
     }
 
     /// Sort DataFrame in place by a column.
-    pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<()> {
+    pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<&mut Self> {
         let s = match self.column(by_column) {
             Some(s) => s,
             None => return Err(PolarsError::NotFound),
@@ -515,7 +516,7 @@ impl DataFrame {
             .par_iter()
             .map(|s| s.take(&take))
             .collect::<Result<Vec<_>>>()?;
-        Ok(())
+        Ok(self)
     }
 
     /// Return a sorted clone of this DataFrame.
@@ -530,9 +531,8 @@ impl DataFrame {
     }
 
     /// Replace a column with a series.
-    pub fn replace(&mut self, column: &str, new_col: DfSeries) -> Result<()> {
-        let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
-        self.replace_at_idx(idx, new_col)
+    pub fn replace(&mut self, column: &str, new_col: DfSeries) -> Result<&mut Self> {
+        self.apply(column, |_| new_col)
     }
 
     /// Replace column at index `idx` with a series.
@@ -548,16 +548,8 @@ impl DataFrame {
     /// // Add 32 to get lowercase ascii values
     /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
     /// ```
-    pub fn replace_at_idx(&mut self, idx: usize, new_col: DfSeries) -> Result<()> {
-        let opt_col = self.columns.get_mut(idx);
-        match opt_col {
-            Some(col) => {
-                let _ = mem::replace(col, new_col);
-                self.register_mutation()?;
-                Ok(())
-            }
-            _ => Err(PolarsError::OutOfBounds),
-        }
+    pub fn replace_at_idx(&mut self, idx: usize, new_col: DfSeries) -> Result<&mut Self> {
+        self.apply_at_idx(idx, |_| new_col)
     }
 
     /// Apply a closure to a column. This is the recommended way to do in place modification.
@@ -599,7 +591,7 @@ impl DataFrame {
     /// | "egg"  | 3   |
     /// +--------+-----+
     /// ```
-    pub fn apply<F>(&mut self, column: &str, f: F) -> Result<()>
+    pub fn apply<F>(&mut self, column: &str, f: F) -> Result<&mut Self>
     where
         F: FnOnce(&Series) -> Series,
     {
@@ -636,14 +628,14 @@ impl DataFrame {
     /// | "egg"  | 111   |
     /// +--------+-------+
     /// ```
-    pub fn apply_at_idx<F>(&mut self, idx: usize, f: F) -> Result<()>
+    pub fn apply_at_idx<F>(&mut self, idx: usize, f: F) -> Result<&mut Self>
     where
         F: FnOnce(&Series) -> Series,
     {
         let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds)?;
         let _ = mem::replace(col, f(col));
         self.register_mutation()?;
-        Ok(())
+        Ok(self)
     }
 
     /// Slice the DataFrame along the rows.

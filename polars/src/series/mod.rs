@@ -315,8 +315,9 @@ impl Series {
     }
 
     /// Rename series.
-    pub fn rename(&mut self, name: &str) {
-        apply_method_all_series!(self, rename, name)
+    pub fn rename(&mut self, name: &str) -> &mut Self {
+        apply_method_all_series!(self, rename, name);
+        self
     }
 
     /// Get field (used in schema)
@@ -490,8 +491,9 @@ impl Series {
         unpack_series!(self, IntervalYearMonth)
     }
 
-    pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        apply_method_all_series!(self, append_array, other)
+    pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
+        apply_method_all_series!(self, append_array, other)?;
+        Ok(self)
     }
 
     /// Take `num_elements` from the top as a zero copy view.
@@ -505,10 +507,10 @@ impl Series {
     }
 
     /// Append a Series of the same type in place.
-    pub fn append(&mut self, other: &Self) -> Result<()> {
+    pub fn append(&mut self, other: &Self) -> Result<&mut Self> {
         if self.dtype() == other.dtype() {
             apply_method_all_series!(self, append, other.as_ref());
-            Ok(())
+            Ok(self)
         } else {
             Err(PolarsError::DataTypeMisMatch)
         }
@@ -628,8 +630,9 @@ impl Series {
     }
 
     /// Sort in place.
-    pub fn sort_in_place(&mut self, reverse: bool) {
+    pub fn sort_in_place(&mut self, reverse: bool) -> &mut Self {
         apply_method_all_series!(self, sort_in_place, reverse);
+        self
     }
 
     pub fn sort(&self, reverse: bool) -> Self {
