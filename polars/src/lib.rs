@@ -29,7 +29,7 @@
 //! * [the csv module](frame/ser/csv/index.html)
 //! * [the json module](frame/ser/json/index.html)
 //! * [the IPC module](frame/ser/ipc/index.html)
-//!
+//! * [the parquet module](frame/ser/parquet/index.html)
 //!
 //! ## Joins
 //!
@@ -149,10 +149,12 @@
 //!
 //! * `pretty` (default)
 //!     - pretty printing of DataFrames
+//! * `temporal (default)`
+//!     - Conversions between Chrono and Polars for temporal data
 //! * `simd`
 //!     - SIMD operations
-//! * `temporal`
-//!     - Conversions between Chrono and Polars for temporal data
+//! * `paquet_ser`
+//!     - Read Apache Parquet format
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #[macro_use]

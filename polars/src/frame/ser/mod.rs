@@ -1,6 +1,8 @@
 pub mod csv;
 pub mod ipc;
 pub mod json;
+#[cfg(feature = "parquet_ser")]
+pub mod parquet;
 use crate::prelude::*;
 use arrow::{
     csv::Reader as ArrowCsvReader, error::Result as ArrowResult, json::Reader as ArrowJsonReader,

@@ -86,13 +86,13 @@ where
 /// Write a DataFrame to Arrow's IPC format
 pub struct IPCWriter<'a, W> {
     writer: &'a mut W,
-    buffer_size: usize,
+    batch_size: usize,
 }
 
 impl<'a, W> IPCWriter<'a, W> {
-    /// Set the size of the write buffers. Buffer size is the amount of rows written at once.
-    pub fn with_buffer_size(mut self, buffer_size: usize) -> Self {
-        self.buffer_size = buffer_size;
+    /// Set the size of the write buffer. Batch size is the amount of rows written at once.
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = batch_size;
         self
     }
 }
@@ -104,14 +104,14 @@ where
     fn new(writer: &'a mut W) -> Self {
         IPCWriter {
             writer,
-            buffer_size: 1000,
+            batch_size: 1000,
         }
     }
 
     fn finish(self, df: &mut DataFrame) -> Result<()> {
         let mut ipc_writer = ArrowIPCFileWriter::try_new(self.writer, &df.schema)?;
 
-        let iter = df.iter_record_batches(self.buffer_size);
+        let iter = df.iter_record_batches(self.batch_size);
 
         for batch in iter {
             ipc_writer.write(&batch)?

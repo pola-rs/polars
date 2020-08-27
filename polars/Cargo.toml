@@ -15,6 +15,7 @@ pretty = ["prettytable-rs"]
 simd = ["arrow/packed_simd"]
 docs = []
 temporal = ["chrono"]
+parquet_ser = ["parquet"]
 default = ["pretty", "docs", "temporal"]
 
 [dependencies]
@@ -29,3 +30,4 @@ prettytable-rs = { version="^0.8.0", features=["win_crlf"], optional = true, def
 crossbeam = "^0.7"
 chrono = {version = "^0.4.13", optional = true}
 enum_dispatch = "^0.3.2"
+parquet = {version = "1.0.1", optional = true}

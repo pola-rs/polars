@@ -30,7 +30,7 @@ structs in that order. For `ChunkedArray` a lot of functionality is also defined
 
 ## Functionality
 
-### Read and write CSV/ JSON
+### Read and write CSV | JSON | IPC | Parquet
 
 ```rust
 use polars::prelude::*;
@@ -159,7 +159,9 @@ Additional cargo features:
 
 * `pretty` (default)
     - pretty printing of DataFrames
+* `temporal (default)`
+    - Conversions between Chrono and Polars for temporal data
 * `simd`
     - SIMD operations
-* `temporal`
-    - Conversions between [Chrono](https://docs.rs/chrono/latest/chrono/) and Polars for temporal data
+* `paquet_ser`
+    - Read Apache Parquet format

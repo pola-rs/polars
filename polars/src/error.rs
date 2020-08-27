@@ -26,6 +26,9 @@ pub enum PolarsError {
     NoData,
     #[error("Memory should be 64 byte aligned")]
     MemoryNotAligned,
+    #[cfg(feature = "parquet_ser")]
+    #[error(transparent)]
+    ParquetError(#[from] parquet::errors::ParquetError),
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
