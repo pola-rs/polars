@@ -269,23 +269,21 @@ impl DataFrame {
     }
 
     /// Select a series by index.
-    pub fn select_idx(&self, idx: usize) -> Option<&Series> {
+    pub fn select_at_idx(&self, idx: usize) -> Option<&Series> {
         self.columns.get(idx)
     }
 
     /// Force select.
     pub fn f_select_idx(&self, idx: usize) -> &Series {
-        self.select_idx(idx).expect("out of bounds")
+        self.select_at_idx(idx).expect("out of bounds")
     }
 
     /// Select a mutable series by index.
-    pub fn select_idx_mut(&mut self, idx: usize) -> Option<&mut Series> {
+    ///
+    /// *Note: the length of the Series should remain the same otherwise the DataFrame is invalid.*
+    /// For this reason the method is not public
+    fn select_idx_mut(&mut self, idx: usize) -> Option<&mut Series> {
         self.columns.get_mut(idx)
-    }
-
-    /// Force select.
-    pub fn f_select_idx_mut(&mut self, idx: usize) -> &mut Series {
-        self.select_idx_mut(idx).expect("out of bounds")
     }
 
     /// Get column index of a series by name.
@@ -304,7 +302,7 @@ impl DataFrame {
         let opt_idx = self.find_idx_by_name(name);
 
         match opt_idx {
-            Some(idx) => self.select_idx(idx),
+            Some(idx) => self.select_at_idx(idx),
             None => None,
         }
     }
@@ -349,19 +347,15 @@ impl DataFrame {
     }
 
     /// Select a mutable series by name.
-    pub fn select_mut(&mut self, name: &str) -> Option<&mut Series> {
+    /// *Note: the length of the Series should remain the same otherwise the DataFrame is invalid.*
+    /// For this reason the method is not public
+    fn select_mut(&mut self, name: &str) -> Option<&mut Series> {
         let opt_idx = self.find_idx_by_name(name);
 
         match opt_idx {
             Some(idx) => self.select_idx_mut(idx),
             None => None,
         }
-    }
-
-    /// Force select.
-    pub fn f_select_mut(&mut self, name: &str) -> &mut Series {
-        self.select_mut(name)
-            .expect(&format!("name {} does not exist on dataframe", name))
     }
 
     /// Take DataFrame rows by a boolean mask.
@@ -559,7 +553,116 @@ impl DataFrame {
     /// Replace a column with a series.
     pub fn replace(&mut self, column: &str, new_col: DfSeries) -> Result<()> {
         let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
-        let _ = mem::replace(&mut self.columns[idx], new_col);
+        self.replace_at_idx(idx, new_col)
+    }
+
+    /// Replace column at index `idx` with a series.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// let s0 = Series::new("foo", &["ham", "spam", "egg"]);
+    /// let s1 = Series::new("ascii", &[70, 79, 79]);
+    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    ///
+    /// // Add 32 to get lowercase ascii values
+    /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
+    /// ```
+    pub fn replace_at_idx(&mut self, idx: usize, new_col: DfSeries) -> Result<()> {
+        let opt_col = self.columns.get_mut(idx);
+        match opt_col {
+            Some(col) => {
+                let _ = mem::replace(col, new_col);
+                self.register_mutation()?;
+                Ok(())
+            }
+            _ => Err(PolarsError::OutOfBounds),
+        }
+    }
+
+    /// Apply a closure to a column. This is the recommended way to do in place modification.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// let s0 = Series::new("foo", &["ham", "spam", "egg"]);
+    /// let s1 = Series::new("names", &["Jean", "Claude", "van"]);
+    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    ///
+    /// fn str_to_len(str_val: &Series) -> Series {
+    ///     str_val.utf8()
+    ///         .unwrap()
+    ///         .into_iter()
+    ///         .map(|opt_name: Option<&str>| {
+    ///             opt_name.map(|name: &str| name.len() as u32)
+    ///          })
+    ///         .collect::<UInt32Chunked>()
+    ///         .into_series()
+    /// }
+    ///
+    /// // Replace the names column by the length of the names.
+    /// df.apply("names", str_to_len);
+    /// ```
+    /// Results in:
+    ///
+    /// ```text
+    /// +--------+-----+
+    /// | foo    |     |
+    /// | ---    | --- |
+    /// | str    | u32 |
+    /// +========+=====+
+    /// | "ham"  | 4   |
+    /// +--------+-----+
+    /// | "spam" | 6   |
+    /// +--------+-----+
+    /// | "egg"  | 3   |
+    /// +--------+-----+
+    /// ```
+    pub fn apply<F>(&mut self, column: &str, f: F) -> Result<()>
+    where
+        F: FnOnce(&Series) -> Series,
+    {
+        let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
+        self.apply_at_idx(idx, f)
+    }
+
+    /// Apply a closure to a column at index `idx`. This is the recommended way to do in place
+    /// modification.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// let s0 = Series::new("foo", &["ham", "spam", "egg"]);
+    /// let s1 = Series::new("ascii", &[70, 79, 79]);
+    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    ///
+    /// // Add 32 to get lowercase ascii values
+    /// df.apply_at_idx(1, |s| s + 32);
+    /// ```
+    /// Results in:
+    ///
+    /// ```text
+    /// +--------+-------+
+    /// | foo    | ascii |
+    /// | ---    | ---   |
+    /// | str    | i32   |
+    /// +========+=======+
+    /// | "ham"  | 102   |
+    /// +--------+-------+
+    /// | "spam" | 111   |
+    /// +--------+-------+
+    /// | "egg"  | 111   |
+    /// +--------+-------+
+    /// ```
+    pub fn apply_at_idx<F>(&mut self, idx: usize, f: F) -> Result<()>
+    where
+        F: FnOnce(&Series) -> Series,
+    {
+        let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds)?;
+        let _ = mem::replace(col, f(col));
         self.register_mutation()?;
         Ok(())
     }
