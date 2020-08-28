@@ -4,6 +4,7 @@ use arrow::{
     compute,
 };
 use num::{Num, NumCast, ToPrimitive};
+use std::ops::{BitAnd, BitOr, Not};
 use std::sync::Arc;
 
 impl<T> ChunkedArray<T>
@@ -334,12 +335,131 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 }
 
+impl BooleanChunked {
+    /// First ensure that the chunks of lhs and rhs match and then iterates over the chunks and applies
+    /// the comparison operator.
+    fn bit_operation(
+        &self,
+        rhs: &BooleanChunked,
+        operator: impl Fn(&BooleanArray, &BooleanArray) -> arrow::error::Result<BooleanArray>,
+    ) -> Result<BooleanChunked> {
+        let chunks = self
+            .downcast_chunks()
+            .iter()
+            .zip(rhs.downcast_chunks())
+            .map(|(left, right)| {
+                let arr_res = operator(left, right);
+                let arr = match arr_res {
+                    Ok(arr) => arr,
+                    Err(e) => return Err(PolarsError::ArrowError(e)),
+                };
+                Ok(Arc::new(arr) as ArrayRef)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(ChunkedArray::new_from_chunks("", chunks))
+    }
+}
+
+macro_rules! impl_bitwise_op  {
+    ($self:ident, $rhs:ident, $arrow_method:ident, $op:tt) => {{
+        if $self.chunk_id == $rhs.chunk_id {
+            let result = $self.bit_operation($rhs, compute::$arrow_method);
+            match result {
+                Ok(v) => return Ok(v),
+                Err(_) => (),
+            };
+        };
+        let ca = $self
+            .into_iter()
+            .zip($rhs.into_iter())
+            .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
+                (Some(left), Some(right)) => Some(left $op right),
+                _ => None,
+            })
+            .collect();
+        Ok(ca)
+    }}
+
+}
+
+impl BitOr for &BooleanChunked {
+    type Output = Result<BooleanChunked>;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        impl_bitwise_op!(self, rhs, or, |)
+    }
+}
+
+impl BitOr for BooleanChunked {
+    type Output = Result<BooleanChunked>;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        (&self).bitor(&rhs)
+    }
+}
+
+impl BitAnd for &BooleanChunked {
+    type Output = Result<BooleanChunked>;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        impl_bitwise_op!(self, rhs, and, &)
+    }
+}
+
+impl BitAnd for BooleanChunked {
+    type Output = Result<BooleanChunked>;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        (&self).bitand(&rhs)
+    }
+}
+
+impl Not for &BooleanChunked {
+    type Output = BooleanChunked;
+
+    fn not(self) -> Self::Output {
+        let chunks = self
+            .downcast_chunks()
+            .iter()
+            .map(|a| {
+                let arr = compute::not(a).expect("should not fail");
+                Arc::new(arr) as ArrayRef
+            })
+            .collect::<Vec<_>>();
+        ChunkedArray::new_from_chunks(self.name(), chunks)
+    }
+}
+
+impl Not for BooleanChunked {
+    type Output = BooleanChunked;
+
+    fn not(self) -> Self::Output {
+        (&self).not()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};
     use crate::prelude::*;
     use itertools::Itertools;
     use std::iter::repeat;
+
+    #[test]
+    fn test_bitwise_ops() {
+        let a = BooleanChunked::new_from_slice("a", &[true, false, false]);
+        let b = BooleanChunked::new_from_opt_slice("b", &[Some(true), Some(true), None]);
+        assert_eq!(
+            Vec::from((&a | &b).unwrap()),
+            &[Some(true), Some(true), None]
+        );
+        assert_eq!(
+            Vec::from((&a & &b).unwrap()),
+            &[Some(true), Some(false), None]
+        );
+        assert_eq!(Vec::from(!b), &[Some(false), Some(false), None]);
+    }
 
     #[test]
     fn test_compare_chunk_diff() {
