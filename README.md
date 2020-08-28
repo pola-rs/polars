@@ -11,16 +11,24 @@ Its focus is being a fast in memory DataFrame library.
 Polars is in rapid development, but it already supports most features needed for a useful DataFrame library. Do you
 mis something, please make an issue and/or sent a PR.
 
+## First run
+Take a look at the [10 minutes to Polars notebook](examples/10_minutes_to_polars.ipynb) to get you started.
+Want to run the notebook yourself? Clone the repo and run `$ cargo c && docker-compose up`. This will spin up a jupyter
+notebook on `http://localhost:8891`. The notebooks are in the `/examples` directory.
+ 
+Oh yeah.. and get a cup of coffee because compilation will take while during the first run.
+
+
 ## Documentation
 Want to know what features Polars support? [Check the current master docs](https://ritchie46.github.io/polars). 
 
-Most
-features are described on the [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html), 
+Most features are described on the [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html), 
 [Series](https://ritchie46.github.io/polars/polars/series/enum.Series.html), and [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
 structs in that order. For `ChunkedArray` a lot of functionality is also defined by `Traits` in the 
 [ops module](https://ritchie46.github.io/polars/polars/chunked_array/ops/index.html).
 
-### Performance
+## Performance
+Polars is written to be performant. Below are some comparisons with the (also very fast) Pandas DataFrame library.
 
 #### GroupBy
 ![](pandas_cmp/img/groupby10_.png)

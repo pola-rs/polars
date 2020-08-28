@@ -49,3 +49,12 @@ pub(crate) fn create_df() -> DataFrame {
 }
 #[cfg(feature = "parquet_ser")]
 pub use crate::frame::ser::parquet::ParquetReader;
+
+
+#[macro_export]
+macro_rules! as_result {
+    ($block:block) => {{
+        let res: Result<_> = $block;
+        res
+    }}
+}

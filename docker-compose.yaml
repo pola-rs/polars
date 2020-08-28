@@ -1,0 +1,13 @@
+version: '3'
+services:
+  notebook:
+    build: .
+    ports:
+      - "8891:8891"
+    command: ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8891", "--NotebookApp.token=''"]
+    environment:
+      - EVCXR_TMPDIR=/target
+    volumes:
+      - ./polars:/polars
+      - ./target:/target
+      - ./examples:/examples
