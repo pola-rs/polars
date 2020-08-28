@@ -8,21 +8,18 @@ impl<'a> Selection<'a> for &'a str {
     }
 }
 
-impl<'a> Selection<'a> for &'a String {
-    fn to_selection_vec(self) -> Vec<&'a str> {
-        vec![self.as_str()]
-    }
-}
-
 impl<'a> Selection<'a> for Vec<&'a str> {
     fn to_selection_vec(self) -> Vec<&'a str> {
         self
     }
 }
 
-impl<'a> Selection<'a> for &'a Vec<String> {
+impl<'a, T> Selection<'a> for &T
+where
+    T: AsRef<[&'a str]>,
+{
     fn to_selection_vec(self) -> Vec<&'a str> {
-        self.iter().map(|s| s.as_str()).collect()
+        self.as_ref().iter().copied().collect()
     }
 }
 

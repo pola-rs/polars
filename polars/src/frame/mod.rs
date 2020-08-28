@@ -115,6 +115,11 @@ impl DataFrame {
         self.columns.iter().map(|s| s.name()).collect()
     }
 
+    /// Get the data types of the columns in the DataFrame.
+    pub fn dtypes(&self) -> Vec<ArrowDataType> {
+        self.columns.iter().map(|s| s.dtype().clone()).collect()
+    }
+
     /// The number of chunks per column
     pub fn n_chunks(&self) -> Result<usize> {
         Ok(self
