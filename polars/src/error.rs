@@ -13,7 +13,7 @@ pub enum PolarsError {
     #[error("Not found")]
     NotFound,
     #[error("Lengths don't match")]
-    LengthMismatch,
+    ShapeMisMatch,
     #[error("{0}")]
     Other(String),
     #[error("No selection was made")]

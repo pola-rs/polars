@@ -64,7 +64,7 @@ impl DataFrame {
     /// Only for crate use as schema is not checked.
     fn new_with_schema(schema: DfSchema, columns: DfColumns) -> Result<Self> {
         if !columns.iter().map(|s| s.len()).all_equal() {
-            return Err(PolarsError::LengthMismatch);
+            return Err(PolarsError::ShapeMisMatch);
         }
         Ok(DataFrame { schema, columns })
     }
@@ -195,7 +195,8 @@ impl DataFrame {
         self.shape().0
     }
 
-    /// Add series column to DataFrame
+    /// Add multiple Series to a DataFrame
+    /// This expects the Series to have the same length.
     ///
     /// # Example
     ///
@@ -209,11 +210,30 @@ impl DataFrame {
         let height = self.height();
         for col in columns {
             if col.len() != height {
-                return Err(PolarsError::LengthMismatch);
+                return Err(PolarsError::ShapeMisMatch);
             } else {
                 self.columns.push(col.clone());
             }
         }
+        self.register_mutation()?;
+        Ok(self)
+    }
+
+    /// Concatenate a DataFrame to this DataFrame
+    pub fn vstack(&mut self, df: &DataFrame) -> Result<&mut Self> {
+        if self.width() != df.width() {
+            return Err(PolarsError::ShapeMisMatch);
+        }
+
+        if self.dtypes() != df.dtypes() {
+            return Err(PolarsError::DataTypeMisMatch);
+        }
+        self.columns
+            .iter_mut()
+            .zip(df.columns.iter())
+            .for_each(|(left, right)| {
+                left.append(right).expect("should not fail");
+            });
         self.register_mutation()?;
         Ok(self)
     }
@@ -638,9 +658,46 @@ impl DataFrame {
         F: FnOnce(&Series) -> Series,
     {
         let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds)?;
+        let name = col.name().to_string();
         let _ = mem::replace(col, f(col));
+
+        // make sure the name remains the same after applying the closure
+        unsafe {
+            let col = self.columns.get_unchecked_mut(idx);
+            col.rename(&name);
+        }
         self.register_mutation()?;
         Ok(self)
+    }
+
+    /// Apply a closure that may fail to a column at index `idx`. This is the recommended way to do in place
+    /// modification.
+    pub fn may_apply_at_idx<F>(&mut self, idx: usize, f: F) -> Result<&mut Self>
+    where
+        F: FnOnce(&Series) -> Result<Series>,
+    {
+        let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds)?;
+        let name = col.name().to_string();
+
+        let _ = mem::replace(col, f(col)?);
+
+        // make sure the name remains the same after applying the closure
+        unsafe {
+            let col = self.columns.get_unchecked_mut(idx);
+            col.rename(&name);
+        }
+        self.register_mutation()?;
+        Ok(self)
+    }
+
+    /// Apply a closure that may fail to a column. This is the recommended way to do in place
+    /// modification.
+    pub fn may_apply<F>(&mut self, column: &str, f: F) -> Result<&mut Self>
+    where
+        F: FnOnce(&Series) -> Result<Series>,
+    {
+        let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
+        self.may_apply_at_idx(idx, f)
     }
 
     /// Slice the DataFrame along the rows.
