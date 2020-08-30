@@ -12,7 +12,7 @@ use std::ops::{Add, Div};
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
 /// Note that these operations clone data. This is however the only way we can modify at mask or
 /// index level as the underlying Arrow arrays are immutable.
-pub trait ChunkSet<'a, V> {
+pub trait ChunkSet<'a, A, B> {
     /// Set the values at indexes `idx` to some optional value `Option<T>`.
     ///
     /// # Example
@@ -24,7 +24,7 @@ pub trait ChunkSet<'a, V> {
     ///
     /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
     /// ```
-    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<V>) -> Result<Self>
+    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<A>) -> Result<Self>
     where
         Self: Sized;
 
@@ -42,7 +42,7 @@ pub trait ChunkSet<'a, V> {
     fn set_at_idx_with<T: AsTakeIndex, F>(&'a self, idx: &T, f: F) -> Result<Self>
     where
         Self: Sized,
-        F: Fn(Option<V>) -> Option<V>;
+        F: Fn(Option<A>) -> Option<B>;
     /// Set the values where the mask evaluates to `true` to some optional value `Option<T>`.
     ///
     /// # Example
@@ -54,7 +54,7 @@ pub trait ChunkSet<'a, V> {
     /// let new = ca.set(&mask, Some(5)).unwrap();
     /// assert_eq!(Vec::from(&new), &[Some(1), Some(5), Some(3)]);
     /// ```
-    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<V>) -> Result<Self>
+    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<A>) -> Result<Self>
     where
         Self: Sized;
 
@@ -74,7 +74,7 @@ pub trait ChunkSet<'a, V> {
     fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
     where
         Self: Sized,
-        F: Fn(Option<V>) -> Option<V>;
+        F: Fn(Option<A>) -> Option<B>;
 }
 
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
@@ -121,8 +121,7 @@ pub trait ChunkAgg<T> {
 /// use polars::prelude::*;
 /// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
 ///     let mask = df
-///     .column("column_a")
-///     .ok_or(PolarsError::NotFound)?
+///     .column("column_a")?
 ///     .eq(1);
 ///
 ///     df.filter(&mask)

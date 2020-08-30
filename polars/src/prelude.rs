@@ -12,8 +12,7 @@ pub use crate::{
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
         ops::{
             ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkFillNone, ChunkFilter, ChunkFull,
-            ChunkReverse, ChunkSet, ChunkShift, ChunkSort, ChunkUnique,
-            FillNoneStrategy,
+            ChunkReverse, ChunkSet, ChunkShift, ChunkSort, ChunkUnique, FillNoneStrategy,
         },
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
@@ -30,7 +29,7 @@ pub use crate::{
             json::JsonReader,
             SerReader, SerWriter,
         },
-        DataFrame,
+        DataFrame, IntoSeries,
     },
     series::{arithmetic::LhsNumOps, NamedFrom, Series},
     testing::*,

@@ -1,12 +1,71 @@
 use crate::prelude::*;
 
-impl<'a, T> ChunkSet<'a, T::Native> for ChunkedArray<T>
+macro_rules! impl_set_at_idx_with {
+    ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
+        let mut idx_iter = $idx.as_take_iter();
+        let mut ca_iter = $self.into_iter().enumerate();
+
+        while let Some(current_idx) = idx_iter.next() {
+            if current_idx > $self.len() {
+                return Err(PolarsError::OutOfBounds);
+            }
+            while let Some((cnt_idx, opt_val)) = ca_iter.next() {
+                if cnt_idx == current_idx {
+                    $builder.append_option($f(opt_val));
+                    break;
+                } else {
+                    $builder.append_option(opt_val);
+                }
+            }
+        }
+        // the last idx is probably not the last value so we finish the iterator
+        while let Some((_, opt_val)) = ca_iter.next() {
+            $builder.append_option(opt_val);
+        }
+
+        let ca = $builder.finish();
+        Ok(ca)
+    }};
+}
+
+macro_rules! check_bounds {
+    ($self:ident, $mask:ident) => {{
+        if $self.len() != $mask.len() {
+            return Err(PolarsError::ShapeMisMatch);
+        }
+    }};
+}
+
+macro_rules! impl_set_with {
+    ($self:ident, $mask:ident, $f:ident) => {{
+        $self
+            .into_iter()
+            .zip($mask)
+            .map(|(opt_val, opt_mask)| match opt_mask {
+                None => opt_val,
+                Some(true) => $f(opt_val),
+                Some(false) => opt_val,
+            })
+            .collect()
+    }};
+}
+
+impl<'a, T> ChunkSet<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Copy,
 {
     fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<T::Native>) -> Result<Self> {
         self.set_at_idx_with(idx, |_| value)
+    }
+
+    fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
+    where
+        F: Fn(Option<T::Native>) -> Option<T::Native>,
+    {
+        // TODO: implement fast path
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
+        impl_set_at_idx_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
@@ -17,10 +76,7 @@ where
     where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
-        if self.len() != mask.len() {
-            return Err(PolarsError::ShapeMisMatch);
-        }
-
+        check_bounds!(self, mask);
         // TODO: could make faster by also checking the mask for a fast path.
         let mut ca: ChunkedArray<T> = match self.cont_slice() {
             // fast path
@@ -34,126 +90,123 @@ where
                 })
                 .collect(),
             // slower path
-            Err(_) => self
-                .into_iter()
-                .zip(mask)
-                .map(|(opt_val, opt_mask)| match opt_mask {
-                    None => opt_val,
-                    Some(true) => f(opt_val),
-                    Some(false) => f(opt_val),
-                })
-                .collect(),
+            Err(_) => impl_set_with!(self, mask, f),
         };
 
         ca.rename(self.name());
         Ok(ca)
     }
+}
 
-    fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
+impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
+    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<bool>) -> Result<Self>
     where
-        F: Fn(Option<T::Native>) -> Option<T::Native>,
+        Self: Sized,
     {
-        // TODO: implement fast path
+        self.set_at_idx_with(idx, |_| opt_value)
+    }
+
+    fn set_at_idx_with<T: AsTakeIndex, F>(&'a self, idx: &T, f: F) -> Result<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<bool>) -> Option<bool>,
+    {
+        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
+        impl_set_at_idx_with!(self, builder, idx, f)
+    }
+
+    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<bool>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        self.set_with(mask, |_| opt_value)
+    }
+
+    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<bool>) -> Option<bool>,
+    {
+        check_bounds!(self, mask);
+        let mut ca: BooleanChunked = impl_set_with!(self, mask, f);
+        ca.rename(self.name());
+        Ok(ca)
+    }
+}
+
+impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
+    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<&'a str>) -> Result<Self>
+    where
+        Self: Sized,
+    {
         let mut idx_iter = idx.as_take_iter();
         let mut ca_iter = self.into_iter().enumerate();
-
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
 
         while let Some(current_idx) = idx_iter.next() {
             if current_idx > self.len() {
                 return Err(PolarsError::OutOfBounds);
             }
-            while let Some((cnt_idx, opt_val)) = ca_iter.next() {
+            while let Some((cnt_idx, opt_val_self)) = ca_iter.next() {
                 if cnt_idx == current_idx {
-                    builder.append_option(f(opt_val));
+                    builder.append_option(opt_value);
                     break;
                 } else {
-                    builder.append_option(opt_val);
+                    builder.append_option(opt_val_self);
                 }
             }
         }
         // the last idx is probably not the last value so we finish the iterator
-        while let Some((_, opt_val)) = ca_iter.next() {
-            builder.append_option(opt_val);
+        while let Some((_, opt_val_self)) = ca_iter.next() {
+            builder.append_option(opt_val_self);
         }
 
         let ca = builder.finish();
         Ok(ca)
     }
+
+    fn set_at_idx_with<T: AsTakeIndex, F>(&'a self, idx: &T, f: F) -> Result<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<&'a str>) -> Option<String>,
+    {
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        impl_set_at_idx_with!(self, builder, idx, f)
+    }
+
+    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<&'a str>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        check_bounds!(self, mask);
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        self.into_iter()
+            .zip(mask)
+            .for_each(|(opt_val_self, opt_mask)| match opt_mask {
+                None => builder.append_option(opt_val_self),
+                Some(true) => builder.append_option(opt_value),
+                Some(false) => builder.append_option(opt_val_self),
+            });
+        Ok(builder.finish())
+    }
+
+    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<&'a str>) -> Option<String>,
+    {
+        check_bounds!(self, mask);
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        self.into_iter()
+            .zip(mask)
+            .for_each(|(opt_val, opt_mask)| match opt_mask {
+                None => builder.append_option(opt_val),
+                Some(true) => builder.append_option(f(opt_val)),
+                Some(false) => builder.append_option(opt_val),
+            });
+        Ok(builder.finish())
+    }
 }
-
-macro_rules! impl_chunkset {
-    ($value_type:ty, $ca_type:ident, $builder:ident) => {
-        impl<'a> ChunkSet<'a, $value_type> for $ca_type {
-            fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
-            where
-                F: Fn(Option<$value_type>) -> Option<$value_type>,
-            {
-                if self.len() != mask.len() {
-                    return Err(PolarsError::ShapeMisMatch);
-                }
-
-                let mut ca: $ca_type = self
-                    .into_iter()
-                    .zip(mask)
-                    .map(|(opt_val, opt_mask)| match opt_mask {
-                        None => opt_val,
-                        Some(true) => f(opt_val),
-                        Some(false) => opt_val,
-                    })
-                    .collect();
-
-                ca.rename(self.name());
-                Ok(ca)
-            }
-            fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
-            where
-                F: Fn(Option<$value_type>) -> Option<$value_type>,
-            {
-                let mut idx_iter = idx.as_take_iter();
-                let mut ca_iter = self.into_iter().enumerate();
-
-                let mut builder = $builder::new(self.name(), self.len());
-
-                while let Some(current_idx) = idx_iter.next() {
-                    if current_idx > self.len() {
-                        return Err(PolarsError::OutOfBounds);
-                    }
-                    while let Some((cnt_idx, opt_val)) = ca_iter.next() {
-                        if cnt_idx == current_idx {
-                            builder.append_option(f(opt_val));
-                            break;
-                        } else {
-                            builder.append_option(opt_val);
-                        }
-                    }
-                }
-                // the last idx is probably not the last value so we finish the iterator
-                while let Some((_, opt_val)) = ca_iter.next() {
-                    builder.append_option(opt_val);
-                }
-
-                let ca = builder.finish();
-                Ok(ca)
-            }
-
-            fn set_at_idx<I: AsTakeIndex>(
-                &'a self,
-                idx: &I,
-                value: Option<$value_type>,
-            ) -> Result<Self> {
-                self.set_at_idx_with(idx, |_| value)
-            }
-
-            fn set(&'a self, mask: &BooleanChunked, value: Option<$value_type>) -> Result<Self> {
-                self.set_with(mask, |_| value)
-            }
-        }
-    };
-}
-
-impl_chunkset!(&'a str, Utf8Chunked, Utf8ChunkedBuilder);
-impl_chunkset!(bool, BooleanChunked, BooleanChunkedBuilder);
 
 #[cfg(test)]
 mod test {

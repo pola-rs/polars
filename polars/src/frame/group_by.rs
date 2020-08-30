@@ -80,11 +80,8 @@ impl DataFrame {
     /// }
     /// ```
     pub fn groupby(&self, by: &str) -> Result<GroupBy> {
-        let groups = if let Some(s) = self.column(by) {
-            s.group_tuples()
-        } else {
-            return Err(PolarsError::NotFound);
-        };
+        let s = self.column(by)?;
+        let groups = s.group_tuples();
 
         Ok(GroupBy {
             df: self,
@@ -309,7 +306,7 @@ impl<'a> GroupBy<'a> {
         };
 
         let keys = self.keys();
-        let agg_col = self.df.column(name).ok_or(PolarsError::NotFound)?;
+        let agg_col = self.df.column(name)?;
         Ok((name, keys, agg_col))
     }
 

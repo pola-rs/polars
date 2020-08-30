@@ -413,11 +413,6 @@ where
         }
     }
 
-    /// Wrap as Series
-    pub fn into_series(self) -> Series {
-        Series::from_chunked_array(self)
-    }
-
     /// Downcast generic `ChunkedArray<T>` to u8.
     pub fn u8(self) -> Result<UInt8Chunked> {
         match T::get_data_type() {

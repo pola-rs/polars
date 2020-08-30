@@ -6,6 +6,7 @@ use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
 use itertools::__std_iter::FromIterator;
 use rayon::prelude::*;
+use std::marker::Sized;
 use std::mem;
 use std::sync::Arc;
 
@@ -13,6 +14,24 @@ pub mod group_by;
 pub mod hash_join;
 pub mod select;
 pub mod ser;
+
+pub trait IntoSeries {
+    fn into_series(self) -> Series
+    where
+        Self: Sized;
+}
+
+impl IntoSeries for Series {
+    fn into_series(self) -> Series {
+        self
+    }
+}
+
+impl<T: PolarsDataType> IntoSeries for ChunkedArray<T> {
+    fn into_series(self) -> Series {
+        Series::from_chunked_array(self)
+    }
+}
 
 type DfSchema = Arc<Schema>;
 type DfSeries = Series;
@@ -318,13 +337,9 @@ impl DataFrame {
     }
 
     /// Select a single column by name.
-    pub fn column(&self, name: &str) -> Option<&Series> {
-        let opt_idx = self.find_idx_by_name(name);
-
-        match opt_idx {
-            Some(idx) => self.select_at_idx(idx),
-            None => None,
-        }
+    pub fn column(&self, name: &str) -> Result<&Series> {
+        let idx = self.find_idx_by_name(name).ok_or(PolarsError::NotFound)?;
+        Ok(self.select_at_idx(idx).unwrap())
     }
 
     /// Select column(s) from this DataFrame.
@@ -350,11 +365,7 @@ impl DataFrame {
         let cols = selection.to_selection_vec();
         let selected = cols
             .iter()
-            .map(|c| {
-                self.column(c)
-                    .map(|s| s.clone())
-                    .ok_or(PolarsError::NotFound)
-            })
+            .map(|c| self.column(c).map(|s| s.clone()))
             .collect::<Result<Vec<_>>>()?;
         let df = DataFrame::new(selected)?;
         Ok(df)
@@ -529,10 +540,7 @@ impl DataFrame {
 
     /// Sort DataFrame in place by a column.
     pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<&mut Self> {
-        let s = match self.column(by_column) {
-            Some(s) => s,
-            None => return Err(PolarsError::NotFound),
-        };
+        let s = self.column(by_column)?;
 
         let take = s.argsort(reverse);
 
@@ -546,18 +554,15 @@ impl DataFrame {
 
     /// Return a sorted clone of this DataFrame.
     pub fn sort(&self, by_column: &str, reverse: bool) -> Result<Self> {
-        let s = match self.column(by_column) {
-            Some(s) => s,
-            None => return Err(PolarsError::NotFound),
-        };
+        let s = self.column(by_column)?;
 
         let take = s.argsort(reverse);
         self.take(&take)
     }
 
     /// Replace a column with a series.
-    pub fn replace(&mut self, column: &str, new_col: DfSeries) -> Result<&mut Self> {
-        self.apply(column, |_| new_col)
+    pub fn replace<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
+        self.apply(column, |_| new_col.into_series())
     }
 
     /// Replace column at index `idx` with a series.
@@ -573,7 +578,7 @@ impl DataFrame {
     /// // Add 32 to get lowercase ascii values
     /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
     /// ```
-    pub fn replace_at_idx(&mut self, idx: usize, new_col: DfSeries) -> Result<&mut Self> {
+    pub fn replace_at_idx<S: IntoSeries>(&mut self, idx: usize, new_col: S) -> Result<&mut Self> {
         self.apply_at_idx(idx, |_| new_col)
     }
 
@@ -604,21 +609,22 @@ impl DataFrame {
     /// Results in:
     ///
     /// ```text
-    /// +--------+-----+
-    /// | foo    |     |
-    /// | ---    | --- |
-    /// | str    | u32 |
-    /// +========+=====+
-    /// | "ham"  | 4   |
-    /// +--------+-----+
-    /// | "spam" | 6   |
-    /// +--------+-----+
-    /// | "egg"  | 3   |
-    /// +--------+-----+
+    /// +--------+-------+
+    /// | foo    |       |
+    /// | ---    | names |
+    /// | str    | u32   |
+    /// +========+=======+
+    /// | "ham"  | 4     |
+    /// +--------+-------+
+    /// | "spam" | 6     |
+    /// +--------+-------+
+    /// | "egg"  | 3     |
+    /// +--------+-------+
     /// ```
-    pub fn apply<F>(&mut self, column: &str, f: F) -> Result<&mut Self>
+    pub fn apply<F, S>(&mut self, column: &str, f: F) -> Result<&mut Self>
     where
-        F: FnOnce(&Series) -> Series,
+        F: FnOnce(&Series) -> S,
+        S: IntoSeries,
     {
         let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
         self.apply_at_idx(idx, f)
@@ -653,13 +659,14 @@ impl DataFrame {
     /// | "egg"  | 111   |
     /// +--------+-------+
     /// ```
-    pub fn apply_at_idx<F>(&mut self, idx: usize, f: F) -> Result<&mut Self>
+    pub fn apply_at_idx<F, S>(&mut self, idx: usize, f: F) -> Result<&mut Self>
     where
-        F: FnOnce(&Series) -> Series,
+        F: FnOnce(&Series) -> S,
+        S: IntoSeries,
     {
         let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds)?;
         let name = col.name().to_string();
-        let _ = mem::replace(col, f(col));
+        let _ = mem::replace(col, f(col).into_series());
 
         // make sure the name remains the same after applying the closure
         unsafe {
@@ -672,14 +679,52 @@ impl DataFrame {
 
     /// Apply a closure that may fail to a column at index `idx`. This is the recommended way to do in place
     /// modification.
-    pub fn may_apply_at_idx<F>(&mut self, idx: usize, f: F) -> Result<&mut Self>
+    ///
+    /// # Example
+    ///
+    /// This is the idomatic way to replace some values a column of a `DataFrame` given range of indexes.
+    ///
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s0 = Series::new("foo", &["ham", "spam", "egg", "bacon", "quack"]);
+    /// let s1 = Series::new("values", &[1, 2, 3, 4, 5]);
+    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    ///
+    /// let idx = &[0, 1, 4];
+    ///
+    /// df.may_apply("foo", |s| {
+    ///     s.utf8()?
+    ///     .set_at_idx_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
+    /// });
+    /// ```
+    /// Results in:
+    ///
+    /// ```text
+    /// +---------------------+--------+
+    /// | foo                 | values |
+    /// | ---                 | ---    |
+    /// | str                 | i32    |
+    /// +=====================+========+
+    /// | "ham-is-modified"   | 1      |
+    /// +---------------------+--------+
+    /// | "spam-is-modified"  | 2      |
+    /// +---------------------+--------+
+    /// | "egg"               | 3      |
+    /// +---------------------+--------+
+    /// | "bacon"             | 4      |
+    /// +---------------------+--------+
+    /// | "quack-is-modified" | 5      |
+    /// +---------------------+--------+
+    /// ```
+    pub fn may_apply_at_idx<F, S>(&mut self, idx: usize, f: F) -> Result<&mut Self>
     where
-        F: FnOnce(&Series) -> Result<Series>,
+        F: FnOnce(&Series) -> Result<S>,
+        S: IntoSeries,
     {
         let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds)?;
         let name = col.name().to_string();
 
-        let _ = mem::replace(col, f(col)?);
+        let _ = mem::replace(col, f(col).map(|s| s.into_series())?);
 
         // make sure the name remains the same after applying the closure
         unsafe {
@@ -692,9 +737,51 @@ impl DataFrame {
 
     /// Apply a closure that may fail to a column. This is the recommended way to do in place
     /// modification.
-    pub fn may_apply<F>(&mut self, column: &str, f: F) -> Result<&mut Self>
+    ///
+    /// # Example
+    ///
+    /// This is the idomatic way to replace some values a column of a `DataFrame` given a boolean mask.
+    ///
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s0 = Series::new("foo", &["ham", "spam", "egg", "bacon", "quack"]);
+    /// let s1 = Series::new("values", &[1, 2, 3, 4, 5]);
+    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    ///
+    /// // create a mask
+    /// let mask = || {
+    ///     (df.column("values")?.lt_eq(1) | df.column("values")?.gt_eq(5))
+    /// };
+    /// let mask = mask().unwrap();
+    ///
+    /// df.may_apply("foo", |s| {
+    ///     s.utf8()?
+    ///     .set(&mask, Some("not_within_bounds"))
+    /// });
+    /// ```
+    /// Results in:
+    ///
+    /// ```text
+    /// +---------------------+--------+
+    /// | foo                 | values |
+    /// | ---                 | ---    |
+    /// | str                 | i32    |
+    /// +=====================+========+
+    /// | "not_within_bounds" | 1      |
+    /// +---------------------+--------+
+    /// | "spam"              | 2      |
+    /// +---------------------+--------+
+    /// | "egg"               | 3      |
+    /// +---------------------+--------+
+    /// | "bacon"             | 4      |
+    /// +---------------------+--------+
+    /// | "not_within_bounds" | 5      |
+    /// +---------------------+--------+
+    /// ```
+    pub fn may_apply<F, S>(&mut self, column: &str, f: F) -> Result<&mut Self>
     where
-        F: FnOnce(&Series) -> Result<Series>,
+        F: FnOnce(&Series) -> Result<S>,
+        S: IntoSeries,
     {
         let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
         self.may_apply_at_idx(idx, f)

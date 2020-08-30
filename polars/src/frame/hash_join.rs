@@ -504,8 +504,8 @@ impl DataFrame {
         left_on: &str,
         right_on: &str,
     ) -> Result<DataFrame> {
-        let s_left = self.column(left_on).ok_or(PolarsError::NotFound)?;
-        let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
+        let s_left = self.column(left_on)?;
+        let s_right = other.column(right_on)?;
         let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
 
         let (df_left, df_right) = exec_concurrent!({ self.create_left_df(&join_tuples) }, {
@@ -529,8 +529,8 @@ impl DataFrame {
     /// }
     /// ```
     pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
-        let s_left = self.column(left_on).ok_or(PolarsError::NotFound)?;
-        let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
+        let s_left = self.column(left_on)?;
+        let s_right = other.column(right_on)?;
         let opt_join_tuples: Vec<(usize, Option<usize>)> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_left);
 
@@ -560,8 +560,8 @@ impl DataFrame {
         left_on: &str,
         right_on: &str,
     ) -> Result<DataFrame> {
-        let s_left = self.column(left_on).ok_or(PolarsError::NotFound)?;
-        let s_right = other.column(right_on).ok_or(PolarsError::NotFound)?;
+        let s_left = self.column(left_on)?;
+        let s_right = other.column(right_on)?;
 
         // Get the indexes of the joined relations
         let opt_join_tuples: HashSet<(Option<usize>, Option<usize>), FnvBuildHasher> =
