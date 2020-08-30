@@ -338,21 +338,15 @@ impl AsTakeIndex for &UInt32Chunked {
     }
 }
 
-impl AsTakeIndex for [usize] {
+impl<T> AsTakeIndex for T
+where
+    T: AsRef<[usize]>,
+{
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
-        Box::new(self.iter().copied())
+        Box::new(self.as_ref().iter().copied())
     }
     fn take_index_len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl AsTakeIndex for Vec<usize> {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
-        Box::new(self.iter().copied())
-    }
-    fn take_index_len(&self) -> usize {
-        self.len()
+        self.as_ref().len()
     }
 }
 

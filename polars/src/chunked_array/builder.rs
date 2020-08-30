@@ -76,6 +76,8 @@ impl<T: ArrowPrimitiveType> DerefMut for PrimitiveChunkedBuilder<T> {
     }
 }
 
+pub type BooleanChunkedBuilder = PrimitiveChunkedBuilder<BooleanType>;
+
 pub struct Utf8ChunkedBuilder {
     pub builder: StringBuilder,
     capacity: usize,

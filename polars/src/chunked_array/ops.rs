@@ -8,6 +8,34 @@ use num::{Num, NumCast};
 use std::cmp::Ordering;
 use std::ops::{Add, Div};
 
+/// Set values in a `ChunkedArray` in place.
+pub trait ChunkSet<V> {
+    /// Set the values at indexes `idx` to some optional value `Option<T>`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// let mut ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// ca.set_at_idx(&[0, 1], Some(10)).unwrap();
+    ///
+    /// assert_eq!(Vec::from(&ca), &[Some(10), Some(10), Some(3)]);
+    /// ```
+    fn set_at_idx<T: AsTakeIndex>(&mut self, idx: &T, opt_value: Option<V>) -> Result<&mut Self>;
+    /// Set the values where the mask evaluates to `true` to some optional value `Option<T>`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// let mut ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+    /// ca.set(&mask, Some(5)).unwrap();
+    /// assert_eq!(Vec::from(&ca), &[Some(1), Some(5), Some(3)]);
+    /// ```
+    fn set(&mut self, mask: &BooleanChunked, opt_value: Option<V>) -> Result<&mut Self>;
+}
+
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
     /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`

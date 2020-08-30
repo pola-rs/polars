@@ -3,16 +3,17 @@ pub use crate::{
     chunked_array::{
         arithmetic::Pow,
         builder::{
-            AlignedAlloc, AlignedVec, LargListBuilderTrait, LargeListPrimitiveChunkedBuilder,
-            LargeListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder,
-            Utf8ChunkedBuilder,
+            AlignedAlloc, AlignedVec, BooleanChunkedBuilder, LargListBuilderTrait,
+            LargeListPrimitiveChunkedBuilder, LargeListUtf8ChunkedBuilder, NewChunkedArray,
+            PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
         chunkops::ChunkOps,
         comparison::NumComp,
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
         ops::{
             ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkFillNone, ChunkFilter, ChunkFull,
-            ChunkReverse, ChunkShift, ChunkSort, ChunkUnique, FillNoneStrategy,
+            ChunkReverse, ChunkSet, ChunkShift, ChunkSort, ChunkUnique,
+            FillNoneStrategy,
         },
         take::{
             AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
@@ -50,11 +51,10 @@ pub(crate) fn create_df() -> DataFrame {
 #[cfg(feature = "parquet_ser")]
 pub use crate::frame::ser::parquet::ParquetReader;
 
-
 #[macro_export]
 macro_rules! as_result {
     ($block:block) => {{
         let res: Result<_> = $block;
         res
-    }}
+    }};
 }
