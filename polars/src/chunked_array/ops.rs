@@ -6,34 +6,75 @@ use arrow::compute;
 use itertools::Itertools;
 use num::{Num, NumCast};
 use std::cmp::Ordering;
+use std::marker::Sized;
 use std::ops::{Add, Div};
 
-/// Set values in a `ChunkedArray` in place.
-pub trait ChunkSet<V> {
+/// Create a `ChunkedArray` with new values by index or by boolean mask.
+/// Note that these operations clone data. This is however the only way we can modify at mask or
+/// index level as the underlying Arrow arrays are immutable.
+pub trait ChunkSet<'a, V> {
     /// Set the values at indexes `idx` to some optional value `Option<T>`.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars::prelude::*;
-    /// let mut ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-    /// ca.set_at_idx(&[0, 1], Some(10)).unwrap();
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let new = ca.set_at_idx(&[0, 1], Some(10)).unwrap();
     ///
-    /// assert_eq!(Vec::from(&ca), &[Some(10), Some(10), Some(3)]);
+    /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
     /// ```
-    fn set_at_idx<T: AsTakeIndex>(&mut self, idx: &T, opt_value: Option<V>) -> Result<&mut Self>;
+    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<V>) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// Set the values at indexes `idx` by applying a closure to these values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let new = ca.set_at_idx_with(&[0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
+    ///
+    /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
+    /// ```
+    fn set_at_idx_with<T: AsTakeIndex, F>(&'a self, idx: &T, f: F) -> Result<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<V>) -> Option<V>;
     /// Set the values where the mask evaluates to `true` to some optional value `Option<T>`.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars::prelude::*;
-    /// let mut ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
     /// let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
-    /// ca.set(&mask, Some(5)).unwrap();
-    /// assert_eq!(Vec::from(&ca), &[Some(1), Some(5), Some(3)]);
+    /// let new = ca.set(&mask, Some(5)).unwrap();
+    /// assert_eq!(Vec::from(&new), &[Some(1), Some(5), Some(3)]);
     /// ```
-    fn set(&mut self, mask: &BooleanChunked, opt_value: Option<V>) -> Result<&mut Self>;
+    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<V>) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// Set the values where the mask evaluates to `true` by applying a closure to these values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+    /// let new = ca.set_with(&mask, |opt_v| opt_v.map(
+    ///     |v| v * 2
+    /// )).unwrap();
+    /// assert_eq!(Vec::from(&new), &[Some(1), Some(4), Some(3)]);
+    /// ```
+    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<V>) -> Option<V>;
 }
 
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
