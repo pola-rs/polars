@@ -113,14 +113,22 @@ where
     let hash_tbl = prepare_hashed_relation(b);
 
     // Next we probe the other relation in the hash table
-    a.enumerate().for_each(|(idx_a, key)| {
-        if let Some(indexes_b) = hash_tbl.get(&key) {
-            let tuples = indexes_b
-                .iter()
-                .map(|&idx_b| if swap { (idx_b, idx_a) } else { (idx_a, idx_b) });
-            results.extend(tuples)
-        }
-    });
+    // code duplication is because we want to only do the swap check once
+    if swap {
+        a.enumerate().for_each(|(idx_a, key)| {
+            if let Some(indexes_b) = hash_tbl.get(&key) {
+                let tuples = indexes_b.iter().map(|&idx_b| (idx_b, idx_a));
+                results.extend(tuples)
+            }
+        });
+    } else {
+        a.enumerate().for_each(|(idx_a, key)| {
+            if let Some(indexes_b) = hash_tbl.get(&key) {
+                let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
+                results.extend(tuples)
+            }
+        });
+    }
     results
 }
 
@@ -172,36 +180,43 @@ where
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)
     // Therefore we remove the matches and the remaining will be joined from the right
-    a.enumerate().for_each(|(idx_a, key)| {
-        match hash_tbl.remove(&key) {
-            // left and right matches
-            Some(indexes_b) => results.extend(indexes_b.iter().map(|&idx_b| {
-                if swap {
-                    (Some(idx_b), Some(idx_a))
-                } else {
-                    (Some(idx_a), Some(idx_b))
+
+    // code duplication is because we want to only do the swap check once
+    if swap {
+        a.enumerate().for_each(|(idx_a, key)| {
+            match hash_tbl.remove(&key) {
+                // left and right matches
+                Some(indexes_b) => {
+                    results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), Some(idx_a))))
                 }
-            })),
-            // only left values, right = null
-            None => {
-                results.insert(if swap {
-                    (None, Some(idx_a))
-                } else {
-                    (Some(idx_a), None)
-                });
+                // only left values, right = null
+                None => {
+                    results.insert((None, Some(idx_a)));
+                }
             }
-        }
-    });
-    hash_tbl.iter().for_each(|(_k, indexes_b)| {
-        // remaining joined values from the right table
-        results.extend(indexes_b.iter().map(|&idx_b| {
-            if swap {
-                (Some(idx_b), None)
-            } else {
-                (None, Some(idx_b))
+        });
+        hash_tbl.iter().for_each(|(_k, indexes_b)| {
+            // remaining joined values from the right table
+            results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), None)))
+        });
+    } else {
+        a.enumerate().for_each(|(idx_a, key)| {
+            match hash_tbl.remove(&key) {
+                // left and right matches
+                Some(indexes_b) => {
+                    results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_a), Some(idx_b))))
+                }
+                // only left values, right = null
+                None => {
+                    results.insert((Some(idx_a), None));
+                }
             }
-        }))
-    });
+        });
+        hash_tbl.iter().for_each(|(_k, indexes_b)| {
+            // remaining joined values from the right table
+            results.extend(indexes_b.iter().map(|&idx_b| (None, Some(idx_b))))
+        });
+    };
 
     results
 }

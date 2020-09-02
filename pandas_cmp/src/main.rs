@@ -14,7 +14,7 @@ fn read_df(f: &File) -> DataFrame {
         .expect("dataframe");
 
     // for groupby we need to cast a column to a string
-    if let Some(s) = df.select_mut("str") {
+    if let Ok(s) = df.column("str") {
         let s = s
             .i64()
             .expect("i64")
