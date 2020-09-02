@@ -342,7 +342,7 @@ impl DataFrame {
         Ok(self.select_at_idx(idx).unwrap())
     }
 
-    /// Select column(s) from this DataFrame.
+    /// Select column(s) from this DataFrame and return a new DataFrame.
     ///
     /// # Examples
     ///
@@ -362,13 +362,22 @@ impl DataFrame {
     where
         S: Selection<'a>,
     {
+        let selected = self.select_series(selection)?;
+        let df = DataFrame::new(selected)?;
+        Ok(df)
+    }
+
+    /// Select column(s) from this DataFrame and return them into a Vector.
+    pub fn select_series<'a, S>(&self, selection: S) -> Result<Vec<Series>>
+    where
+        S: Selection<'a>,
+    {
         let cols = selection.to_selection_vec();
         let selected = cols
             .iter()
             .map(|c| self.column(c).map(|s| s.clone()))
             .collect::<Result<Vec<_>>>()?;
-        let df = DataFrame::new(selected)?;
-        Ok(df)
+        Ok(selected)
     }
 
     /// Select a mutable series by name.
