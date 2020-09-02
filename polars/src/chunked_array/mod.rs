@@ -226,7 +226,7 @@ impl<T> ChunkedArray<T> {
 
     /// Returns true if contains a single chunk and has no null values
     pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 0 && self.null_count() == 0
+        self.chunks.len() == 1 && self.null_count() == 0
     }
 
     /// Count the null values.

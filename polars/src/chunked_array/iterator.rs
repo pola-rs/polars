@@ -29,6 +29,21 @@ pub trait IntoNoNullIterator {
     fn into_no_null_iter(self) -> Self::IntoIter;
 }
 
+impl<'a, T> IntoNoNullIterator for &'a ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    type Item = T::Native;
+    type IntoIter = Copied<Iter<'a, T::Native>>;
+
+    fn into_no_null_iter(self) -> Self::IntoIter {
+        self.downcast_chunks()[0]
+            .value_slice(0, self.len())
+            .into_iter()
+            .copied()
+    }
+}
+
 /// Single chunk with null values
 pub struct NumIterSingleChunkNullCheck<'a, T>
 where
