@@ -379,6 +379,56 @@ where
     }
 }
 
+#[enum_dispatch(Series)]
+trait AggFirst {
+    fn agg_first(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        unimplemented!()
+    }
+}
+
+macro_rules! impl_agg_first {
+    ($self:ident, $groups:ident, $ca_type:ty) => {{
+        $groups
+            .par_iter()
+            .map(|(first, _idx)| {
+                let taker = $self.take_rand();
+                taker.get(*first)
+            })
+            .collect::<$ca_type>()
+            .into_series()
+    }};
+}
+
+impl<T> AggFirst for ChunkedArray<T>
+where
+    T: PolarsNumericType + std::marker::Sync,
+{
+    fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        impl_agg_first!(self, groups, ChunkedArray<T>)
+    }
+}
+
+impl AggFirst for BooleanChunked {
+    fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        impl_agg_first!(self, groups, BooleanChunked)
+    }
+}
+
+impl AggFirst for Utf8Chunked {
+    fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        groups
+            .par_iter()
+            .map(|(first, _idx)| {
+                let taker = self.take_rand();
+                taker.get(*first).map(|s| s.to_string())
+            })
+            .collect::<Utf8Chunked>()
+            .into_series()
+    }
+}
+
+impl AggFirst for LargeListChunked {}
+
 impl<'a, 'b> GroupBy<'a, 'b> {
     /// Select the column by which the determine the groups.
     /// You can select a single column or a slice of columns.
@@ -568,6 +618,42 @@ impl<'a, 'b> GroupBy<'a, 'b> {
         DataFrame::new(cols)
     }
 
+    /// Aggregate grouped series and find the first value per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").first()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +------------+------------+
+    /// | date       | temp_first |
+    /// | ---        | ---        |
+    /// | date32     | i32        |
+    /// +============+============+
+    /// | 2020-08-23 | 9          |
+    /// +------------+------------+
+    /// | 2020-08-22 | 7          |
+    /// +------------+------------+
+    /// | 2020-08-21 | 20         |
+    /// +------------+------------+
+    /// ```
+    pub fn first(&self) -> Result<DataFrame> {
+        let (mut cols, agg_cols) = self.prepare_agg()?;
+        for agg_col in agg_cols {
+            let new_name = format!["{}_first", agg_col.name()];
+            let mut agg = agg_col.agg_first(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
+        }
+        DataFrame::new(cols)
+    }
+
     /// Aggregate grouped series and compute the number of values per group.
     ///
     /// # Example
@@ -744,6 +830,10 @@ mod test {
                 .select("temp")
                 .agg_list()
                 .unwrap()
+        );
+        println!(
+            "{:?}",
+            df.groupby("date").unwrap().select("temp").first().unwrap()
         );
     }
 }
