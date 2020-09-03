@@ -12,11 +12,10 @@ pub use crate::{
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
         ops::{
             ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkFillNone, ChunkFilter, ChunkFull,
-            ChunkReverse, ChunkSet, ChunkShift, ChunkSort, ChunkUnique, FillNoneStrategy,
+            ChunkReverse, ChunkSet, ChunkShift, ChunkSort, ChunkTake, ChunkUnique,
+            FillNoneStrategy,
         },
-        take::{
-            AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, Take, TakeRandom,
-        },
+        take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, TakeRandom},
         ChunkedArray, Downcast,
     },
     datatypes,

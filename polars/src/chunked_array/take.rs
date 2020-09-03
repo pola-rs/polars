@@ -9,40 +9,6 @@ use crate::chunked_array::builder::{
 use crate::prelude::*;
 use arrow::array::{Array, BooleanArray, LargeListArray, PrimitiveArray, StringArray};
 
-pub trait Take {
-    /// Take values from ChunkedArray by index.
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by index without checking bounds.
-    unsafe fn take_unchecked(
-        &self,
-        indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by Option<index>.
-    fn take_opt(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Result<Self>
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by Option<index>.
-    unsafe fn take_opt_unchecked(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized;
-}
-
 macro_rules! impl_take {
     ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
         let capacity = $capacity.unwrap_or($indices.size_hint().0);
@@ -111,7 +77,7 @@ macro_rules! impl_take_unchecked {
     }};
 }
 
-impl<T> Take for ChunkedArray<T>
+impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
@@ -144,7 +110,7 @@ where
     }
 }
 
-impl Take for BooleanChunked {
+impl ChunkTake for BooleanChunked {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
     where
         Self: std::marker::Sized,
@@ -177,7 +143,7 @@ impl Take for BooleanChunked {
     }
 }
 
-impl Take for Utf8Chunked {
+impl ChunkTake for Utf8Chunked {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
     where
         Self: std::marker::Sized,
@@ -213,7 +179,7 @@ impl Take for Utf8Chunked {
     }
 }
 
-impl Take for LargeListChunked {
+impl ChunkTake for LargeListChunked {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 

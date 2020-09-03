@@ -9,6 +9,41 @@ use std::cmp::Ordering;
 use std::marker::Sized;
 use std::ops::{Add, Div};
 
+/// Fast access by index.
+pub trait ChunkTake {
+    /// Take values from ChunkedArray by index.
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+
+    /// Take values from ChunkedArray by index without checking bounds.
+    unsafe fn take_unchecked(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized;
+
+    /// Take values from ChunkedArray by Option<index>.
+    fn take_opt(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+
+    /// Take values from ChunkedArray by Option<index>.
+    unsafe fn take_opt_unchecked(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized;
+}
+
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
 /// Note that these operations clone data. This is however the only way we can modify at mask or
 /// index level as the underlying Arrow arrays are immutable.

@@ -5,4 +5,5 @@
 //! * `ChunkSet` Trait.
 //! * `Groupby` aggregations can be done on a selection of multiple columns.
 //! * `Groupby` operation can be done on multiple keys.
+//! * `Groupby` `first` operation.
 //!
