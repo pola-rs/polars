@@ -790,6 +790,21 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         DataFrame::new(cols)
     }
 
+    /// Pivot a column of the current `DataFrame` and perform one of the following aggregations:
+    /// * first
+    /// * sum
+    /// * min
+    /// * max
+    /// * mean
+    /// * median
+    ///
+    /// The pivot operation consists of a group by one, or multiple collumns (these will be the new
+    /// y-axis), column that will be pivoted (this will be the new x-axis) and an aggregation.
+    ///
+    /// # Panics
+    /// If the values column is not a numerical type, the code will panic.
+    ///
+    /// # Example
     ///
     /// ```rust
     /// use polars::prelude::*;
@@ -881,7 +896,7 @@ trait ChunkPivot {
 impl<T> ChunkPivot for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Copy + Num,
+    T::Native: Copy + Num + NumCast,
 {
     fn pivot(
         &self,
@@ -941,7 +956,7 @@ where
 
             // After the vectors are filled we really do the aggregation and add the result to the main
             // hash map, mapping pivot values as column to aggregate result.
-            for (k, v) in &columns_agg_map_group {
+            for (k, v) in &mut columns_agg_map_group {
                 let main_builder = columns_agg_map_main.get_mut(k).unwrap();
 
                 match v.len() {
@@ -952,6 +967,8 @@ where
                         PivotAgg::Sum => pivot_agg_sum(main_builder, v),
                         PivotAgg::Min => pivot_agg_min(main_builder, v),
                         PivotAgg::Max => pivot_agg_max(main_builder, v),
+                        PivotAgg::Mean => pivot_agg_mean(main_builder, v),
+                        PivotAgg::Median => pivot_agg_median(main_builder, v),
                     },
                 }
             }
@@ -979,6 +996,8 @@ enum PivotAgg {
     Sum,
     Min,
     Max,
+    Mean,
+    Median,
 }
 
 fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
@@ -988,12 +1007,34 @@ where
     builder.append_option(v[0]);
 }
 
+fn pivot_agg_median<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &mut Vec<Option<T::Native>>)
+where
+    T: PolarsNumericType,
+    T::Native: PartialOrd,
+{
+    v.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+    builder.append_option(v[v.len() / 2]);
+}
+
 fn pivot_agg_sum<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
 where
     T: PolarsNumericType,
     T::Native: Num + Zero,
 {
     builder.append_option(v.iter().copied().fold_options(Zero::zero(), Add::add));
+}
+
+fn pivot_agg_mean<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+where
+    T: PolarsNumericType,
+    T::Native: Num + Zero + NumCast,
+{
+    builder.append_option(
+        v.iter()
+            .copied()
+            .fold_options::<T::Native, T::Native, _>(Zero::zero(), Add::add)
+            .map(|sum_val| sum_val / NumCast::from(v.len()).unwrap()),
+    );
 }
 
 fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
@@ -1072,6 +1113,29 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
         Ok(values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Max))
+    }
+
+    /// Aggregate the pivot results by taking the mean value of all duplicates.
+    pub fn mean(&self) -> Result<DataFrame> {
+        let pivot_series = self.gb.df.column(self.pivot_column)?;
+        let values_series = self.gb.df.column(self.values_column)?;
+        Ok(values_series.pivot(
+            pivot_series,
+            self.gb.keys(),
+            &self.gb.groups,
+            PivotAgg::Mean,
+        ))
+    }
+    /// Aggregate the pivot results by taking the median value of all duplicates.
+    pub fn median(&self) -> Result<DataFrame> {
+        let pivot_series = self.gb.df.column(self.pivot_column)?;
+        let values_series = self.gb.df.column(self.values_column)?;
+        Ok(values_series.pivot(
+            pivot_series,
+            self.gb.keys(),
+            &self.gb.groups,
+            PivotAgg::Median,
+        ))
     }
 }
 
@@ -1168,6 +1232,11 @@ mod test {
         assert_eq!(
             Vec::from(pvt.column("m").unwrap().i32().unwrap()),
             &[None, Some(4), None]
+        );
+        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").mean().unwrap();
+        assert_eq!(
+            Vec::from(pvt.column("m").unwrap().i32().unwrap()),
+            &[None, Some(3), None]
         );
     }
 }
