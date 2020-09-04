@@ -4,7 +4,8 @@ members = [
     "bench",
     "polars",
     "pandas_cmp",
-    "py-polars"
+    "py-polars",
+    "examples/iris_classifier"
 ]
 
 [profile.release]

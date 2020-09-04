@@ -904,6 +904,20 @@ impl DataFrame {
             .collect::<Result<Vec<_>>>()?;
         DataFrame::new_with_schema(self.schema.clone(), col)
     }
+
+    pub fn pipe<F, B>(self, f: F) -> Result<B>
+    where
+        F: Fn(DataFrame) -> Result<B>,
+    {
+        f(self)
+    }
+
+    pub fn pipe_mut<F, B>(&mut self, f: F) -> Result<B>
+    where
+        F: Fn(&mut DataFrame) -> Result<B>,
+    {
+        f(self)
+    }
 }
 
 pub struct RecordBatchIter<'a> {
