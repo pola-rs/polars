@@ -1,17 +1,15 @@
 use super::hash_join::prepare_hashed_relation;
-use crate::chunked_array::builder::AlignedAlloc;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use enum_dispatch::enum_dispatch;
-use fnv::FnvHashMap;
-use itertools::Itertools;
+use fnv::FnvBuildHasher;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
 where
@@ -696,7 +694,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// | date32     | u32        |
     /// +============+============+
     /// | 2020-08-23 | 1          |
-    /// +------------+------------+
+    /// +------------+------------T: PolarsNumericT+
     /// | 2020-08-22 | 2          |
     /// +------------+------------+
     /// | 2020-08-21 | 2          |
@@ -796,20 +794,47 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// let s2 = Series::new("bar", ["k", "l", "m", "n", "o"].as_ref());
     /// // create a new DataFrame
     /// let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
-    /// println!("{:?}", df);
     ///
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     let df = df.groupby("foo")?
+    ///     df.groupby("foo")?
     ///     .pivot("bar", "N")
-    ///     .first();
-    ///
-    ///     Ok(df)
+    ///     .first()
     /// }
-    /// let df = example(df);
-    /// println!("{:?}", df);
+    /// ```
+    /// Transforms:
     ///
-    /// assert!(false)
+    /// ```text
+    /// +-----+-----+-----+
+    /// | foo | N   | bar |
+    /// | --- | --- | --- |
+    /// | str | i32 | str |
+    /// +=====+=====+=====+
+    /// | "A" | 1   | "k" |
+    /// +-----+-----+-----+
+    /// | "A" | 2   | "l" |
+    /// +-----+-----+-----+
+    /// | "B" | 2   | "m" |
+    /// +-----+-----+-----+
+    /// | "B" | 4   | "n" |
+    /// +-----+-----+-----+
+    /// | "C" | 2   | "o" |
+    /// +-----+-----+-----+
+    /// ```
     ///
+    /// Into:
+    ///
+    /// ```text
+    /// +-----+------+------+------+------+------+
+    /// | foo | o    | n    | m    | l    | k    |
+    /// | --- | ---  | ---  | ---  | ---  | ---  |
+    /// | str | i32  | i32  | i32  | i32  | i32  |
+    /// +=====+======+======+======+======+======+
+    /// | "A" | null | null | null | 2    | 1    |
+    /// +-----+------+------+------+------+------+
+    /// | "B" | null | 4    | 2    | null | null |
+    /// +-----+------+------+------+------+------+
+    /// | "C" | 2    | null | null | null | null |
+    /// +-----+------+------+------+------+------+
     /// ```
     pub fn pivot(
         &mut self,
@@ -828,6 +853,8 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     }
 }
 
+/// Intermediate structure when a `pivot` operation is applied.
+/// See [the pivot method for more information.](../group_by/struct.GroupBy.html#method.pivot)
 pub struct Pivot<'df, 'selection_str> {
     gb: &'df GroupBy<'df, 'selection_str>,
     pivot_column: &'selection_str str,
@@ -838,9 +865,10 @@ pub struct Pivot<'df, 'selection_str> {
 trait ChunkPivot {
     fn pivot(
         &self,
-        pivot_series: &Series,
-        keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        _pivot_series: &Series,
+        _keys: Vec<Series>,
+        _groups: &Vec<(usize, Vec<usize>)>,
+        _agg_type: PivotAgg,
     ) -> DataFrame {
         unimplemented!()
     }
@@ -856,15 +884,17 @@ where
         pivot_series: &Series,
         keys: Vec<Series>,
         groups: &Vec<(usize, Vec<usize>)>,
+        agg_type: PivotAgg,
     ) -> DataFrame {
-        /// TODO: save an allocation by creating a random access struct for the Groupable utility type.
+        // TODO: save an allocation by creating a random access struct for the Groupable utility type.
         let pivot_vec: Vec<_> = pivot_series.as_groupable_iter().collect();
 
         let values_taker = self.take_rand();
 
         let new_column_map = |size| {
             // create a new hashmap that will be filled with new Vecs that later will be aggegrated
-            let mut columns_agg_map = HashMap::with_capacity(size);
+            let mut columns_agg_map =
+                HashMap::with_capacity_and_hasher(size, FnvBuildHasher::default());
             for opt_column_name in &pivot_vec {
                 if let Some(column_name) = opt_column_name {
                     columns_agg_map
@@ -878,7 +908,8 @@ where
 
         // create a hash map that will be filled with the results of the aggregation.
         // let mut columns_agg_map_main = new_column_map(groups.len());
-        let mut columns_agg_map_main = HashMap::with_capacity(pivot_vec.len());
+        let mut columns_agg_map_main =
+            HashMap::with_capacity_and_hasher(pivot_vec.len(), FnvBuildHasher::default());
         for opt_column_name in &pivot_vec {
             if let Some(column_name) = opt_column_name {
                 columns_agg_map_main.entry(column_name).or_insert_with(|| {
@@ -911,13 +942,15 @@ where
 
                 match v.len() {
                     0 => main_builder.append_null(),
-                    /// NOTE: now we take first, but this is the place where all aggregations happen
-                    _ => main_builder.append_option(v[0]),
+                    // NOTE: now we take first, but this is the place where all aggregations happen
+                    _ => match agg_type {
+                        PivotAgg::First => pivot_agg_first(main_builder, v),
+                    },
                 }
             }
         }
-        // todo: increase capacity
         let mut cols = keys;
+        cols.reserve_exact(columns_agg_map_main.len());
 
         for (_, builder) in columns_agg_map_main {
             let ca = builder.finish();
@@ -933,12 +966,29 @@ impl ChunkPivot for BooleanChunked {}
 impl ChunkPivot for Utf8Chunked {}
 impl ChunkPivot for LargeListChunked {}
 
-impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
-    pub fn first(&self) -> DataFrame {
-        let pivot_series = self.gb.df.column(self.pivot_column).unwrap();
-        let values_series = self.gb.df.column(self.values_column).unwrap();
+enum PivotAgg {
+    First,
+}
 
-        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups)
+fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+where
+    T: PolarsNumericType,
+    T::Native: Copy,
+{
+    builder.append_option(v[0]);
+}
+
+impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
+    /// Aggregate the pivot results by taking the first occurring value.
+    pub fn first(&self) -> Result<DataFrame> {
+        let pivot_series = self.gb.df.column(self.pivot_column)?;
+        let values_series = self.gb.df.column(self.values_column)?;
+        Ok(values_series.pivot(
+            pivot_series,
+            self.gb.keys(),
+            &self.gb.groups,
+            PivotAgg::First,
+        ))
     }
 }
 
