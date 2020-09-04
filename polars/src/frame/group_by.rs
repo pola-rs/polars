@@ -5,11 +5,15 @@ use crate::prelude::*;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use enum_dispatch::enum_dispatch;
 use fnv::FnvBuildHasher;
+use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
+use std::{
+    fmt::{Debug, Formatter},
+    ops::Add,
+};
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
 where
@@ -877,7 +881,7 @@ trait ChunkPivot {
 impl<T> ChunkPivot for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Copy,
+    T::Native: Copy + Num,
 {
     fn pivot(
         &self,
@@ -945,10 +949,14 @@ where
                     // NOTE: now we take first, but this is the place where all aggregations happen
                     _ => match agg_type {
                         PivotAgg::First => pivot_agg_first(main_builder, v),
+                        PivotAgg::Sum => pivot_agg_sum(main_builder, v),
+                        PivotAgg::Min => pivot_agg_min(main_builder, v),
+                        PivotAgg::Max => pivot_agg_max(main_builder, v),
                     },
                 }
             }
         }
+        // Finalize the pivot by creating a vec of all the columns and creating a DataFrame
         let mut cols = keys;
         cols.reserve_exact(columns_agg_map_main.len());
 
@@ -968,14 +976,68 @@ impl ChunkPivot for LargeListChunked {}
 
 enum PivotAgg {
     First,
+    Sum,
+    Min,
+    Max,
 }
 
 fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
 where
     T: PolarsNumericType,
-    T::Native: Copy,
 {
     builder.append_option(v[0]);
+}
+
+fn pivot_agg_sum<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+where
+    T: PolarsNumericType,
+    T::Native: Num + Zero,
+{
+    builder.append_option(v.iter().copied().fold_options(Zero::zero(), Add::add));
+}
+
+fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+where
+    T: PolarsNumericType,
+{
+    let mut min = None;
+
+    for opt_val in v {
+        if let Some(val) = opt_val {
+            match min {
+                None => min = Some(*val),
+                Some(minimum) => {
+                    if val < &minimum {
+                        min = Some(*val)
+                    }
+                }
+            }
+        }
+    }
+
+    builder.append_option(min);
+}
+
+fn pivot_agg_max<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+where
+    T: PolarsNumericType,
+{
+    let mut max = None;
+
+    for opt_val in v {
+        if let Some(val) = opt_val {
+            match max {
+                None => max = Some(*val),
+                Some(maximum) => {
+                    if val > &maximum {
+                        max = Some(*val)
+                    }
+                }
+            }
+        }
+    }
+
+    builder.append_option(max);
 }
 
 impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
@@ -989,6 +1051,27 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
             &self.gb.groups,
             PivotAgg::First,
         ))
+    }
+
+    /// Aggregate the pivot results by taking the sum of all duplicates.
+    pub fn sum(&self) -> Result<DataFrame> {
+        let pivot_series = self.gb.df.column(self.pivot_column)?;
+        let values_series = self.gb.df.column(self.values_column)?;
+        Ok(values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Sum))
+    }
+
+    /// Aggregate the pivot results by taking the minimal value of all duplicates.
+    pub fn min(&self) -> Result<DataFrame> {
+        let pivot_series = self.gb.df.column(self.pivot_column)?;
+        let values_series = self.gb.df.column(self.values_column)?;
+        Ok(values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Min))
+    }
+
+    /// Aggregate the pivot results by taking the maximum value of all duplicates.
+    pub fn max(&self) -> Result<DataFrame> {
+        let pivot_series = self.gb.df.column(self.pivot_column)?;
+        let values_series = self.gb.df.column(self.values_column)?;
+        Ok(values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Max))
     }
 }
 
@@ -1060,6 +1143,31 @@ mod test {
         println!(
             "{:?}",
             df.groupby("date").unwrap().select("temp").first().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_pivot() {
+        let s0 = Series::new("foo", ["A", "A", "B", "B", "C"].as_ref());
+        let s1 = Series::new("N", [1, 2, 2, 4, 2].as_ref());
+        let s2 = Series::new("bar", ["k", "l", "m", "m", "l"].as_ref());
+        let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
+        println!("{:?}", df);
+
+        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").sum().unwrap();
+        assert_eq!(
+            Vec::from(pvt.column("m").unwrap().i32().unwrap()),
+            &[None, Some(6), None]
+        );
+        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").min().unwrap();
+        assert_eq!(
+            Vec::from(pvt.column("m").unwrap().i32().unwrap()),
+            &[None, Some(2), None]
+        );
+        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").max().unwrap();
+        assert_eq!(
+            Vec::from(pvt.column("m").unwrap().i32().unwrap()),
+            &[None, Some(4), None]
         );
     }
 }
