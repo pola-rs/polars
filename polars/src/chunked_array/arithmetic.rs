@@ -2,7 +2,7 @@
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::{array::ArrayRef, compute};
-use num::ToPrimitive;
+use num::{Num, NumCast, ToPrimitive};
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
 
@@ -55,6 +55,8 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
             }
     }
 }
+
+// Operands on ChunkedArray & ChunkedArray
 
 impl<T> Add for &ChunkedArray<T>
 where
@@ -207,6 +209,115 @@ where
 
     fn sub(self, rhs: Self) -> Self::Output {
         (&self).sub(&rhs)
+    }
+}
+
+// Operands on ChunkedArray & Num
+
+impl<T, N> Add<N> for &ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+    N: Num + ToPrimitive,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + num::Zero,
+{
+    type Output = ChunkedArray<T>;
+
+    fn add(self, rhs: N) -> Self::Output {
+        let adder: T::Native = NumCast::from(rhs).unwrap();
+        if self.is_optimal_aligned() {
+            let intermed: Xob<_> = self.into_no_null_iter().map(|val| val + adder).collect();
+            intermed.into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_val| opt_val.map(|val| val + adder))
+                .collect()
+        }
+    }
+}
+
+impl<T, N> Sub<N> for &ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+    N: Num + ToPrimitive,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + num::Zero,
+{
+    type Output = ChunkedArray<T>;
+
+    fn sub(self, rhs: N) -> Self::Output {
+        let subber: T::Native = NumCast::from(rhs).unwrap();
+        if self.is_optimal_aligned() {
+            let intermed: Xob<_> = self.into_no_null_iter().map(|val| val - subber).collect();
+            intermed.into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_val| opt_val.map(|val| val - subber))
+                .collect()
+        }
+    }
+}
+
+impl<T, N> Div<N> for &ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+    N: Num + ToPrimitive,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + num::Zero,
+{
+    type Output = ChunkedArray<T>;
+
+    fn div(self, rhs: N) -> Self::Output {
+        let divider: T::Native = NumCast::from(rhs).unwrap();
+        if self.is_optimal_aligned() {
+            let intermed: Xob<_> = self.into_no_null_iter().map(|val| val / divider).collect();
+            intermed.into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_val| opt_val.map(|val| val / divider))
+                .collect()
+        }
+    }
+}
+
+impl<T, N> Mul<N> for &ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+    N: Num + ToPrimitive,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + num::Zero,
+{
+    type Output = ChunkedArray<T>;
+
+    fn mul(self, rhs: N) -> Self::Output {
+        let multiplier: T::Native = NumCast::from(rhs).unwrap();
+        if self.is_optimal_aligned() {
+            let intermed: Xob<_> = self
+                .into_no_null_iter()
+                .map(|val| val * multiplier)
+                .collect();
+            intermed.into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_val| opt_val.map(|val| val * multiplier))
+                .collect()
+        }
     }
 }
 
