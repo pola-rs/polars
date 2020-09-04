@@ -10,6 +10,7 @@ use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
@@ -84,6 +85,24 @@ enum Groupable<'a> {
     Int16(i16),
     Int32(i32),
     Int64(i64),
+}
+
+impl<'a> Debug for Groupable<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use Groupable::*;
+        match self {
+            Boolean(v) => write!(f, "{}", v),
+            Utf8(v) => write!(f, "{}", v),
+            UInt8(v) => write!(f, "{}", v),
+            UInt16(v) => write!(f, "{}", v),
+            UInt32(v) => write!(f, "{}", v),
+            UInt64(v) => write!(f, "{}", v),
+            Int8(v) => write!(f, "{}", v),
+            Int16(v) => write!(f, "{}", v),
+            Int32(v) => write!(f, "{}", v),
+            Int64(v) => write!(f, "{}", v),
+        }
+    }
 }
 
 impl Series {
@@ -819,7 +838,9 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn first(&self) -> DataFrame {
         let pivot_series = self.gb.df.column(self.pivot_column).unwrap();
 
-        let pivot_ca = pivot_series.utf8().unwrap();
+        /// TODO: save an allocation by creating a random access struct for the Groupable utility type.
+        let pivot_vec: Vec<_> = pivot_series.as_groupable_iter().collect();
+
         let values_ca = self
             .gb
             .df
@@ -828,13 +849,12 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
             .i32()
             .unwrap();
 
-        let pivot_taker = pivot_ca.take_rand();
         let values_taker = values_ca.take_rand();
 
         let new_column_map = |size| {
             // create a new hashmap that will be filled with new Vecs that later will be aggegrated
             let mut columns_agg_map = HashMap::with_capacity(size);
-            for column_name in pivot_ca {
+            for column_name in &pivot_vec {
                 columns_agg_map
                     .entry(column_name)
                     .or_insert_with(|| Vec::new());
@@ -853,7 +873,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
             // the columns are hashed with the pivot values
             let mut columns_agg_map_group = new_column_map(idx.len());
             for &i in idx {
-                let pivot_val = pivot_taker.get(i);
+                let pivot_val = unsafe { pivot_vec.get_unchecked(i) };
                 let values_val = values_taker.get(i);
                 columns_agg_map_group
                     .get_mut(&pivot_val)
