@@ -73,7 +73,7 @@
 //! +------+------+------+
 //! ```
 //!
-//! ## GroupBys
+//! ## Groupby's | aggregations | pivots
 //!
 //! ```
 //! use polars::prelude::*;
@@ -156,6 +156,7 @@
 //!         .into_series();
 //! ```
 //!
+//!
 //! ## And more...
 //!
 //! * [DataFrame](frame/struct.DataFrame.html)
@@ -163,7 +164,7 @@
 //! * [ChunkedArray](chunked_array/struct.ChunkedArray.html)
 //!     - [Operations implemented by Traits](chunked_array/ops/index.html)
 //! * [Time/ DateTime utilities](doc/time/index.html)
-//! * [Groupby and aggregations](frame/group_by/struct.GroupBy.html)
+//! * [Groupby, aggregations and pivots](frame/group_by/struct.GroupBy.html)
 //!
 //! ## Features
 //!

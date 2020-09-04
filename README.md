@@ -95,7 +95,7 @@ Polars is written to be performant. Below are some comparisons with the (also ve
  +------+------+------+
 ```
 
-### GroupBys
+### Groupby's | aggregations | pivots
 
 ```rust
  use polars::prelude::*;
@@ -180,6 +180,7 @@ Polars is written to be performant. Below are some comparisons with the (also ve
 * [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
      - [Operations implemented by Traits](https://ritchie46.github.io/polars/polars/chunked_array/ops/index.html)
 * [Time/ DateTime utilities](https://ritchie46.github.io/polars/polars/doc/time/index.html)
+* [Groupby, aggregations and pivots](https://ritchie46.github.io/polars/polars/frame/group_by/struct.GroupBy.html)
 
 ## Features
 
