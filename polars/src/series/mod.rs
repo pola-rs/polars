@@ -626,7 +626,7 @@ impl Series {
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
     pub fn get(&self, index: usize) -> AnyType {
-        apply_method_all_series!(self, get, index)
+        apply_method_all_series!(self, get_any, index)
     }
 
     /// Sort in place.

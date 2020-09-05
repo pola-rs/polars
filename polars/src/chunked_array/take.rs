@@ -325,17 +325,23 @@ impl AsTakeIndex for [u32] {
     }
 }
 
+/// Fast indexing in a `ChunkedArray` by doing only a one time downcast up front.
 pub trait TakeRandom {
     type Item;
+
+    /// Get a nullable value by index.
     fn get(&self, index: usize) -> Option<Self::Item>;
 
+    /// Get a value by index and ignore the null bit.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
 }
 
+/// Create a type that implements `TakeRandom`.
 pub trait IntoTakeRandom<'a> {
     type Item;
-    type IntoTR;
-    fn take_rand(&self) -> Self::IntoTR;
+    type TakeRandom;
+    /// Create a type that implements `TakeRandom`.
+    fn take_rand(&self) -> Self::TakeRandom;
 }
 
 /// Choose the Struct for multiple chunks or the struct for a single chunk.
@@ -394,9 +400,9 @@ where
     T: PolarsNumericType,
 {
     type Item = T::Native;
-    type IntoTR = NumTakeRandomDispatch<'a, T>;
+    type TakeRandom = NumTakeRandomDispatch<'a, T>;
 
-    fn take_rand(&self) -> Self::IntoTR {
+    fn take_rand(&self) -> Self::TakeRandom {
         match self.cont_slice() {
             Ok(slice) => NumTakeRandomDispatch::Cont(NumTakeRandomCont { slice }),
             _ => {
@@ -416,27 +422,27 @@ where
 
 impl<'a> IntoTakeRandom<'a> for &'a Utf8Chunked {
     type Item = &'a str;
-    type IntoTR = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
+    type TakeRandom = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
-    fn take_rand(&self) -> Self::IntoTR {
+    fn take_rand(&self) -> Self::TakeRandom {
         many_or_single!(self, Utf8TakeRandomSingleChunk, Utf8TakeRandom)
     }
 }
 
 impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
     type Item = bool;
-    type IntoTR = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
+    type TakeRandom = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
-    fn take_rand(&self) -> Self::IntoTR {
+    fn take_rand(&self) -> Self::TakeRandom {
         many_or_single!(self, BoolTakeRandomSingleChunk, BoolTakeRandom)
     }
 }
 
 impl<'a> IntoTakeRandom<'a> for &'a LargeListChunked {
     type Item = Series;
-    type IntoTR = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
+    type TakeRandom = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
-    fn take_rand(&self) -> Self::IntoTR {
+    fn take_rand(&self) -> Self::TakeRandom {
         let chunks = self.downcast_chunks();
         if chunks.len() == 1 {
             Box::new(ListTakeRandomSingleChunk {

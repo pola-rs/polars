@@ -616,13 +616,13 @@ mod test {
         builder.append_opt_series(Some(&s1));
         builder.append_opt_series(Some(&s2));
         let ls = builder.finish();
-        if let AnyType::LargeList(s) = ls.get(0) {
+        if let AnyType::LargeList(s) = ls.get_any(0) {
             // many chunks are aggregated to one in the ListArray
             assert_eq!(s.len(), 6)
         } else {
             assert!(false)
         }
-        if let AnyType::LargeList(s) = ls.get(1) {
+        if let AnyType::LargeList(s) = ls.get_any(1) {
             assert_eq!(s.len(), 3)
         } else {
             assert!(false)
