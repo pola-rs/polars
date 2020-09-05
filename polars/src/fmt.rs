@@ -274,9 +274,55 @@ impl Display for AnyType<'_> {
             }
             AnyType::IntervalDayTime(v) => write!(f, "{}", v),
             AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
-            AnyType::LargeList(s) => write!(f, "list [{:?}]", s.dtype()),
+            AnyType::LargeList(s) => write!(f, "{:?}", s.fmt_largelist()),
             _ => unimplemented!(),
         }
+    }
+}
+
+macro_rules! impl_fmt_largelist {
+    ($self:ident) => {{
+        match $self.len() {
+            1 => format!("[{:?}]", $self.get(0)),
+            2 => format!("[{:?}, {:?}]", $self.get(0), $self.get(1)),
+            3 => format!(
+                "[{:?}, {:?}, {:?}]",
+                $self.get(0),
+                $self.get(1),
+                $self.get(2)
+            ),
+            _ => format!(
+                "[{:?}, {:?}, ... {:?}]",
+                $self.get(0),
+                $self.get(1),
+                $self.get($self.len() - 1)
+            ),
+        }
+    }};
+}
+
+pub(crate) trait FmtLargeList {
+    fn fmt_largelist(&self) -> String;
+}
+
+impl<T> FmtLargeList for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn fmt_largelist(&self) -> String {
+        impl_fmt_largelist!(self)
+    }
+}
+
+impl FmtLargeList for Utf8Chunked {
+    fn fmt_largelist(&self) -> String {
+        impl_fmt_largelist!(self)
+    }
+}
+
+impl FmtLargeList for LargeListChunked {
+    fn fmt_largelist(&self) -> String {
+        impl_fmt_largelist!(self)
     }
 }
 

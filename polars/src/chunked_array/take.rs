@@ -52,7 +52,7 @@ where
         impl_take_random_get_unchecked!(self, index, PrimitiveArray<T>)
     }
 }
-
+// extra trait such that it also works without extra reference.
 impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
     type Item = &'a str;
 

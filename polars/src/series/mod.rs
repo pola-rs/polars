@@ -10,6 +10,7 @@ mod comparison;
 pub(crate) mod iterator;
 use arithmetic::{LhsNumOpsDispatch, NumOpsDispatch, NumOpsDispatchSeriesSingleNumber};
 // needed for enum dispatch
+use crate::fmt::FmtLargeList;
 use arrow::array::ArrayDataRef;
 use enum_dispatch::enum_dispatch;
 use num::{Num, NumCast};
@@ -748,6 +749,10 @@ impl Series {
     /// ```
     pub fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         Ok(apply_method_all_series_and_return!(self, fill_none, [strategy],?))
+    }
+
+    pub(crate) fn fmt_largelist(&self) -> String {
+        apply_method_all_series!(self, fmt_largelist,)
     }
 }
 
