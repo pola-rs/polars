@@ -7,4 +7,5 @@
 //! * `Groupby` operation can be done on multiple keys.
 //! * `Groupby` `first` operation.
 //! * `Pivot` operation.
+//! * Random access to `ChunkedArray` types via `.get` and `.get_unchecked`.
 //!

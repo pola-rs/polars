@@ -76,7 +76,7 @@ impl Debug for Series {
                 write![f, "Series: '{}' [{}]\n[\n", $name, $dtype]?;
 
                 for i in 0..limit {
-                    let v = $a.get(i);
+                    let v = $a.get_any(i);
                     write!(f, "\t{}\n", v)?;
                 }
 

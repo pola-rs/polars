@@ -9,6 +9,27 @@ use std::cmp::Ordering;
 use std::marker::Sized;
 use std::ops::{Add, Div};
 
+/// Random access
+pub trait TakeRandom {
+    type Item;
+
+    /// Get a nullable value by index.
+    fn get(&self, index: usize) -> Option<Self::Item>;
+
+    /// Get a value by index and ignore the null bit.
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
+}
+// Utility trait because associated type needs a lifetime
+pub trait TakeRandomUtf8 {
+    type Item;
+
+    /// Get a nullable value by index.
+    fn get(self, index: usize) -> Option<Self::Item>;
+
+    /// Get a value by index and ignore the null bit.
+    unsafe fn get_unchecked(self, index: usize) -> Self::Item;
+}
+
 /// Fast access by index.
 pub trait ChunkTake {
     /// Take values from ChunkedArray by index.

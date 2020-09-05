@@ -7,7 +7,77 @@ use crate::chunked_array::builder::{
     get_large_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::prelude::*;
-use arrow::array::{Array, BooleanArray, LargeListArray, PrimitiveArray, StringArray};
+use arrow::array::{
+    Array, ArrayRef, BooleanArray, LargeListArray, PrimitiveArray, PrimitiveArrayOps, StringArray,
+};
+use std::sync::Arc;
+
+macro_rules! impl_take_random_get {
+    ($self:ident, $index:ident, $array_type:ty) => {{
+        let (chunk_idx, idx) = $self.index_to_chunked_index($index);
+        let arr = unsafe {
+            let arr = $self.chunks.get_unchecked(chunk_idx);
+            &*(arr as *const ArrayRef as *const Arc<$array_type>)
+        };
+        if arr.is_valid(idx) {
+            Some(arr.value(idx))
+        } else {
+            None
+        }
+    }};
+}
+
+macro_rules! impl_take_random_get_unchecked {
+    ($self:ident, $index:ident, $array_type:ty) => {{
+        let (chunk_idx, idx) = $self.index_to_chunked_index($index);
+        let arr = {
+            let arr = $self.chunks.get_unchecked(chunk_idx);
+            &*(arr as *const ArrayRef as *const Arc<$array_type>)
+        };
+        arr.value(idx)
+    }};
+}
+
+impl<T> TakeRandom for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    type Item = T::Native;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        impl_take_random_get!(self, index, PrimitiveArray<T>)
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        impl_take_random_get_unchecked!(self, index, PrimitiveArray<T>)
+    }
+}
+
+impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
+    type Item = &'a str;
+
+    fn get(self, index: usize) -> Option<Self::Item> {
+        impl_take_random_get!(self, index, StringArray)
+    }
+
+    unsafe fn get_unchecked(self, index: usize) -> Self::Item {
+        impl_take_random_get_unchecked!(self, index, StringArray)
+    }
+}
+
+impl TakeRandom for LargeListChunked {
+    type Item = Series;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        let opt_arr = impl_take_random_get!(self, index, LargeListArray);
+        opt_arr.map(|arr| (self.name(), arr).into())
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        let arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
+        (self.name(), arr).into()
+    }
+}
 
 macro_rules! impl_take {
     ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
@@ -325,18 +395,7 @@ impl AsTakeIndex for [u32] {
     }
 }
 
-/// Fast indexing in a `ChunkedArray` by doing only a one time downcast up front.
-pub trait TakeRandom {
-    type Item;
-
-    /// Get a nullable value by index.
-    fn get(&self, index: usize) -> Option<Self::Item>;
-
-    /// Get a value by index and ignore the null bit.
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
-}
-
-/// Create a type that implements `TakeRandom`.
+/// Create a type that implements a faster `TakeRandom`.
 pub trait IntoTakeRandom<'a> {
     type Item;
     type TakeRandom;
@@ -655,5 +714,23 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         (self.name, self.arr.value(index)).into()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_take_random() {
+        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+        assert_eq!(ca.get(0), Some(1));
+        assert_eq!(ca.get(1), Some(2));
+        assert_eq!(ca.get(2), Some(3));
+
+        let ca = Utf8Chunked::new_from_slice("a", &["a", "b", "c"]);
+        assert_eq!(ca.get(0), Some("a"));
+        assert_eq!(ca.get(1), Some("b"));
+        assert_eq!(ca.get(2), Some("c"));
     }
 }

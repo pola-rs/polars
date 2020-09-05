@@ -252,6 +252,7 @@ impl<T> ChunkedArray<T> {
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
         if other.data_type() == self.field.data_type() {
             self.chunks.push(other);
+            self.chunk_id = create_chunk_id(&self.chunks);
             Ok(())
         } else {
             Err(PolarsError::DataTypeMisMatch)
@@ -336,6 +337,9 @@ impl<T> ChunkedArray<T> {
     /// Get the index of the chunk and the index of the value in that chunk
     #[inline]
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunk_id().len() == 1 {
+            return (0, index);
+        }
         let mut index_remainder = index;
         let mut current_chunk_idx = 0;
 

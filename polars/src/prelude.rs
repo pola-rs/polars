@@ -13,9 +13,9 @@ pub use crate::{
         ops::{
             ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkFillNone, ChunkFilter, ChunkFull,
             ChunkReverse, ChunkSet, ChunkShift, ChunkSort, ChunkTake, ChunkUnique,
-            FillNoneStrategy,
+            FillNoneStrategy, TakeRandom, TakeRandomUtf8,
         },
-        take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont, TakeRandom},
+        take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
         ChunkedArray, Downcast,
     },
     datatypes,
