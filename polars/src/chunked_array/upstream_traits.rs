@@ -130,6 +130,23 @@ impl FromIterator<Option<String>> for Utf8Chunked {
     }
 }
 
+impl FromIterator<Series> for LargeListChunked {
+    fn from_iter<I: IntoIterator<Item = Series>>(iter: I) -> Self {
+        let mut it = iter.into_iter();
+        let capacity = get_iter_capacity(&it);
+
+        // first take one to get the dtype. We panic if we have an empty iterator
+        let v = it.next().unwrap();
+        let mut builder = get_large_list_builder(v.dtype(), capacity, "collected");
+
+        builder.append_opt_series(Some(&v));
+        while let Some(s) = it.next() {
+            builder.append_opt_series(Some(&s));
+        }
+        builder.finish()
+    }
+}
+
 impl<'a> FromIterator<&'a Series> for LargeListChunked {
     fn from_iter<I: IntoIterator<Item = &'a Series>>(iter: I) -> Self {
         let mut it = iter.into_iter();
@@ -148,8 +165,9 @@ impl<'a> FromIterator<&'a Series> for LargeListChunked {
     }
 }
 
-impl<'a> FromIterator<Option<&'a Series>> for LargeListChunked {
-    fn from_iter<I: IntoIterator<Item = Option<&'a Series>>>(iter: I) -> Self {
+
+impl FromIterator<Option<Series>> for LargeListChunked {
+    fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
         // we don't know the type of the series until we get Some(Series) from the iterator.
         // until that happens we count the number of None's so that we can first fill the None's until
         // we know the type
@@ -187,11 +205,11 @@ impl<'a> FromIterator<Option<&'a Series>> for LargeListChunked {
         }
 
         // now the first non None
-        builder.append_opt_series(Some(v));
+        builder.append_opt_series(Some(v).as_ref());
 
         // now we have added all Nones, we can consume the rest of the iterator.
         while let Some(opt_s) = it.next() {
-            builder.append_opt_series(opt_s);
+            builder.append_opt_series(opt_s.as_ref());
         }
 
         builder.finish()
