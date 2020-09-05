@@ -139,8 +139,5 @@ pub fn finish_reader<R: ArrowReader>(mut reader: R, rechunk: bool) -> Result<Dat
             .collect::<Result<Vec<_>>>()?;
     }
 
-    Ok(DataFrame {
-        schema: reader.schema(),
-        columns,
-    })
+    Ok(DataFrame { columns })
 }

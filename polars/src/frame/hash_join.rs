@@ -474,17 +474,18 @@ impl DataFrame {
     fn finish_join(&self, mut df_left: DataFrame, mut df_right: DataFrame) -> Result<DataFrame> {
         let mut left_names =
             HashSet::with_capacity_and_hasher(df_left.width(), FnvBuildHasher::default());
-        for field in df_left.schema.fields() {
-            left_names.insert(field.name());
-        }
+
+        df_left.columns.iter().for_each(|series| {
+            left_names.insert(series.name());
+        });
 
         let mut rename_strs = Vec::with_capacity(df_right.width());
 
-        for field in df_right.schema.fields() {
-            if left_names.contains(field.name()) {
-                rename_strs.push(field.name().to_owned())
+        df_right.columns.iter().for_each(|series| {
+            if left_names.contains(series.name()) {
+                rename_strs.push(series.name().to_owned())
             }
-        }
+        });
 
         for name in rename_strs {
             df_right.rename(&name, &format!("{}_right", name))?;

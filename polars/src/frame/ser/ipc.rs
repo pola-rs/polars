@@ -109,7 +109,7 @@ where
     }
 
     fn finish(self, df: &mut DataFrame) -> Result<()> {
-        let mut ipc_writer = ArrowIPCFileWriter::try_new(self.writer, &df.schema)?;
+        let mut ipc_writer = ArrowIPCFileWriter::try_new(self.writer, &df.schema())?;
 
         let iter = df.iter_record_batches(self.batch_size);
 
