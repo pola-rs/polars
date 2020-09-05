@@ -135,7 +135,7 @@
 //! let mask = s.eq(1);
 //! let valid = [true, false, false].iter();
 //!
-//! assert_eq!(Vec::from(mask.bool().unwrap()), &[Some(true), Some(false), Some(false)]);
+//! assert_eq!(Vec::from(mask), &[Some(true), Some(false), Some(false)]);
 //! ```
 //!
 //! ## Temporal data types
