@@ -72,8 +72,8 @@ impl Debug for Series {
         let limit = std::cmp::min(self.len(), LIMIT);
 
         macro_rules! format_series {
-            ($a:ident, $name:expr) => {{
-                write![f, "Series: {}\n[\n", $name]?;
+            ($a:ident, $dtype:expr, $name:expr) => {{
+                write![f, "Series: '{}' [{}]\n[\n", $name, $dtype]?;
 
                 for i in 0..limit {
                     let v = $a.get(i);
@@ -85,35 +85,35 @@ impl Debug for Series {
         }
 
         match self {
-            Series::UInt8(a) => format_series!(a, "u8"),
-            Series::UInt16(a) => format_series!(a, "u16"),
-            Series::UInt32(a) => format_series!(a, "u32"),
-            Series::UInt64(a) => format_series!(a, "u64"),
-            Series::Int8(a) => format_series!(a, "i8"),
-            Series::Int16(a) => format_series!(a, "i16"),
-            Series::Int32(a) => format_series!(a, "i32"),
-            Series::Int64(a) => format_series!(a, "i64"),
-            Series::Bool(a) => format_series!(a, "bool"),
-            Series::Float32(a) => format_series!(a, "f32"),
-            Series::Float64(a) => format_series!(a, "f64"),
-            Series::Date32(a) => format_series!(a, "date32(day)"),
-            Series::Date64(a) => format_series!(a, "date64(ms)"),
-            Series::Time32Millisecond(a) => format_series!(a, "time32(ms)"),
-            Series::Time32Second(a) => format_series!(a, "time32(s)"),
-            Series::Time64Nanosecond(a) => format_series!(a, "time64(ns)"),
-            Series::Time64Microsecond(a) => format_series!(a, "time64(μs)"),
-            Series::DurationNanosecond(a) => format_series!(a, "duration(ns)"),
-            Series::DurationMicrosecond(a) => format_series!(a, "duration(μs)"),
-            Series::DurationMillisecond(a) => format_series!(a, "duration(ms)"),
-            Series::DurationSecond(a) => format_series!(a, "duration(s)"),
-            Series::IntervalDayTime(a) => format_series!(a, "interval(daytime)"),
-            Series::IntervalYearMonth(a) => format_series!(a, "interval(year-month)"),
-            Series::TimestampNanosecond(a) => format_series!(a, "timestamp(ns)"),
-            Series::TimestampMicrosecond(a) => format_series!(a, "timestamp(μs)"),
-            Series::TimestampMillisecond(a) => format_series!(a, "timestamp(ms)"),
-            Series::TimestampSecond(a) => format_series!(a, "timestamp(s)"),
+            Series::UInt8(a) => format_series!(a, "u8", a.name()),
+            Series::UInt16(a) => format_series!(a, "u16", a.name()),
+            Series::UInt32(a) => format_series!(a, "u32", a.name()),
+            Series::UInt64(a) => format_series!(a, "u64", a.name()),
+            Series::Int8(a) => format_series!(a, "i8", a.name()),
+            Series::Int16(a) => format_series!(a, "i16", a.name()),
+            Series::Int32(a) => format_series!(a, "i32", a.name()),
+            Series::Int64(a) => format_series!(a, "i64", a.name()),
+            Series::Bool(a) => format_series!(a, "bool", a.name()),
+            Series::Float32(a) => format_series!(a, "f32", a.name()),
+            Series::Float64(a) => format_series!(a, "f64", a.name()),
+            Series::Date32(a) => format_series!(a, "date32(day)", a.name()),
+            Series::Date64(a) => format_series!(a, "date64(ms)", a.name()),
+            Series::Time32Millisecond(a) => format_series!(a, "time32(ms)", a.name()),
+            Series::Time32Second(a) => format_series!(a, "time32(s)", a.name()),
+            Series::Time64Nanosecond(a) => format_series!(a, "time64(ns)", a.name()),
+            Series::Time64Microsecond(a) => format_series!(a, "time64(μs)", a.name()),
+            Series::DurationNanosecond(a) => format_series!(a, "duration(ns)", a.name()),
+            Series::DurationMicrosecond(a) => format_series!(a, "duration(μs)", a.name()),
+            Series::DurationMillisecond(a) => format_series!(a, "duration(ms)", a.name()),
+            Series::DurationSecond(a) => format_series!(a, "duration(s)", a.name()),
+            Series::IntervalDayTime(a) => format_series!(a, "interval(daytime)", a.name()),
+            Series::IntervalYearMonth(a) => format_series!(a, "interval(year-month)", a.name()),
+            Series::TimestampNanosecond(a) => format_series!(a, "timestamp(ns)", a.name()),
+            Series::TimestampMicrosecond(a) => format_series!(a, "timestamp(μs)", a.name()),
+            Series::TimestampMillisecond(a) => format_series!(a, "timestamp(ms)", a.name()),
+            Series::TimestampSecond(a) => format_series!(a, "timestamp(s)", a.name()),
             Series::Utf8(a) => {
-                write![f, "Series: str \n[\n"]?;
+                write![f, "Series: '{}' [str] \n[\n", a.name()]?;
                 a.into_iter().take(LIMIT).for_each(|opt_s| match opt_s {
                     None => {
                         write!(f, "\tnull\n").ok();
@@ -300,7 +300,7 @@ mod test {
     fn temporal() {
         let s = Date32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
         assert_eq!(
-            r#"Series: date32(day)
+            r#"Series: 'date32' [date32(day)]
 [
 	1970-01-02
 	null
@@ -311,7 +311,7 @@ mod test {
 
         let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1000_000_000_000)]);
         assert_eq!(
-            r#"Series: date64(ms)
+            r#"Series: '' [date64(ms)]
 [
 	1970-01-01
 	null
@@ -324,7 +324,7 @@ mod test {
             &[1_000_000, 37_800_005_000_000, 86_399_210_000_000],
         );
         assert_eq!(
-            r#"Series: time64(ns)
+            r#"Series: '' [time64(ns)]
 [
 	00:00:00.001
 	10:30:00.005
