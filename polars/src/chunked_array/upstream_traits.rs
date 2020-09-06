@@ -165,7 +165,6 @@ impl<'a> FromIterator<&'a Series> for LargeListChunked {
     }
 }
 
-
 impl FromIterator<Option<Series>> for LargeListChunked {
     fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
         // we don't know the type of the series until we get Some(Series) from the iterator.

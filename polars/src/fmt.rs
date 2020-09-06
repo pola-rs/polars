@@ -76,8 +76,11 @@ impl Debug for Series {
                 write![f, "Series: '{}' [{}]\n[\n", $name, $dtype]?;
 
                 for i in 0..limit {
-                    let v = $a.get_any(i);
-                    write!(f, "\t{}\n", v)?;
+                    let opt_v = $a.get(i);
+                    match opt_v {
+                        Some(v) => write!(f, "\t{}\n", v)?,
+                        None => write!(f, "\tnull\n")?,
+                    }
                 }
 
                 write![f, "]"]
@@ -125,26 +128,37 @@ impl Debug for Series {
                 write![f, "]"]
             }
             Series::LargeList(a) => {
-                let limit = 3;
-                write![f, "Series: list \n[\n"]?;
-                a.into_iter().take(limit).for_each(|opt_s| match opt_s {
-                    None => {
-                        write!(f, "\tnull\n").ok();
-                    }
-                    Some(s) => {
-                        // Inner series are indented one level
-                        let series_formatted = format!("{:?}", s);
+                write![f, "Series: '{}' [{}]\n[\n", self.name(), "list"]?;
 
-                        // now prepend a tab before every line.
-                        let mut with_tab = String::with_capacity(series_formatted.len() + 10);
-                        for line in series_formatted.split("\n") {
-                            with_tab.push_str(&format!("\t{}\n", line))
-                        }
-
-                        write!(f, "\t{}\n", with_tab).ok();
+                for i in 0..limit {
+                    let opt_v = a.get(i);
+                    match opt_v {
+                        Some(v) => write!(f, "\t{}\n", v.fmt_largelist())?,
+                        None => write!(f, "\tnull\n")?,
                     }
-                });
+                }
+
                 write![f, "]"]
+                // let limit = 3;
+                // write![f, "Series: list \n[\n"]?;
+                // a.into_iter().take(limit).for_each(|opt_s| match opt_s {
+                //     None => {
+                //         write!(f, "\tnull\n").ok();
+                //     }
+                //     Some(s) => {
+                //         // Inner series are indented one level
+                //         let series_formatted = format!("{:?}", s);
+                //
+                //         // now prepend a tab before every line.
+                //         let mut with_tab = String::with_capacity(series_formatted.len() + 10);
+                //         for line in series_formatted.split("\n") {
+                //             with_tab.push_str(&format!("\t{}\n", line))
+                //         }
+                //
+                //         write!(f, "\t{}\n", with_tab).ok();
+                //     }
+                // });
+                // write![f, "]"]
             }
         }
     }
@@ -280,22 +294,35 @@ impl Display for AnyType<'_> {
     }
 }
 
+macro_rules! fmt_option {
+    ($opt:expr) => {{
+        match $opt {
+            Some(v) => format!("{:?}", v),
+            None => "null".to_string(),
+        }
+    }};
+}
+
 macro_rules! impl_fmt_largelist {
     ($self:ident) => {{
         match $self.len() {
-            1 => format!("[{:?}]", $self.get(0)),
-            2 => format!("[{:?}, {:?}]", $self.get(0), $self.get(1)),
+            1 => format!("[{}]", fmt_option!($self.get(0))),
+            2 => format!(
+                "[{}, {}]",
+                fmt_option!($self.get(0)),
+                fmt_option!($self.get(1))
+            ),
             3 => format!(
-                "[{:?}, {:?}, {:?}]",
-                $self.get(0),
-                $self.get(1),
-                $self.get(2)
+                "[{}, {}, {}]",
+                fmt_option!($self.get(0)),
+                fmt_option!($self.get(1)),
+                fmt_option!($self.get(2))
             ),
             _ => format!(
-                "[{:?}, {:?}, ... {:?}]",
-                $self.get(0),
-                $self.get(1),
-                $self.get($self.len() - 1)
+                "[{}, {}, ... {}]",
+                fmt_option!($self.get(0)),
+                fmt_option!($self.get(1)),
+                fmt_option!($self.get($self.len() - 1))
             ),
         }
     }};

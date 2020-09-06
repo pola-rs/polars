@@ -69,13 +69,33 @@ impl DataFrame {
     /// let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
     /// let df = DataFrame::new(vec![s0, s1]).unwrap();
     /// ```
-    pub fn new(columns: Vec<Series>) -> Result<Self> {
-        if !columns.iter().map(|s| s.len()).all_equal() {
-            return Err(PolarsError::ShapeMisMatch);
+    pub fn new<S: IntoSeries>(columns: Vec<S>) -> Result<Self> {
+        let mut first_len = None;
+        let mut series_cols = Vec::with_capacity(columns.len());
+
+        // check for series length equality and convert into series in one pass
+        for s in columns {
+            let series = s.into_series();
+            match first_len {
+                Some(len) => {
+                    if series.len() != len {
+                        return Err(PolarsError::ShapeMisMatch);
+                    }
+                }
+                None => first_len = Some(series.len()),
+            }
+            series_cols.push(series)
         }
-        let mut df = DataFrame { columns };
+        let mut df = DataFrame {
+            columns: series_cols,
+        };
         df.rechunk()?;
         Ok(df)
+    }
+
+    // doesn't check Series sizes.
+    fn new_no_checks(columns: Vec<Series>) -> DataFrame {
+        DataFrame { columns }
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
@@ -276,7 +296,7 @@ impl DataFrame {
             }
         });
 
-        DataFrame::new(new_cols)
+        Ok(DataFrame::new_no_checks(new_cols))
     }
 
     /// Get a row in the dataframe. Beware this is slow.
@@ -351,7 +371,7 @@ impl DataFrame {
         S: Selection<'a>,
     {
         let selected = self.select_series(selection)?;
-        let df = DataFrame::new(selected)?;
+        let df = DataFrame::new_no_checks(selected);
         Ok(df)
     }
 
@@ -387,7 +407,7 @@ impl DataFrame {
             .par_iter()
             .map(|col| col.filter(mask))
             .collect::<Result<Vec<_>>>()?;
-        DataFrame::new(new_col)
+        Ok(DataFrame::new_no_checks(new_col))
     }
 
     /// Take DataFrame value by indexes from an iterator.
@@ -413,7 +433,7 @@ impl DataFrame {
                 s.take_iter(&mut i, capacity)
             })
             .collect::<Result<Vec<_>>>()?;
-        DataFrame::new(new_col)
+        Ok(DataFrame::new_no_checks(new_col))
     }
 
     /// Take DataFrame values by indexes from an iterator. This doesn't do any bound checking.
@@ -439,7 +459,7 @@ impl DataFrame {
                 s.take_iter_unchecked(&mut i, capacity)
             })
             .collect::<Vec<_>>();
-        DataFrame::new(new_col).unwrap()
+        DataFrame::new_no_checks(new_col)
     }
 
     /// Take DataFrame values by indexes from an iterator that may contain None values.
@@ -465,7 +485,7 @@ impl DataFrame {
                 s.take_opt_iter(&mut i, capacity)
             })
             .collect::<Result<Vec<_>>>()?;
-        DataFrame::new(new_col)
+        Ok(DataFrame::new_no_checks(new_col))
     }
 
     /// Take DataFrame values by indexes from an iterator that may contain None values.
@@ -492,7 +512,7 @@ impl DataFrame {
                 s.take_opt_iter_unchecked(&mut i, capacity)
             })
             .collect::<Vec<_>>();
-        DataFrame::new(new_col).unwrap()
+        DataFrame::new_no_checks(new_col)
     }
 
     /// Take DataFrame rows by index values.
@@ -513,7 +533,7 @@ impl DataFrame {
             .map(|s| s.take(indices))
             .collect::<Result<Vec<_>>>()?;
 
-        DataFrame::new(new_col)
+        Ok(DataFrame::new_no_checks(new_col))
     }
 
     /// Rename a column in the DataFrame
@@ -791,7 +811,7 @@ impl DataFrame {
             .par_iter()
             .map(|s| s.slice(offset, length))
             .collect::<Result<Vec<_>>>()?;
-        DataFrame::new(col)
+        Ok(DataFrame::new_no_checks(col))
     }
 
     /// Get the head of the DataFrame
@@ -801,7 +821,7 @@ impl DataFrame {
             .iter()
             .map(|s| s.head(length))
             .collect::<Vec<_>>();
-        DataFrame::new(col).unwrap()
+        DataFrame::new_no_checks(col)
     }
 
     /// Get the tail of the DataFrame
@@ -811,7 +831,7 @@ impl DataFrame {
             .iter()
             .map(|s| s.tail(length))
             .collect::<Vec<_>>();
-        DataFrame::new(col).unwrap()
+        DataFrame::new_no_checks(col)
     }
 
     /// Transform the underlying chunks in the DataFrame to Arrow RecordBatches
@@ -862,7 +882,7 @@ impl DataFrame {
     /// Get a DataFrame with all the columns in reversed order
     pub fn reverse(&self) -> Self {
         let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
-        DataFrame::new(col).unwrap()
+        DataFrame::new_no_checks(col)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -875,7 +895,7 @@ impl DataFrame {
             .iter()
             .map(|s| s.shift(periods))
             .collect::<Result<Vec<_>>>()?;
-        DataFrame::new(col)
+        Ok(DataFrame::new_no_checks(col))
     }
 
     /// Replace None values with one of the following strategies:
@@ -892,7 +912,7 @@ impl DataFrame {
             .iter()
             .map(|s| s.fill_none(strategy))
             .collect::<Result<Vec<_>>>()?;
-        DataFrame::new(col)
+        Ok(DataFrame::new_no_checks(col))
     }
 
     pub fn pipe<F, B>(self, f: F) -> Result<B>
