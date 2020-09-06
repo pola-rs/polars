@@ -139,9 +139,9 @@ impl FromIterator<Series> for LargeListChunked {
         let v = it.next().unwrap();
         let mut builder = get_large_list_builder(v.dtype(), capacity, "collected");
 
-        builder.append_opt_series(Some(&v));
+        builder.append_opt_series(&Some(v));
         while let Some(s) = it.next() {
-            builder.append_opt_series(Some(&s));
+            builder.append_opt_series(&Some(s));
         }
         builder.finish()
     }
@@ -156,22 +156,22 @@ impl<'a> FromIterator<&'a Series> for LargeListChunked {
         let v = it.next().unwrap();
         let mut builder = get_large_list_builder(v.dtype(), capacity, "collected");
 
-        builder.append_opt_series(Some(v));
+        builder.append_series(v);
         while let Some(s) = it.next() {
-            builder.append_opt_series(Some(s));
+            builder.append_series(s);
         }
 
         builder.finish()
     }
 }
 
-impl FromIterator<Option<Series>> for LargeListChunked {
-    fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
+macro_rules! impl_from_iter_opt_series {
+    ($iter:ident) => {{
         // we don't know the type of the series until we get Some(Series) from the iterator.
         // until that happens we count the number of None's so that we can first fill the None's until
         // we know the type
 
-        let mut it = iter.into_iter();
+        let mut it = $iter.into_iter();
 
         let v;
         let mut cnt = 0;
@@ -199,19 +199,32 @@ impl FromIterator<Option<Series>> for LargeListChunked {
 
         // first fill all None's we encountered
         while cnt > 0 {
-            builder.append_opt_series(None);
+            builder.append_opt_series(&None);
             cnt -= 1;
         }
 
         // now the first non None
-        builder.append_opt_series(Some(v).as_ref());
+        builder.append_series(&v);
 
         // now we have added all Nones, we can consume the rest of the iterator.
         while let Some(opt_s) = it.next() {
-            builder.append_opt_series(opt_s.as_ref());
+            builder.append_opt_series(&opt_s);
         }
 
         builder.finish()
+
+    }}
+}
+
+impl FromIterator<Option<Series>> for LargeListChunked {
+    fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
+        impl_from_iter_opt_series!(iter)
+    }
+}
+
+impl<'a> FromIterator<&'a Option<Series>> for LargeListChunked {
+    fn from_iter<I: IntoIterator<Item = &'a Option<Series>>>(iter: I) -> Self {
+        impl_from_iter_opt_series!(iter)
     }
 }
 
@@ -414,10 +427,10 @@ mod test {
         let s1 = Series::new("", &[true, false, true]);
         let s2 = Series::new("", &[true, false, true]);
 
-        let ll: LargeListChunked = [Some(&s1), Some(&s2)].iter().copied().collect();
+        let ll: LargeListChunked = [&s1, &s2].iter().map(|&s| s).collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 0);
-        let ll: LargeListChunked = [None, Some(&s2)].iter().copied().collect();
+        let ll: LargeListChunked = [None, Some(s2)].iter().collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 1);
     }

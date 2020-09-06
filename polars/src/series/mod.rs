@@ -708,7 +708,7 @@ impl Series {
     /// example();
     /// ```
     pub fn shift(&self, periods: i32) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, shift, [periods, None],?))
+        Ok(apply_method_all_series_and_return!(self, shift, [periods, &None],?))
     }
 
     /// Replace None values with one of the following strategies:

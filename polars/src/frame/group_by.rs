@@ -758,7 +758,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
                     };
-                    builder.append_opt_series(Some(&s))
+                    builder.append_opt_series(&Some(s))
                 }
                 builder.finish().into_series()
             }};
@@ -773,7 +773,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
                     };
-                    builder.append_opt_series(Some(&s))
+                    builder.append_series(&s)
                 }
                 builder.finish().into_series()
             }};

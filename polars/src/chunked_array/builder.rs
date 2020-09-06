@@ -403,7 +403,8 @@ where
 }
 
 pub trait LargListBuilderTrait {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>);
+    fn append_opt_series(&mut self, opt_s: &Option<Series>);
+    fn append_series(&mut self, s: &Series);
     fn finish(&mut self) -> LargeListChunked;
 }
 
@@ -431,6 +432,18 @@ macro_rules! append_opt_series {
                 $self.builder.append(false).expect("should not fail");
             }
         }
+    }};
+}
+
+macro_rules! append_series {
+    ($self:ident, $s: ident) => {{
+        let data = $s.array_data();
+        $self
+            .builder
+            .values()
+            .append_data(&data)
+            .expect("should not fail");
+        $self.builder.append(true).expect("should not fail");
     }};
 }
 
@@ -502,8 +515,12 @@ impl<T> LargListBuilderTrait for LargeListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+    fn append_opt_series(&mut self, opt_s: &Option<Series>) {
         append_opt_series!(self, opt_s)
+    }
+
+    fn append_series(&mut self, s: &Series) {
+        append_series!(self, s);
     }
 
     fn finish(&mut self) -> LargeListChunked {
@@ -527,19 +544,15 @@ impl LargeListUtf8ChunkedBuilder {
 
         LargeListUtf8ChunkedBuilder { builder, field }
     }
-
-    pub fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        append_opt_series!(self, opt_s)
-    }
-
-    pub fn finish(mut self) -> LargeListChunked {
-        finish_largelist_builder!(self)
-    }
 }
 
 impl LargListBuilderTrait for LargeListUtf8ChunkedBuilder {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+    fn append_opt_series(&mut self, opt_s: &Option<Series>) {
         append_opt_series!(self, opt_s)
+    }
+
+    fn append_series(&mut self, s: &Series) {
+        append_series!(self, s);
     }
 
     fn finish(&mut self) -> LargeListChunked {
@@ -613,8 +626,8 @@ mod test {
         let s2 = Int32Chunked::new_from_slice("b", &[4, 5, 6]).into_series();
         s1.append(&s2).unwrap();
 
-        builder.append_opt_series(Some(&s1));
-        builder.append_opt_series(Some(&s2));
+        builder.append_series(&s1);
+        builder.append_series(&s2);
         let ls = builder.finish();
         if let AnyType::LargeList(s) = ls.get_any(0) {
             // many chunks are aggregated to one in the ListArray

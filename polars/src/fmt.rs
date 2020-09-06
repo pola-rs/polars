@@ -76,11 +76,8 @@ impl Debug for Series {
                 write![f, "Series: '{}' [{}]\n[\n", $name, $dtype]?;
 
                 for i in 0..limit {
-                    let opt_v = $a.get(i);
-                    match opt_v {
-                        Some(v) => write!(f, "\t{}\n", v)?,
-                        None => write!(f, "\tnull\n")?,
-                    }
+                    let v = $a.get_any(i);
+                    write!(f, "\t{}\n", v)?;
                 }
 
                 write![f, "]"]
@@ -139,26 +136,6 @@ impl Debug for Series {
                 }
 
                 write![f, "]"]
-                // let limit = 3;
-                // write![f, "Series: list \n[\n"]?;
-                // a.into_iter().take(limit).for_each(|opt_s| match opt_s {
-                //     None => {
-                //         write!(f, "\tnull\n").ok();
-                //     }
-                //     Some(s) => {
-                //         // Inner series are indented one level
-                //         let series_formatted = format!("{:?}", s);
-                //
-                //         // now prepend a tab before every line.
-                //         let mut with_tab = String::with_capacity(series_formatted.len() + 10);
-                //         for line in series_formatted.split("\n") {
-                //             with_tab.push_str(&format!("\t{}\n", line))
-                //         }
-                //
-                //         write!(f, "\t{}\n", with_tab).ok();
-                //     }
-                // });
-                // write![f, "]"]
             }
         }
     }
@@ -366,7 +343,15 @@ mod test {
         builder.append_slice(None);
         let list = builder.finish().into_series();
 
-        println!("{:?}", list)
+        println!("{:?}", list);
+        assert_eq!(
+            r#"Series: 'a' [list]
+[
+	[1, 2, 3]
+	null
+]"#,
+            format!("{:?}", list)
+        );
     }
 
     #[test]

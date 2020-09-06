@@ -162,7 +162,7 @@ impl ChunkOps for LargeListChunked {
                     let mut builder =
                         get_large_list_builder(self.dtype(), chunk_length, self.name());
                     while let Some(v) = iter.next() {
-                        builder.append_opt_series(v.as_ref())
+                        builder.append_opt_series(&v)
                     }
                     let list = builder.finish();
                     // cheap clone of Arc

@@ -678,7 +678,7 @@ impl ChunkFilter<LargeListType> for LargeListChunked {
                     true => opt_series,
                     false => None,
                 };
-                builder.append_opt_series(opt_val.as_ref())
+                builder.append_opt_series(&opt_val)
             });
         Ok(builder.finish())
     }
@@ -688,7 +688,7 @@ impl ChunkFilter<LargeListType> for LargeListChunked {
 pub trait ChunkShift<T, V> {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `fill_value`.
-    fn shift(&self, periods: i32, fill_value: Option<V>) -> Result<ChunkedArray<T>>;
+    fn shift(&self, periods: i32, fill_value: &Option<V>) -> Result<ChunkedArray<T>>;
 }
 
 fn chunk_shift_helper<T>(
@@ -719,7 +719,7 @@ where
     T: PolarsNumericType,
     T::Native: Copy,
 {
-    fn shift(&self, periods: i32, fill_value: Option<T::Native>) -> Result<ChunkedArray<T>> {
+    fn shift(&self, periods: i32, fill_value: &Option<T::Native>) -> Result<ChunkedArray<T>> {
         if periods.abs() >= self.len() as i32 {
             return Err(PolarsError::OutOfBounds);
         }
@@ -729,14 +729,14 @@ where
         // Fill the front of the array
         if periods > 0 {
             for _ in 0..periods {
-                builder.append_option(fill_value)
+                builder.append_option(*fill_value)
             }
             chunk_shift_helper(self, &mut builder, amount);
         // Fill the back of the array
         } else {
             chunk_shift_helper(self, &mut builder, amount);
             for _ in 0..periods.abs() {
-                builder.append_option(fill_value)
+                builder.append_option(*fill_value)
             }
         }
         Ok(builder.finish())
@@ -774,7 +774,7 @@ macro_rules! impl_shift {
 }
 
 impl ChunkShift<BooleanType, bool> for BooleanChunked {
-    fn shift(&self, periods: i32, fill_value: Option<bool>) -> Result<BooleanChunked> {
+    fn shift(&self, periods: i32, fill_value: &Option<bool>) -> Result<BooleanChunked> {
         if periods.abs() >= self.len() as i32 {
             return Err(PolarsError::OutOfBounds);
         }
@@ -783,13 +783,14 @@ impl ChunkShift<BooleanType, bool> for BooleanChunked {
         fn append_fn(builder: &mut PrimitiveChunkedBuilder<BooleanType>, v: Option<bool>) {
             builder.append_option(v);
         }
+        let fill_value = *fill_value;
 
         impl_shift!(self, builder, periods, fill_value, append_option, append_fn)
     }
 }
 
 impl ChunkShift<Utf8Type, &str> for Utf8Chunked {
-    fn shift(&self, periods: i32, fill_value: Option<&str>) -> Result<Utf8Chunked> {
+    fn shift(&self, periods: i32, fill_value: &Option<&str>) -> Result<Utf8Chunked> {
         if periods.abs() >= self.len() as i32 {
             return Err(PolarsError::OutOfBounds);
         }
@@ -797,20 +798,21 @@ impl ChunkShift<Utf8Type, &str> for Utf8Chunked {
         fn append_fn(builder: &mut Utf8ChunkedBuilder, v: Option<&str>) {
             builder.append_option(v);
         }
+        let fill_value = *fill_value;
 
         impl_shift!(self, builder, periods, fill_value, append_option, append_fn)
     }
 }
 
-impl ChunkShift<LargeListType, &Series> for LargeListChunked {
-    fn shift(&self, periods: i32, fill_value: Option<&Series>) -> Result<LargeListChunked> {
+impl ChunkShift<LargeListType, Series> for LargeListChunked {
+    fn shift(&self, periods: i32, fill_value: &Option<Series>) -> Result<LargeListChunked> {
         if periods.abs() >= self.len() as i32 {
             return Err(PolarsError::OutOfBounds);
         }
         let dt = self.get_inner_dtype();
         let mut builder = get_large_list_builder(dt, self.len(), self.name());
         fn append_fn(builder: &mut Box<dyn LargListBuilderTrait>, v: Option<Series>) {
-            builder.append_opt_series(v.as_ref());
+            builder.append_opt_series(&v);
         }
 
         impl_shift!(
@@ -831,13 +833,13 @@ mod test {
     #[test]
     fn test_shift() {
         let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
-        let shifted = ca.shift(1, Some(0)).unwrap();
+        let shifted = ca.shift(1, &Some(0)).unwrap();
         assert_eq!(shifted.cont_slice().unwrap(), &[0, 1, 2]);
-        let shifted = ca.shift(1, None).unwrap();
+        let shifted = ca.shift(1, &None).unwrap();
         assert_eq!(Vec::from(&shifted), &[None, Some(1), Some(2)]);
-        let shifted = ca.shift(-1, None).unwrap();
+        let shifted = ca.shift(-1, &None).unwrap();
         assert_eq!(Vec::from(&shifted), &[Some(1), Some(2), None]);
-        assert!(ca.shift(3, None).is_err());
+        assert!(ca.shift(3, &None).is_err());
     }
 
     #[test]
