@@ -15,6 +15,7 @@ use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
 };
+const LIMIT: usize = 10;
 
 /// Some unit functions that just pass the integer values if we don't want all chrono functionality
 #[cfg(not(feature = "temporal"))]
@@ -66,77 +67,140 @@ mod temporal {
 #[cfg(not(feature = "temporal"))]
 use temporal::*;
 
-impl Debug for Series {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        const LIMIT: usize = 10;
-        let limit = std::cmp::min(self.len(), LIMIT);
+macro_rules! format_array {
+    ($limit:ident, $f:ident, $a:ident, $dtype:expr, $name:expr, $array_type:expr) => {{
+        write![$f, "{}: '{}' [{}]\n[\n", $array_type, $name, $dtype]?;
 
-        macro_rules! format_series {
-            ($a:ident, $dtype:expr, $name:expr) => {{
-                write![f, "Series: '{}' [{}]\n[\n", $name, $dtype]?;
-
-                for i in 0..limit {
-                    let v = $a.get_any(i);
-                    write!(f, "\t{}\n", v)?;
-                }
-
-                write![f, "]"]
-            }};
+        for i in 0..$limit {
+            let v = $a.get_any(i);
+            write!($f, "\t{}\n", v)?;
         }
 
+        write![$f, "]"]
+    }};
+}
+
+macro_rules! format_utf8_array {
+    ($limit:ident, $f:ident, $a:ident, $name:expr, $array_type:expr) => {{
+        write![$f, "{}: '{}' [str]\n[\n", $array_type, $name]?;
+        $a.into_iter().take($limit).for_each(|opt_s| match opt_s {
+            None => {
+                write!($f, "\tnull\n").ok();
+            }
+            Some(s) => {
+                write!($f, "\t\"{}\"\n", &s[..std::cmp::min($limit, s.len())]).ok();
+            }
+        });
+        write![$f, "]"]
+    }};
+}
+macro_rules! format_list_array {
+    ($limit:ident, $f:ident, $a:ident, $name:expr, $array_type:expr) => {{
+        write![$f, "{}: '{}' [list]\n[\n", $array_type, $name]?;
+
+        for i in 0..$limit {
+            let opt_v = $a.get(i);
+            match opt_v {
+                Some(v) => write!($f, "\t{}\n", v.fmt_largelist())?,
+                None => write!($f, "\tnull\n")?,
+            }
+        }
+
+        write![$f, "]"]
+    }};
+}
+
+macro_rules! set_limit {
+    ($self:ident) => {
+        std::cmp::min($self.len(), LIMIT)
+    };
+}
+
+impl<T> Debug for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+        let dtype = format!("{:?}", T::get_data_type());
+        format_array!(limit, f, self, dtype, self.name(), "ChunkedArray")
+    }
+}
+
+impl Debug for Utf8Chunked {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+        format_utf8_array!(limit, f, self, self.name(), "ChunkedArray")
+    }
+}
+
+impl Debug for LargeListChunked {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+        format_list_array!(limit, f, self, self.name(), "ChunkedArray")
+    }
+}
+
+impl Debug for Series {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+
         match self {
-            Series::UInt8(a) => format_series!(a, "u8", a.name()),
-            Series::UInt16(a) => format_series!(a, "u16", a.name()),
-            Series::UInt32(a) => format_series!(a, "u32", a.name()),
-            Series::UInt64(a) => format_series!(a, "u64", a.name()),
-            Series::Int8(a) => format_series!(a, "i8", a.name()),
-            Series::Int16(a) => format_series!(a, "i16", a.name()),
-            Series::Int32(a) => format_series!(a, "i32", a.name()),
-            Series::Int64(a) => format_series!(a, "i64", a.name()),
-            Series::Bool(a) => format_series!(a, "bool", a.name()),
-            Series::Float32(a) => format_series!(a, "f32", a.name()),
-            Series::Float64(a) => format_series!(a, "f64", a.name()),
-            Series::Date32(a) => format_series!(a, "date32(day)", a.name()),
-            Series::Date64(a) => format_series!(a, "date64(ms)", a.name()),
-            Series::Time32Millisecond(a) => format_series!(a, "time32(ms)", a.name()),
-            Series::Time32Second(a) => format_series!(a, "time32(s)", a.name()),
-            Series::Time64Nanosecond(a) => format_series!(a, "time64(ns)", a.name()),
-            Series::Time64Microsecond(a) => format_series!(a, "time64(μs)", a.name()),
-            Series::DurationNanosecond(a) => format_series!(a, "duration(ns)", a.name()),
-            Series::DurationMicrosecond(a) => format_series!(a, "duration(μs)", a.name()),
-            Series::DurationMillisecond(a) => format_series!(a, "duration(ms)", a.name()),
-            Series::DurationSecond(a) => format_series!(a, "duration(s)", a.name()),
-            Series::IntervalDayTime(a) => format_series!(a, "interval(daytime)", a.name()),
-            Series::IntervalYearMonth(a) => format_series!(a, "interval(year-month)", a.name()),
-            Series::TimestampNanosecond(a) => format_series!(a, "timestamp(ns)", a.name()),
-            Series::TimestampMicrosecond(a) => format_series!(a, "timestamp(μs)", a.name()),
-            Series::TimestampMillisecond(a) => format_series!(a, "timestamp(ms)", a.name()),
-            Series::TimestampSecond(a) => format_series!(a, "timestamp(s)", a.name()),
-            Series::Utf8(a) => {
-                write![f, "Series: '{}' [str] \n[\n", a.name()]?;
-                a.into_iter().take(LIMIT).for_each(|opt_s| match opt_s {
-                    None => {
-                        write!(f, "\tnull\n").ok();
-                    }
-                    Some(s) => {
-                        write!(f, "\t\"{}\"\n", &s[..std::cmp::min(LIMIT, s.len())]).ok();
-                    }
-                });
-                write![f, "]"]
+            Series::UInt8(a) => format_array!(limit, f, a, "u8", a.name(), "Series"),
+            Series::UInt16(a) => format_array!(limit, f, a, "u16", a.name(), "Series"),
+            Series::UInt32(a) => format_array!(limit, f, a, "u32", a.name(), "Series"),
+            Series::UInt64(a) => format_array!(limit, f, a, "u64", a.name(), "Series"),
+            Series::Int8(a) => format_array!(limit, f, a, "i8", a.name(), "Series"),
+            Series::Int16(a) => format_array!(limit, f, a, "i16", a.name(), "Series"),
+            Series::Int32(a) => format_array!(limit, f, a, "i32", a.name(), "Series"),
+            Series::Int64(a) => format_array!(limit, f, a, "i64", a.name(), "Series"),
+            Series::Bool(a) => format_array!(limit, f, a, "bool", a.name(), "Series"),
+            Series::Float32(a) => format_array!(limit, f, a, "f32", a.name(), "Series"),
+            Series::Float64(a) => format_array!(limit, f, a, "f64", a.name(), "Series"),
+            Series::Date32(a) => format_array!(limit, f, a, "date32(day)", a.name(), "Series"),
+            Series::Date64(a) => format_array!(limit, f, a, "date64(ms)", a.name(), "Series"),
+            Series::Time32Millisecond(a) => {
+                format_array!(limit, f, a, "time32(ms)", a.name(), "Series")
             }
-            Series::LargeList(a) => {
-                write![f, "Series: '{}' [{}]\n[\n", self.name(), "list"]?;
-
-                for i in 0..limit {
-                    let opt_v = a.get(i);
-                    match opt_v {
-                        Some(v) => write!(f, "\t{}\n", v.fmt_largelist())?,
-                        None => write!(f, "\tnull\n")?,
-                    }
-                }
-
-                write![f, "]"]
+            Series::Time32Second(a) => format_array!(limit, f, a, "time32(s)", a.name(), "Series"),
+            Series::Time64Nanosecond(a) => {
+                format_array!(limit, f, a, "time64(ns)", a.name(), "Series")
             }
+            Series::Time64Microsecond(a) => {
+                format_array!(limit, f, a, "time64(μs)", a.name(), "Series")
+            }
+            Series::DurationNanosecond(a) => {
+                format_array!(limit, f, a, "duration(ns)", a.name(), "Series")
+            }
+            Series::DurationMicrosecond(a) => {
+                format_array!(limit, f, a, "duration(μs)", a.name(), "Series")
+            }
+            Series::DurationMillisecond(a) => {
+                format_array!(limit, f, a, "duration(ms)", a.name(), "Series")
+            }
+            Series::DurationSecond(a) => {
+                format_array!(limit, f, a, "duration(s)", a.name(), "Series")
+            }
+            Series::IntervalDayTime(a) => {
+                format_array!(limit, f, a, "interval(daytime)", a.name(), "Series")
+            }
+            Series::IntervalYearMonth(a) => {
+                format_array!(limit, f, a, "interval(year-month)", a.name(), "Series")
+            }
+            Series::TimestampNanosecond(a) => {
+                format_array!(limit, f, a, "timestamp(ns)", a.name(), "Series")
+            }
+            Series::TimestampMicrosecond(a) => {
+                format_array!(limit, f, a, "timestamp(μs)", a.name(), "Series")
+            }
+            Series::TimestampMillisecond(a) => {
+                format_array!(limit, f, a, "timestamp(ms)", a.name(), "Series")
+            }
+            Series::TimestampSecond(a) => {
+                format_array!(limit, f, a, "timestamp(s)", a.name(), "Series")
+            }
+            Series::Utf8(a) => format_utf8_array!(limit, f, a, a.name(), "Series"),
+            Series::LargeList(a) => format_list_array!(limit, f, a, a.name(), "Series"),
         }
     }
 }
@@ -390,5 +454,29 @@ mod test {
 ]"#,
             format!("{:?}", s.into_series())
         )
+    }
+    #[test]
+    fn test_fmt_chunkedarray() {
+        let ca = Int32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
+        println!("{:?}", ca);
+        assert_eq!(
+            r#"ChunkedArray: 'date32' [Int32]
+[
+	1
+	null
+	3
+]"#,
+            format!("{:?}", ca)
+        );
+        let ca = Utf8Chunked::new_from_slice("name", &["a", "b"]);
+        println!("{:?}", ca);
+        assert_eq!(
+            r#"ChunkedArray: 'name' [str]
+[
+	"a"
+	"b"
+]"#,
+            format!("{:?}", ca)
+        );
     }
 }

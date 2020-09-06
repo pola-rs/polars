@@ -13,7 +13,6 @@ use arrow::{
     datatypes::{ArrowPrimitiveType, DateUnit, Field, TimeUnit},
 };
 use itertools::Itertools;
-use std::fmt::{Debug, Formatter};
 use std::iter::{Copied, Map};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -717,12 +716,6 @@ impl LargeListChunked {
             ArrowDataType::LargeList(dt) => dt,
             _ => panic!("should not happen"),
         }
-    }
-}
-
-impl<T> Debug for ChunkedArray<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("{:?}", self.chunks))
     }
 }
 
