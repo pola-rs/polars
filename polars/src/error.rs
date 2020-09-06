@@ -29,6 +29,9 @@ pub enum PolarsError {
     #[cfg(feature = "parquet_ser")]
     #[error(transparent)]
     ParquetError(#[from] parquet::errors::ParquetError),
+    #[cfg(feature = "random")]
+    #[error(transparent)]
+    RandError(#[from] rand_distr::NormalError),
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

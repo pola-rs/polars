@@ -7,4 +7,5 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars = {path = "../../polars"}
+polars = {path = "../../polars", features = ["random"]}
+reqwest = {version = "0.10.8", features = ["blocking"]}

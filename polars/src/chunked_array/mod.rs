@@ -28,6 +28,8 @@ pub mod cast;
 pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
+#[cfg(feature = "random")]
+pub mod random;
 pub mod set;
 pub mod take;
 #[cfg(feature = "temporal")]
