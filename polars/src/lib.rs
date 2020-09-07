@@ -178,6 +178,8 @@
 //!     - SIMD operations
 //! * `paquet_ser`
 //!     - Read Apache Parquet format
+//! * `random`
+//!     - Generate array's with randomly sampled values
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #[macro_use]
