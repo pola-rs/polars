@@ -60,11 +60,16 @@
 //! | 0.005        | 0.007       | 0.002       | 0.001        | "Iris-setosa" | "[0, 1, 0]" |
 //! +--------------+-------------+-------------+--------------+---------------+-------------+
 //!
+use itertools::Itertools;
+use ndarray::prelude::*;
 use polars::prelude::*;
 use reqwest;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+
+const FEATURES: [&str; 4] = ["sepal.length", "sepal.width", "petal.width", "petal.length"];
+const LEARNING_RATE: f64 = 0.01;
 
 fn download_iris() -> std::io::Result<()> {
     let r = reqwest::blocking::get(
@@ -129,7 +134,7 @@ fn enforce_schema(mut df: DataFrame) -> Result<DataFrame> {
 }
 
 fn normalize(mut df: DataFrame) -> Result<DataFrame> {
-    let cols = &["sepal.length", "sepal.width", "petal.length", "petal.width"];
+    let cols = &FEATURES;
 
     for &col in cols {
         df.may_apply(col, |s| {
@@ -198,7 +203,13 @@ fn pipe() -> Result<DataFrame> {
         .expect("could not ohe")
         .pipe(print_state)
 }
-fn train(mut df: DataFrame) {
+fn train(mut df: DataFrame) -> Result<()> {
+    let feat = df.select(&FEATURES)?.to_ndarray::<Float64Type>()?;
+
+    let target = df
+        .column("ohe")?
+        .large_list()?
+        .to_ndarray::<Float64Type>()?;
     todo!()
 }
 
@@ -208,5 +219,4 @@ fn main() {
     }
 
     let df = pipe().expect("could not prepare DataFrame");
-    train(df);
 }

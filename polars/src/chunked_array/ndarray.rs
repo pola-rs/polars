@@ -13,6 +13,50 @@ where
     }
 }
 
+impl LargeListChunked {
+    /// If all nested `Series` have the same length, a 2 dimensional `ndarray::Array` is returned.
+    pub fn to_ndarray<N>(&self) -> Result<Array2<N::Native>>
+    where
+        N: PolarsNumericType,
+    {
+        if self.null_count() != 0 {
+            return Err(PolarsError::HasNullValues);
+        } else {
+            let mut iter = self.into_no_null_iter();
+
+            let mut ndarray;
+            let width;
+
+            // first iteration determine the size
+            if let Some(series) = iter.next() {
+                width = series.len();
+
+                ndarray = unsafe { Array::uninitialized((self.len(), series.len())) };
+
+                let series = series.cast::<N>()?;
+                let ca = series.unpack::<N>()?;
+                let a = ca.to_ndarray()?;
+                let mut row = ndarray.slice_mut(s![0, ..]);
+                row.assign(&a);
+
+                while let Some(series) = iter.next() {
+                    if series.len() != width {
+                        return Err(PolarsError::ShapeMisMatch);
+                    }
+                    let series = series.cast::<N>()?;
+                    let ca = series.unpack::<N>()?;
+                    let a = ca.to_ndarray()?;
+                    let mut row = ndarray.slice_mut(s![0, ..]);
+                    row.assign(&a)
+                }
+                Ok(ndarray)
+            } else {
+                Err(PolarsError::NoData)
+            }
+        }
+    }
+}
+
 impl DataFrame {
     /// Create a 2D `ndarray::Array` from this `DataFrame`. This requires all columns in the
     /// `DataFrame` to be non-null and numeric. They will be casted to the same data type

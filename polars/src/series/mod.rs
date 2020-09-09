@@ -492,6 +492,11 @@ impl Series {
         unpack_series!(self, IntervalYearMonth)
     }
 
+    /// Unpack to ChunkedArray
+    pub fn large_list(&self) -> Result<&LargeListChunked> {
+        unpack_series!(self, LargeList)
+    }
+
     pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
         apply_method_all_series!(self, append_array, other)?;
         Ok(self)
