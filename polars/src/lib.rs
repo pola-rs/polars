@@ -176,10 +176,12 @@
 //!     - Conversions between Chrono and Polars for temporal data
 //! * `simd`
 //!     - SIMD operations
-//! * `paquet_ser`
+//! * `paquet`
 //!     - Read Apache Parquet format
 //! * `random`
 //!     - Generate array's with randomly sampled values
+//! * `ndarray`
+//!     - Convert from `DataFrame` to `ndarray`
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]

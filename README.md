@@ -192,5 +192,5 @@ Additional cargo features:
     - Conversions between Chrono and Polars for temporal data
 * `simd`
     - SIMD operations
-* `paquet_ser`
+* `paquet`
     - Read Apache Parquet format

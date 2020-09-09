@@ -1,8 +1,8 @@
 pub mod csv;
 pub mod ipc;
 pub mod json;
-#[cfg(feature = "parquet_ser")]
-#[doc(cfg(feature = "parquet_ser"))]
+#[cfg(feature = "parquet")]
+#[doc(cfg(feature = "parquet"))]
 pub mod parquet;
 use crate::prelude::*;
 use arrow::{
