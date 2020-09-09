@@ -624,6 +624,53 @@ impl Series {
         Ok(s)
     }
 
+    /// Get the `ChunkedArray` for some `PolarsDataType`
+    pub fn unpack<N>(&self) -> Result<&ChunkedArray<N>>
+    where
+        N: PolarsDataType,
+    {
+        macro_rules! unpack_if_match {
+            ($ca:ident) => {{
+                if *$ca.dtype() == N::get_data_type() {
+                    unsafe { Ok(mem::transmute::<_, &ChunkedArray<N>>($ca)) }
+                } else {
+                    Err(PolarsError::DataTypeMisMatch)
+                }
+            }};
+        }
+        match self {
+            Series::Bool(arr) => unpack_if_match!(arr),
+            Series::Utf8(arr) => unpack_if_match!(arr),
+            Series::UInt8(arr) => unpack_if_match!(arr),
+            Series::UInt16(arr) => unpack_if_match!(arr),
+            Series::UInt32(arr) => unpack_if_match!(arr),
+            Series::UInt64(arr) => unpack_if_match!(arr),
+            Series::Int8(arr) => unpack_if_match!(arr),
+            Series::Int16(arr) => unpack_if_match!(arr),
+            Series::Int32(arr) => unpack_if_match!(arr),
+            Series::Int64(arr) => unpack_if_match!(arr),
+            Series::Float32(arr) => unpack_if_match!(arr),
+            Series::Float64(arr) => unpack_if_match!(arr),
+            Series::Date32(arr) => unpack_if_match!(arr),
+            Series::Date64(arr) => unpack_if_match!(arr),
+            Series::Time32Millisecond(arr) => unpack_if_match!(arr),
+            Series::Time32Second(arr) => unpack_if_match!(arr),
+            Series::Time64Nanosecond(arr) => unpack_if_match!(arr),
+            Series::Time64Microsecond(arr) => unpack_if_match!(arr),
+            Series::DurationNanosecond(arr) => unpack_if_match!(arr),
+            Series::DurationMicrosecond(arr) => unpack_if_match!(arr),
+            Series::DurationMillisecond(arr) => unpack_if_match!(arr),
+            Series::DurationSecond(arr) => unpack_if_match!(arr),
+            Series::TimestampNanosecond(arr) => unpack_if_match!(arr),
+            Series::TimestampMicrosecond(arr) => unpack_if_match!(arr),
+            Series::TimestampMillisecond(arr) => unpack_if_match!(arr),
+            Series::TimestampSecond(arr) => unpack_if_match!(arr),
+            Series::IntervalDayTime(arr) => unpack_if_match!(arr),
+            Series::IntervalYearMonth(arr) => unpack_if_match!(arr),
+            Series::LargeList(arr) => unpack_if_match!(arr),
+        }
+    }
+
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
     pub fn get(&self, index: usize) -> AnyType {

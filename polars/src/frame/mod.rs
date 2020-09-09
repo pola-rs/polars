@@ -147,6 +147,7 @@ impl DataFrame {
     }
 
     /// Get a reference to the DataFrame columns.
+    #[inline]
     pub fn get_columns(&self) -> &DfColumns {
         &self.columns
     }

@@ -7,7 +7,7 @@
 //! use std::fs::File;
 //!
 //! fn example() -> Result<DataFrame> {
-//!     let r = File::open("some_file.parquet")?;
+//!     let r = File::open("some_file.parquet").unwrap();
 //!     let reader = ParquetReader::new(r);
 //!     reader.finish()
 //! }

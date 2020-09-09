@@ -34,13 +34,18 @@ where
     T: PolarsNumericType,
 {
     type Item = T::Native;
-    type IntoIter = Copied<Iter<'a, T::Native>>;
+    type IntoIter = Box<dyn Iterator<Item = Self::Item> + 'a>;
 
     fn into_no_null_iter(self) -> Self::IntoIter {
-        self.downcast_chunks()[0]
-            .value_slice(0, self.len())
-            .into_iter()
-            .copied()
+        match self.chunks.len() {
+            1 => Box::new(
+                self.downcast_chunks()[0]
+                    .value_slice(0, self.len())
+                    .into_iter()
+                    .copied(),
+            ),
+            _ => Box::new(NumIterManyChunk::new(self)),
+        }
     }
 }
 
@@ -138,6 +143,8 @@ where
 }
 
 /// Many chunks no null checks
+/// Both used as iterator with null checks and without. We later map Some on it for the iter
+/// with null checks
 pub struct NumIterManyChunk<'a, T>
 where
     T: PolarsNumericType,
@@ -216,7 +223,7 @@ impl<'a, T> Iterator for NumIterManyChunk<'a, T>
 where
     T: PolarsNumericType,
 {
-    type Item = Option<T::Native>;
+    type Item = T::Native;
 
     fn next(&mut self) -> Option<Self::Item> {
         let opt_val = self.current_iter_left.next();
@@ -237,7 +244,8 @@ where
             opt_val
         };
         self.idx_left += 1;
-        opt_val.map(Some)
+        // opt_val.map(Some)
+        opt_val
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -272,7 +280,7 @@ where
             opt_val
         };
         self.idx_right -= 1;
-        opt_val.map(Some)
+        opt_val
     }
 }
 
@@ -468,7 +476,7 @@ where
         match self {
             NumericChunkIterDispatch::SingleChunk(a) => a.next(),
             NumericChunkIterDispatch::SingleChunkNullCheck(a) => a.next(),
-            NumericChunkIterDispatch::ManyChunk(a) => a.next(),
+            NumericChunkIterDispatch::ManyChunk(a) => a.next().map(Some),
             NumericChunkIterDispatch::ManyChunkNullCheck(a) => a.next(),
         }
     }
@@ -491,7 +499,7 @@ where
         match self {
             NumericChunkIterDispatch::SingleChunk(a) => a.next_back(),
             NumericChunkIterDispatch::SingleChunkNullCheck(a) => a.next_back(),
-            NumericChunkIterDispatch::ManyChunk(a) => a.next_back(),
+            NumericChunkIterDispatch::ManyChunk(a) => a.next_back().map(Some),
             NumericChunkIterDispatch::ManyChunkNullCheck(a) => a.next_back(),
         }
     }

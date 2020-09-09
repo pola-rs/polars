@@ -46,7 +46,7 @@ pub(crate) fn create_df() -> DataFrame {
     let s1 = Series::new("temp", [22.1, 19.9, 7., 2., 3.].as_ref());
     DataFrame::new(vec![s0, s1]).unwrap()
 }
-#[cfg(feature = "parquet_ser")]
+#[cfg(feature = "parquet")]
 pub use crate::frame::ser::parquet::ParquetReader;
 
 #[macro_export]

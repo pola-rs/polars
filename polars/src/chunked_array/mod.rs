@@ -27,6 +27,9 @@ pub mod cast;
 pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
+#[cfg(feature = "ndarray")]
+#[doc(cfg(feature = "ndarray"))]
+mod ndarray;
 #[cfg(feature = "random")]
 #[doc(cfg(feature = "random"))]
 mod random;
