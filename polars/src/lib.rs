@@ -182,6 +182,7 @@
 //!     - Generate array's with randomly sampled values
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
+#![feature(doc_cfg)]
 #[macro_use]
 pub mod series;
 #[macro_use]

@@ -28,10 +28,12 @@ pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
 #[cfg(feature = "random")]
-pub mod random;
+#[doc(cfg(feature = "random"))]
+mod random;
 pub mod set;
 pub mod take;
 #[cfg(feature = "temporal")]
+#[doc(cfg(feature = "temporal"))]
 pub mod temporal;
 pub mod unique;
 pub mod upstream_traits;
