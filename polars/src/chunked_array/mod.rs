@@ -41,7 +41,7 @@ pub mod temporal;
 pub mod unique;
 pub mod upstream_traits;
 use arrow::array::{
-    ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
+    Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
     DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
     LargeListArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
@@ -747,9 +747,8 @@ where
         self.chunks
             .iter()
             .map(|arr| {
-                arr.as_any()
-                    .downcast_ref::<PrimitiveArray<T>>()
-                    .expect("could not downcast one of the chunks")
+                let arr = &**arr;
+                unsafe { &*(arr as *const dyn Array as *const PrimitiveArray<T>) }
             })
             .collect::<Vec<_>>()
     }
@@ -760,9 +759,8 @@ impl Downcast<StringArray> for Utf8Chunked {
         self.chunks
             .iter()
             .map(|arr| {
-                arr.as_any()
-                    .downcast_ref()
-                    .expect("could not downcast one of the chunks")
+                let arr = &**arr;
+                unsafe { &*(arr as *const dyn Array as *const StringArray) }
             })
             .collect::<Vec<_>>()
     }
@@ -773,9 +771,8 @@ impl Downcast<BooleanArray> for BooleanChunked {
         self.chunks
             .iter()
             .map(|arr| {
-                arr.as_any()
-                    .downcast_ref()
-                    .expect("could not downcast one of the chunks")
+                let arr = &**arr;
+                unsafe { &*(arr as *const dyn Array as *const BooleanArray) }
             })
             .collect::<Vec<_>>()
     }
@@ -786,9 +783,8 @@ impl Downcast<LargeListArray> for LargeListChunked {
         self.chunks
             .iter()
             .map(|arr| {
-                arr.as_any()
-                    .downcast_ref()
-                    .expect("could not downcast one of the chunks")
+                let arr = &**arr;
+                unsafe { &*(arr as *const dyn Array as *const LargeListArray) }
             })
             .collect::<Vec<_>>()
     }
