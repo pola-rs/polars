@@ -46,6 +46,7 @@ pub struct IPCReader<R> {
     reader: R,
     /// Aggregates chunks afterwards to a single chunk.
     rechunk: bool,
+    ignore_parser_error: bool,
 }
 
 impl<R> ArrowReader for ArrowIPCFileReader<R>
@@ -69,6 +70,7 @@ where
         IPCReader {
             reader,
             rechunk: true,
+            ignore_parser_error: false,
         }
     }
     fn set_rechunk(mut self, rechunk: bool) -> Self {
@@ -76,10 +78,15 @@ where
         self
     }
 
+    fn with_ignore_parser_error(mut self) -> Self {
+        self.ignore_parser_error = true;
+        self
+    }
+
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let ipc_reader = ArrowIPCFileReader::try_new(self.reader)?;
-        finish_reader(ipc_reader, rechunk)
+        finish_reader(ipc_reader, rechunk, self.ignore_parser_error)
     }
 }
 
@@ -104,7 +111,7 @@ where
     fn new(writer: &'a mut W) -> Self {
         IPCWriter {
             writer,
-            batch_size: 1000,
+            batch_size: 200_000,
         }
     }
 

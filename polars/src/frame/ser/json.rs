@@ -72,6 +72,7 @@ where
     reader: R,
     reader_builder: ReaderBuilder,
     rechunk: bool,
+    ignore_parser_error: bool,
 }
 
 impl<R> SerReader<R> for JsonReader<R>
@@ -83,7 +84,13 @@ where
             reader,
             reader_builder: ReaderBuilder::new(),
             rechunk: true,
+            ignore_parser_error: false,
         }
+    }
+
+    fn with_ignore_parser_error(mut self) -> Self {
+        self.ignore_parser_error = true;
+        self
     }
 
     fn set_rechunk(mut self, rechunk: bool) -> Self {
@@ -93,7 +100,11 @@ where
 
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        finish_reader(self.reader_builder.build(self.reader)?, rechunk)
+        finish_reader(
+            self.reader_builder.build(self.reader)?,
+            rechunk,
+            self.ignore_parser_error,
+        )
     }
 }
 
@@ -114,6 +125,7 @@ where
     }
 
     /// Set the batch size (number of records to load at one time)
+    /// This heavily influences loading time.
     pub fn with_batch_size(mut self, batch_size: usize) -> Self {
         self.reader_builder = self.reader_builder.with_batch_size(batch_size);
         self

@@ -108,3 +108,8 @@ macro_rules! match_arrow_data_type_apply_macro {
         }
     }};
 }
+
+/// Clone if upstream hasn't implemented clone
+pub(crate) fn clone<T>(t: &T) -> T {
+    unsafe { mem::transmute_copy(t) }
+}

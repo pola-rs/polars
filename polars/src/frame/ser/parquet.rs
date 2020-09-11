@@ -30,6 +30,7 @@ pub struct ParquetReader<R> {
     reader: R,
     rechunk: bool,
     batch_size: usize,
+    ignore_parser_error: bool,
 }
 
 impl ArrowReader for ParquetRecordBatchReader {
@@ -44,6 +45,7 @@ impl ArrowReader for ParquetRecordBatchReader {
 
 impl<R> ParquetReader<R> {
     /// Set the size of the read buffer. Batch size is the amount of rows read at once.
+    /// This heavily influences loading time.
     pub fn with_batch_size(mut self, batch_size: usize) -> Self {
         self.batch_size = batch_size;
         self
@@ -58,12 +60,19 @@ where
         ParquetReader {
             reader,
             rechunk: true,
-            batch_size: 2048,
+            // parquets are often large, so use a large batch size
+            batch_size: 524288,
+            ignore_parser_error: false,
         }
     }
 
     fn set_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
+        self
+    }
+
+    fn with_ignore_parser_error(mut self) -> Self {
+        self.ignore_parser_error = true;
         self
     }
 
@@ -73,7 +82,7 @@ where
         let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
         let record_reader = arrow_reader.get_record_reader(self.batch_size)?;
-        finish_reader(record_reader, rechunk)
+        finish_reader(record_reader, rechunk, self.ignore_parser_error)
     }
 }
 

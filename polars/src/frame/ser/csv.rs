@@ -48,9 +48,10 @@
 //! assert_eq!("sepal.length", df.get_columns()[0].name());
 //! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
-use crate::frame::ser::finish_reader;
 use crate::prelude::*;
+use crate::{frame::ser::finish_reader, utils::clone};
 pub use arrow::csv::{ReaderBuilder, WriterBuilder};
+use arrow::error::ArrowError;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -138,6 +139,10 @@ where
     reader_builder: ReaderBuilder,
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
+    /// Continue with next batch when a ParserError is encountered.
+    ignore_parser_error: bool,
+    // use by error ignore logic
+    max_records: Option<usize>,
 }
 
 impl<R> SerReader<R> for CsvReader<R>
@@ -150,6 +155,8 @@ where
             reader,
             reader_builder: ReaderBuilder::new(),
             rechunk: true,
+            ignore_parser_error: false,
+            max_records: None,
         }
     }
 
@@ -159,10 +166,41 @@ where
         self
     }
 
+    /// Continue with next batch when a ParserError is encountered.
+    fn with_ignore_parser_error(mut self) -> Self {
+        self.ignore_parser_error = true;
+        self
+    }
+
     /// Read the file and create the DataFrame.
-    fn finish(self) -> Result<DataFrame> {
-        let rechunk = self.rechunk;
-        finish_reader(self.reader_builder.build(self.reader)?, rechunk)
+    fn finish(mut self) -> Result<DataFrame> {
+        // It could be that we could not infer schema due to invalid lines.
+        // If we have a CsvError or ParserError we half the number of lines we use for
+        // schema inference
+        let reader = if self.ignore_parser_error && self.max_records.is_some() {
+            if self.max_records < Some(1) {
+                return Err(PolarsError::Other("Could not infer schema".to_string()));
+            }
+            let reader_val;
+            loop {
+                let rb = clone(&self.reader_builder);
+                match rb.build(clone(&self.reader)) {
+                    Err(ArrowError::CsvError(_)) | Err(ArrowError::ParseError(_)) => {
+                        self.max_records = self.max_records.map(|v| v / 2);
+                        self.reader_builder = self.reader_builder.infer_schema(self.max_records);
+                    }
+                    Err(e) => return Err(PolarsError::ArrowError(e)),
+                    Ok(reader) => {
+                        reader_val = reader;
+                        break;
+                    }
+                }
+            }
+            reader_val
+        } else {
+            self.reader_builder.build(self.reader)?
+        };
+        finish_reader(reader, self.rechunk, self.ignore_parser_error)
     }
 }
 
@@ -208,6 +246,8 @@ where
 
     /// Set the CSV reader to infer the schema of the file
     pub fn infer_schema(mut self, max_records: Option<usize>) -> Self {
+        // used by error ignore logic
+        self.max_records = max_records;
         self.reader_builder = self.reader_builder.infer_schema(max_records);
         self
     }
@@ -240,5 +280,29 @@ mod test {
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
         assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);
+    }
+
+    #[test]
+    fn test_parser_error_ignore() {
+        use std::io::Cursor;
+
+        let s = r#"
+         "sepal.length","sepal.width","petal.length","petal.width","variety"
+         5.1,3.5,1.4,.2,"Setosa"
+         5.1,3.5,1.4,.2,"Setosa"
+         4.9,3,1.4,.2,"Setosa", "extra-column"
+         "#;
+
+        let file = Cursor::new(s);
+
+        // just checks if unwrap doesn't panic
+        CsvReader::new(file)
+            // we also check if infer schema ignores errors
+            .infer_schema(Some(10))
+            .has_header(true)
+            .with_batch_size(2)
+            .with_ignore_parser_error()
+            .finish()
+            .unwrap();
     }
 }

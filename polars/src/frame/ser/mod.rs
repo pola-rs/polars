@@ -6,8 +6,8 @@ pub mod json;
 pub mod parquet;
 use crate::prelude::*;
 use arrow::{
-    csv::Reader as ArrowCsvReader, error::Result as ArrowResult, json::Reader as ArrowJsonReader,
-    record_batch::RecordBatch,
+    csv::Reader as ArrowCsvReader, error::ArrowError, error::Result as ArrowResult,
+    json::Reader as ArrowJsonReader, record_batch::RecordBatch,
 };
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
@@ -20,6 +20,9 @@ where
 
     /// Rechunk to a single chunk after Reading file.
     fn set_rechunk(self, rechunk: bool) -> Self;
+
+    /// Continue with next batch when a ParserError is encountered.
+    fn with_ignore_parser_error(self) -> Self;
 
     /// Take the SerReader and return a parsed DataFrame.
     fn finish(self) -> Result<DataFrame>;
@@ -59,7 +62,11 @@ impl<R: Read> ArrowReader for ArrowJsonReader<R> {
     }
 }
 
-pub fn finish_reader<R: ArrowReader>(mut reader: R, rechunk: bool) -> Result<DataFrame> {
+pub fn finish_reader<R: ArrowReader>(
+    mut reader: R,
+    rechunk: bool,
+    ignore_parser_error: bool,
+) -> Result<DataFrame> {
     fn init_ca<T>(field: &Field) -> ChunkedArray<T>
     where
         T: PolarsDataType,
@@ -117,11 +124,23 @@ pub fn finish_reader<R: ArrowReader>(mut reader: R, rechunk: bool) -> Result<Dat
                 Series::TimestampSecond(init_ca(field))
             }
             ArrowDataType::LargeList(_) => Series::LargeList(init_ca(field)),
-            _ => unimplemented!(),
+            t => panic!(format!("Arrow datatype {:?} is not supported", t)),
         })
         .collect::<Vec<_>>();
 
-    while let Some(batch) = reader.next()? {
+    loop {
+        let batch = match reader.next() {
+            Err(ArrowError::ParseError(s)) => {
+                if ignore_parser_error {
+                    continue;
+                } else {
+                    return Err(PolarsError::ArrowError(ArrowError::ParseError(s)));
+                }
+            }
+            Err(e) => return Err(PolarsError::ArrowError(e)),
+            Ok(None) => break,
+            Ok(Some(batch)) => batch,
+        };
         batch
             .columns()
             .into_iter()
@@ -129,7 +148,6 @@ pub fn finish_reader<R: ArrowReader>(mut reader: R, rechunk: bool) -> Result<Dat
             .map(|(arr, ser)| ser.append_array(arr.clone()))
             .collect::<Result<Vec<_>>>()?;
     }
-
     if rechunk {
         columns = columns
             .into_iter()

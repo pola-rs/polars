@@ -22,17 +22,18 @@ macro_rules! cmp_float_with_nans {
 
 macro_rules! agg_float_with_nans {
     ($self:ident, $agg_method:ident, $precision:ty) => {{
-                if $self.null_count() == 0 {
-                    $self.into_no_null_iter()
-                        .$agg_method(|&a, &b| cmp_float_with_nans!(a, b, $precision))
-                } else {
-                    $self.into_iter()
-                        .filter(|opt| opt.is_some())
-                        .map(|opt| opt.unwrap())
-                        .$agg_method(|&a, &b| cmp_float_with_nans!(a, b, $precision))
-                }
-
-    }}
+        if $self.null_count() == 0 {
+            $self
+                .into_no_null_iter()
+                .$agg_method(|&a, &b| cmp_float_with_nans!(a, b, $precision))
+        } else {
+            $self
+                .into_iter()
+                .filter(|opt| opt.is_some())
+                .map(|opt| opt.unwrap())
+                .$agg_method(|&a, &b| cmp_float_with_nans!(a, b, $precision))
+        }
+    }};
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
@@ -60,12 +61,8 @@ where
 
     fn min(&self) -> Option<T::Native> {
         match T::get_data_type() {
-            ArrowDataType::Float32 => {
-                agg_float_with_nans!(self, min_by, f32)
-            },
-            ArrowDataType::Float64 => {
-                agg_float_with_nans!(self, min_by, f64)
-            }
+            ArrowDataType::Float32 => agg_float_with_nans!(self, min_by, f32),
+            ArrowDataType::Float64 => agg_float_with_nans!(self, min_by, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
@@ -76,12 +73,8 @@ where
 
     fn max(&self) -> Option<T::Native> {
         match T::get_data_type() {
-            ArrowDataType::Float32 => {
-                agg_float_with_nans!(self, max_by, f32)
-            },
-            ArrowDataType::Float64 => {
-                agg_float_with_nans!(self, max_by, f64)
-            }
+            ArrowDataType::Float32 => agg_float_with_nans!(self, max_by, f32),
+            ArrowDataType::Float64 => agg_float_with_nans!(self, max_by, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
