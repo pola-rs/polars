@@ -36,10 +36,31 @@ where
     }
 }
 
+macro_rules! impl_eq_missing {
+    ($self:ident, $rhs:ident) => {{
+        match ($self.null_count(), $rhs.null_count()) {
+            (0, 0) => $self
+                .into_no_null_iter()
+                .zip($rhs.into_no_null_iter())
+                .map(|(opt_a, opt_b)| opt_a == opt_b)
+                .collect(),
+            (_, _) => $self
+                .into_iter()
+                .zip($rhs)
+                .map(|(opt_a, opt_b)| opt_a == opt_b)
+                .collect(),
+        }
+    }};
+}
+
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
+    fn eq_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
+        impl_eq_missing!(self, rhs)
+    }
+
     fn eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         if self.chunk_id == rhs.chunk_id {
             // should not fail if arrays are equal
@@ -93,44 +114,33 @@ where
     }
 }
 
-macro_rules! apply_operand_on_bool_iter {
-    ($self:ident, $rhs:ident, $operand:tt) => {
-    {
-        $self.into_iter()
-            .zip($rhs.into_iter())
-        .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
-            (None, None) => None,
-            (None, Some(_)) => None,
-            (Some(_), None) => None,
-            (Some(left), Some(right)) => Some(left $operand right),
-        })
-            .collect()
-    }}
-}
-
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
+    fn eq_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        impl_eq_missing!(self, rhs)
+    }
+
     fn eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_bool_iter!(self, rhs, ==)
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
     }
 
     fn neq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_bool_iter!(self, rhs, !=)
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
     }
 
     fn gt(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_bool_iter!(self, rhs, >)
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
     }
 
     fn gt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_bool_iter!(self, rhs, >=)
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
     }
 
     fn lt(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_bool_iter!(self, rhs, <)
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
     }
 
     fn lt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_bool_iter!(self, rhs, <=)
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
     }
 }
 
@@ -167,15 +177,16 @@ impl Utf8Chunked {
 }
 
 impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
+    fn eq_missing(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+        impl_eq_missing!(self, rhs)
+    }
+
     fn eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
         if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::eq_utf8)
                 .expect("should not fail")
         } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left == right)
-                .collect()
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
         }
     }
 
@@ -184,10 +195,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             self.comparison(rhs, compute::neq_utf8)
                 .expect("should not fail")
         } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left != right)
-                .collect()
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
         }
     }
 
@@ -196,10 +204,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             self.comparison(rhs, compute::gt_utf8)
                 .expect("should not fail")
         } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left > right)
-                .collect()
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
         }
     }
 
@@ -208,10 +213,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             self.comparison(rhs, compute::gt_eq_utf8)
                 .expect("should not fail")
         } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left >= right)
-                .collect()
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
         }
     }
 
@@ -220,10 +222,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             self.comparison(rhs, compute::lt_utf8)
                 .expect("should not fail")
         } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left < right)
-                .collect()
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
         }
     }
 
@@ -232,10 +231,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             self.comparison(rhs, compute::lt_eq_utf8)
                 .expect("should not fail")
         } else {
-            self.into_iter()
-                .zip(rhs.into_iter())
-                .map(|(left, right)| left <= right)
-                .collect()
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
         }
     }
 }
@@ -269,6 +265,10 @@ where
     T::Native: NumCast,
     Rhs: NumComp + ToPrimitive,
 {
+    fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
+        self.eq(rhs)
+    }
+
     fn eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
         cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs == Some(rhs))
@@ -310,10 +310,13 @@ fn cmp_utf8chunked_to_str(ca: &Utf8Chunked, cmp_fn: &dyn Fn(&str) -> bool) -> Bo
 }
 
 impl ChunkCompare<&str> for Utf8Chunked {
+    fn eq_missing(&self, rhs: &str) -> BooleanChunked {
+        self.eq(rhs)
+    }
+
     fn eq(&self, rhs: &str) -> BooleanChunked {
         cmp_utf8chunked_to_str(self, &|lhs| lhs == rhs)
     }
-
     fn neq(&self, rhs: &str) -> BooleanChunked {
         cmp_utf8chunked_to_str(self, &|lhs| lhs != rhs)
     }
@@ -332,6 +335,72 @@ impl ChunkCompare<&str> for Utf8Chunked {
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
         cmp_utf8chunked_to_str(self, &|lhs| lhs <= rhs)
+    }
+}
+
+macro_rules! impl_cmp_largelist {
+    ($self:ident, $rhs:ident, $cmp_method:ident) => {{
+        match ($self.null_count(), $rhs.null_count()) {
+            (0, 0) => {
+                $self
+                    .into_no_null_iter()
+                    .zip($rhs.into_no_null_iter())
+                    // TODO: use Xob to get rid of redundant Some<T>
+                    .map(|(left, right)| Some(left.$cmp_method(&right)))
+                    .collect()
+            }
+            (0, _) => $self
+                .into_no_null_iter()
+                .zip($rhs.into_iter())
+                .map(|(left, opt_right)| opt_right.map(|right| left.$cmp_method(&right)))
+                .collect(),
+            (_, 0) => $self
+                .into_iter()
+                .zip($rhs.into_no_null_iter())
+                .map(|(opt_left, right)| opt_left.map(|left| left.$cmp_method(&right)))
+                .collect(),
+            (_, _) => $self
+                .into_iter()
+                .zip($rhs.into_iter())
+                .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
+                    (None, None) => None,
+                    (None, Some(_)) => None,
+                    (Some(_), None) => None,
+                    (Some(left), Some(right)) => Some(left.$cmp_method(&right)),
+                })
+                .collect(),
+        }
+    }};
+}
+
+impl ChunkCompare<&LargeListChunked> for LargeListChunked {
+    fn eq_missing(&self, rhs: &LargeListChunked) -> BooleanChunked {
+        impl_cmp_largelist!(self, rhs, series_equal_missing)
+    }
+
+    fn eq(&self, rhs: &LargeListChunked) -> BooleanChunked {
+        impl_cmp_largelist!(self, rhs, series_equal)
+    }
+
+    fn neq(&self, rhs: &LargeListChunked) -> BooleanChunked {
+        self.eq(rhs).not()
+    }
+
+    // following are not implemented because gt, lt comparison of series don't make sense
+    fn gt(&self, _rhs: &LargeListChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn gt_eq(&self, _rhs: &LargeListChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt(&self, _rhs: &LargeListChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt_eq(&self, _rhs: &LargeListChunked) -> BooleanChunked {
+        unimplemented!()
     }
 }
 

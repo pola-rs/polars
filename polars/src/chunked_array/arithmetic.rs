@@ -28,20 +28,30 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
 
     ($self:ident, $rhs:ident, $operand:tt) => {
             {
-
-                if let Ok(slice_lhs) = $self.cont_slice() {
-                    slice_lhs
-                        .iter()
+                match ($self.null_count(), $rhs.null_count()) {
+                    (0, 0) => {
+                        $self
+                        .into_no_null_iter()
+                        .zip($rhs.into_no_null_iter())
+                // TODO: use Xob to get rid of redundant Some<T>
+                        .map(|(left, right)| Some(left $operand right))
+                        .collect()
+                    },
+                    (0, _) => {
+                        $self
+                        .into_no_null_iter()
                         .zip($rhs.into_iter())
-                        .map(|(&left, opt_right)| opt_right.map(|right| left $operand right))
+                        .map(|(left, opt_right)| opt_right.map(|right| left $operand right))
                         .collect()
-                } else if let Ok(slice_rhs) = $rhs.cont_slice() {
-                    slice_rhs
-                        .iter()
-                        .zip($self.into_iter())
-                        .map(|(&right, opt_left)| opt_left.map(|left| left $operand right))
+                    },
+                    (_, 0) => {
+                        $self
+                        .into_iter()
+                        .zip($rhs.into_no_null_iter())
+                        .map(|(opt_left, right)| opt_left.map(|left| left $operand right))
                         .collect()
-                } else {
+                    },
+                    (_, _) => {
                     $self.into_iter()
                         .zip($rhs.into_iter())
                         .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
@@ -51,6 +61,8 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
                             (Some(left), Some(right)) => Some(left $operand right),
                         })
                         .collect()
+
+                    }
                 }
             }
     }

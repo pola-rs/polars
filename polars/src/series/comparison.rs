@@ -18,223 +18,85 @@ macro_rules! compare {
     }};
 }
 
+macro_rules! impl_compare {
+    ($self:ident, $rhs:ident, $method:ident) => {{
+        match $self {
+            Series::Bool(a) => compare!(Series::Bool, a, $rhs, $method),
+            Series::UInt8(a) => compare!(Series::UInt8, a, $rhs, $method),
+            Series::UInt16(a) => compare!(Series::UInt16, a, $rhs, $method),
+            Series::UInt32(a) => compare!(Series::UInt32, a, $rhs, $method),
+            Series::UInt64(a) => compare!(Series::UInt64, a, $rhs, $method),
+            Series::Int8(a) => compare!(Series::Int8, a, $rhs, $method),
+            Series::Int16(a) => compare!(Series::Int16, a, $rhs, $method),
+            Series::Int32(a) => compare!(Series::Int32, a, $rhs, $method),
+            Series::Int64(a) => compare!(Series::Int64, a, $rhs, $method),
+            Series::Float32(a) => compare!(Series::Float32, a, $rhs, $method),
+            Series::Float64(a) => compare!(Series::Float64, a, $rhs, $method),
+            Series::Utf8(a) => compare!(Series::Utf8, a, $rhs, $method),
+            Series::Date32(a) => compare!(Series::Date32, a, $rhs, $method),
+            Series::Date64(a) => compare!(Series::Date64, a, $rhs, $method),
+            Series::Time32Millisecond(a) => compare!(Series::Time32Millisecond, a, $rhs, $method),
+            Series::Time32Second(a) => compare!(Series::Time32Second, a, $rhs, $method),
+            Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, $rhs, $method),
+            Series::Time64Microsecond(a) => compare!(Series::Time64Microsecond, a, $rhs, $method),
+            Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, $rhs, $method),
+            Series::DurationMicrosecond(a) => {
+                compare!(Series::DurationMicrosecond, a, $rhs, $method)
+            }
+            Series::DurationMillisecond(a) => {
+                compare!(Series::DurationMillisecond, a, $rhs, $method)
+            }
+            Series::DurationSecond(a) => compare!(Series::DurationSecond, a, $rhs, $method),
+            Series::TimestampNanosecond(a) => {
+                compare!(Series::TimestampNanosecond, a, $rhs, $method)
+            }
+            Series::TimestampMicrosecond(a) => {
+                compare!(Series::TimestampMicrosecond, a, $rhs, $method)
+            }
+            Series::TimestampMillisecond(a) => {
+                compare!(Series::TimestampMillisecond, a, $rhs, $method)
+            }
+            Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, $rhs, $method),
+            Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, $rhs, $method),
+            Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, $rhs, $method),
+            Series::LargeList(a) => compare!(Series::LargeList, a, $rhs, $method),
+        }
+    }};
+}
+
 impl ChunkCompare<&Series> for Series {
+    fn eq_missing(&self, rhs: &Series) -> BooleanChunked {
+        impl_compare!(self, rhs, eq_missing)
+    }
+
     /// Create a boolean mask by checking for equality.
     fn eq(&self, rhs: &Series) -> BooleanChunked {
-        match self {
-            Series::Bool(a) => compare!(Series::Bool, a, rhs, eq),
-            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, eq),
-            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, eq),
-            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, eq),
-            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, eq),
-            Series::Int8(a) => compare!(Series::Int8, a, rhs, eq),
-            Series::Int16(a) => compare!(Series::Int16, a, rhs, eq),
-            Series::Int32(a) => compare!(Series::Int32, a, rhs, eq),
-            Series::Int64(a) => compare!(Series::Int64, a, rhs, eq),
-            Series::Float32(a) => compare!(Series::Float32, a, rhs, eq),
-            Series::Float64(a) => compare!(Series::Float64, a, rhs, eq),
-            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, eq),
-            Series::Date32(a) => compare!(Series::Date32, a, rhs, eq),
-            Series::Date64(a) => compare!(Series::Date64, a, rhs, eq),
-            Series::Time32Millisecond(a) => compare!(Series::Time32Millisecond, a, rhs, eq),
-            Series::Time32Second(a) => compare!(Series::Time32Second, a, rhs, eq),
-            Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, rhs, eq),
-            Series::Time64Microsecond(a) => compare!(Series::Time64Microsecond, a, rhs, eq),
-            Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, rhs, eq),
-            Series::DurationMicrosecond(a) => compare!(Series::DurationMicrosecond, a, rhs, eq),
-            Series::DurationMillisecond(a) => compare!(Series::DurationMillisecond, a, rhs, eq),
-            Series::DurationSecond(a) => compare!(Series::DurationSecond, a, rhs, eq),
-            Series::TimestampNanosecond(a) => compare!(Series::TimestampNanosecond, a, rhs, eq),
-            Series::TimestampMicrosecond(a) => compare!(Series::TimestampMicrosecond, a, rhs, eq),
-            Series::TimestampMillisecond(a) => compare!(Series::TimestampMillisecond, a, rhs, eq),
-            Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, eq),
-            Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, eq),
-            Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, eq),
-            Series::LargeList(_a) => fill_bool(true, self.len()),
-        }
+        impl_compare!(self, rhs, eq)
     }
 
     /// Create a boolean mask by checking for inequality.
     fn neq(&self, rhs: &Series) -> BooleanChunked {
-        match self {
-            Series::Bool(a) => compare!(Series::Bool, a, rhs, neq),
-            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, neq),
-            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, neq),
-            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, neq),
-            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, neq),
-            Series::Int8(a) => compare!(Series::Int8, a, rhs, neq),
-            Series::Int16(a) => compare!(Series::Int16, a, rhs, neq),
-            Series::Int32(a) => compare!(Series::Int32, a, rhs, neq),
-            Series::Int64(a) => compare!(Series::Int64, a, rhs, neq),
-            Series::Float32(a) => compare!(Series::Float32, a, rhs, neq),
-            Series::Float64(a) => compare!(Series::Float64, a, rhs, neq),
-            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, neq),
-            Series::Date32(a) => compare!(Series::Date32, a, rhs, neq),
-            Series::Date64(a) => compare!(Series::Date64, a, rhs, neq),
-            Series::Time32Millisecond(a) => compare!(Series::Time32Millisecond, a, rhs, neq),
-            Series::Time32Second(a) => compare!(Series::Time32Second, a, rhs, neq),
-            Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, rhs, neq),
-            Series::Time64Microsecond(a) => compare!(Series::Time64Microsecond, a, rhs, neq),
-            Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, rhs, neq),
-            Series::DurationMicrosecond(a) => compare!(Series::DurationMicrosecond, a, rhs, neq),
-            Series::DurationMillisecond(a) => compare!(Series::DurationMillisecond, a, rhs, neq),
-            Series::DurationSecond(a) => compare!(Series::DurationSecond, a, rhs, neq),
-            Series::TimestampNanosecond(a) => compare!(Series::TimestampNanosecond, a, rhs, neq),
-            Series::TimestampMicrosecond(a) => compare!(Series::TimestampMicrosecond, a, rhs, neq),
-            Series::TimestampMillisecond(a) => compare!(Series::TimestampMillisecond, a, rhs, neq),
-            Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, neq),
-            Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, neq),
-            Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, neq),
-            Series::LargeList(_a) => fill_bool(true, self.len()),
-        }
+        impl_compare!(self, rhs, neq)
     }
 
     /// Create a boolean mask by checking if lhs > rhs.
     fn gt(&self, rhs: &Series) -> BooleanChunked {
-        match self {
-            Series::Bool(a) => compare!(Series::Bool, a, rhs, gt),
-            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, gt),
-            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, gt),
-            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt),
-            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, gt),
-            Series::Int8(a) => compare!(Series::Int8, a, rhs, gt),
-            Series::Int16(a) => compare!(Series::Int16, a, rhs, gt),
-            Series::Int32(a) => compare!(Series::Int32, a, rhs, gt),
-            Series::Int64(a) => compare!(Series::Int64, a, rhs, gt),
-            Series::Float32(a) => compare!(Series::Float32, a, rhs, gt),
-            Series::Float64(a) => compare!(Series::Float64, a, rhs, gt),
-            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, gt),
-            Series::Date32(a) => compare!(Series::Date32, a, rhs, gt),
-            Series::Date64(a) => compare!(Series::Date64, a, rhs, gt),
-            Series::Time32Millisecond(a) => compare!(Series::Time32Millisecond, a, rhs, gt),
-            Series::Time32Second(a) => compare!(Series::Time32Second, a, rhs, gt),
-            Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, rhs, gt),
-            Series::Time64Microsecond(a) => compare!(Series::Time64Microsecond, a, rhs, gt),
-            Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, rhs, gt),
-            Series::DurationMicrosecond(a) => compare!(Series::DurationMicrosecond, a, rhs, gt),
-            Series::DurationMillisecond(a) => compare!(Series::DurationMillisecond, a, rhs, gt),
-            Series::DurationSecond(a) => compare!(Series::DurationSecond, a, rhs, gt),
-            Series::TimestampNanosecond(a) => compare!(Series::TimestampNanosecond, a, rhs, gt),
-            Series::TimestampMicrosecond(a) => compare!(Series::TimestampMicrosecond, a, rhs, gt),
-            Series::TimestampMillisecond(a) => compare!(Series::TimestampMillisecond, a, rhs, gt),
-            Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, gt),
-            Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, gt),
-            Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, gt),
-            Series::LargeList(_a) => fill_bool(true, self.len()),
-        }
+        impl_compare!(self, rhs, gt)
     }
 
     /// Create a boolean mask by checking if lhs >= rhs.
     fn gt_eq(&self, rhs: &Series) -> BooleanChunked {
-        match self {
-            Series::Bool(a) => compare!(Series::Bool, a, rhs, gt_eq),
-            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, gt_eq),
-            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, gt_eq),
-            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, gt_eq),
-            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, gt_eq),
-            Series::Int8(a) => compare!(Series::Int8, a, rhs, gt_eq),
-            Series::Int16(a) => compare!(Series::Int16, a, rhs, gt_eq),
-            Series::Int32(a) => compare!(Series::Int32, a, rhs, gt_eq),
-            Series::Int64(a) => compare!(Series::Int64, a, rhs, gt_eq),
-            Series::Float32(a) => compare!(Series::Float32, a, rhs, gt_eq),
-            Series::Float64(a) => compare!(Series::Float64, a, rhs, gt_eq),
-            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, gt_eq),
-            Series::Date32(a) => compare!(Series::Date32, a, rhs, gt_eq),
-            Series::Date64(a) => compare!(Series::Date64, a, rhs, gt_eq),
-            Series::Time32Millisecond(a) => compare!(Series::Time32Millisecond, a, rhs, gt_eq),
-            Series::Time32Second(a) => compare!(Series::Time32Second, a, rhs, gt_eq),
-            Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, rhs, gt_eq),
-            Series::Time64Microsecond(a) => compare!(Series::Time64Microsecond, a, rhs, gt_eq),
-            Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, rhs, gt_eq),
-            Series::DurationMicrosecond(a) => compare!(Series::DurationMicrosecond, a, rhs, gt_eq),
-            Series::DurationMillisecond(a) => compare!(Series::DurationMillisecond, a, rhs, gt_eq),
-            Series::DurationSecond(a) => compare!(Series::DurationSecond, a, rhs, gt_eq),
-            Series::TimestampNanosecond(a) => compare!(Series::TimestampNanosecond, a, rhs, gt_eq),
-            Series::TimestampMicrosecond(a) => {
-                compare!(Series::TimestampMicrosecond, a, rhs, gt_eq)
-            }
-            Series::TimestampMillisecond(a) => {
-                compare!(Series::TimestampMillisecond, a, rhs, gt_eq)
-            }
-            Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, gt_eq),
-            Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, gt_eq),
-            Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, gt_eq),
-            Series::LargeList(_a) => fill_bool(true, self.len()),
-        }
+        impl_compare!(self, rhs, gt_eq)
     }
 
     /// Create a boolean mask by checking if lhs < rhs.
     fn lt(&self, rhs: &Series) -> BooleanChunked {
-        match self {
-            Series::Bool(a) => compare!(Series::Bool, a, rhs, lt),
-            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, lt),
-            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, lt),
-            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt),
-            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, lt),
-            Series::Int8(a) => compare!(Series::Int8, a, rhs, lt),
-            Series::Int16(a) => compare!(Series::Int16, a, rhs, lt),
-            Series::Int32(a) => compare!(Series::Int32, a, rhs, lt),
-            Series::Int64(a) => compare!(Series::Int64, a, rhs, lt),
-            Series::Float32(a) => compare!(Series::Float32, a, rhs, lt),
-            Series::Float64(a) => compare!(Series::Float64, a, rhs, lt),
-            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, lt),
-            Series::Date32(a) => compare!(Series::Date32, a, rhs, lt),
-            Series::Date64(a) => compare!(Series::Date64, a, rhs, lt),
-            Series::Time32Millisecond(a) => compare!(Series::Time32Millisecond, a, rhs, lt),
-            Series::Time32Second(a) => compare!(Series::Time32Second, a, rhs, lt),
-            Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, rhs, lt),
-            Series::Time64Microsecond(a) => compare!(Series::Time64Microsecond, a, rhs, lt),
-            Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, rhs, lt),
-            Series::DurationMicrosecond(a) => compare!(Series::DurationMicrosecond, a, rhs, lt),
-            Series::DurationMillisecond(a) => compare!(Series::DurationMillisecond, a, rhs, lt),
-            Series::DurationSecond(a) => compare!(Series::DurationSecond, a, rhs, lt),
-            Series::TimestampNanosecond(a) => compare!(Series::TimestampNanosecond, a, rhs, lt),
-            Series::TimestampMicrosecond(a) => compare!(Series::TimestampMicrosecond, a, rhs, lt),
-            Series::TimestampMillisecond(a) => compare!(Series::TimestampMillisecond, a, rhs, lt),
-            Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, lt),
-            Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, lt),
-            Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, lt),
-            Series::LargeList(_a) => fill_bool(true, self.len()),
-        }
+        impl_compare!(self, rhs, lt)
     }
 
     /// Create a boolean mask by checking if lhs <= rhs.
     fn lt_eq(&self, rhs: &Series) -> BooleanChunked {
-        match self {
-            Series::Bool(a) => compare!(Series::Bool, a, rhs, lt_eq),
-            Series::UInt8(a) => compare!(Series::UInt8, a, rhs, lt_eq),
-            Series::UInt16(a) => compare!(Series::UInt16, a, rhs, lt_eq),
-            Series::UInt32(a) => compare!(Series::UInt32, a, rhs, lt_eq),
-            Series::UInt64(a) => compare!(Series::UInt64, a, rhs, lt_eq),
-            Series::Int8(a) => compare!(Series::Int8, a, rhs, lt_eq),
-            Series::Int16(a) => compare!(Series::Int16, a, rhs, lt_eq),
-            Series::Int32(a) => compare!(Series::Int32, a, rhs, lt_eq),
-            Series::Int64(a) => compare!(Series::Int64, a, rhs, lt_eq),
-            Series::Float32(a) => compare!(Series::Float32, a, rhs, lt_eq),
-            Series::Float64(a) => compare!(Series::Float64, a, rhs, lt_eq),
-            Series::Utf8(a) => compare!(Series::Utf8, a, rhs, lt_eq),
-            Series::Date32(a) => compare!(Series::Date32, a, rhs, lt_eq),
-            Series::Date64(a) => compare!(Series::Date64, a, rhs, lt_eq),
-            Series::Time32Millisecond(a) => compare!(Series::Time32Millisecond, a, rhs, lt_eq),
-            Series::Time32Second(a) => compare!(Series::Time32Second, a, rhs, lt_eq),
-            Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, rhs, lt_eq),
-            Series::Time64Microsecond(a) => compare!(Series::Time64Microsecond, a, rhs, lt_eq),
-            Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, rhs, lt_eq),
-            Series::DurationMicrosecond(a) => compare!(Series::DurationMicrosecond, a, rhs, lt_eq),
-            Series::DurationMillisecond(a) => compare!(Series::DurationMillisecond, a, rhs, lt_eq),
-            Series::DurationSecond(a) => compare!(Series::DurationSecond, a, rhs, lt_eq),
-            Series::TimestampNanosecond(a) => compare!(Series::TimestampNanosecond, a, rhs, lt_eq),
-            Series::TimestampMicrosecond(a) => {
-                compare!(Series::TimestampMicrosecond, a, rhs, lt_eq)
-            }
-            Series::TimestampMillisecond(a) => {
-                compare!(Series::TimestampMillisecond, a, rhs, lt_eq)
-            }
-            Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, rhs, lt_eq),
-            Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, rhs, lt_eq),
-            Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, rhs, lt_eq),
-            Series::LargeList(_a) => fill_bool(true, self.len()),
-        }
+        impl_compare!(self, rhs, lt_eq)
     }
 }
 
@@ -242,6 +104,10 @@ impl<Rhs> ChunkCompare<Rhs> for Series
 where
     Rhs: NumComp,
 {
+    fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
+        self.eq(rhs)
+    }
+
     fn eq(&self, rhs: Rhs) -> BooleanChunked {
         apply_method_numeric_series!(self, eq, rhs)
     }
@@ -268,6 +134,10 @@ where
 }
 
 impl ChunkCompare<&str> for Series {
+    fn eq_missing(&self, rhs: &str) -> BooleanChunked {
+        self.eq(rhs)
+    }
+
     fn eq(&self, rhs: &str) -> BooleanChunked {
         match self {
             Series::Utf8(a) => a.eq(rhs),

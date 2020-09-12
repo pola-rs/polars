@@ -184,6 +184,9 @@ pub trait ChunkAgg<T> {
 /// }
 /// ```
 pub trait ChunkCompare<Rhs> {
+    /// Check for equality and regard missing values as equal.
+    fn eq_missing(&self, rhs: Rhs) -> BooleanChunked;
+
     /// Check for equality.
     fn eq(&self, rhs: Rhs) -> BooleanChunked;
 
