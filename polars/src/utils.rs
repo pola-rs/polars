@@ -36,6 +36,10 @@ macro_rules! exec_concurrent {
 }
 
 /// Just a wrapper structure. Useful for certain impl specializations
+/// This is for instance use to implement
+/// `impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>`
+/// as `Option<T::Native>` was alrady implemented:
+/// `impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>`
 pub struct Xob<T> {
     inner: T,
 }

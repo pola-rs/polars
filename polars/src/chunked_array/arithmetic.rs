@@ -30,12 +30,12 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
             {
                 match ($self.null_count(), $rhs.null_count()) {
                     (0, 0) => {
-                        $self
+                        let a: Xob<ChunkedArray<_>> = $self
                         .into_no_null_iter()
                         .zip($rhs.into_no_null_iter())
-                // TODO: use Xob to get rid of redundant Some<T>
-                        .map(|(left, right)| Some(left $operand right))
-                        .collect()
+                        .map(|(left, right)| left $operand right)
+                        .collect();
+                        a.into_inner()
                     },
                     (0, _) => {
                         $self
