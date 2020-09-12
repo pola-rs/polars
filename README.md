@@ -194,3 +194,7 @@ Additional cargo features:
     - SIMD operations
 * `paquet`
     - Read Apache Parquet format
+* `random`
+    - Generate array's with randomly sampled values
+* `ndarray`
+    - Convert from `DataFrame` to `ndarray`
