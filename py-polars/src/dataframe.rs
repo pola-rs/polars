@@ -204,13 +204,14 @@ impl PyDataFrame {
         self.df.frame_equal(&other.df)
     }
 
-    pub fn groupby(&self, by: &str, select: &str, agg: &str) -> PyResult<Self> {
-        let gb = self.df.groupby(by).map_err(PyPolarsEr::from)?;
-        let selection = gb.select(select);
+    pub fn groupby(&self, by: Vec<String>, select: Vec<String>, agg: &str) -> PyResult<Self> {
+        let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
+        let selection = gb.select(&select);
         let df = match agg {
             "min" => selection.min(),
             "max" => selection.max(),
             "mean" => selection.mean(),
+            "first" => selection.first(),
             "sum" => selection.sum(),
             "count" => selection.count(),
             a => Err(PolarsError::Other(format!("agg fn {} does not exists", a))),

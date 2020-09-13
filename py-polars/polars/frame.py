@@ -1,6 +1,6 @@
 from __future__ import annotations
 from .polars import PyDataFrame, PySeries
-from typing import Dict, Sequence, List, Tuple, Optional
+from typing import Dict, Sequence, List, Tuple, Optional, Union
 from .series import Series, wrap_s
 import numpy as np
 
@@ -121,8 +121,10 @@ class DataFrame:
     def tail(self, length: int = 5) -> DataFrame:
         return wrap_df(self._df.tail(length))
 
-    def groupby(self, by: str, select: str, agg: str) -> DataFrame:
-        return wrap_df(self._df.groupby(by, select, agg))
+    def groupby(self, by: Union[str, List[str]]) -> GroupBy:
+        if isinstance(by, str):
+            by = [by]
+        return GroupBy(self._df, by)
 
     def join(
         self, df: DataFrame, left_on: str, right_on: str, how="inner"
@@ -148,3 +150,39 @@ class DataFrame:
 
     def select_at_idx(self, idx: int) -> Series:
         return wrap_s(self._df.select_at_idx(idx))
+
+
+class GroupBy:
+    def __init__(self, df: DataFrame, by: List[str]):
+        self._df = df
+        self.by = by
+
+    def select(self, columns: Union[str, List[str]]) -> GBSelection:
+        if isinstance(columns, str):
+            columns = [columns]
+        return GBSelection(self._df, self.by, columns)
+
+
+class GBSelection:
+    def __init__(self, df: DataFrame, by: List[str], selection: List[str]):
+        self._df = df
+        self.by = by
+        self.selection = selection
+
+    def first(self):
+        return wrap_df(self._df.groupby(self.by, self.selection, "first"))
+
+    def sum(self):
+        return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
+
+    def min(self):
+        return wrap_df(self._df.groupby(self.by, self.selection, "min"))
+
+    def max(self):
+        return wrap_df(self._df.groupby(self.by, self.selection, "max"))
+
+    def count(self):
+        return wrap_df(self._df.groupby(self.by, self.selection, "count"))
+
+    def mean(self):
+        return wrap_df(self._df.groupby(self.by, self.selection, "mean"))

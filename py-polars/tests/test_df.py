@@ -68,29 +68,41 @@ def test_groupby():
             "c": [6, 5, 4, 3, 2, 1],
         }
     )
-    assert df.groupby(by="a", select="b", agg="sum").frame_equal(
-        DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]})
+    assert (
+        df.groupby("a")
+        .select("b")
+        .sum()
+        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
-    assert df.groupby(by="a", select="c", agg="sum").frame_equal(
-        DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]})
+    assert (
+        df.groupby("a")
+        .select("c")
+        .sum()
+        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
     )
-    assert df.groupby(by="a", select="b", agg="min").frame_equal(
-        DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]})
+    assert (
+        df.groupby("a")
+        .select("b")
+        .min()
+        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
     )
-    assert df.groupby(by="a", select="b", agg="min").frame_equal(
-        DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]})
+    assert (
+        df.groupby("a")
+        .select("b")
+        .max()
+        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
-    assert df.groupby(by="a", select="b", agg="max").frame_equal(
-        DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]})
+    assert (
+        df.groupby("a")
+        .select("b")
+        .mean()
+        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]}))
     )
-    assert df.groupby(by="a", select="b", agg="mean").frame_equal(
-        DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]})
-    )
-
-    # TODO: is false because count is u32
-    df.groupby(by="a", select="b", agg="count").frame_equal(
-        DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
-    )
+    #
+    # # TODO: is false because count is u32
+    # df.groupby(by="a", select="b", agg="count").frame_equal(
+    #     DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
+    # )
 
 
 def test_join():
