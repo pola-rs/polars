@@ -98,10 +98,10 @@ impl PySeries {
     }
 
     pub fn rename(&mut self, name: &str) {
-        self.series.rename(name)
+        self.series.rename(name);
     }
 
-    pub fn dtype(&self) -> &str {
+    pub fn dtype(&self) -> String {
         self.series.dtype().to_str()
     }
 
@@ -254,6 +254,7 @@ impl PySeries {
             Series::DurationNanosecond(ca) => PyList::new(python, ca),
             Series::Bool(ca) => PyList::new(python, ca),
             Series::Utf8(ca) => PyList::new(python, ca),
+            _ => todo!(),
         };
         pylist.to_object(python)
     }

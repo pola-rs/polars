@@ -146,5 +146,5 @@ class DataFrame:
     def drop_in_place(self, name: str) -> Series:
         return wrap_s(self._df.drop_in_place(name))
 
-    def select_idx(self, idx: int) -> Series:
-        return wrap_s(self._df.select_idx(idx))
+    def select_at_idx(self, idx: int) -> Series:
+        return wrap_s(self._df.select_at_idx(idx))

@@ -42,13 +42,13 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn to_csv(&self, path: &str, has_headers: bool, delimiter: u8) -> PyResult<()> {
+    pub fn to_csv(&mut self, path: &str, has_headers: bool, delimiter: u8) -> PyResult<()> {
         // TODO: use python file objects:
         let mut buf = std::fs::File::create(path)?;
         CsvWriter::new(&mut buf)
             .has_headers(has_headers)
             .with_delimiter(delimiter)
-            .finish(&self.df)
+            .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
@@ -123,16 +123,21 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn select_idx(&self, idx: usize) -> Option<PySeries> {
-        self.df.select_idx(idx).map(|s| PySeries::new(s.clone()))
+    pub fn select_at_idx(&self, idx: usize) -> Option<PySeries> {
+        self.df.select_at_idx(idx).map(|s| PySeries::new(s.clone()))
     }
 
     pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
         self.df.find_idx_by_name(name)
     }
 
-    pub fn column(&self, name: &str) -> Option<PySeries> {
-        self.df.column(name).map(|s| PySeries::new(s.clone()))
+    pub fn column(&self, name: &str) -> PyResult<PySeries> {
+        let series = self
+            .df
+            .column(name)
+            .map(|s| PySeries::new(s.clone()))
+            .map_err(PyPolarsEr::from)?;
+        Ok(series)
     }
 
     pub fn select(&self, selection: Vec<String>) -> PyResult<Self> {
