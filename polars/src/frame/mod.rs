@@ -396,9 +396,9 @@ impl DataFrame {
     ///     }
     /// }
     /// ```
-    pub fn select<'a, S>(&self, selection: S) -> Result<Self>
+    pub fn select<'a, S, J>(&self, selection: S) -> Result<Self>
     where
-        S: Selection<'a>,
+        S: Selection<'a, J>,
     {
         let selected = self.select_series(selection)?;
         let df = DataFrame::new_no_checks(selected);
@@ -406,9 +406,9 @@ impl DataFrame {
     }
 
     /// Select column(s) from this DataFrame and return them into a Vector.
-    pub fn select_series<'a, S>(&self, selection: S) -> Result<Vec<Series>>
+    pub fn select_series<'a, S, J>(&self, selection: S) -> Result<Vec<Series>>
     where
-        S: Selection<'a>,
+        S: Selection<'a, J>,
     {
         let cols = selection.to_selection_vec();
         let selected = cols

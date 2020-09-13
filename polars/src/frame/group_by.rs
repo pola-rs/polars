@@ -162,7 +162,7 @@ impl DataFrame {
     ///     .sum()
     /// }
     /// ```
-    pub fn groupby<'g, S: Selection<'g>>(&self, by: S) -> Result<GroupBy> {
+    pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
         let selected_keys = self.select_series(by)?;
 
         let groups = match selected_keys.len() {
@@ -457,9 +457,9 @@ impl AggFirst for LargeListChunked {}
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Select the column by which the determine the groups.
     /// You can select a single column or a slice of columns.
-    pub fn select<S>(mut self, selection: S) -> Self
+    pub fn select<S, J>(mut self, selection: S) -> Self
     where
-        S: Selection<'selection_str>,
+        S: Selection<'selection_str, J>,
     {
         self.selected_agg = Some(selection.to_selection_vec());
         self
