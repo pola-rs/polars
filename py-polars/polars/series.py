@@ -691,6 +691,8 @@ class Series:
         return array
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        if self._s.n_chunks() > 0:
+            self._s.rechunk(in_place=True)
 
         if method == "__call__":
             args = []
@@ -704,7 +706,9 @@ class Series:
             (out, ptr) = aligned_array_f64(self.len())
             kwargs["out"] = out
             ufunc(*args, **kwargs)
-            return wrap_s(series_from_ptr_f64(self.name, ptr, self.len()))
+            # get method for current dtype
+            f = getattr(self._s, f"unsafe_from_ptr_{self.dtype}")
+            return wrap_s(f(ptr, self.len()))
 
         else:
             return NotImplemented

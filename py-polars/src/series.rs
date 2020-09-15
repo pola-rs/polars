@@ -1,5 +1,7 @@
 use crate::error::PyPolarsEr;
+use crate::npy;
 use numpy::PyArray1;
+use polars::chunked_array::builder::get_bitmap;
 use polars::prelude::*;
 use pyo3::types::PyList;
 use pyo3::{exceptions::RuntimeError, prelude::*, Python};
@@ -317,6 +319,15 @@ impl PySeries {
             Series::Utf8(_) => self.to_list(),
             _ => todo!(),
         }
+    }
+
+    pub fn unsafe_from_ptr_f64(&self, ptr: usize, len: usize) -> Self {
+        let v: Vec<f64> = unsafe { npy::vec_from_ptr(ptr, len) };
+        let av = AlignedVec::new(v).unwrap();
+        let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
+        let ca =
+            ChunkedArray::new_from_owned_with_null_bitmap(self.name(), av, null_bitmap, null_count);
+        Self::new(Series::Float64(ca))
     }
 }
 
