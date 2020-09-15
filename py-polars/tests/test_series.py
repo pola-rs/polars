@@ -150,3 +150,9 @@ def test_numpy_interface():
 
     # TODO: sent pointer to Rust and take ownership of array.
     # https://stackoverflow.com/questions/37988849/safer-way-to-expose-a-c-allocated-memory-buffer-using-numpy-ctypes
+
+
+def test_ufunc():
+    a = Series("a", [1.0, 2.0, 3.0, 4.0])
+    print(np.multiply(a, 4))
+    assert False

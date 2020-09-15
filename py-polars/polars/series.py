@@ -2,8 +2,9 @@ from __future__ import annotations
 from .polars import PySeries
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any
-from .ffi import ptr_to_numpy
+from .ffi import ptr_to_numpy, aligned_array_f64
 import ctypes
+from numbers import Number
 
 
 def wrap_s(s: PySeries) -> Series:
@@ -463,6 +464,7 @@ class Series:
             if stride != 1:
                 return NotImplemented
             return self.slice(start, stop - start)
+        # TODO: implement
         return NotImplemented
 
     @property
@@ -687,3 +689,22 @@ class Series:
         array = ptr_to_numpy(ptr, self.len(), ptr_type)
         array.setflags(write=False)
         return array
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+
+        if method == "__call__":
+            args = []
+            for arg in inputs:
+                if isinstance(arg, Number):
+                    args.append(arg)
+                elif isinstance(arg, self.__class__):
+                    args.append(arg.view())
+                else:
+                    return NotImplemented
+            (out, ptr) = aligned_array_f64(self.len())
+            kwargs["out"] = out
+            ufunc(*args, **kwargs)
+            return kwargs["out"]
+
+        else:
+            return NotImplemented

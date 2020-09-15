@@ -12,8 +12,9 @@ use crate::{dataframe::PyDataFrame, series::PySeries};
 macro_rules! create_aligned_buffer {
     ($name:ident, $type:ty) => {
         #[pyfunction]
-        pub fn $name(size: usize) -> Py<PyArray1<$type>> {
-            npy::aligned_array::<$type>(size)
+        pub fn $name(size: usize) -> (Py<PyArray1<$type>>, usize) {
+            let (buf, ptr) = npy::aligned_array::<$type>(size);
+            (buf, ptr as usize)
         }
     };
 }

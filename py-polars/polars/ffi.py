@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.core
 from numpy import ctypeslib
 import ctypes
 from typing import Any
@@ -8,6 +9,8 @@ from .polars import (
     aligned_array_i32,
     aligned_array_i64,
 )
+
+# https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
 
 
 def ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
@@ -30,3 +33,13 @@ def ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     """
     ptr = ctypes.cast(ptr, ctypes.POINTER(ptr_type))
     return ctypeslib.as_array(ptr, (len,))
+
+
+def _as_float_ndarray(ptr, size):
+    """
+    https://github.com/maciejkula/python-rustlearn
+
+    Turn a float* to a numpy array.
+    """
+
+    return np.core.multiarray.int_asbuffer(ptr, size * np.float32.itemsize)

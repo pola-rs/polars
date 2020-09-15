@@ -2,7 +2,7 @@ use crate::error::PyPolarsEr;
 use numpy::PyArray1;
 use polars::prelude::*;
 use pyo3::types::PyList;
-use pyo3::{exceptions::RuntimeError, prelude::*};
+use pyo3::{exceptions::RuntimeError, prelude::*, Python};
 
 #[pyclass]
 #[repr(transparent)]
@@ -239,7 +239,7 @@ impl PySeries {
     }
 
     pub fn to_list(&self) -> PyObject {
-        let gil = pyo3::Python::acquire_gil();
+        let gil = Python::acquire_gil();
         let python = gil.python();
 
         let pylist = match &self.series {
@@ -263,6 +263,60 @@ impl PySeries {
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> usize {
         self.series.as_single_ptr()
+    }
+
+    /// Attempts to copy data to numpy arrays. If integer types have missing values
+    /// they will be casted to floating point values, where NaNs are used to represent missing.
+    /// Strings will be converted to python lists and booleans will be a numpy array if there are no
+    /// missing values, otherwise a python list is made.
+    pub fn to_numpy(&self) -> PyObject {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let series = &self.series;
+
+        // if has null values we use floats and np.nan to represent missing values
+        macro_rules! impl_to_np_array {
+            ($ca:ident, $float_type:ty) => {{
+                match $ca.cont_slice() {
+                    Ok(slice) => PyArray1::from_slice(py, slice).to_object(py),
+                    Err(_) => {
+                        if $ca.null_count() == 0 {
+                            let v = $ca.into_no_null_iter().collect::<Vec<_>>();
+                            PyArray1::from_vec(py, v).to_object(py)
+                        } else {
+                            let v = $ca
+                                .into_iter()
+                                .map(|opt_v| match opt_v {
+                                    Some(v) => v as $float_type,
+                                    None => <$float_type>::NAN,
+                                })
+                                .collect::<Vec<_>>();
+                            PyArray1::from_vec(py, v).to_object(py)
+                        }
+                    }
+                }
+            }};
+        }
+
+        match series {
+            Series::UInt32(ca) => impl_to_np_array!(ca, f32),
+            Series::Int32(ca) => impl_to_np_array!(ca, f32),
+            Series::Int64(ca) => impl_to_np_array!(ca, f64),
+            Series::Float32(ca) => impl_to_np_array!(ca, f32),
+            Series::Float64(ca) => impl_to_np_array!(ca, f64),
+            Series::Date32(ca) => impl_to_np_array!(ca, f32),
+            Series::Date64(ca) => impl_to_np_array!(ca, f64),
+            Series::Bool(ca) => {
+                if ca.null_count() == 0 {
+                    let v = ca.into_no_null_iter().collect::<Vec<_>>();
+                    PyArray1::from_vec(py, v).to_object(py)
+                } else {
+                    self.to_list()
+                }
+            }
+            Series::Utf8(_) => self.to_list(),
+            _ => todo!(),
+        }
     }
 }
 
