@@ -137,7 +137,7 @@ def test_view():
 
 
 def test_numpy_interface():
-    a = aligned_array_f32(10)
+    a, ptr = aligned_array_f32(10)
     assert a.dtype == np.float32
     assert a.shape == (10,)
     pointer, read_only_flag = a.__array_interface__["data"]
@@ -154,5 +154,6 @@ def test_numpy_interface():
 
 def test_ufunc():
     a = Series("a", [1.0, 2.0, 3.0, 4.0])
-    print(np.multiply(a, 4))
-    assert False
+    b = np.multiply(a, 4)
+    assert isinstance(b, Series)
+    assert b == [4, 8, 12, 16]

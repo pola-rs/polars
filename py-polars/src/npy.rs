@@ -107,3 +107,8 @@ pub fn aligned_array<T: Element>(size: usize) -> (Py<PyArray1<T>>, *mut T) {
         (PyArray1::from_owned_ptr(py, ptr).to_owned(), buffer_ptr)
     }
 }
+
+pub unsafe fn vec_from_ptr<T>(ptr: usize, len: usize) -> Vec<T> {
+    let ptr = ptr as *mut T;
+    Vec::from_raw_parts(ptr, len, len)
+}

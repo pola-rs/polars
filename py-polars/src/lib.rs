@@ -8,6 +8,8 @@ pub mod npy;
 pub mod series;
 
 use crate::{dataframe::PyDataFrame, series::PySeries};
+use polars::chunked_array::builder::AlignedVec;
+use polars::prelude::*;
 
 macro_rules! create_aligned_buffer {
     ($name:ident, $type:ty) => {
@@ -24,6 +26,14 @@ create_aligned_buffer!(aligned_array_f64, f64);
 create_aligned_buffer!(aligned_array_i32, i32);
 create_aligned_buffer!(aligned_array_i64, i64);
 
+#[pyfunction]
+pub fn series_from_ptr_f64(name: &str, ptr: usize, len: usize) -> PySeries {
+    let v: Vec<f64> = unsafe { npy::vec_from_ptr(ptr, len) };
+    let av = AlignedVec::new(v).unwrap();
+    let ca = ChunkedArray::new_from_aligned_vec(name, av);
+    PySeries::new(Series::Float64(ca))
+}
+
 #[pymodule]
 fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -32,5 +42,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(aligned_array_f64)).unwrap();
     m.add_wrapped(wrap_pyfunction!(aligned_array_i32)).unwrap();
     m.add_wrapped(wrap_pyfunction!(aligned_array_i64)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(series_from_ptr_f64))
+        .unwrap();
     Ok(())
 }

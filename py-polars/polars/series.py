@@ -2,7 +2,7 @@ from __future__ import annotations
 from .polars import PySeries
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any
-from .ffi import ptr_to_numpy, aligned_array_f64
+from .ffi import ptr_to_numpy, aligned_array_f64, series_from_ptr_f64
 import ctypes
 from numbers import Number
 
@@ -704,7 +704,7 @@ class Series:
             (out, ptr) = aligned_array_f64(self.len())
             kwargs["out"] = out
             ufunc(*args, **kwargs)
-            return kwargs["out"]
+            return wrap_s(series_from_ptr_f64(self.name, ptr, self.len()))
 
         else:
             return NotImplemented

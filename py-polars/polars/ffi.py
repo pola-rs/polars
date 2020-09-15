@@ -8,6 +8,7 @@ from .polars import (
     aligned_array_f64,
     aligned_array_i32,
     aligned_array_i64,
+    series_from_ptr_f64,
 )
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
