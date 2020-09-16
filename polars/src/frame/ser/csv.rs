@@ -121,9 +121,9 @@ where
         self
     }
 
-    /// Set the size of the write buffers. Buffer size is the amount of rows written at once.
-    pub fn with_buffer_size(mut self, buffer_size: usize) -> Self {
-        self.buffer_size = buffer_size;
+    /// Set the size of the write buffers. Batch size is the amount of rows written at once.
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.buffer_size = batch_size;
         self
     }
 }

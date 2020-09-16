@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars = {path = "../polars"}
+polars = {path = "../polars", features = ["parquet"]}
 pyo3 = {version = "0.11", features = ["extension-module"] }
 thiserror = "1.0.20"
 numpy = "0.11"

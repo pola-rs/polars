@@ -28,26 +28,70 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    pub fn from_csv(path: &str, infer_schema_length: usize, batch_size: usize) -> PyResult<Self> {
+    pub fn from_csv(
+        path: &str,
+        infer_schema_length: usize,
+        batch_size: usize,
+        has_header: bool,
+        ignore_errors: bool,
+    ) -> PyResult<Self> {
         // TODO: use python file objects:
         // https://github.com/mre/hyperjson/blob/e1a0515f8d033f24b9fba64a0a4c77df841bbd1b/src/lib.rs#L20
         let file = std::fs::File::open(path)?;
 
-        let df = CsvReader::new(file)
+        let reader = CsvReader::new(file)
             .infer_schema(Some(infer_schema_length))
-            .has_header(true)
+            .has_header(has_header)
+            .with_batch_size(batch_size);
+
+        let reader = if ignore_errors {
+            reader.with_ignore_parser_error()
+        } else {
+            reader
+        };
+        let df = reader.finish().map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    #[staticmethod]
+    pub fn from_parquet(path: &str, batch_size: usize) -> PyResult<Self> {
+        let file = std::fs::File::open(path)?;
+        let df = ParquetReader::new(file)
             .with_batch_size(batch_size)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn to_csv(&mut self, path: &str, has_headers: bool, delimiter: u8) -> PyResult<()> {
+    #[staticmethod]
+    pub fn from_ipc(path: &str) -> PyResult<Self> {
+        let file = std::fs::File::open(path)?;
+        let df = IPCReader::new(file).finish().map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    pub fn to_csv(
+        &mut self,
+        path: &str,
+        batch_size: usize,
+        has_headers: bool,
+        delimiter: u8,
+    ) -> PyResult<()> {
         // TODO: use python file objects:
         let mut buf = std::fs::File::create(path)?;
         CsvWriter::new(&mut buf)
             .has_headers(has_headers)
             .with_delimiter(delimiter)
+            .with_batch_size(batch_size)
+            .finish(&mut self.df)
+            .map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
+    pub fn to_ipc(&mut self, path: &str, batch_size: usize) -> PyResult<()> {
+        let mut buf = std::fs::File::create(path)?;
+        IPCWriter::new(&mut buf)
+            .with_batch_size(batch_size)
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
