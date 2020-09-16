@@ -52,6 +52,10 @@ class Series:
                 self._s = PySeries.new_i64(name, values)
             elif dtype == np.int32:
                 self._s = PySeries.new_i32(name, values)
+            elif dtype == np.int16:
+                self._s = PySeries.new_i16(name, values)
+            elif dtype == np.int8:
+                self._s = PySeries.new_i8(name, values)
             elif dtype == np.float32:
                 self._s = PySeries.new_f32(name, values)
             elif dtype == np.float64:
@@ -60,10 +64,14 @@ class Series:
                 self._s = PySeries.new_str(name, values)
             elif dtype == np.bool:
                 self._s = PySeries.new_bool(name, values)
+            elif dtype == np.uint8:
+                self._s = PySeries.new_u8(name, values)
+            elif dtype == np.uint16:
+                self._s = PySeries.new_u16(name, values)
             elif dtype == np.uint32:
                 self._s = PySeries.new_u32(name, values)
             elif dtype == np.uint64:
-                self._s = PySeries.new_u32(name, np.array(values, dtype=np.uint32))
+                self._s = PySeries.new_u64(name, values)
             else:
                 raise ValueError(f"dtype: {dtype} not known")
 

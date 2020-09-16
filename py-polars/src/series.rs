@@ -36,12 +36,16 @@ macro_rules! init_method {
     };
 }
 
+init_method!(new_i8, i8);
 init_method!(new_i32, i32);
 init_method!(new_i64, i64);
 init_method!(new_f32, f32);
 init_method!(new_f64, f64);
 init_method!(new_bool, bool);
+init_method!(new_u8, u8);
+init_method!(new_u16, u16);
 init_method!(new_u32, u32);
+init_method!(new_u64, u64);
 init_method!(new_date32, i32);
 init_method!(new_date64, i64);
 init_method!(new_duration_ns, i64);
@@ -322,7 +326,7 @@ impl PySeries {
     }
 
     pub fn unsafe_from_ptr_f64(&self, ptr: usize, len: usize) -> Self {
-        let v: Vec<f64> = unsafe { npy::vec_from_ptr(ptr, len) };
+        let v = unsafe { npy::vec_from_ptr(ptr, len) };
         let av = AlignedVec::new(v).unwrap();
         let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
         let ca =
@@ -330,6 +334,36 @@ impl PySeries {
         Self::new(Series::Float64(ca))
     }
 }
+
+macro_rules! impl_unsafe_from_ptr {
+    ($name:ident, $series_variant:ident) => {
+        #[pymethods]
+        impl PySeries {
+            pub fn $name(&self, ptr: usize, len: usize) -> Self {
+                let v = unsafe { npy::vec_from_ptr(ptr, len) };
+                let av = AlignedVec::new(v).unwrap();
+                let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
+                let ca = ChunkedArray::new_from_owned_with_null_bitmap(
+                    self.name(),
+                    av,
+                    null_bitmap,
+                    null_count,
+                );
+                Self::new(Series::$series_variant(ca))
+            }
+        }
+    };
+}
+
+impl_unsafe_from_ptr!(unsafe_from_ptr_f32, Float32);
+impl_unsafe_from_ptr!(unsafe_from_ptr_u8, UInt8);
+impl_unsafe_from_ptr!(unsafe_from_ptr_u16, UInt16);
+impl_unsafe_from_ptr!(unsafe_from_ptr_u32, UInt32);
+impl_unsafe_from_ptr!(unsafe_from_ptr_u64, UInt64);
+impl_unsafe_from_ptr!(unsafe_from_ptr_i8, Int8);
+impl_unsafe_from_ptr!(unsafe_from_ptr_i16, Int16);
+impl_unsafe_from_ptr!(unsafe_from_ptr_i32, Int32);
+impl_unsafe_from_ptr!(unsafe_from_ptr_i64, Int64);
 
 macro_rules! impl_cast {
     ($name:ident, $type:ty) => {
