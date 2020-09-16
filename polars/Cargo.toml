@@ -12,7 +12,7 @@ readme = "../README.md"
 
 [features]
 pretty = ["prettytable-rs"]
-simd = ["arrow/packed_simd"]
+simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono"]
 random = ["rand", "rand_distr"]
