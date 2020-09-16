@@ -137,6 +137,7 @@ def test_view():
 
 
 def test_numpy_interface():
+    # this isn't used anymore.
     a, ptr = aligned_array_f32(10)
     assert a.dtype == np.float32
     assert a.shape == (10,)
@@ -157,3 +158,14 @@ def test_ufunc():
     b = np.multiply(a, 4)
     assert isinstance(b, Series)
     assert b == [4, 8, 12, 16]
+
+    # test if null bitmask is preserved
+    a = Series("a", [1.0, None, 3.0], nullable=True)
+    b = np.exp(a)
+    assert b.null_count() == 1
+
+
+def test_get():
+    a = Series("a", [1, 2, 3])
+    assert a[0] == 1
+    assert a[:2] == [1, 2]

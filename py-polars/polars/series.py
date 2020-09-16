@@ -236,8 +236,10 @@ class Series:
             if stride != 1:
                 return NotImplemented
             return self.slice(start, stop - start)
-        # TODO: implement
-        return NotImplemented
+        f = getattr(self._s, f"get_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return f(item)
 
     @property
     def dtype(self):

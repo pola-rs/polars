@@ -340,16 +340,33 @@ impl PySeries {
             _ => todo!(),
         }
     }
-
-    pub fn unsafe_from_ptr_f64(&self, ptr: usize, len: usize) -> Self {
-        let v = unsafe { npy::vec_from_ptr(ptr, len) };
-        let av = AlignedVec::new(v).unwrap();
-        let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
-        let ca =
-            ChunkedArray::new_from_owned_with_null_bitmap(self.name(), av, null_bitmap, null_count);
-        Self::new(Series::Float64(ca))
-    }
 }
+
+macro_rules! impl_get {
+    ($name:ident, $series_variant:ident, $type:ty) => {
+        #[pymethods]
+        impl PySeries {
+            pub fn $name(&self, index: usize) -> Option<$type> {
+                if let Series::$series_variant(ca) = &self.series {
+                    ca.get(index)
+                } else {
+                    None
+                }
+            }
+        }
+    };
+}
+
+impl_get!(get_f32, Float32, f32);
+impl_get!(get_f64, Float64, f64);
+impl_get!(get_u8, UInt8, u8);
+impl_get!(get_u16, UInt16, u16);
+impl_get!(get_u32, UInt32, u32);
+impl_get!(get_u64, UInt64, u64);
+impl_get!(get_i8, Int8, i8);
+impl_get!(get_i16, Int16, i16);
+impl_get!(get_i32, Int32, i32);
+impl_get!(get_i64, Int64, i64);
 
 macro_rules! impl_unsafe_from_ptr {
     ($name:ident, $series_variant:ident) => {
@@ -372,6 +389,7 @@ macro_rules! impl_unsafe_from_ptr {
 }
 
 impl_unsafe_from_ptr!(unsafe_from_ptr_f32, Float32);
+impl_unsafe_from_ptr!(unsafe_from_ptr_f64, Float64);
 impl_unsafe_from_ptr!(unsafe_from_ptr_u8, UInt8);
 impl_unsafe_from_ptr!(unsafe_from_ptr_u16, UInt16);
 impl_unsafe_from_ptr!(unsafe_from_ptr_u32, UInt32);
