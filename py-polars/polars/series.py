@@ -445,3 +445,10 @@ class Series:
 
         else:
             return NotImplemented
+
+    def to_numpy(self) -> np.ndarray:
+        a = self._s.to_numpy()
+        # strings are returned in lists
+        if isinstance(a, list):
+            return np.array(a)
+        return a

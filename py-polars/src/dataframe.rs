@@ -263,4 +263,26 @@ impl PyDataFrame {
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
+
+    pub fn pivot(
+        &self,
+        by: Vec<String>,
+        pivot_column: &str,
+        values_column: &str,
+        agg: &str,
+    ) -> PyResult<Self> {
+        let mut gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
+        let pivot = gb.pivot(pivot_column, values_column);
+        let df = match agg {
+            "first" => pivot.first(),
+            "min" => pivot.min(),
+            "max" => pivot.max(),
+            "mean" => pivot.mean(),
+            "median" => pivot.median(),
+            "sum" => pivot.sum(),
+            a => Err(PolarsError::Other(format!("agg fn {} does not exists", a))),
+        };
+        let df = df.map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
 }

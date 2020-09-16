@@ -15,7 +15,7 @@ ndarray = "0.13.1"
 
 
 [lib]
-name = "polars"
+name = "pypolars"
 crate-type = ["cdylib"]
 
 

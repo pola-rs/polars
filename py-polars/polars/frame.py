@@ -78,6 +78,10 @@ class DataFrame:
         if isinstance(item, tuple):
             row_selection, col_selection = item
 
+            if isinstance(row_selection, slice):
+                series = self.__getitem__(col_selection)
+                wrap_s(series[row_selection])
+
             # column selection can be "a" and ["a", "b"]
             if isinstance(col_selection, str):
                 col_selection = [col_selection]
@@ -87,6 +91,9 @@ class DataFrame:
         # select single column
         if isinstance(item, str):
             return wrap_s(self._df.column(item))
+
+        if isinstance(item, int):
+            return wrap_s(self._df.select_at_idx(item))
 
         # select multiple columns
         if isinstance(item, Sequence) and isinstance(item[0], str):
@@ -105,6 +112,7 @@ class DataFrame:
                 return wrap_df(self._df.filter(item.inner()))
             if dtype == "u32":
                 return wrap_df(self._df.take_with_series(item.inner()))
+        return NotImplemented
 
     def __len__(self):
         return self.height
@@ -188,6 +196,39 @@ class GroupBy:
         if isinstance(columns, str):
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
+
+    def pivot(self, pivot_column: str, values_column: str) -> PivotOps:
+        return PivotOps(self._df, self.by, pivot_column, values_column)
+
+
+class PivotOps:
+    def __init__(
+        self, df: DataFrame, by: List[str], pivot_column: str, values_column: str
+    ):
+        self._df = df
+        self.by = by
+        self.pivot_column = pivot_column
+        self.values_column = values_column
+
+    def first(self):
+        wrap_df(self._df.pivot(self.by, self.pivot_column, self.values_column, "first"))
+
+    def sum(self):
+        wrap_df(self._df.pivot(self.by, self.pivot_column, self.values_column, "sum"))
+
+    def min(self):
+        wrap_df(self._df.pivot(self.by, self.pivot_column, self.values_column, "min"))
+
+    def max(self):
+        wrap_df(self._df.pivot(self.by, self.pivot_column, self.values_column, "max"))
+
+    def mean(self):
+        wrap_df(self._df.pivot(self.by, self.pivot_column, self.values_column, "mean"))
+
+    def median(self):
+        wrap_df(
+            self._df.pivot(self.by, self.pivot_column, self.values_column, "median")
+        )
 
 
 class GBSelection:
