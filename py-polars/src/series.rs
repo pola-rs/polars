@@ -37,6 +37,7 @@ macro_rules! init_method {
 }
 
 init_method!(new_i8, i8);
+init_method!(new_i16, i16);
 init_method!(new_i32, i32);
 init_method!(new_i64, i64);
 init_method!(new_f32, f32);
@@ -66,12 +67,17 @@ macro_rules! init_method_opt {
     };
 }
 
+init_method_opt!(new_opt_u8, u8);
+init_method_opt!(new_opt_u16, u16);
+init_method_opt!(new_opt_u32, u32);
+init_method_opt!(new_opt_u64, u64);
+init_method_opt!(new_opt_i8, i8);
+init_method_opt!(new_opt_i16, i16);
 init_method_opt!(new_opt_i32, i32);
 init_method_opt!(new_opt_i64, i64);
 init_method_opt!(new_opt_f32, f32);
 init_method_opt!(new_opt_f64, f64);
 init_method_opt!(new_opt_bool, bool);
-init_method_opt!(new_opt_u32, u32);
 init_method_opt!(new_opt_date32, i32);
 init_method_opt!(new_opt_date64, i64);
 init_method_opt!(new_opt_duration_ns, i64);
@@ -249,7 +255,12 @@ impl PySeries {
         let python = gil.python();
 
         let pylist = match &self.series {
+            Series::UInt8(ca) => PyList::new(python, ca),
+            Series::UInt16(ca) => PyList::new(python, ca),
             Series::UInt32(ca) => PyList::new(python, ca),
+            Series::UInt64(ca) => PyList::new(python, ca),
+            Series::Int8(ca) => PyList::new(python, ca),
+            Series::Int16(ca) => PyList::new(python, ca),
             Series::Int32(ca) => PyList::new(python, ca),
             Series::Int64(ca) => PyList::new(python, ca),
             Series::Float32(ca) => PyList::new(python, ca),
@@ -305,7 +316,12 @@ impl PySeries {
         }
 
         match series {
+            Series::UInt8(ca) => impl_to_np_array!(ca, f32),
+            Series::UInt16(ca) => impl_to_np_array!(ca, f32),
             Series::UInt32(ca) => impl_to_np_array!(ca, f32),
+            Series::UInt64(ca) => impl_to_np_array!(ca, f64),
+            Series::Int8(ca) => impl_to_np_array!(ca, f32),
+            Series::Int16(ca) => impl_to_np_array!(ca, f32),
             Series::Int32(ca) => impl_to_np_array!(ca, f32),
             Series::Int64(ca) => impl_to_np_array!(ca, f64),
             Series::Float32(ca) => impl_to_np_array!(ca, f32),
@@ -377,7 +393,12 @@ macro_rules! impl_cast {
     };
 }
 
+impl_cast!(cast_u8, UInt8Type);
+impl_cast!(cast_u16, UInt16Type);
 impl_cast!(cast_u32, UInt32Type);
+impl_cast!(cast_u64, UInt64Type);
+impl_cast!(cast_i8, Int8Type);
+impl_cast!(cast_i16, Int16Type);
 impl_cast!(cast_i32, Int32Type);
 impl_cast!(cast_i64, Int64Type);
 impl_cast!(cast_f32, Float32Type);
@@ -398,22 +419,42 @@ macro_rules! impl_arithmetic {
     };
 }
 
+impl_arithmetic!(add_u8, u8, +);
+impl_arithmetic!(add_u16, u16, +);
 impl_arithmetic!(add_u32, u32, +);
+impl_arithmetic!(add_u64, u64, +);
+impl_arithmetic!(add_i8, i8, +);
+impl_arithmetic!(add_i16, i16, +);
 impl_arithmetic!(add_i32, i32, +);
 impl_arithmetic!(add_i64, i64, +);
 impl_arithmetic!(add_f32, f32, +);
 impl_arithmetic!(add_f64, f64, +);
+impl_arithmetic!(sub_u8, u8, -);
+impl_arithmetic!(sub_u16, u16, -);
 impl_arithmetic!(sub_u32, u32, -);
+impl_arithmetic!(sub_u64, u64, -);
+impl_arithmetic!(sub_i8, i8, -);
+impl_arithmetic!(sub_i16, i16, -);
 impl_arithmetic!(sub_i32, i32, -);
 impl_arithmetic!(sub_i64, i64, -);
 impl_arithmetic!(sub_f32, f32, -);
 impl_arithmetic!(sub_f64, f64, -);
+impl_arithmetic!(div_u8, u8, /);
+impl_arithmetic!(div_u16, u16, /);
 impl_arithmetic!(div_u32, u32, /);
+impl_arithmetic!(div_u64, u64, /);
+impl_arithmetic!(div_i8, i8, /);
+impl_arithmetic!(div_i16, i16, /);
 impl_arithmetic!(div_i32, i32, /);
 impl_arithmetic!(div_i64, i64, /);
 impl_arithmetic!(div_f32, f32, /);
 impl_arithmetic!(div_f64, f64, /);
+impl_arithmetic!(mul_u8, u8, *);
+impl_arithmetic!(mul_u16, u16, *);
 impl_arithmetic!(mul_u32, u32, *);
+impl_arithmetic!(mul_u64, u64, *);
+impl_arithmetic!(mul_i8, i8, *);
+impl_arithmetic!(mul_i16, i16, *);
 impl_arithmetic!(mul_i32, i32, *);
 impl_arithmetic!(mul_i64, i64, *);
 impl_arithmetic!(mul_f32, f32, *);
@@ -430,22 +471,42 @@ macro_rules! impl_rhs_arithmetic {
     };
 }
 
+impl_rhs_arithmetic!(add_u8_rhs, u8, add);
+impl_rhs_arithmetic!(add_u16_rhs, u16, add);
 impl_rhs_arithmetic!(add_u32_rhs, u32, add);
+impl_rhs_arithmetic!(add_u64_rhs, u64, add);
+impl_rhs_arithmetic!(add_i8_rhs, i8, add);
+impl_rhs_arithmetic!(add_i16_rhs, i16, add);
 impl_rhs_arithmetic!(add_i32_rhs, i32, add);
 impl_rhs_arithmetic!(add_i64_rhs, i64, add);
 impl_rhs_arithmetic!(add_f32_rhs, f32, add);
 impl_rhs_arithmetic!(add_f64_rhs, f64, add);
+impl_rhs_arithmetic!(sub_u8_rhs, u8, sub);
+impl_rhs_arithmetic!(sub_u16_rhs, u16, sub);
 impl_rhs_arithmetic!(sub_u32_rhs, u32, sub);
+impl_rhs_arithmetic!(sub_u64_rhs, u64, sub);
+impl_rhs_arithmetic!(sub_i8_rhs, i8, sub);
+impl_rhs_arithmetic!(sub_i16_rhs, i16, sub);
 impl_rhs_arithmetic!(sub_i32_rhs, i32, sub);
 impl_rhs_arithmetic!(sub_i64_rhs, i64, sub);
 impl_rhs_arithmetic!(sub_f32_rhs, f32, sub);
 impl_rhs_arithmetic!(sub_f64_rhs, f64, sub);
+impl_rhs_arithmetic!(div_u8_rhs, u8, div);
+impl_rhs_arithmetic!(div_u16_rhs, u16, div);
 impl_rhs_arithmetic!(div_u32_rhs, u32, div);
+impl_rhs_arithmetic!(div_u64_rhs, u64, div);
+impl_rhs_arithmetic!(div_i8_rhs, i8, div);
+impl_rhs_arithmetic!(div_i16_rhs, i16, div);
 impl_rhs_arithmetic!(div_i32_rhs, i32, div);
 impl_rhs_arithmetic!(div_i64_rhs, i64, div);
 impl_rhs_arithmetic!(div_f32_rhs, f32, div);
 impl_rhs_arithmetic!(div_f64_rhs, f64, div);
+impl_rhs_arithmetic!(mul_u8_rhs, u8, mul);
+impl_rhs_arithmetic!(mul_u16_rhs, u16, mul);
 impl_rhs_arithmetic!(mul_u32_rhs, u32, mul);
+impl_rhs_arithmetic!(mul_u64_rhs, u64, mul);
+impl_rhs_arithmetic!(mul_i8_rhs, i8, mul);
+impl_rhs_arithmetic!(mul_i16_rhs, i16, mul);
 impl_rhs_arithmetic!(mul_i32_rhs, i32, mul);
 impl_rhs_arithmetic!(mul_i64_rhs, i64, mul);
 impl_rhs_arithmetic!(mul_f32_rhs, f32, mul);
@@ -462,7 +523,12 @@ macro_rules! impl_sum {
     };
 }
 
+impl_sum!(sum_u8, u8);
+impl_sum!(sum_u16, u16);
 impl_sum!(sum_u32, u32);
+impl_sum!(sum_u64, u64);
+impl_sum!(sum_i8, i8);
+impl_sum!(sum_i16, i16);
 impl_sum!(sum_i32, i32);
 impl_sum!(sum_i64, i64);
 impl_sum!(sum_f32, f32);
@@ -479,7 +545,12 @@ macro_rules! impl_min {
     };
 }
 
+impl_min!(min_u8, u8);
+impl_min!(min_u16, u16);
 impl_min!(min_u32, u32);
+impl_min!(min_u64, u64);
+impl_min!(min_i8, i8);
+impl_min!(min_i16, i16);
 impl_min!(min_i32, i32);
 impl_min!(min_i64, i64);
 impl_min!(min_f32, f32);
@@ -496,7 +567,12 @@ macro_rules! impl_max {
     };
 }
 
+impl_max!(max_u8, u8);
+impl_max!(max_u16, u16);
 impl_max!(max_u32, u32);
+impl_max!(max_u64, u64);
+impl_max!(max_i8, i8);
+impl_max!(max_i16, i16);
 impl_max!(max_i32, i32);
 impl_max!(max_i64, i64);
 impl_max!(max_f32, f32);
@@ -513,7 +589,12 @@ macro_rules! impl_mean {
     };
 }
 
+impl_mean!(mean_u8, u8);
+impl_mean!(mean_u16, u16);
 impl_mean!(mean_u32, u32);
+impl_mean!(mean_u64, u64);
+impl_mean!(mean_i8, i8);
+impl_mean!(mean_i16, i16);
 impl_mean!(mean_i32, i32);
 impl_mean!(mean_i64, i64);
 impl_mean!(mean_f32, f32);
@@ -530,7 +611,12 @@ macro_rules! impl_eq_num {
     };
 }
 
+impl_eq_num!(eq_u8, u8);
+impl_eq_num!(eq_u16, u16);
 impl_eq_num!(eq_u32, u32);
+impl_eq_num!(eq_u64, u64);
+impl_eq_num!(eq_i8, i8);
+impl_eq_num!(eq_i16, i16);
 impl_eq_num!(eq_i32, i32);
 impl_eq_num!(eq_i64, i64);
 impl_eq_num!(eq_f32, f32);
@@ -548,7 +634,12 @@ macro_rules! impl_neq_num {
     };
 }
 
+impl_neq_num!(neq_u8, u8);
+impl_neq_num!(neq_u16, u16);
 impl_neq_num!(neq_u32, u32);
+impl_neq_num!(neq_u64, u64);
+impl_neq_num!(neq_i8, i8);
+impl_neq_num!(neq_i16, i16);
 impl_neq_num!(neq_i32, i32);
 impl_neq_num!(neq_i64, i64);
 impl_neq_num!(neq_f32, f32);
@@ -566,7 +657,12 @@ macro_rules! impl_gt_num {
     };
 }
 
+impl_gt_num!(gt_u8, u8);
+impl_gt_num!(gt_u16, u16);
 impl_gt_num!(gt_u32, u32);
+impl_gt_num!(gt_u64, u64);
+impl_gt_num!(gt_i8, i8);
+impl_gt_num!(gt_i16, i16);
 impl_gt_num!(gt_i32, i32);
 impl_gt_num!(gt_i64, i64);
 impl_gt_num!(gt_f32, f32);
@@ -584,7 +680,12 @@ macro_rules! impl_gt_eq_num {
     };
 }
 
+impl_gt_eq_num!(gt_eq_u8, u8);
+impl_gt_eq_num!(gt_eq_u16, u16);
 impl_gt_eq_num!(gt_eq_u32, u32);
+impl_gt_eq_num!(gt_eq_u64, u64);
+impl_gt_eq_num!(gt_eq_i8, i8);
+impl_gt_eq_num!(gt_eq_i16, i16);
 impl_gt_eq_num!(gt_eq_i32, i32);
 impl_gt_eq_num!(gt_eq_i64, i64);
 impl_gt_eq_num!(gt_eq_f32, f32);
@@ -602,7 +703,12 @@ macro_rules! impl_lt_num {
     };
 }
 
+impl_lt_num!(lt_u8, u8);
+impl_lt_num!(lt_u16, u16);
 impl_lt_num!(lt_u32, u32);
+impl_lt_num!(lt_u64, u64);
+impl_lt_num!(lt_i8, i8);
+impl_lt_num!(lt_i16, i16);
 impl_lt_num!(lt_i32, i32);
 impl_lt_num!(lt_i64, i64);
 impl_lt_num!(lt_f32, f32);
@@ -620,7 +726,12 @@ macro_rules! impl_lt_eq_num {
     };
 }
 
+impl_lt_eq_num!(lt_eq_u8, u8);
+impl_lt_eq_num!(lt_eq_u16, u16);
 impl_lt_eq_num!(lt_eq_u32, u32);
+impl_lt_eq_num!(lt_eq_u64, u64);
+impl_lt_eq_num!(lt_eq_i8, i8);
+impl_lt_eq_num!(lt_eq_i16, i16);
 impl_lt_eq_num!(lt_eq_i32, i32);
 impl_lt_eq_num!(lt_eq_i64, i64);
 impl_lt_eq_num!(lt_eq_f32, f32);

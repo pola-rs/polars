@@ -107,360 +107,124 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.eq(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.eq_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.eq_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.eq_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.eq_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.eq_f64(other))
-        if dtype == "str":
-            return Series.from_pyseries(self._s.eq_str(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.eq_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.eq_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.eq_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.eq_i64(other))
-        raise NotImplemented
+        f = getattr(self._s, f"eq_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __ne__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.neq(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.neq_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.neq_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.neq_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.neq_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.neq_f64(other))
-        if dtype == "str":
-            return Series.from_pyseries(self._s.neq_str(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.neq_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.neq_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.neq_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.neq_i64(other))
-        raise NotImplemented
+        f = getattr(self._s, f"neq_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __gt__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.gt(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.gt_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.gt_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.gt_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.gt_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.gt_f64(other))
-        if dtype == "str":
-            return Series.from_pyseries(self._s.gt_str(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.gt_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.gt_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.gt_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.gt_i64(other))
-        raise NotImplemented
+        f = getattr(self._s, f"gt_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __lt__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.lt(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.lt_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.lt_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.lt_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.lt_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.lt_f64(other))
-        if dtype == "str":
-            return Series.from_pyseries(self._s.lt_str(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.lt_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.lt_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.lt_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.lt_i64(other))
-        raise NotImplemented
+        f = getattr(self._s, f"lt_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __ge__(self, other) -> Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.gt_eq(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.gt_eq_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.gt_eq_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.gt_eq_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.gt_eq_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.gt_eq_f64(other))
-        if dtype == "str":
-            return Series.from_pyseries(self._s.gt_eq_str(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.gt_eq_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.gt_eq_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.gt_eq_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.gt_eq_i64(other))
-        raise NotImplemented
+        f = getattr(self._s, f"gt_eq_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __le__(self, other) -> Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.lt_eq(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.lt_eq_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.lt_eq_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.lt_eq_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.lt_eq_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.lt_eq_f64(other))
-        if dtype == "str":
-            return Series.from_pyseries(self._s.lt_eq_str(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.lt_eq_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.lt_eq_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.lt_eq_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.lt_eq_i64(other))
-        raise NotImplemented
+        f = getattr(self._s, f"lt_eq_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __add__(self, other) -> Series:
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.add(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.add_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.add_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.add_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.add_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.add_f64(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.add_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.add_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.add_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.add_i64(other))
-        return NotImplemented
+        f = getattr(self._s, f"add_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __sub__(self, other) -> Series:
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.sub(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.sub_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.sub_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.sub_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.sub_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.sub_f64(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.sub_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.sub_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.sub_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.sub_i64(other))
-        return NotImplemented
+        f = getattr(self._s, f"sub_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __truediv__(self, other) -> Series:
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.div(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.div_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.div_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.div_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.div_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.div_f64(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.div_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.div_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.div_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.div_i64(other))
-        return NotImplemented
+        f = getattr(self._s, f"div_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __mul__(self, other) -> Series:
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.mul(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.mul_u32(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.mul_i32(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.mul_i64(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.mul_f32(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.mul_f64(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.mul_i32(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.mul_i64(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.mul_i64(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.mul_i64(other))
-        return NotImplemented
+        f = getattr(self._s, f"mul_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __radd__(self, other):
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.add(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.add_u32_rhs(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.add_i32_rhs(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.add_i64_rhs(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.add_f32_rhs(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.add_f64_rhs(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.add_i32_rhs(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.add_i64_rhs(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.add_i64_rhs(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.add_i64_rhs(other))
-        return NotImplemented
+        f = getattr(self._s, f"add_{self.dtype}_rhs", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __rsub__(self, other):
         if isinstance(other, Series):
             return Series.from_pyseries(other._s.sub(self._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.sub_u32_rhs(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.sub_i32_rhs(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.sub_i64_rhs(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.sub_f32_rhs(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.sub_f64_rhs(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.sub_i32_rhs(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.sub_i64_rhs(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.sub_i64_rhs(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.sub_i64_rhs(other))
-        return NotImplemented
+        f = getattr(self._s, f"sub_{self.dtype}_rhs", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __rtruediv__(self, other):
         if isinstance(other, Series):
             return Series.from_pyseries(other._s.div(self._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.div_u32_rhs(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.div_i32_rhs(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.div_i64_rhs(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.div_f32_rhs(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.div_f64_rhs(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.div_i32_rhs(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.div_i64_rhs(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.div_i64_rhs(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.div_i64_rhs(other))
-        return NotImplemented
+        f = getattr(self._s, f"div_{self.dtype}_rhs", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __rmul__(self, other):
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.mul(other._s))
-        dtype = self.dtype
-        if dtype == "u32":
-            return Series.from_pyseries(self._s.mul_u32_rhs(other))
-        if dtype == "i32":
-            return Series.from_pyseries(self._s.mul_i32_rhs(other))
-        if dtype == "i64":
-            return Series.from_pyseries(self._s.mul_i64_rhs(other))
-        if dtype == "f32":
-            return Series.from_pyseries(self._s.mul_f32_rhs(other))
-        if dtype == "f64":
-            return Series.from_pyseries(self._s.mul_f64_rhs(other))
-        if dtype == "date32":
-            return Series.from_pyseries(self._s.mul_i32_rhs(other))
-        if dtype == "date64":
-            return Series.from_pyseries(self._s.mul_i64_rhs(other))
-        if dtype == "time64(ns)":
-            return Series.from_pyseries(self._s.mul_i64_rhs(other))
-        if dtype == "duration(ns)":
-            return Series.from_pyseries(self._s.mul_i64_rhs(other))
-        return NotImplemented
+        f = getattr(self._s, f"mul_{self.dtype}_rhs", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
 
     def __getitem__(self, item):
         # assume it is boolean mask
@@ -480,69 +244,32 @@ class Series:
         return self._s.dtype()
 
     def sum(self):
-        dtype = self.dtype
-        if dtype == "u32":
+        if self.dtype == "bool":
             return self._s.sum_u32()
-        if dtype == "i32":
-            return self._s.sum_i32()
-        if dtype == "i64":
-            return self._s.sum_i64()
-        if dtype == "f32":
-            return self._s.sum_f32()
-        if dtype == "f64":
-            return self._s.sum_f64()
-        if dtype == "bool":
-            return self._s.sum_u32()
-        return NotImplemented
+        f = getattr(self._s, f"sum_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return f()
 
     def mean(self):
         # use float type for mean aggregations no matter of base type
-        dtype = self.dtype
-        if dtype == "u32":
-            return self._s.mean_f64()
-        if dtype == "i32":
-            return self._s.mean_f64()
-        if dtype == "i64":
-            return self._s.mean_f64()
-        if dtype == "f32":
-            return self._s.mean_f32()
-        if dtype == "f64":
-            return self._s.mean_f64()
-        if dtype == "bool":
-            return self._s.mean_f32()
-        return NotImplemented
+        return self._s.mean_f64()
 
     def min(self):
-        dtype = self.dtype
-        if dtype == "u32":
+        if self.dtype == "bool":
             return self._s.min_u32()
-        if dtype == "i32":
-            return self._s.min_i32()
-        if dtype == "i64":
-            return self._s.min_i64()
-        if dtype == "f32":
-            return self._s.min_f32()
-        if dtype == "f64":
-            return self._s.min_f64()
-        if dtype == "bool":
-            return self._s.min_u32()
-        return NotImplemented
+        f = getattr(self._s, f"min_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return f()
 
     def max(self):
-        dtype = self.dtype
-        if dtype == "u32":
+        if self.dtype == "bool":
             return self._s.max_u32()
-        if dtype == "i32":
-            return self._s.max_i32()
-        if dtype == "i64":
-            return self._s.max_i64()
-        if dtype == "f32":
-            return self._s.max_f32()
-        if dtype == "f64":
-            return self._s.max_f64()
-        if dtype == "bool":
-            return self._s.max_u32()
-        return NotImplemented
+        f = getattr(self._s, f"max_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return f()
 
     @property
     def name(self):
@@ -651,30 +378,26 @@ class Series:
 
     def is_numeric(self) -> bool:
         dtype = self.dtype
-        if dtype == "u32":
-            return True
-        if dtype == "i32":
-            return True
-        if dtype == "i64":
-            return True
-        if dtype == "f32":
-            return True
-        if dtype == "f64":
-            return True
-        if dtype == "date32":
-            return True
-        if dtype == "date64":
-            return True
-        if dtype == "time64(ns)":
-            return True
-        if dtype == "duration(ns)":
-            return True
-        return False
+        if dtype == "bool":
+            return False
+        if dtype == "utf8":
+            return False
+        return True
 
     def view(self) -> np.ndarray:
         dtype = self.dtype
-        if dtype == "u32":
+        if dtype == "u8":
+            ptr_type = ctypes.c_uint8
+        elif dtype == "u16":
+            ptr_type = ctypes.c_uint16
+        elif dtype == "u32":
             ptr_type = ctypes.c_uint
+        elif dtype == "u64":
+            ptr_type = ctypes.c_ulong
+        elif dtype == "i8":
+            ptr_type = ctypes.c_int8
+        elif dtype == "i16":
+            ptr_type = ctypes.c_int16
         elif dtype == "i32":
             ptr_type = ctypes.c_int
         elif dtype == "i64":
