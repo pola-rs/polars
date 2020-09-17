@@ -1,4 +1,4 @@
-use polars::prelude::*;
+use polars::{datatypes::ToStr, prelude::*};
 use pyo3::{exceptions::RuntimeError, prelude::*};
 
 use crate::{
@@ -97,6 +97,7 @@ impl PyDataFrame {
         Ok(())
     }
 
+    /// Format `DataFrame` as String
     pub fn as_str(&self) -> String {
         format!("{:?}", self.df)
     }
@@ -130,8 +131,18 @@ impl PyDataFrame {
         to_pyseries_collection(cols)
     }
 
+    /// Get column names
     pub fn columns(&self) -> Vec<&str> {
         self.df.columns()
+    }
+
+    /// Get datatypes
+    pub fn dtypes(&self) -> Vec<String> {
+        self.df
+            .dtypes()
+            .iter()
+            .map(|arrow_dtype| arrow_dtype.to_str())
+            .collect()
     }
 
     pub fn n_chunks(&self) -> PyResult<usize> {
@@ -154,6 +165,11 @@ impl PyDataFrame {
     pub fn hstack(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
         let columns = to_series_collection(columns);
         self.df.hstack(&columns).map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
+    pub fn vstack(&mut self, df: &PyDataFrame) -> PyResult<()> {
+        self.df.vstack(&df.df).map_err(PyPolarsEr::from)?;
         Ok(())
     }
 
@@ -184,7 +200,7 @@ impl PyDataFrame {
         Ok(series)
     }
 
-    pub fn select(&self, selection: Vec<String>) -> PyResult<Self> {
+    pub fn select(&self, selection: Vec<&str>) -> PyResult<Self> {
         let df = self.df.select(&selection).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -229,6 +245,13 @@ impl PyDataFrame {
         Ok(())
     }
 
+    pub fn replace_at_idx(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
+        self.df
+            .replace_at_idx(index, new_col.series)
+            .map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
     pub fn slice(&self, offset: usize, length: usize) -> PyResult<Self> {
         let df = self.df.slice(offset, length).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
@@ -248,7 +271,7 @@ impl PyDataFrame {
         self.df.frame_equal(&other.df)
     }
 
-    pub fn groupby(&self, by: Vec<String>, select: Vec<String>, agg: &str) -> PyResult<Self> {
+    pub fn groupby(&self, by: Vec<&str>, select: Vec<String>, agg: &str) -> PyResult<Self> {
         let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
         let selection = gb.select(&select);
         let df = match agg {
@@ -284,5 +307,9 @@ impl PyDataFrame {
         };
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
+    }
+
+    pub fn clone(&self) -> Self {
+        PyDataFrame::new(self.df.clone())
     }
 }

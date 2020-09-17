@@ -37,16 +37,18 @@ class Series:
         nullable
             If nullable. List[Optional[Any]] will remain lists where None values will be interpreted as nulls
         """
-        if isinstance(values, Series):
+        if values.__class__ == self.__class__:
             values.rename(name)
             self._s = values._s
             return
 
         self._s: PySeries
-        # numpy path
+        # castable to numpy
         if not isinstance(values, np.ndarray) and not nullable:
             values = np.array(values)
 
+        # numpy path
+        if isinstance(values, np.ndarray):
             dtype = values.dtype
             if dtype == np.int64:
                 self._s = PySeries.new_i64(name, values)
@@ -80,12 +82,14 @@ class Series:
             dtype = find_first_non_none(values)
             if isinstance(dtype, int):
                 self._s = PySeries.new_opt_i64(name, values)
-            if isinstance(dtype, float):
+            elif isinstance(dtype, float):
                 self._s = PySeries.new_opt_f64(name, values)
-            if isinstance(dtype, str):
+            elif isinstance(dtype, str):
                 self._s = PySeries.new_opt_str(name, values)
-            if isinstance(dtype, bool):
+            elif isinstance(dtype, bool):
                 self._s = PySeries.new_opt_bool(name, values)
+            else:
+                raise ValueError(f"dtype: {dtype} not known")
 
     @staticmethod
     def from_pyseries(s: PySeries) -> Series:
@@ -241,6 +245,19 @@ class Series:
             return NotImplemented
         return f(item)
 
+    def __setitem__(self, key, value):
+        if isinstance(key, Series):
+            if key.dtype == "bool":
+                self._s = self.set(key, value)._s
+            elif key.dtype == "u64":
+                self._s = self.set_at_idx(key, value)._s
+            elif key.dtype == "u32":
+                self._s = self.set_at_idx(key.cast_u64(), value)._s
+        # TODO: implement for these types without casting to series
+        if isinstance(key, (np.ndarray, list, tuple)):
+            s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
+            self.__setitem__(s, value)
+
     @property
     def dtype(self):
         return self._s.dtype()
@@ -343,8 +360,23 @@ class Series:
     def __len__(self):
         return self.len()
 
+    def cast_u8(self):
+        return wrap_s(self._s.cast_u8())
+
+    def cast_u16(self):
+        return wrap_s(self._s.cast_u16())
+
     def cast_u32(self):
         return wrap_s(self._s.cast_u32())
+
+    def cast_u64(self):
+        return wrap_s(self._s.cast_u64())
+
+    def cast_i8(self):
+        return wrap_s(self._s.cast_i8())
+
+    def cast_i16(self):
+        return wrap_s(self._s.cast_i16())
 
     def cast_i32(self):
         return wrap_s(self._s.cast_i32())
@@ -452,3 +484,60 @@ class Series:
         if isinstance(a, list):
             return np.array(a)
         return a
+
+    def set(self, filter: Series, value: Union[int, float]) -> Series:
+        """
+        Set masked values.
+
+        Parameters
+        ----------
+        filter
+            Boolean mask
+        value
+            Value to replace the the masked values with.
+        """
+        f = getattr(self._s, f"set_with_mask_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(filter._s, value))
+
+    def set_at_idx(
+        self, idx: Union[Series, np.ndarray], value: Union[int, float]
+    ) -> Series:
+        """
+        Set values at the index locations.
+
+        Parameters
+        ----------
+        idx
+            Integers representing the index locations.
+        value
+            replacement values
+
+        Returns
+        -------
+        New allocated Series
+        """
+        f = getattr(self._s, f"set_at_idx_{self.dtype}", None)
+        if f is None:
+            return NotImplemented
+        if isinstance(idx, Series):
+            idx_array = idx.view()
+        elif isinstance(idx, np.ndarray):
+            if not idx.data.c_contiguous:
+                idx_array = np.ascontiguousarray(idx, dtype=np.uint64)
+            else:
+                idx_array = idx
+                if idx_array.dtype != np.uint64:
+                    idx_array = np.array(idx_array, np.uint64)
+
+        else:
+            idx_array = np.array(idx, dtype=np.uint64)
+
+        return wrap_s(f(idx_array, value))
+
+    def clone(self) -> Series:
+        """
+        Cheap deep clones
+        """
+        return wrap_s(self._s.clone())

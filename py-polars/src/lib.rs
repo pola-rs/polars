@@ -21,7 +21,6 @@ macro_rules! create_aligned_buffer {
     };
 }
 
-create_aligned_buffer!(aligned_array_f16, f16);
 create_aligned_buffer!(aligned_array_f32, f32);
 create_aligned_buffer!(aligned_array_f64, f64);
 create_aligned_buffer!(aligned_array_i8, i8);

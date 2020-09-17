@@ -414,11 +414,8 @@ trait AggFirst {
 macro_rules! impl_agg_first {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
         $groups
-            .par_iter()
-            .map(|(first, _idx)| {
-                let taker = $self.take_rand();
-                taker.get(*first)
-            })
+            .iter()
+            .map(|(first, _idx)| $self.get(*first))
             .collect::<$ca_type>()
             .into_series()
     }};
@@ -442,11 +439,8 @@ impl AggFirst for BooleanChunked {
 impl AggFirst for Utf8Chunked {
     fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
         groups
-            .par_iter()
-            .map(|(first, _idx)| {
-                let taker = self.take_rand();
-                taker.get(*first).map(|s| s.to_string())
-            })
+            .iter()
+            .map(|(first, _idx)| self.get(*first))
             .collect::<Utf8Chunked>()
             .into_series()
     }
@@ -710,10 +704,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             let new_name = format!["{}_count", agg_col.name()];
             let mut builder = PrimitiveChunkedBuilder::new(&new_name, self.groups.len());
             for (_first, idx) in &self.groups {
-                let s = unsafe {
-                    agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
-                };
-                builder.append_value(s.len() as u32);
+                builder.append_value(idx.len() as u32);
             }
             let ca = builder.finish();
             let agg = Series::UInt32(ca);

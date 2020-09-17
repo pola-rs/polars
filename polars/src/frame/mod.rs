@@ -626,7 +626,16 @@ impl DataFrame {
     /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
     /// ```
     pub fn replace_at_idx<S: IntoSeries>(&mut self, idx: usize, new_col: S) -> Result<&mut Self> {
-        self.apply_at_idx(idx, |_| new_col)
+        let mut new_column = new_col.into_series();
+        if new_column.len() != self.height() {
+            return Err(PolarsError::ShapeMisMatch);
+        };
+        if idx >= self.width() {
+            return Err(PolarsError::OutOfBounds);
+        }
+        let old_col = &mut self.columns[idx];
+        mem::swap(old_col, &mut new_column);
+        Ok(self)
     }
 
     /// Apply a closure to a column. This is the recommended way to do in place modification.

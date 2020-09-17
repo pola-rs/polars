@@ -2,6 +2,7 @@ use crate::prelude::*;
 use crate::utils::Xob;
 use enum_dispatch::enum_dispatch;
 use fnv::{FnvBuildHasher, FnvHashMap};
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use unsafe_unwrap::UnsafeUnwrap;
@@ -131,6 +132,56 @@ where
     results
 }
 
+macro_rules! par_prepare_hashed_relation {
+    ($b:expr) => {{
+        $b.enumerate()
+            // acc is the hashmap
+            .fold(FnvHashMap::default, |mut acc, (idx, key)| {
+                acc.entry(key).or_insert_with(Vec::new).push(idx);
+                acc
+            })
+            .reduce(FnvHashMap::default, |mut map1, map2| {
+                map1.extend(map2.into_iter());
+                map1
+            })
+
+        // let mut hash_tbl = FnvHashMap::default();
+        //
+        // $b.par_iter().enumerate()
+        //     .for_each(|(idx, key)| hash_tbl.entry(key).or_insert_with(Vec::new).push(idx));
+        // hash_tbl
+    }};
+}
+
+macro_rules! par_hash_join_tuples_inner {
+    ($a:expr, $b:expr, $swap:expr) => {{
+        // First we hash one relation
+        // let hash_tbl = prepare_hashed_relation($b.iter());
+        let hash_tbl = par_prepare_hashed_relation!($b);
+
+        // Next we probe the other relation in the hash table
+        // code duplication is because we want to only do the swap check once
+        if $swap {
+            $a.enumerate()
+                .map(|(idx_a, key)| {
+                    if let Some(indexes_b) = hash_tbl.get(&key) {
+                        let tuples: Vec<_> =
+                            indexes_b.iter().map(|&idx_b| (idx_b, idx_a)).collect();
+                        tuples
+                    } else {
+                        Vec::with_capacity(0)
+                    }
+                })
+                .reduce(Vec::new, |mut v1, v2| {
+                    v1.extend(v2);
+                    v1
+                })
+        } else {
+            Vec::new()
+        }
+    }};
+}
+
 /// Hash join left. None/ Nulls are regarded as Equal
 /// All left values are joined so no Option<usize> there.
 fn hash_join_tuples_left<T>(
@@ -194,7 +245,7 @@ where
                 }
             }
         });
-        hash_tbl.iter().for_each( |(_k, indexes_b)| {
+        hash_tbl.iter().for_each(|(_k, indexes_b)| {
             // remaining joined values from the right table
             results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), None)))
         });
@@ -257,7 +308,7 @@ where
 
         match (a.cont_slice(), b.cont_slice()) {
             (Ok(a_slice), Ok(b_slice)) => {
-                hash_join_tuples_inner(a_slice.iter(), b_slice.iter(), swap)
+                par_hash_join_tuples_inner!(a_slice.par_iter(), b_slice.par_iter(), swap)
             }
             (Ok(a_slice), Err(_)) => {
                 hash_join_tuples_inner(
@@ -523,15 +574,15 @@ impl DataFrame {
         let s_right = other.column(right_on)?;
         let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
 
-        let (df_left, df_right) = rayon::join(|| self.create_left_df(&join_tuples), || {
-            unsafe {
+        let (df_left, df_right) = rayon::join(
+            || self.create_left_df(&join_tuples),
+            || unsafe {
                 other.drop(right_on).unwrap().take_iter_unchecked(
                     join_tuples.iter().map(|(_left, right)| *right),
                     Some(join_tuples.len()),
                 )
-            }
-
-        });
+            },
+        );
         self.finish_join(df_left, df_right)
     }
 
@@ -550,15 +601,15 @@ impl DataFrame {
         let opt_join_tuples: Vec<(usize, Option<usize>)> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_left);
 
-        let (df_left, df_right) =rayon::join(|| self.create_left_df(&opt_join_tuples), || {
-            unsafe {
+        let (df_left, df_right) = rayon::join(
+            || self.create_left_df(&opt_join_tuples),
+            || unsafe {
                 other.drop(right_on).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples.iter().map(|(_left, right)| *right),
                     Some(opt_join_tuples.len()),
                 )
-            }
-
-        });
+            },
+        );
         self.finish_join(df_left, df_right)
     }
 
@@ -585,23 +636,19 @@ impl DataFrame {
             apply_hash_join_on_series!(s_left, s_right, hash_join_outer);
 
         // Take the left and right dataframes by join tuples
-        let (mut df_left, df_right) = rayon::join(||
-        {
-            unsafe {
+        let (mut df_left, df_right) = rayon::join(
+            || unsafe {
                 self.drop(left_on).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples.iter().map(|(left, _right)| *left),
                     Some(opt_join_tuples.len()),
                 )
-            }
-        },
-                                                  || {
-                        unsafe {
-                            other.drop(right_on).unwrap().take_opt_iter_unchecked(
-                                opt_join_tuples.iter().map(|(_left, right)| *right),
-                                Some(opt_join_tuples.len()),
-                            )
-                        }
-                    }
+            },
+            || unsafe {
+                other.drop(right_on).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples.iter().map(|(_left, right)| *right),
+                    Some(opt_join_tuples.len()),
+                )
+            },
         );
         let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
         s.rename(left_on);

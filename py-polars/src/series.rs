@@ -217,7 +217,6 @@ impl PySeries {
     pub fn series_equal(&self, other: &PySeries) -> PyResult<bool> {
         Ok(self.series.series_equal(&other.series))
     }
-
     pub fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
         Ok(Self::new(Series::Bool(self.series.eq(&rhs.series))))
     }
@@ -340,7 +339,73 @@ impl PySeries {
             _ => todo!(),
         }
     }
+
+    pub fn clone(&self) -> Self {
+        PySeries::new(self.series.clone())
+    }
 }
+
+macro_rules! impl_set_with_mask {
+    ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
+        fn $name(series: &Series, filter: &PySeries, value: Option<$native>) -> Result<Series> {
+            let mask = filter.series.bool()?;
+            let ca = series.$cast()?;
+            let new = ca.set(mask, value)?;
+            Ok(Series::$variant(new))
+        }
+
+        #[pymethods]
+        impl PySeries {
+            pub fn $name(&self, filter: &PySeries, value: Option<$native>) -> PyResult<Self> {
+                let series = $name(&self.series, filter, value).map_err(PyPolarsEr::from)?;
+                Ok(Self::new(series))
+            }
+        }
+    };
+}
+
+impl_set_with_mask!(set_with_mask_str, &str, utf8, Utf8);
+impl_set_with_mask!(set_with_mask_f64, f64, f64, Float64);
+impl_set_with_mask!(set_with_mask_f32, f32, f32, Float32);
+impl_set_with_mask!(set_with_mask_u8, u8, u8, UInt8);
+impl_set_with_mask!(set_with_mask_u16, u16, u16, UInt16);
+impl_set_with_mask!(set_with_mask_u32, u32, u32, UInt32);
+impl_set_with_mask!(set_with_mask_u64, u64, u64, UInt64);
+impl_set_with_mask!(set_with_mask_i8, i8, i8, Int8);
+impl_set_with_mask!(set_with_mask_i16, i16, i16, Int16);
+impl_set_with_mask!(set_with_mask_i32, i32, i32, Int32);
+impl_set_with_mask!(set_with_mask_i64, i64, i64, Int64);
+
+macro_rules! impl_set_at_idx {
+    ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
+        fn $name(series: &Series, idx: &[usize], value: Option<$native>) -> Result<Series> {
+            let ca = series.$cast()?;
+            let new = ca.set_at_idx(&idx, value)?;
+            Ok(Series::$variant(new))
+        }
+
+        #[pymethods]
+        impl PySeries {
+            pub fn $name(&self, idx: &PyArray1<usize>, value: Option<$native>) -> PyResult<Self> {
+                let idx = unsafe { idx.as_slice().unwrap() };
+                let series = $name(&self.series, &idx, value).map_err(PyPolarsEr::from)?;
+                Ok(Self::new(series))
+            }
+        }
+    };
+}
+
+impl_set_at_idx!(set_at_idx_str, &str, utf8, Utf8);
+impl_set_at_idx!(set_at_idx_f64, f64, f64, Float64);
+impl_set_at_idx!(set_at_idx_f32, f32, f32, Float32);
+impl_set_at_idx!(set_at_idx_u8, u8, u8, UInt8);
+impl_set_at_idx!(set_at_idx_u16, u16, u16, UInt16);
+impl_set_at_idx!(set_at_idx_u32, u32, u32, UInt32);
+impl_set_at_idx!(set_at_idx_u64, u64, u64, UInt64);
+impl_set_at_idx!(set_at_idx_i8, i8, i8, Int8);
+impl_set_at_idx!(set_at_idx_i16, i16, i16, Int16);
+impl_set_at_idx!(set_at_idx_i32, i32, i32, Int32);
+impl_set_at_idx!(set_at_idx_i64, i64, i64, Int64);
 
 macro_rules! impl_get {
     ($name:ident, $series_variant:ident, $type:ty) => {
