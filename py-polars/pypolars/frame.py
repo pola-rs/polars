@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .polars import PyDataFrame, PySeries
+from .pypolars import PyDataFrame, PySeries
 from typing import Dict, Sequence, List, Tuple, Optional, Union
 from .series import Series, wrap_s
 import numpy as np

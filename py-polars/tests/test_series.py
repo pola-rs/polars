@@ -1,5 +1,5 @@
-from polars import Series
-from polars.ffi import aligned_array_f32
+from pypolars import Series
+from pypolars.ffi import aligned_array_f32
 import numpy as np
 
 

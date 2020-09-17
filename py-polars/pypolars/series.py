@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .polars import PySeries
+from .pypolars import PySeries
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any
 from .ffi import ptr_to_numpy, aligned_array_f64, series_from_ptr_f64

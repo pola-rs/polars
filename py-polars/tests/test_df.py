@@ -1,4 +1,4 @@
-from polars import DataFrame, Series
+from pypolars import DataFrame, Series
 import pytest
 
 

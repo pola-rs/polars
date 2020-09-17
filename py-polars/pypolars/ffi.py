@@ -3,7 +3,7 @@ import numpy.core
 from numpy import ctypeslib
 import ctypes
 from typing import Any
-from .polars import (
+from .pypolars import (
     aligned_array_f32,
     aligned_array_f64,
     aligned_array_i32,
