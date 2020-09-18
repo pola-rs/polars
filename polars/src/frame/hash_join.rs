@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::utils::Xob;
-use crossbeam::thread;
 use enum_dispatch::enum_dispatch;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::{HashMap, HashSet};
@@ -195,7 +194,7 @@ where
                 }
             }
         });
-        hash_tbl.iter().for_each(|(_k, indexes_b)| {
+        hash_tbl.iter().for_each( |(_k, indexes_b)| {
             // remaining joined values from the right table
             results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), None)))
         });
@@ -524,13 +523,14 @@ impl DataFrame {
         let s_right = other.column(right_on)?;
         let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
 
-        let (df_left, df_right) = exec_concurrent!({ self.create_left_df(&join_tuples) }, {
+        let (df_left, df_right) = rayon::join(|| self.create_left_df(&join_tuples), || {
             unsafe {
                 other.drop(right_on).unwrap().take_iter_unchecked(
                     join_tuples.iter().map(|(_left, right)| *right),
                     Some(join_tuples.len()),
                 )
             }
+
         });
         self.finish_join(df_left, df_right)
     }
@@ -550,13 +550,14 @@ impl DataFrame {
         let opt_join_tuples: Vec<(usize, Option<usize>)> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_left);
 
-        let (df_left, df_right) = exec_concurrent!({ self.create_left_df(&opt_join_tuples) }, {
+        let (df_left, df_right) =rayon::join(|| self.create_left_df(&opt_join_tuples), || {
             unsafe {
                 other.drop(right_on).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples.iter().map(|(_left, right)| *right),
                     Some(opt_join_tuples.len()),
                 )
             }
+
         });
         self.finish_join(df_left, df_right)
     }
@@ -584,23 +585,23 @@ impl DataFrame {
             apply_hash_join_on_series!(s_left, s_right, hash_join_outer);
 
         // Take the left and right dataframes by join tuples
-        let (mut df_left, df_right) = exec_concurrent!(
-            {
-                unsafe {
-                    self.drop(left_on).unwrap().take_opt_iter_unchecked(
-                        opt_join_tuples.iter().map(|(left, _right)| *left),
-                        Some(opt_join_tuples.len()),
-                    )
-                }
-            },
-            {
-                unsafe {
-                    other.drop(right_on).unwrap().take_opt_iter_unchecked(
-                        opt_join_tuples.iter().map(|(_left, right)| *right),
-                        Some(opt_join_tuples.len()),
-                    )
-                }
+        let (mut df_left, df_right) = rayon::join(||
+        {
+            unsafe {
+                self.drop(left_on).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples.iter().map(|(left, _right)| *left),
+                    Some(opt_join_tuples.len()),
+                )
             }
+        },
+                                                  || {
+                        unsafe {
+                            other.drop(right_on).unwrap().take_opt_iter_unchecked(
+                                opt_join_tuples.iter().map(|(_left, right)| *right),
+                                Some(opt_join_tuples.len()),
+                            )
+                        }
+                    }
         );
         let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
         s.rename(left_on);
