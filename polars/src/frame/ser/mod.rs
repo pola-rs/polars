@@ -158,5 +158,8 @@ pub fn finish_reader<R: ArrowReader>(
             .collect::<Result<Vec<_>>>()?;
     }
 
-    Ok(DataFrame { columns })
+    Ok(DataFrame {
+        columns,
+        parallel: false,
+    })
 }

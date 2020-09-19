@@ -1,8 +1,9 @@
 use crate::prelude::*;
+use arrow::array::StringArray;
 use rayon::iter::plumbing::*;
 use rayon::iter::plumbing::{Consumer, ProducerCallback};
 use rayon::prelude::*;
-use std::{marker::PhantomData, mem, ops::Range};
+use std::{mem, ops::Range};
 
 #[derive(Debug, Clone)]
 pub struct Utf8IntoIter<'a> {
@@ -48,15 +49,17 @@ impl<'a> IndexedParallelIterator for Utf8IntoIter<'a> {
         CB: ProducerCallback<Self::Item>,
     {
         callback.callback(Utf8Producer {
-            ca: self.ca.clone(),
-            phantom: &PhantomData,
+            ca: &self.ca,
+            offset: 0,
+            len: self.ca.len(),
         })
     }
 }
 
 struct Utf8Producer<'a> {
-    ca: Utf8Chunked,
-    phantom: &'a PhantomData<()>,
+    ca: &'a Utf8Chunked,
+    offset: usize,
+    len: usize,
 }
 
 impl<'a> Producer for Utf8Producer<'a> {
@@ -64,34 +67,28 @@ impl<'a> Producer for Utf8Producer<'a> {
     type IntoIter = Utf8Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let iter = (0..self.ca.len()).into_iter();
-        Utf8Iter {
-            ca: self.ca,
-            phantom: &PhantomData,
-            iter,
-        }
+        let iter = (0..self.len).into_iter();
+        Utf8Iter { ca: self.ca, iter }
     }
 
     fn split_at(self, index: usize) -> (Self, Self) {
-        let left = self.ca.slice(0, index).unwrap();
-        let right = self.ca.slice(index, self.ca.len() - index).unwrap();
-        debug_assert!(right.len() + left.len() == self.ca.len());
         (
             Utf8Producer {
-                ca: left,
-                phantom: &PhantomData,
+                ca: self.ca,
+                offset: self.offset,
+                len: index + 1,
             },
             Utf8Producer {
-                ca: right,
-                phantom: &PhantomData,
+                ca: self.ca,
+                offset: self.offset + index,
+                len: self.len - index,
             },
         )
     }
 }
 
 struct Utf8Iter<'a> {
-    ca: Utf8Chunked,
-    phantom: &'a PhantomData<()>,
+    ca: &'a Utf8Chunked,
     iter: Range<usize>,
 }
 
@@ -123,19 +120,19 @@ impl<'a> ExactSizeIterator for Utf8Iter<'a> {}
 /// No null Iterators
 
 #[derive(Debug, Clone)]
-pub struct Utf8IntoIterNoNull<'a> {
+pub struct Utf8IntoIterCont<'a> {
     ca: &'a Utf8Chunked,
 }
 
 impl<'a> IntoParallelIterator for NoNull<&'a Utf8Chunked> {
-    type Iter = Utf8IntoIterNoNull<'a>;
+    type Iter = Utf8IntoIterCont<'a>;
     type Item = &'a str;
 
     fn into_par_iter(self) -> Self::Iter {
-        Utf8IntoIterNoNull { ca: self.0 }
+        Utf8IntoIterCont { ca: self.0 }
     }
 }
-impl<'a> ParallelIterator for Utf8IntoIterNoNull<'a> {
+impl<'a> ParallelIterator for Utf8IntoIterCont<'a> {
     type Item = &'a str;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
@@ -149,7 +146,7 @@ impl<'a> ParallelIterator for Utf8IntoIterNoNull<'a> {
         Some(self.ca.len())
     }
 }
-impl<'a> IndexedParallelIterator for Utf8IntoIterNoNull<'a> {
+impl<'a> IndexedParallelIterator for Utf8IntoIterCont<'a> {
     fn len(&self) -> usize {
         self.ca.len()
     }
@@ -165,75 +162,75 @@ impl<'a> IndexedParallelIterator for Utf8IntoIterNoNull<'a> {
     where
         CB: ProducerCallback<Self::Item>,
     {
-        callback.callback(Utf8ProducerNoNull {
-            ca: self.ca.clone(),
-            phantom: &PhantomData,
+        callback.callback(Utf8ProducerCont {
+            arr: self.ca.downcast_chunks()[0],
+            offset: 0,
+            len: self.ca.len(),
         })
     }
 }
 
-struct Utf8ProducerNoNull<'a> {
-    ca: Utf8Chunked,
-    phantom: &'a PhantomData<()>,
+struct Utf8ProducerCont<'a> {
+    arr: &'a StringArray,
+    offset: usize,
+    len: usize,
 }
 
-impl<'a> Producer for Utf8ProducerNoNull<'a> {
+impl<'a> Producer for Utf8ProducerCont<'a> {
     type Item = &'a str;
-    type IntoIter = Utf8IterNoNull<'a>;
+    type IntoIter = Utf8IterCont<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let iter = (0..self.ca.len()).into_iter();
-        Utf8IterNoNull {
-            ca: self.ca,
-            phantom: &PhantomData,
+        let iter = (0..self.len).into_iter();
+        Utf8IterCont {
+            arr: self.arr,
             iter,
+            offset: self.offset,
         }
     }
 
     fn split_at(self, index: usize) -> (Self, Self) {
-        let left = self.ca.slice(0, index).unwrap();
-        let right = self.ca.slice(index, self.ca.len() - index).unwrap();
-        debug_assert!(right.len() + left.len() == self.ca.len());
         (
-            Utf8ProducerNoNull {
-                ca: left,
-                phantom: &PhantomData,
+            Utf8ProducerCont {
+                arr: self.arr,
+                offset: self.offset,
+                len: index + 1,
             },
-            Utf8ProducerNoNull {
-                ca: right,
-                phantom: &PhantomData,
+            Utf8ProducerCont {
+                arr: self.arr,
+                offset: self.offset + index,
+                len: self.len - index,
             },
         )
     }
 }
 
-struct Utf8IterNoNull<'a> {
-    ca: Utf8Chunked,
-    phantom: &'a PhantomData<()>,
+struct Utf8IterCont<'a> {
+    arr: &'a StringArray,
     iter: Range<usize>,
+    offset: usize,
 }
 
-impl<'a> Iterator for Utf8IterNoNull<'a> {
+impl<'a> Iterator for Utf8IterCont<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|idx| unsafe { mem::transmute::<&'_ str, &'a str>(self.ca.get_unchecked(idx)) })
+        self.iter.next().map(|idx| unsafe {
+            mem::transmute::<&'_ str, &'a str>(self.arr.value(idx + self.offset))
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.ca.len();
-        (len, Some(len))
+        self.iter.size_hint()
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8IterNoNull<'a> {
+impl<'a> DoubleEndedIterator for Utf8IterCont<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next_back()
-            .map(|idx| unsafe { mem::transmute::<&'_ str, &'a str>(self.ca.get_unchecked(idx)) })
+        self.iter.next_back().map(|idx| unsafe {
+            mem::transmute::<&'_ str, &'a str>(self.arr.value(idx + self.offset))
+        })
     }
 }
 
-impl<'a> ExactSizeIterator for Utf8IterNoNull<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterCont<'a> {}

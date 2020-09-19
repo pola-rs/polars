@@ -51,7 +51,6 @@ use arrow::array::{
     TimestampSecondArray,
 };
 use std::mem;
-use std::ops::{Deref, DerefMut};
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
@@ -801,20 +800,6 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
 }
 
 pub struct NoNull<T>(pub T);
-
-impl<T> Deref for NoNull<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for NoNull<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
 
 #[cfg(test)]
 pub(crate) mod test {
