@@ -5,4 +5,4 @@
 //! * Comparisons are more performant.
 //! * Outer join is more performant.
 //! * Start with parallel iterator support for ChunkedArrays.
-//!
+//! * Remove crossbeam dependency.

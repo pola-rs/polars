@@ -182,6 +182,8 @@
 //!     - Generate array's with randomly sampled values
 //! * `ndarray`
 //!     - Convert from `DataFrame` to `ndarray`
+//! * `parallel`
+//!     - Parallel variants of operation
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]
