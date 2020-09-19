@@ -293,16 +293,44 @@ class DataFrame:
         return GroupBy(self._df, by)
 
     def join(
-        self, df: DataFrame, left_on: str, right_on: str, how="inner"
+        self, df: DataFrame, left_on: str, right_on: str, how="inner", parallel: bool = False
     ) -> DataFrame:
-        if how == "inner":
-            inner = self._df.inner_join(df._df, left_on, right_on)
-        elif how == "left":
-            inner = self._df.left_join(df._df, left_on, right_on)
-        elif how == "outer":
-            inner = self._df.outer_join(df._df, left_on, right_on)
-        else:
-            return NotImplemented
+        """
+        SQL like joins
+
+        Parameters
+        ----------
+        df
+            DataFrame to join with
+        left_on
+            Name of the left join column
+        right_on
+            Name of the right join column
+        how
+            Join strategy
+                - "inner"
+                - "left"
+                - "outer"
+        parallel
+            Use parallel join strategy.
+
+        Returns
+        -------
+            Joined DataFrame
+        """
+        self._df.with_parallel(parallel)
+        try:
+            if how == "inner":
+                inner = self._df.inner_join(df._df, left_on, right_on)
+            elif how == "left":
+                inner = self._df.left_join(df._df, left_on, right_on)
+            elif how == "outer":
+                inner = self._df.outer_join(df._df, left_on, right_on)
+            else:
+                return NotImplemented
+        except Exception as e:
+            self._df.with_parallel(False)
+            raise e
         return wrap_df(inner)
 
     def hstack(self, columns: List[Series]):
@@ -328,6 +356,25 @@ class DataFrame:
 
     def get_columns(self) -> List[Series]:
         return list(map(lambda s: wrap_s(s), self._df.get_columns()))
+
+    def fill_none(self, strategy: str) -> DataFrame:
+        """
+        Fill None values by a filling strategy.
+
+        Parameters
+        ----------
+        strategy
+            - "backward"
+            - "forward"
+            - "mean"
+            - "min'
+            - "max"
+
+        Returns
+        -------
+            DataFrame with None replaced with the filling strategy.
+        """
+        return wrap_df(self._df.fill_none(strategy))
 
 
 class GroupBy:

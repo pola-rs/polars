@@ -102,6 +102,23 @@ impl PyDataFrame {
         format!("{:?}", self.df)
     }
 
+    pub fn with_parallel(&mut self, parallel: bool) {
+        self.df.with_parallel(parallel);
+    }
+
+    pub fn fill_none(&self, strategy: &str) -> PyResult<Self> {
+        let strat = match strategy {
+            "backward" => FillNoneStrategy::Backward,
+            "forward" => FillNoneStrategy::Forward,
+            "min" => FillNoneStrategy::Min,
+            "max" => FillNoneStrategy::Max,
+            "mean" => FillNoneStrategy::Mean,
+            s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
+        };
+        let df = self.df.fill_none(strat).map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
     pub fn inner_join(&self, other: &PyDataFrame, left_on: &str, right_on: &str) -> PyResult<Self> {
         let df = self
             .df

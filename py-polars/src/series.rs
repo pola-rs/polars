@@ -281,6 +281,19 @@ impl PySeries {
         self.series.as_single_ptr()
     }
 
+    pub fn fill_none(&self, strategy: &str) -> PyResult<Self> {
+        let strat = match strategy {
+            "backward" => FillNoneStrategy::Backward,
+            "forward" => FillNoneStrategy::Forward,
+            "min" => FillNoneStrategy::Min,
+            "max" => FillNoneStrategy::Max,
+            "mean" => FillNoneStrategy::Mean,
+            s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
+        };
+        let series = self.series.fill_none(strat).map_err(PyPolarsEr::from)?;
+        Ok(PySeries::new(series))
+    }
+
     /// Attempts to copy data to numpy arrays. If integer types have missing values
     /// they will be casted to floating point values, where NaNs are used to represent missing.
     /// Strings will be converted to python lists and booleans will be a numpy array if there are no

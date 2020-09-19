@@ -169,3 +169,9 @@ def test_get():
     a = Series("a", [1, 2, 3])
     assert a[0] == 1
     assert a[:2] == [1, 2]
+
+
+def test_fill_none():
+    a = Series("a", [1, 2, None], nullable=True)
+    b = a.fill_none("forward")
+    assert b == [1, 2, 2]

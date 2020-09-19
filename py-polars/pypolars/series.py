@@ -541,3 +541,6 @@ class Series:
         Cheap deep clones
         """
         return wrap_s(self._s.clone())
+
+    def fill_none(self, strategy: str) -> Series:
+        return wrap_s(self._s.fill_none(strategy))
