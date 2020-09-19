@@ -16,7 +16,7 @@ pub use crate::{
             FillNoneStrategy, TakeRandom, TakeRandomUtf8,
         },
         take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
-        ChunkedArray, Downcast,
+        ChunkedArray, Downcast, NoNull,
     },
     datatypes,
     datatypes::*,

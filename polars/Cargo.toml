@@ -16,6 +16,7 @@ simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono"]
 random = ["rand", "rand_distr"]
+parallel = []
 default = ["pretty", "docs", "temporal"]
 
 [dependencies]

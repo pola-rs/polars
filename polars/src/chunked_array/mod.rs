@@ -30,6 +30,9 @@ pub mod iterator;
 #[cfg(feature = "ndarray")]
 #[doc(cfg(feature = "ndarray"))]
 mod ndarray;
+#[cfg(feature = "parallel")]
+#[doc(cfg(feature = "parallel"))]
+pub mod par;
 #[cfg(feature = "random")]
 #[doc(cfg(feature = "random"))]
 mod random;
@@ -48,6 +51,7 @@ use arrow::array::{
     TimestampSecondArray,
 };
 use std::mem;
+use std::ops::{Deref, DerefMut};
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
@@ -793,6 +797,22 @@ impl Downcast<LargeListArray> for LargeListChunked {
 impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
     fn as_ref(&self) -> &ChunkedArray<T> {
         self
+    }
+}
+
+pub struct NoNull<T>(pub T);
+
+impl<T> Deref for NoNull<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for NoNull<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
