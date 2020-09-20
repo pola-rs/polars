@@ -293,7 +293,12 @@ class DataFrame:
         return GroupBy(self._df, by)
 
     def join(
-        self, df: DataFrame, left_on: str, right_on: str, how="inner", parallel: bool = False
+        self,
+        df: DataFrame,
+        left_on: str,
+        right_on: str,
+        how="inner",
+        parallel: bool = False,
     ) -> DataFrame:
         """
         SQL like joins
