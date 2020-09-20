@@ -2,9 +2,54 @@ from __future__ import annotations
 from .pypolars import PySeries
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any
-from .ffi import ptr_to_numpy, aligned_array_f64, series_from_ptr_f64
+from .ffi import ptr_to_numpy
+
 import ctypes
 from numbers import Number
+
+
+class IdentityDict(dict):
+    def __missing__(self, key):
+        return key
+
+
+# TODO: add all polars supported primitives.
+DTYPE_TO_FFINAME = IdentityDict()
+DTYPE_TO_FFINAME["date32"] = lambda x: "i32"
+DTYPE_TO_FFINAME["date64"] = lambda x: "i64"
+DTYPE_TO_FFINAME["time64(ns)"] = "i64"
+DTYPE_TO_FFINAME["duration(ns)"] = "i64"
+
+
+def get_ffi_func(
+    name: str, dtype: str, obj: Optional[Series] = None, default: Optional = None
+):
+    """
+    Dynamically obtain the proper ffi function/ method.
+
+    Parameters
+    ----------
+    name
+        function or method name where dtype is replaced by <>
+        for example
+            "call_foo_<>"
+    dtype
+        polars dtype str
+    obj
+        Optional object to find the method for. If none provided globals are used.
+    default
+        default function to use if not found.
+
+    Returns
+    -------
+    ffi function
+    """
+    ffi_name = DTYPE_TO_FFINAME[dtype]
+    fname = name.replace("<>", ffi_name)
+    if obj:
+        return getattr(obj, fname, default)
+    else:
+        return globals().get(fname, default)
 
 
 def wrap_s(s: PySeries) -> Series:
@@ -47,8 +92,12 @@ class Series:
         if not isinstance(values, np.ndarray) and not nullable:
             values = np.array(values)
 
+        # series path
+        if isinstance(values, Series):
+            self.from_pyseries(values)
+
         # numpy path
-        if isinstance(values, np.ndarray):
+        elif isinstance(values, np.ndarray):
             dtype = values.dtype
             if dtype == np.int64:
                 self._s = PySeries.new_i64(name, values)
@@ -76,7 +125,6 @@ class Series:
                 self._s = PySeries.new_u64(name, values)
             else:
                 raise ValueError(f"dtype: {dtype} not known")
-
         # list path
         else:
             dtype = find_first_non_none(values)
@@ -183,12 +231,11 @@ class Series:
         return wrap_s(f(other))
 
     def __truediv__(self, other) -> Series:
-        if isinstance(other, Series):
-            return Series.from_pyseries(self._s.div(other._s))
-        f = getattr(self._s, f"div_{self.dtype}", None)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        if not self.is_float():
+            out_dtype = "f64"
+        else:
+            out_dtype = DTYPE_TO_FFINAME[self.dtype]
+        return np.true_divide(self, other, dtype=out_dtype)
 
     def __mul__(self, other) -> Series:
         if isinstance(other, Series):
@@ -418,6 +465,12 @@ class Series:
             return False
         return True
 
+    def is_float(self) -> bool:
+        dtype = self.dtype
+        if dtype[0] == "f":
+            return True
+        return False
+
     def view(self) -> np.ndarray:
         dtype = self.dtype
         if dtype == "u8":
@@ -468,13 +521,15 @@ class Series:
                     args.append(arg.view())
                 else:
                     return NotImplemented
-            (out, ptr) = aligned_array_f64(self.len())
-            kwargs["out"] = out
-            ufunc(*args, **kwargs)
-            # get method for current dtype
-            f = getattr(self._s, f"unsafe_from_ptr_{self.dtype}")
-            return wrap_s(f(ptr, self.len()))
 
+            if "dtype" in kwargs:
+                dtype = kwargs.pop("dtype")
+            else:
+                dtype = self.dtype
+
+            f = get_ffi_func("apply_ufunc_<>", dtype, self._s)
+            series = f(lambda out: ufunc(*args, out=out, **kwargs), self.len())
+            return wrap_s(series)
         else:
             return NotImplemented
 

@@ -3,13 +3,6 @@ import numpy.core
 from numpy import ctypeslib
 import ctypes
 from typing import Any
-from .pypolars import (
-    aligned_array_f32,
-    aligned_array_f64,
-    aligned_array_i32,
-    aligned_array_i64,
-    series_from_ptr_f64,
-)
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
 

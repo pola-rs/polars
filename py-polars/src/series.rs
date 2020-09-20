@@ -1,9 +1,10 @@
 use crate::error::PyPolarsEr;
 use crate::npy;
+use crate::npy::aligned_array;
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use polars::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::RuntimeError, prelude::*, Python};
 
 #[pyclass]
@@ -358,6 +359,58 @@ impl PySeries {
     }
 }
 
+macro_rules! impl_ufuncs {
+    ($name:ident, $type:ty, $unsafe_from_ptr_method:ident) => {
+        #[pymethods]
+        impl PySeries {
+            // applies a ufunc by accepting a lambda out: ufunc(*args, out=out)
+            // the out array is allocated in this method, send to Python and once the ufunc is applied
+            // ownership is taken by Rust again to prevent memory leak.
+            // if the ufunc fails, we first must take ownership back.
+            pub fn $name(&self, lambda: &PyAny, size: usize) -> PyResult<PySeries> {
+                // numpy array object, and a *mut ptr
+                let (out_array, ptr) = aligned_array::<$type>(size);
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+
+                // TODO: check if we can initialize such that we have a ref count of 1.
+                // why is it already 2 here?
+                assert_eq!(out_array.get_refcnt(py), 2);
+                // inserting it in a tuple increase the reference count by 1.
+                let args = PyTuple::new(py, &[out_array]);
+
+                // whatever the result, we must take the leaked memory ownership back
+                let s = match lambda.call1(args) {
+                    Ok(out) => {
+                        // if this assert fails, the lambda has taken a reference to the object, so we must panic
+                        assert_eq!(out.get_refcnt(), 3);
+                        self.$unsafe_from_ptr_method(ptr as usize, size)
+                    }
+                    Err(e) => {
+                        // first take ownership from the leaked memory
+                        // so the destructor gets called when we go out of scope
+                        self.$unsafe_from_ptr_method(ptr as usize, size);
+                        // return error information
+                        return Err(e);
+                    }
+                };
+
+                Ok(s)
+            }
+        }
+    };
+}
+impl_ufuncs!(apply_ufunc_f32, f32, unsafe_from_ptr_f32);
+impl_ufuncs!(apply_ufunc_f64, f64, unsafe_from_ptr_f64);
+impl_ufuncs!(apply_ufunc_u8, u8, unsafe_from_ptr_u8);
+impl_ufuncs!(apply_ufunc_u16, u16, unsafe_from_ptr_u16);
+impl_ufuncs!(apply_ufunc_u32, u32, unsafe_from_ptr_u32);
+impl_ufuncs!(apply_ufunc_u64, u64, unsafe_from_ptr_u64);
+impl_ufuncs!(apply_ufunc_i8, i8, unsafe_from_ptr_i8);
+impl_ufuncs!(apply_ufunc_i16, i16, unsafe_from_ptr_i16);
+impl_ufuncs!(apply_ufunc_i32, i32, unsafe_from_ptr_i32);
+impl_ufuncs!(apply_ufunc_i64, i64, unsafe_from_ptr_i64);
+
 macro_rules! impl_set_with_mask {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
         fn $name(series: &Series, filter: &PySeries, value: Option<$native>) -> Result<Series> {
@@ -446,11 +499,11 @@ impl_get!(get_i16, Int16, i16);
 impl_get!(get_i32, Int32, i32);
 impl_get!(get_i64, Int64, i64);
 
+// Not public methods.
 macro_rules! impl_unsafe_from_ptr {
     ($name:ident, $series_variant:ident) => {
-        #[pymethods]
         impl PySeries {
-            pub fn $name(&self, ptr: usize, len: usize) -> Self {
+            fn $name(&self, ptr: usize, len: usize) -> Self {
                 let v = unsafe { npy::vec_from_ptr(ptr, len) };
                 let av = AlignedVec::new(v).unwrap();
                 let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());

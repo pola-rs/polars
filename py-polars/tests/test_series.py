@@ -1,5 +1,4 @@
 from pypolars import Series
-from pypolars.ffi import aligned_array_f32
 import numpy as np
 
 
@@ -38,12 +37,12 @@ def test_arithmetic():
     b = a
 
     assert ((a * b) == [1, 4]).sum() == 2
-    assert ((a / b) == [1, 1]).sum() == 2
+    assert ((a / b) == [1.0, 1.0]).sum() == 2
     assert ((a + b) == [2, 4]).sum() == 2
     assert ((a - b) == [0, 0]).sum() == 2
     assert ((a + 1) == [2, 3]).sum() == 2
     assert ((a - 1) == [0, 1]).sum() == 2
-    assert ((a / 1) == [1, 2]).sum() == 2
+    assert ((a / 1) == [1.0, 2.0]).sum() == 2
     assert ((a * 2) == [2, 4]).sum() == 2
     assert ((1 + a) == [2, 3]).sum() == 2
     assert ((1 - a) == [0, -1]).sum() == 2
@@ -134,23 +133,6 @@ def test_view():
     a = Series("a", [1.0, 2.0, 3.0])
     assert isinstance(a.view(), np.ndarray)
     assert np.all(a.view() == np.array([1, 2, 3]))
-
-
-def test_numpy_interface():
-    # this isn't used anymore.
-    a, ptr = aligned_array_f32(10)
-    assert a.dtype == np.float32
-    assert a.shape == (10,)
-    pointer, read_only_flag = a.__array_interface__["data"]
-    # set read only flag to False
-    a.__array_interface__["data"] = (pointer, False)
-    # the __array_interface is used to create a new array (pointing to the same memory)
-    b = np.array(a)
-    # now the memory is writeable
-    b[0] = 1
-
-    # TODO: sent pointer to Rust and take ownership of array.
-    # https://stackoverflow.com/questions/37988849/safer-way-to-expose-a-c-allocated-memory-buffer-using-numpy-ctypes
 
 
 def test_ufunc():
