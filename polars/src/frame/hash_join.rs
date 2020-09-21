@@ -378,9 +378,11 @@ where
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         match (a.cont_slice(), b.cont_slice()) {
-            (Ok(a_slice), Ok(b_slice)) => {
-                par_hash_join_tuples_inner!(a_slice.into_par_iter().enumerate(), b_slice.into_par_iter().enumerate(), swap)
-            }
+            (Ok(a_slice), Ok(b_slice)) => par_hash_join_tuples_inner!(
+                a_slice.into_par_iter().enumerate(),
+                b_slice.into_par_iter().enumerate(),
+                swap
+            ),
             (Ok(a_slice), Err(_)) => {
                 hash_join_tuples_inner(
                     a_slice.iter().map(|v| Some(*v)), // take ownership
@@ -398,9 +400,10 @@ where
     #[cfg(feature = "parallel")]
     fn par_hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
         match (self.cont_slice(), other.cont_slice()) {
-            (Ok(a_slice), Ok(b_slice)) => {
-                par_hash_join_tuples_left!(a_slice.par_iter().enumerate(), b_slice.into_par_iter().enumerate())
-            }
+            (Ok(a_slice), Ok(b_slice)) => par_hash_join_tuples_left!(
+                a_slice.par_iter().enumerate(),
+                b_slice.into_par_iter().enumerate()
+            ),
             (Ok(a_slice), Err(_)) => {
                 hash_join_tuples_left(
                     a_slice.iter().map(|v| Some(*v)), // take ownership
@@ -519,7 +522,11 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
                 NoNull(b).into_par_iter().enumerate(),
                 swap
             ),
-            _ => par_hash_join_tuples_inner!(a.into_par_iter().enumerate(), b.into_par_iter().enumerate(), swap),
+            _ => par_hash_join_tuples_inner!(
+                a.into_par_iter().enumerate(),
+                b.into_par_iter().enumerate(),
+                swap
+            ),
         }
     }
 
@@ -539,7 +546,10 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
                 NoNull(self).into_par_iter().enumerate(),
                 NoNull(other).into_par_iter().enumerate()
             ),
-            _ => par_hash_join_tuples_left!(self.into_par_iter().enumerate(), other.into_par_iter().enumerate()),
+            _ => par_hash_join_tuples_left!(
+                self.into_par_iter().enumerate(),
+                other.into_par_iter().enumerate()
+            ),
         }
     }
 
