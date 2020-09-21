@@ -2,6 +2,7 @@ from __future__ import annotations
 from .pypolars import PyDataFrame, PySeries
 from typing import Dict, Sequence, List, Tuple, Optional, Union
 from .series import Series, wrap_s
+from .datatypes import *
 import numpy as np
 from typing import TextIO, BinaryIO
 
@@ -217,9 +218,9 @@ class DataFrame:
                 else:
                     return wrap_df(self._df.take(item))
             dtype = item.dtype
-            if dtype == "bool":
+            if dtype == Bool:
                 return wrap_df(self._df.filter(item.inner()))
-            if dtype == "u32":
+            if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
         return NotImplemented
 
@@ -282,11 +283,11 @@ class DataFrame:
         return self._df.columns()
 
     @property
-    def dtypes(self) -> List[str]:
+    def dtypes(self) -> List[type]:
         """
         get dtypes
         """
-        return self._df.dtypes()
+        return [dtypes[idx] for idx in self._df.dtypes()]
 
     def replace_at_idx(self, index: int, series: Series):
         """

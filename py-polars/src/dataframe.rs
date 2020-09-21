@@ -1,6 +1,7 @@
-use polars::{datatypes::ToStr, prelude::*};
+use polars::prelude::*;
 use pyo3::{exceptions::RuntimeError, prelude::*};
 
+use crate::datatypes::DataType;
 use crate::{
     error::PyPolarsEr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
@@ -152,11 +153,14 @@ impl PyDataFrame {
     }
 
     /// Get datatypes
-    pub fn dtypes(&self) -> Vec<String> {
+    pub fn dtypes(&self) -> Vec<u8> {
         self.df
             .dtypes()
             .iter()
-            .map(|arrow_dtype| arrow_dtype.to_str())
+            .map(|arrow_dtype| {
+                let dt: DataType = arrow_dtype.into();
+                dt as u8
+            })
             .collect()
     }
 

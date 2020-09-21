@@ -3,6 +3,7 @@ from .pypolars import PySeries
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any
 from .ffi import ptr_to_numpy
+from .datatypes import *
 
 import ctypes
 from numbers import Number
@@ -11,14 +12,6 @@ from numbers import Number
 class IdentityDict(dict):
     def __missing__(self, key):
         return key
-
-
-# TODO: add all polars supported primitives.
-DTYPE_TO_FFINAME = IdentityDict()
-DTYPE_TO_FFINAME["date32"] = lambda x: "i32"
-DTYPE_TO_FFINAME["date64"] = lambda x: "i64"
-DTYPE_TO_FFINAME["time64(ns)"] = "i64"
-DTYPE_TO_FFINAME["duration(ns)"] = "i64"
 
 
 def get_ffi_func(
@@ -159,7 +152,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.eq(other._s))
-        f = getattr(self._s, f"eq_{self.dtype}", None)
+        f = get_ffi_func("eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -169,7 +162,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.neq(other._s))
-        f = getattr(self._s, f"neq_{self.dtype}", None)
+        f = get_ffi_func("neq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -179,7 +172,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.gt(other._s))
-        f = getattr(self._s, f"gt_{self.dtype}", None)
+        f = get_ffi_func("gt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -189,7 +182,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.lt(other._s))
-        f = getattr(self._s, f"lt_{self.dtype}", None)
+        f = get_ffi_func("lt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -199,7 +192,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.gt_eq(other._s))
-        f = getattr(self._s, f"gt_eq_{self.dtype}", None)
+        f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -209,7 +202,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.lt_eq(other._s))
-        f = getattr(self._s, f"lt_eq_{self.dtype}", None)
+        f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -217,7 +210,7 @@ class Series:
     def __add__(self, other) -> Series:
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.add(other._s))
-        f = getattr(self._s, f"add_{self.dtype}", None)
+        f = get_ffi_func("add_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -225,22 +218,25 @@ class Series:
     def __sub__(self, other) -> Series:
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.sub(other._s))
-        f = getattr(self._s, f"sub_{self.dtype}", None)
+        f = get_ffi_func("sub_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __truediv__(self, other) -> Series:
         if not self.is_float():
-            out_dtype = "f64"
+            out_dtype = Float64
         else:
             out_dtype = DTYPE_TO_FFINAME[self.dtype]
         return np.true_divide(self, other, dtype=out_dtype)
 
+    def __floordiv__(self, other) -> Series:
+        return np.floor_divide(self, other)
+
     def __mul__(self, other) -> Series:
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.mul(other._s))
-        f = getattr(self._s, f"mul_{self.dtype}", None)
+        f = get_ffi_func("mul_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -248,7 +244,7 @@ class Series:
     def __radd__(self, other):
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.add(other._s))
-        f = getattr(self._s, f"add_{self.dtype}_rhs", None)
+        f = get_ffi_func("add_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -256,15 +252,22 @@ class Series:
     def __rsub__(self, other):
         if isinstance(other, Series):
             return Series.from_pyseries(other._s.sub(self._s))
-        f = getattr(self._s, f"sub_{self.dtype}_rhs", None)
+        f = get_ffi_func("sub_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __rtruediv__(self, other):
+        if not self.is_float():
+            out_dtype = Float64
+        else:
+            out_dtype = DTYPE_TO_FFINAME[self.dtype]
+        return np.true_divide(other, self, dtype=out_dtype)
+
+    def __rfloordiv__(self, other):
         if isinstance(other, Series):
             return Series.from_pyseries(other._s.div(self._s))
-        f = getattr(self._s, f"div_{self.dtype}_rhs", None)
+        f = get_ffi_func("div_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -272,7 +275,7 @@ class Series:
     def __rmul__(self, other):
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.mul(other._s))
-        f = getattr(self._s, f"mul_{self.dtype}_rhs", None)
+        f = get_ffi_func("mul_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -287,18 +290,18 @@ class Series:
             if stride != 1:
                 return NotImplemented
             return self.slice(start, stop - start)
-        f = getattr(self._s, f"get_{self.dtype}", None)
+        f = get_ffi_func("get_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return f(item)
 
     def __setitem__(self, key, value):
         if isinstance(key, Series):
-            if key.dtype == "bool":
+            if key.dtype == Bool:
                 self._s = self.set(key, value)._s
-            elif key.dtype == "u64":
+            elif key.dtype == UInt64:
                 self._s = self.set_at_idx(key, value)._s
-            elif key.dtype == "u32":
+            elif key.dtype == UInt32:
                 self._s = self.set_at_idx(key.cast_u64(), value)._s
         # TODO: implement for these types without casting to series
         if isinstance(key, (np.ndarray, list, tuple)):
@@ -307,12 +310,12 @@ class Series:
 
     @property
     def dtype(self):
-        return self._s.dtype()
+        return dtypes[self._s.dtype()]
 
     def sum(self):
-        if self.dtype == "bool":
+        if self.dtype == Bool:
             return self._s.sum_u32()
-        f = getattr(self._s, f"sum_{self.dtype}", None)
+        f = get_ffi_func("sum_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return f()
@@ -322,17 +325,17 @@ class Series:
         return self._s.mean_f64()
 
     def min(self):
-        if self.dtype == "bool":
+        if self.dtype == Bool:
             return self._s.min_u32()
-        f = getattr(self._s, f"min_{self.dtype}", None)
+        f = get_ffi_func("min_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return f()
 
     def max(self):
-        if self.dtype == "bool":
+        if self.dtype == Bool:
             return self._s.max_u32()
-        f = getattr(self._s, f"max_{self.dtype}", None)
+        f = get_ffi_func("max_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return f()
@@ -458,51 +461,13 @@ class Series:
             return wrap_s(opt_s)
 
     def is_numeric(self) -> bool:
-        dtype = self.dtype
-        if dtype == "bool":
-            return False
-        if dtype == "utf8":
-            return False
-        return True
+        return self.dtype not in (Utf8, Bool, LargeList)
 
     def is_float(self) -> bool:
-        dtype = self.dtype
-        if dtype[0] == "f":
-            return True
-        return False
+        return self.dtype in (Float32, Float64)
 
     def view(self) -> np.ndarray:
-        dtype = self.dtype
-        if dtype == "u8":
-            ptr_type = ctypes.c_uint8
-        elif dtype == "u16":
-            ptr_type = ctypes.c_uint16
-        elif dtype == "u32":
-            ptr_type = ctypes.c_uint
-        elif dtype == "u64":
-            ptr_type = ctypes.c_ulong
-        elif dtype == "i8":
-            ptr_type = ctypes.c_int8
-        elif dtype == "i16":
-            ptr_type = ctypes.c_int16
-        elif dtype == "i32":
-            ptr_type = ctypes.c_int
-        elif dtype == "i64":
-            ptr_type = ctypes.c_long
-        elif dtype == "f32":
-            ptr_type = ctypes.c_float
-        elif dtype == "f64":
-            ptr_type = ctypes.c_double
-        elif dtype == "date32":
-            ptr_type = ctypes.c_int
-        elif dtype == "date64":
-            ptr_type = ctypes.c_long
-        elif dtype == "time64(ns)":
-            ptr_type = ctypes.c_long
-        elif dtype == "duration(ns)":
-            ptr_type = ctypes.c_long
-        else:
-            return NotImplemented
+        ptr_type = dtype_to_ctype(self.dtype)
         ptr = self._s.as_single_ptr()
         array = ptr_to_numpy(ptr, self.len(), ptr_type)
         array.setflags(write=False)
