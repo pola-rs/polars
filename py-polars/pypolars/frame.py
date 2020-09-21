@@ -438,14 +438,35 @@ class GroupBy:
         self.by = by
 
     def select(self, columns: Union[str, List[str]]) -> GBSelection:
+        """
+        Select the columns that will be aggregated.
+
+        Parameters
+        ----------
+        columns
+            One or multiple columns
+        """
         if isinstance(columns, str):
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
 
     def select_all(self):
+        """
+        Select all columns for aggregation.
+        """
         return GBSelection(self._df, self.by, self._df.columns())
 
     def pivot(self, pivot_column: str, values_column: str) -> PivotOps:
+        """
+        Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
+
+        Parameters
+        ----------
+        pivot_column
+            Column to pivot.
+        values_column
+            Column that will be aggregated
+        """
         return PivotOps(self._df, self.by, pivot_column, values_column)
 
 
@@ -496,18 +517,39 @@ class GBSelection:
         self.selection = selection
 
     def first(self):
+        """
+        Aggregate the first value in the group.
+        """
         return wrap_df(self._df.groupby(self.by, self.selection, "first"))
 
+    def last(self):
+        """
+        Aggregate the first value in the group.
+        """
+        return wrap_df(self._df.groupby(self.by, self.selection, "last"))
+
     def sum(self):
+        """
+        Reduce the groups to the sum.
+        """
         return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
 
     def min(self):
+        """
+        Reduce the groups to the minimal value.
+        """
         return wrap_df(self._df.groupby(self.by, self.selection, "min"))
 
     def max(self):
+        """
+        Reduce the groups to the maximal value.
+        """
         return wrap_df(self._df.groupby(self.by, self.selection, "max"))
 
     def count(self):
+        """
+        Count the number of values in each group.
+        """
         return wrap_df(self._df.groupby(self.by, self.selection, "count"))
 
     def mean(self):

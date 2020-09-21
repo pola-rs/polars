@@ -407,9 +407,7 @@ where
 
 #[enum_dispatch(Series)]
 trait AggFirst {
-    fn agg_first(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        unimplemented!()
-    }
+    fn agg_first(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series;
 }
 
 macro_rules! impl_agg_first {
@@ -424,30 +422,60 @@ macro_rules! impl_agg_first {
 
 impl<T> AggFirst for ChunkedArray<T>
 where
-    T: PolarsNumericType + std::marker::Sync,
+    T: ArrowPrimitiveType + Send,
 {
     fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
         impl_agg_first!(self, groups, ChunkedArray<T>)
     }
 }
 
-impl AggFirst for BooleanChunked {
-    fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        impl_agg_first!(self, groups, BooleanChunked)
-    }
-}
-
 impl AggFirst for Utf8Chunked {
     fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        groups
-            .iter()
-            .map(|(first, _idx)| self.get(*first))
-            .collect::<Utf8Chunked>()
-            .into_series()
+        impl_agg_first!(self, groups, Utf8Chunked)
     }
 }
 
-impl AggFirst for LargeListChunked {}
+impl AggFirst for LargeListChunked {
+    fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        impl_agg_first!(self, groups, LargeListChunked)
+    }
+}
+
+#[enum_dispatch(Series)]
+trait AggLast {
+    fn agg_last(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series;
+}
+
+macro_rules! impl_agg_last {
+    ($self:ident, $groups:ident, $ca_type:ty) => {{
+        $groups
+            .iter()
+            .map(|(_first, idx)| $self.get(idx[idx.len() - 1]))
+            .collect::<$ca_type>()
+            .into_series()
+    }};
+}
+
+impl<T> AggLast for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType + Send,
+{
+    fn agg_last(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        impl_agg_last!(self, groups, ChunkedArray<T>)
+    }
+}
+
+impl AggLast for Utf8Chunked {
+    fn agg_last(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        impl_agg_last!(self, groups, Utf8Chunked)
+    }
+}
+
+impl AggLast for LargeListChunked {
+    fn agg_last(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+        impl_agg_last!(self, groups, LargeListChunked)
+    }
+}
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Select the column by which the determine the groups.
@@ -638,7 +666,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped series and find the first value per group.
+    /// Aggregate grouped `Series` and find the first value per group.
     ///
     /// # Example
     ///
@@ -668,6 +696,42 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         for agg_col in agg_cols {
             let new_name = format!["{}_first", agg_col.name()];
             let mut agg = agg_col.agg_first(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
+        }
+        DataFrame::new(cols)
+    }
+
+    /// Aggregate grouped `Series` and return the last value per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").last()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +------------+------------+
+    /// | date       | temp_last |
+    /// | ---        | ---        |
+    /// | date32     | i32        |
+    /// +============+============+
+    /// | 2020-08-23 | 9          |
+    /// +------------+------------+
+    /// | 2020-08-22 | 1          |
+    /// +------------+------------+
+    /// | 2020-08-21 | 10         |
+    /// +------------+------------+
+    /// ```
+    pub fn last(&self) -> Result<DataFrame> {
+        let (mut cols, agg_cols) = self.prepare_agg()?;
+        for agg_col in agg_cols {
+            let new_name = format!["{}_last", agg_col.name()];
+            let mut agg = agg_col.agg_last(&self.groups);
             agg.rename(&new_name);
             cols.push(agg);
         }
@@ -1198,6 +1262,10 @@ mod test {
         println!(
             "{:?}",
             df.groupby("date").unwrap().select("temp").first().unwrap()
+        );
+        println!(
+            "{:?}",
+            df.groupby("date").unwrap().select("temp").last().unwrap()
         );
     }
 

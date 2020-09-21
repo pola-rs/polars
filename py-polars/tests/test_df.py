@@ -100,6 +100,12 @@ def test_groupby():
         .mean()
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]}))
     )
+    assert (
+        df.groupby("a")
+        .select("b")
+        .last()
+        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
+    )
     #
     # # TODO: is false because count is u32
     # df.groupby(by="a", select="b", agg="count").frame_equal(
