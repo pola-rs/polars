@@ -369,21 +369,21 @@ macro_rules! impl_ufuncs {
             // if the ufunc fails, we first must take ownership back.
             pub fn $name(&self, lambda: &PyAny, size: usize) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
-                let (out_array, ptr) = aligned_array::<$type>(size);
                 let gil = Python::acquire_gil();
                 let py = gil.python();
+                let (out_array, ptr) = aligned_array::<$type>(py, size);
 
-                // TODO: check if we can initialize such that we have a ref count of 1.
-                // why is it already 2 here?
-                assert_eq!(out_array.get_refcnt(py), 2);
+                debug_assert_eq!(out_array.get_refcnt(), 1);
                 // inserting it in a tuple increase the reference count by 1.
                 let args = PyTuple::new(py, &[out_array]);
+                debug_assert_eq!(out_array.get_refcnt(), 2);
 
                 // whatever the result, we must take the leaked memory ownership back
                 let s = match lambda.call1(args) {
-                    Ok(out) => {
+                    Ok(_) => {
                         // if this assert fails, the lambda has taken a reference to the object, so we must panic
-                        assert_eq!(out.get_refcnt(), 3);
+                        // args and the lambda return have a reference, making a total of 3
+                        assert_eq!(out_array.get_refcnt(), 3);
                         self.$unsafe_from_ptr_method(ptr as usize, size)
                     }
                     Err(e) => {

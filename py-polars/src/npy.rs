@@ -9,11 +9,9 @@ use pyo3::prelude::*;
 use std::{mem, ptr};
 
 /// Create an empty numpy array arrows 64 byte alignment
-pub fn aligned_array<T: Element>(size: usize) -> (Py<PyArray1<T>>, *mut T) {
+pub fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArray1<T>, *mut T) {
     let mut buf: Vec<T> = Vec::with_capacity_aligned(size);
     unsafe { buf.set_len(size) }
-    let gil = Python::acquire_gil();
-    let py = gil.python();
     // modified from
     // numpy-0.10.0/src/array.rs:375
 
@@ -35,7 +33,7 @@ pub fn aligned_array<T: Element>(size: usize) -> (Py<PyArray1<T>>, *mut T) {
             ptr::null_mut(),            //obj
         );
         mem::forget(buf);
-        (PyArray1::from_owned_ptr(py, ptr).to_owned(), buffer_ptr)
+        (PyArray1::from_owned_ptr(py, ptr), buffer_ptr)
     }
 }
 
