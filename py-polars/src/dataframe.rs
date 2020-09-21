@@ -301,6 +301,7 @@ impl PyDataFrame {
             "last" => selection.last(),
             "sum" => selection.sum(),
             "count" => selection.count(),
+            "n_unique" => selection.n_unique(),
             a => Err(PolarsError::Other(format!("agg fn {} does not exists", a))),
         };
         let df = df.map_err(PyPolarsEr::from)?;
