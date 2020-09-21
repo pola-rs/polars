@@ -3,6 +3,7 @@ from .pypolars import PyDataFrame, PySeries
 from typing import Dict, Sequence, List, Tuple, Optional, Union
 from .series import Series, wrap_s
 import numpy as np
+from typing import TextIO, BinaryIO
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
@@ -25,28 +26,76 @@ class DataFrame:
 
     @staticmethod
     def from_csv(
-        path: str,
+        file: Union[str, TextIO],
         infer_schema_length: int = 100,
         batch_size: int = 100000,
         has_headers: bool = True,
         ignore_errors: bool = False,
     ) -> DataFrame:
+        """
+        Read into a DataFrame from a csv file.
+
+        Parameters
+        ----------
+        file
+            Path to a file or a file like object.
+        infer_schema_length
+            Maximum number of lines to read to infer schema.
+        batch_size
+            Number of lines to read into the buffer at once. Modify this to change performance.
+        has_headers
+            If the CSV file has headers or not.
+        ignore_errors
+            Try to keep reading lines if some lines yield errors.
+
+        Returns
+        -------
+        DataFrame
+        """
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.from_csv(
-            path, infer_schema_length, batch_size, has_headers, ignore_errors
+            file, infer_schema_length, batch_size, has_headers, ignore_errors
         )
         return self
 
     @staticmethod
-    def from_parquet(path: str, batch_size: int = 250000,) -> DataFrame:
+    def from_parquet(
+        file: Union[str, BinaryIO], batch_size: int = 250000,
+    ) -> DataFrame:
+        """
+        Read into a DataFrame from a parquet file.
+
+        Parameters
+        ----------
+        file
+            Path to a file or a file like object.
+        batch_size
+            Number of lines to read into the buffer at once. Modify this to change performance.
+
+        Returns
+        -------
+        DataFrame
+        """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.from_parquet(path, batch_size)
+        self._df = PyDataFrame.from_parquet(file, batch_size)
         return self
 
     @staticmethod
-    def from_ipc(path: str) -> DataFrame:
+    def from_ipc(file: Union[str, BinaryIO]) -> DataFrame:
+        """
+        Read into a DataFrame from Arrow IPC stream format.
+
+        Parameters
+        ----------
+        file
+            Path to a file or a file like object.
+
+        Returns
+        -------
+        DataFrame
+        """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.from_ipc(path)
+        self._df = PyDataFrame.from_ipc(file)
         return self
 
     def to_csv(
