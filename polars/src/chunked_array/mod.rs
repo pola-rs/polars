@@ -346,7 +346,7 @@ impl<T> ChunkedArray<T> {
     /// Get the index of the chunk and the index of the value in that chunk
     #[inline]
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
-        if self.chunk_id().len() == 1 {
+        if self.chunks.len() == 1 {
             return (0, index);
         }
         let mut index_remainder = index;

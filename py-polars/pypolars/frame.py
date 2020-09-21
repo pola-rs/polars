@@ -516,41 +516,50 @@ class GBSelection:
         self.by = by
         self.selection = selection
 
-    def first(self):
+    def first(self) -> DataFrame:
         """
-        Aggregate the first value in the group.
+        Aggregate the first values in the group.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "first"))
 
-    def last(self):
+    def last(self) -> DataFrame:
         """
-        Aggregate the first value in the group.
+        Aggregate the last values in the group.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "last"))
 
-    def sum(self):
+    def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
 
-    def min(self):
+    def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "min"))
 
-    def max(self):
+    def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "max"))
 
-    def count(self):
+    def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "count"))
 
-    def mean(self):
+    def mean(self) -> DataFrame:
+        """
+        Reduce the groups to the mean values.
+        """
         return wrap_df(self._df.groupby(self.by, self.selection, "mean"))
+
+    def n_unique(self) -> DataFrame:
+        """
+        Count the unique values per group.
+        """
+        return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))

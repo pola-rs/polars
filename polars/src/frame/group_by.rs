@@ -2,13 +2,14 @@ use super::hash_join::prepare_hashed_relation;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::frame::select::Selection;
 use crate::prelude::*;
+use crate::utils::Xob;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use enum_dispatch::enum_dispatch;
 use fnv::FnvBuildHasher;
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::{
     fmt::{Debug, Formatter},
@@ -477,6 +478,64 @@ impl AggLast for LargeListChunked {
     }
 }
 
+#[enum_dispatch(Series)]
+trait AggNUnique {
+    fn agg_n_unique(&self, _groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
+        unimplemented!()
+    }
+}
+
+macro_rules! impl_agg_n_unique {
+    ($self:ident, $groups:ident, $ca_type:ty) => {{
+        $groups
+            .into_iter()
+            .map(|(_first, idx)| {
+                if $self.null_count() == 0 {
+                    let mut set = HashSet::with_hasher(FnvBuildHasher::default());
+                    for i in idx {
+                        let v = unsafe { $self.get_unchecked(*i) };
+                        set.insert(v);
+                    }
+                    set.len() as u32
+                } else {
+                    let mut set = HashSet::with_hasher(FnvBuildHasher::default());
+                    for i in idx {
+                        let opt_v = $self.get(*i);
+                        set.insert(opt_v);
+                    }
+                    set.len() as u32
+                }
+            })
+            .collect::<$ca_type>()
+            .into_inner()
+    }};
+}
+
+impl<T> AggNUnique for ChunkedArray<T>
+where
+    T: PolarsIntegerType + Send,
+    T::Native: Hash + Eq,
+{
+    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
+        impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>)
+    }
+}
+
+impl AggNUnique for Float32Chunked {}
+impl AggNUnique for Float64Chunked {}
+impl AggNUnique for LargeListChunked {}
+impl AggNUnique for BooleanChunked {
+    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
+        impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>)
+    }
+}
+
+impl AggNUnique for Utf8Chunked {
+    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
+        impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>)
+    }
+}
+
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Select the column by which the determine the groups.
     /// You can select a single column or a slice of columns.
@@ -732,6 +791,42 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         for agg_col in agg_cols {
             let new_name = format!["{}_last", agg_col.name()];
             let mut agg = agg_col.agg_last(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
+        }
+        DataFrame::new(cols)
+    }
+
+    /// Aggregate grouped `Series` by counting the number of unique values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").n_unique()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +------------+---------------+
+    /// | date       | temp_n_unique |
+    /// | ---        | ---           |
+    /// | date32     | u32           |
+    /// +============+===============+
+    /// | 2020-08-23 | 1             |
+    /// +------------+---------------+
+    /// | 2020-08-22 | 2             |
+    /// +------------+---------------+
+    /// | 2020-08-21 | 2             |
+    /// +------------+---------------+
+    /// ```
+    pub fn n_unique(&self) -> Result<DataFrame> {
+        let (mut cols, agg_cols) = self.prepare_agg()?;
+        for agg_col in agg_cols {
+            let new_name = format!["{}_n_unique", agg_col.name()];
+            let mut agg = agg_col.agg_n_unique(&self.groups).into_series();
             agg.rename(&new_name);
             cols.push(agg);
         }
@@ -1266,6 +1361,14 @@ mod test {
         println!(
             "{:?}",
             df.groupby("date").unwrap().select("temp").last().unwrap()
+        );
+        println!(
+            "{:?}",
+            df.groupby("date")
+                .unwrap()
+                .select("temp")
+                .n_unique()
+                .unwrap()
         );
     }
 
