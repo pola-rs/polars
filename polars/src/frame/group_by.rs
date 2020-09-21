@@ -108,13 +108,14 @@ impl<'a> Debug for Groupable<'a> {
 }
 
 impl Series {
-    fn as_groupable_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<Groupable>> + 'a> {
+    fn as_groupable_iter<'a>(&'a self) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>> {
         macro_rules! as_groupable_iter {
             ($ca:expr, $variant:ident ) => {{
-                Box::new(
+                let bx = Box::new(
                     $ca.into_iter()
                         .map(|opt_b| opt_b.map(|b| Groupable::$variant(b))),
-                )
+                );
+                Ok(bx)
             }};
         }
         match self {
@@ -144,7 +145,7 @@ impl Series {
             Series::IntervalDayTime(ca) => as_groupable_iter!(ca, Int64),
             Series::IntervalYearMonth(ca) => as_groupable_iter!(ca, Int32),
             Series::Utf8(ca) => as_groupable_iter!(ca, Utf8),
-            _ => unimplemented!(),
+            _ => Err(PolarsError::Other("Column is not groupable".to_string())),
         }
     }
 }
@@ -169,32 +170,32 @@ impl DataFrame {
             1 => selected_keys[0].group_tuples(),
             2 => {
                 let iter = selected_keys[0]
-                    .as_groupable_iter()
-                    .zip(selected_keys[1].as_groupable_iter());
+                    .as_groupable_iter()?
+                    .zip(selected_keys[1].as_groupable_iter()?);
                 groupby(iter)
             }
             3 => {
                 let iter = selected_keys[0]
-                    .as_groupable_iter()
-                    .zip(selected_keys[1].as_groupable_iter())
-                    .zip(selected_keys[2].as_groupable_iter());
+                    .as_groupable_iter()?
+                    .zip(selected_keys[1].as_groupable_iter()?)
+                    .zip(selected_keys[2].as_groupable_iter()?);
                 groupby(iter)
             }
             4 => {
                 let iter = selected_keys[0]
-                    .as_groupable_iter()
-                    .zip(selected_keys[1].as_groupable_iter())
-                    .zip(selected_keys[2].as_groupable_iter())
-                    .zip(selected_keys[3].as_groupable_iter());
+                    .as_groupable_iter()?
+                    .zip(selected_keys[1].as_groupable_iter()?)
+                    .zip(selected_keys[2].as_groupable_iter()?)
+                    .zip(selected_keys[3].as_groupable_iter()?);
                 groupby(iter)
             }
             5 => {
                 let iter = selected_keys[0]
-                    .as_groupable_iter()
-                    .zip(selected_keys[1].as_groupable_iter())
-                    .zip(selected_keys[2].as_groupable_iter())
-                    .zip(selected_keys[3].as_groupable_iter())
-                    .zip(selected_keys[4].as_groupable_iter());
+                    .as_groupable_iter()?
+                    .zip(selected_keys[1].as_groupable_iter()?)
+                    .zip(selected_keys[2].as_groupable_iter()?)
+                    .zip(selected_keys[3].as_groupable_iter()?)
+                    .zip(selected_keys[4].as_groupable_iter()?);
                 groupby(iter)
             }
             _ => {
@@ -879,7 +880,7 @@ trait ChunkPivot {
         _keys: Vec<Series>,
         _groups: &Vec<(usize, Vec<usize>)>,
         _agg_type: PivotAgg,
-    ) -> DataFrame {
+    ) -> Result<DataFrame> {
         unimplemented!()
     }
 }
@@ -895,9 +896,9 @@ where
         keys: Vec<Series>,
         groups: &Vec<(usize, Vec<usize>)>,
         agg_type: PivotAgg,
-    ) -> DataFrame {
+    ) -> Result<DataFrame> {
         // TODO: save an allocation by creating a random access struct for the Groupable utility type.
-        let pivot_vec: Vec<_> = pivot_series.as_groupable_iter().collect();
+        let pivot_vec: Vec<_> = pivot_series.as_groupable_iter()?.collect();
 
         let values_taker = self.take_rand();
 
@@ -973,8 +974,7 @@ where
             cols.push(ca.into_series());
         }
 
-        let df = DataFrame::new(cols).unwrap();
-        df
+        DataFrame::new(cols)
     }
 }
 
@@ -1077,56 +1077,56 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn first(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        Ok(values_series.pivot(
+        values_series.pivot(
             pivot_series,
             self.gb.keys(),
             &self.gb.groups,
             PivotAgg::First,
-        ))
+        )
     }
 
     /// Aggregate the pivot results by taking the sum of all duplicates.
     pub fn sum(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        Ok(values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Sum))
+        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Sum)
     }
 
     /// Aggregate the pivot results by taking the minimal value of all duplicates.
     pub fn min(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        Ok(values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Min))
+        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Min)
     }
 
     /// Aggregate the pivot results by taking the maximum value of all duplicates.
     pub fn max(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        Ok(values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Max))
+        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Max)
     }
 
     /// Aggregate the pivot results by taking the mean value of all duplicates.
     pub fn mean(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        Ok(values_series.pivot(
+        values_series.pivot(
             pivot_series,
             self.gb.keys(),
             &self.gb.groups,
             PivotAgg::Mean,
-        ))
+        )
     }
     /// Aggregate the pivot results by taking the median value of all duplicates.
     pub fn median(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        Ok(values_series.pivot(
+        values_series.pivot(
             pivot_series,
             self.gb.keys(),
             &self.gb.groups,
             PivotAgg::Median,
-        ))
+        )
     }
 }
 

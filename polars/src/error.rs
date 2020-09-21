@@ -14,6 +14,7 @@ pub enum PolarsError {
     NotFound,
     #[error("Lengths don't match")]
     ShapeMisMatch,
+    // TODO: use Cow
     #[error("{0}")]
     Other(String),
     #[error("No selection was made")]
