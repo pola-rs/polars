@@ -298,6 +298,7 @@ impl PyDataFrame {
             "max" => selection.max(),
             "mean" => selection.mean(),
             "first" => selection.first(),
+            "last" => selection.last(),
             "sum" => selection.sum(),
             "count" => selection.count(),
             a => Err(PolarsError::Other(format!("agg fn {} does not exists", a))),
