@@ -1,4 +1,5 @@
 from pypolars import Series
+from pypolars.datatypes import *
 import numpy as np
 
 
@@ -43,12 +44,14 @@ def test_arithmetic():
     assert ((a + 1) == [2, 3]).sum() == 2
     assert ((a - 1) == [0, 1]).sum() == 2
     assert ((a / 1) == [1.0, 2.0]).sum() == 2
+    assert ((a // 2) == [0, 1]).sum() == 2
     assert ((a * 2) == [2, 4]).sum() == 2
     assert ((1 + a) == [2, 3]).sum() == 2
     assert ((1 - a) == [0, -1]).sum() == 2
     assert ((1 * a) == [1, 2]).sum() == 2
     # integer division
-    assert ((1 / a) == [1, 0]).sum() == 2
+    assert ((1 / a) == [1.0, 0.5]).sum() == 2
+    assert ((1 // a) == [1, 0]).sum() == 2
 
 
 def test_various():
@@ -78,6 +81,9 @@ def test_various():
     assert list(a.arg_unique()) == [0, 1, 3]
 
     assert a.take([2, 3]).series_equal(Series("", [1, 4]))
+    assert a.is_numeric()
+    a = Series("bool", [True, False])
+    assert not a.is_numeric()
 
 
 def test_filter():
@@ -93,13 +99,12 @@ def test_filter():
 def test_cast():
     a = Series("a", range(20))
 
-    assert a.cast_f32().dtype == "f32"
-    assert a.cast_f64().dtype == "f64"
-    assert a.cast_i32().dtype == "i32"
-    assert a.cast_u32().dtype == "u32"
-    assert a.cast_date64().dtype == "date64"
-    assert a.cast_time64ns().dtype == "time64(ns)"
-    assert a.cast_date32().dtype == "date32"
+    assert a.cast_f32().dtype == Float32
+    assert a.cast_f64().dtype == Float64
+    assert a.cast_i32().dtype == Int32
+    assert a.cast_u32().dtype == UInt32
+    assert a.cast_date64().dtype == Date64
+    assert a.cast_date32().dtype == Date32
 
 
 def test_to_python():

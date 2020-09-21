@@ -1,4 +1,5 @@
 from pypolars import DataFrame, Series
+from pypolars.datatypes import *
 import pytest
 from io import BytesIO
 
@@ -14,9 +15,9 @@ def test_init():
 def test_selection():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
-    assert df["a"].dtype == "i64"
-    assert df["b"].dtype == "f64"
-    assert df["c"].dtype == "str"
+    assert df["a"].dtype == Int64
+    assert df["b"].dtype == Float64
+    assert df["c"].dtype == Utf8
 
     assert df[["a", "b"]].columns == ["a", "b"]
     assert df[[True, False, True]].height == 2

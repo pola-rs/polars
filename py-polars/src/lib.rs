@@ -2,6 +2,7 @@ use crate::{dataframe::PyDataFrame, series::PySeries};
 use pyo3::prelude::*;
 
 pub mod dataframe;
+pub mod datatypes;
 pub mod error;
 pub mod file;
 pub mod npy;

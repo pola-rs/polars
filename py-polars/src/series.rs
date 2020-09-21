@@ -1,3 +1,4 @@
+use crate::datatypes::DataType;
 use crate::error::PyPolarsEr;
 use crate::npy;
 use crate::npy::aligned_array;
@@ -114,8 +115,9 @@ impl PySeries {
         self.series.rename(name);
     }
 
-    pub fn dtype(&self) -> String {
-        self.series.dtype().to_str()
+    pub fn dtype(&self) -> u8 {
+        let dt: DataType = self.series.dtype().into();
+        dt as u8
     }
 
     pub fn n_chunks(&self) -> usize {
