@@ -2,6 +2,10 @@ language: rust
 rust:
   - nightly
 
+branches:
+  only:
+    - master
+
 script:
   - cd polars && cargo test
 

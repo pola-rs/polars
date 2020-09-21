@@ -1,0 +1,47 @@
+name: Create Python test release
+
+
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'py-polars-test-v*' # Push events to matching py-polars-v*, i.e. py-polars-test-v1.0, py-polars-test-v-v20.15.10
+jobs:
+  build:
+    name: Create Release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.7", "3.8"]
+    steps:
+        - uses: actions/checkout@v2
+        - name: Install latest Rust nightly
+          uses: actions-rs/toolchain@v1
+          with:
+            toolchain: nightly-2020-04-22
+            override: true
+            components: rustfmt, clippy
+        - name: Set up Python
+          uses: actions/setup-python@v2
+          with:
+            python-version: ${{ matrix.python-version }}
+        - name: Install dependencies
+          run: |
+            python -m pip install --upgrade pip
+            pip install maturin pytest
+        - name: Run tests
+          run: |
+            cd py-polars
+            ./tasks.sh build-run-tests
+            rm wheels/*
+        - name: Publish wheel
+          env:
+            MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+          run: |
+            cd py-polars
+            maturin publish \
+            -o wheels \
+            -i python${{ matrix.python-version }} \
+            --repository-url https://test.pypi.org/legacy/ \
+            --username ritchie46 \
+            --target x86_64-unknown-linux-gnu
