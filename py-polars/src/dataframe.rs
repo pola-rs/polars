@@ -3,6 +3,7 @@ use pyo3::{exceptions::RuntimeError, prelude::*};
 
 use crate::{
     error::PyPolarsEr,
+    file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 
@@ -29,16 +30,13 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn from_csv(
-        path: &str,
+        py_f: PyObject,
         infer_schema_length: usize,
         batch_size: usize,
         has_header: bool,
         ignore_errors: bool,
     ) -> PyResult<Self> {
-        // TODO: use python file objects:
-        // https://github.com/mre/hyperjson/blob/e1a0515f8d033f24b9fba64a0a4c77df841bbd1b/src/lib.rs#L20
-        let file = std::fs::File::open(path)?;
-
+        let file = get_file_like(py_f, false)?;
         let reader = CsvReader::new(file)
             .infer_schema(Some(infer_schema_length))
             .has_header(has_header)
@@ -54,31 +52,31 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    pub fn from_parquet(path: &str, batch_size: usize) -> PyResult<Self> {
-        let file = std::fs::File::open(path)?;
-        let df = ParquetReader::new(file)
-            .with_batch_size(batch_size)
-            .finish()
-            .map_err(PyPolarsEr::from)?;
+    pub fn from_parquet(py_f: PyObject, batch_size: usize) -> PyResult<Self> {
+        use EitherRustPythonFile::*;
+        let result = match get_either_file(py_f, false)? {
+            Py(f) => ParquetReader::new(f).with_batch_size(batch_size).finish(),
+            Rust(f) => ParquetReader::new(f).with_batch_size(batch_size).finish(),
+        };
+        let df = result.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
     #[staticmethod]
-    pub fn from_ipc(path: &str) -> PyResult<Self> {
-        let file = std::fs::File::open(path)?;
+    pub fn from_ipc(py_f: PyObject) -> PyResult<Self> {
+        let file = get_file_like(py_f, false)?;
         let df = IPCReader::new(file).finish().map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
     pub fn to_csv(
         &mut self,
-        path: &str,
+        py_f: PyObject,
         batch_size: usize,
         has_headers: bool,
         delimiter: u8,
     ) -> PyResult<()> {
-        // TODO: use python file objects:
-        let mut buf = std::fs::File::create(path)?;
+        let mut buf = get_file_like(py_f, true)?;
         CsvWriter::new(&mut buf)
             .has_headers(has_headers)
             .with_delimiter(delimiter)
@@ -88,8 +86,8 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn to_ipc(&mut self, path: &str, batch_size: usize) -> PyResult<()> {
-        let mut buf = std::fs::File::create(path)?;
+    pub fn to_ipc(&mut self, py_f: PyObject, batch_size: usize) -> PyResult<()> {
+        let mut buf = get_file_like(py_f, true)?;
         IPCWriter::new(&mut buf)
             .with_batch_size(batch_size)
             .finish(&mut self.df)

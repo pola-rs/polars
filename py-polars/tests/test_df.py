@@ -1,5 +1,6 @@
 from pypolars import DataFrame, Series
 import pytest
+from io import BytesIO
 
 
 def test_init():
@@ -138,3 +139,17 @@ def test_drop():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
     s = df.drop_in_place("a")
     assert s.name == "a"
+
+
+def test_file_buffer():
+    f = BytesIO()
+    f.write(b"1,2,3,4,5,6\n1,2,3,4,5,6")
+    f.seek(0)
+    df = DataFrame.from_csv(f, has_headers=False)
+    assert df.shape == (2, 6)
+    f.seek(0)
+
+    # check if not fails on TryClone and Length impl in file.rs
+    with pytest.raises(RuntimeError) as e:
+        df.from_parquet(f)
+    assert "Invalid Parquet file" in str(e.value)

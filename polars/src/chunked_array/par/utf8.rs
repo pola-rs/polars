@@ -67,6 +67,7 @@ impl<'a> Producer for Utf8Producer<'a> {
     type IntoIter = Utf8Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
+        // TODO: slice and create normal iterator?
         let iter = (0..self.len).into_iter();
         Utf8Iter { ca: self.ca, iter }
     }
