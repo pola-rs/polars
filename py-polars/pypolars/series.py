@@ -516,7 +516,7 @@ class Series:
         value
             Value to replace the the masked values with.
         """
-        f = getattr(self._s, f"set_with_mask_{self.dtype}", None)
+        f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(filter._s, value))
@@ -538,7 +538,7 @@ class Series:
         -------
         New allocated Series
         """
-        f = getattr(self._s, f"set_at_idx_{self.dtype}", None)
+        f = get_ffi_func("set_at_idx_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         if isinstance(idx, Series):
