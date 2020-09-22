@@ -107,6 +107,11 @@ def test_groupby():
         .last()
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
+    # check if it runs
+    (df.groupby("a").select("b").n_unique())
+
+    (df.groupby("a").select("b").quantile(0.3))
+
     #
     # # TODO: is false because count is u32
     # df.groupby(by="a", select="b", agg="count").frame_equal(
@@ -165,9 +170,6 @@ def test_file_buffer():
 
 def test_set():
     np.random.seed(1)
-    df = DataFrame({"foo": np.random.rand(10),
-                    "bar": np.arange(10),
-                    "ham": ["h"] * 10})
+    df = DataFrame({"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10})
     df["new"] = np.random.rand(10)
     df[df["new"] > 0.5, "new"] = 1
-

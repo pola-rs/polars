@@ -563,3 +563,15 @@ class GBSelection:
         Count the unique values per group.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))
+
+    def quantile(self, quantile: float) -> DataFrame:
+        """
+        Count the unique values per group.
+        """
+        return wrap_df(self._df.groupby_quantile(self.by, self.selection, quantile))
+
+    def median(self) -> DataFrame:
+        """
+        Return the median per group.
+        """
+        return wrap_df(self._df.groupby(self.by, self.selection, "median"))

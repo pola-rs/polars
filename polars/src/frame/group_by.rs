@@ -488,7 +488,7 @@ trait AggNUnique {
 macro_rules! impl_agg_n_unique {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
         $groups
-            .into_iter()
+            .into_par_iter()
             .map(|(_first, idx)| {
                 if $self.null_count() == 0 {
                     let mut set = HashSet::with_hasher(FnvBuildHasher::default());
@@ -513,7 +513,7 @@ macro_rules! impl_agg_n_unique {
 
 impl<T> AggNUnique for ChunkedArray<T>
 where
-    T: PolarsIntegerType + Send,
+    T: PolarsIntegerType + Sync,
     T::Native: Hash + Eq,
 {
     fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
@@ -524,6 +524,8 @@ where
 impl AggNUnique for Float32Chunked {}
 impl AggNUnique for Float64Chunked {}
 impl AggNUnique for LargeListChunked {}
+
+// TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
     fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
         impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>)
@@ -535,6 +537,35 @@ impl AggNUnique for Utf8Chunked {
         impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>)
     }
 }
+
+#[enum_dispatch(Series)]
+trait AggQuantile {
+    fn agg_quantile(&self, _groups: &Vec<(usize, Vec<usize>)>, _quantile: f64) -> Series  {
+        unimplemented!()
+    }
+}
+
+impl<T> AggQuantile for ChunkedArray<T>
+    where T: PolarsNumericType + Sync,
+    T::Native: PartialEq
+{
+    fn agg_quantile(&self, groups: &Vec<(usize, Vec<usize>)>, quantile: f64) -> Series {
+        groups.into_par_iter()
+            .map(|(_first, idx)| {
+                let group_vals = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                let sorted_idx = group_vals.argsort(false);
+                let quant_idx = (quantile * (sorted_idx.len() -1) as f64) as usize;
+                let value_idx = sorted_idx[quant_idx];
+                group_vals.get(value_idx)
+            }).collect::<ChunkedArray<T>>().into_series()
+    }
+}
+
+impl AggQuantile for Utf8Chunked {}
+impl AggQuantile for BooleanChunked {}
+impl AggQuantile for LargeListChunked {}
+
+
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Select the column by which the determine the groups.
@@ -832,6 +863,52 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         }
         DataFrame::new(cols)
     }
+
+    /// Aggregate grouped `Series` and determine the quantile per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").quantile(0.2)
+    /// }
+    /// ```
+    pub fn quantile(&self, quantile: f64) -> Result<DataFrame> {
+        if quantile < 0.0 || quantile > 1.0 {
+            return Err(PolarsError::Other("quantile should be within 0.0 and 1.0".into()))
+        }
+        let (mut cols, agg_cols) = self.prepare_agg()?;
+        for agg_col in agg_cols {
+            let new_name = format!["{}_quantile_{:.2}", agg_col.name(), quantile];
+            let mut agg = agg_col.agg_quantile(&self.groups, quantile).into_series();
+            agg.rename(&new_name);
+            cols.push(agg);
+        }
+        DataFrame::new(cols)
+    }
+
+    /// Aggregate grouped `Series` and determine the median per group.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.select("temp").median()
+    /// }
+    /// ```
+    pub fn median(&self) -> Result<DataFrame> {
+        let (mut cols, agg_cols) = self.prepare_agg()?;
+        for agg_col in agg_cols {
+            let new_name = format!["{}_median", agg_col.name()];
+            let mut agg = agg_col.agg_quantile(&self.groups, 0.5).into_series();
+            agg.rename(&new_name);
+            cols.push(agg);
+        }
+        DataFrame::new(cols)
+    }
+
 
     /// Aggregate grouped series and compute the number of values per group.
     ///
@@ -1368,6 +1445,22 @@ mod test {
                 .unwrap()
                 .select("temp")
                 .n_unique()
+                .unwrap()
+        );
+        println!(
+            "{:?}",
+            df.groupby("date")
+                .unwrap()
+                .select("temp")
+                .quantile(0.2)
+                .unwrap()
+        );
+        println!(
+            "{:?}",
+            df.groupby("date")
+                .unwrap()
+                .select("temp")
+                .median()
                 .unwrap()
         );
     }
