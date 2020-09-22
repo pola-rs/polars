@@ -262,6 +262,27 @@ fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
     ll.iter().map(|list| list.len()).sum()
 }
 
+impl<T> FromParallelIterator<T::Native> for Xob<ChunkedArray<T>>
+    where
+        T: ArrowPrimitiveType,
+{
+    fn from_par_iter<I: IntoParallelIterator<Item = T::Native>>(iter: I) -> Self {
+        // Get linkedlist filled with different vec result from different threads
+        let vectors = collect_into_linked_list(iter);
+        let capacity: usize = get_capacity_from_par_results(&vectors);
+
+        let mut builder = PrimitiveChunkedBuilder::new("", capacity);
+        // Unpack all these results and append them single threaded
+        vectors.iter().for_each(|vec| {
+            for val in vec {
+                builder.append_value(*val);
+            }
+        });
+
+        Xob::new(builder.finish())
+    }
+}
+
 impl<T> FromParallelIterator<Option<T::Native>> for ChunkedArray<T>
 where
     T: ArrowPrimitiveType,

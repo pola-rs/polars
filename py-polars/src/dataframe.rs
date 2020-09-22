@@ -302,8 +302,22 @@ impl PyDataFrame {
             "sum" => selection.sum(),
             "count" => selection.count(),
             "n_unique" => selection.n_unique(),
+            "median" => selection.median(),
             a => Err(PolarsError::Other(format!("agg fn {} does not exists", a))),
         };
+        let df = df.map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    pub fn groupby_quantile(
+        &self,
+        by: Vec<&str>,
+        select: Vec<String>,
+        quantile: f64,
+    ) -> PyResult<Self> {
+        let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
+        let selection = gb.select(&select);
+        let df = selection.quantile(quantile);
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
