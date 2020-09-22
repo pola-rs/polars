@@ -1,10 +1,9 @@
 from __future__ import annotations
 from .pypolars import PyDataFrame, PySeries
-from typing import Dict, Sequence, List, Tuple, Optional, Union
+from typing import Dict, Sequence, List, Tuple, Optional, Union, Callable, TextIO, BinaryIO
 from .series import Series, wrap_s
 from .datatypes import *
 import numpy as np
-from typing import TextIO, BinaryIO
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
@@ -341,6 +340,9 @@ class DataFrame:
         if isinstance(by, str):
             by = [by]
         return GroupBy(self._df, by)
+    
+    def pipe(self, func: Callable, *args, **kwargs):
+        return func(self, *args, **kwargs)
 
     def join(
         self,
