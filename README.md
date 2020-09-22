@@ -18,6 +18,13 @@ notebook on `http://localhost:8891`. The notebooks are in the `/examples` direct
  
 Oh yeah.. and get a cup of coffee because compilation will take while during the first run.
 
+## Python
+A subset of the Polars functionality is also exposed throught Python bindings. You can install them for linux with:
+
+`$ pip install --upgrade -i https://test.pypi.org/simple/ py-polars`
+
+Next you can check the [10 minutes to py-polars notebook](examples/10_minutes_to_pypolars.ipynb)
+
 
 ## Documentation
 Want to know what features Polars support? [Check the current master docs](https://ritchie46.github.io/polars). 
