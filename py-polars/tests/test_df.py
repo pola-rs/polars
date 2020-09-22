@@ -2,6 +2,7 @@ from pypolars import DataFrame, Series
 from pypolars.datatypes import *
 import pytest
 from io import BytesIO
+import numpy as np
 
 
 def test_init():
@@ -160,3 +161,13 @@ def test_file_buffer():
     with pytest.raises(RuntimeError) as e:
         df.from_parquet(f)
     assert "Invalid Parquet file" in str(e.value)
+
+
+def test_set():
+    np.random.seed(1)
+    df = DataFrame({"foo": np.random.rand(10),
+                    "bar": np.arange(10),
+                    "ham": ["h"] * 10})
+    df["new"] = np.random.rand(10)
+    df[df["new"] > 0.5, "new"] = 1
+
