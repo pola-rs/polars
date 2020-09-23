@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
@@ -16,7 +17,7 @@ pub enum PolarsError {
     ShapeMisMatch,
     // TODO: use Cow
     #[error("{0}")]
-    Other(String),
+    Other(Cow<'static, str>),
     #[error("No selection was made")]
     NoSelection,
     #[error("Out of bounds")]
@@ -33,7 +34,7 @@ pub enum PolarsError {
     #[cfg(feature = "random")]
     #[error("{0}")]
     RandError(String),
-    #[error("This operation requires data without None values")]
+    #[error("This operation requires data without Null values")]
     HasNullValues,
 }
 

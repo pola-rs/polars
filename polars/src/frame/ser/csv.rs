@@ -179,7 +179,7 @@ where
         // schema inference
         let reader = if self.ignore_parser_error && self.max_records.is_some() {
             if self.max_records < Some(1) {
-                return Err(PolarsError::Other("Could not infer schema".to_string()));
+                return Err(PolarsError::Other("Could not infer schema".into()));
             }
             let reader_val;
             loop {
