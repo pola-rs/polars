@@ -1,0 +1,28 @@
+name: Build, test and docs
+
+on:
+  push:
+    branches:
+      - master
+jobs:
+  test:
+    name: Build, test and docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2020-04-22
+          override: true
+          components: rustfmt, clippy
+      - name: Run tests
+        run: |
+          cd polars && cargo test
+      - name: deploy docs
+        run: |
+          cargo doc --no-deps --all-features --package polars \
+          && echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
+          sudo pip install ghp-import && \
+          ghp-import -n target/doc && \
+          git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages
