@@ -1,6 +1,5 @@
 name: Create Python test release
 
-
 on:
   push:
     # Sequence of patterns matched against refs/tags
@@ -12,7 +11,7 @@ jobs:
     runs-on: "ubuntu-latest"
     strategy:
       matrix:
-      python-version: ["3.7", "3.8"]
+        python-version: ["3.7", "3.8"]
     steps:
         - uses: actions/checkout@v2
         - name: Install latest Rust nightly
@@ -40,6 +39,7 @@ jobs:
     strategy:
       matrix:
         os: ["ubuntu-latest", "macos-latest"]
+#        os: ["windows-latest"]
         python-version: ["3.7", "3.8"]
     steps:
         - uses: actions/checkout@v2
@@ -65,7 +65,9 @@ jobs:
             cd py-polars
             maturin publish \
             -o wheels \
-            -i python${{ matrix.python-version }} \
+            -i python \
             --repository-url https://test.pypi.org/legacy/ \
             --username ritchie46 \
 #            --target x86_64-unknown-linux-gnu
+
+#            -i python${{ matrix.python-version }} \
