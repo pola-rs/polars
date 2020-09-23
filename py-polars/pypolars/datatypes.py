@@ -61,6 +61,62 @@ class Date64:
     pass
 
 
+class Time32Millisecond:
+    pass
+
+
+class Time32Second:
+    pass
+
+
+class Time64Nanosecond:
+    pass
+
+
+class Time64Microsecond:
+    pass
+
+
+class DurationNanosecond:
+    pass
+
+
+class DurationMicrosecond:
+    pass
+
+
+class DurationMillisecond:
+    pass
+
+
+class DurationSecond:
+    pass
+
+
+class IntervalDayTime:
+    pass
+
+
+class IntervalYearMonth:
+    pass
+
+
+class TimestampNanosecond:
+    pass
+
+
+class TimestampMicrosecond:
+    pass
+
+
+class TimestampMillisecond:
+    pass
+
+
+class TimestampSecond:
+    pass
+
+
 # Don't change the order of these!
 dtypes = [
     Int8,
@@ -78,6 +134,20 @@ dtypes = [
     LargeList,
     Date32,
     Date64,
+    Time32Millisecond,
+    Time32Second,
+    Time64Nanosecond,
+    Time64Microsecond,
+    DurationNanosecond,
+    DurationMicrosecond,
+    DurationMillisecond,
+    DurationSecond,
+    IntervalDayTime,
+    IntervalYearMonth,
+    TimestampNanosecond,
+    TimestampMicrosecond,
+    TimestampMillisecond,
+    TimestampSecond,
 ]
 DTYPE_TO_FFINAME = {
     Int8: "i8",
@@ -92,9 +162,23 @@ DTYPE_TO_FFINAME = {
     Float64: "f64",
     Bool: "bool",
     Utf8: "str",
-    LargeList: "largelist",
+    LargeList: "large_list",
     Date32: "date32",
     Date64: "date64",
+    Time32Millisecond: "time32_millisecond",
+    Time32Second: "time32_second",
+    Time64Nanosecond: "time64_nanosecond",
+    Time64Microsecond: "time64_microsecond",
+    DurationNanosecond: "duration_nanosecond",
+    DurationMicrosecond: "duration_microsecond",
+    DurationMillisecond: "duration_millisecond",
+    DurationSecond: "duration_second",
+    IntervalDayTime: "interval_daytime",
+    IntervalYearMonth: "interval_yearmonth",
+    TimestampNanosecond: "timestamp_nanosecond",
+    TimestampMicrosecond: "timestamp_microsecond",
+    TimestampMillisecond: "timestamp_millisecond",
+    TimestampSecond: "timestamp_second",
 }
 
 

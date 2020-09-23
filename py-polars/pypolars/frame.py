@@ -92,7 +92,7 @@ class DataFrame:
     @staticmethod
     def from_ipc(file: Union[str, BinaryIO]) -> DataFrame:
         """
-        Read into a DataFrame from Arrow IPC stream format.
+        Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
         Parameters
         ----------
@@ -107,9 +107,25 @@ class DataFrame:
         self._df = PyDataFrame.from_ipc(file)
         return self
 
+    @staticmethod
+    def from_feather(file: Union[str, BinaryIO]) -> DataFrame:
+        """
+        Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
+
+        Parameters
+        ----------
+        file
+            Path to a file or a file like object.
+
+        Returns
+        -------
+        DataFrame
+        """
+        return DataFrame.from_ipc(file)
+
     def to_csv(
         self,
-        path: str,
+        file: Union[TextIO, str],
         batch_size: int = 100000,
         has_headers: bool = True,
         delimiter: str = ",",
@@ -119,7 +135,7 @@ class DataFrame:
 
         Parameters
         ----------
-        path
+        file
             write location
         batch_size
             Size of the write buffer. Increase to have faster io.
@@ -128,20 +144,33 @@ class DataFrame:
         delimiter
             Space elements with this symbol.
         """
-        self._df.to_csv(path, batch_size, has_headers, ord(delimiter))
+        self._df.to_csv(file, batch_size, has_headers, ord(delimiter))
 
-    def to_ipc(self, path: str, batch_size):
+    def to_ipc(self, file: Union[BinaryIO, str], batch_size):
         """
-        Write to Arrow IPC binary stream.
+        Write to Arrow IPC binary stream, or a feather file.
 
         Parameters
         ----------
-        path
+        file
             write location
         batch_size
             Size of the write buffer. Increase to have faster io.
         """
-        self._df.to_ipc(path, batch_size)
+        self._df.to_ipc(file, batch_size)
+
+    def to_feather(self, file: Union[BinaryIO, str], batch_size):
+        """
+        Write to Arrow IPC binary stream, or a feather file.
+
+        Parameters
+        ----------
+        file
+            write location
+        batch_size
+            Size of the write buffer. Increase to have faster io.
+        """
+        self.to_ipc(file, batch_size)
 
     def __str__(self) -> str:
         return self._df.as_str()
