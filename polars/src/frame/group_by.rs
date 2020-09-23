@@ -990,7 +990,23 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         DataFrame::new(cols)
     }
 
-    ///
+    /// Get the groupby group indexes.
+    pub fn groups(&self) -> Result<DataFrame> {
+        let mut cols = self.keys();
+
+        let column: LargeListChunked = self
+            .groups
+            .iter()
+            .map(|(_first, idx)| {
+                let ca: Xob<UInt32Chunked> = idx.into_iter().map(|&v| v as u32).collect();
+                ca.into_inner().into_series()
+            })
+            .collect();
+        cols.push(column.into_series());
+        cols.shrink_to_fit();
+        DataFrame::new(cols)
+    }
+
     /// Combine different aggregations on columns
     ///
     /// ## Operations
