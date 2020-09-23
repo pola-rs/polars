@@ -303,7 +303,9 @@ impl PyDataFrame {
             "count" => selection.count(),
             "n_unique" => selection.n_unique(),
             "median" => selection.median(),
-            a => Err(PolarsError::Other(format!("agg fn {} does not exists", a))),
+            a => Err(PolarsError::Other(
+                format!("agg fn {} does not exists", a).into(),
+            )),
         };
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
@@ -338,7 +340,9 @@ impl PyDataFrame {
             "mean" => pivot.mean(),
             "median" => pivot.median(),
             "sum" => pivot.sum(),
-            a => Err(PolarsError::Other(format!("agg fn {} does not exists", a))),
+            a => Err(PolarsError::Other(
+                format!("agg fn {} does not exists", a).into(),
+            )),
         };
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))

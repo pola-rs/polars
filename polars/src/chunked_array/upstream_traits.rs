@@ -263,8 +263,8 @@ fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
 }
 
 impl<T> FromParallelIterator<T::Native> for Xob<ChunkedArray<T>>
-    where
-        T: ArrowPrimitiveType,
+where
+    T: ArrowPrimitiveType,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = T::Native>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads
