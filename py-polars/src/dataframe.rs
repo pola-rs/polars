@@ -306,6 +306,7 @@ impl PyDataFrame {
             "count" => selection.count(),
             "n_unique" => selection.n_unique(),
             "median" => selection.median(),
+            "agg_list" => selection.agg_list(),
             a => Err(PolarsError::Other(
                 format!("agg fn {} does not exists", a).into(),
             )),

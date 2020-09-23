@@ -111,6 +111,7 @@ def test_groupby():
     (df.groupby("a").select("b").n_unique())
 
     (df.groupby("a").select("b").quantile(0.3))
+    (df.groupby("a").select("b").agg_list())
 
     gb_df = df.groupby("a").agg({"b": ["sum", "min"], "c": "count"})
     assert "b_sum" in gb_df.columns
