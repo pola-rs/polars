@@ -1,10 +1,18 @@
 from __future__ import annotations
 from .pypolars import PyDataFrame, PySeries
-from typing import Dict, Sequence, List, Tuple, Optional, Union
+from typing import (
+    Dict,
+    Sequence,
+    List,
+    Tuple,
+    Optional,
+    Union,
+    TextIO,
+    BinaryIO,
+    Callable,
+)
 from .series import Series, wrap_s
 from .datatypes import *
-import numpy as np
-from typing import TextIO, BinaryIO
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
@@ -336,6 +344,9 @@ class DataFrame:
 
     def tail(self, length: int = 5) -> DataFrame:
         return wrap_df(self._df.tail(length))
+
+    def pipe(self, func: Callable, *args, **kwargs):
+        return func(self, *args, **kwargs)
 
     def groupby(self, by: Union[str, List[str]]) -> GroupBy:
         if isinstance(by, str):
