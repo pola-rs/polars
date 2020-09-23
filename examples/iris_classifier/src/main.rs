@@ -124,7 +124,7 @@ fn enforce_schema(mut df: DataFrame) -> Result<DataFrame> {
                 df.may_apply(field.name(), |col| match dtype {
                     ArrowDataType::Float64 => col.cast::<Float64Type>(),
                     ArrowDataType::Utf8 => col.cast::<Utf8Type>(),
-                    _ => return Err(PolarsError::Other("unexpected type".to_string())),
+                    _ => return Err(PolarsError::Other("unexpected type".into())),
                 })?;
             }
             Ok(())
@@ -142,7 +142,7 @@ fn normalize(mut df: DataFrame) -> Result<DataFrame> {
 
             match ca.sum() {
                 Some(sum) => Ok(ca / sum),
-                None => Err(PolarsError::Other("Nulls in column".to_string())),
+                None => Err(PolarsError::Other("Nulls in column".into())),
             }
         })?;
     }

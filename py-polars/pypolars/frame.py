@@ -494,7 +494,7 @@ class GroupBy:
         """
         Select all columns for aggregation.
         """
-        return GBSelection(self._df, self.by, self._df.columns())
+        return GBSelection(self._df, self.by, None)
 
     def pivot(self, pivot_column: str, values_column: str) -> PivotOps:
         """
@@ -508,6 +508,66 @@ class GroupBy:
             Column that will be aggregated
         """
         return PivotOps(self._df, self.by, pivot_column, values_column)
+
+    def first(self) -> DataFrame:
+        """
+        Aggregate the first values in the group.
+        """
+        return self.select_all().first()
+
+    def last(self) -> DataFrame:
+        """
+        Aggregate the last values in the group.
+        """
+        return self.select_all().last()
+
+    def sum(self) -> DataFrame:
+        """
+        Reduce the groups to the sum.
+        """
+        return self.select_all().sum()
+
+    def min(self) -> DataFrame:
+        """
+        Reduce the groups to the minimal value.
+        """
+        return self.select_all().min()
+
+    def max(self) -> DataFrame:
+        """
+        Reduce the groups to the maximal value.
+        """
+        return self.select_all().max()
+
+    def count(self) -> DataFrame:
+        """
+        Count the number of values in each group.
+        """
+        return self.select_all().count()
+
+    def mean(self) -> DataFrame:
+        """
+        Reduce the groups to the mean values.
+        """
+        return self.select_all().mean()
+
+    def n_unique(self) -> DataFrame:
+        """
+        Count the unique values per group.
+        """
+        return self.select_all().n_unique()
+
+    def quantile(self, quantile: float) -> DataFrame:
+        """
+        Count the unique values per group.
+        """
+        return self.select_all().quantile(quantile)
+
+    def median(self) -> DataFrame:
+        """
+        Return the median per group.
+        """
+        return self.select_all().median()
 
 
 class PivotOps:
@@ -551,7 +611,7 @@ class PivotOps:
 
 
 class GBSelection:
-    def __init__(self, df: DataFrame, by: List[str], selection: List[str]):
+    def __init__(self, df: DataFrame, by: List[str], selection: Optional[List[str]]):
         self._df = df
         self.by = by
         self.selection = selection

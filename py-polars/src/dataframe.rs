@@ -290,9 +290,12 @@ impl PyDataFrame {
         self.df.frame_equal(&other.df)
     }
 
-    pub fn groupby(&self, by: Vec<&str>, select: Vec<String>, agg: &str) -> PyResult<Self> {
+    pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {
         let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
-        let selection = gb.select(&select);
+        let selection = match select.as_ref() {
+            Some(s) => gb.select(s),
+            None => gb,
+        };
         let df = match agg {
             "min" => selection.min(),
             "max" => selection.max(),
