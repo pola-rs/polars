@@ -30,7 +30,6 @@ jobs:
             python -m pip install --upgrade pip
             pip install maturin pytest
         - name: Run tests
-          shell: bash
           run: |
             cd py-polars
             ./tasks.sh build-run-tests
