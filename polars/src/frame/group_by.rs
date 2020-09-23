@@ -276,17 +276,17 @@ pub struct GroupBy<'df, 'selection_str> {
 
 #[enum_dispatch(Series)]
 trait NumericAggSync {
-    fn agg_mean(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        unimplemented!()
+    fn agg_mean(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        None
     }
-    fn agg_min(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        unimplemented!()
+    fn agg_min(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        None
     }
-    fn agg_max(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        unimplemented!()
+    fn agg_max(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        None
     }
-    fn agg_sum(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        unimplemented!()
+    fn agg_sum(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        None
     }
 }
 
@@ -299,8 +299,8 @@ where
     T: PolarsNumericType + Sync,
     T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
 {
-    fn agg_mean(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        Series::Float64(
+    fn agg_mean(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        Some(Series::Float64(
             groups
                 .par_iter()
                 .map(|(_first, idx)| {
@@ -320,89 +320,98 @@ where
                     }
                 })
                 .collect(),
+        ))
+    }
+
+    fn agg_min(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        Some(
+            groups
+                .par_iter()
+                .map(|(_first, idx)| {
+                    if let Ok(slice) = self.cont_slice() {
+                        let mut min = None;
+                        for i in idx {
+                            let v = slice[*i];
+
+                            min = match min {
+                                Some(min) => {
+                                    if min < v {
+                                        Some(min)
+                                    } else {
+                                        Some(v)
+                                    }
+                                }
+                                None => Some(v),
+                            };
+                        }
+                        min
+                    } else {
+                        let take = unsafe {
+                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
+                        };
+                        take.min()
+                    }
+                })
+                .collect::<ChunkedArray<T>>()
+                .into_series(),
         )
     }
 
-    fn agg_min(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        groups
-            .par_iter()
-            .map(|(_first, idx)| {
-                if let Ok(slice) = self.cont_slice() {
-                    let mut min = None;
-                    for i in idx {
-                        let v = slice[*i];
+    fn agg_max(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        Some(
+            groups
+                .par_iter()
+                .map(|(_first, idx)| {
+                    if let Ok(slice) = self.cont_slice() {
+                        let mut max = None;
+                        for i in idx {
+                            let v = slice[*i];
 
-                        min = match min {
-                            Some(min) => {
-                                if min < v {
-                                    Some(min)
-                                } else {
-                                    Some(v)
+                            max = match max {
+                                Some(max) => {
+                                    if max > v {
+                                        Some(max)
+                                    } else {
+                                        Some(v)
+                                    }
                                 }
-                            }
-                            None => Some(v),
+                                None => Some(v),
+                            };
+                        }
+                        max
+                    } else {
+                        let take = unsafe {
+                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
                         };
+                        take.max()
                     }
-                    min
-                } else {
-                    let take =
-                        unsafe { self.take_unchecked(idx.into_iter().copied(), Some(self.len())) };
-                    take.min()
-                }
-            })
-            .collect::<ChunkedArray<T>>()
-            .into_series()
+                })
+                .collect::<ChunkedArray<T>>()
+                .into_series(),
+        )
     }
 
-    fn agg_max(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        groups
-            .par_iter()
-            .map(|(_first, idx)| {
-                if let Ok(slice) = self.cont_slice() {
-                    let mut max = None;
-                    for i in idx {
-                        let v = slice[*i];
-
-                        max = match max {
-                            Some(max) => {
-                                if max > v {
-                                    Some(max)
-                                } else {
-                                    Some(v)
-                                }
-                            }
-                            None => Some(v),
+    fn agg_sum(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        Some(
+            groups
+                .par_iter()
+                .map(|(_first, idx)| {
+                    if let Ok(slice) = self.cont_slice() {
+                        let mut sum = Zero::zero();
+                        for i in idx {
+                            sum = sum + slice[*i]
+                        }
+                        Some(sum)
+                    } else {
+                        let take = unsafe {
+                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
                         };
+                        take.sum()
                     }
-                    max
-                } else {
-                    let take =
-                        unsafe { self.take_unchecked(idx.into_iter().copied(), Some(self.len())) };
-                    take.max()
-                }
-            })
-            .collect::<ChunkedArray<T>>()
-            .into_series()
-    }
-
-    fn agg_sum(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
-        groups
-            .par_iter()
-            .map(|(_first, idx)| {
-                if let Ok(slice) = self.cont_slice() {
-                    let mut sum = Zero::zero();
-                    for i in idx {
-                        sum = sum + slice[*i]
-                    }
-                    Some(sum)
-                } else {
-                    let take =
-                        unsafe { self.take_unchecked(idx.into_iter().copied(), Some(self.len())) };
-                    take.sum()
-                }
-            })
-            .collect::<ChunkedArray<T>>()
-            .into_series()
+                })
+                .collect::<ChunkedArray<T>>()
+                .into_series(),
+        )
     }
 }
 
@@ -480,8 +489,8 @@ impl AggLast for LargeListChunked {
 
 #[enum_dispatch(Series)]
 trait AggNUnique {
-    fn agg_n_unique(&self, _groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
-        unimplemented!()
+    fn agg_n_unique(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
+        None
     }
 }
 
@@ -516,8 +525,8 @@ where
     T: PolarsIntegerType + Sync,
     T::Native: Hash + Eq,
 {
-    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
-        impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>)
+    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
+        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
     }
 }
 
@@ -527,21 +536,21 @@ impl AggNUnique for LargeListChunked {}
 
 // TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
-    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
-        impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>)
+    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
+        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
     }
 }
 
 impl AggNUnique for Utf8Chunked {
-    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> UInt32Chunked {
-        impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>)
+    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
+        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
     }
 }
 
 #[enum_dispatch(Series)]
 trait AggQuantile {
-    fn agg_quantile(&self, _groups: &Vec<(usize, Vec<usize>)>, _quantile: f64) -> Series {
-        unimplemented!()
+    fn agg_quantile(&self, _groups: &Vec<(usize, Vec<usize>)>, _quantile: f64) -> Option<Series> {
+        None
     }
 }
 
@@ -550,19 +559,21 @@ where
     T: PolarsNumericType + Sync,
     T::Native: PartialEq,
 {
-    fn agg_quantile(&self, groups: &Vec<(usize, Vec<usize>)>, quantile: f64) -> Series {
-        groups
-            .into_par_iter()
-            .map(|(_first, idx)| {
-                let group_vals =
-                    unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
-                let sorted_idx = group_vals.argsort(false);
-                let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
-                let value_idx = sorted_idx[quant_idx];
-                group_vals.get(value_idx)
-            })
-            .collect::<ChunkedArray<T>>()
-            .into_series()
+    fn agg_quantile(&self, groups: &Vec<(usize, Vec<usize>)>, quantile: f64) -> Option<Series> {
+        Some(
+            groups
+                .into_par_iter()
+                .map(|(_first, idx)| {
+                    let group_vals =
+                        unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    let sorted_idx = group_vals.argsort(false);
+                    let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
+                    let value_idx = sorted_idx[quant_idx];
+                    group_vals.get(value_idx)
+                })
+                .collect::<ChunkedArray<T>>()
+                .into_series(),
+        )
     }
 }
 
@@ -604,8 +615,15 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
     fn prepare_agg(&self) -> Result<(Vec<Series>, Vec<Series>)> {
         let selection = match &self.selected_agg {
-            Some(selection) => selection,
-            None => return Err(PolarsError::NoSelection),
+            Some(selection) => selection.clone(),
+            None => {
+                let by: Vec<_> = self.selected_keys.iter().map(|s| s.name()).collect();
+                self.df
+                    .columns()
+                    .into_iter()
+                    .filter(|a| !by.contains(a))
+                    .collect()
+            }
         };
 
         let keys = self.keys();
@@ -643,16 +661,18 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         for agg_col in agg_cols {
             let new_name = format!["{}_mean", agg_col.name()];
-            let mut agg = agg_col.agg_mean(&self.groups);
-            agg.rename(&new_name);
-            cols.push(agg);
+            let opt_agg = agg_col.agg_mean(&self.groups);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg);
+            }
         }
         DataFrame::new(cols)
     }
 
     /// Aggregate grouped series and compute the sum per group.
     ///
-    /// # Example
+    /// # Example                agg.rename(&new_name);
     ///
     /// ```rust
     /// # use polars::prelude::*;
@@ -680,9 +700,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         for agg_col in agg_cols {
             let new_name = format!["{}_sum", agg_col.name()];
-            let mut agg = agg_col.agg_sum(&self.groups);
-            agg.rename(&new_name);
-            cols.push(agg);
+            let opt_agg = agg_col.agg_sum(&self.groups);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg);
+            }
         }
         DataFrame::new(cols)
     }
@@ -716,9 +738,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_min", agg_col.name()];
-            let mut agg = agg_col.agg_min(&self.groups);
-            agg.rename(&new_name);
-            cols.push(agg);
+            let opt_agg = agg_col.agg_min(&self.groups);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg);
+            }
         }
         DataFrame::new(cols)
     }
@@ -752,9 +776,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_max", agg_col.name()];
-            let mut agg = agg_col.agg_max(&self.groups);
-            agg.rename(&new_name);
-            cols.push(agg);
+            let opt_agg = agg_col.agg_max(&self.groups);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg);
+            }
         }
         DataFrame::new(cols)
     }
@@ -860,9 +886,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_n_unique", agg_col.name()];
-            let mut agg = agg_col.agg_n_unique(&self.groups).into_series();
-            agg.rename(&new_name);
-            cols.push(agg);
+            let opt_agg = agg_col.agg_n_unique(&self.groups);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg.into_series());
+            }
         }
         DataFrame::new(cols)
     }
@@ -886,9 +914,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_quantile_{:.2}", agg_col.name(), quantile];
-            let mut agg = agg_col.agg_quantile(&self.groups, quantile).into_series();
-            agg.rename(&new_name);
-            cols.push(agg);
+            let opt_agg = agg_col.agg_quantile(&self.groups, quantile);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg.into_series());
+            }
         }
         DataFrame::new(cols)
     }
@@ -907,9 +937,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_median", agg_col.name()];
-            let mut agg = agg_col.agg_quantile(&self.groups, 0.5).into_series();
-            agg.rename(&new_name);
-            cols.push(agg);
+            let opt_agg = agg_col.agg_quantile(&self.groups, 0.5);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg.into_series());
+            }
         }
         DataFrame::new(cols)
     }
@@ -1463,6 +1495,11 @@ mod test {
             "{:?}",
             df.groupby("date").unwrap().select("temp").median().unwrap()
         );
+        // implicit select all and only aggregate on methods that support that aggregation
+        let gb = df.groupby("date").unwrap().n_unique().unwrap();
+        println!("{:?}", df.groupby("date").unwrap().n_unique().unwrap());
+        // check the group by column is filtered out.
+        assert_eq!(gb.width(), 2)
     }
 
     #[test]
