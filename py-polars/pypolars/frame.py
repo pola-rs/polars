@@ -500,9 +500,15 @@ class GroupBy:
         Result of groupby split apply operations.
         """
         if isinstance(column_to_agg, dict):
-            column_to_agg = [(column, [agg] if isinstance(agg, str) else agg) for (column, agg) in column_to_agg.items()]
+            column_to_agg = [
+                (column, [agg] if isinstance(agg, str) else agg)
+                for (column, agg) in column_to_agg.items()
+            ]
         else:
-            column_to_agg = [(column, [agg] if isinstance(agg, str) else agg) for (column, agg) in column_to_agg]
+            column_to_agg = [
+                (column, [agg] if isinstance(agg, str) else agg)
+                for (column, agg) in column_to_agg
+            ]
 
         return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
 
@@ -597,6 +603,12 @@ class GroupBy:
         Return the median per group.
         """
         return self.select_all().median()
+
+    def agg_list(self) -> DataFrame:
+        """
+        Aggregate the groups into Series.
+        """
+        return self.select_all().agg_list()
 
 
 class PivotOps:
@@ -704,3 +716,9 @@ class GBSelection:
         Return the median per group.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "median"))
+
+    def agg_list(self) -> DataFrame:
+        """
+        Aggregate the groups into Series.
+        """
+        return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))
