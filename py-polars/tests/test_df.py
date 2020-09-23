@@ -112,6 +112,10 @@ def test_groupby():
 
     (df.groupby("a").select("b").quantile(0.3))
 
+    gb_df = df.groupby("a").agg({"b": ["sum", "min"], "c": "count"})
+    assert "b_sum" in gb_df.columns
+    assert "b_min" in gb_df.columns
+
     #
     # # TODO: is false because count is u32
     # df.groupby(by="a", select="b", agg="count").frame_equal(

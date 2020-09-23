@@ -314,6 +314,16 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
+    pub fn groupby_agg(
+        &self,
+        by: Vec<&str>,
+        column_to_agg: Vec<(&str, Vec<&str>)>,
+    ) -> PyResult<Self> {
+        let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
+        let df = gb.agg(&column_to_agg).map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
     pub fn groupby_quantile(
         &self,
         by: Vec<&str>,
