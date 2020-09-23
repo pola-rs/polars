@@ -477,6 +477,35 @@ class GroupBy:
         self._df = df
         self.by = by
 
+    def agg(
+        self, column_to_agg: Union[List[Tuple[str, List[str]]], Dict[str, List[str]]]
+    ) -> DataFrame:
+        """
+        Use multiple aggregations on columns
+
+        Parameters
+        ----------
+        column_to_agg
+            map column to aggregation functions
+
+            Examples:
+                [("foo", ["sum", "n_unique", "min"]),
+                 ("bar": ["max"])]
+
+                {"foo": ["sum", "n_unique", "min"],
+                "bar": "max" }
+
+        Returns
+        -------
+        Result of groupby split apply operations.
+        """
+        if isinstance(column_to_agg, dict):
+            column_to_agg = [(column, [agg] if isinstance(agg, str) else agg) for (column, agg) in column_to_agg.items()]
+        else:
+            column_to_agg = [(column, [agg] if isinstance(agg, str) else agg) for (column, agg) in column_to_agg]
+
+        return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
+
     def select(self, columns: Union[str, List[str]]) -> GBSelection:
         """
         Select the columns that will be aggregated.

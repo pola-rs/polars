@@ -552,6 +552,10 @@ trait AggQuantile {
     fn agg_quantile(&self, _groups: &Vec<(usize, Vec<usize>)>, _quantile: f64) -> Option<Series> {
         None
     }
+
+    fn agg_median(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+        self.agg_quantile(groups, 0.5)
+    }
 }
 
 impl<T> AggQuantile for ChunkedArray<T>
@@ -672,7 +676,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
     /// Aggregate grouped series and compute the sum per group.
     ///
-    /// # Example                agg.rename(&new_name);
+    /// # Example
     ///
     /// ```rust
     /// # use polars::prelude::*;
@@ -937,7 +941,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_median", agg_col.name()];
-            let opt_agg = agg_col.agg_quantile(&self.groups, 0.5);
+            let opt_agg = agg_col.agg_median(&self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -982,6 +986,113 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             let ca = builder.finish();
             let agg = Series::UInt32(ca);
             cols.push(agg);
+        }
+        DataFrame::new(cols)
+    }
+
+    ///
+    /// Combine different aggregations on columns
+    ///
+    /// ## Operations
+    ///
+    /// * count
+    /// * first
+    /// * last
+    /// * sum
+    /// * min
+    /// * max
+    /// * mean
+    /// * median
+    ///
+    /// # Example
+    ///
+    ///  ```rust
+    ///  # use polars::prelude::*;
+    ///  fn example(df: DataFrame) -> Result<DataFrame> {
+    ///      df.groupby("date")?.agg(&[("temp", &["n_unique", "sum", "min"])])
+    ///  }
+    ///  ```
+    ///  Returns:
+    ///
+    ///  ```text
+    ///  +--------------+---------------+----------+----------+
+    ///  | date         | temp_n_unique | temp_sum | temp_min |
+    ///  | ---          | ---           | ---      | ---      |
+    ///  | date32(days) | u32           | i32      | i32      |
+    ///  +==============+===============+==========+==========+
+    ///  | 2020-08-23   | 1             | 9        | 9        |
+    ///  +--------------+---------------+----------+----------+
+    ///  | 2020-08-22   | 2             | 8        | 1        |
+    ///  +--------------+---------------+----------+----------+
+    ///  | 2020-08-21   | 2             | 30       | 10       |
+    ///  +--------------+---------------+----------+----------+
+    ///  ```
+    ///
+    pub fn agg<Column, S, Slice>(&self, column_to_agg: &[(Column, Slice)]) -> Result<DataFrame>
+    where
+        S: AsRef<str>,
+        S: AsRef<str>,
+        Slice: AsRef<[S]>,
+        Column: AsRef<str>,
+    {
+        // create a mapping from columns to aggregations on that column
+        let mut map =
+            HashMap::with_capacity_and_hasher(column_to_agg.len(), FnvBuildHasher::default());
+        column_to_agg
+            .into_iter()
+            .for_each(|(column, aggregations)| {
+                map.insert(column.as_ref(), aggregations.as_ref());
+            });
+
+        macro_rules! finish_agg_opt {
+            ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
+                let new_name = format![$name_fmt, $agg_col.name()];
+                let opt_agg = $agg_col.$agg_fn(&$self.groups);
+                if let Some(mut agg) = opt_agg {
+                    agg.rename(&new_name);
+                    $cols.push(agg.into_series());
+                }
+            }};
+        }
+        macro_rules! finish_agg {
+            ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
+                let new_name = format![$name_fmt, $agg_col.name()];
+                let mut agg = $agg_col.$agg_fn(&$self.groups);
+                agg.rename(&new_name);
+                $cols.push(agg.into_series());
+            }};
+        }
+
+        let (mut cols, agg_cols) = self.prepare_agg()?;
+        for agg_col in agg_cols {
+            if let Some(&aggregations) = map.get(agg_col.name()) {
+                for aggregation_f in aggregations.as_ref() {
+                    match aggregation_f.as_ref() {
+                        "min" => finish_agg_opt!(self, "{}_min", agg_min, agg_col, cols),
+                        "max" => finish_agg_opt!(self, "{}_max", agg_max, agg_col, cols),
+                        "mean" => finish_agg_opt!(self, "{}_mean", agg_mean, agg_col, cols),
+                        "sum" => finish_agg_opt!(self, "{}_sum", agg_sum, agg_col, cols),
+                        "first" => finish_agg!(self, "{}_first", agg_first, agg_col, cols),
+                        "last" => finish_agg!(self, "{}_last", agg_last, agg_col, cols),
+                        "n_unique" => {
+                            finish_agg_opt!(self, "{}_n_unique", agg_n_unique, agg_col, cols)
+                        }
+                        "median" => finish_agg_opt!(self, "{}_median", agg_n_unique, agg_col, cols),
+                        "count" => {
+                            let new_name = format!["{}_count", agg_col.name()];
+                            let mut builder =
+                                PrimitiveChunkedBuilder::new(&new_name, self.groups.len());
+                            for (_first, idx) in &self.groups {
+                                builder.append_value(idx.len() as u32);
+                            }
+                            let ca = builder.finish();
+                            let agg = Series::UInt32(ca);
+                            cols.push(agg);
+                        }
+                        a => panic!(format!("aggregation: {:?} is not supported", a)),
+                    }
+                }
+            }
         }
         DataFrame::new(cols)
     }
@@ -1499,7 +1610,14 @@ mod test {
         let gb = df.groupby("date").unwrap().n_unique().unwrap();
         println!("{:?}", df.groupby("date").unwrap().n_unique().unwrap());
         // check the group by column is filtered out.
-        assert_eq!(gb.width(), 2)
+        assert_eq!(gb.width(), 2);
+        println!(
+            "{:?}",
+            df.groupby("date")
+                .unwrap()
+                .agg(&[("temp", &["n_unique", "sum", "min"])])
+                .unwrap()
+        );
     }
 
     #[test]
