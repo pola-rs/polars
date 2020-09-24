@@ -29,7 +29,6 @@ unsafe_unwrap = "^0.1.0"
 rayon = "^1.3.1"
 prettytable-rs = { version="^0.8.0", features=["win_crlf"], optional = true, default_features = false}
 chrono = {version = "^0.4.13", optional = true}
-enum_dispatch = "^0.3.2"
 parquet = {version = "1", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}

@@ -1,9 +1,7 @@
 use crate::prelude::*;
-use enum_dispatch::enum_dispatch;
 use num::{Num, NumCast, ToPrimitive};
 use std::ops;
 
-#[enum_dispatch(Series)]
 pub(super) trait NumOpsDispatch {
     fn subtract(&self, _rhs: &Series) -> Result<Series> {
         Err(PolarsError::InvalidOperation)
@@ -59,7 +57,8 @@ impl ops::Sub for Series {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        (&self).subtract(&rhs).expect("data types don't match")
+        let series = &self;
+        apply_method_all_series!(series, subtract, &rhs).expect("data types don't match")
     }
 }
 
@@ -67,7 +66,8 @@ impl ops::Add for Series {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        (&self).add_to(&rhs).expect("data types don't match")
+        let series = &self;
+        apply_method_all_series!(series, add_to, &rhs).expect("data types don't match")
     }
 }
 
@@ -75,7 +75,8 @@ impl std::ops::Mul for Series {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        (&self).multiply(&rhs).expect("data types don't match")
+        let series = &self;
+        apply_method_all_series!(series, multiply, &rhs).expect("data types don't match")
     }
 }
 
@@ -83,7 +84,8 @@ impl std::ops::Div for Series {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
-        (&self).divide(&rhs).expect("data types don't match")
+        let series = &self;
+        apply_method_all_series!(series, divide, &rhs).expect("data types don't match")
     }
 }
 
@@ -93,7 +95,7 @@ impl ops::Sub for &Series {
     type Output = Series;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        (&self).subtract(rhs).expect("data types don't match")
+        apply_method_all_series!(self, subtract, &rhs).expect("data types don't match")
     }
 }
 
@@ -101,7 +103,7 @@ impl ops::Add for &Series {
     type Output = Series;
 
     fn add(self, rhs: Self) -> Self::Output {
-        (&self).add_to(rhs).expect("data types don't match")
+        apply_method_all_series!(self, add_to, &rhs).expect("data types don't match")
     }
 }
 
@@ -114,7 +116,7 @@ impl std::ops::Mul for &Series {
     /// let out = &s * &s;
     /// ```
     fn mul(self, rhs: Self) -> Self::Output {
-        (&self).multiply(rhs).expect("data types don't match")
+        apply_method_all_series!(self, multiply, &rhs).expect("data types don't match")
     }
 }
 
@@ -127,13 +129,12 @@ impl std::ops::Div for &Series {
     /// let out = &s / &s;
     /// ```
     fn div(self, rhs: Self) -> Self::Output {
-        (&self).divide(rhs).expect("data types don't match")
+        apply_method_all_series!(self, divide, &rhs).expect("data types don't match")
     }
 }
 
 // Series +-/* numbers instead of Series
 
-#[enum_dispatch(Series)]
 pub(super) trait NumOpsDispatchSeriesSingleNumber {
     fn subtract_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
         unimplemented!()
@@ -209,7 +210,7 @@ where
     type Output = Series;
 
     fn sub(self, rhs: T) -> Self::Output {
-        self.subtract_number(rhs)
+        apply_method_all_series!(self, subtract_number, rhs)
     }
 }
 
@@ -231,7 +232,7 @@ where
     type Output = Series;
 
     fn add(self, rhs: T) -> Self::Output {
-        self.add_number(rhs)
+        apply_method_all_series!(self, add_number, rhs)
     }
 }
 
@@ -253,7 +254,7 @@ where
     type Output = Series;
 
     fn div(self, rhs: T) -> Self::Output {
-        self.divide_number(rhs)
+        apply_method_all_series!(self, divide_number, rhs)
     }
 }
 
@@ -275,7 +276,7 @@ where
     type Output = Series;
 
     fn mul(self, rhs: T) -> Self::Output {
-        self.multiply_number(rhs)
+        apply_method_all_series!(self, multiply_number, rhs)
     }
 }
 
@@ -293,7 +294,6 @@ where
 /// We cannot override the left hand side behaviour. So we create a trait Lhs num ops.
 /// This allows for 1.add(&Series)
 
-#[enum_dispatch(Series)]
 pub(super) trait LhsNumOpsDispatch {
     fn lhs_subtract_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
         unimplemented!()
@@ -378,20 +378,19 @@ where
     type Output = Series;
 
     fn add(self, rhs: &Series) -> Self::Output {
-        rhs.lhs_add_number(self)
+        apply_method_all_series!(rhs, lhs_add_number, self)
     }
     fn sub(self, rhs: &Series) -> Self::Output {
-        rhs.lhs_subtract_number(self)
+        apply_method_all_series!(rhs, lhs_subtract_number, self)
     }
     fn div(self, rhs: &Series) -> Self::Output {
-        rhs.lhs_divide_number(self)
+        apply_method_all_series!(rhs, lhs_divide_number, self)
     }
     fn mul(self, rhs: &Series) -> Self::Output {
-        rhs.lhs_multiply_number(self)
+        apply_method_all_series!(rhs, lhs_multiply_number, self)
     }
 }
 
-// TODO: use enum dispatch
 impl Series {
     fn pow<E: Num>(&self, exp: E) -> Series
     where

@@ -4,7 +4,6 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
-use enum_dispatch::enum_dispatch;
 use fnv::FnvBuildHasher;
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
@@ -31,7 +30,6 @@ where
         .collect()
 }
 
-#[enum_dispatch(Series)]
 trait IntoGroupTuples {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
         unimplemented!()
@@ -168,7 +166,10 @@ impl DataFrame {
         let selected_keys = self.select_series(by)?;
 
         let groups = match selected_keys.len() {
-            1 => selected_keys[0].group_tuples(),
+            1 => {
+                let series = &selected_keys[0];
+                apply_method_all_series!(series, group_tuples,)
+            }
             2 => {
                 let iter = selected_keys[0]
                     .as_groupable_iter()?
@@ -274,7 +275,6 @@ pub struct GroupBy<'df, 'selection_str> {
     selected_agg: Option<Vec<&'selection_str str>>,
 }
 
-#[enum_dispatch(Series)]
 trait NumericAggSync {
     fn agg_mean(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
         None
@@ -415,7 +415,6 @@ where
     }
 }
 
-#[enum_dispatch(Series)]
 trait AggFirst {
     fn agg_first(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series;
 }
@@ -451,7 +450,6 @@ impl AggFirst for LargeListChunked {
     }
 }
 
-#[enum_dispatch(Series)]
 trait AggLast {
     fn agg_last(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series;
 }
@@ -487,7 +485,6 @@ impl AggLast for LargeListChunked {
     }
 }
 
-#[enum_dispatch(Series)]
 trait AggNUnique {
     fn agg_n_unique(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
         None
@@ -547,7 +544,6 @@ impl AggNUnique for Utf8Chunked {
     }
 }
 
-#[enum_dispatch(Series)]
 trait AggQuantile {
     fn agg_quantile(&self, _groups: &Vec<(usize, Vec<usize>)>, _quantile: f64) -> Option<Series> {
         None
@@ -665,7 +661,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         for agg_col in agg_cols {
             let new_name = format!["{}_mean", agg_col.name()];
-            let opt_agg = agg_col.agg_mean(&self.groups);
+            let opt_agg = apply_method_all_series!(agg_col, agg_mean, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -704,7 +700,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         for agg_col in agg_cols {
             let new_name = format!["{}_sum", agg_col.name()];
-            let opt_agg = agg_col.agg_sum(&self.groups);
+            let opt_agg = apply_method_all_series!(agg_col, agg_sum, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -742,7 +738,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_min", agg_col.name()];
-            let opt_agg = agg_col.agg_min(&self.groups);
+            let opt_agg = apply_method_all_series!(agg_col, agg_min, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -780,7 +776,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_max", agg_col.name()];
-            let opt_agg = agg_col.agg_max(&self.groups);
+            let opt_agg = apply_method_all_series!(agg_col, agg_max, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -818,7 +814,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_first", agg_col.name()];
-            let mut agg = agg_col.agg_first(&self.groups);
+            let mut agg = apply_method_all_series!(agg_col, agg_first, &self.groups);
             agg.rename(&new_name);
             cols.push(agg);
         }
@@ -854,7 +850,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_last", agg_col.name()];
-            let mut agg = agg_col.agg_last(&self.groups);
+            let mut agg = apply_method_all_series!(agg_col, agg_last, &self.groups);
             agg.rename(&new_name);
             cols.push(agg);
         }
@@ -890,7 +886,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_n_unique", agg_col.name()];
-            let opt_agg = agg_col.agg_n_unique(&self.groups);
+            let opt_agg = apply_method_all_series!(agg_col, agg_n_unique, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -918,7 +914,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_quantile_{:.2}", agg_col.name(), quantile];
-            let opt_agg = agg_col.agg_quantile(&self.groups, quantile);
+            let opt_agg = apply_method_all_series!(agg_col, agg_quantile, &self.groups, quantile);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -941,7 +937,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = format!["{}_median", agg_col.name()];
-            let opt_agg = agg_col.agg_median(&self.groups);
+            let opt_agg = apply_method_all_series!(agg_col, agg_median, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -1063,7 +1059,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         macro_rules! finish_agg_opt {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
                 let new_name = format![$name_fmt, $agg_col.name()];
-                let opt_agg = $agg_col.$agg_fn(&$self.groups);
+                let opt_agg = apply_method_all_series!($agg_col, $agg_fn, &$self.groups);
                 if let Some(mut agg) = opt_agg {
                     agg.rename(&new_name);
                     $cols.push(agg.into_series());
@@ -1073,14 +1069,14 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         macro_rules! finish_agg {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
                 let new_name = format![$name_fmt, $agg_col.name()];
-                let mut agg = $agg_col.$agg_fn(&$self.groups);
+                let mut agg = apply_method_all_series!($agg_col, $agg_fn, &$self.groups);
                 agg.rename(&new_name);
                 $cols.push(agg.into_series());
             }};
         }
 
         let (mut cols, agg_cols) = self.prepare_agg()?;
-        for agg_col in agg_cols {
+        for agg_col in &agg_cols {
             if let Some(&aggregations) = map.get(agg_col.name()) {
                 for aggregation_f in aggregations.as_ref() {
                     match aggregation_f.as_ref() {
@@ -1271,7 +1267,6 @@ pub struct Pivot<'df, 'selection_str> {
     values_column: &'selection_str str,
 }
 
-#[enum_dispatch(Series)]
 trait ChunkPivot {
     fn pivot(
         &self,
@@ -1476,11 +1471,13 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn first(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(
+        apply_method_all_series!(
+            values_series,
+            pivot,
             pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::First,
+            PivotAgg::First
         )
     }
 
@@ -1488,43 +1485,68 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn sum(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Sum)
+        apply_method_all_series!(
+            values_series,
+            pivot,
+            pivot_series,
+            self.gb.keys(),
+            &self.gb.groups,
+            PivotAgg::Sum
+        )
     }
 
     /// Aggregate the pivot results by taking the minimal value of all duplicates.
     pub fn min(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Min)
+        apply_method_all_series!(
+            values_series,
+            pivot,
+            pivot_series,
+            self.gb.keys(),
+            &self.gb.groups,
+            PivotAgg::Min
+        )
     }
 
     /// Aggregate the pivot results by taking the maximum value of all duplicates.
     pub fn max(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Max)
+        apply_method_all_series!(
+            values_series,
+            pivot,
+            pivot_series,
+            self.gb.keys(),
+            &self.gb.groups,
+            PivotAgg::Max
+        )
     }
 
     /// Aggregate the pivot results by taking the mean value of all duplicates.
     pub fn mean(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(
+        apply_method_all_series!(
+            values_series,
+            pivot,
             pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::Mean,
+            PivotAgg::Mean
         )
     }
     /// Aggregate the pivot results by taking the median value of all duplicates.
     pub fn median(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(
+        apply_method_all_series!(
+            values_series,
+            pivot,
             pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::Median,
+            PivotAgg::Median
         )
     }
 }
