@@ -13,6 +13,7 @@ thiserror = "1.0.20"
 numpy = "0.11"
 ndarray = "0.13.1"
 parquet = "1.0.1"
+enum_dispatch = "^0.3.2"
 
 
 [lib]

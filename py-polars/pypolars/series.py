@@ -1,7 +1,7 @@
 from __future__ import annotations
 from .pypolars import PySeries
 import numpy as np
-from typing import Optional, List, Sequence, Union, Any
+from typing import Optional, List, Sequence, Union, Any, Callable
 from .ffi import ptr_to_numpy
 from .datatypes import *
 
@@ -149,7 +149,7 @@ class Series:
 
     def __eq__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
+            other = Series("", other, nullable=True)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.eq(other._s))
         f = get_ffi_func("eq_<>", self.dtype, self._s)
@@ -159,7 +159,7 @@ class Series:
 
     def __ne__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
+            other = Series("", other, nullable=True)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.neq(other._s))
         f = get_ffi_func("neq_<>", self.dtype, self._s)
@@ -169,7 +169,7 @@ class Series:
 
     def __gt__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
+            other = Series("", other, nullable=True)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.gt(other._s))
         f = get_ffi_func("gt_<>", self.dtype, self._s)
@@ -179,7 +179,7 @@ class Series:
 
     def __lt__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
+            other = Series("", other, nullable=True)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.lt(other._s))
         f = get_ffi_func("lt_<>", self.dtype, self._s)
@@ -189,7 +189,7 @@ class Series:
 
     def __ge__(self, other) -> Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
+            other = Series("", other, nullable=True)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.gt_eq(other._s))
         f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
@@ -199,7 +199,7 @@ class Series:
 
     def __le__(self, other) -> Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
+            other = Series("", other, nullable=True)
         if isinstance(other, Series):
             return Series.from_pyseries(self._s.lt_eq(other._s))
         f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
@@ -493,7 +493,7 @@ class Series:
                 dtype = self.dtype
 
             f = get_ffi_func("apply_ufunc_<>", dtype, self._s)
-            series = f(lambda out: ufunc(*args, out=out, **kwargs), self.len())
+            series = f(lambda out: ufunc(*args, out=out, **kwargs))
             return wrap_s(series)
         else:
             return NotImplemented
@@ -564,3 +564,6 @@ class Series:
 
     def fill_none(self, strategy: str) -> Series:
         return wrap_s(self._s.fill_none(strategy))
+
+    def apply(self, func: Callable[["T"], "T"]):
+        return wrap_s(self._s.apply_lambda(func))

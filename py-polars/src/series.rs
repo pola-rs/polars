@@ -1,7 +1,9 @@
 use crate::datatypes::DataType;
 use crate::error::PyPolarsEr;
-use crate::npy;
-use crate::npy::aligned_array;
+use crate::{
+    dispatch::ApplyLambda,
+    npy::{self, aligned_array},
+};
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use polars::prelude::*;
@@ -359,6 +361,13 @@ impl PySeries {
     pub fn clone(&self) -> Self {
         PySeries::new(self.series.clone())
     }
+
+    pub fn apply_lambda(&self, lambda: &PyAny) -> PyResult<PySeries> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let series = &self.series;
+        apply_method_all_series!(series, apply_lambda, py, lambda)
+    }
 }
 
 macro_rules! impl_ufuncs {
@@ -369,10 +378,11 @@ macro_rules! impl_ufuncs {
             // the out array is allocated in this method, send to Python and once the ufunc is applied
             // ownership is taken by Rust again to prevent memory leak.
             // if the ufunc fails, we first must take ownership back.
-            pub fn $name(&self, lambda: &PyAny, size: usize) -> PyResult<PySeries> {
+            pub fn $name(&self, lambda: &PyAny) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
                 let gil = Python::acquire_gil();
                 let py = gil.python();
+                let size = self.len();
                 let (out_array, ptr) = aligned_array::<$type>(py, size);
 
                 debug_assert_eq!(out_array.get_refcnt(), 1);

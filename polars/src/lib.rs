@@ -176,7 +176,7 @@
 //!     - Conversions between Chrono and Polars for temporal data
 //! * `simd`
 //!     - SIMD operations
-//! * `paquet`
+//! * `parquet`
 //!     - Read Apache Parquet format
 //! * `random`
 //!     - Generate array's with randomly sampled values
