@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::utils::Xob;
-use enum_dispatch::enum_dispatch;
 use fnv::{FnvBuildHasher, FnvHashMap};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -564,7 +563,6 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[enum_dispatch(Series)]
 trait ZipOuterJoinColumn {
     fn zip_outer_join_column(
         &self,
@@ -781,7 +779,8 @@ impl DataFrame {
                 )
             },
         );
-        let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
+        let mut s =
+            apply_method_all_series!(s_left, zip_outer_join_column, s_right, &opt_join_tuples);
         s.rename(left_on);
         df_left.hstack(&[s])?;
         self.finish_join(df_left, df_right)

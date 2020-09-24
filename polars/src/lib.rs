@@ -188,8 +188,6 @@
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]
 #[macro_use]
-pub mod series;
-#[macro_use]
 pub(crate) mod utils;
 pub mod chunked_array;
 pub mod datatypes;
@@ -199,4 +197,5 @@ pub mod error;
 mod fmt;
 pub mod frame;
 pub mod prelude;
+pub mod series;
 pub mod testing;

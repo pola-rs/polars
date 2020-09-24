@@ -3,17 +3,12 @@ pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::{array::ArrayRef, buffer::Buffer};
 use std::mem;
-
 pub(crate) mod aggregate;
 pub(crate) mod arithmetic;
 mod comparison;
 pub(crate) mod iterator;
-use arithmetic::{LhsNumOpsDispatch, NumOpsDispatch, NumOpsDispatchSeriesSingleNumber};
-// needed for enum dispatch
 use crate::fmt::FmtLargeList;
 use arrow::array::ArrayDataRef;
-use enum_dispatch::enum_dispatch;
-use num::{Num, NumCast};
 
 /// # Series
 /// The columnar data type for a DataFrame. The [Series enum](enum.Series.html) consists
@@ -108,7 +103,6 @@ use num::{Num, NumCast};
 ///     .collect();
 ///
 /// ```
-#[enum_dispatch]
 #[derive(Clone)]
 pub enum Series {
     UInt8(ChunkedArray<UInt8Type>),
@@ -140,150 +134,6 @@ pub enum Series {
     TimestampMillisecond(TimestampMillisecondChunked),
     TimestampSecond(TimestampSecondChunked),
     LargeList(LargeListChunked),
-}
-
-#[macro_export]
-macro_rules! apply_method_all_series {
-    ($self:ident, $method:ident, $($args:expr),*) => {
-        match $self {
-            Series::Utf8(a) => a.$method($($args),*),
-            Series::Bool(a) => a.$method($($args),*),
-            Series::UInt8(a) => a.$method($($args),*),
-            Series::UInt16(a) => a.$method($($args),*),
-            Series::UInt32(a) => a.$method($($args),*),
-            Series::UInt64(a) => a.$method($($args),*),
-            Series::Int8(a) => a.$method($($args),*),
-            Series::Int16(a) => a.$method($($args),*),
-            Series::Int32(a) => a.$method($($args),*),
-            Series::Int64(a) => a.$method($($args),*),
-            Series::Float32(a) => a.$method($($args),*),
-            Series::Float64(a) => a.$method($($args),*),
-            Series::Date32(a) => a.$method($($args),*),
-            Series::Date64(a) => a.$method($($args),*),
-            Series::Time32Millisecond(a) => a.$method($($args),*),
-            Series::Time32Second(a) => a.$method($($args),*),
-            Series::Time64Nanosecond(a) => a.$method($($args),*),
-            Series::Time64Microsecond(a) => a.$method($($args),*),
-            Series::DurationNanosecond(a) => a.$method($($args),*),
-            Series::DurationMicrosecond(a) => a.$method($($args),*),
-            Series::DurationMillisecond(a) => a.$method($($args),*),
-            Series::DurationSecond(a) => a.$method($($args),*),
-            Series::TimestampNanosecond(a) => a.$method($($args),*),
-            Series::TimestampMicrosecond(a) => a.$method($($args),*),
-            Series::TimestampMillisecond(a) => a.$method($($args),*),
-            Series::TimestampSecond(a) => a.$method($($args),*),
-            Series::IntervalDayTime(a) => a.$method($($args),*),
-            Series::IntervalYearMonth(a) => a.$method($($args),*),
-            Series::LargeList(a) => a.$method($($args),*),
-        }
-    }
-}
-
-// doesn't include Bool and Utf8
-#[macro_export]
-macro_rules! apply_method_numeric_series {
-    ($self:ident, $method:ident, $($args:expr),*) => {
-        match $self {
-            Series::UInt8(a) => a.$method($($args),*),
-            Series::UInt16(a) => a.$method($($args),*),
-            Series::UInt32(a) => a.$method($($args),*),
-            Series::UInt64(a) => a.$method($($args),*),
-            Series::Int8(a) => a.$method($($args),*),
-            Series::Int16(a) => a.$method($($args),*),
-            Series::Int32(a) => a.$method($($args),*),
-            Series::Int64(a) => a.$method($($args),*),
-            Series::Float32(a) => a.$method($($args),*),
-            Series::Float64(a) => a.$method($($args),*),
-            Series::Date32(a) => a.$method($($args),*),
-            Series::Date64(a) => a.$method($($args),*),
-            Series::Time32Millisecond(a) => a.$method($($args),*),
-            Series::Time32Second(a) => a.$method($($args),*),
-            Series::Time64Nanosecond(a) => a.$method($($args),*),
-            Series::Time64Microsecond(a) => a.$method($($args),*),
-            Series::DurationNanosecond(a) => a.$method($($args),*),
-            Series::DurationMicrosecond(a) => a.$method($($args),*),
-            Series::DurationMillisecond(a) => a.$method($($args),*),
-            Series::DurationSecond(a) => a.$method($($args),*),
-            Series::TimestampNanosecond(a) => a.$method($($args),*),
-            Series::TimestampMicrosecond(a) => a.$method($($args),*),
-            Series::TimestampMillisecond(a) => a.$method($($args),*),
-            Series::TimestampSecond(a) => a.$method($($args),*),
-            Series::IntervalDayTime(a) => a.$method($($args),*),
-            Series::IntervalYearMonth(a) => a.$method($($args),*),
-            _ => unimplemented!(),
-        }
-    }
-}
-
-#[macro_export]
-macro_rules! apply_method_numeric_series_and_return {
-    ($self:ident, $method:ident, [$($args:expr),*], $($opt_question_mark:tt)*) => {
-        match $self {
-            Series::UInt8(a) => Series::UInt8(a.$method($($args),*)$($opt_question_mark)*),
-            Series::UInt16(a) => Series::UInt16(a.$method($($args),*)$($opt_question_mark)*),
-            Series::UInt32(a) => Series::UInt32(a.$method($($args),*)$($opt_question_mark)*),
-            Series::UInt64(a) => Series::UInt64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Int8(a) => Series::Int8(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Int16(a) => Series::Int16(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Int32(a) => Series::Int32(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Int64(a) => Series::Int64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Float32(a) => Series::Float32(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Float64(a) => Series::Float64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Date32(a) => Series::Date32(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Date64(a) => Series::Date64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time32Millisecond(a) => Series::Time32Millisecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time32Second(a) => Series::Time32Second(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time64Nanosecond(a) => Series::Time64Nanosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time64Microsecond(a) => Series::Time64Microsecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationNanosecond(a) => Series::DurationNanosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationMicrosecond(a) => Series::DurationMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationMillisecond(a) => Series::DurationMillisecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationSecond(a) => Series::DurationSecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::TimestampNanosecond(a) => Series::TimestampNanosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::TimestampMicrosecond(a) => Series::TimestampMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::TimestampMillisecond(a) => Series::TimestampMillisecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
-            Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
-            _ => unimplemented!()
-        }
-    }
-}
-
-macro_rules! apply_method_all_series_and_return {
-    ($self:ident, $method:ident, [$($args:expr),*], $($opt_question_mark:tt)*) => {
-        match $self {
-            Series::UInt8(a) => Series::UInt8(a.$method($($args),*)$($opt_question_mark)*),
-            Series::UInt16(a) => Series::UInt16(a.$method($($args),*)$($opt_question_mark)*),
-            Series::UInt32(a) => Series::UInt32(a.$method($($args),*)$($opt_question_mark)*),
-            Series::UInt64(a) => Series::UInt64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Int8(a) => Series::Int8(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Int16(a) => Series::Int16(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Int32(a) => Series::Int32(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Int64(a) => Series::Int64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Float32(a) => Series::Float32(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Float64(a) => Series::Float64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Utf8(a) => Series::Utf8(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Bool(a) => Series::Bool(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Date32(a) => Series::Date32(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Date64(a) => Series::Date64(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time32Millisecond(a) => Series::Time32Millisecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time32Second(a) => Series::Time32Second(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time64Nanosecond(a) => Series::Time64Nanosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::Time64Microsecond(a) => Series::Time64Microsecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationNanosecond(a) => Series::DurationNanosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationMicrosecond(a) => Series::DurationMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationMillisecond(a) => Series::DurationMillisecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::DurationSecond(a) => Series::DurationSecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::TimestampNanosecond(a) => Series::TimestampNanosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::TimestampMicrosecond(a) => Series::TimestampMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::TimestampMillisecond(a) => Series::TimestampMillisecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
-            Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
-            Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
-            Series::LargeList(a) => Series::LargeList(a.$method($($args),*)$($opt_question_mark)*),
-        }
-    }
 }
 
 macro_rules! unpack_series {
@@ -1151,7 +1001,7 @@ mod test {
         Series::new("boolean series", &vec![true, false, true]);
         Series::new("int series", &[1, 2, 3]);
         let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-        Series::from(ca);
+        ca.into_series();
     }
 
     #[test]
