@@ -162,3 +162,9 @@ def test_fill_none():
     a = Series("a", [1, 2, None], nullable=True)
     b = a.fill_none("forward")
     assert b == [1, 2, 2]
+
+
+def test_apply():
+    a = Series("a", [1, 2, None], nullable=True)
+    b = a.apply(lambda x: x**2)
+    assert b == [1, 4, None]
