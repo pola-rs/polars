@@ -34,7 +34,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def from_csv(
+    def read_csv(
         file: Union[str, TextIO],
         infer_schema_length: int = 100,
         batch_size: int = 100000,
@@ -62,13 +62,13 @@ class DataFrame:
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.from_csv(
+        self._df = PyDataFrame.read_csv(
             file, infer_schema_length, batch_size, has_headers, ignore_errors
         )
         return self
 
     @staticmethod
-    def from_parquet(
+    def read_parquet(
         file: Union[str, BinaryIO], batch_size: int = 250000,
     ) -> DataFrame:
         """
@@ -86,11 +86,11 @@ class DataFrame:
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.from_parquet(file, batch_size)
+        self._df = PyDataFrame.read_parquet(file, batch_size)
         return self
 
     @staticmethod
-    def from_ipc(file: Union[str, BinaryIO]) -> DataFrame:
+    def read_ipc(file: Union[str, BinaryIO]) -> DataFrame:
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -104,11 +104,11 @@ class DataFrame:
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.from_ipc(file)
+        self._df = PyDataFrame.read_ipc(file)
         return self
 
     @staticmethod
-    def from_feather(file: Union[str, BinaryIO]) -> DataFrame:
+    def read_feather(file: Union[str, BinaryIO]) -> DataFrame:
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -121,7 +121,7 @@ class DataFrame:
         -------
         DataFrame
         """
-        return DataFrame.from_ipc(file)
+        return DataFrame.read_ipc(file)
 
     def to_csv(
         self,
