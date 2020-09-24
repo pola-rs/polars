@@ -362,11 +362,115 @@ impl PySeries {
         PySeries::new(self.series.clone())
     }
 
-    pub fn apply_lambda(&self, lambda: &PyAny) -> PyResult<PySeries> {
+    pub fn apply_lambda(&self, lambda: &PyAny, dtype: Option<u8>) -> PyResult<PySeries> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let series = &self.series;
-        apply_method_all_series!(series, apply_lambda, py, lambda)
+
+        let out = match dtype {
+            Some(0) => {
+                let ca: Int8Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(1) => {
+                let ca: Int16Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(2) => {
+                let ca: Int32Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(3) => {
+                let ca: Int64Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(4) => {
+                let ca: UInt8Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(5) => {
+                let ca: UInt16Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(6) => {
+                let ca: UInt32Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(7) => {
+                let ca: UInt64Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(8) => {
+                let ca: Float32Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(9) => {
+                let ca: Float64Chunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(10) => {
+                let ca: BooleanChunked = apply_method_all_series!(
+                    series,
+                    apply_lambda_with_primitive_dtype,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            _ => return apply_method_all_series!(series, apply_lambda, py, lambda),
+        };
+
+        Ok(PySeries::new(out))
     }
 }
 

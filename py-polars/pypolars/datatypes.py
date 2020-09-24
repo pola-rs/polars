@@ -210,3 +210,11 @@ def dtype_to_ctype(dtype: "DataType") -> "ctype":
     else:
         return NotImplemented
     return ptr_type
+
+
+def dtype_to_int(dtype: "DataType") -> int:
+    i = 0
+    for dt in dtypes:
+        if dt == dtype:
+            return i
+        i += 1

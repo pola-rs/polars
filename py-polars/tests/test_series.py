@@ -1,6 +1,7 @@
 from pypolars import Series
 from pypolars.datatypes import *
 import numpy as np
+import pytest
 
 
 def create_series():
@@ -172,3 +173,9 @@ def test_apply():
     a = Series("a", ["foo", "bar", None], nullable=True)
     b = a.apply(lambda x: x + "py")
     assert b == ["foopy", "barpy", None]
+
+    b = a.apply(lambda x: len(x), dtype_out=Int32)
+    assert b == [3, 3, None]
+
+    with pytest.raises(TypeError):
+        a.apply(lambda x: len(x))
