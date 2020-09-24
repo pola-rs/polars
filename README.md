@@ -1,6 +1,6 @@
 # Polars
 [![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
-[![Build Status](https://travis-ci.com/ritchie46/polars.svg?branch=master)](https://travis-ci.com/ritchie46/polars)
+![Build, test and docs](https://github.com/ritchie46/polars/workflows/Build,%20test%20and%20docs/badge.svg)
 [![](http://meritbadge.herokuapp.com/polars)](https://crates.io/crates/polars)
 
 ## Blazingly fast in memory DataFrames in Rust

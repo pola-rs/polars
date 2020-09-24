@@ -565,5 +565,29 @@ class Series:
     def fill_none(self, strategy: str) -> Series:
         return wrap_s(self._s.fill_none(strategy))
 
-    def apply(self, func: Callable[["T"], "T"]):
-        return wrap_s(self._s.apply_lambda(func))
+    def apply(
+        self,
+        func: Union[Callable[["T"], "T"], Callable[["T"], "S"]],
+        dtype_out: Optional["DataType"] = None,
+    ):
+        """
+        Apply a function over elements in this Series and return a new Series.
+
+        If the function returns another datatype, the dtype_out arg should be set, otherwise the method will fail.
+
+        Parameters
+        ----------
+        func
+            function or lambda.
+        dtype_out
+            Output datatype. If none given the same datatype as this Series will be used.
+
+        Returns
+        -------
+        Series
+        """
+        if dtype_out is None:
+            return wrap_s(self._s.apply_lambda(func))
+        else:
+            dt = dtype_to_int(dtype_out)
+            return wrap_s(self._s.apply_lambda(func, dt))
