@@ -166,5 +166,9 @@ def test_fill_none():
 
 def test_apply():
     a = Series("a", [1, 2, None], nullable=True)
-    b = a.apply(lambda x: x**2)
+    b = a.apply(lambda x: x ** 2)
     assert b == [1, 4, None]
+
+    a = Series("a", ["foo", "bar", None], nullable=True)
+    b = a.apply(lambda x: x + "py")
+    assert b == ["foopy", "barpy", None]
