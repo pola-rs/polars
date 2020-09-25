@@ -68,7 +68,7 @@ fn bench_join() {
     let mut mean = 0.0;
     for _ in 0..10 {
         let now = Instant::now();
-        let joined = left
+        let _joined = left
             .inner_join(&right, "key", "key")
             .expect("could not join");
         let duration = now.elapsed().as_micros();
@@ -81,7 +81,7 @@ fn bench_join() {
     let mut mean = 0.0;
     for _ in 0..10 {
         let now = Instant::now();
-        let joined = left
+        let _joined = left
             .left_join(&right, "key", "key")
             .expect("could not join");
         let duration = now.elapsed().as_micros();
@@ -94,7 +94,7 @@ fn bench_join() {
     let mut mean = 0.0;
     for _ in 0..10 {
         let now = Instant::now();
-        let joined = left
+        let _joined = left
             .outer_join(&right, "key", "key")
             .expect("could not join");
         let duration = now.elapsed().as_micros();
