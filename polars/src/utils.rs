@@ -243,6 +243,20 @@ macro_rules! apply_method_all_series_and_return {
     }
 }
 
+#[macro_export]
+macro_rules! df {
+    ($($col_name:expr => $slice:expr), +) => {
+        {
+            let mut columns = vec![];
+            $(
+                columns.push(Series::new($col_name, $slice));
+            )+
+            DataFrame::new(columns)
+        }
+
+    }
+}
+
 /// Clone if upstream hasn't implemented clone
 pub(crate) fn clone<T>(t: &T) -> T {
     unsafe { mem::transmute_copy(t) }

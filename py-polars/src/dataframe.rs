@@ -372,4 +372,12 @@ impl PyDataFrame {
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
+
+    pub fn melt(&self, id_vars: Vec<&str>, value_vars: Vec<&str>) -> PyResult<Self> {
+        let df = self
+            .df
+            .melt(id_vars, value_vars)
+            .map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
 }

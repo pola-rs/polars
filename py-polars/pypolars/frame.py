@@ -486,6 +486,30 @@ class DataFrame:
         """
         return wrap_df(self._df.explode(column))
 
+    def melt(
+        self, id_vars: Union[List[str], str], value_vars: Union[List[str], str]
+    ) -> DataFrame:
+        """
+        Unpivot DataFrame to long format.
+
+        Parameters
+        ----------
+        id_vars
+            Columns to use as identifier variables
+
+        value_vars
+            Values to use as identifier variables
+
+        Returns
+        -------
+
+        """
+        if isinstance(value_vars, str):
+            value_vars = [value_vars]
+        if isinstance(id_vars, str):
+            id_vars = [id_vars]
+        return wrap_df(self._df.melt(id_vars, value_vars))
+
 
 class GroupBy:
     def __init__(self, df: DataFrame, by: List[str]):

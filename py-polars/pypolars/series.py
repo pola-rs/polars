@@ -81,16 +81,21 @@ class Series:
             return
 
         self._s: PySeries
+        # series path
+        if isinstance(values, Series):
+            self.from_pyseries(values)
+            return
+        elif isinstance(values, dict):
+            raise ValueError(
+                f"Constructing a Series with a dict is not supported for {values}"
+            )
+
         # castable to numpy
         if not isinstance(values, np.ndarray) and not nullable:
             values = np.array(values)
 
-        # series path
-        if isinstance(values, Series):
-            self.from_pyseries(values)
-
         # numpy path
-        elif isinstance(values, np.ndarray):
+        if isinstance(values, np.ndarray):
             dtype = values.dtype
             if dtype == np.int64:
                 self._s = PySeries.new_i64(name, values)

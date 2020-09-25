@@ -8,3 +8,5 @@
 //!     - group indexes
 //!     - agg (combined aggregations)
 //! * explode operation
+//! * melt operation
+//! * df! macro

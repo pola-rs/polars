@@ -66,22 +66,21 @@ Polars is written to be performant. Below are some comparisons with the (also ve
 
 ```rust
  use polars::prelude::*;
- 
+
  fn join() -> Result<DataFrame> {
      // Create first df.
-     let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
-     let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
-     let temp = DataFrame::new(vec![s0, s1])?;
- 
+     let temp = df!("days" => &[0, 1, 2, 3, 4],
+                    "temp" => &[22.1, 19.9, 7., 2., 3.])?;
+
      // Create second df.
-     let s0 = Series::new("days", &[1, 2]);
-     let s1 = Series::new("rain", &[0.1, 0.2]);
-     let rain = DataFrame::new(vec![s0, s1])?;
- 
+     let rain = df!("days" => &[1, 2],
+                    "rain" => &[0.1, 0.2])?;
+
      // Left join on days column.
      temp.left_join(&rain, "days", "days")
  }
- println!("{}", join().unwrap());
+
+ println!("{:?}", join().unwrap());
 ```
 
 ```text

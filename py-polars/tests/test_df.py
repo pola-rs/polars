@@ -178,3 +178,9 @@ def test_set():
     df = DataFrame({"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10})
     df["new"] = np.random.rand(10)
     df[df["new"] > 0.5, "new"] = 1
+
+
+def test_melt():
+    df = DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
+    melted = df.melt(id_vars="A", value_vars=["B", "C"])
+    assert melted["value"] == [1, 3, 4, 2, 4, 6]
