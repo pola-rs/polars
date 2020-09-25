@@ -31,9 +31,10 @@ jobs:
         - name: Run tests
           run: |
             cd py-polars
-            ./taskds.sh build-run-tests
+            ./tasks.sh build-run-tests
             rm wheels/*
   build:
+    needs: test
     name: Create Release
     runs-on: ${{ matrix.os }}
     strategy:
