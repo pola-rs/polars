@@ -7,9 +7,3 @@ members = [
     "py-polars",
     "examples/iris_classifier"
 ]
-
-[profile.release]
-codegen-units = 1
-rustflags = ["-C", "target-cpu=native"]
-target-cpu = "native"
-lto = "fat"

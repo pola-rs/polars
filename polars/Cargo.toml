@@ -32,4 +32,4 @@ chrono = {version = "^0.4.13", optional = true}
 parquet = {version = "1", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
-ndarray = {version = "0.13", optional = true}
+ndarray = {version = "0.13", optional = true, default_features = false}
