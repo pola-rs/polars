@@ -65,17 +65,14 @@ impl DataFrame {
     ///
     /// ```rust
     ///  use polars::prelude::*;
-    ///  use polars::chunked_array::builder::get_large_list_builder;
+    ///  let s0 = Series::new("a", &[1i8, 2, 3]);
+    ///  let s1 = Series::new("b", &[1i8, 1, 1]);
+    ///  let s2 = Series::new("c", &[2i8, 2, 2]);
+    ///  let list = Series::new("foo", &[s0, s1, s2]);
     ///
-    ///  let mut builder = get_large_list_builder(&ArrowDataType::Int8, 3, "foo");
-    ///  builder.append_series(&Series::new("a", &[1i8, 2, 3]));
-    ///  builder.append_series(&Series::new("b", &[1i8, 1, 1]));
-    ///  builder.append_series(&Series::new("c", &[2i8, 2, 2]));
-    ///  let list = builder.finish().into_series();
-    ///
-    ///  let s = Series::new("B", [1, 2, 3]);
+    ///  let s0 = Series::new("B", [1, 2, 3]);
     ///  let s1 = Series::new("C", [1, 1, 1]);
-    ///  let df = DataFrame::new(vec![list, s, s1]).unwrap();
+    ///  let df = DataFrame::new(vec![list, s0, s1]).unwrap();
     ///  let exploded = df.explode("foo").unwrap();
     ///
     ///  println!("{:?}", df);
@@ -137,20 +134,18 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::chunked_array::builder::get_large_list_builder;
     use crate::prelude::*;
 
     #[test]
     fn test_explode() {
-        let mut builder = get_large_list_builder(&ArrowDataType::Int8, 3, "foo");
-        builder.append_series(&Series::new("a", &[1i8, 2, 3]));
-        builder.append_series(&Series::new("b", &[1i8, 1, 1]));
-        builder.append_series(&Series::new("c", &[2i8, 2, 2]));
-        let list = builder.finish().into_series();
+        let s0 = Series::new("a", &[1i8, 2, 3]);
+        let s1 = Series::new("b", &[1i8, 1, 1]);
+        let s2 = Series::new("c", &[2i8, 2, 2]);
+        let list = Series::new("foo", &[s0, s1, s2]);
 
-        let s = Series::new("B", [1, 2, 3]);
+        let s0 = Series::new("B", [1, 2, 3]);
         let s1 = Series::new("C", [1, 1, 1]);
-        let df = DataFrame::new(vec![list, s, s1]).unwrap();
+        let df = DataFrame::new(vec![list, s0, s1]).unwrap();
         let exploded = df.explode("foo").unwrap();
         println!("{:?}", df);
         println!("{:?}", exploded);
