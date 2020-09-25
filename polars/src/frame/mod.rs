@@ -9,6 +9,7 @@ use std::marker::Sized;
 use std::mem;
 use std::sync::Arc;
 
+pub mod explode;
 pub mod group_by;
 pub mod hash_join;
 pub mod select;

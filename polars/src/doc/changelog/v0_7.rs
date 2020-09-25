@@ -5,4 +5,6 @@
 //!     - quantile
 //!     - median
 //!     - last
-//!
+//!     - group indexes
+//!     - agg (combined aggregations)
+//! * explode operation
