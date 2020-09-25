@@ -471,6 +471,21 @@ class DataFrame:
         """
         return wrap_df(self._df.fill_none(strategy))
 
+    def explode(self, column: str) -> DataFrame:
+        """
+        Explode `DataFrame` to long format by exploding a column with Lists.
+
+        Parameters
+        ----------
+        column
+            Column of LargeList type
+
+        Returns
+        -------
+        DataFrame
+        """
+        return wrap_df(self._df.explode(column))
+
 
 class GroupBy:
     def __init__(self, df: DataFrame, by: List[str]):

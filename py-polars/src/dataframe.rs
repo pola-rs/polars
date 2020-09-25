@@ -366,4 +366,10 @@ impl PyDataFrame {
     pub fn clone(&self) -> Self {
         PyDataFrame::new(self.df.clone())
     }
+
+    pub fn explode(&self, column: &str) -> PyResult<Self> {
+        let df = self.df.explode(column);
+        let df = df.map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
 }
