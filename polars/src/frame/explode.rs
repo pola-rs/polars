@@ -1,4 +1,6 @@
+use crate::frame::select::Selection;
 use crate::prelude::*;
+use std::collections::VecDeque;
 
 impl LargeListChunked {
     pub fn explode(&self) -> Result<(Series, Vec<usize>)> {
@@ -130,6 +132,60 @@ impl DataFrame {
             Ok(self.clone())
         }
     }
+
+    ///
+    /// Unpivot a `DataFrame` from wide to long format.
+    ///
+    /// # Example
+    ///
+    /// # Arguments
+    ///
+    /// * `id_vars` - String slice that represent the columns to use as id variables.
+    /// * `value_vars` - String slice that represent the columns to use as value variables.
+    ///
+    /// ```rust
+    ///
+    ///  # #[macro_use] extern crate polars;
+    /// use polars::prelude::*;
+    /// let df = df!("A" => &["a", "b", "a"],
+    ///              "B" => &[1, 3, 5],
+    ///              "C" => &[10, 11, 12],
+    ///              "D" => &[2, 4, 6]
+    ///     )
+    /// .unwrap();
+    ///
+    /// let melted = df.melt(&["A", "B"], &["C", "D"]).unwrap();
+    /// println!("{:?}", df);
+    /// println!("{:?}", melted);
+    /// ```
+    pub fn melt<'a, 'b, J, K, SelId: Selection<'a, J>, SelValue: Selection<'b, K>>(
+        &self,
+        id_vars: SelId,
+        value_vars: SelValue,
+    ) -> Result<Self> {
+        let ids = self.select(id_vars)?;
+        let value_vars = value_vars.to_selection_vec();
+        let len = self.height();
+
+        let mut dataframe_chunks = VecDeque::with_capacity(value_vars.len());
+
+        for value_column_name in value_vars {
+            let variable_col = Utf8Chunked::full("variable", value_column_name, len).into_series();
+            let mut value_col = self.column(value_column_name)?.clone();
+            value_col.rename("value");
+
+            let mut df_chunk = ids.clone();
+            df_chunk.hstack(&[variable_col, value_col])?;
+            dataframe_chunks.push_back(df_chunk)
+        }
+
+        let mut main_df = dataframe_chunks.pop_front().ok_or(PolarsError::NoData)?;
+
+        while let Some(df) = dataframe_chunks.pop_front() {
+            main_df.vstack(&df)?;
+        }
+        Ok(main_df)
+    }
 }
 
 #[cfg(test)]
@@ -150,5 +206,21 @@ mod test {
         println!("{:?}", df);
         println!("{:?}", exploded);
         assert_eq!(exploded.shape(), (9, 3));
+    }
+
+    #[test]
+    fn test_melt() {
+        let df = df!("A" => &["a", "b", "a"],
+         "B" => &[1, 3, 5],
+         "C" => &[10, 11, 12],
+         "D" => &[2, 4, 6]
+        )
+        .unwrap();
+
+        let melted = df.melt(&["A", "B"], &["C", "D"]).unwrap();
+        assert_eq!(
+            Vec::from(melted.column("value").unwrap().i32().unwrap()),
+            &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
+        )
     }
 }
