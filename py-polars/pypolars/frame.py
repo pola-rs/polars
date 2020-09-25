@@ -1,5 +1,7 @@
 from __future__ import annotations
-from .pypolars import PyDataFrame, PySeries
+import os
+if not os.environ.get("DOC_BUILDING", False):
+    from .pypolars import PyDataFrame, PySeries
 from typing import (
     Dict,
     Sequence,
@@ -28,7 +30,7 @@ class DataFrame:
         self._df = PyDataFrame(columns)
 
     @staticmethod
-    def from_pydf(df: PyDataFrame) -> DataFrame:
+    def from_pydf(df: "PyDataFrame") -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
         self._df = df
         return self
@@ -360,24 +362,88 @@ class DataFrame:
             return wrap_df(self._df.sort(by_column, reverse))
 
     def frame_equal(self, other: DataFrame) -> bool:
+        """
+        Check if DataFrame is equal to other.
+
+        Parameters
+        ----------
+        other
+            DataFrame to compare with.
+        """
         return self._df.frame_equal(other._df)
 
     def replace(self, column: str, new_col: Series):
+        """
+        Replace a column by a new Series.
+
+        Parameters
+        ----------
+        column
+            Column to replace.
+        new_col
+            New column to insert.
+        """
         self._df.replace(column, new_col.inner())
 
     def slice(self, offset: int, length: int) -> DataFrame:
+        """
+        Slice this DataFrame over the rows direction.
+
+        Parameters
+        ----------
+        offset
+            Offset index.
+        length
+            Length of the slice.
+        """
         return wrap_df(self._df.slice(offset, length))
 
     def head(self, length: int = 5) -> DataFrame:
+        """
+        Get first N rows as DataFrame
+
+        Parameters
+        ----------
+        length
+            Length of the head
+        """
         return wrap_df(self._df.head(length))
 
     def tail(self, length: int = 5) -> DataFrame:
+        """
+        Get last N rows as DataFrame
+
+        Parameters
+        ----------
+        length
+            Length of the tail
+        """
         return wrap_df(self._df.tail(length))
 
     def pipe(self, func: Callable, *args, **kwargs):
+        """
+        Apply a function on Self
+
+        Parameters
+        ----------
+        func
+            Callable
+        args
+            Arguments
+        kwargs
+            Keyword arguments
+        """
         return func(self, *args, **kwargs)
 
     def groupby(self, by: Union[str, List[str]]) -> GroupBy:
+        """
+        Start a groupby operation
+
+        Parameters
+        ----------
+        by
+            Column(s) to group by.
+        """
         if isinstance(by, str):
             by = [by]
         return GroupBy(self._df, by)
@@ -429,27 +495,70 @@ class DataFrame:
         return wrap_df(inner)
 
     def hstack(self, columns: List[Series]):
+        """
+        Grow this DataFrame horizontally by stacking Series to it.
+
+        Parameters
+        ----------
+        columns
+            Series to stack
+        """
         self._df.hstack([s.inner() for s in columns])
 
     def vstack(self, df: DataFrame):
+        """
+        Grow this DataFrame vertically by stacking a DataFrame to it.
+
+        Parameters
+        ----------
+        df
+            DataFrame to stack
+        """
         self._df.vstack(df._df)
 
     def drop(self, name: str) -> DataFrame:
+        """
+        Remove column from DataFrame and return as new.
+
+        Parameters
+        ----------
+        name
+            Column to drop
+        """
         return wrap_df(self._df.drop(name))
 
     def drop_in_place(self, name: str) -> Series:
+        """
+        Drop in place
+
+        Parameters
+        ----------
+        name
+            Column to drop
+        """
         return wrap_s(self._df.drop_in_place(name))
 
     def select_at_idx(self, idx: int) -> Series:
+        """
+        Select column at index location.
+
+        Parameters
+        ----------
+        idx
+            Location of selection
+        """
         return wrap_s(self._df.select_at_idx(idx))
 
     def clone(self) -> DataFrame:
         """
-        Cheap deep clone
+        Very cheap deep clone
         """
         return wrap_df(self._df.clone())
 
     def get_columns(self) -> List[Series]:
+        """
+        Get the DataFrame as a List of Series
+        """
         return list(map(lambda s: wrap_s(s), self._df.get_columns()))
 
     def fill_none(self, strategy: str) -> DataFrame:
@@ -660,31 +769,49 @@ class PivotOps:
         self.values_column = values_column
 
     def first(self):
+        """
+        Get the first value per group.
+        """
         return wrap_df(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "first")
         )
 
     def sum(self):
+        """
+        Get the sum per group.
+        """
         return wrap_df(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "sum")
         )
 
     def min(self):
+        """
+        Get the minimal value per group.
+        """
         return wrap_df(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "min")
         )
 
     def max(self):
+        """
+        Get the maximal value per group.
+        """
         return wrap_df(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "max")
         )
 
     def mean(self):
+        """
+        Get the mean value per group.
+        """
         return wrap_df(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "mean")
         )
 
     def median(self):
+        """
+        Get the median value per group.
+        """
         return wrap_df(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "median")
         )

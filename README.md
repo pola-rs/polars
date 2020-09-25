@@ -21,9 +21,10 @@ Oh yeah.. and get a cup of coffee because compilation will take while during the
 ## Python
 A subset of the Polars functionality is also exposed through Python bindings. You can install them for linux with:
 
-`$ pip install --upgrade -i https://test.pypi.org/simple/ py-polars`
+`$ pip install py-polars`
 
-Next you can check the [10 minutes to py-polars notebook](examples/10_minutes_to_pypolars.ipynb)
+Next you can check the [10 minutes to py-polars notebook](examples/10_minutes_to_pypolars.ipynb) or take a look 
+at the [reference](https://py-polars.readthedocs.io/en/latest/).
 
 
 ## Documentation
