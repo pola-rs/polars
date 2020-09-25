@@ -7,6 +7,7 @@ pub(crate) mod aggregate;
 pub(crate) mod arithmetic;
 mod comparison;
 pub(crate) mod iterator;
+use crate::chunked_array::builder::get_large_list_builder;
 use crate::fmt::FmtLargeList;
 use arrow::array::ArrayDataRef;
 
@@ -773,6 +774,18 @@ impl_named_from!([Option<i32>], Int32, new_from_opt_slice);
 impl_named_from!([Option<i64>], Int64, new_from_opt_slice);
 impl_named_from!([Option<f32>], Float32, new_from_opt_slice);
 impl_named_from!([Option<f64>], Float64, new_from_opt_slice);
+
+impl<T: AsRef<[Series]>> NamedFrom<T, LargeListType> for Series {
+    fn new(name: &str, s: T) -> Self {
+        let series_slice = s.as_ref();
+        let dt = series_slice[0].dtype();
+        let mut builder = get_large_list_builder(dt, series_slice.len(), name);
+        for series in series_slice {
+            builder.append_series(series)
+        }
+        builder.finish().into_series()
+    }
+}
 
 macro_rules! impl_as_ref_ca {
     ($type:ident, $series_var:ident) => {
