@@ -28,14 +28,14 @@ impl CsvExec {
 }
 
 impl ExecutionPlan for CsvExec {
-    fn execute(&self) -> Result<DataStructure> {
+    fn execute(&self) -> Result<DataFrame> {
         let file = std::fs::File::open(&self.path).unwrap();
 
         let df = CsvReader::new(file)
             .has_header(self.has_header)
             .with_batch_size(10000)
             .finish()?;
-        Ok(DataStructure::DataFrame(df))
+        Ok(df)
     }
 }
 
@@ -52,15 +52,12 @@ impl FilterExec {
 }
 
 impl ExecutionPlan for FilterExec {
-    fn execute(&self) -> Result<DataStructure> {
-        let ds = self.input.execute()?;
-        let s = self.predicate.evaluate(&ds)?;
+    fn execute(&self) -> Result<DataFrame> {
+        let df = self.input.execute()?;
+        let s = self.predicate.evaluate(&df)?;
         let mask = s.bool()?;
 
-        match ds {
-            DataStructure::DataFrame(df) => Ok(df.filter(mask)?.into()),
-            DataStructure::Series(s) => Ok(s.filter(mask)?.into()),
-        }
+        Ok(df.filter(mask)?)
     }
 }
 
@@ -76,10 +73,35 @@ impl DataFrameExec {
 }
 
 impl ExecutionPlan for DataFrameExec {
-    fn execute(&self) -> Result<DataStructure> {
+    fn execute(&self) -> Result<DataFrame> {
         let mut ref_df = self.df.borrow_mut();
         let df = &mut *ref_df;
         let out = mem::take(df);
-        Ok(out.into())
+        Ok(out)
+    }
+}
+
+#[derive(Debug)]
+pub struct ProjectionExec {
+    input: Rc<dyn ExecutionPlan>,
+    columns: Vec<Rc<dyn PhysicalExpr>>,
+}
+
+impl ProjectionExec {
+    pub(crate) fn new(input: Rc<dyn ExecutionPlan>, columns: Vec<Rc<dyn PhysicalExpr>>) -> Self {
+        Self { input, columns }
+    }
+}
+
+impl ExecutionPlan for ProjectionExec {
+    fn execute(&self) -> Result<DataFrame> {
+        // projection is only on a DataFrame so we unpack df
+        let df = self.input.execute()?;
+        let selected_columns = self
+            .columns
+            .iter()
+            .map(|expr| expr.evaluate(&df))
+            .collect::<Result<Vec<Series>>>()?;
+        Ok(DataFrame::new_no_checks(selected_columns))
     }
 }

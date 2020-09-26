@@ -1,3 +1,4 @@
+use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::datatypes::SchemaRef;
 use std::cell::RefCell;
@@ -139,6 +140,11 @@ pub enum LogicalPlan {
     DataFrameScan {
         df: Rc<RefCell<DataFrame>>,
     },
+    // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
+    Projection {
+        columns: Rc<Vec<Expr>>,
+        input: Rc<LogicalPlan>,
+    },
 }
 
 pub struct LogicalPlanBuilder(LogicalPlan);
@@ -161,6 +167,21 @@ impl LogicalPlanBuilder {
             schema,
             has_header,
             delimiter,
+        }
+        .into()
+    }
+
+    /// Projection in RDMS language
+    pub fn select<'a, K, S: Selection<'a, K>>(&self, columns: S) -> Self {
+        let columns = columns
+            .to_selection_vec()
+            .into_iter()
+            .map(|s| col(s))
+            .collect::<Vec<_>>();
+
+        LogicalPlan::Projection {
+            columns: Rc::new(columns),
+            input: Rc::new(self.0.clone()),
         }
         .into()
     }

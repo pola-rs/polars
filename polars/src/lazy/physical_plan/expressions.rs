@@ -11,11 +11,13 @@ impl LiteralExpr {
 }
 
 impl PhysicalExpr for LiteralExpr {
-    fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         match &self.0 {
             // todo! implement single value chunked_arrays? Or allow comparison and arithemtic with
             //      ca of a single value
-            ScalarValue::Int32(v) => Ok(Int32Chunked::full("literal", *v, ds.len()).into_series()),
+            ScalarValue::Int32(v) => {
+                Ok(Int32Chunked::full("literal", *v, df.height()).into_series())
+            }
             sv => panic!(format!("ScalarValue {:?} is not implemented", sv)),
         }
     }
@@ -35,9 +37,9 @@ impl BinaryExpr {
 }
 
 impl PhysicalExpr for BinaryExpr {
-    fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
-        let left = self.left.evaluate(ds)?;
-        let right = self.right.evaluate(ds)?;
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let left = self.left.evaluate(df)?;
+        let right = self.right.evaluate(df)?;
         match self.op {
             Operator::Lt => {
                 let a = apply_method_all_series!(left, lt_series, &right);
@@ -58,8 +60,7 @@ impl ColumnExpr {
 }
 
 impl PhysicalExpr for ColumnExpr {
-    fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
-        let df = ds.df_ref()?;
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let column = df.column(&self.0)?;
         Ok(column.clone())
     }

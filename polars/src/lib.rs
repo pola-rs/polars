@@ -197,8 +197,8 @@ pub mod error;
 mod fmt;
 pub mod frame;
 pub mod lazy;
+#[cfg(feature = "lazy")]
+pub mod lazy;
 pub mod prelude;
 pub mod series;
 pub mod testing;
-#[cfg(feature = "lazy")]
-pub mod lazy;

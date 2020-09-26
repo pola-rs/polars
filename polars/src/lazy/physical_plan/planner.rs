@@ -1,5 +1,5 @@
 use super::{
-    executors::{CsvExec, FilterExec},
+    executors::{CsvExec, FilterExec, ProjectionExec},
     expressions::LiteralExpr,
     *,
 };
@@ -40,6 +40,14 @@ impl SimplePlanner {
                 *has_header,
                 *delimiter,
             ))),
+            LogicalPlan::Projection { columns, input } => {
+                let input = self.create_initial_physical_plan(input)?;
+                let columns = columns
+                    .iter()
+                    .map(|expr| self.create_physical_expr(expr))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Rc::new(ProjectionExec::new(input, columns)))
+            }
             LogicalPlan::DataFrameScan { df } => Ok(Rc::new(DataFrameExec::new(df.clone()))),
         }
     }

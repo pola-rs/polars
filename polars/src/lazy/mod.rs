@@ -9,49 +9,6 @@ pub(crate) use crate::{
 };
 use arrow::datatypes::SchemaRef;
 
-#[derive(Debug)]
-pub enum DataStructure {
-    Series(Series),
-    DataFrame(DataFrame),
-}
-
-impl From<Series> for DataStructure {
-    fn from(s: Series) -> Self {
-        DataStructure::Series(s)
-    }
-}
-
-impl From<DataFrame> for DataStructure {
-    fn from(df: DataFrame) -> Self {
-        DataStructure::DataFrame(df)
-    }
-}
-
-impl DataStructure {
-    pub fn series_ref(&self) -> Result<&Series> {
-        if let DataStructure::Series(series) = self {
-            Ok(series)
-        } else {
-            Err(PolarsError::DataTypeMisMatch)
-        }
-    }
-
-    pub fn df_ref(&self) -> Result<&DataFrame> {
-        if let DataStructure::DataFrame(df) = self {
-            Ok(&df)
-        } else {
-            Err(PolarsError::DataTypeMisMatch)
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            DataStructure::Series(s) => s.len(),
-            DataStructure::DataFrame(df) => df.height(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,6 +41,7 @@ mod tests {
 
         let logical_plan = LogicalPlanBuilder::dataframe(df)
             .filter(col("sepal.length").lt(lit(5)))
+            .select(&["sepal.length", "variety"])
             .build();
 
         println!("{:?}", logical_plan);

@@ -110,7 +110,7 @@ impl DataFrame {
     }
 
     // doesn't check Series sizes.
-    fn new_no_checks(columns: Vec<Series>) -> DataFrame {
+    pub(crate) fn new_no_checks(columns: Vec<Series>) -> DataFrame {
         DataFrame {
             columns,
             parallel: false,
