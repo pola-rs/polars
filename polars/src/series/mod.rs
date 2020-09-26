@@ -989,6 +989,12 @@ impl From<(&str, ArrayRef)> for Series {
     }
 }
 
+impl Default for Series {
+    fn default() -> Self {
+        Series::Int8(ChunkedArray::default())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

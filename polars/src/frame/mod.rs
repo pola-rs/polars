@@ -34,6 +34,12 @@ impl<T: PolarsDataType> IntoSeries for ChunkedArray<T> {
     }
 }
 
+impl Default for DataFrame {
+    fn default() -> Self {
+        DataFrame::new_no_checks(Vec::with_capacity(0))
+    }
+}
+
 type DfSchema = Arc<Schema>;
 type DfSeries = Series;
 type DfColumns = Vec<DfSeries>;

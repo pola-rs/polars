@@ -19,6 +19,8 @@ pub trait ExecutionPlan: Debug {
 
 /// Implement this for Column, lt, eq, etc
 pub trait PhysicalExpr: Debug {
-    fn data_type(&self, input_schema: &Schema) -> Result<ArrowDataType>;
+    fn data_type(&self, _input_schema: &Schema) -> Result<ArrowDataType> {
+        unimplemented!()
+    }
     fn evaluate(&self, ds: &DataStructure) -> Result<Series>;
 }

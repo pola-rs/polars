@@ -1,5 +1,7 @@
 use super::*;
 use arrow::datatypes::SchemaRef;
+use std::cell::RefCell;
+use std::mem;
 
 #[derive(Debug)]
 pub struct CsvExec {
@@ -59,5 +61,25 @@ impl ExecutionPlan for FilterExec {
             DataStructure::DataFrame(df) => Ok(df.filter(mask)?.into()),
             DataStructure::Series(s) => Ok(s.filter(mask)?.into()),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct DataFrameExec {
+    df: Rc<RefCell<DataFrame>>,
+}
+
+impl DataFrameExec {
+    pub(crate) fn new(df: Rc<RefCell<DataFrame>>) -> Self {
+        DataFrameExec { df }
+    }
+}
+
+impl ExecutionPlan for DataFrameExec {
+    fn execute(&self) -> Result<DataStructure> {
+        let mut ref_df = self.df.borrow_mut();
+        let df = &mut *ref_df;
+        let out = mem::take(df);
+        Ok(out.into())
     }
 }

@@ -510,9 +510,41 @@ impl Not for BooleanChunked {
 }
 
 pub trait CompToSeries {
-    fn lt_series(&self, rhs: &Series) -> BooleanChunked {
+    fn lt_series(&self, _rhs: &Series) -> BooleanChunked {
         unimplemented!()
     }
+
+    fn gt_series(&self, _rhs: &Series) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn gt_eq_series(&self, _rhs: &Series) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt_eq_series(&self, _rhs: &Series) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn eq_series(&self, _rhs: &Series) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn neq_series(&self, _rhs: &Series) -> BooleanChunked {
+        unimplemented!()
+    }
+}
+
+macro_rules! impl_comp_to_series {
+    ($SELF:ident, $METHOD_NAME:ident, $OPERATION:ident, $RHS:ident, $NAME:expr, $TYPE:ty) => {{
+        match $SELF.unpack_series_matching_type($RHS) {
+            Ok(ca) => $SELF.lt(ca),
+            Err(_) => match $RHS.cast::<$TYPE>() {
+                Ok(s) => $SELF.$METHOD_NAME(&s),
+                Err(_) => BooleanChunked::full($NAME, false, $SELF.len()),
+            },
+        }
+    }};
 }
 
 impl<T> CompToSeries for ChunkedArray<T>
@@ -520,18 +552,79 @@ where
     T: PolarsNumericType,
 {
     fn lt_series(&self, rhs: &Series) -> BooleanChunked {
-        match self.unpack_series_matching_type(rhs) {
-            Ok(ca) => self.lt(ca),
-            Err(_) => match rhs.cast::<T>() {
-                Ok(s) => self.lt_series(&s),
-                Err(e) => BooleanChunked::full("lt", false, self.len()),
-            },
-        }
+        impl_comp_to_series!(self, lt_series, lt, rhs, "lt", T)
+    }
+
+    fn gt_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, gt_series, gt, rhs, "gt", T)
+    }
+
+    fn gt_eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, gt_eq_series, gt_eq, rhs, "gt_eq", T)
+    }
+
+    fn lt_eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, lt_eq_series, lt_eq, rhs, "lt_eq", T)
+    }
+
+    fn eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, eq_series, eq, rhs, "eq", T)
+    }
+
+    fn neq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, neq_series, neq, rhs, "neq", T)
     }
 }
 
-impl CompToSeries for BooleanChunked {}
-impl CompToSeries for Utf8Chunked {}
+impl CompToSeries for BooleanChunked {
+    fn lt_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, lt_series, lt, rhs, "lt", BooleanType)
+    }
+
+    fn gt_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, gt_series, gt, rhs, "gt", BooleanType)
+    }
+
+    fn gt_eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, gt_eq_series, gt_eq, rhs, "gt_eq", BooleanType)
+    }
+
+    fn lt_eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, lt_eq_series, lt_eq, rhs, "lt_eq", BooleanType)
+    }
+
+    fn eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, eq_series, eq, rhs, "eq", BooleanType)
+    }
+
+    fn neq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, neq_series, neq, rhs, "neq", BooleanType)
+    }
+}
+impl CompToSeries for Utf8Chunked {
+    fn lt_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, lt_series, lt, rhs, "lt", Utf8Type)
+    }
+
+    fn gt_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, gt_series, gt, rhs, "gt", Utf8Type)
+    }
+    fn gt_eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, gt_eq_series, gt_eq, rhs, "gt_eq", Utf8Type)
+    }
+
+    fn lt_eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, lt_eq_series, lt_eq, rhs, "lt_eq", Utf8Type)
+    }
+
+    fn eq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, eq_series, eq, rhs, "eq", Utf8Type)
+    }
+
+    fn neq_series(&self, rhs: &Series) -> BooleanChunked {
+        impl_comp_to_series!(self, neq_series, neq, rhs, "neq", Utf8Type)
+    }
+}
 impl CompToSeries for LargeListChunked {}
 
 #[cfg(test)]

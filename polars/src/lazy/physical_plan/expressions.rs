@@ -11,10 +11,6 @@ impl LiteralExpr {
 }
 
 impl PhysicalExpr for LiteralExpr {
-    fn data_type(&self, input_schema: &Schema) -> Result<ArrowDataType> {
-        unimplemented!()
-    }
-
     fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
         match &self.0 {
             // todo! implement single value chunked_arrays? Or allow comparison and arithemtic with
@@ -39,10 +35,6 @@ impl BinaryExpr {
 }
 
 impl PhysicalExpr for BinaryExpr {
-    fn data_type(&self, input_schema: &Schema) -> Result<ArrowDataType> {
-        unimplemented!()
-    }
-
     fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
         let left = self.left.evaluate(ds)?;
         let right = self.right.evaluate(ds)?;
@@ -66,10 +58,6 @@ impl ColumnExpr {
 }
 
 impl PhysicalExpr for ColumnExpr {
-    fn data_type(&self, input_schema: &Schema) -> Result<ArrowDataType> {
-        unimplemented!()
-    }
-
     fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
         let df = ds.df_ref()?;
         let column = df.column(&self.0)?;

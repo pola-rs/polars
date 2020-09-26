@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use arrow::datatypes::SchemaRef;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -135,6 +136,9 @@ pub enum LogicalPlan {
         has_header: bool,
         delimiter: Option<u8>,
     },
+    DataFrameScan {
+        df: Rc<RefCell<DataFrame>>,
+    },
 }
 
 pub struct LogicalPlanBuilder(LogicalPlan);
@@ -172,6 +176,13 @@ impl LogicalPlanBuilder {
 
     pub fn build(self) -> LogicalPlan {
         self.0
+    }
+
+    pub fn dataframe(df: DataFrame) -> Self {
+        LogicalPlan::DataFrameScan {
+            df: Rc::new(RefCell::new(df)),
+        }
+        .into()
     }
 }
 

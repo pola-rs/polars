@@ -7,6 +7,19 @@ use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::collections::LinkedList;
 use std::iter::FromIterator;
+use std::marker::PhantomData;
+use std::sync::Arc;
+
+impl<T> Default for ChunkedArray<T> {
+    fn default() -> Self {
+        ChunkedArray {
+            field: Arc::new(Field::new("default", ArrowDataType::Null, false)),
+            chunks: Vec::with_capacity(0),
+            chunk_id: Vec::with_capacity(0),
+            phantom: PhantomData,
+        }
+    }
+}
 
 /// FromIterator trait
 

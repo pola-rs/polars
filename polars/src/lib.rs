@@ -200,3 +200,5 @@ pub mod lazy;
 pub mod prelude;
 pub mod series;
 pub mod testing;
+#[cfg(feature = "lazy")]
+pub mod lazy;

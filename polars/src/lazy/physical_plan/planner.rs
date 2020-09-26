@@ -3,6 +3,7 @@ use super::{
     expressions::LiteralExpr,
     *,
 };
+use crate::lazy::physical_plan::executors::DataFrameExec;
 
 pub(crate) struct SimplePlanner {}
 impl Default for SimplePlanner {
@@ -39,6 +40,7 @@ impl SimplePlanner {
                 *has_header,
                 *delimiter,
             ))),
+            LogicalPlan::DataFrameScan { df } => Ok(Rc::new(DataFrameExec::new(df.clone()))),
         }
     }
 
