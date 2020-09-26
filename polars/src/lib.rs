@@ -196,6 +196,7 @@ pub mod doc;
 pub mod error;
 mod fmt;
 pub mod frame;
+pub mod lazy;
 pub mod prelude;
 pub mod series;
 pub mod testing;
