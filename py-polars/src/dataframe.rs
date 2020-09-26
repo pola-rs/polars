@@ -286,8 +286,12 @@ impl PyDataFrame {
         PyDataFrame::new(df)
     }
 
-    pub fn frame_equal(&self, other: &PyDataFrame) -> bool {
-        self.df.frame_equal(&other.df)
+    pub fn frame_equal(&self, other: &PyDataFrame, null_equal: bool) -> bool {
+        if null_equal {
+            self.df.frame_equal_missing(&other.df)
+        } else {
+            self.df.frame_equal(&other.df)
+        }
     }
 
     pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {
@@ -378,6 +382,11 @@ impl PyDataFrame {
             .df
             .melt(id_vars, value_vars)
             .map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    pub fn shift(&self, periods: i32) -> PyResult<Self> {
+        let df = self.df.shift(periods).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 }

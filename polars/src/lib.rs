@@ -74,7 +74,7 @@
 //! +------+------+------+
 //! ```
 //!
-//! ## Groupby's | aggregations | pivots
+//! ## Groupby's | aggregations | pivots | melts
 //!
 //! ```
 //! use polars::prelude::*;
@@ -88,7 +88,7 @@
 //! ## Arithmetic
 //! ```
 //! use polars::prelude::*;
-//! let s: Series = [1, 2, 3].iter().collect();
+//! let s = Series::new("foo", [1, 2, 3]);
 //! let s_squared = &s * &s;
 //! ```
 //!
@@ -134,7 +134,6 @@
 //! use itertools::Itertools;
 //! let s = Series::new("dollars", &[1, 2, 3]);
 //! let mask = s.eq(1);
-//! let valid = [true, false, false].iter();
 //!
 //! assert_eq!(Vec::from(mask), &[Some(true), Some(false), Some(false)]);
 //! ```

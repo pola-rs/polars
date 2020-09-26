@@ -219,8 +219,12 @@ impl PySeries {
         Self::new(Series::Bool(self.series.is_null()))
     }
 
-    pub fn series_equal(&self, other: &PySeries) -> PyResult<bool> {
-        Ok(self.series.series_equal(&other.series))
+    pub fn series_equal(&self, other: &PySeries, null_equal: bool) -> bool {
+        if null_equal {
+            self.series.series_equal_missing(&other.series)
+        } else {
+            self.series.series_equal(&other.series)
+        }
     }
     pub fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
         Ok(Self::new(Series::Bool(self.series.eq(&rhs.series))))
@@ -471,6 +475,11 @@ impl PySeries {
         };
 
         Ok(PySeries::new(out))
+    }
+
+    pub fn shift(&self, periods: i32) -> PyResult<Self> {
+        let s = self.series.shift(periods).map_err(PyPolarsEr::from)?;
+        Ok(PySeries::new(s))
     }
 }
 

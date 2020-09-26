@@ -179,3 +179,10 @@ def test_apply():
 
     with pytest.raises(TypeError):
         a.apply(lambda x: len(x))
+
+
+def test_shift():
+    a = Series("a", [1, 2, 3])
+    assert a.shift(1) == [None, 1, 2]
+    assert a.shift(-1) == [1, 2, None]
+    assert a.shift(-2) == [1, None, None]

@@ -522,7 +522,7 @@ class Series:
         """
         return Series.from_pyseries(self._s.is_null())
 
-    def series_equal(self, other: Series) -> bool:
+    def series_equal(self, other: Series, null_equal: bool = False) -> bool:
         """
         Check if series equal with another Series.
 
@@ -530,11 +530,10 @@ class Series:
         ----------
         other
             Series to compare with.
-        Returns
-        -------
-        Series
+        null_equal
+            Consider null values as equal.
         """
-        return self._s.series_equal(other._s)
+        return self._s.series_equal(other._s, null_equal)
 
     def len(self) -> int:
         """
@@ -804,3 +803,15 @@ class Series:
         else:
             dt = dtype_to_int(dtype_out)
             return wrap_s(self._s.apply_lambda(func, dt))
+
+    def shift(self, periods: int) -> Series:
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with `Nones`.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        """
+        return wrap_s(self._s.shift(periods))

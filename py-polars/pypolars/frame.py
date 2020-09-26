@@ -362,7 +362,7 @@ class DataFrame:
         else:
             return wrap_df(self._df.sort(by_column, reverse))
 
-    def frame_equal(self, other: DataFrame) -> bool:
+    def frame_equal(self, other: DataFrame, null_equal: bool = False) -> bool:
         """
         Check if DataFrame is equal to other.
 
@@ -370,8 +370,10 @@ class DataFrame:
         ----------
         other
             DataFrame to compare with.
+        null_equal
+            Consider null values as equal.
         """
-        return self._df.frame_equal(other._df)
+        return self._df.frame_equal(other._df, null_equal)
 
     def replace(self, column: str, new_col: Series):
         """
@@ -619,6 +621,18 @@ class DataFrame:
         if isinstance(id_vars, str):
             id_vars = [id_vars]
         return wrap_df(self._df.melt(id_vars, value_vars))
+
+    def shift(self, periods: int) -> DataFrame:
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with `Nones`.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        """
+        return wrap_df(self._df.shift(periods))
 
 
 class GroupBy:

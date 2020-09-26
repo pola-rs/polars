@@ -184,3 +184,10 @@ def test_melt():
     df = DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
     melted = df.melt(id_vars="A", value_vars=["B", "C"])
     assert melted["value"] == [1, 3, 4, 2, 4, 6]
+
+
+def test_shift():
+    df = DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    a = df.shift(1)
+    b = DataFrame({"A": [None, "a", "b"], "B": [None, 1, 3]}, nullable=True)
+    assert a.frame_equal(b, null_equal=True)

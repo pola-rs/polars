@@ -2,6 +2,7 @@
 [![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
 ![Build, test and docs](https://github.com/ritchie46/polars/workflows/Build,%20test%20and%20docs/badge.svg)
 [![](http://meritbadge.herokuapp.com/polars)](https://crates.io/crates/polars)
+[![Gitter](https://badges.gitter.im/polars-rs/community.svg)](https://gitter.im/polars-rs/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 ## Blazingly fast in memory DataFrames in Rust
 
@@ -11,14 +12,14 @@ Its focus is being a fast in memory DataFrame library.
 Polars is in rapid development, but it already supports most features needed for a useful DataFrame library. Do you
 miss something, please make an issue and/or sent a PR.
 
-## First run
+## First run in Rust
 Take a look at the [10 minutes to Polars notebook](examples/10_minutes_to_polars.ipynb) to get you started.
 Want to run the notebook yourself? Clone the repo and run `$ cargo c && docker-compose up`. This will spin up a jupyter
 notebook on `http://localhost:8891`. The notebooks are in the `/examples` directory.
  
 Oh yeah.. and get a cup of coffee because compilation will take while during the first run.
 
-## Python
+## First run in Python
 A subset of the Polars functionality is also exposed through Python bindings. You can install them for linux with:
 
 `$ pip install py-polars`
@@ -102,12 +103,12 @@ Polars is written to be performant. Below are some comparisons with the (also ve
  +------+------+------+
 ```
 
-### Groupby's | aggregations | pivots
+### Groupby's | aggregations | pivots | melts
 
 ```rust
  use polars::prelude::*;
  fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
-     df.groupby("column_name")?
+     df.groupby(&["a", "b"])?
      .select("agg_column_name")
      .sum()
  }
@@ -116,7 +117,7 @@ Polars is written to be performant. Below are some comparisons with the (also ve
 ### Arithmetic
 ```rust
  use polars::prelude::*;
- let s: Series = [1, 2, 3].iter().collect();
+ let s = Series::new("foo", [1, 2, 3]);
  let s_squared = &s * &s;
 ```
 
@@ -148,7 +149,7 @@ Polars is written to be performant. Below are some comparisons with the (also ve
      .apply(|value| value.powf(2.0))
      .into_series();
  
- assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)])
+ assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)]);
 ```
 
 ### Comparisons
@@ -158,7 +159,6 @@ Polars is written to be performant. Below are some comparisons with the (also ve
  use itertools::Itertools;
  let s = Series::new("dollars", &[1, 2, 3]);
  let mask = s.eq(1);
- let valid = [true, false, false].iter();
  
  assert_eq!(Vec::from(mask), &[Some(true), Some(false), Some(false)]);
 ```
