@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+
 if not os.environ.get("DOC_BUILDING", False):
     from .pypolars import PyDataFrame, PySeries
 from typing import (

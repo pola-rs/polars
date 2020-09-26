@@ -9,9 +9,7 @@ with open("../data/rust_bench_join.txt") as f:
 
 x = ["inner", "left", "outer"]
 
-df = pd.DataFrame({"join_type": x,
-                   "pandas": pandas,
-                   "polars": polars})
+df = pd.DataFrame({"join_type": x, "pandas": pandas, "polars": polars})
 
 df.plot.bar(x="join_type", figsize=(14, 6))
 plt.title("join on 80,000 rows")

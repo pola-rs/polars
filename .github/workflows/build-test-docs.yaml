@@ -16,9 +16,22 @@ jobs:
           toolchain: nightly-2020-04-22
           override: true
           components: rustfmt, clippy
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest black==19.10b
+      - name: Run formatting checks
+        run: |
+          cargo fmt -- --check
+          black --check .
       - name: Run tests
         run: |
           cd polars && cargo test
+          cd ../py-polars && ./tasks.sh build-run-tests
       - name: deploy docs
         run: |
           cargo doc --no-deps --all-features --package polars \

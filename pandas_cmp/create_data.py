@@ -32,4 +32,3 @@ right = pd.DataFrame(
 
 left.to_csv("../data/join_left_80000.csv", index=False)
 right.to_csv("../data/join_right_80000.csv", index=False)
-
