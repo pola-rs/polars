@@ -243,6 +243,7 @@ fn cmp_chunked_array_to_num<T>(
 where
     T: PolarsNumericType,
 {
+    // todo! no null path
     ca.into_iter().map(cmp_fn).collect()
 }
 
@@ -507,6 +508,31 @@ impl Not for BooleanChunked {
         (&self).not()
     }
 }
+
+pub trait CompToSeries {
+    fn lt_series(&self, rhs: &Series) -> BooleanChunked {
+        unimplemented!()
+    }
+}
+
+impl<T> CompToSeries for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    fn lt_series(&self, rhs: &Series) -> BooleanChunked {
+        match self.unpack_series_matching_type(rhs) {
+            Ok(ca) => self.lt(ca),
+            Err(_) => match rhs.cast::<T>() {
+                Ok(s) => self.lt_series(&s),
+                Err(e) => BooleanChunked::full("lt", false, self.len()),
+            },
+        }
+    }
+}
+
+impl CompToSeries for BooleanChunked {}
+impl CompToSeries for Utf8Chunked {}
+impl CompToSeries for LargeListChunked {}
 
 #[cfg(test)]
 mod test {

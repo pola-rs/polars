@@ -16,7 +16,12 @@ impl PhysicalExpr for LiteralExpr {
     }
 
     fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
-        unimplemented!()
+        match &self.0 {
+            // todo! implement single value chunked_arrays? Or allow comparison and arithemtic with
+            //      ca of a single value
+            ScalarValue::Int32(v) => Ok(Int32Chunked::full("literal", *v, ds.len()).into_series()),
+            sv => panic!(format!("ScalarValue {:?} is not implemented", sv)),
+        }
     }
 }
 
@@ -39,7 +44,15 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
-        unimplemented!()
+        let left = self.left.evaluate(ds)?;
+        let right = self.right.evaluate(ds)?;
+        match self.op {
+            Operator::Lt => {
+                let a = apply_method_all_series!(left, lt_series, &right);
+                Ok(a.into_series())
+            }
+            op => panic!(format!("Operator {:?} is not implemented", op)),
+        }
     }
 }
 
@@ -58,6 +71,8 @@ impl PhysicalExpr for ColumnExpr {
     }
 
     fn evaluate(&self, ds: &DataStructure) -> Result<Series> {
-        unimplemented!()
+        let df = ds.df_ref()?;
+        let column = df.column(&self.0)?;
+        Ok(column.clone())
     }
 }

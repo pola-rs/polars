@@ -31,7 +31,7 @@ impl From<DataFrame> for DataStructure {
 }
 
 impl DataStructure {
-    fn series(self) -> Result<Series> {
+    pub fn series_ref(&self) -> Result<&Series> {
         if let DataStructure::Series(series) = self {
             Ok(series)
         } else {
@@ -39,11 +39,18 @@ impl DataStructure {
         }
     }
 
-    fn df(self) -> Result<DataFrame> {
+    pub fn df_ref(&self) -> Result<&DataFrame> {
         if let DataStructure::DataFrame(df) = self {
-            Ok(df)
+            Ok(&df)
         } else {
             Err(PolarsError::DataTypeMisMatch)
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            DataStructure::Series(s) => s.len(),
+            DataStructure::DataFrame(df) => df.height(),
         }
     }
 }
@@ -57,7 +64,7 @@ mod tests {
     #[test]
     fn plan_builder_simple() {
         let logical_plan =
-            LogicalPlanBuilder::scan_csv("../../data/iris.csv".into(), None, true, None)
+            LogicalPlanBuilder::scan_csv("../data/iris.csv".into(), None, true, None)
                 .filter(col("sepal.length").lt(lit(5)))
                 .build();
 
@@ -65,6 +72,6 @@ mod tests {
 
         let planner = SimplePlanner {};
         let physical_plan = planner.create_physical_plan(&logical_plan).unwrap();
-        println!("{:?}", physical_plan);
+        println!("{:?}", physical_plan.execute());
     }
 }

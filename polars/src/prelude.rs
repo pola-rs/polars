@@ -8,7 +8,7 @@ pub use crate::{
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
         chunkops::ChunkOps,
-        comparison::NumComp,
+        comparison::{CompToSeries, NumComp},
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
         ops::{
             ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkFillNone, ChunkFilter, ChunkFull,
