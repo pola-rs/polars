@@ -60,10 +60,10 @@ impl PhysicalExpr for BinaryExpr {
 }
 
 #[derive(Debug)]
-pub struct ColumnExpr(String);
+pub struct ColumnExpr(Rc<String>);
 
 impl ColumnExpr {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: Rc<String>) -> Self {
         Self(name)
     }
 }

@@ -70,8 +70,6 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(expr)?;
                 Ok(Rc::new(SortExpr::new(phys_expr, *reverse)))
             }
-
-            e => panic!(format!("physical expr. for expr: {:?} not implemented", e)),
         }
     }
 }

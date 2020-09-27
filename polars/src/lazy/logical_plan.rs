@@ -54,36 +54,36 @@ pub enum Operator {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Alias(Box<Expr>, String),
-    Column(String),
+    // Alias(Box<Expr>, String),
+    Column(Rc<String>),
     Literal(ScalarValue),
     BinaryExpr {
         left: Box<Expr>,
         op: Operator,
         right: Box<Expr>,
     },
-    Nested(Box<Expr>),
-    Not(Box<Expr>),
-    IsNotNull(Box<Expr>),
-    IsNull(Box<Expr>),
-    Cast {
-        expr: Box<Expr>,
-        data_type: ArrowDataType,
-    },
+    // Nested(Box<Expr>),
+    // Not(Box<Expr>),
+    // IsNotNull(Box<Expr>),
+    // IsNull(Box<Expr>),
+    // Cast {
+    //     expr: Box<Expr>,
+    //     data_type: ArrowDataType,
+    // },
     Sort {
         expr: Box<Expr>,
         reverse: bool,
     },
-    ScalarFunction {
-        name: String,
-        args: Vec<Expr>,
-        return_type: ArrowDataType,
-    },
-    AggregateFunction {
-        name: String,
-        args: Vec<Expr>,
-    },
-    Wildcard,
+    // ScalarFunction {
+    //     name: String,
+    //     args: Vec<Expr>,
+    //     return_type: ArrowDataType,
+    // },
+    // AggregateFunction {
+    //     name: String,
+    //     args: Vec<Expr>,
+    // },
+    // Wildcard,
 }
 
 impl Expr {
@@ -193,7 +193,7 @@ impl LogicalPlanBuilder {
 
 /// Create a column expression based on a column name.
 pub fn col(name: &str) -> Expr {
-    Expr::Column(name.to_owned())
+    Expr::Column(Rc::new(name.to_owned()))
 }
 
 pub trait Literal {
