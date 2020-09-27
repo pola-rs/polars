@@ -56,13 +56,23 @@ macro_rules! impl_eq_missing {
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: NumCast + NumComp + ToPrimitive,
 {
     fn eq_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
     }
 
     fn eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                return self.eq(value);
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             // should not fail if arrays are equal
             self.comparison(rhs, compute::eq).expect("should not fail.")
         } else {
@@ -71,7 +81,16 @@ where
     }
 
     fn neq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                return self.neq(value);
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::neq)
                 .expect("should not fail.")
         } else {
@@ -80,7 +99,16 @@ where
     }
 
     fn gt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                return self.gt(value);
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::gt).expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
@@ -88,7 +116,16 @@ where
     }
 
     fn gt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                return self.gt_eq(value);
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::gt_eq)
                 .expect("should not fail.")
         } else {
@@ -97,7 +134,16 @@ where
     }
 
     fn lt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.lt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::lt).expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
@@ -105,7 +151,16 @@ where
     }
 
     fn lt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.lt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::lt_eq)
                 .expect("should not fail.")
         } else {
@@ -243,8 +298,17 @@ fn cmp_chunked_array_to_num<T>(
 where
     T: PolarsNumericType,
 {
-    // todo! no null path
     ca.into_iter().map(cmp_fn).collect()
+}
+
+fn cmp_chunked_array_to_num_no_null<T>(
+    ca: &ChunkedArray<T>,
+    cmp_fn: &dyn Fn(T::Native) -> bool,
+) -> BooleanChunked
+where
+    T: PolarsNumericType,
+{
+    ca.into_no_null_iter().map(cmp_fn).collect()
 }
 
 pub trait NumComp: Num + NumCast + PartialOrd {}
@@ -272,32 +336,50 @@ where
 
     fn eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs == Some(rhs))
+        match self.null_count() {
+            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs == rhs),
+            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs == Some(rhs)),
+        }
     }
 
     fn neq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs != Some(rhs))
+        match self.null_count() {
+            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs != rhs),
+            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs != Some(rhs)),
+        }
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs > Some(rhs))
+        match self.null_count() {
+            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs > rhs),
+            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs > Some(rhs)),
+        }
     }
 
     fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs >= Some(rhs))
+        match self.null_count() {
+            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs >= rhs),
+            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs >= Some(rhs)),
+        }
     }
 
     fn lt(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs < Some(rhs))
+        match self.null_count() {
+            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs < rhs),
+            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs < Some(rhs)),
+        }
     }
 
     fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs <= Some(rhs))
+        match self.null_count() {
+            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs <= rhs),
+            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs <= Some(rhs)),
+        }
     }
 }
 
@@ -550,6 +632,9 @@ macro_rules! impl_comp_to_series {
 impl<T> CompToSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    // extra trait bound is required to call match the trait bounds of
+    // impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
+    T::Native: NumCast + NumComp + ToPrimitive,
 {
     fn lt_series(&self, rhs: &Series) -> BooleanChunked {
         impl_comp_to_series!(self, lt_series, lt, rhs, "lt", T)

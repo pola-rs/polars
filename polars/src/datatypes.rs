@@ -89,7 +89,6 @@ pub type TimestampMillisecondChunked = ChunkedArray<TimestampMillisecondType>;
 pub type TimestampSecondChunked = ChunkedArray<TimestampSecondType>;
 
 pub trait PolarsNumericType: ArrowNumericType {}
-
 impl PolarsNumericType for UInt8Type {}
 impl PolarsNumericType for UInt16Type {}
 impl PolarsNumericType for UInt32Type {}
