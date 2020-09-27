@@ -13,7 +13,7 @@ pub enum Expr {
     },
     // Nested(Box<Expr>),
     Not(Box<Expr>),
-    // IsNotNull(Box<Expr>),
+    IsNotNull(Box<Expr>),
     IsNull(Box<Expr>),
     // Cast {
     //     expr: Box<Expr>,
@@ -87,6 +87,11 @@ impl Expr {
     /// Run is_null operation on `Expr`.
     pub fn is_null(self) -> Self {
         Expr::IsNull(Box::new(self))
+    }
+
+    /// Run is_not_null operation on `Expr`.
+    pub fn is_not_null(self) -> Self {
+        Expr::IsNotNull(Box::new(self))
     }
 }
 

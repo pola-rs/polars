@@ -150,3 +150,21 @@ impl PhysicalExpr for IsNullExpr {
         Ok(series.is_null().into_series())
     }
 }
+
+#[derive(Debug)]
+pub struct IsNotNullExpr {
+    expr: Rc<dyn PhysicalExpr>,
+}
+
+impl IsNotNullExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+        Self { expr }
+    }
+}
+
+impl PhysicalExpr for IsNotNullExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series = self.expr.evaluate(df)?;
+        Ok(series.is_not_null().into_series())
+    }
+}

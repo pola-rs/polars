@@ -338,6 +338,28 @@ impl<T> ChunkedArray<T> {
         BooleanChunked::new_from_chunks("is_null", chunks)
     }
 
+    /// Get a mask of the null values.
+    pub fn is_not_null(&self) -> BooleanChunked {
+        if self.null_count() == 0 {
+            return BooleanChunked::full("is_not_null", true, self.len());
+        }
+        let chunks = self
+            .chunks
+            .iter()
+            .map(|arr| {
+                let mut builder = PrimitiveBuilder::<BooleanType>::new(arr.len());
+                for i in 0..arr.len() {
+                    builder
+                        .append_value(arr.is_valid(i))
+                        .expect("could not append");
+                }
+                let chunk: ArrayRef = Arc::new(builder.finish());
+                chunk
+            })
+            .collect_vec();
+        BooleanChunked::new_from_chunks("is_not_null", chunks)
+    }
+
     /// Get data type of ChunkedArray.
     pub fn dtype(&self) -> &ArrowDataType {
         self.field.data_type()

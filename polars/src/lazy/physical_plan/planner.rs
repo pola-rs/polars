@@ -82,6 +82,10 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(expr)?;
                 Ok(Rc::new(IsNullExpr::new(phys_expr)))
             }
+            Expr::IsNotNull(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(IsNotNullExpr::new(phys_expr)))
+            }
         }
     }
 }

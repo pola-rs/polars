@@ -96,10 +96,18 @@ mod test {
     fn test_is_null() {
         let df = get_df();
         let new = df
+            .clone()
             .lazy()
             .select(&[col("sepal.width").is_null()])
             .collect()
             .unwrap();
-        assert!(new.select_at_idx(0).unwrap().bool().unwrap().all_false())
+        assert!(new.select_at_idx(0).unwrap().bool().unwrap().all_false());
+
+        let new = df
+            .lazy()
+            .select(&[col("sepal.width").is_not_null()])
+            .collect()
+            .unwrap();
+        assert!(new.select_at_idx(0).unwrap().bool().unwrap().all_true());
     }
 }
