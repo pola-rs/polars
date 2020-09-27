@@ -11,15 +11,24 @@ impl LiteralExpr {
 }
 
 impl PhysicalExpr for LiteralExpr {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        match &self.0 {
-            // todo! implement single value chunked_arrays? Or allow comparison and arithemtic with
-            //      ca of a single value
-            ScalarValue::Int32(v) => {
-                Ok(Int32Chunked::full("literal", *v, df.height()).into_series())
-            }
-            sv => panic!(format!("ScalarValue {:?} is not implemented", sv)),
-        }
+    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+        use ScalarValue::*;
+        let s = match &self.0 {
+            Int8(v) => Int8Chunked::full("literal", *v, 1).into_series(),
+            Int16(v) => Int16Chunked::full("literal", *v, 1).into_series(),
+            Int32(v) => Int32Chunked::full("literal", *v, 1).into_series(),
+            Int64(v) => Int64Chunked::full("literal", *v, 1).into_series(),
+            UInt8(v) => UInt8Chunked::full("literal", *v, 1).into_series(),
+            UInt16(v) => UInt16Chunked::full("literal", *v, 1).into_series(),
+            UInt32(v) => UInt32Chunked::full("literal", *v, 1).into_series(),
+            UInt64(v) => UInt64Chunked::full("literal", *v, 1).into_series(),
+            Float32(v) => Float32Chunked::full("literal", *v, 1).into_series(),
+            Float64(v) => Float64Chunked::full("literal", *v, 1).into_series(),
+            Boolean(v) => BooleanChunked::full("literal", *v, 1).into_series(),
+            Null => BooleanChunked::new_from_opt_slice("literal", &[None]).into_series(),
+            Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
+        };
+        Ok(s)
     }
 }
 

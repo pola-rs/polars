@@ -744,7 +744,7 @@ pub trait Downcast<T> {
 
 impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
 where
-    T: PolarsNumericType,
+    T: ArrowPrimitiveType,
 {
     fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
         self.chunks
@@ -764,18 +764,6 @@ impl Downcast<StringArray> for Utf8Chunked {
             .map(|arr| {
                 let arr = &**arr;
                 unsafe { &*(arr as *const dyn Array as *const StringArray) }
-            })
-            .collect::<Vec<_>>()
-    }
-}
-
-impl Downcast<BooleanArray> for BooleanChunked {
-    fn downcast_chunks(&self) -> Vec<&BooleanArray> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const BooleanArray) }
             })
             .collect::<Vec<_>>()
     }

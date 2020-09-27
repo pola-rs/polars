@@ -66,7 +66,7 @@ where
         // broadcast
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
-                return self.eq(value);
+                self.eq(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
@@ -84,7 +84,7 @@ where
         // broadcast
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
-                return self.neq(value);
+                self.neq(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
@@ -102,7 +102,7 @@ where
         // broadcast
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
-                return self.gt(value);
+                self.gt(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
@@ -119,7 +119,7 @@ where
         // broadcast
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
-                return self.gt_eq(value);
+                self.gt_eq(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
@@ -175,27 +175,99 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
     }
 
     fn eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                match value {
+                    true => self.clone(),
+                    false => self.not(),
+                }
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
+        }
     }
 
     fn neq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                match value {
+                    true => self.not(),
+                    false => self.clone(),
+                }
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
+        }
     }
 
     fn gt(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                match value {
+                    true => BooleanChunked::full("", false, self.len()),
+                    false => self.clone(),
+                }
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
+        }
     }
 
     fn gt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                match value {
+                    true => self.clone(),
+                    false => BooleanChunked::full("", true, self.len()),
+                }
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
+        }
     }
 
     fn lt(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                match value {
+                    true => self.not(),
+                    false => BooleanChunked::full("", false, self.len()),
+                }
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
+        }
     }
 
     fn lt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                match value {
+                    true => BooleanChunked::full("", true, self.len()),
+                    false => self.not(),
+                }
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else {
+            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
+        }
     }
 }
 
@@ -237,7 +309,16 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 
     fn eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::eq_utf8)
                 .expect("should not fail")
         } else {
@@ -246,7 +327,16 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 
     fn neq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.neq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::neq_utf8)
                 .expect("should not fail")
         } else {
@@ -255,7 +345,16 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 
     fn gt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.gt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::gt_utf8)
                 .expect("should not fail")
         } else {
@@ -264,7 +363,16 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 
     fn gt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.gt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::gt_eq_utf8)
                 .expect("should not fail")
         } else {
@@ -273,7 +381,16 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 
     fn lt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.lt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::lt_utf8)
                 .expect("should not fail")
         } else {
@@ -282,7 +399,16 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 
     fn lt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        if self.chunk_id == rhs.chunk_id {
+        // broadcast
+        if rhs.len() == 1 {
+            if let Some(value) = rhs.get(0) {
+                self.lt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+        // same length
+        else if self.chunk_id == rhs.chunk_id {
             self.comparison(rhs, compute::lt_eq_utf8)
                 .expect("should not fail")
         } else {
