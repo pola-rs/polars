@@ -1,4 +1,3 @@
-use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::datatypes::SchemaRef;
 use std::cell::RefCell;
@@ -109,7 +108,7 @@ fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
 pub enum LogicalPlan {
     Filter {
         predicate: Expr,
-        input: Rc<LogicalPlan>,
+        input: Box<LogicalPlan>,
     },
     CsvScan {
         path: String,
@@ -122,8 +121,12 @@ pub enum LogicalPlan {
     },
     // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
     Projection {
-        columns: Rc<Vec<Expr>>,
-        input: Rc<LogicalPlan>,
+        expr: Vec<Expr>,
+        input: Box<LogicalPlan>,
+    },
+    Sort {
+        input: Box<LogicalPlan>,
+        expr: Vec<Expr>,
     },
 }
 
@@ -151,26 +154,19 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    /// Projection in RDMS language
-    pub fn select<'a, K, S: Selection<'a, K>>(&self, columns: S) -> Self {
-        let columns = columns
-            .to_selection_vec()
-            .into_iter()
-            .map(|s| col(s))
-            .collect::<Vec<_>>();
-
+    pub fn project(self, expr: Vec<Expr>) -> Self {
         LogicalPlan::Projection {
-            columns: Rc::new(columns),
-            input: Rc::new(self.0.clone()),
+            expr,
+            input: Box::new(self.0),
         }
         .into()
     }
 
     /// Apply a filter
-    pub fn filter(&self, predicate: Expr) -> Self {
+    pub fn filter(self, predicate: Expr) -> Self {
         LogicalPlan::Filter {
             predicate,
-            input: Rc::new(self.0.clone()),
+            input: Box::new(self.0),
         }
         .into()
     }
@@ -179,9 +175,17 @@ impl LogicalPlanBuilder {
         self.0
     }
 
-    pub fn dataframe(df: DataFrame) -> Self {
+    pub fn from_existing_df(df: DataFrame) -> Self {
         LogicalPlan::DataFrameScan {
             df: Rc::new(RefCell::new(df)),
+        }
+        .into()
+    }
+
+    pub fn sort(self, expr: Vec<Expr>) -> Self {
+        LogicalPlan::Sort {
+            input: Box::new(self.0),
+            expr,
         }
         .into()
     }

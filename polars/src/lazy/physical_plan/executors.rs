@@ -1,5 +1,4 @@
 use super::*;
-use arrow::datatypes::SchemaRef;
 use std::cell::RefCell;
 use std::mem;
 
@@ -27,7 +26,7 @@ impl CsvExec {
     }
 }
 
-impl ExecutionPlan for CsvExec {
+impl Executor for CsvExec {
     fn execute(&self) -> Result<DataFrame> {
         let file = std::fs::File::open(&self.path).unwrap();
 
@@ -42,16 +41,16 @@ impl ExecutionPlan for CsvExec {
 #[derive(Debug)]
 pub struct FilterExec {
     predicate: Rc<dyn PhysicalExpr>,
-    input: Rc<dyn ExecutionPlan>,
+    input: Rc<dyn Executor>,
 }
 
 impl FilterExec {
-    pub fn new(predicate: Rc<dyn PhysicalExpr>, input: Rc<dyn ExecutionPlan>) -> Self {
+    pub fn new(predicate: Rc<dyn PhysicalExpr>, input: Rc<dyn Executor>) -> Self {
         Self { predicate, input }
     }
 }
 
-impl ExecutionPlan for FilterExec {
+impl Executor for FilterExec {
     fn execute(&self) -> Result<DataFrame> {
         let df = self.input.execute()?;
         let s = self.predicate.evaluate(&df)?;
@@ -72,7 +71,7 @@ impl DataFrameExec {
     }
 }
 
-impl ExecutionPlan for DataFrameExec {
+impl Executor for DataFrameExec {
     fn execute(&self) -> Result<DataFrame> {
         let mut ref_df = self.df.borrow_mut();
         let df = &mut *ref_df;
@@ -81,24 +80,35 @@ impl ExecutionPlan for DataFrameExec {
     }
 }
 
+/// Take an input Executor and a multiple expressions
 #[derive(Debug)]
-pub struct ProjectionExec {
-    input: Rc<dyn ExecutionPlan>,
-    columns: Vec<Rc<dyn PhysicalExpr>>,
+pub struct PipeExec {
+    /// i.e. sort, projection
+    operation: &'static str,
+    input: Rc<dyn Executor>,
+    expr: Vec<Rc<dyn PhysicalExpr>>,
 }
 
-impl ProjectionExec {
-    pub(crate) fn new(input: Rc<dyn ExecutionPlan>, columns: Vec<Rc<dyn PhysicalExpr>>) -> Self {
-        Self { input, columns }
+impl PipeExec {
+    pub(crate) fn new(
+        operation: &'static str,
+        input: Rc<dyn Executor>,
+        expr: Vec<Rc<dyn PhysicalExpr>>,
+    ) -> Self {
+        Self {
+            operation,
+            input,
+            expr,
+        }
     }
 }
 
-impl ExecutionPlan for ProjectionExec {
+impl Executor for PipeExec {
     fn execute(&self) -> Result<DataFrame> {
-        // projection is only on a DataFrame so we unpack df
         let df = self.input.execute()?;
+
         let selected_columns = self
-            .columns
+            .expr
             .iter()
             .map(|expr| expr.evaluate(&df))
             .collect::<Result<Vec<Series>>>()?;

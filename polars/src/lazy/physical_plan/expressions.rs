@@ -1,4 +1,4 @@
-use super::*;
+use crate::{lazy::prelude::*, prelude::*};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -72,5 +72,24 @@ impl PhysicalExpr for ColumnExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let column = df.column(&self.0)?;
         Ok(column.clone())
+    }
+}
+
+#[derive(Debug)]
+pub struct SortExpr {
+    expr: Rc<dyn PhysicalExpr>,
+    reverse: bool,
+}
+
+impl SortExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>, reverse: bool) -> Self {
+        Self { expr, reverse }
+    }
+}
+
+impl PhysicalExpr for SortExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series = self.expr.evaluate(df)?;
+        Ok(series.sort(self.reverse))
     }
 }

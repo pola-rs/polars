@@ -1,28 +1,24 @@
-use super::{
-    executors::{CsvExec, FilterExec, ProjectionExec},
-    expressions::LiteralExpr,
-    *,
-};
-use crate::lazy::physical_plan::executors::DataFrameExec;
+use crate::{lazy::prelude::*, prelude::*};
+use std::rc::Rc;
 
-pub(crate) struct SimplePlanner {}
-impl Default for SimplePlanner {
+pub struct DefaultPlanner {}
+impl Default for DefaultPlanner {
     fn default() -> Self {
-        SimplePlanner {}
+        Self {}
     }
 }
 
-impl PhysicalPlanner for SimplePlanner {
-    fn create_physical_plan(&self, logical_plan: &LogicalPlan) -> Result<Rc<dyn ExecutionPlan>> {
+impl PhysicalPlanner for DefaultPlanner {
+    fn create_physical_plan(&self, logical_plan: &LogicalPlan) -> Result<Rc<dyn Executor>> {
         self.create_initial_physical_plan(logical_plan)
     }
 }
 
-impl SimplePlanner {
+impl DefaultPlanner {
     pub fn create_initial_physical_plan(
         &self,
         logical_plan: &LogicalPlan,
-    ) -> Result<Rc<dyn ExecutionPlan>> {
+    ) -> Result<Rc<dyn Executor>> {
         match logical_plan {
             LogicalPlan::Filter { input, predicate } => {
                 let input = self.create_initial_physical_plan(input)?;
@@ -40,15 +36,23 @@ impl SimplePlanner {
                 *has_header,
                 *delimiter,
             ))),
-            LogicalPlan::Projection { columns, input } => {
+            LogicalPlan::Projection { expr, input } => {
                 let input = self.create_initial_physical_plan(input)?;
-                let columns = columns
+                let phys_expr = expr
                     .iter()
                     .map(|expr| self.create_physical_expr(expr))
                     .collect::<Result<Vec<_>>>()?;
-                Ok(Rc::new(ProjectionExec::new(input, columns)))
+                Ok(Rc::new(PipeExec::new("projection", input, phys_expr)))
             }
             LogicalPlan::DataFrameScan { df } => Ok(Rc::new(DataFrameExec::new(df.clone()))),
+            LogicalPlan::Sort { input, expr } => {
+                let input = self.create_initial_physical_plan(input)?;
+                let phys_expr = expr
+                    .iter()
+                    .map(|e| self.create_physical_expr(e))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Rc::new(PipeExec::new("sort", input, phys_expr)))
+            }
         }
     }
 
@@ -62,6 +66,11 @@ impl SimplePlanner {
                 Ok(Rc::new(BinaryExpr::new(lhs.clone(), *op, rhs.clone())))
             }
             Expr::Column(column) => Ok(Rc::new(ColumnExpr::new(column.clone()))),
+            Expr::Sort { expr, reverse } => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(SortExpr::new(phys_expr, *reverse)))
+            }
+
             e => panic!(format!("physical expr. for expr: {:?} not implemented", e)),
         }
     }

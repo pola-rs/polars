@@ -1,24 +1,19 @@
 // All credits to Andy Grove and Ballista/ DataFusion / Apache Arrow
 
+pub mod frame;
 mod logical_plan;
 mod physical_plan;
-
-pub(crate) use crate::{
-    lazy::{logical_plan::*, physical_plan::expressions::*},
-    prelude::*,
-};
-use arrow::datatypes::SchemaRef;
+pub(crate) mod prelude;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::lazy::physical_plan::{planner::SimplePlanner, PhysicalPlanner};
+    use crate::lazy::prelude::*;
+    use crate::prelude::*;
     use std::io::Cursor;
 
     // physical plan see: datafusion/physical_plan/planner.rs.html#61-63
 
-    #[test]
-    fn plan_builder_simple() {
+    pub(crate) fn get_df() -> DataFrame {
         let s = r#"
 "sepal.length","sepal.width","petal.length","petal.width","variety"
 5.1,3.5,1.4,.2,"Setosa"
@@ -38,15 +33,20 @@ mod tests {
             .has_header(true)
             .finish()
             .unwrap();
+        df
+    }
 
-        let logical_plan = LogicalPlanBuilder::dataframe(df)
+    #[test]
+    fn plan_builder_simple() {
+        let df = get_df();
+
+        let logical_plan = LogicalPlanBuilder::from_existing_df(df)
             .filter(col("sepal.length").lt(lit(5)))
-            .select(&["sepal.length", "variety"])
             .build();
 
         println!("{:?}", logical_plan);
 
-        let planner = SimplePlanner {};
+        let planner = DefaultPlanner {};
         let physical_plan = planner.create_physical_plan(&logical_plan).unwrap();
         println!("{:?}", physical_plan.execute());
     }
