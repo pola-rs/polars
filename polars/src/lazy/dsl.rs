@@ -14,7 +14,7 @@ pub enum Expr {
     // Nested(Box<Expr>),
     Not(Box<Expr>),
     // IsNotNull(Box<Expr>),
-    // IsNull(Box<Expr>),
+    IsNull(Box<Expr>),
     // Cast {
     //     expr: Box<Expr>,
     //     data_type: ArrowDataType,
@@ -79,8 +79,14 @@ impl Expr {
         Expr::Not(Box::new(self))
     }
 
+    /// Rename Column.
     pub fn alias(self, name: &str) -> Expr {
         Expr::Alias(Box::new(self), Rc::new(name.into()))
+    }
+
+    /// Run is_null operation on `Expr`.
+    pub fn is_null(self) -> Self {
+        Expr::IsNull(Box::new(self))
     }
 }
 

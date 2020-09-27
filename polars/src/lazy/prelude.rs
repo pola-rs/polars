@@ -3,7 +3,7 @@ pub use crate::lazy::{
     logical_plan::{LogicalPlan, LogicalPlanBuilder, Operator, ScalarValue},
     physical_plan::{
         executors::{CsvExec, DataFrameExec, FilterExec, PipeExec},
-        expressions::{AliasExpr, BinaryExpr, ColumnExpr, LiteralExpr, NotExpr, SortExpr},
+        expressions::*,
         planner::DefaultPlanner,
         Executor, PhysicalExpr, PhysicalPlanner,
     },

@@ -847,6 +847,15 @@ impl BooleanChunked {
     }
 }
 
+impl BooleanChunked {
+    pub fn all_false(&self) -> bool {
+        match self.sum() {
+            None => false,
+            Some(n) => (n as usize) == 0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};

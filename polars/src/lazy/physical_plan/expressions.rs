@@ -132,3 +132,21 @@ impl PhysicalExpr for AliasExpr {
         Ok(series)
     }
 }
+
+#[derive(Debug)]
+pub struct IsNullExpr {
+    expr: Rc<dyn PhysicalExpr>,
+}
+
+impl IsNullExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+        Self { expr }
+    }
+}
+
+impl PhysicalExpr for IsNullExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series = self.expr.evaluate(df)?;
+        Ok(series.is_null().into_series())
+    }
+}
