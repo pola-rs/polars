@@ -70,6 +70,10 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(expr)?;
                 Ok(Rc::new(SortExpr::new(phys_expr, *reverse)))
             }
+            Expr::Not(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(NotExpr::new(phys_expr)))
+            }
         }
     }
 }

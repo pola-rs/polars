@@ -1,5 +1,6 @@
 // All credits to Andy Grove and Ballista/ DataFusion / Apache Arrow
 
+pub mod dsl;
 pub mod frame;
 mod logical_plan;
 mod physical_plan;

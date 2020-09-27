@@ -49,21 +49,38 @@ impl LazyFrame {
         let physical_plan = planner.create_physical_plan(&logical_plan)?;
         physical_plan.execute()
     }
+
+    pub fn filter(self, predicate: Expr) -> Self {
+        self.get_plan_builder().filter(predicate).build().into()
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::lazy::prelude::*;
     use crate::lazy::tests::get_df;
+    use crate::prelude::*;
 
     #[test]
     fn test_lazy_exec() {
         let df = get_df();
         let new = df
+            .clone()
             .lazy()
             .select("sepal.width")
             .sort("sepal.width", false)
             .collect();
+        println!("{:?}", new);
 
-        println!("{:?}", new)
+        let new = df
+            .clone()
+            .lazy()
+            .filter(not(col("sepal.width").lt(lit(3.5))))
+            .collect()
+            .unwrap();
+
+        let check = new.column("sepal.width").unwrap().f64().unwrap().gt(3.4);
+
+        assert!(check.all_true())
     }
 }

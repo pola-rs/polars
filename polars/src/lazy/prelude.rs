@@ -1,8 +1,9 @@
 pub use crate::lazy::{
-    logical_plan::{col, lit, Expr, LogicalPlan, LogicalPlanBuilder, Operator, ScalarValue},
+    dsl::*,
+    logical_plan::{LogicalPlan, LogicalPlanBuilder, Operator, ScalarValue},
     physical_plan::{
         executors::{CsvExec, DataFrameExec, FilterExec, PipeExec},
-        expressions::{BinaryExpr, ColumnExpr, LiteralExpr, SortExpr},
+        expressions::{BinaryExpr, ColumnExpr, LiteralExpr, NotExpr, SortExpr},
         planner::DefaultPlanner,
         Executor, PhysicalExpr, PhysicalPlanner,
     },

@@ -93,3 +93,22 @@ impl PhysicalExpr for SortExpr {
         Ok(series.sort(self.reverse))
     }
 }
+
+#[derive(Debug)]
+pub struct NotExpr(Rc<dyn PhysicalExpr>);
+
+impl NotExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+        Self(expr)
+    }
+}
+impl PhysicalExpr for NotExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series = self.0.evaluate(df)?;
+        if let Series::Bool(ca) = series {
+            Ok((!ca).into_series())
+        } else {
+            Err(PolarsError::InvalidOperation)
+        }
+    }
+}

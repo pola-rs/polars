@@ -100,10 +100,10 @@ where
     }
 }
 
-fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u8> {
-    let min_max = ca.into_iter().fold(0, |acc: u8, x| match x {
+fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
+    let min_max = ca.into_iter().fold(0, |acc: u32, x| match x {
         Some(v) => {
-            let v = v as u8;
+            let v = v as u32;
             if min {
                 if acc < v {
                     acc
@@ -124,39 +124,39 @@ fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u8> {
 }
 
 /// Booleans are casted to 1 or 0.
-impl ChunkAgg<u8> for BooleanChunked {
+impl ChunkAgg<u32> for BooleanChunked {
     /// Returns `None` if the array is empty or only contains null values.
-    fn sum(&self) -> Option<u8> {
+    fn sum(&self) -> Option<u32> {
         if self.len() == 0 {
             return None;
         }
-        let sum = self.into_iter().fold(0, |acc: u8, x| match x {
-            Some(v) => acc + v as u8,
+        let sum = self.into_iter().fold(0, |acc: u32, x| match x {
+            Some(v) => acc + v as u32,
             None => acc,
         });
         Some(sum)
     }
 
-    fn min(&self) -> Option<u8> {
+    fn min(&self) -> Option<u32> {
         if self.len() == 0 {
             return None;
         }
         min_max_helper(self, true)
     }
 
-    fn max(&self) -> Option<u8> {
+    fn max(&self) -> Option<u32> {
         if self.len() == 0 {
             return None;
         }
         min_max_helper(self, false)
     }
 
-    fn mean(&self) -> Option<u8> {
+    fn mean(&self) -> Option<u32> {
         let len = self.len() - self.null_count();
-        self.sum().map(|v| (v as usize / len) as u8)
+        self.sum().map(|v| (v as usize / len) as u32)
     }
 
-    fn median(&self) -> Option<u8> {
+    fn median(&self) -> Option<u32> {
         let null_count = self.null_count();
         let opt_v = self
             .sort(false)
@@ -165,7 +165,7 @@ impl ChunkAgg<u8> for BooleanChunked {
             .into_iter()
             .next()
             .unwrap();
-        opt_v.map(|v| v as u8)
+        opt_v.map(|v| v as u32)
     }
 }
 

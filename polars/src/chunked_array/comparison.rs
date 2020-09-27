@@ -838,6 +838,15 @@ impl CompToSeries for Utf8Chunked {
 }
 impl CompToSeries for LargeListChunked {}
 
+impl BooleanChunked {
+    pub fn all_true(&self) -> bool {
+        match self.sum() {
+            None => false,
+            Some(n) => (n as usize) == self.len(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};
