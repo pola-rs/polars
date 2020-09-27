@@ -1,4 +1,3 @@
-use crate::frame::select::Selection;
 use crate::{lazy::prelude::*, prelude::*};
 
 impl DataFrame {
@@ -24,15 +23,6 @@ impl LazyFrame {
         LogicalPlanBuilder::from(self.logical_plan)
     }
 
-    pub fn select<'a, K, S: Selection<'a, K>>(self, columns: S) -> Self {
-        let expr = columns
-            .to_selection_vec()
-            .into_iter()
-            .map(|s| col(s))
-            .collect::<Vec<_>>();
-        self.get_plan_builder().project(expr).build().into()
-    }
-
     pub fn sort(self, by_column: &str, reverse: bool) -> Self {
         let expr = vec![Expr::Sort {
             reverse,
@@ -53,6 +43,13 @@ impl LazyFrame {
     pub fn filter(self, predicate: Expr) -> Self {
         self.get_plan_builder().filter(predicate).build().into()
     }
+
+    fn select<E: AsRef<[Expr]>>(self, expr: E) -> Self {
+        self.get_plan_builder()
+            .project(expr.as_ref().to_vec())
+            .build()
+            .into()
+    }
 }
 
 #[cfg(test)]
@@ -67,7 +64,7 @@ mod test {
         let new = df
             .clone()
             .lazy()
-            .select("sepal.width")
+            .select(&[col("sepal.width")])
             .sort("sepal.width", false)
             .collect();
         println!("{:?}", new);
@@ -82,5 +79,16 @@ mod test {
         let check = new.column("sepal.width").unwrap().f64().unwrap().gt(3.4);
 
         assert!(check.all_true())
+    }
+
+    #[test]
+    fn test_alias() {
+        let df = get_df();
+        let new = df
+            .lazy()
+            .select(&[col("sepal.width").alias("petals"), col("sepal.width")])
+            .collect()
+            .unwrap();
+        assert_eq!(new.columns(), &["petals", "sepal.width"]);
     }
 }

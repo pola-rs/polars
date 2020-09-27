@@ -74,6 +74,10 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(expr)?;
                 Ok(Rc::new(NotExpr::new(phys_expr)))
             }
+            Expr::Alias(expr, name) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AliasExpr::new(phys_expr, name.clone())))
+            }
         }
     }
 }

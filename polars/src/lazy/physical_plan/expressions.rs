@@ -112,3 +112,23 @@ impl PhysicalExpr for NotExpr {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct AliasExpr {
+    expr: Rc<dyn PhysicalExpr>,
+    name: Rc<String>,
+}
+
+impl AliasExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>, name: Rc<String>) -> Self {
+        Self { expr, name }
+    }
+}
+
+impl PhysicalExpr for AliasExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let mut series = self.expr.evaluate(df)?;
+        series.rename(&self.name);
+        Ok(series)
+    }
+}

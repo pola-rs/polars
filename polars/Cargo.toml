@@ -18,6 +18,7 @@ temporal = ["chrono"]
 random = ["rand", "rand_distr"]
 parallel = []
 default = ["pretty", "docs", "temporal"]
+lazy = []
 
 [dependencies]
 arrow = {version = "1.0.1", default_features = false}

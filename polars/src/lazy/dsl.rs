@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    // Alias(Box<Expr>, String),
+    Alias(Box<Expr>, Rc<String>),
     Column(Rc<String>),
     Literal(ScalarValue),
     BinaryExpr {
@@ -45,38 +45,42 @@ fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
 
 impl Expr {
     /// Compare `Expr` with other `Expr` on equality
-    pub fn eq(&self, other: Expr) -> Expr {
-        binary_expr(self.clone(), Operator::Eq, other)
+    pub fn eq(self, other: Expr) -> Expr {
+        binary_expr(self, Operator::Eq, other)
     }
 
     /// Compare `Expr` with other `Expr` on non-equality
-    pub fn neq(&self, other: Expr) -> Expr {
-        binary_expr(self.clone(), Operator::NotEq, other)
+    pub fn neq(self, other: Expr) -> Expr {
+        binary_expr(self, Operator::NotEq, other)
     }
 
     /// Check if `Expr` < `Expr`
-    pub fn lt(&self, other: Expr) -> Expr {
-        binary_expr(self.clone(), Operator::Lt, other)
+    pub fn lt(self, other: Expr) -> Expr {
+        binary_expr(self, Operator::Lt, other)
     }
 
     /// Check if `Expr` > `Expr`
-    pub fn gt(&self, other: Expr) -> Expr {
-        binary_expr(self.clone(), Operator::Gt, other)
+    pub fn gt(self, other: Expr) -> Expr {
+        binary_expr(self, Operator::Gt, other)
     }
 
     /// Check if `Expr` >= `Expr`
-    pub fn gt_eq(&self, other: Expr) -> Expr {
-        binary_expr(self.clone(), Operator::GtEq, other)
+    pub fn gt_eq(self, other: Expr) -> Expr {
+        binary_expr(self, Operator::GtEq, other)
     }
 
     /// Check if `Expr` <= `Expr`
-    pub fn lt_eq(&self, other: Expr) -> Expr {
-        binary_expr(self.clone(), Operator::LtEq, other)
+    pub fn lt_eq(self, other: Expr) -> Expr {
+        binary_expr(self, Operator::LtEq, other)
     }
 
     /// Negate `Expr`
-    pub fn not(&self) -> Expr {
-        Expr::Not(Box::new(self.clone()))
+    pub fn not(self) -> Expr {
+        Expr::Not(Box::new(self))
+    }
+
+    pub fn alias(self, name: &str) -> Expr {
+        Expr::Alias(Box::new(self), Rc::new(name.into()))
     }
 }
 

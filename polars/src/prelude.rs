@@ -49,6 +49,9 @@ pub(crate) fn create_df() -> DataFrame {
 #[cfg(feature = "parquet")]
 pub use crate::frame::ser::parquet::ParquetReader;
 
+#[cfg(feature = "lazy")]
+pub use crate::lazy::frame::*;
+
 #[macro_export]
 macro_rules! as_result {
     ($block:block) => {{
