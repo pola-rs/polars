@@ -23,6 +23,10 @@ impl LazyFrame {
         LogicalPlanBuilder::from(self.logical_plan)
     }
 
+    pub fn describe_plan(&self) -> String {
+        self.logical_plan.describe()
+    }
+
     pub fn sort(self, by_column: &str, reverse: bool) -> Self {
         let expr = vec![Expr::Sort {
             reverse,
@@ -44,7 +48,7 @@ impl LazyFrame {
         self.get_plan_builder().filter(predicate).build().into()
     }
 
-    fn select<E: AsRef<[Expr]>>(self, expr: E) -> Self {
+    pub fn select<E: AsRef<[Expr]>>(self, expr: E) -> Self {
         self.get_plan_builder()
             .project(expr.as_ref().to_vec())
             .build()

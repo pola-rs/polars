@@ -1,7 +1,8 @@
 use crate::lazy::prelude::*;
+use std::fmt;
 use std::rc::Rc;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Expr {
     Alias(Box<Expr>, Rc<String>),
     Column(Rc<String>),
@@ -33,6 +34,25 @@ pub enum Expr {
     //     args: Vec<Expr>,
     // },
     // Wildcard,
+}
+
+impl fmt::Debug for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Expr::*;
+        match self {
+            Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
+            Column(name) => write!(f, "{}", name),
+            Literal(v) => write!(f, "{:?}", v),
+            BinaryExpr { left, op, right } => write!(f, "{:?} {:?} {:?}", left, op, right),
+            Not(expr) => write!(f, "NOT {:?}", expr),
+            IsNull(expr) => write!(f, "{:?} IS NULL", expr),
+            IsNotNull(expr) => write!(f, "{:?} IS NOT NULL", expr),
+            Sort { expr, reverse } => match reverse {
+                true => write!(f, "{:?} DESC", expr),
+                false => write!(f, "{:?} ASC", expr),
+            },
+        }
+    }
 }
 
 fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {

@@ -1,7 +1,7 @@
 use crate::{lazy::prelude::*, prelude::*};
 use arrow::datatypes::SchemaRef;
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::{fmt, rc::Rc};
 
 #[derive(Clone, Debug)]
 pub enum ScalarValue {
@@ -52,7 +52,7 @@ pub enum Operator {
     NotLike,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum LogicalPlan {
     Filter {
         predicate: Expr,
@@ -78,7 +78,34 @@ pub enum LogicalPlan {
     },
 }
 
+impl fmt::Debug for LogicalPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use LogicalPlan::*;
+        match self {
+            Filter { predicate, input } => write!(f, "Filter{:?} {:?}", predicate, input),
+            CsvScan {
+                path,
+                schema: _,
+                has_header: _,
+                delimiter: _,
+            } => write!(f, "CSVScan {}", path),
+            DataFrameScan { df } => {
+                let df = df.borrow();
+                write!(f, "{:?}", df.head(Some(1)))
+            }
+            Projection { expr, input } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
+            Sort { input, expr } => write!(f, "Sort\n\t{:?}\n{:?}", expr, input),
+        }
+    }
+}
+
 pub struct LogicalPlanBuilder(LogicalPlan);
+
+impl LogicalPlan {
+    pub fn describe(&self) -> String {
+        format!("{:#?}", self)
+    }
+}
 
 impl From<LogicalPlan> for LogicalPlanBuilder {
     fn from(lp: LogicalPlan) -> Self {
@@ -136,5 +163,26 @@ impl LogicalPlanBuilder {
             expr,
         }
         .into()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::lazy::prelude::*;
+    use crate::lazy::tests::get_df;
+    use crate::prelude::*;
+
+    #[test]
+    fn test_logical_plan() {
+        let df = get_df();
+
+        // expensive order
+        let lf = df
+            .clone()
+            .lazy()
+            .sort("sepal.width", false)
+            .select(&[col("sepal.width")]);
+        println!("{}", lf.describe_plan());
+        assert!(false)
     }
 }
