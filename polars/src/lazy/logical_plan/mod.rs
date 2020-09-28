@@ -1,3 +1,5 @@
+pub(crate) mod optimizer;
+
 use crate::{lazy::prelude::*, prelude::*};
 use arrow::datatypes::SchemaRef;
 use std::cell::RefCell;
@@ -163,26 +165,5 @@ impl LogicalPlanBuilder {
             expr,
         }
         .into()
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::lazy::prelude::*;
-    use crate::lazy::tests::get_df;
-    use crate::prelude::*;
-
-    #[test]
-    fn test_logical_plan() {
-        let df = get_df();
-
-        // expensive order
-        let lf = df
-            .clone()
-            .lazy()
-            .sort("sepal.width", false)
-            .select(&[col("sepal.width")]);
-        println!("{}", lf.describe_plan());
-        assert!(false)
     }
 }

@@ -9,7 +9,7 @@ impl DataFrame {
 
 /// abstraction over a logical plan
 pub struct LazyFrame {
-    logical_plan: LogicalPlan,
+    pub(crate) logical_plan: LogicalPlan,
 }
 
 impl From<LogicalPlan> for LazyFrame {
