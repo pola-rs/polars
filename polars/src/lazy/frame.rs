@@ -37,7 +37,11 @@ impl LazyFrame {
 
     pub fn collect(self) -> Result<DataFrame> {
         let logical_plan = self.get_plan_builder().build();
-        // todo: optimize plan.
+
+        let predicate_pushdown_opt = PredicatePushDown {};
+        let projection_pushdown_opt = ProjectionPushDown {};
+        let logical_plan = predicate_pushdown_opt.optimize(logical_plan);
+        let logical_plan = projection_pushdown_opt.optimize(logical_plan);
 
         let planner = DefaultPlanner::default();
         let physical_plan = planner.create_physical_plan(&logical_plan)?;
@@ -81,12 +85,11 @@ mod test {
             .unwrap();
 
         let check = new.column("sepal.width").unwrap().f64().unwrap().gt(3.4);
-
         assert!(check.all_true())
     }
 
     #[test]
-    fn test_alias() {
+    fn test_lazy_alias() {
         let df = get_df();
         let new = df
             .lazy()
@@ -97,7 +100,7 @@ mod test {
     }
 
     #[test]
-    fn test_is_null() {
+    fn test_lazy_is_null() {
         let df = get_df();
         let new = df
             .clone()

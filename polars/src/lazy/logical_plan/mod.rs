@@ -84,7 +84,7 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
-            Filter { predicate, input } => write!(f, "Filter{:?} {:?}", predicate, input),
+            Filter { predicate, input } => write!(f, "Filter\n\t{:?} {:?}", predicate, input),
             CsvScan {
                 path,
                 schema: _,

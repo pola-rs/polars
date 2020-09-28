@@ -1,7 +1,7 @@
 pub use crate::lazy::{
     dsl::*,
     logical_plan::{
-        optimizer::{Optimize, ProjectionPushDown},
+        optimizer::{Optimize, PredicatePushDown, ProjectionPushDown},
         LogicalPlan, LogicalPlanBuilder, Operator, ScalarValue,
     },
     physical_plan::{
