@@ -110,6 +110,31 @@ impl Executor for PipeExec {
         Ok(DataFrame::new_no_checks(selected_columns))
     }
 }
+
+#[derive(Debug)]
+pub struct SortExec {
+    input: Rc<dyn Executor>,
+    by_column: String,
+    reverse: bool,
+}
+
+impl SortExec {
+    pub(crate) fn new(input: Rc<dyn Executor>, by_column: String, reverse: bool) -> Self {
+        Self {
+            input,
+            by_column,
+            reverse,
+        }
+    }
+}
+
+impl Executor for SortExec {
+    fn execute(&self) -> Result<DataFrame> {
+        let df = self.input.execute()?;
+        df.sort(&self.by_column, self.reverse)
+    }
+}
+
 /// Take an input Executor and a multiple expressions
 #[derive(Debug)]
 pub struct GroupByExec {
@@ -139,6 +164,16 @@ impl GroupByExec {
 impl Executor for GroupByExec {
     fn execute(&self) -> Result<DataFrame> {
         let df = self.input.execute()?;
+        let keys = self
+            .keys
+            .iter()
+            .map(|expr| {
+                expr.to_field(&self.input.schema())
+                    .map(|f| f.name().clone())
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // df.groupby(keys)?.agg()
 
         // let selected_columns = self
         //     .keys

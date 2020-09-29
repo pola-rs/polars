@@ -28,11 +28,10 @@ impl LazyFrame {
     }
 
     pub fn sort(self, by_column: &str, reverse: bool) -> Self {
-        let expr = vec![Expr::Sort {
-            reverse,
-            expr: Box::new(col(by_column)),
-        }];
-        self.get_plan_builder().sort(expr).build().into()
+        self.get_plan_builder()
+            .sort(by_column.into(), reverse)
+            .build()
+            .into()
     }
 
     pub fn collect(self) -> Result<DataFrame> {
@@ -75,10 +74,11 @@ mod test {
         let new = df
             .clone()
             .lazy()
-            .select(&[col("sepal.width")])
+            .select(&[col("sepal.width"), col("variety")])
             .sort("sepal.width", false)
             .collect();
         println!("{:?}", new);
+        assert!(false);
 
         let new = df
             .clone()

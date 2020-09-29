@@ -45,13 +45,15 @@ impl DefaultPlanner {
                 Ok(Rc::new(PipeExec::new("projection", input, phys_expr)))
             }
             LogicalPlan::DataFrameScan { df, .. } => Ok(Rc::new(DataFrameExec::new(df.clone()))),
-            LogicalPlan::Sort { input, expr } => {
+            LogicalPlan::Sort {
+                input,
+                column,
+                reverse,
+            } => {
+                // this isn't a sort
                 let input = self.create_initial_physical_plan(input)?;
-                let phys_expr = expr
-                    .iter()
-                    .map(|e| self.create_physical_expr(e))
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(Rc::new(PipeExec::new("sort", input, phys_expr)))
+
+                Ok(Rc::new(SortExec::new(input, column.clone(), *reverse)))
             }
             LogicalPlan::Aggregate {
                 input, keys, aggs, ..

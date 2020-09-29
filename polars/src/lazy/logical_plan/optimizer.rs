@@ -52,11 +52,13 @@ impl ProjectionPushDown {
                 };
                 self.finish_at_leaf(lp, accumulated_projections)
             }
-            Sort { input, expr } => {
-                LogicalPlanBuilder::from(self.push_down(*input, accumulated_projections))
-                    .sort(expr)
-                    .build()
-            }
+            Sort {
+                input,
+                column,
+                reverse,
+            } => LogicalPlanBuilder::from(self.push_down(*input, accumulated_projections))
+                .sort(column, reverse)
+                .build(),
             Selection { predicate, input } => {
                 LogicalPlanBuilder::from(self.push_down(*input, accumulated_projections))
                     .filter(predicate)
@@ -124,11 +126,13 @@ impl PredicatePushDown {
                 };
                 self.finish_at_leaf(lp, acc_predicates)
             }
-            Sort { input, expr } => {
-                LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
-                    .sort(expr)
-                    .build()
-            }
+            Sort {
+                input,
+                column,
+                reverse,
+            } => LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
+                .sort(column, reverse)
+                .build(),
             Aggregate {
                 input, keys, aggs, ..
             } => LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))

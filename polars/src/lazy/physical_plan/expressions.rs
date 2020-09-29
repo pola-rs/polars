@@ -1,4 +1,5 @@
 use crate::{lazy::prelude::*, prelude::*};
+use std::borrow::Cow;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -30,6 +31,27 @@ impl PhysicalExpr for LiteralExpr {
         };
         Ok(s)
     }
+
+    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
+        use ScalarValue::*;
+        let name = "literal";
+        let field = match &self.0 {
+            Int8(_) => Field::new(name, ArrowDataType::Int8, true),
+            Int16(_) => Field::new(name, ArrowDataType::Int16, true),
+            Int32(_) => Field::new(name, ArrowDataType::Int32, true),
+            Int64(_) => Field::new(name, ArrowDataType::Int64, true),
+            UInt8(_) => Field::new(name, ArrowDataType::UInt8, true),
+            UInt16(_) => Field::new(name, ArrowDataType::UInt16, true),
+            UInt32(_) => Field::new(name, ArrowDataType::UInt32, true),
+            UInt64(_) => Field::new(name, ArrowDataType::UInt64, true),
+            Float32(_) => Field::new(name, ArrowDataType::Float32, true),
+            Float64(_) => Field::new(name, ArrowDataType::Float64, true),
+            Boolean(_) => Field::new(name, ArrowDataType::Boolean, true),
+            Utf8(_) => Field::new(name, ArrowDataType::Utf8, true),
+            Null => Field::new(name, ArrowDataType::Null, true),
+        };
+        Ok(field)
+    }
 }
 
 #[derive(Debug)]
@@ -57,6 +79,9 @@ impl PhysicalExpr for BinaryExpr {
             op => panic!(format!("Operator {:?} is not implemented", op)),
         }
     }
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -72,6 +97,10 @@ impl PhysicalExpr for ColumnExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let column = df.column(&self.0)?;
         Ok(column.clone())
+    }
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        let field = input_schema.field_with_name(&self.0).map(|f| f.clone())?;
+        Ok(field)
     }
 }
 
@@ -92,6 +121,9 @@ impl PhysicalExpr for SortExpr {
         let series = self.expr.evaluate(df)?;
         Ok(series.sort(self.reverse))
     }
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.expr.to_field(input_schema)
+    }
 }
 
 #[derive(Debug)]
@@ -110,6 +142,9 @@ impl PhysicalExpr for NotExpr {
         } else {
             Err(PolarsError::InvalidOperation)
         }
+    }
+    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
+        Ok(Field::new("not", ArrowDataType::Boolean, true))
     }
 }
 
@@ -131,6 +166,14 @@ impl PhysicalExpr for AliasExpr {
         series.rename(&self.name);
         Ok(series)
     }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        Ok(Field::new(
+            &self.name,
+            self.expr.to_field(input_schema)?.data_type().clone(),
+            true,
+        ))
+    }
 }
 
 #[derive(Debug)]
@@ -149,6 +192,9 @@ impl PhysicalExpr for IsNullExpr {
         let series = self.expr.evaluate(df)?;
         Ok(series.is_null().into_series())
     }
+    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
+        Ok(Field::new("is_null", ArrowDataType::Boolean, true))
+    }
 }
 
 #[derive(Debug)]
@@ -166,5 +212,8 @@ impl PhysicalExpr for IsNotNullExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let series = self.expr.evaluate(df)?;
         Ok(series.is_not_null().into_series())
+    }
+    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
+        Ok(Field::new("is_not_null", ArrowDataType::Boolean, true))
     }
 }

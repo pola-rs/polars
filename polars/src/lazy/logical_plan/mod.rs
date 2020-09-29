@@ -103,7 +103,8 @@ pub enum LogicalPlan {
     },
     Sort {
         input: Box<LogicalPlan>,
-        expr: Vec<Expr>,
+        column: String,
+        reverse: bool,
     },
     Aggregate {
         input: Box<LogicalPlan>,
@@ -121,7 +122,7 @@ impl fmt::Debug for LogicalPlan {
             CsvScan { path, .. } => write!(f, "CSVScan {}", path),
             DataFrameScan { schema: schema, .. } => write!(f, "{:?}", schema),
             Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
-            Sort { input, expr } => write!(f, "Sort\n\t{:?}\n{:?}", expr, input),
+            Sort { input, column, .. } => write!(f, "Sort\n\t{:?}\n{:?}", column, input),
             Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
         }
     }
@@ -203,10 +204,11 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn sort(self, expr: Vec<Expr>) -> Self {
+    pub fn sort(self, by_column: String, reverse: bool) -> Self {
         LogicalPlan::Sort {
             input: Box::new(self.0),
-            expr,
+            column: by_column,
+            reverse,
         }
         .into()
     }
