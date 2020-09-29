@@ -95,7 +95,7 @@ pub enum LogicalPlan {
         df: Rc<RefCell<DataFrame>>,
         schema: Schema,
     },
-    // horizontal selection
+    // vertical selection
     Projection {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
@@ -108,7 +108,7 @@ pub enum LogicalPlan {
     },
     Aggregate {
         input: Box<LogicalPlan>,
-        keys: Vec<Expr>,
+        keys: Rc<Vec<String>>,
         aggs: Vec<Expr>,
         schema: Schema,
     },
@@ -120,7 +120,7 @@ impl fmt::Debug for LogicalPlan {
         match self {
             Selection { predicate, input } => write!(f, "Filter\n\t{:?} {:?}", predicate, input),
             CsvScan { path, .. } => write!(f, "CSVScan {}", path),
-            DataFrameScan { schema: schema, .. } => write!(f, "{:?}", schema),
+            DataFrameScan { schema, .. } => write!(f, "{:?}", schema),
             Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
             Sort { input, column, .. } => write!(f, "Sort\n\t{:?}\n{:?}", column, input),
             Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
@@ -177,8 +177,16 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn groupby(self, keys: Vec<Expr>, aggs: Vec<Expr>) -> Self {
-        let schema1 = utils::expressions_to_schema(&keys, self.0.schema());
+    pub fn groupby(self, keys: Rc<Vec<String>>, aggs: Vec<Expr>) -> Self {
+        let current_schema = self.0.schema();
+
+        let fields = keys
+            .iter()
+            .map(|name| current_schema.field_with_name(name).unwrap().clone())
+            .collect::<Vec<_>>();
+
+        let schema1 = Schema::new(fields);
+
         let schema2 = utils::expressions_to_schema(&aggs, self.0.schema());
         let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
 

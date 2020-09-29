@@ -275,17 +275,17 @@ pub struct GroupBy<'df, 'selection_str> {
     selected_agg: Option<Vec<&'selection_str str>>,
 }
 
-trait NumericAggSync {
-    fn agg_mean(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+pub(crate) trait NumericAggSync {
+    fn agg_mean(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         None
     }
-    fn agg_min(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+    fn agg_min(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         None
     }
-    fn agg_max(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+    fn agg_max(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         None
     }
-    fn agg_sum(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+    fn agg_sum(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         None
     }
 }
@@ -299,7 +299,7 @@ where
     T: PolarsNumericType + Sync,
     T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
 {
-    fn agg_mean(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+    fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(Series::Float64(
             groups
                 .par_iter()
@@ -323,7 +323,7 @@ where
         ))
     }
 
-    fn agg_min(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+    fn agg_min(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(
             groups
                 .par_iter()
@@ -357,7 +357,7 @@ where
         )
     }
 
-    fn agg_max(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+    fn agg_max(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(
             groups
                 .par_iter()
@@ -391,7 +391,7 @@ where
         )
     }
 
-    fn agg_sum(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+    fn agg_sum(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(
             groups
                 .par_iter()
@@ -592,7 +592,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         self
     }
 
-    fn keys(&self) -> Vec<Series> {
+    pub(crate) fn get_groups(&self) -> &Vec<(usize, Vec<usize>)> {
+        &self.groups
+    }
+
+    pub(crate) fn keys(&self) -> Vec<Series> {
         // Keys will later be appended with the aggregation columns, so we already allocate extra space
         let size;
         if let Some(sel) = &self.selected_agg {

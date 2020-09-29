@@ -138,54 +138,34 @@ impl Executor for SortExec {
 /// Take an input Executor and a multiple expressions
 #[derive(Debug)]
 pub struct GroupByExec {
-    /// i.e. sort, projection
-    operation: &'static str,
     input: Rc<dyn Executor>,
-    keys: Vec<Rc<dyn PhysicalExpr>>,
+    keys: Rc<Vec<String>>,
     aggs: Vec<Rc<dyn PhysicalExpr>>,
 }
 
 impl GroupByExec {
     pub(crate) fn new(
-        operation: &'static str,
         input: Rc<dyn Executor>,
-        keys: Vec<Rc<dyn PhysicalExpr>>,
+        keys: Rc<Vec<String>>,
         aggs: Vec<Rc<dyn PhysicalExpr>>,
     ) -> Self {
-        Self {
-            operation,
-            input,
-            keys,
-            aggs,
-        }
+        Self { input, keys, aggs }
     }
 }
 
 impl Executor for GroupByExec {
     fn execute(&self) -> Result<DataFrame> {
         let df = self.input.execute()?;
-        let keys = self
-            .keys
-            .iter()
-            .map(|expr| {
-                expr.to_field(&self.input.schema())
-                    .map(|f| f.name().clone())
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let gb = df.groupby(&*self.keys)?;
+        let groups = gb.get_groups();
 
-        // df.groupby(keys)?.agg()
+        let mut columns = gb.keys();
 
-        // let selected_columns = self
-        //     .keys
-        //     .iter()
-        //     .map(|expr| expr.evaluate(&df).map(|series| series.name().to_owned()))
-        //     .collect::<Result<Vec<String>>>()?;
-        //
-        //
-        //
-        // df.groupby(&selected_columns)
-        //     .agg
-        // Ok(DataFrame::new_no_checks(selected_columns))
-        todo!()
+        for expr in &self.aggs {
+            let agg_expr = expr.as_agg_expr()?;
+            let agg = agg_expr.evaluate(&df, groups)?;
+            columns.push(agg)
+        }
+        Ok(DataFrame::new_no_checks(columns))
     }
 }

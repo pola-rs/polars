@@ -1,5 +1,6 @@
+use crate::frame::group_by::NumericAggSync;
+use crate::lazy::physical_plan::AggPhysicalExpr;
 use crate::{lazy::prelude::*, prelude::*};
-use std::borrow::Cow;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -79,7 +80,7 @@ impl PhysicalExpr for BinaryExpr {
             op => panic!(format!("Operator {:?} is not implemented", op)),
         }
     }
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         todo!()
     }
 }
@@ -215,5 +216,46 @@ impl PhysicalExpr for IsNotNullExpr {
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         Ok(Field::new("is_not_null", ArrowDataType::Boolean, true))
+    }
+}
+
+#[derive(Debug)]
+pub struct AggMinExpr {
+    expr: Rc<dyn PhysicalExpr>,
+}
+
+impl AggMinExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+        Self { expr }
+    }
+}
+
+impl PhysicalExpr for AggMinExpr {
+    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        let field = self.expr.to_field(input_schema)?;
+        Ok(Field::new(
+            &format!("{}_min", field.name()),
+            field.data_type().clone(),
+            field.is_nullable(),
+        ))
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+impl AggPhysicalExpr for AggMinExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Series> {
+        let series = self.expr.evaluate(df)?;
+        let new_name = format!("{}_min", series.name());
+        let opt_agg = apply_method_all_series!(series, agg_min, groups);
+        let mut agg = opt_agg.expect("implementation error");
+        agg.rename(&new_name);
+        Ok(agg)
     }
 }

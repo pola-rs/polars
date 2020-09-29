@@ -1,4 +1,5 @@
 use crate::{lazy::prelude::*, prelude::*};
+use std::rc::Rc;
 
 impl DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
@@ -60,6 +61,14 @@ impl LazyFrame {
             .build()
             .into()
     }
+
+    // Todo: change api
+    pub(crate) fn groupby(self, keys: Vec<String>, column: &str) -> Self {
+        self.get_plan_builder()
+            .groupby(Rc::new(keys), vec![Expr::AggMin(Box::new(col(column)))])
+            .build()
+            .into()
+    }
 }
 
 #[cfg(test)]
@@ -78,7 +87,6 @@ mod test {
             .sort("sepal.width", false)
             .collect();
         println!("{:?}", new);
-        assert!(false);
 
         let new = df
             .clone()
@@ -108,16 +116,26 @@ mod test {
         let new = df
             .clone()
             .lazy()
-            .select(&[col("sepal.width").is_null()])
+            .filter(col("sepal.width").is_null())
             .collect()
             .unwrap();
-        assert!(new.select_at_idx(0).unwrap().bool().unwrap().all_false());
+
+        assert_eq!(new.height(), 0);
+
+        let new = df
+            .clone()
+            .lazy()
+            .filter(col("sepal.width").is_not_null())
+            .collect()
+            .unwrap();
+        assert_eq!(new.height(), df.height());
 
         let new = df
             .lazy()
-            .select(&[col("sepal.width").is_not_null()])
+            .groupby(vec!["variety".into()], "sepal.width")
             .collect()
             .unwrap();
-        assert!(new.select_at_idx(0).unwrap().bool().unwrap().all_true());
+
+        println!("{:?}", new);
     }
 }

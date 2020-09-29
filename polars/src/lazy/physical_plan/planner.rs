@@ -63,13 +63,7 @@ impl DefaultPlanner {
                     .iter()
                     .map(|e| self.create_physical_expr(e))
                     .collect::<Result<Vec<_>>>()?;
-                let phys_keys = keys
-                    .iter()
-                    .map(|e| self.create_physical_expr(e))
-                    .collect::<Result<Vec<_>>>()?;
-                Ok(Rc::new(GroupByExec::new(
-                    "groupby", input, phys_keys, phys_aggs,
-                )))
+                Ok(Rc::new(GroupByExec::new(input, keys.clone(), phys_aggs)))
             }
         }
     }
@@ -103,6 +97,10 @@ impl DefaultPlanner {
             Expr::IsNotNull(expr) => {
                 let phys_expr = self.create_physical_expr(expr)?;
                 Ok(Rc::new(IsNotNullExpr::new(phys_expr)))
+            }
+            Expr::AggMin(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggMinExpr::new(phys_expr)))
             }
         }
     }

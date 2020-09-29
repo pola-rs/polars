@@ -26,16 +26,12 @@ pub enum Expr {
         expr: Box<Expr>,
         reverse: bool,
     },
-    // ScalarFunction {
-    //     name: String,
-    //     args: Vec<Expr>,
-    //     return_type: ArrowDataType,
-    // },
-    // AggregateFunction {
-    //     name: String,
-    //     args: Vec<Expr>,
-    // },
-    // Wildcard,
+    AggMin(Box<Expr>), // ScalarFunction {
+                       //     name: String,
+                       //     args: Vec<Expr>,
+                       //     return_type: ArrowDataType,
+                       // },
+                       // Wildcard
 }
 
 impl Expr {
@@ -68,6 +64,7 @@ impl Expr {
             IsNull(_) => Ok(ArrowDataType::Boolean),
             IsNotNull(_) => Ok(ArrowDataType::Boolean),
             Sort { expr, .. } => expr.get_type(schema),
+            AggMin(expr) => expr.get_type(schema),
         }
     }
 
@@ -91,6 +88,7 @@ impl Expr {
             IsNull(_) => Ok(Field::new("is_null", ArrowDataType::Boolean, true)),
             IsNotNull(_) => Ok(Field::new("is_not_null", ArrowDataType::Boolean, true)),
             Sort { expr, .. } => expr.to_field(schema),
+            AggMin(expr) => expr.to_field(schema),
         }
     }
 }
@@ -110,6 +108,7 @@ impl fmt::Debug for Expr {
                 true => write!(f, "{:?} DESC", expr),
                 false => write!(f, "{:?} ASC", expr),
             },
+            AggMin(expr) => write!(f, "AGGREGATE MIN {:?}", expr),
         }
     }
 }
