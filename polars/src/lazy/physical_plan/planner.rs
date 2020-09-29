@@ -36,7 +36,7 @@ impl DefaultPlanner {
                 *has_header,
                 *delimiter,
             ))),
-            LogicalPlan::Projection { expr, input } => {
+            LogicalPlan::Projection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(input)?;
                 let phys_expr = expr
                     .iter()
@@ -44,7 +44,9 @@ impl DefaultPlanner {
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Rc::new(PipeExec::new("projection", input, phys_expr)))
             }
-            LogicalPlan::DataFrameScan { df } => Ok(Rc::new(DataFrameExec::new(df.clone()))),
+            LogicalPlan::DataFrameScan { df, schema: _ } => {
+                Ok(Rc::new(DataFrameExec::new(df.clone())))
+            }
             LogicalPlan::Sort { input, expr } => {
                 let input = self.create_initial_physical_plan(input)?;
                 let phys_expr = expr

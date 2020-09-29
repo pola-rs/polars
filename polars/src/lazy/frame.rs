@@ -40,6 +40,9 @@ impl LazyFrame {
 
         let predicate_pushdown_opt = PredicatePushDown {};
         let projection_pushdown_opt = ProjectionPushDown {};
+
+        // NOTE: the order is important. Projection pushdown must be later than predicate pushdown,
+        // because I want the projections to occur before the filtering.
         let logical_plan = predicate_pushdown_opt.optimize(logical_plan);
         let logical_plan = projection_pushdown_opt.optimize(logical_plan);
 

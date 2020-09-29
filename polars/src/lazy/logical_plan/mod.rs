@@ -1,7 +1,6 @@
 pub(crate) mod optimizer;
-
 use crate::{lazy::prelude::*, prelude::*};
-use arrow::datatypes::SchemaRef;
+use arrow::datatypes::DataType;
 use std::cell::RefCell;
 use std::{fmt, rc::Rc};
 
@@ -34,6 +33,27 @@ pub enum ScalarValue {
     Float64(f64),
 }
 
+impl ScalarValue {
+    /// Getter for the `DataType` of the value
+    pub fn get_datatype(&self) -> DataType {
+        match *self {
+            ScalarValue::Boolean(_) => DataType::Boolean,
+            ScalarValue::UInt8(_) => DataType::UInt8,
+            ScalarValue::UInt16(_) => DataType::UInt16,
+            ScalarValue::UInt32(_) => DataType::UInt32,
+            ScalarValue::UInt64(_) => DataType::UInt64,
+            ScalarValue::Int8(_) => DataType::Int8,
+            ScalarValue::Int16(_) => DataType::Int16,
+            ScalarValue::Int32(_) => DataType::Int32,
+            ScalarValue::Int64(_) => DataType::Int64,
+            ScalarValue::Float32(_) => DataType::Float32,
+            ScalarValue::Float64(_) => DataType::Float64,
+            ScalarValue::Utf8(_) => DataType::Utf8,
+            _ => panic!("Cannot treat {:?} as scalar value", self),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum Operator {
     Eq,
@@ -62,17 +82,19 @@ pub enum LogicalPlan {
     },
     CsvScan {
         path: String,
-        schema: Option<SchemaRef>,
+        schema: Schema,
         has_header: bool,
         delimiter: Option<u8>,
     },
     DataFrameScan {
         df: Rc<RefCell<DataFrame>>,
+        schema: Schema,
     },
     // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
     Projection {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
+        schema: Schema,
     },
     Sort {
         input: Box<LogicalPlan>,
@@ -85,17 +107,12 @@ impl fmt::Debug for LogicalPlan {
         use LogicalPlan::*;
         match self {
             Filter { predicate, input } => write!(f, "Filter\n\t{:?} {:?}", predicate, input),
-            CsvScan {
-                path,
-                schema: _,
-                has_header: _,
-                delimiter: _,
-            } => write!(f, "CSVScan {}", path),
-            DataFrameScan { df } => {
+            CsvScan { path, .. } => write!(f, "CSVScan {}", path),
+            DataFrameScan { df, schema: _ } => {
                 let df = df.borrow();
                 write!(f, "{:?}", df.head(Some(1)))
             }
-            Projection { expr, input } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
+            Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
             Sort { input, expr } => write!(f, "Sort\n\t{:?}\n{:?}", expr, input),
         }
     }
@@ -104,6 +121,16 @@ impl fmt::Debug for LogicalPlan {
 pub struct LogicalPlanBuilder(LogicalPlan);
 
 impl LogicalPlan {
+    pub(crate) fn schema(&self) -> &Schema {
+        use LogicalPlan::*;
+        match self {
+            DataFrameScan { schema, .. } => schema,
+            Filter { input, .. } => input.schema(),
+            CsvScan { schema, .. } => schema,
+            Projection { schema, .. } => schema,
+            Sort { input, .. } => input.schema(),
+        }
+    }
     pub fn describe(&self) -> String {
         format!("{:#?}", self)
     }
@@ -116,25 +143,22 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 }
 
 impl LogicalPlanBuilder {
-    pub fn scan_csv(
-        path: String,
-        schema: Option<SchemaRef>,
-        has_header: bool,
-        delimiter: Option<u8>,
-    ) -> Self {
-        LogicalPlan::CsvScan {
-            path,
-            schema,
-            has_header,
-            delimiter,
-        }
-        .into()
+    pub fn scan_csv() -> Self {
+        todo!()
     }
 
     pub fn project(self, expr: Vec<Expr>) -> Self {
+        let fields = expr
+            .iter()
+            .map(|expr| expr.to_field(self.0.schema()))
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        let schema = Schema::new(fields);
+
         LogicalPlan::Projection {
             expr,
             input: Box::new(self.0),
+            schema,
         }
         .into()
     }
@@ -153,8 +177,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn from_existing_df(df: DataFrame) -> Self {
+        let schema = df.schema();
         LogicalPlan::DataFrameScan {
             df: Rc::new(RefCell::new(df)),
+            schema,
         }
         .into()
     }

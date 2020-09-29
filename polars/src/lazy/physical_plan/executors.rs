@@ -5,18 +5,13 @@ use std::mem;
 #[derive(Debug)]
 pub struct CsvExec {
     path: String,
-    schema: Option<SchemaRef>,
+    schema: Schema,
     has_header: bool,
     delimiter: Option<u8>,
 }
 
 impl CsvExec {
-    pub fn new(
-        path: String,
-        schema: Option<SchemaRef>,
-        has_header: bool,
-        delimiter: Option<u8>,
-    ) -> Self {
+    pub fn new(path: String, schema: Schema, has_header: bool, delimiter: Option<u8>) -> Self {
         CsvExec {
             path,
             schema,

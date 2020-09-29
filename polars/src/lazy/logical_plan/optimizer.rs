@@ -30,12 +30,12 @@ impl ProjectionPushDown {
     ) -> LogicalPlan {
         use LogicalPlan::*;
         match logical_plan {
-            Projection { expr, input } => {
+            Projection { expr, input, .. } => {
                 accumulated_projections.extend(expr);
                 self.push_down(*input, accumulated_projections)
             }
-            DataFrameScan { df } => {
-                let lp = DataFrameScan { df };
+            DataFrameScan { df, schema } => {
+                let lp = DataFrameScan { df, schema };
                 self.finish_at_leaf(lp, accumulated_projections)
             }
             CsvScan {
@@ -96,13 +96,13 @@ impl PredicatePushDown {
                 acc_predicates.push(predicate);
                 self.push_down(*input, acc_predicates)
             }
-            Projection { expr, input } => {
+            Projection { expr, input, .. } => {
                 LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
                     .project(expr)
                     .build()
             }
-            DataFrameScan { df } => {
-                let lp = DataFrameScan { df };
+            DataFrameScan { df, schema } => {
+                let lp = DataFrameScan { df, schema };
                 self.finish_at_leaf(lp, acc_predicates)
             }
             CsvScan {

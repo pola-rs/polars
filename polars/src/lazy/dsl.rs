@@ -1,4 +1,6 @@
-use crate::lazy::prelude::*;
+use crate::lazy::utils::get_supertype;
+use crate::{lazy::prelude::*, prelude::*};
+use arrow::datatypes::{Field, Schema};
 use std::fmt;
 use std::rc::Rc;
 
@@ -34,6 +36,63 @@ pub enum Expr {
     //     args: Vec<Expr>,
     // },
     // Wildcard,
+}
+
+impl Expr {
+    /// Get DataType result of the expression. The schema is the input data.
+    fn get_type(&self, schema: &Schema) -> Result<ArrowDataType> {
+        use Expr::*;
+        match self {
+            Alias(expr, ..) => expr.get_type(schema),
+            Column(name) => Ok(schema.field_with_name(name)?.data_type().clone()),
+            Literal(sv) => Ok(sv.get_datatype()),
+            BinaryExpr { left, op, right } => match op {
+                Operator::Not
+                | Operator::Lt
+                | Operator::Gt
+                | Operator::Eq
+                | Operator::NotEq
+                | Operator::And
+                | Operator::LtEq
+                | Operator::GtEq
+                | Operator::Or
+                | Operator::NotLike
+                | Operator::Like => Ok(ArrowDataType::Boolean),
+                _ => {
+                    let left_type = left.get_type(schema)?;
+                    let right_type = right.get_type(schema)?;
+                    get_supertype(&left_type, &right_type)
+                }
+            },
+            Not(_) => Ok(ArrowDataType::Boolean),
+            IsNull(_) => Ok(ArrowDataType::Boolean),
+            IsNotNull(_) => Ok(ArrowDataType::Boolean),
+            Sort { expr, .. } => expr.get_type(schema),
+        }
+    }
+
+    /// Get Field result of the expression. The schema is the input data.
+    pub(crate) fn to_field(&self, schema: &Schema) -> Result<Field> {
+        use Expr::*;
+        match self {
+            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema)?, true)),
+            Column(name) => {
+                let field = schema.field_with_name(name).map(|f| f.clone())?;
+                Ok(field)
+            }
+            Literal(sv) => Ok(Field::new("lit", sv.get_datatype(), true)),
+            BinaryExpr { left, right, .. } => {
+                let left_type = left.get_type(schema)?;
+                let right_type = right.get_type(schema)?;
+                let expr_type = get_supertype(&left_type, &right_type)?;
+                Ok(Field::new("binary_expr", expr_type, true))
+            }
+            Not(_) => Ok(Field::new("not", ArrowDataType::Boolean, true)),
+            IsNull(_) => Ok(Field::new("is_null", ArrowDataType::Boolean, true)),
+            IsNotNull(_) => Ok(Field::new("is_not_null", ArrowDataType::Boolean, true)),
+            Sort { expr, .. } => expr.to_field(schema),
+        }
+    }
 }
 
 impl fmt::Debug for Expr {
