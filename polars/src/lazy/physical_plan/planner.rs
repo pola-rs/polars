@@ -20,7 +20,7 @@ impl DefaultPlanner {
         logical_plan: &LogicalPlan,
     ) -> Result<Rc<dyn Executor>> {
         match logical_plan {
-            LogicalPlan::Filter { input, predicate } => {
+            LogicalPlan::Selection { input, predicate } => {
                 let input = self.create_initial_physical_plan(input)?;
                 let predicate = self.create_physical_expr(predicate)?;
                 Ok(Rc::new(FilterExec::new(predicate, input)))
@@ -44,9 +44,7 @@ impl DefaultPlanner {
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Rc::new(PipeExec::new("projection", input, phys_expr)))
             }
-            LogicalPlan::DataFrameScan { df, schema: _ } => {
-                Ok(Rc::new(DataFrameExec::new(df.clone())))
-            }
+            LogicalPlan::DataFrameScan { df, .. } => Ok(Rc::new(DataFrameExec::new(df.clone()))),
             LogicalPlan::Sort { input, expr } => {
                 let input = self.create_initial_physical_plan(input)?;
                 let phys_expr = expr
@@ -54,6 +52,22 @@ impl DefaultPlanner {
                     .map(|e| self.create_physical_expr(e))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Rc::new(PipeExec::new("sort", input, phys_expr)))
+            }
+            LogicalPlan::Aggregate {
+                input, keys, aggs, ..
+            } => {
+                let input = self.create_initial_physical_plan(input)?;
+                let phys_aggs = aggs
+                    .iter()
+                    .map(|e| self.create_physical_expr(e))
+                    .collect::<Result<Vec<_>>>()?;
+                let phys_keys = keys
+                    .iter()
+                    .map(|e| self.create_physical_expr(e))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Rc::new(GroupByExec::new(
+                    "groupby", input, phys_keys, phys_aggs,
+                )))
             }
         }
     }

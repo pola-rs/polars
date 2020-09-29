@@ -5,7 +5,7 @@ pub use crate::lazy::{
         LogicalPlan, LogicalPlanBuilder, Operator, ScalarValue,
     },
     physical_plan::{
-        executors::{CsvExec, DataFrameExec, FilterExec, PipeExec},
+        executors::{CsvExec, DataFrameExec, FilterExec, GroupByExec, PipeExec},
         expressions::*,
         planner::DefaultPlanner,
         Executor, PhysicalExpr, PhysicalPlanner,

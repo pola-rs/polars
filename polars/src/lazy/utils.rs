@@ -1,4 +1,13 @@
-use crate::prelude::*;
+use crate::{lazy::prelude::*, prelude::*};
+
+pub fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> Schema {
+    let fields = expr
+        .iter()
+        .map(|expr| expr.to_field(schema))
+        .collect::<Result<Vec<_>>>()
+        .unwrap();
+    Schema::new(fields)
+}
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 pub fn get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Result<ArrowDataType> {

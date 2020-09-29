@@ -57,11 +57,16 @@ impl ProjectionPushDown {
                     .sort(expr)
                     .build()
             }
-            Filter { predicate, input } => {
+            Selection { predicate, input } => {
                 LogicalPlanBuilder::from(self.push_down(*input, accumulated_projections))
                     .filter(predicate)
                     .build()
             }
+            Aggregate {
+                input, keys, aggs, ..
+            } => LogicalPlanBuilder::from(self.push_down(*input, accumulated_projections))
+                .groupby(keys, aggs)
+                .build(),
         }
     }
 }
@@ -92,7 +97,7 @@ impl PredicatePushDown {
     fn push_down(&self, logical_plan: LogicalPlan, mut acc_predicates: Vec<Expr>) -> LogicalPlan {
         use LogicalPlan::*;
         match logical_plan {
-            Filter { predicate, input } => {
+            Selection { predicate, input } => {
                 acc_predicates.push(predicate);
                 self.push_down(*input, acc_predicates)
             }
@@ -124,6 +129,11 @@ impl PredicatePushDown {
                     .sort(expr)
                     .build()
             }
+            Aggregate {
+                input, keys, aggs, ..
+            } => LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
+                .groupby(keys, aggs)
+                .build(),
         }
     }
 }

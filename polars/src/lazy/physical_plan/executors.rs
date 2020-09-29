@@ -110,3 +110,47 @@ impl Executor for PipeExec {
         Ok(DataFrame::new_no_checks(selected_columns))
     }
 }
+/// Take an input Executor and a multiple expressions
+#[derive(Debug)]
+pub struct GroupByExec {
+    /// i.e. sort, projection
+    operation: &'static str,
+    input: Rc<dyn Executor>,
+    keys: Vec<Rc<dyn PhysicalExpr>>,
+    aggs: Vec<Rc<dyn PhysicalExpr>>,
+}
+
+impl GroupByExec {
+    pub(crate) fn new(
+        operation: &'static str,
+        input: Rc<dyn Executor>,
+        keys: Vec<Rc<dyn PhysicalExpr>>,
+        aggs: Vec<Rc<dyn PhysicalExpr>>,
+    ) -> Self {
+        Self {
+            operation,
+            input,
+            keys,
+            aggs,
+        }
+    }
+}
+
+impl Executor for GroupByExec {
+    fn execute(&self) -> Result<DataFrame> {
+        let df = self.input.execute()?;
+
+        // let selected_columns = self
+        //     .keys
+        //     .iter()
+        //     .map(|expr| expr.evaluate(&df).map(|series| series.name().to_owned()))
+        //     .collect::<Result<Vec<String>>>()?;
+        //
+        //
+        //
+        // df.groupby(&selected_columns)
+        //     .agg
+        // Ok(DataFrame::new_no_checks(selected_columns))
+        todo!()
+    }
+}

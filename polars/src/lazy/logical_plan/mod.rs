@@ -1,5 +1,8 @@
 pub(crate) mod optimizer;
-use crate::{lazy::prelude::*, prelude::*};
+use crate::{
+    lazy::{prelude::*, utils},
+    prelude::*,
+};
 use arrow::datatypes::DataType;
 use std::cell::RefCell;
 use std::{fmt, rc::Rc};
@@ -74,11 +77,13 @@ pub enum Operator {
     NotLike,
 }
 
+// https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 pub enum LogicalPlan {
-    Filter {
-        predicate: Expr,
+    // filter on a boolean mask
+    Selection {
         input: Box<LogicalPlan>,
+        predicate: Expr,
     },
     CsvScan {
         path: String,
@@ -90,7 +95,7 @@ pub enum LogicalPlan {
         df: Rc<RefCell<DataFrame>>,
         schema: Schema,
     },
-    // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
+    // horizontal selection
     Projection {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
@@ -100,20 +105,24 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         expr: Vec<Expr>,
     },
+    Aggregate {
+        input: Box<LogicalPlan>,
+        keys: Vec<Expr>,
+        aggs: Vec<Expr>,
+        schema: Schema,
+    },
 }
 
 impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
-            Filter { predicate, input } => write!(f, "Filter\n\t{:?} {:?}", predicate, input),
+            Selection { predicate, input } => write!(f, "Filter\n\t{:?} {:?}", predicate, input),
             CsvScan { path, .. } => write!(f, "CSVScan {}", path),
-            DataFrameScan { df, schema: _ } => {
-                let df = df.borrow();
-                write!(f, "{:?}", df.head(Some(1)))
-            }
+            DataFrameScan { schema: schema, .. } => write!(f, "{:?}", schema),
             Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
             Sort { input, expr } => write!(f, "Sort\n\t{:?}\n{:?}", expr, input),
+            Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
         }
     }
 }
@@ -125,10 +134,11 @@ impl LogicalPlan {
         use LogicalPlan::*;
         match self {
             DataFrameScan { schema, .. } => schema,
-            Filter { input, .. } => input.schema(),
+            Selection { input, .. } => input.schema(),
             CsvScan { schema, .. } => schema,
             Projection { schema, .. } => schema,
             Sort { input, .. } => input.schema(),
+            Aggregate { schema, .. } => schema,
         }
     }
     pub fn describe(&self) -> String {
@@ -148,13 +158,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project(self, expr: Vec<Expr>) -> Self {
-        let fields = expr
-            .iter()
-            .map(|expr| expr.to_field(self.0.schema()))
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        let schema = Schema::new(fields);
-
+        let schema = utils::expressions_to_schema(&expr, self.0.schema());
         LogicalPlan::Projection {
             expr,
             input: Box::new(self.0),
@@ -165,9 +169,23 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
-        LogicalPlan::Filter {
+        LogicalPlan::Selection {
             predicate,
             input: Box::new(self.0),
+        }
+        .into()
+    }
+
+    pub fn groupby(self, keys: Vec<Expr>, aggs: Vec<Expr>) -> Self {
+        let schema1 = utils::expressions_to_schema(&keys, self.0.schema());
+        let schema2 = utils::expressions_to_schema(&aggs, self.0.schema());
+        let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
+
+        LogicalPlan::Aggregate {
+            input: Box::new(self.0),
+            keys,
+            aggs,
+            schema,
         }
         .into()
     }
