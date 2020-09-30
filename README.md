@@ -20,7 +20,7 @@ notebook on `http://localhost:8891`. The notebooks are in the `/examples` direct
 Oh yeah.. and get a cup of coffee because compilation will take while during the first run.
 
 ## First run in Python
-A subset of the Polars functionality is also exposed through Python bindings. You can install them for linux with:
+A subset of the Polars functionality is also exposed through Python bindings. You can install them with:
 
 `$ pip install py-polars`
 

@@ -221,3 +221,30 @@ impl LogicalPlanBuilder {
         .into()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::lazy::prelude::*;
+    use crate::lazy::tests::get_df;
+
+    #[test]
+    fn test_lazy_logical_plan_schema() {
+        let df = get_df();
+        let lp = df
+            .clone()
+            .lazy()
+            .select(&[col("variety").alias("foo")])
+            .logical_plan;
+
+        println!("{:#?}", lp.schema().fields());
+        assert!(lp.schema().field_with_name("foo").is_ok());
+
+        let lp = df
+            .lazy()
+            .groupby("variety")
+            .agg(vec![col("sepal.width").agg_min()])
+            .logical_plan;
+        println!("{:#?}", lp.schema().fields());
+        assert!(lp.schema().field_with_name("sepal.width_min").is_ok());
+    }
+}

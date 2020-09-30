@@ -1,3 +1,4 @@
+use crate::frame::select::Selection;
 use crate::{lazy::prelude::*, prelude::*};
 use std::rc::Rc;
 
@@ -9,6 +10,7 @@ impl DataFrame {
 }
 
 /// abstraction over a logical plan
+#[derive(Clone)]
 pub struct LazyFrame {
     pub(crate) logical_plan: LogicalPlan,
 }
@@ -41,11 +43,21 @@ impl LazyFrame {
         let predicate_pushdown_opt = PredicatePushDown {};
         let projection_pushdown_opt = ProjectionPushDown {};
 
-        // NOTE: the order is important. Projection pushdown must be later than predicate pushdown,
-        // because I want the projections to occur before the filtering.
-        let logical_plan = predicate_pushdown_opt.optimize(logical_plan);
-        let logical_plan = projection_pushdown_opt.optimize(logical_plan);
-
+        let logical_plan = if cfg!(debug_assertions) {
+            // check that the optimization don't interfere with the schema result.
+            let prev_schema = logical_plan.schema().clone();
+            let logical_plan = predicate_pushdown_opt.optimize(logical_plan);
+            assert_eq!(logical_plan.schema(), &prev_schema);
+            let prev_schema = logical_plan.schema().clone();
+            let logical_plan = projection_pushdown_opt.optimize(logical_plan);
+            assert_eq!(logical_plan.schema(), &prev_schema);
+            logical_plan
+        } else {
+            // NOTE: the order is important. Projection pushdown must be later than predicate pushdown,
+            // because I want the projections to occur before the filtering.
+            let logical_plan = predicate_pushdown_opt.optimize(logical_plan);
+            projection_pushdown_opt.optimize(logical_plan)
+        };
         let planner = DefaultPlanner::default();
         let physical_plan = planner.create_physical_plan(&logical_plan)?;
         physical_plan.execute()
@@ -55,17 +67,43 @@ impl LazyFrame {
         self.get_plan_builder().filter(predicate).build().into()
     }
 
-    pub fn select<E: AsRef<[Expr]>>(self, expr: E) -> Self {
+    pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
         self.get_plan_builder()
-            .project(expr.as_ref().to_vec())
+            .project(exprs.as_ref().to_vec())
             .build()
             .into()
     }
 
-    // Todo: change api
-    pub(crate) fn groupby(self, keys: Vec<String>, column: &str) -> Self {
-        self.get_plan_builder()
-            .groupby(Rc::new(keys), vec![Expr::AggMin(Box::new(col(column)))])
+    pub fn groupby<'g, J, S: Selection<'g, J>>(self, by: S) -> LazyGroupBy {
+        let keys = by
+            .to_selection_vec()
+            .iter()
+            .map(|&s| s.to_owned())
+            .collect();
+        LazyGroupBy {
+            logical_plan: self.logical_plan,
+            keys,
+        }
+    }
+
+    // // Todo: change api
+    // pub(crate) fn groupby(self, keys: Vec<String>, column: &str) -> Self {
+    //     self.get_plan_builder()
+    //         .groupby(Rc::new(keys), vec![Expr::AggMin(Box::new(col(column)))])
+    //         .build()
+    //         .into()
+    // }
+}
+
+pub struct LazyGroupBy {
+    pub(crate) logical_plan: LogicalPlan,
+    keys: Vec<String>,
+}
+
+impl LazyGroupBy {
+    pub fn agg(self, aggs: Vec<Expr>) -> LazyFrame {
+        LogicalPlanBuilder::from(self.logical_plan)
+            .groupby(Rc::new(self.keys), aggs)
             .build()
             .into()
     }
@@ -132,7 +170,8 @@ mod test {
 
         let new = df
             .lazy()
-            .groupby(vec!["variety".into()], "sepal.width")
+            .groupby("variety")
+            .agg(vec![col("sepal.width").agg_min()])
             .collect()
             .unwrap();
 

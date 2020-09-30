@@ -88,7 +88,14 @@ impl Expr {
             IsNull(_) => Ok(Field::new("is_null", ArrowDataType::Boolean, true)),
             IsNotNull(_) => Ok(Field::new("is_not_null", ArrowDataType::Boolean, true)),
             Sort { expr, .. } => expr.to_field(schema),
-            AggMin(expr) => expr.to_field(schema),
+            AggMin(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    &format!("{}_min", field.name()),
+                    field.data_type().clone(),
+                    field.is_nullable(),
+                ))
+            }
         }
     }
 }
@@ -170,6 +177,11 @@ impl Expr {
     /// Run is_not_null operation on `Expr`.
     pub fn is_not_null(self) -> Self {
         Expr::IsNotNull(Box::new(self))
+    }
+
+    /// Reduce column to minimal value.
+    pub fn agg_min(self) -> Self {
+        Expr::AggMin(Box::new(self))
     }
 }
 
