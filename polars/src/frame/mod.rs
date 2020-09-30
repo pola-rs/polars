@@ -61,7 +61,7 @@ impl DataFrame {
             idx += 1;
         }
         if idx == self.columns.len() {
-            Err(PolarsError::NotFound)
+            Err(PolarsError::NotFound(name.into()))
         } else {
             Ok(idx)
         }
@@ -395,7 +395,9 @@ impl DataFrame {
 
     /// Select a single column by name.
     pub fn column(&self, name: &str) -> Result<&Series> {
-        let idx = self.find_idx_by_name(name).ok_or(PolarsError::NotFound)?;
+        let idx = self
+            .find_idx_by_name(name)
+            .ok_or(PolarsError::NotFound(name.into()))?;
         Ok(self.select_at_idx(idx).unwrap())
     }
 
@@ -599,7 +601,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> Result<&mut Self> {
         self.select_mut(column)
-            .ok_or(PolarsError::NotFound)
+            .ok_or(PolarsError::NotFound(name.to_string()))
             .map(|s| s.rename(name))?;
         Ok(self)
     }
@@ -701,7 +703,9 @@ impl DataFrame {
         F: FnOnce(&Series) -> S,
         S: IntoSeries,
     {
-        let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
+        let idx = self
+            .find_idx_by_name(column)
+            .ok_or(PolarsError::NotFound(column.to_string()))?;
         self.apply_at_idx(idx, f)
     }
 
@@ -858,7 +862,9 @@ impl DataFrame {
         F: FnOnce(&Series) -> Result<S>,
         S: IntoSeries,
     {
-        let idx = self.find_idx_by_name(column).ok_or(PolarsError::NotFound)?;
+        let idx = self
+            .find_idx_by_name(column)
+            .ok_or(PolarsError::NotFound(column.to_string()))?;
         self.may_apply_at_idx(idx, f)
     }
 

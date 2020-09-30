@@ -57,7 +57,7 @@ impl ScalarValue {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Operator {
     Eq,
     NotEq,

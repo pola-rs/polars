@@ -105,7 +105,7 @@ impl fmt::Debug for Expr {
         use Expr::*;
         match self {
             Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
-            Column(name) => write!(f, "{}", name),
+            Column(name) => write!(f, "COLUMN {}", name),
             Literal(v) => write!(f, "{:?}", v),
             BinaryExpr { left, op, right } => write!(f, "{:?} {:?} {:?}", left, op, right),
             Not(expr) => write!(f, "NOT {:?}", expr),

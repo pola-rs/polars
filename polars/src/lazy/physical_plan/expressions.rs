@@ -175,6 +175,19 @@ impl PhysicalExpr for AliasExpr {
             true,
         ))
     }
+
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+impl AggPhysicalExpr for AliasExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Series> {
+        let agg_expr = self.expr.as_agg_expr()?;
+        let mut agg = agg_expr.evaluate(df, groups)?;
+        agg.rename(&self.name);
+        Ok(agg)
+    }
 }
 
 #[derive(Debug)]

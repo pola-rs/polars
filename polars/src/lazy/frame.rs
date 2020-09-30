@@ -85,14 +85,6 @@ impl LazyFrame {
             keys,
         }
     }
-
-    // // Todo: change api
-    // pub(crate) fn groupby(self, keys: Vec<String>, column: &str) -> Self {
-    //     self.get_plan_builder()
-    //         .groupby(Rc::new(keys), vec![Expr::AggMin(Box::new(col(column)))])
-    //         .build()
-    //         .into()
-    // }
 }
 
 pub struct LazyGroupBy {
@@ -172,6 +164,27 @@ mod test {
             .lazy()
             .groupby("variety")
             .agg(vec![col("sepal.width").agg_min()])
+            .collect()
+            .unwrap();
+
+        println!("{:?}", new);
+        assert_eq!(new.shape(), (1, 2));
+    }
+
+    #[test]
+    fn test_lazy_pushdown_through_agg() {
+        // An aggregation changes the schema names, check if the pushdown succeeds.
+        let df = get_df();
+        let new = df
+            .lazy()
+            .groupby(&["variety"])
+            .agg(vec![
+                col("sepal.length").agg_min(),
+                col("petal.length").agg_min().alias("foo"),
+            ])
+            .select(&[col("foo")])
+            // second selection is to test if optimizer can handle that
+            .select(&[col("foo").alias("bar")])
             .collect()
             .unwrap();
 

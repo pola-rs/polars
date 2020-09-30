@@ -1,7 +1,32 @@
 use crate::lazy::prelude::*;
+use crate::prelude::*;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan;
+}
+
+/// Take an expression and unwrap to Expr::Column() if it exists.
+fn expr_to_root_column(expr: &Expr) -> Result<Expr> {
+    use Expr::*;
+    match expr {
+        Column(name) => Ok(Column(name.clone())),
+        Alias(expr, ..) => expr_to_root_column(expr),
+        Literal(_) => Err(PolarsError::Other("no root column exits for lit".into())),
+        // todo: return root columns? multiple?
+        BinaryExpr { .. } => Err(PolarsError::Other(
+            "no root column exits for binary expr".into(),
+        )),
+        Not(expr) => expr_to_root_column(expr),
+        IsNotNull(expr) => expr_to_root_column(expr),
+        IsNull(expr) => expr_to_root_column(expr),
+        Sort { expr, .. } => expr_to_root_column(expr),
+        AggMin(expr) => expr_to_root_column(expr),
+    }
+}
+
+// Result<[Column("foo"), Column("bar")]>
+fn expressions_to_root_columns(exprs: &[Expr]) -> Result<Vec<Expr>> {
+    exprs.into_iter().map(|e| expr_to_root_column(e)).collect()
 }
 
 pub struct ProjectionPushDown {}
@@ -17,26 +42,66 @@ impl ProjectionPushDown {
         }
     }
 
+    // check if a projection can be done upstream or should be done in this level of the tree.
+    fn check_upstream(&self, expr: &Expr, upstream_schema: &Schema) -> bool {
+        expr.to_field(upstream_schema).is_ok()
+    }
+
+    // split in a projection vec that can be pushed upstream and a projection vec that should be used
+    // in this node
+    fn split_acc_projections(
+        &self,
+        acc_projections: Vec<Expr>,
+        upstream_schema: &Schema,
+    ) -> (Vec<Expr>, Vec<Expr>) {
+        // If node above has as many columns as the projection there is nothing to pushdown.
+        if upstream_schema.fields().len() == acc_projections.len() {
+            let local_projections = acc_projections;
+            (vec![], local_projections)
+        } else {
+            let (acc_projections, local_projections) = acc_projections
+                .into_iter()
+                .partition(|expr| self.check_upstream(expr, upstream_schema));
+            (acc_projections, local_projections)
+        }
+    }
+
+    fn finish_node(
+        &self,
+        local_projections: Vec<Expr>,
+        builder: LogicalPlanBuilder,
+    ) -> LogicalPlan {
+        if local_projections.len() > 0 {
+            builder.project(local_projections).build()
+        } else {
+            builder.build()
+        }
+    }
+
     // We recurrently traverse the logical plan and every projection we encounter we add to the accumulated
     // projections.
     // Every non projection operation we recurse and rebuild that operation on the output of the recursion.
     // The recursion stops at the nodes of the logical plan. These nodes IO or existing DataFrames. On top of
     // these nodes we apply the projection.
     // TODO: renaming operations and joins interfere with the schema. We need to keep track of the schema somehow.
-    fn push_down(
-        &self,
-        logical_plan: LogicalPlan,
-        mut accumulated_projections: Vec<Expr>,
-    ) -> LogicalPlan {
+    fn push_down(&self, logical_plan: LogicalPlan, mut acc_projections: Vec<Expr>) -> LogicalPlan {
         use LogicalPlan::*;
         match logical_plan {
             Projection { expr, input, .. } => {
-                accumulated_projections.extend(expr);
-                self.push_down(*input, accumulated_projections)
+                for e in expr {
+                    acc_projections.push(e);
+                }
+
+                let (acc_projections, local_projections) =
+                    self.split_acc_projections(acc_projections, input.schema());
+
+                let lp = self.push_down(*input, acc_projections);
+                let builder = LogicalPlanBuilder::from(lp);
+                self.finish_node(local_projections, builder)
             }
             DataFrameScan { df, schema } => {
                 let lp = DataFrameScan { df, schema };
-                self.finish_at_leaf(lp, accumulated_projections)
+                self.finish_at_leaf(lp, acc_projections)
             }
             CsvScan {
                 path,
@@ -50,32 +115,37 @@ impl ProjectionPushDown {
                     has_header,
                     delimiter,
                 };
-                self.finish_at_leaf(lp, accumulated_projections)
+                self.finish_at_leaf(lp, acc_projections)
             }
             Sort {
                 input,
                 column,
                 reverse,
-            } => LogicalPlanBuilder::from(self.push_down(*input, accumulated_projections))
+            } => LogicalPlanBuilder::from(self.push_down(*input, acc_projections))
                 .sort(column, reverse)
                 .build(),
             Selection { predicate, input } => {
-                LogicalPlanBuilder::from(self.push_down(*input, accumulated_projections))
+                LogicalPlanBuilder::from(self.push_down(*input, acc_projections))
                     .filter(predicate)
                     .build()
             }
             Aggregate {
                 input, keys, aggs, ..
-            } => LogicalPlanBuilder::from(self.push_down(*input, accumulated_projections))
-                .groupby(keys, aggs)
-                .build(),
+            } => {
+                let (acc_projections, local_projections) =
+                    self.split_acc_projections(acc_projections, input.schema());
+
+                let lp = self.push_down(*input, acc_projections);
+                let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
+                self.finish_node(local_projections, builder)
+            }
         }
     }
 }
 
 impl Optimize for ProjectionPushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan {
-        self.push_down(logical_plan, vec![])
+        self.push_down(logical_plan, Vec::default())
     }
 }
 

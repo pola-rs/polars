@@ -11,11 +11,10 @@ pub enum PolarsError {
     ChunkMisMatch,
     #[error("Data types don't match")]
     DataTypeMisMatch,
-    #[error("Not found")]
-    NotFound,
+    #[error("Not found: {0}")]
+    NotFound(String),
     #[error("Lengths don't match")]
     ShapeMisMatch,
-    // TODO: use Cow
     #[error("{0}")]
     Other(Cow<'static, str>),
     #[error("No selection was made")]
