@@ -129,6 +129,9 @@ impl ProjectionPushDown {
                 let mut pushdown_left = vec![];
                 let mut pushdown_right = vec![];
                 let mut local_projection = vec![];
+                pushdown_left.push(Expr::Column(left_on.clone()));
+                pushdown_right.push(Expr::Column(right_on.clone()));
+
                 for proj in acc_projections {
                     let mut pushed_down = false;
                     if self.check_down_node(&proj, schema_left) {
@@ -139,9 +142,16 @@ impl ProjectionPushDown {
                         pushdown_right.push(proj.clone());
                         pushed_down = true;
                     }
-                    if !pushed_down {
-                        local_projection.push(proj)
-                    }
+                    // always also do the projection locally, because the join columns may not be
+                    // included in the projection.
+                    // for instance:
+                    //
+                    // SELECT [COLUMN temp]
+                    // FROM
+                    // JOIN (["days", "temp"]) WITH (["days", "rain"]) ON (left: days right: days)
+                    //
+                    // should drop the days column afther the join.
+                    local_projection.push(proj)
                 }
                 let lp_left = self.push_down(*input_left, pushdown_left);
                 let lp_right = self.push_down(*input_right, pushdown_right);

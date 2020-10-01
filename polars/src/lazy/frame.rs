@@ -30,6 +30,15 @@ impl LazyFrame {
         self.logical_plan.describe()
     }
 
+    pub fn describe_optimized_plan(&self) -> String {
+        let logical_plan = self.clone().get_plan_builder().build();
+        let predicate_pushdown_opt = PredicatePushDown {};
+        let projection_pushdown_opt = ProjectionPushDown {};
+        let logical_plan = predicate_pushdown_opt.optimize(logical_plan);
+        let logical_plan = projection_pushdown_opt.optimize(logical_plan);
+        logical_plan.describe()
+    }
+
     pub fn sort(self, by_column: &str, reverse: bool) -> Self {
         self.get_plan_builder()
             .sort(by_column.into(), reverse)
@@ -197,28 +206,6 @@ mod test {
             .select(&[col("foo")])
             // second selection is to test if optimizer can handle that
             .select(&[col("foo").alias("bar")])
-            .collect()
-            .unwrap();
-
-        println!("{:?}", new);
-    }
-
-    #[test]
-    fn test_lazy_pushdown_through_join() {
-        let left = df!("days" => &[0, 1, 2, 3, 4],
-        "temp" => [22.1, 19.9, 7., 2., 3.]
-        )
-        .unwrap();
-
-        let right = df!(
-        "days" => &[1, 2],
-        "rain" => &[0.1, 0.2]
-        )
-        .unwrap();
-
-        let new = left
-            .lazy()
-            .left_join(right.lazy(), "days", "days")
             .collect()
             .unwrap();
 

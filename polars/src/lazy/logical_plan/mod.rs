@@ -129,11 +129,30 @@ impl fmt::Debug for LogicalPlan {
         match self {
             Selection { predicate, input } => write!(f, "Filter\n\t{:?} {:?}", predicate, input),
             CsvScan { path, .. } => write!(f, "CSVScan {}", path),
-            DataFrameScan { schema, .. } => write!(f, "{:?}", schema),
+            DataFrameScan { schema, .. } => write!(
+                f,
+                "TABLE: {:?}",
+                schema
+                    .fields()
+                    .iter()
+                    .map(|f| f.name())
+                    .take(4)
+                    .collect::<Vec<_>>()
+            ),
             Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
             Sort { input, column, .. } => write!(f, "Sort\n\t{:?}\n{:?}", column, input),
             Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
-            Join { .. } => write!(f, "JOIN"),
+            Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                ..
+            } => write!(
+                f,
+                "JOIN ({:?}) WITH ({:?}) ON (left: {} right: {})",
+                input_left, input_right, left_on, right_on
+            ),
         }
     }
 }
@@ -285,6 +304,15 @@ pub enum JoinType {
 mod test {
     use crate::lazy::prelude::*;
     use crate::lazy::tests::get_df;
+    use crate::prelude::*;
+
+    fn compare_plans(lf: &LazyFrame) {
+        println!("LOGICAL PLAN\n\n{}\n", lf.describe_plan());
+        println!(
+            "OPTIMIZED LOGICAL PLAN\n\n{}\n",
+            lf.describe_optimized_plan()
+        );
+    }
 
     #[test]
     fn test_lazy_logical_plan_schema() {
@@ -305,5 +333,31 @@ mod test {
             .logical_plan;
         println!("{:#?}", lp.schema().fields());
         assert!(lp.schema().field_with_name("sepal.width_min").is_ok());
+    }
+
+    #[test]
+    fn test_lazy_logical_plan_join() {
+        let left = df!("days" => &[0, 1, 2, 3, 4],
+        "temp" => [22.1, 19.9, 7., 2., 3.]
+        )
+        .unwrap();
+
+        let right = df!(
+        "days" => &[1, 2],
+        "rain" => &[0.1, 0.2]
+        )
+        .unwrap();
+
+        let lf = left
+            .lazy()
+            .left_join(right.lazy(), "days", "days")
+            .select(&[col("temp")]);
+
+        compare_plans(&lf);
+
+        let df = lf.collect().unwrap();
+        println!("{:?}", df);
+
+        assert!(false)
     }
 }
