@@ -1,5 +1,7 @@
 use crate::lazy::prelude::*;
+use crate::lazy::utils::expr_to_root_column;
 use crate::prelude::*;
+use std::rc::Rc;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan;
@@ -52,6 +54,27 @@ impl ProjectionPushDown {
         } else {
             builder.build()
         }
+    }
+
+    fn join_push_down(
+        &self,
+        schema_left: &Schema,
+        schema_right: &Schema,
+        proj: &Expr,
+        pushdown_left: &mut Vec<Expr>,
+        pushdown_right: &mut Vec<Expr>,
+    ) -> bool {
+        let mut pushed_at_least_one = false;
+
+        if self.check_down_node(&proj, schema_left) {
+            pushdown_left.push(proj.clone());
+            pushed_at_least_one = true;
+        }
+        if self.check_down_node(&proj, schema_right) {
+            pushdown_right.push(proj.clone());
+            pushed_at_least_one = true;
+        }
+        pushed_at_least_one
     }
 
     // We recurrently traverse the logical plan and every projection we encounter we add to the accumulated
@@ -124,34 +147,75 @@ impl ProjectionPushDown {
                 how,
                 ..
             } => {
-                let schema_left = input_left.schema();
-                let schema_right = input_right.schema();
                 let mut pushdown_left = vec![];
                 let mut pushdown_right = vec![];
                 let mut local_projection = vec![];
-                pushdown_left.push(Expr::Column(left_on.clone()));
-                pushdown_right.push(Expr::Column(right_on.clone()));
 
-                for proj in acc_projections {
-                    let mut pushed_down = false;
-                    if self.check_down_node(&proj, schema_left) {
-                        pushdown_left.push(proj.clone());
-                        pushed_down = true;
+                // if there are no projections we don't have to do anything
+                if acc_projections.len() > 0 {
+                    let schema_left = input_left.schema();
+                    let schema_right = input_right.schema();
+
+                    // We need the join columns so we push the projection downwards
+                    pushdown_left.push(Expr::Column(left_on.clone()));
+                    pushdown_right.push(Expr::Column(right_on.clone()));
+
+                    for mut proj in acc_projections {
+                        let mut add_local = true;
+
+                        // if it is an alias we want to project the root column name downwards
+                        // but we don't want to project it a this level, otherwise we project both
+                        // the root and the alias, hence add_local = false.
+                        if let Expr::Alias(expr, name) = proj {
+                            let root_name = expr_to_root_column(&expr).unwrap();
+
+                            proj = Expr::Column(root_name);
+                            local_projection.push(Expr::Alias(Box::new(proj.clone()), name));
+
+                            // now we don
+                            add_local = false;
+                        }
+
+                        // Path for renamed columns due to the join. The column name of the left table
+                        // stays as is, the column of the right will have the "_right" suffix.
+                        // Thus joining two tables with both a foo column leads to ["foo", "foo_right"]
+                        if !self.join_push_down(
+                            schema_left,
+                            schema_right,
+                            &proj,
+                            &mut pushdown_left,
+                            &mut pushdown_right,
+                        ) {
+                            // Column name of the projection without any alias.
+                            let root_column_name = expr_to_root_column(&proj).unwrap();
+
+                            // If _right suffix exists we need to push a projection down without this
+                            // suffix.
+                            if root_column_name.ends_with("_right") {
+                                // downwards name is the name without the _right i.e. "foo".
+                                let (downwards_name, _) = root_column_name
+                                    .split_at(root_column_name.len() - "_right".len());
+
+                                // project downwards and immediately alias to prevent wrong projections
+                                let projection =
+                                    col(downwards_name).alias(&format!("{}_right", downwards_name));
+                                pushdown_right.push(projection);
+                                // locally we project the aliased column
+                                local_projection.push(proj);
+                            }
+                        } else if add_local {
+                            // always also do the projection locally, because the join columns may not be
+                            // included in the projection.
+                            // for instance:
+                            //
+                            // SELECT [COLUMN temp]
+                            // FROM
+                            // JOIN (["days", "temp"]) WITH (["days", "rain"]) ON (left: days right: days)
+                            //
+                            // should drop the days column afther the join.
+                            local_projection.push(proj)
+                        }
                     }
-                    if self.check_down_node(&proj, schema_right) {
-                        pushdown_right.push(proj.clone());
-                        pushed_down = true;
-                    }
-                    // always also do the projection locally, because the join columns may not be
-                    // included in the projection.
-                    // for instance:
-                    //
-                    // SELECT [COLUMN temp]
-                    // FROM
-                    // JOIN (["days", "temp"]) WITH (["days", "rain"]) ON (left: days right: days)
-                    //
-                    // should drop the days column afther the join.
-                    local_projection.push(proj)
                 }
                 let lp_left = self.push_down(*input_left, pushdown_left);
                 let lp_right = self.push_down(*input_right, pushdown_right);

@@ -150,7 +150,7 @@ impl fmt::Debug for LogicalPlan {
                 ..
             } => write!(
                 f,
-                "JOIN ({:?}) WITH ({:?}) ON (left: {} right: {})",
+                "JOIN\n\t({:?})\nWITH\n\t({:?})\nON (left: {} right: {})",
                 input_left, input_right, left_on, right_on
             ),
         }
@@ -189,6 +189,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project(self, expr: Vec<Expr>) -> Self {
+        // TODO: don't panic
         let schema = utils::expressions_to_schema(&expr, self.0.schema());
         LogicalPlan::Projection {
             expr,
@@ -261,25 +262,30 @@ impl LogicalPlanBuilder {
         let schema_left = self.0.schema();
         let schema_right = other.schema();
 
-        let mut set = FnvHashSet::default();
+        // column names of left table
+        let mut names = FnvHashSet::default();
+        // fields of new schema
+        let mut fields = vec![];
 
         for f in schema_left.fields() {
-            set.insert(f.clone());
+            names.insert(f.name());
+            fields.push(f.clone());
         }
 
         for f in schema_right.fields() {
-            if set.contains(f) {
-                let field = Field::new(
-                    &format!("{}_right", f.name()),
-                    f.data_type().clone(),
-                    f.is_nullable(),
-                );
-                set.insert(field);
-            } else {
-                set.insert(f.clone());
+            let name = f.name();
+
+            if name != &*right_on {
+                if names.contains(name) {
+                    let new_name = format!("{}_right", name);
+                    let field = Field::new(&new_name, f.data_type().clone(), f.is_nullable());
+                    fields.push(field)
+                } else {
+                    fields.push(f.clone())
+                }
             }
         }
-        let schema = Schema::new(set.into_iter().collect());
+        let schema = Schema::new(fields);
 
         LogicalPlan::Join {
             input_left: Box::new(self.0),
@@ -306,7 +312,7 @@ mod test {
     use crate::lazy::tests::get_df;
     use crate::prelude::*;
 
-    fn compare_plans(lf: &LazyFrame) {
+    fn print_plans(lf: &LazyFrame) {
         println!("LOGICAL PLAN\n\n{}\n", lf.describe_plan());
         println!(
             "OPTIMIZED LOGICAL PLAN\n\n{}\n",
@@ -338,7 +344,8 @@ mod test {
     #[test]
     fn test_lazy_logical_plan_join() {
         let left = df!("days" => &[0, 1, 2, 3, 4],
-        "temp" => [22.1, 19.9, 7., 2., 3.]
+        "temp" => [22.1, 19.9, 7., 2., 3.],
+        "rain" => &[0.1, 0.2, 0.3, 0.4, 0.5]
         )
         .unwrap();
 
@@ -348,16 +355,71 @@ mod test {
         )
         .unwrap();
 
-        let lf = left
-            .lazy()
-            .left_join(right.lazy(), "days", "days")
-            .select(&[col("temp")]);
+        // check if optimizations succeeds without selection
+        {
+            let lf = left
+                .clone()
+                .lazy()
+                .left_join(right.clone().lazy(), "days", "days");
 
-        compare_plans(&lf);
+            print_plans(&lf);
+            // implicitly checks logical plan == optimized logical plan
+            let df = lf.collect().unwrap();
+            println!("{:?}", df);
+        }
 
-        let df = lf.collect().unwrap();
-        println!("{:?}", df);
+        // check if optimization succeeds with selection
+        {
+            let lf = left
+                .clone()
+                .lazy()
+                .left_join(right.clone().lazy(), "days", "days")
+                .select(&[col("temp")]);
 
-        assert!(false)
+            print_plans(&lf);
+            let df = lf.collect().unwrap();
+            println!("{:?}", df);
+        }
+
+        // check if optimization succeeds with selection of a renamed column due to the join
+        {
+            let lf = left
+                .clone()
+                .lazy()
+                .left_join(right.clone().lazy(), "days", "days")
+                .select(&[col("temp"), col("rain_right")]);
+
+            print_plans(&lf);
+            let df = lf.collect().unwrap();
+            println!("{:?}", df);
+        }
+
+        // check if optimization succeeds with selection of the left and the right (renamed)
+        // column due to the join
+        {
+            let lf = left
+                .clone()
+                .lazy()
+                .left_join(right.clone().lazy(), "days", "days")
+                .select(&[col("temp"), col("rain"), col("rain_right")]);
+
+            print_plans(&lf);
+            let df = lf.collect().unwrap();
+            println!("{:?}", df);
+        }
+
+        // check if optimization succeeds with selection of the left and the right (renamed)
+        // column due to the join and an extra alias
+        {
+            let lf = left
+                .clone()
+                .lazy()
+                .left_join(right.clone().lazy(), "days", "days")
+                .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")]);
+
+            print_plans(&lf);
+            let df = lf.collect().unwrap();
+            println!("{:?}", df);
+        }
     }
 }

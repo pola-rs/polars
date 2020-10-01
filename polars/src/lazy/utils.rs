@@ -1,6 +1,18 @@
 use crate::{lazy::prelude::*, prelude::*};
+use std::rc::Rc;
 
-pub fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> Schema {
+// unpack alias(col) to name of the root column
+pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Rc<String>> {
+    match expr {
+        Expr::Column(name) => Ok(name.clone()),
+        Expr::Alias(expr, _) => expr_to_root_column(expr),
+        a => Err(PolarsError::Other(
+            format!("No root column name could be found for {:?}", a).into(),
+        )),
+    }
+}
+
+pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> Schema {
     let fields = expr
         .iter()
         .map(|expr| expr.to_field(schema))
@@ -10,7 +22,7 @@ pub fn expressions_to_schema(expr: &[Expr], schema: &Schema) -> Schema {
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
-pub fn get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Result<ArrowDataType> {
+pub(crate) fn get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Result<ArrowDataType> {
     match _get_supertype(l, r) {
         Some(dt) => Ok(dt),
         None => _get_supertype(r, l).ok_or_else(|| {
