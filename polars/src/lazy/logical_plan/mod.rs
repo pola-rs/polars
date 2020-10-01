@@ -4,6 +4,7 @@ use crate::{
     prelude::*,
 };
 use arrow::datatypes::DataType;
+use fnv::FnvHashSet;
 use std::cell::RefCell;
 use std::{fmt, rc::Rc};
 
@@ -112,6 +113,14 @@ pub enum LogicalPlan {
         aggs: Vec<Expr>,
         schema: Schema,
     },
+    Join {
+        input_left: Box<LogicalPlan>,
+        input_right: Box<LogicalPlan>,
+        schema: Schema,
+        how: JoinType,
+        left_on: Rc<String>,
+        right_on: Rc<String>,
+    },
 }
 
 impl fmt::Debug for LogicalPlan {
@@ -124,6 +133,7 @@ impl fmt::Debug for LogicalPlan {
             Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
             Sort { input, column, .. } => write!(f, "Sort\n\t{:?}\n{:?}", column, input),
             Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
+            Join { .. } => write!(f, "JOIN"),
         }
     }
 }
@@ -140,6 +150,7 @@ impl LogicalPlan {
             Projection { schema, .. } => schema,
             Sort { input, .. } => input.schema(),
             Aggregate { schema, .. } => schema,
+            Join { schema, .. } => schema,
         }
     }
     pub fn describe(&self) -> String {
@@ -220,6 +231,54 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
+
+    pub fn join(
+        self,
+        other: LogicalPlan,
+        how: JoinType,
+        left_on: Rc<String>,
+        right_on: Rc<String>,
+    ) -> Self {
+        let schema_left = self.0.schema();
+        let schema_right = other.schema();
+
+        let mut set = FnvHashSet::default();
+
+        for f in schema_left.fields() {
+            set.insert(f.clone());
+        }
+
+        for f in schema_right.fields() {
+            if set.contains(f) {
+                let field = Field::new(
+                    &format!("{}_right", f.name()),
+                    f.data_type().clone(),
+                    f.is_nullable(),
+                );
+                set.insert(field);
+            } else {
+                set.insert(f.clone());
+            }
+        }
+        let schema = Schema::new(set.into_iter().collect());
+
+        LogicalPlan::Join {
+            input_left: Box::new(self.0),
+            input_right: Box::new(other),
+            how,
+            schema,
+            left_on,
+            right_on,
+        }
+        .into()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum JoinType {
+    Left,
+    Inner,
+    Outer,
 }
 
 #[cfg(test)]

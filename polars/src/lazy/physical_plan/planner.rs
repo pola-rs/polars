@@ -1,3 +1,4 @@
+use crate::lazy::physical_plan::executors::JoinExec;
 use crate::{lazy::prelude::*, prelude::*};
 use std::rc::Rc;
 
@@ -64,6 +65,24 @@ impl DefaultPlanner {
                     .map(|e| self.create_physical_expr(e))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Rc::new(GroupByExec::new(input, keys.clone(), phys_aggs)))
+            }
+            LogicalPlan::Join {
+                input_left,
+                input_right,
+                how,
+                left_on,
+                right_on,
+                ..
+            } => {
+                let input_left = self.create_initial_physical_plan(input_left)?;
+                let input_right = self.create_initial_physical_plan(input_right)?;
+                Ok(Rc::new(JoinExec::new(
+                    input_left,
+                    input_right,
+                    how.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                )))
             }
         }
     }

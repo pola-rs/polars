@@ -169,3 +169,44 @@ impl Executor for GroupByExec {
         Ok(DataFrame::new_no_checks(columns))
     }
 }
+
+#[derive(Debug)]
+pub struct JoinExec {
+    input_left: Rc<dyn Executor>,
+    input_right: Rc<dyn Executor>,
+    how: JoinType,
+    left_on: Rc<String>,
+    right_on: Rc<String>,
+}
+
+impl JoinExec {
+    pub(crate) fn new(
+        input_left: Rc<dyn Executor>,
+        input_right: Rc<dyn Executor>,
+        how: JoinType,
+        left_on: Rc<String>,
+        right_on: Rc<String>,
+    ) -> Self {
+        JoinExec {
+            input_left,
+            input_right,
+            how,
+            left_on,
+            right_on,
+        }
+    }
+}
+
+impl Executor for JoinExec {
+    fn execute(&self) -> Result<DataFrame> {
+        let df_left = self.input_left.execute()?;
+        let df_right = self.input_right.execute()?;
+
+        use JoinType::*;
+        match self.how {
+            Left => df_left.left_join(&df_right, &self.left_on, &self.right_on),
+            Inner => df_left.inner_join(&df_right, &self.left_on, &self.right_on),
+            Outer => df_left.outer_join(&df_right, &self.left_on, &self.right_on),
+        }
+    }
+}

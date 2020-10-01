@@ -5,30 +5,6 @@ pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan;
 }
 
-/// Take an expression and unwrap to Expr::Column() if it exists.
-fn expr_to_root_column(expr: &Expr) -> Result<Expr> {
-    use Expr::*;
-    match expr {
-        Column(name) => Ok(Column(name.clone())),
-        Alias(expr, ..) => expr_to_root_column(expr),
-        Literal(_) => Err(PolarsError::Other("no root column exits for lit".into())),
-        // todo: return root columns? multiple?
-        BinaryExpr { .. } => Err(PolarsError::Other(
-            "no root column exits for binary expr".into(),
-        )),
-        Not(expr) => expr_to_root_column(expr),
-        IsNotNull(expr) => expr_to_root_column(expr),
-        IsNull(expr) => expr_to_root_column(expr),
-        Sort { expr, .. } => expr_to_root_column(expr),
-        AggMin(expr) => expr_to_root_column(expr),
-    }
-}
-
-// Result<[Column("foo"), Column("bar")]>
-fn expressions_to_root_columns(exprs: &[Expr]) -> Result<Vec<Expr>> {
-    exprs.into_iter().map(|e| expr_to_root_column(e)).collect()
-}
-
 pub struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
@@ -43,25 +19,25 @@ impl ProjectionPushDown {
     }
 
     // check if a projection can be done upstream or should be done in this level of the tree.
-    fn check_upstream(&self, expr: &Expr, upstream_schema: &Schema) -> bool {
-        expr.to_field(upstream_schema).is_ok()
+    fn check_down_node(&self, expr: &Expr, down_schema: &Schema) -> bool {
+        expr.to_field(down_schema).is_ok()
     }
 
-    // split in a projection vec that can be pushed upstream and a projection vec that should be used
+    // split in a projection vec that can be pushed down and a projection vec that should be used
     // in this node
     fn split_acc_projections(
         &self,
         acc_projections: Vec<Expr>,
-        upstream_schema: &Schema,
+        down_schema: &Schema,
     ) -> (Vec<Expr>, Vec<Expr>) {
         // If node above has as many columns as the projection there is nothing to pushdown.
-        if upstream_schema.fields().len() == acc_projections.len() {
+        if down_schema.fields().len() == acc_projections.len() {
             let local_projections = acc_projections;
             (vec![], local_projections)
         } else {
             let (acc_projections, local_projections) = acc_projections
                 .into_iter()
-                .partition(|expr| self.check_upstream(expr, upstream_schema));
+                .partition(|expr| self.check_down_node(expr, down_schema));
             (acc_projections, local_projections)
         }
     }
@@ -132,12 +108,46 @@ impl ProjectionPushDown {
             Aggregate {
                 input, keys, aggs, ..
             } => {
+                // TODO: projections of resulting columns of gb, should be renamed and pushed down
                 let (acc_projections, local_projections) =
                     self.split_acc_projections(acc_projections, input.schema());
 
                 let lp = self.push_down(*input, acc_projections);
                 let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
                 self.finish_node(local_projections, builder)
+            }
+            Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                how,
+                ..
+            } => {
+                let schema_left = input_left.schema();
+                let schema_right = input_right.schema();
+                let mut pushdown_left = vec![];
+                let mut pushdown_right = vec![];
+                let mut local_projection = vec![];
+                for proj in acc_projections {
+                    let mut pushed_down = false;
+                    if self.check_down_node(&proj, schema_left) {
+                        pushdown_left.push(proj.clone());
+                        pushed_down = true;
+                    }
+                    if self.check_down_node(&proj, schema_right) {
+                        pushdown_right.push(proj.clone());
+                        pushed_down = true;
+                    }
+                    if !pushed_down {
+                        local_projection.push(proj)
+                    }
+                }
+                let lp_left = self.push_down(*input_left, pushdown_left);
+                let lp_right = self.push_down(*input_right, pushdown_right);
+                let builder =
+                    LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
+                self.finish_node(local_projection, builder)
             }
         }
     }
@@ -208,6 +218,7 @@ impl PredicatePushDown {
             } => LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
                 .groupby(keys, aggs)
                 .build(),
+            Join { .. } => todo!(),
         }
     }
 }
