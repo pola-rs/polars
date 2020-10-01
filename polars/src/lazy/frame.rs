@@ -85,6 +85,18 @@ impl LazyFrame {
             keys,
         }
     }
+
+    pub fn left_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
+        self.get_plan_builder()
+            .join(
+                other.logical_plan,
+                JoinType::Left,
+                Rc::new(left_on.into()),
+                Rc::new(right_on.into()),
+            )
+            .build()
+            .into()
+    }
 }
 
 pub struct LazyGroupBy {
@@ -185,6 +197,28 @@ mod test {
             .select(&[col("foo")])
             // second selection is to test if optimizer can handle that
             .select(&[col("foo").alias("bar")])
+            .collect()
+            .unwrap();
+
+        println!("{:?}", new);
+    }
+
+    #[test]
+    fn test_lazy_pushdown_through_join() {
+        let left = df!("days" => &[0, 1, 2, 3, 4],
+        "temp" => [22.1, 19.9, 7., 2., 3.]
+        )
+        .unwrap();
+
+        let right = df!(
+        "days" => &[1, 2],
+        "rain" => &[0.1, 0.2]
+        )
+        .unwrap();
+
+        let new = left
+            .lazy()
+            .left_join(right.lazy(), "days", "days")
             .collect()
             .unwrap();
 

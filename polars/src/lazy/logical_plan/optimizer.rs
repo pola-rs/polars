@@ -218,7 +218,22 @@ impl PredicatePushDown {
             } => LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
                 .groupby(keys, aggs)
                 .build(),
-            Join { .. } => todo!(),
+            Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                how,
+                ..
+            } => {
+                // TODO: Probably very wrong this.
+                let lp_left = self.push_down(*input_left, acc_predicates.clone());
+                let lp_right = self.push_down(*input_right, acc_predicates);
+
+                LogicalPlanBuilder::from(lp_left)
+                    .join(lp_right, how, left_on, right_on)
+                    .build()
+            }
         }
     }
 }
