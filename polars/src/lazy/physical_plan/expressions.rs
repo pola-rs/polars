@@ -73,11 +73,26 @@ impl PhysicalExpr for BinaryExpr {
         let left = self.left.evaluate(df)?;
         let right = self.right.evaluate(df)?;
         match self.op {
-            Operator::Lt => {
-                let a = apply_method_all_series!(left, lt_series, &right);
-                Ok(a.into_series())
+            Operator::Gt => Ok(apply_method_all_series!(left, gt_series, &right).into_series()),
+            Operator::GtEq => {
+                Ok(apply_method_all_series!(left, gt_eq_series, &right).into_series())
             }
-            op => panic!(format!("Operator {:?} is not implemented", op)),
+            Operator::Lt => Ok(apply_method_all_series!(left, lt_series, &right).into_series()),
+            Operator::LtEq => {
+                Ok(apply_method_all_series!(left, lt_eq_series, &right).into_series())
+            }
+            Operator::Eq => Ok(apply_method_all_series!(left, eq_series, &right).into_series()),
+            Operator::NotEq => Ok(apply_method_all_series!(left, neq_series, &right).into_series()),
+            Operator::Plus => Ok(left + right),
+            Operator::Minus => Ok(left - right),
+            Operator::Multiply => Ok(left * right),
+            Operator::Divide => Ok(left / right),
+            Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
+            Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
+            Operator::Not => Ok(apply_method_all_series!(left, eq_series, &right).into_series()),
+            Operator::Like => todo!(),
+            Operator::NotLike => todo!(),
+            Operator::Modulus => todo!(),
         }
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {

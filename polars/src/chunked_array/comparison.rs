@@ -643,26 +643,24 @@ macro_rules! impl_bitwise_op  {
     ($self:ident, $rhs:ident, $arrow_method:ident, $op:tt) => {{
         if $self.chunk_id == $rhs.chunk_id {
             let result = $self.bit_operation($rhs, compute::$arrow_method);
-            match result {
-                Ok(v) => return Ok(v),
-                Err(_) => (),
-            };
-        };
-        let ca = $self
-            .into_iter()
-            .zip($rhs.into_iter())
-            .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
-                (Some(left), Some(right)) => Some(left $op right),
-                _ => None,
-            })
-            .collect();
-        Ok(ca)
+            result.unwrap()
+        } else {
+            let ca = $self
+                .into_iter()
+                .zip($rhs.into_iter())
+                .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
+                    (Some(left), Some(right)) => Some(left $op right),
+                    _ => None,
+                })
+                .collect();
+            ca
+        }
     }}
 
 }
 
 impl BitOr for &BooleanChunked {
-    type Output = Result<BooleanChunked>;
+    type Output = BooleanChunked;
 
     fn bitor(self, rhs: Self) -> Self::Output {
         impl_bitwise_op!(self, rhs, or, |)
@@ -670,7 +668,7 @@ impl BitOr for &BooleanChunked {
 }
 
 impl BitOr for BooleanChunked {
-    type Output = Result<BooleanChunked>;
+    type Output = BooleanChunked;
 
     fn bitor(self, rhs: Self) -> Self::Output {
         (&self).bitor(&rhs)
@@ -678,7 +676,7 @@ impl BitOr for BooleanChunked {
 }
 
 impl BitAnd for &BooleanChunked {
-    type Output = Result<BooleanChunked>;
+    type Output = BooleanChunked;
 
     fn bitand(self, rhs: Self) -> Self::Output {
         impl_bitwise_op!(self, rhs, and, &)
@@ -686,7 +684,7 @@ impl BitAnd for &BooleanChunked {
 }
 
 impl BitAnd for BooleanChunked {
-    type Output = Result<BooleanChunked>;
+    type Output = BooleanChunked;
 
     fn bitand(self, rhs: Self) -> Self::Output {
         (&self).bitand(&rhs)

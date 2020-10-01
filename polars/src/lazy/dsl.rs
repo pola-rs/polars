@@ -236,3 +236,11 @@ pub fn lit<L: Literal>(t: L) -> Expr {
 pub fn not(expr: Expr) -> Expr {
     Expr::Not(Box::new(expr))
 }
+
+pub fn is_null(expr: Expr) -> Expr {
+    Expr::IsNull(Box::new(expr))
+}
+
+pub fn is_not_null(expr: Expr) -> Expr {
+    Expr::IsNotNull(Box::new(expr))
+}
