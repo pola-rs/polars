@@ -1,7 +1,13 @@
 use crate::lazy::prelude::*;
-use crate::lazy::utils::expr_to_root_column;
+use crate::lazy::utils::{expr_to_root_column, rename_expr_root_name};
 use crate::prelude::*;
+use fnv::FnvHashMap;
 use std::rc::Rc;
+
+// check if a selection/projection can be done on the downwards schema
+fn check_down_node(expr: &Expr, down_schema: &Schema) -> bool {
+    expr.to_field(down_schema).is_ok()
+}
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan;
@@ -20,11 +26,6 @@ impl ProjectionPushDown {
         }
     }
 
-    // check if a projection can be done upstream or should be done in this level of the tree.
-    fn check_down_node(&self, expr: &Expr, down_schema: &Schema) -> bool {
-        expr.to_field(down_schema).is_ok()
-    }
-
     // split in a projection vec that can be pushed down and a projection vec that should be used
     // in this node
     fn split_acc_projections(
@@ -39,7 +40,7 @@ impl ProjectionPushDown {
         } else {
             let (acc_projections, local_projections) = acc_projections
                 .into_iter()
-                .partition(|expr| self.check_down_node(expr, down_schema));
+                .partition(|expr| check_down_node(expr, down_schema));
             (acc_projections, local_projections)
         }
     }
@@ -66,11 +67,11 @@ impl ProjectionPushDown {
     ) -> bool {
         let mut pushed_at_least_one = false;
 
-        if self.check_down_node(&proj, schema_left) {
+        if check_down_node(&proj, schema_left) {
             pushdown_left.push(proj.clone());
             pushed_at_least_one = true;
         }
-        if self.check_down_node(&proj, schema_right) {
+        if check_down_node(&proj, schema_right) {
             pushdown_right.push(proj.clone());
             pushed_at_least_one = true;
         }
@@ -236,28 +237,73 @@ impl Optimize for ProjectionPushDown {
 pub struct PredicatePushDown {}
 
 impl PredicatePushDown {
-    fn finish_at_leaf(&self, lp: LogicalPlan, acc_predicates: Vec<Expr>) -> LogicalPlan {
+    fn finish_at_leaf(
+        &self,
+        lp: LogicalPlan,
+        acc_predicates: FnvHashMap<Rc<String>, Expr>,
+    ) -> LogicalPlan {
         match acc_predicates.len() {
             // No filter in the logical plan
             0 => lp,
             _ => {
+                // TODO: create a single predicate
                 let mut builder = LogicalPlanBuilder::from(lp);
-                for expr in acc_predicates {
-                    builder = builder.filter(expr);
+                for expr in acc_predicates.values() {
+                    builder = builder.filter(expr.clone());
                 }
                 builder.build()
             }
         }
     }
 
-    fn push_down(&self, logical_plan: LogicalPlan, mut acc_predicates: Vec<Expr>) -> LogicalPlan {
+    fn finish_node(
+        &self,
+        local_predicates: Vec<Expr>,
+        mut builder: LogicalPlanBuilder,
+    ) -> LogicalPlan {
+        if local_predicates.len() > 0 {
+            for expr in local_predicates {
+                builder = builder.filter(expr);
+            }
+            builder.build()
+        } else {
+            builder.build()
+        }
+    }
+
+    // acc predicates maps the root column names to predicates
+    fn push_down(
+        &self,
+        logical_plan: LogicalPlan,
+        mut acc_predicates: FnvHashMap<Rc<String>, Expr>,
+    ) -> LogicalPlan {
         use LogicalPlan::*;
+
         match logical_plan {
             Selection { predicate, input } => {
-                acc_predicates.push(predicate);
+                match expr_to_root_column(&predicate) {
+                    Ok(name) => {
+                        acc_predicates.insert(name, predicate);
+                    }
+                    Err(_) => panic!("implement logic for binary expr with 2 root columns"),
+                }
                 self.push_down(*input, acc_predicates)
             }
             Projection { expr, input, .. } => {
+                // maybe update predicate name if a projection is an alias
+                for e in &expr {
+                    // check if there is an alias
+                    if let Expr::Alias(e, name) = e {
+                        // if this alias refers to one of the predicates in the upper nodes
+                        // we rename the column of the predicate before we push it downwards.
+                        if let Some(predicate) = acc_predicates.remove(name) {
+                            let new_name = expr_to_root_column(e).unwrap();
+                            let new_predicate =
+                                rename_expr_root_name(&predicate, new_name.clone()).unwrap();
+                            acc_predicates.insert(new_name, new_predicate);
+                        }
+                    }
+                }
                 LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
                     .project(expr)
                     .build()
@@ -300,13 +346,32 @@ impl PredicatePushDown {
                 how,
                 ..
             } => {
-                // TODO: Probably very wrong this.
-                let lp_left = self.push_down(*input_left, acc_predicates.clone());
-                let lp_right = self.push_down(*input_right, acc_predicates);
+                let schema_left = input_left.schema();
+                let schema_right = input_right.schema();
 
-                LogicalPlanBuilder::from(lp_left)
-                    .join(lp_right, how, left_on, right_on)
-                    .build()
+                let mut pushdown_left = FnvHashMap::default();
+                let mut pushdown_right = FnvHashMap::default();
+                let mut local_predicates = vec![];
+
+                for predicate in acc_predicates.values() {
+                    if check_down_node(&predicate, schema_left) {
+                        let name = Rc::new(predicate.to_field(schema_left).unwrap().name().clone());
+                        pushdown_left.insert(name, predicate.clone());
+                    } else if check_down_node(&predicate, schema_right) {
+                        let name =
+                            Rc::new(predicate.to_field(schema_right).unwrap().name().clone());
+                        pushdown_right.insert(name, predicate.clone());
+                    } else {
+                        local_predicates.push(predicate.clone())
+                    }
+                }
+
+                let lp_left = self.push_down(*input_left, pushdown_left);
+                let lp_right = self.push_down(*input_right, pushdown_right);
+
+                let builder =
+                    LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
+                self.finish_node(local_predicates, builder)
             }
         }
     }
@@ -314,7 +379,7 @@ impl PredicatePushDown {
 
 impl Optimize for PredicatePushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan {
-        self.push_down(logical_plan, vec![])
+        self.push_down(logical_plan, FnvHashMap::default())
     }
 }
 

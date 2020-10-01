@@ -127,7 +127,7 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
-            Selection { predicate, input } => write!(f, "Filter\n\t{:?} {:?}", predicate, input),
+            Selection { predicate, input } => write!(f, "Filter {:?}\n{:?}", predicate, input),
             CsvScan { path, .. } => write!(f, "CSVScan {}", path),
             DataFrameScan { schema, .. } => write!(
                 f,
@@ -416,6 +416,21 @@ mod test {
                 .lazy()
                 .left_join(right.clone().lazy(), "days", "days")
                 .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")]);
+
+            print_plans(&lf);
+            let df = lf.collect().unwrap();
+            println!("{:?}", df);
+        }
+
+        // check if optimization succeeds with selection of the left and the right (renamed)
+        // column due to the join and an extra alias
+        {
+            let lf = left
+                .clone()
+                .lazy()
+                .left_join(right.clone().lazy(), "days", "days")
+                .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")])
+                .filter(col("foo").lt(lit(0.3)));
 
             print_plans(&lf);
             let df = lf.collect().unwrap();

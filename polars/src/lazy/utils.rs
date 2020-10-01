@@ -6,6 +6,72 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Rc<String>> {
     match expr {
         Expr::Column(name) => Ok(name.clone()),
         Expr::Alias(expr, _) => expr_to_root_column(expr),
+        Expr::Not(expr) => expr_to_root_column(expr),
+        Expr::IsNull(expr) => expr_to_root_column(expr),
+        Expr::IsNotNull(expr) => expr_to_root_column(expr),
+        Expr::BinaryExpr { left, right, .. } => match expr_to_root_column(left) {
+            Err(_) => expr_to_root_column(right),
+            Ok(name) => match expr_to_root_column(right) {
+                Ok(_) => Err(PolarsError::Other(
+                    format!(
+                        "cannot find root column for binary expression {:?}, {:?}",
+                        left, right
+                    )
+                    .into(),
+                )),
+                Err(_) => Ok(name),
+            },
+        },
+        Expr::Sort { expr, .. } => expr_to_root_column(expr),
+        a => Err(PolarsError::Other(
+            format!("No root column name could be found for {:?}", a).into(),
+        )),
+    }
+}
+
+pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Rc<String>) -> Result<Expr> {
+    match expr {
+        Expr::Column(_) => Ok(Expr::Column(new_name)),
+        Expr::Alias(expr, alias) => rename_expr_root_name(expr, new_name)
+            .map(|expr| Expr::Alias(Box::new(expr), alias.clone())),
+        Expr::Not(expr) => {
+            rename_expr_root_name(expr, new_name).map(|expr| Expr::Not(Box::new(expr)))
+        }
+        Expr::IsNull(expr) => {
+            rename_expr_root_name(expr, new_name).map(|expr| Expr::IsNull(Box::new(expr)))
+        }
+        Expr::IsNotNull(expr) => {
+            rename_expr_root_name(expr, new_name).map(|expr| Expr::IsNotNull(Box::new(expr)))
+        }
+        Expr::BinaryExpr { left, right, op } => {
+            match rename_expr_root_name(left, new_name.clone()) {
+                Err(_) => rename_expr_root_name(right, new_name).map(|right| Expr::BinaryExpr {
+                    left: Box::new(*left.clone()),
+                    op: op.clone(),
+                    right: Box::new(right),
+                }),
+                Ok(expr_left) => match rename_expr_root_name(right, new_name) {
+                    Ok(_) => Err(PolarsError::Other(
+                        format!(
+                            "cannot find root column for binary expression {:?}, {:?}",
+                            left, right
+                        )
+                        .into(),
+                    )),
+                    Err(_) => Ok(Expr::BinaryExpr {
+                        left: Box::new(expr_left),
+                        op: op.clone(),
+                        right: Box::new(*right.clone()),
+                    }),
+                },
+            }
+        }
+        Expr::Sort { expr, reverse } => {
+            rename_expr_root_name(expr, new_name).map(|expr| Expr::Sort {
+                expr: Box::new(expr),
+                reverse: *reverse,
+            })
+        }
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),
         )),
