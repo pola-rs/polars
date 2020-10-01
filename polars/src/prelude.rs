@@ -30,7 +30,10 @@ pub use crate::{
         },
         DataFrame, IntoSeries,
     },
-    series::{arithmetic::LhsNumOps, NamedFrom, Series},
+    series::{
+        arithmetic::{LhsNumOps, NumOpsDispatch},
+        NamedFrom, Series,
+    },
     testing::*,
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};

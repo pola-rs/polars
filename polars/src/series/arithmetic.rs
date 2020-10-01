@@ -2,7 +2,7 @@ use crate::prelude::*;
 use num::{Num, NumCast, ToPrimitive};
 use std::ops;
 
-pub(super) trait NumOpsDispatch {
+pub trait NumOpsDispatch {
     fn subtract(&self, _rhs: &Series) -> Result<Series> {
         Err(PolarsError::InvalidOperation)
     }
@@ -15,6 +15,9 @@ pub(super) trait NumOpsDispatch {
     fn divide(&self, _rhs: &Series) -> Result<Series> {
         Err(PolarsError::InvalidOperation)
     }
+    fn remainder(&self, _rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation)
+    }
 }
 
 impl<T> NumOpsDispatch for ChunkedArray<T>
@@ -24,6 +27,7 @@ where
         + ops::Sub<Output = T::Native>
         + ops::Mul<Output = T::Native>
         + ops::Div<Output = T::Native>
+        + ops::Rem<Output = T::Native>
         + num::Zero
         + num::One,
 {
@@ -45,6 +49,11 @@ where
     fn divide(&self, rhs: &Series) -> Result<Series> {
         let rhs = self.unpack_series_matching_type(rhs)?;
         let out = self / rhs;
+        Ok(out.into_series())
+    }
+    fn remainder(&self, rhs: &Series) -> Result<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self % rhs;
         Ok(out.into_series())
     }
 }

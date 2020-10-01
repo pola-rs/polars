@@ -865,14 +865,8 @@ mod test {
     fn test_bitwise_ops() {
         let a = BooleanChunked::new_from_slice("a", &[true, false, false]);
         let b = BooleanChunked::new_from_opt_slice("b", &[Some(true), Some(true), None]);
-        assert_eq!(
-            Vec::from((&a | &b).unwrap()),
-            &[Some(true), Some(true), None]
-        );
-        assert_eq!(
-            Vec::from((&a & &b).unwrap()),
-            &[Some(true), Some(false), None]
-        );
+        assert_eq!(Vec::from(&a | &b), &[Some(true), Some(true), None]);
+        assert_eq!(Vec::from(&a & &b), &[Some(true), Some(false), None]);
         assert_eq!(Vec::from(!b), &[Some(false), Some(false), None]);
     }
 

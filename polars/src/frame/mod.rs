@@ -828,10 +828,8 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
     ///
     /// // create a mask
-    /// let mask = || {
-    ///     (df.column("values")?.lt_eq(1) | df.column("values")?.gt_eq(5))
-    /// };
-    /// let mask = mask().unwrap();
+    /// let values = df.column("values").unwrap();
+    /// let mask = values.lt_eq(1) | values.gt_eq(5);
     ///
     /// df.may_apply("foo", |s| {
     ///     s.utf8()?

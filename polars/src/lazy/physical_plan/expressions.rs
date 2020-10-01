@@ -92,7 +92,9 @@ impl PhysicalExpr for BinaryExpr {
             Operator::Not => Ok(apply_method_all_series!(left, eq_series, &right).into_series()),
             Operator::Like => todo!(),
             Operator::NotLike => todo!(),
-            Operator::Modulus => todo!(),
+            Operator::Modulus => {
+                apply_method_all_series!(left, remainder, &right).map(|ca| ca.into_series())
+            }
         }
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {

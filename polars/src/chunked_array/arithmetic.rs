@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::{array::ArrayRef, compute};
 use num::{Num, NumCast, ToPrimitive};
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
 // TODO: Add Boolean arithmetic
@@ -134,6 +134,18 @@ where
     }
 }
 
+impl<T> Rem for &ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Rem<Output = T::Native>,
+{
+    type Output = ChunkedArray<T>;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        apply_operand_on_chunkedarray_by_iter!(self, rhs, %)
+    }
+}
+
 impl<T> Sub for &ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -167,11 +179,7 @@ where
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        if self.chunk_id == rhs.chunk_id {
-            (&self).add(&rhs)
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, +)
-        }
+        (&self).add(&rhs)
     }
 }
 
@@ -221,6 +229,18 @@ where
 
     fn sub(self, rhs: Self) -> Self::Output {
         (&self).sub(&rhs)
+    }
+}
+
+impl<T> Rem for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Rem<Output = T::Native>,
+{
+    type Output = ChunkedArray<T>;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        (&self).rem(&rhs)
     }
 }
 
@@ -328,6 +348,28 @@ where
         } else {
             self.into_iter()
                 .map(|opt_val| opt_val.map(|val| val * multiplier))
+                .collect()
+        }
+    }
+}
+
+impl<T, N> Rem<N> for &ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+    N: Num + ToPrimitive,
+    T::Native: Rem<Output = T::Native>,
+{
+    type Output = ChunkedArray<T>;
+
+    fn rem(self, rhs: N) -> Self::Output {
+        let operand: T::Native = NumCast::from(rhs).unwrap();
+        if self.is_optimal_aligned() {
+            let intermed: Xob<_> = self.into_no_null_iter().map(|val| val % operand).collect();
+            intermed.into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_val| opt_val.map(|val| val % operand))
                 .collect()
         }
     }
