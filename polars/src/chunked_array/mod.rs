@@ -603,7 +603,7 @@ where
         buffer: Option<Buffer>,
         null_count: usize,
     ) -> Self {
-        let len = values.0.len();
+        let len = values.len();
         let arr = Arc::new(aligned_vec_to_primitive_array::<T>(
             values, buffer, null_count,
         ));

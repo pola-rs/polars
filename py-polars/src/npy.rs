@@ -4,13 +4,16 @@ use numpy::{
     ToNpyDims, PY_ARRAY_API,
 };
 use numpy::{Element, PyArray1};
-use polars::prelude::*;
+use polars::chunked_array::builder::memory;
 use pyo3::prelude::*;
 use std::{mem, ptr};
 
 /// Create an empty numpy array arrows 64 byte alignment
 pub fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArray1<T>, *mut T) {
-    let mut buf: Vec<T> = Vec::with_capacity_aligned(size);
+    let t_size = std::mem::size_of::<T>();
+    let capacity = size * t_size;
+    let ptr = memory::allocate_aligned(capacity) as *mut T;
+    let mut buf = unsafe { Vec::from_raw_parts(ptr, 0, capacity) };
     unsafe { buf.set_len(size) }
     // modified from
     // numpy-0.10.0/src/array.rs:375

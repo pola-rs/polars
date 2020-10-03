@@ -2,15 +2,15 @@ use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use arrow::array::{ArrayBuilder, ArrayDataBuilder, ArrayRef};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
+pub use arrow::memory;
 use arrow::{
     array::{Array, ArrayData, LargeListBuilder, PrimitiveArray, PrimitiveBuilder, StringBuilder},
     buffer::Buffer,
-    memory,
     util::bit_util,
 };
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -240,10 +240,10 @@ pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
     null_bit_buffer: Option<Buffer>,
     null_count: usize,
 ) -> PrimitiveArray<T> {
-    let values = values.into_inner();
+    let values = unsafe { values.into_inner() };
     let vec_len = values.len();
 
-    let me = ManuallyDrop::new(values);
+    let me = mem::ManuallyDrop::new(values);
     let ptr = me.as_ptr() as *const u8;
     let len = me.len() * std::mem::size_of::<T::Native>();
     let capacity = me.capacity() * std::mem::size_of::<T::Native>();
@@ -261,25 +261,25 @@ pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
     PrimitiveArray::<T>::from(data)
 }
 
-pub trait AlignedAlloc<T> {
-    fn with_capacity_aligned(size: usize) -> Vec<T>;
+#[derive(Debug)]
+pub struct AlignedVec<T> {
+    inner: Vec<T>,
+    capacity: usize,
+    // if into_inner is called, this will be true and we can use the default Vec's destructor
+    taken: bool,
 }
 
-impl<T> AlignedAlloc<T> for Vec<T> {
-    /// Create a new Vec where first bytes memory address has an alignment of 64 bytes, as described
-    /// by arrow spec.
-    /// Read more:
-    /// https://github.com/rust-ndarray/ndarray/issues/771
-    fn with_capacity_aligned(size: usize) -> Vec<T> {
-        // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
-        let t_size = std::mem::size_of::<T>();
-        let capacity = size * t_size;
-        let ptr = memory::allocate_aligned(capacity) as *mut T;
-        unsafe { Vec::from_raw_parts(ptr, 0, capacity) }
+impl<T> Drop for AlignedVec<T> {
+    fn drop(&mut self) {
+        if !self.taken {
+            let inner = mem::take(&mut self.inner);
+            let mut me = mem::ManuallyDrop::new(inner);
+            let ptr: *mut T = me.as_mut_ptr();
+            let ptr = ptr as *mut u8;
+            unsafe { memory::free_aligned(ptr, self.capacity) }
+        }
     }
 }
-
-pub struct AlignedVec<T>(pub Vec<T>);
 
 impl<T> FromIterator<T> for AlignedVec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
@@ -287,28 +287,69 @@ impl<T> FromIterator<T> for AlignedVec<T> {
         let sh = iter.size_hint();
         let size = sh.1.unwrap_or(sh.0);
 
-        let mut inner = Vec::with_capacity_aligned(size);
+        let mut av = Self::with_capacity_aligned(size);
 
         while let Some(v) = iter.next() {
-            inner.push(v)
+            unsafe { av.push(v) }
         }
 
         // Iterator size hint wasn't correct and reallocation has occurred
-        assert!(inner.len() <= size);
-        AlignedVec(inner)
+        assert!(av.len() <= size);
+        av
     }
 }
 
 impl<T> AlignedVec<T> {
-    pub fn new(v: Vec<T>) -> Result<Self> {
-        if v.as_ptr() as usize % 64 != 0 {
-            Err(PolarsError::MemoryNotAligned)
-        } else {
-            Ok(AlignedVec(v))
+    /// Create a new Vec where first bytes memory address has an alignment of 64 bytes, as described
+    /// by arrow spec.
+    /// Read more:
+    /// https://github.com/rust-ndarray/ndarray/issues/771
+    pub fn with_capacity_aligned(size: usize) -> Self {
+        // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
+        let t_size = std::mem::size_of::<T>();
+        let capacity = size * t_size;
+        let ptr = memory::allocate_aligned(capacity) as *mut T;
+        let v = unsafe { Vec::from_raw_parts(ptr, 0, capacity) };
+        AlignedVec {
+            inner: v,
+            capacity,
+            taken: false,
         }
     }
-    pub fn into_inner(self) -> Vec<T> {
-        self.0
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub unsafe fn from_ptr(ptr: usize, len: usize, capacity: usize) -> Self {
+        assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
+        let ptr = ptr as *mut T;
+        let v = Vec::from_raw_parts(ptr, len, capacity);
+        Self {
+            inner: v,
+            capacity,
+            taken: false,
+        }
+    }
+
+    /// Take ownership of the Vec. This is UB because the destructor of Vec<T> probably has a different
+    /// alignment than what we allocated.
+    unsafe fn into_inner(mut self) -> Vec<T> {
+        let inner = mem::take(&mut self.inner);
+        self.taken = true;
+        inner
+    }
+
+    /// Push at the end of the Vec. This is unsafe because a push when the capacity of the
+    /// inner Vec is reached will reallocate the Vec without the alignment, leaving this destructor's
+    /// alignment incorrect
+    pub unsafe fn push(&mut self, value: T) {
+        debug_assert!(self.inner.len() < self.capacity);
+        self.inner.push(value)
+    }
+
+    pub fn as_ptr(&self) -> *const T {
+        self.inner.as_ptr()
     }
 }
 
@@ -606,13 +647,15 @@ mod test {
     #[test]
     fn from_vec() {
         // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
-        let mut v = Vec::with_capacity_aligned(2);
-        v.push(1);
-        v.push(2);
+        let mut v = AlignedVec::with_capacity_aligned(2);
+        unsafe {
+            v.push(1);
+            v.push(2);
+        }
 
         let ptr = v.as_ptr();
         assert_eq!((ptr as usize) % 64, 0);
-        let a = aligned_vec_to_primitive_array::<Int32Type>(AlignedVec::new(v).unwrap(), None, 0);
+        let a = aligned_vec_to_primitive_array::<Int32Type>(v, None, 0);
         assert_eq!(a.value_slice(0, 2), &[1, 2])
     }
 

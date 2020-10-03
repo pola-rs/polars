@@ -1,9 +1,6 @@
 use crate::datatypes::DataType;
 use crate::error::PyPolarsEr;
-use crate::{
-    dispatch::ApplyLambda,
-    npy::{self, aligned_array},
-};
+use crate::{dispatch::ApplyLambda, npy::aligned_array};
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use polars::prelude::*;
@@ -629,8 +626,7 @@ macro_rules! impl_unsafe_from_ptr {
     ($name:ident, $series_variant:ident) => {
         impl PySeries {
             fn $name(&self, ptr: usize, len: usize) -> Self {
-                let v = unsafe { npy::vec_from_ptr(ptr, len) };
-                let av = AlignedVec::new(v).unwrap();
+                let av = unsafe { AlignedVec::from_ptr(ptr, len, len) };
                 let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
                 let ca = ChunkedArray::new_from_owned_with_null_bitmap(
                     self.name(),

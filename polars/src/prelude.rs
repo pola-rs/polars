@@ -3,7 +3,7 @@ pub use crate::{
     chunked_array::{
         arithmetic::Pow,
         builder::{
-            AlignedAlloc, AlignedVec, BooleanChunkedBuilder, LargListBuilderTrait,
+            AlignedVec, BooleanChunkedBuilder, LargListBuilderTrait,
             LargeListPrimitiveChunkedBuilder, LargeListUtf8ChunkedBuilder, NewChunkedArray,
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },

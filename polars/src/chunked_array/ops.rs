@@ -270,15 +270,13 @@ where
                 .enumerate()
                 .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(b, a))
                 .map(|(idx, _v)| idx)
-                .collect::<AlignedVec<usize>>()
-                .0
+                .collect()
         } else {
             self.into_iter()
                 .enumerate()
                 .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(a, b))
                 .map(|(idx, _v)| idx)
-                .collect::<AlignedVec<usize>>()
-                .0
+                .collect()
         }
     }
 }
@@ -290,8 +288,7 @@ macro_rules! argsort {
             .enumerate()
             .sorted_by($closure)
             .map(|(idx, _v)| idx)
-            .collect::<AlignedVec<usize>>()
-            .0
+            .collect()
     }};
 }
 

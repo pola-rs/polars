@@ -37,7 +37,7 @@ where
     T: Hash + Eq,
 {
     let mut set = HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
-    let mut unique = Vec::with_capacity_aligned(capacity);
+    let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
             unique.push(idx)
