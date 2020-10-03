@@ -9,7 +9,9 @@ impl DataFrame {
     }
 }
 
-/// abstraction over a logical plan
+/// Lazy abstraction over an eager `DataFrame`.
+/// It really is an abstraction over a logical plan. The methods of this struct will incrementally
+/// modify a logical plan until output is requested (via [collect](crate::lazy::frame::LazyFrame::collect))
 #[derive(Clone)]
 pub struct LazyFrame {
     pub(crate) logical_plan: LogicalPlan,
@@ -26,10 +28,12 @@ impl LazyFrame {
         LogicalPlanBuilder::from(self.logical_plan)
     }
 
+    /// Describe the logical plan.
     pub fn describe_plan(&self) -> String {
         self.logical_plan.describe()
     }
 
+    /// Describe the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> String {
         let logical_plan = self.clone().get_plan_builder().build();
         let predicate_pushdown_opt = PredicatePushDown {};
@@ -39,6 +43,19 @@ impl LazyFrame {
         logical_plan.describe()
     }
 
+    /// Add a sort operation to the logical plan.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    ///
+    /// /// Sort DataFrame by 'sepal.width' column
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .sort("sepal.width", false)
+    /// }
+    /// ```
     pub fn sort(self, by_column: &str, reverse: bool) -> Self {
         self.get_plan_builder()
             .sort(by_column.into(), reverse)

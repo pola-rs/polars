@@ -1,5 +1,8 @@
-// All credits to Andy Grove and Ballista/ DataFusion / Apache Arrow
-
+//! Lazy API of Polars
+//!
+//! *Credits to the work of Andy Grove and Ballista/ DataFusion / Apache Arrow, which gave
+//! this a huge kickstart.*
+//!
 pub mod dsl;
 pub mod frame;
 mod logical_plan;

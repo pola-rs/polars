@@ -10,3 +10,13 @@
 //! * explode operation
 //! * melt operation
 //! * df! macro
+//! * Rem trait implemented for Series and ChunkedArrays
+//! * laziness api initiated.
+//!     - PredicatePushdown Optimizer
+//!     - ProjectionPushdown Optimizer
+//!     - Selection (filter, where clause)
+//!     - Projection (select foo from bar)
+//!     - Aggregation (groupby)
+//!         - agg min
+//!     - Joins
+//!     - DSL (col, lit, lt, lt_eq, alias, etc.)

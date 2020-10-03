@@ -1,0 +1,20 @@
+name: Windows tests
+
+on:
+  push:
+    branches:
+      - master
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2020-04-22
+          override: true
+      - name: Run tests
+        run: |
+          cd polars && cargo test
+          cd ../py-polars && ./tasks.sh build-run-tests
