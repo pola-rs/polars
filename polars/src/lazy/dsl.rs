@@ -1,4 +1,5 @@
-use crate::lazy::utils::get_supertype;
+use crate::frame::group_by::{fmt_groupby_column, GroupByMethod};
+use crate::lazy::utils::{get_supertype, rename_field};
 use crate::{lazy::prelude::*, prelude::*};
 use arrow::datatypes::{Field, Schema};
 use std::fmt;
@@ -26,12 +27,24 @@ pub enum Expr {
         expr: Box<Expr>,
         reverse: bool,
     },
-    AggMin(Box<Expr>), // ScalarFunction {
-                       //     name: String,
-                       //     args: Vec<Expr>,
-                       //     return_type: ArrowDataType,
-                       // },
-                       // Wildcard
+    AggMin(Box<Expr>),
+    AggMax(Box<Expr>),
+    AggMedian(Box<Expr>),
+    AggNUnique(Box<Expr>),
+    AggFirst(Box<Expr>),
+    AggLast(Box<Expr>),
+    AggMean(Box<Expr>),
+    AggQuantile {
+        expr: Box<Expr>,
+        quantile: f64,
+    },
+    AggSum(Box<Expr>),
+    AggGroups(Box<Expr>), // ScalarFunction {
+                          //     name: String,
+                          //     args: Vec<Expr>,
+                          //     return_type: ArrowDataType,
+                          // },
+                          // Wildcard
 }
 
 impl Expr {
@@ -90,11 +103,53 @@ impl Expr {
             Sort { expr, .. } => expr.to_field(schema),
             AggMin(expr) => {
                 let field = expr.to_field(schema)?;
-                Ok(Field::new(
-                    &format!("{}_min", field.name()),
-                    field.data_type().clone(),
-                    field.is_nullable(),
-                ))
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Min);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggMax(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Max);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggMedian(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Median);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggMean(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Mean);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggFirst(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::First);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggLast(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Last);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggNUnique(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::NUnique);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggSum(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Sum);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggGroups(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggQuantile { expr, quantile } => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Quantile(*quantile));
+                Ok(rename_field(&field, &new_name))
             }
         }
     }
@@ -191,6 +246,7 @@ pub fn col(name: &str) -> Expr {
 }
 
 pub trait Literal {
+    /// [Literal](Expr::Literal) expression.
     fn lit(self) -> Expr;
 }
 
@@ -233,14 +289,17 @@ pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
 }
 
+/// [Not](Expr::Not) expression
 pub fn not(expr: Expr) -> Expr {
     Expr::Not(Box::new(expr))
 }
 
+/// [IsNull](Expr::IsNotNull) expression
 pub fn is_null(expr: Expr) -> Expr {
     Expr::IsNull(Box::new(expr))
 }
 
+/// [IsNotNull](Expr::IsNotNull) expression
 pub fn is_not_null(expr: Expr) -> Expr {
     Expr::IsNotNull(Box::new(expr))
 }

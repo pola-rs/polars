@@ -664,7 +664,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
         for agg_col in agg_cols {
-            let new_name = format!["{}_mean", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Mean);
             let opt_agg = apply_method_all_series!(agg_col, agg_mean, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
@@ -703,7 +703,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
         for agg_col in agg_cols {
-            let new_name = format!["{}_sum", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Sum);
             let opt_agg = apply_method_all_series!(agg_col, agg_sum, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
@@ -741,7 +741,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     pub fn min(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_min", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Min);
             let opt_agg = apply_method_all_series!(agg_col, agg_min, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
@@ -779,7 +779,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     pub fn max(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_max", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Max);
             let opt_agg = apply_method_all_series!(agg_col, agg_max, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
@@ -817,7 +817,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     pub fn first(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_first", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::First);
             let mut agg = apply_method_all_series!(agg_col, agg_first, &self.groups);
             agg.rename(&new_name);
             cols.push(agg);
@@ -853,7 +853,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     pub fn last(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_last", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Last);
             let mut agg = apply_method_all_series!(agg_col, agg_last, &self.groups);
             agg.rename(&new_name);
             cols.push(agg);
@@ -889,7 +889,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     pub fn n_unique(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_n_unique", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::NUnique);
             let opt_agg = apply_method_all_series!(agg_col, agg_n_unique, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
@@ -917,7 +917,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         }
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_quantile_{:.2}", agg_col.name(), quantile];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile));
             let opt_agg = apply_method_all_series!(agg_col, agg_quantile, &self.groups, quantile);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
@@ -940,7 +940,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     pub fn median(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_median", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Median);
             let opt_agg = apply_method_all_series!(agg_col, agg_median, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
@@ -978,7 +978,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     pub fn count(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_count", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Count);
             let mut builder = PrimitiveChunkedBuilder::new(&new_name, self.groups.len());
             for (_first, idx) in &self.groups {
                 builder.append_value(idx.len() as u32);
@@ -991,10 +991,34 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     }
 
     /// Get the groupby group indexes.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("date")?.groups()
+    /// }
+    /// ```
+    /// Returns:
+    ///
+    /// ```text
+    /// +--------------+------------+
+    /// | date         | groups     |
+    /// | ---          | ---        |
+    /// | date32(days) | list [u32] |
+    /// +==============+============+
+    /// | 2020-08-23   | "[3]"      |
+    /// +--------------+------------+
+    /// | 2020-08-22   | "[2, 4]"   |
+    /// +--------------+------------+
+    /// | 2020-08-21   | "[0, 1]"   |
+    /// +--------------+------------+
+    /// ```
     pub fn groups(&self) -> Result<DataFrame> {
         let mut cols = self.keys();
 
-        let column: LargeListChunked = self
+        let mut column: LargeListChunked = self
             .groups
             .iter()
             .map(|(_first, idx)| {
@@ -1002,6 +1026,8 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                 ca.into_inner().into_series()
             })
             .collect();
+        let new_name = fmt_groupby_column("", GroupByMethod::Groups);
+        column.rename(&new_name);
         cols.push(column.into_series());
         cols.shrink_to_fit();
         DataFrame::new(cols)
@@ -1172,7 +1198,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = format!["{}_agg_list", agg_col.name()];
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
             let mut agg =
                 match_arrow_data_type_apply_macro!(agg_col.dtype(), impl_gb, impl_gb_utf8, agg_col);
             agg.rename(&new_name);
@@ -1260,6 +1286,40 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             values_column,
         };
         pivot
+    }
+}
+
+pub(crate) enum GroupByMethod {
+    Min,
+    Max,
+    Median,
+    Mean,
+    First,
+    Last,
+    Sum,
+    Groups,
+    NUnique,
+    Quantile(f64),
+    Count,
+    List,
+}
+
+// Formatting functions used in eager and lazy code for renaming grouped columns
+pub(crate) fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
+    use GroupByMethod::*;
+    match method {
+        Min => format!["{}_min", name],
+        Max => format!["{}_max", name],
+        Median => format!["{}_median", name],
+        Mean => format!["{}_mean", name],
+        First => format!["{}_first", name],
+        Last => format!["{}_last", name],
+        Sum => format!["{}_sum", name],
+        Groups => "groups".to_string(),
+        NUnique => format!["{}_n_unique", name],
+        Count => format!["{}_count", name],
+        List => format!["{}_agg_list", name],
+        Quantile(quantile) => format!["{}_quantile_{:.2}", name, quantile],
     }
 }
 
@@ -1660,6 +1720,7 @@ mod test {
                 .agg(&[("temp", &["n_unique", "sum", "min"])])
                 .unwrap()
         );
+        println!("{:?}", df.groupby("date").unwrap().groups().unwrap());
     }
 
     #[test]

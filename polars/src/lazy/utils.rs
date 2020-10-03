@@ -1,6 +1,10 @@
 use crate::{lazy::prelude::*, prelude::*};
 use std::rc::Rc;
 
+pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
+    Field::new(name, field.data_type().clone(), field.is_nullable())
+}
+
 // unpack alias(col) to name of the root column
 pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Rc<String>> {
     match expr {
