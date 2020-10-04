@@ -121,6 +121,42 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(expr)?;
                 Ok(Rc::new(AggMinExpr::new(phys_expr)))
             }
+            Expr::AggMax(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggMaxExpr::new(phys_expr)))
+            }
+            Expr::AggSum(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggSumExpr::new(phys_expr)))
+            }
+            Expr::AggMean(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggMeanExpr::new(phys_expr)))
+            }
+            Expr::AggMedian(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggMedianExpr::new(phys_expr)))
+            }
+            Expr::AggFirst(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggFirstExpr::new(phys_expr)))
+            }
+            Expr::AggLast(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggLastExpr::new(phys_expr)))
+            }
+            Expr::AggNUnique(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggNUniqueExpr::new(phys_expr)))
+            }
+            Expr::AggQuantile { expr, quantile } => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggQuantileExpr::new(phys_expr, *quantile)))
+            }
+            Expr::AggGroups(expr) => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(AggGroupsExpr::new(phys_expr)))
+            }
         }
     }
 }

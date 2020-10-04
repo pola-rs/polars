@@ -415,8 +415,8 @@ where
     }
 }
 
-trait AggFirst {
-    fn agg_first(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series;
+pub(crate) trait AggFirst {
+    fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series;
 }
 
 macro_rules! impl_agg_first {
@@ -433,25 +433,25 @@ impl<T> AggFirst for ChunkedArray<T>
 where
     T: ArrowPrimitiveType + Send,
 {
-    fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, ChunkedArray<T>)
     }
 }
 
 impl AggFirst for Utf8Chunked {
-    fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, Utf8Chunked)
     }
 }
 
 impl AggFirst for LargeListChunked {
-    fn agg_first(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, LargeListChunked)
     }
 }
 
-trait AggLast {
-    fn agg_last(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Series;
+pub(crate) trait AggLast {
+    fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series;
 }
 
 macro_rules! impl_agg_last {
@@ -468,25 +468,25 @@ impl<T> AggLast for ChunkedArray<T>
 where
     T: ArrowPrimitiveType + Send,
 {
-    fn agg_last(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, ChunkedArray<T>)
     }
 }
 
 impl AggLast for Utf8Chunked {
-    fn agg_last(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, Utf8Chunked)
     }
 }
 
 impl AggLast for LargeListChunked {
-    fn agg_last(&self, groups: &Vec<(usize, Vec<usize>)>) -> Series {
+    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, LargeListChunked)
     }
 }
 
-trait AggNUnique {
-    fn agg_n_unique(&self, _groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
+pub(crate) trait AggNUnique {
+    fn agg_n_unique(&self, _groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
         None
     }
 }
@@ -522,7 +522,7 @@ where
     T: PolarsIntegerType + Sync,
     T::Native: Hash + Eq,
 {
-    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
+    fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
         Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
     }
 }
@@ -533,23 +533,23 @@ impl AggNUnique for LargeListChunked {}
 
 // TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
-    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
+    fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
         Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
     }
 }
 
 impl AggNUnique for Utf8Chunked {
-    fn agg_n_unique(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<UInt32Chunked> {
+    fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
         Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
     }
 }
 
-trait AggQuantile {
-    fn agg_quantile(&self, _groups: &Vec<(usize, Vec<usize>)>, _quantile: f64) -> Option<Series> {
+pub(crate) trait AggQuantile {
+    fn agg_quantile(&self, _groups: &[(usize, Vec<usize>)], _quantile: f64) -> Option<Series> {
         None
     }
 
-    fn agg_median(&self, groups: &Vec<(usize, Vec<usize>)>) -> Option<Series> {
+    fn agg_median(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         self.agg_quantile(groups, 0.5)
     }
 }
@@ -559,7 +559,7 @@ where
     T: PolarsNumericType + Sync,
     T::Native: PartialEq,
 {
-    fn agg_quantile(&self, groups: &Vec<(usize, Vec<usize>)>, quantile: f64) -> Option<Series> {
+    fn agg_quantile(&self, groups: &[(usize, Vec<usize>)], quantile: f64) -> Option<Series> {
         Some(
             groups
                 .into_par_iter()

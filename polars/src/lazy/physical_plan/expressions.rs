@@ -1,6 +1,11 @@
-use crate::frame::group_by::NumericAggSync;
+use crate::frame::group_by::{fmt_groupby_column, GroupByMethod, NumericAggSync};
 use crate::lazy::physical_plan::AggPhysicalExpr;
-use crate::{lazy::prelude::*, prelude::*};
+use crate::utils::Xob;
+use crate::{
+    frame::group_by::{AggFirst, AggLast, AggNUnique, AggQuantile},
+    lazy::prelude::*,
+    prelude::*,
+};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -249,29 +254,99 @@ impl PhysicalExpr for IsNotNullExpr {
     }
 }
 
-#[derive(Debug)]
-pub struct AggMinExpr {
-    expr: Rc<dyn PhysicalExpr>,
+// TODO: to_field for groups and n_unique is probably wrong as the Datatype changes to Uint32
+macro_rules! impl_to_field_for_agg {
+    ($self:ident, $input_schema:ident, $groupby_method_variant:expr) => {{
+        let field = $self.expr.to_field($input_schema)?;
+        let new_name = fmt_groupby_column(field.name(), $groupby_method_variant);
+        Ok(Field::new(
+            &new_name,
+            field.data_type().clone(),
+            field.is_nullable(),
+        ))
+    }};
 }
 
-impl AggMinExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
+macro_rules! impl_aggregation {
+    ($expr_struct:ident, $agg_method:ident, $groupby_method_variant:expr, $mayunpack:ident) => {
+        #[derive(Debug)]
+        pub struct $expr_struct {
+            expr: Rc<dyn PhysicalExpr>,
+        }
+
+        impl $expr_struct {
+            pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+                Self { expr }
+            }
+        }
+
+        impl PhysicalExpr for $expr_struct {
+            fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+                unimplemented!()
+            }
+
+            fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+                impl_to_field_for_agg!(self, input_schema, $groupby_method_variant)
+            }
+
+            fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+                Ok(self)
+            }
+        }
+
+        impl AggPhysicalExpr for $expr_struct {
+            fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Series> {
+                let series = self.expr.evaluate(df)?;
+                let new_name = fmt_groupby_column(series.name(), $groupby_method_variant);
+                let opt_agg = apply_method_all_series!(series, $agg_method, groups);
+                let mut agg = $mayunpack!(opt_agg);
+                agg.rename(&new_name);
+                Ok(agg.into_series())
+            }
+        }
+    };
+}
+
+macro_rules! unpack {
+    ($opt_agg:expr) => {{
+        let agg = $opt_agg.expect("could not unpack aggregation result");
+        agg
+    }};
+}
+macro_rules! identity {
+    ($opt_agg:expr) => {{
+        $opt_agg
+    }};
+}
+
+impl_aggregation!(AggMinExpr, agg_min, GroupByMethod::Min, unpack);
+impl_aggregation!(AggMaxExpr, agg_max, GroupByMethod::Max, unpack);
+impl_aggregation!(AggFirstExpr, agg_first, GroupByMethod::First, identity);
+impl_aggregation!(AggLastExpr, agg_last, GroupByMethod::Last, identity);
+impl_aggregation!(AggMedianExpr, agg_median, GroupByMethod::Median, unpack);
+impl_aggregation!(AggMeanExpr, agg_mean, GroupByMethod::Mean, unpack);
+impl_aggregation!(AggSumExpr, agg_sum, GroupByMethod::Sum, unpack);
+impl_aggregation!(AggNUniqueExpr, agg_n_unique, GroupByMethod::NUnique, unpack);
+
+#[derive(Debug)]
+pub struct AggQuantileExpr {
+    expr: Rc<dyn PhysicalExpr>,
+    quantile: f64,
+}
+
+impl AggQuantileExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>, quantile: f64) -> Self {
+        Self { expr, quantile }
     }
 }
 
-impl PhysicalExpr for AggMinExpr {
+impl PhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
         unimplemented!()
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = self.expr.to_field(input_schema)?;
-        Ok(Field::new(
-            &format!("{}_min", field.name()),
-            field.data_type().clone(),
-            field.is_nullable(),
-        ))
+        impl_to_field_for_agg!(self, input_schema, GroupByMethod::Quantile(self.quantile))
     }
 
     fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
@@ -279,13 +354,56 @@ impl PhysicalExpr for AggMinExpr {
     }
 }
 
-impl AggPhysicalExpr for AggMinExpr {
+impl AggPhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Series> {
         let series = self.expr.evaluate(df)?;
-        let new_name = format!("{}_min", series.name());
-        let opt_agg = apply_method_all_series!(series, agg_min, groups);
-        let mut agg = opt_agg.expect("implementation error");
+        let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
+        let opt_agg = apply_method_all_series!(series, agg_quantile, groups, self.quantile);
+        let mut agg = opt_agg.expect("could not unpack aggregation result");
         agg.rename(&new_name);
         Ok(agg)
+    }
+}
+
+#[derive(Debug)]
+pub struct AggGroupsExpr {
+    expr: Rc<dyn PhysicalExpr>,
+}
+
+impl AggGroupsExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+        Self { expr }
+    }
+}
+
+impl PhysicalExpr for AggGroupsExpr {
+    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        impl_to_field_for_agg!(self, input_schema, GroupByMethod::Groups)
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+impl AggPhysicalExpr for AggGroupsExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Series> {
+        let series = self.expr.evaluate(df)?;
+        let new_name = fmt_groupby_column(series.name(), GroupByMethod::Groups);
+
+        let mut column: LargeListChunked = groups
+            .iter()
+            .map(|(_first, idx)| {
+                let ca: Xob<UInt32Chunked> = idx.into_iter().map(|&v| v as u32).collect();
+                ca.into_inner().into_series()
+            })
+            .collect();
+
+        column.rename(&new_name);
+        Ok(column.into_series())
     }
 }

@@ -78,6 +78,15 @@ impl Expr {
             IsNotNull(_) => Ok(ArrowDataType::Boolean),
             Sort { expr, .. } => expr.get_type(schema),
             AggMin(expr) => expr.get_type(schema),
+            AggMax(expr) => expr.get_type(schema),
+            AggSum(expr) => expr.get_type(schema),
+            AggFirst(expr) => expr.get_type(schema),
+            AggLast(expr) => expr.get_type(schema),
+            AggMean(expr) => expr.get_type(schema),
+            AggMedian(expr) => expr.get_type(schema),
+            AggGroups(_) => Ok(ArrowDataType::UInt32),
+            AggNUnique(_) => Ok(ArrowDataType::UInt32),
+            AggQuantile { expr, .. } => expr.get_type(schema),
         }
     }
 
@@ -134,7 +143,8 @@ impl Expr {
             AggNUnique(expr) => {
                 let field = expr.to_field(schema)?;
                 let new_name = fmt_groupby_column(field.name(), GroupByMethod::NUnique);
-                Ok(rename_field(&field, &new_name))
+                let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
+                Ok(new_field)
             }
             AggSum(expr) => {
                 let field = expr.to_field(schema)?;
@@ -144,7 +154,8 @@ impl Expr {
             AggGroups(expr) => {
                 let field = expr.to_field(schema)?;
                 let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-                Ok(rename_field(&field, &new_name))
+                let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
+                Ok(new_field)
             }
             AggQuantile { expr, quantile } => {
                 let field = expr.to_field(schema)?;
@@ -171,6 +182,15 @@ impl fmt::Debug for Expr {
                 false => write!(f, "{:?} ASC", expr),
             },
             AggMin(expr) => write!(f, "AGGREGATE MIN {:?}", expr),
+            AggMax(expr) => write!(f, "AGGREGATE MAX {:?}", expr),
+            AggMedian(expr) => write!(f, "AGGREGATE MEDIAN {:?}", expr),
+            AggMean(expr) => write!(f, "AGGREGATE MEAN {:?}", expr),
+            AggFirst(expr) => write!(f, "AGGREGATE FIRST {:?}", expr),
+            AggLast(expr) => write!(f, "AGGREGATE LAST {:?}", expr),
+            AggNUnique(expr) => write!(f, "AGGREGATE N UNIQUE {:?}", expr),
+            AggSum(expr) => write!(f, "AGGREGATE SUM {:?}", expr),
+            AggGroups(expr) => write!(f, "AGGREGATE GROUPS {:?}", expr),
+            AggQuantile { expr, .. } => write!(f, "AGGREGATE QUANTILE {:?}", expr),
         }
     }
 }
@@ -234,9 +254,52 @@ impl Expr {
         Expr::IsNotNull(Box::new(self))
     }
 
-    /// Reduce column to minimal value.
+    /// Reduce groups to minimal value.
     pub fn agg_min(self) -> Self {
         Expr::AggMin(Box::new(self))
+    }
+
+    /// Reduce groups to maximum value.
+    pub fn agg_max(self) -> Self {
+        Expr::AggMax(Box::new(self))
+    }
+
+    /// Reduce groups to the mean value.
+    pub fn agg_mean(self) -> Self {
+        Expr::AggMean(Box::new(self))
+    }
+
+    /// Reduce groups to the median value.
+    pub fn agg_median(self) -> Self {
+        Expr::AggMedian(Box::new(self))
+    }
+
+    /// Reduce groups to the sum of all the values.
+    pub fn agg_sum(self) -> Self {
+        Expr::AggSum(Box::new(self))
+    }
+
+    /// Get the number of unique values in the groups.
+    pub fn agg_n_unique(self) -> Self {
+        Expr::AggNUnique(Box::new(self))
+    }
+
+    /// Get the first value in the group.
+    pub fn agg_first(self) -> Self {
+        Expr::AggFirst(Box::new(self))
+    }
+
+    /// Get the last value in the group.
+    pub fn agg_last(self) -> Self {
+        Expr::AggLast(Box::new(self))
+    }
+
+    /// Compute the quantile per group.
+    pub fn agg_quantile(self, quantile: f64) -> Self {
+        Expr::AggQuantile {
+            expr: Box::new(self),
+            quantile,
+        }
     }
 }
 
