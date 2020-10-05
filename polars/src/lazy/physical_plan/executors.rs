@@ -163,8 +163,10 @@ impl Executor for GroupByExec {
 
         for expr in &self.aggs {
             let agg_expr = expr.as_agg_expr()?;
-            let agg = agg_expr.evaluate(&df, groups)?;
-            columns.push(agg)
+            let opt_agg = agg_expr.evaluate(&df, groups)?;
+            if let Some(agg) = opt_agg {
+                columns.push(agg)
+            }
         }
         Ok(DataFrame::new_no_checks(columns))
     }

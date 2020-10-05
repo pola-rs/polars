@@ -47,5 +47,5 @@ pub trait PhysicalExpr: Debug {
 }
 
 pub trait AggPhysicalExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Series>;
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>>;
 }
