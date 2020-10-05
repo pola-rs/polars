@@ -164,7 +164,7 @@
 //! * [ChunkedArray](chunked_array/struct.ChunkedArray.html)
 //!     - [Operations implemented by Traits](chunked_array/ops/index.html)
 //! * [Time/ DateTime utilities](doc/time/index.html)
-//! * [Groupby, aggregations and pivots](frame/group_by/struct.GroupBy.html)
+//! * [Groupby, aggregations, pivots and meltswhatap(frame/group_by/struct.GroupBy.html)
 //!
 //! ## Features
 //!

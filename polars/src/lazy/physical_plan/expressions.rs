@@ -326,7 +326,6 @@ impl_aggregation!(AggLastExpr, agg_last, GroupByMethod::Last, identity);
 impl_aggregation!(AggMedianExpr, agg_median, GroupByMethod::Median, unpack);
 impl_aggregation!(AggMeanExpr, agg_mean, GroupByMethod::Mean, unpack);
 impl_aggregation!(AggSumExpr, agg_sum, GroupByMethod::Sum, unpack);
-impl_aggregation!(AggNUniqueExpr, agg_n_unique, GroupByMethod::NUnique, unpack);
 
 #[derive(Debug)]
 pub struct AggQuantileExpr {
@@ -382,7 +381,10 @@ impl PhysicalExpr for AggGroupsExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        impl_to_field_for_agg!(self, input_schema, GroupByMethod::Groups)
+        let field = self.expr.to_field(input_schema)?;
+        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
+        let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
+        Ok(new_field)
     }
 
     fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
@@ -405,5 +407,44 @@ impl AggPhysicalExpr for AggGroupsExpr {
 
         column.rename(&new_name);
         Ok(column.into_series())
+    }
+}
+
+#[derive(Debug)]
+pub struct AggNUniqueExpr {
+    expr: Rc<dyn PhysicalExpr>,
+}
+
+impl AggNUniqueExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+        Self { expr }
+    }
+}
+
+impl PhysicalExpr for AggNUniqueExpr {
+    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        let field = self.expr.to_field(input_schema)?;
+        let new_name = fmt_groupby_column(field.name(), GroupByMethod::NUnique);
+        let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
+        Ok(new_field)
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+impl AggPhysicalExpr for AggNUniqueExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Series> {
+        let series = self.expr.evaluate(df)?;
+        let new_name = fmt_groupby_column(series.name(), GroupByMethod::NUnique);
+        let opt_agg = apply_method_all_series!(series, agg_n_unique, groups);
+        let mut agg = unpack!(opt_agg);
+        agg.rename(&new_name);
+        Ok(agg.into_series())
     }
 }
