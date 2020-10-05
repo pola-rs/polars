@@ -207,3 +207,6 @@ Additional cargo features:
     - Convert from `DataFrame` to `ndarray`
 * `lazy`
     - Lazy api
+
+## Contribution
+Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).
