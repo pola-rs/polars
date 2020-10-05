@@ -13,7 +13,10 @@ pub enum ExprVal {
 }
 
 pub trait PhysicalPlanner {
-    fn create_physical_plan(&self, logical_plan: &LogicalPlan) -> Result<Rc<dyn Executor>>;
+    fn create_physical_plan<'a>(
+        &self,
+        logical_plan: &'a LogicalPlan,
+    ) -> Result<Rc<dyn Executor + 'a>>;
 }
 
 // Executor are the executors of the physical plan and produce DataFrames. They

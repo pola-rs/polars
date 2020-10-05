@@ -21,10 +21,10 @@ pub enum Expr {
     Not(Box<Expr>),
     IsNotNull(Box<Expr>),
     IsNull(Box<Expr>),
-    // Cast {
-    //     expr: Box<Expr>,
-    //     data_type: ArrowDataType,
-    // },
+    Cast {
+        expr: Box<Expr>,
+        data_type: ArrowDataType,
+    },
     Sort {
         expr: Box<Expr>,
         reverse: bool,
@@ -89,6 +89,7 @@ impl Expr {
             AggGroups(_) => Ok(ArrowDataType::UInt32),
             AggNUnique(_) => Ok(ArrowDataType::UInt32),
             AggQuantile { expr, .. } => expr.get_type(schema),
+            Cast { data_type, .. } => Ok(data_type.clone()),
         }
     }
 
@@ -164,6 +165,14 @@ impl Expr {
                 let new_name = fmt_groupby_column(field.name(), GroupByMethod::Quantile(*quantile));
                 Ok(rename_field(&field, &new_name))
             }
+            Cast { expr, data_type } => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name(),
+                    data_type.clone(),
+                    field.is_nullable(),
+                ))
+            }
         }
     }
 }
@@ -193,6 +202,7 @@ impl fmt::Debug for Expr {
             AggSum(expr) => write!(f, "AGGREGATE SUM {:?}", expr),
             AggGroups(expr) => write!(f, "AGGREGATE GROUPS {:?}", expr),
             AggQuantile { expr, .. } => write!(f, "AGGREGATE QUANTILE {:?}", expr),
+            Cast { expr, data_type } => write!(f, "CAST {:?} TO {:?}", expr, data_type),
         }
     }
 }
@@ -303,6 +313,14 @@ impl Expr {
             quantile,
         }
     }
+
+    /// Cast expression to another data type.
+    pub fn cast(self, data_type: ArrowDataType) -> Self {
+        Expr::Cast {
+            expr: Box::new(self),
+            data_type,
+        }
+    }
 }
 
 /// Create a Colum Expression based on a column name.
@@ -354,7 +372,7 @@ pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
 }
 
-/// [Not](Expr::Not) expression
+/// [Not](Expr::Not) expression.
 pub fn not(expr: Expr) -> Expr {
     Expr::Not(Box::new(expr))
 }
@@ -364,7 +382,15 @@ pub fn is_null(expr: Expr) -> Expr {
     Expr::IsNull(Box::new(expr))
 }
 
-/// [IsNotNull](Expr::IsNotNull) expression
+/// [IsNotNull](Expr::IsNotNull) expression.
 pub fn is_not_null(expr: Expr) -> Expr {
     Expr::IsNotNull(Box::new(expr))
+}
+
+/// [Cast](Expr::Cast) expression.
+pub fn cast(expr: Expr, data_type: ArrowDataType) -> Expr {
+    Expr::Cast {
+        expr: Box::new(expr),
+        data_type,
+    }
 }

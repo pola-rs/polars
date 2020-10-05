@@ -480,6 +480,44 @@ impl Series {
         Ok(s)
     }
 
+    pub fn cast_with_arrow_datatype(&self, data_type: &ArrowDataType) -> Result<Self> {
+        use ArrowDataType::*;
+        match data_type {
+            Boolean => self.cast::<BooleanType>(),
+            Utf8 => self.cast::<Utf8Type>(),
+            UInt8 => self.cast::<UInt8Type>(),
+            UInt16 => self.cast::<UInt16Type>(),
+            UInt32 => self.cast::<UInt32Type>(),
+            UInt64 => self.cast::<UInt64Type>(),
+            Int8 => self.cast::<Int8Type>(),
+            Int16 => self.cast::<Int16Type>(),
+            Int32 => self.cast::<Int32Type>(),
+            Int64 => self.cast::<Int64Type>(),
+            Float32 => self.cast::<Float32Type>(),
+            Float64 => self.cast::<Float64Type>(),
+            Date32(_) => self.cast::<Date32Type>(),
+            Date64(_) => self.cast::<Date64Type>(),
+            Time32(TimeUnit::Second) => self.cast::<Time32SecondType>(),
+            Time32(TimeUnit::Millisecond) => self.cast::<Time32MillisecondType>(),
+            Time64(TimeUnit::Microsecond) => self.cast::<Time64MicrosecondType>(),
+            Time64(TimeUnit::Nanosecond) => self.cast::<Time64NanosecondType>(),
+            Duration(TimeUnit::Nanosecond) => self.cast::<DurationNanosecondType>(),
+            Duration(TimeUnit::Microsecond) => self.cast::<DurationMicrosecondType>(),
+            Duration(TimeUnit::Millisecond) => self.cast::<DurationMillisecondType>(),
+            Duration(TimeUnit::Second) => self.cast::<DurationSecondType>(),
+            Timestamp(TimeUnit::Nanosecond, _) => self.cast::<TimestampNanosecondType>(),
+            Timestamp(TimeUnit::Microsecond, _) => self.cast::<TimestampMicrosecondType>(),
+            Timestamp(TimeUnit::Millisecond, _) => self.cast::<TimestampMillisecondType>(),
+            Timestamp(TimeUnit::Second, _) => self.cast::<TimestampSecondType>(),
+            Interval(IntervalUnit::DayTime) => self.cast::<IntervalDayTimeType>(),
+            Interval(IntervalUnit::YearMonth) => self.cast::<IntervalYearMonthType>(),
+            LargeList(_) => self.cast::<LargeListType>(),
+            dt => Err(PolarsError::Other(
+                format!("Casting to {:?} is not supported", dt).into(),
+            )),
+        }
+    }
+
     /// Get the `ChunkedArray` for some `PolarsDataType`
     pub fn unpack<N>(&self) -> Result<&ChunkedArray<N>>
     where

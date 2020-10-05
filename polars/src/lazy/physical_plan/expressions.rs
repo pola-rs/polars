@@ -500,3 +500,30 @@ impl AggPhysicalExpr for AggNUniqueExpr {
         Ok(opt_agg)
     }
 }
+
+#[derive(Debug)]
+pub struct CastExpr {
+    expr: Rc<dyn PhysicalExpr>,
+    data_type: ArrowDataType,
+}
+
+impl CastExpr {
+    pub fn new(expr: Rc<dyn PhysicalExpr>, data_type: ArrowDataType) -> Self {
+        Self { expr, data_type }
+    }
+}
+
+impl PhysicalExpr for CastExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series = self.expr.evaluate(df)?;
+        series.cast_with_arrow_datatype(&self.data_type)
+    }
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        let field = self.expr.to_field(input_schema)?;
+        Ok(Field::new(
+            field.name(),
+            self.data_type.clone(),
+            field.is_nullable(),
+        ))
+    }
+}

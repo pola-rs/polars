@@ -157,6 +157,10 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(expr)?;
                 Ok(Rc::new(AggGroupsExpr::new(phys_expr)))
             }
+            Expr::Cast { expr, data_type } => {
+                let phys_expr = self.create_physical_expr(expr)?;
+                Ok(Rc::new(CastExpr::new(phys_expr, data_type.clone())))
+            }
         }
     }
 }
