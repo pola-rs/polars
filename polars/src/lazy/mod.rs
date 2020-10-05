@@ -3,6 +3,14 @@
 //! *Credits to the work of Andy Grove and Ballista/ DataFusion / Apache Arrow, which gave
 //! this a huge kickstart.*
 //!
+//! The lazy api of Polars supports a subset of the eager api. Apart from the distributed compute,
+//! it is very similar to [Apache Spark](https://spark.apache.org/). You write queries in a
+//! domain specific language. These queries translate to a logical plan, which represent your query steps.
+//! Before execution this logical plan is optimized and may change the order of operations if this will increase performance.
+//! Or implicit type casts may be added such that execution of the query won't lead to a type error (if it can be resolved).
+//!
+//! The easiest way to get started is with the [LazyFrame](crate::lazy::frame::LazyFrame) struct.
+//! The method's docstrings show some examples to get you up to speed.
 pub mod dsl;
 pub mod frame;
 mod logical_plan;

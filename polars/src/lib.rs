@@ -5,8 +5,15 @@
 //! optimally aligned cache friendly operations and SIMD. Sadly, Apache Arrow needs **nightly Rust**,
 //! which means that Polars cannot run on stable.
 //!
+//! Polars supports an eager and a lazy api. The eager api is similar to [pandas](https://pandas.pydata.org/),
+//! the lazy api is similar to [Spark](https://spark.apache.org/).
+//!
+//! ### Eager
 //! Read more in the pages of the [DataFrame](frame/struct.DataFrame.html), [Series](series/enum.Series.html), and
 //! [ChunkedArray](chunked_array/struct.ChunkedArray.html) data structures.
+//!
+//! ### Lazy
+//! Read more in the [lazy](lazy/index.html) module
 //!
 //! ## Read and write CSV/ JSON
 //!
@@ -174,7 +181,7 @@
 //!     - pretty printing of DataFrames
 //! * `temporal (default)`
 //!     - Conversions between Chrono and Polars for temporal data
-//! * `simd`
+//! * `simd (default)`
 //!     - SIMD operations
 //! * `parquet`
 //!     - Read Apache Parquet format
@@ -184,6 +191,8 @@
 //!     - Convert from `DataFrame` to `ndarray`
 //! * `parallel`
 //!     - Parallel variants of operation
+//! * `lazy`
+//!     - Lazy api
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]

@@ -4,7 +4,7 @@
 [![](http://meritbadge.herokuapp.com/polars)](https://crates.io/crates/polars)
 [![Gitter](https://badges.gitter.im/polars-rs/community.svg)](https://gitter.im/polars-rs/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
-## Blazingly fast in memory DataFrames in Rust
+## Blazingly fast (lazy) in memory DataFrames in Rust
 
 Polars is a DataFrames library implemented in Rust, using Apache Arrow as backend. 
 Its focus is being a fast in memory DataFrame library. 
@@ -197,7 +197,7 @@ Additional cargo features:
     - pretty printing of DataFrames
 * `temporal (default)`
     - Conversions between Chrono and Polars for temporal data
-* `simd`
+* `simd (default)`
     - SIMD operations
 * `parquet`
     - Read Apache Parquet format
@@ -205,3 +205,5 @@ Additional cargo features:
     - Generate array's with randomly sampled values
 * `ndarray`
     - Convert from `DataFrame` to `ndarray`
+* `lazy`
+    - Lazy api

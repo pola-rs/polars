@@ -1,3 +1,4 @@
+//! Domain specific language for the Lazy api.
 use crate::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use crate::lazy::utils::{get_supertype, rename_field};
 use crate::{lazy::prelude::*, prelude::*};
@@ -5,6 +6,7 @@ use arrow::datatypes::{Field, Schema};
 use std::fmt;
 use std::rc::Rc;
 
+/// Queries consists of multiple expressions.
 #[derive(Clone)]
 pub enum Expr {
     Alias(Box<Expr>, Rc<String>),

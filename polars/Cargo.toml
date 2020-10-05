@@ -17,7 +17,7 @@ docs = []
 temporal = ["chrono"]
 random = ["rand", "rand_distr"]
 parallel = []
-default = ["pretty", "docs", "temporal"]
+default = ["pretty", "docs", "temporal", "simd"]
 lazy = []
 
 [dependencies]

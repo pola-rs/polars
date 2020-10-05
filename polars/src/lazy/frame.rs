@@ -1,3 +1,4 @@
+//! Lazy variant of a [DataFrame](crate::prelude::DataFrame).
 use crate::frame::select::Selection;
 use crate::{lazy::prelude::*, prelude::*};
 use std::rc::Rc;
@@ -63,6 +64,23 @@ impl LazyFrame {
             .into()
     }
 
+    /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).
+    /// Before execution the query is being optimized.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    ///
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///       df.lazy()
+    ///         .groupby("foo")
+    ///         .agg(vec!(col("bar").agg_sum(),
+    ///                   col("ham").ag_mean().alias("avg_ham")))
+    ///         .collect()
+    /// }
+    /// ```
     pub fn collect(self) -> Result<DataFrame> {
         let logical_plan = self.get_plan_builder().build();
 
@@ -89,10 +107,38 @@ impl LazyFrame {
         physical_plan.execute()
     }
 
+    /// Filter by some predicate expression.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .filter(col("sepal.width").is_not_null())
+    ///         .select(&[col("sepal.width"), col("sepal.length")])
+    /// }
+    /// ```
     pub fn filter(self, predicate: Expr) -> Self {
         self.get_plan_builder().filter(predicate).build().into()
     }
 
+    /// Select (and rename) columns from the query.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .select(&[col("foo"),
+    ///                   col("bar").alias("ham")])
+    /// }
+    /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
         self.get_plan_builder()
             .project(exprs.as_ref().to_vec())
@@ -100,6 +146,25 @@ impl LazyFrame {
             .into()
     }
 
+    /// Group by and aggregate.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///        .groupby("date")
+    ///        .agg(vec![
+    ///            col("rain").agg_min(),
+    ///            col("rain").agg_sum(),
+    ///            col("rain").agg_quantile(0.5).alias("median_rain"),
+    ///        ])
+    ///        .sort("date", false)
+    /// }
+    /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(self, by: S) -> LazyGroupBy {
         let keys = by
             .to_selection_vec()
@@ -112,6 +177,7 @@ impl LazyFrame {
         }
     }
 
+    /// Join query with other lazy query.
     pub fn left_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
         self.get_plan_builder()
             .join(
@@ -123,14 +189,60 @@ impl LazyFrame {
             .build()
             .into()
     }
+
+    /// Join query with other lazy query.
+    pub fn outer_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
+        self.get_plan_builder()
+            .join(
+                other.logical_plan,
+                JoinType::Outer,
+                Rc::new(left_on.into()),
+                Rc::new(right_on.into()),
+            )
+            .build()
+            .into()
+    }
+
+    /// Join query with other lazy query.
+    pub fn inner_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
+        self.get_plan_builder()
+            .join(
+                other.logical_plan,
+                JoinType::Inner,
+                Rc::new(left_on.into()),
+                Rc::new(right_on.into()),
+            )
+            .build()
+            .into()
+    }
 }
 
+/// Utility struct for lazy groupby operation.
 pub struct LazyGroupBy {
     pub(crate) logical_plan: LogicalPlan,
     keys: Vec<String>,
 }
 
 impl LazyGroupBy {
+    /// Group by and aggregate.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///        .groupby("date")
+    ///        .agg(vec![
+    ///            col("rain").agg_min(),
+    ///            col("rain").agg_sum(),
+    ///            col("rain").agg_quantile(0.5).alias("median_rain"),
+    ///        ])
+    ///        .sort("date", false)
+    /// }
+    /// ```
     pub fn agg(self, aggs: Vec<Expr>) -> LazyFrame {
         LogicalPlanBuilder::from(self.logical_plan)
             .groupby(Rc::new(self.keys), aggs)
