@@ -17,6 +17,6 @@
 //!     - Selection (filter, where clause)
 //!     - Projection (select foo from bar)
 //!     - Aggregation (groupby)
-//!         - agg min
+//!         - all eager aggregations supported
 //!     - Joins
 //!     - DSL (col, lit, lt, lt_eq, alias, etc.)
