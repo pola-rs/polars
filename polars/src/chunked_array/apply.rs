@@ -1,5 +1,6 @@
 //! Implementations of the ChunkApply Trait.
 use crate::prelude::*;
+use crate::utils::Xob;
 
 impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
@@ -21,7 +22,8 @@ where
         F: Fn(T::Native) -> T::Native + Copy,
     {
         if let Ok(slice) = self.cont_slice() {
-            slice.iter().copied().map(f).map(Some).collect()
+            let new: Xob<ChunkedArray<T>> = slice.iter().copied().map(f).collect();
+            new.into_inner()
         } else {
             let mut ca: ChunkedArray<T> = self
                 .data_views()

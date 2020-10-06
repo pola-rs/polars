@@ -11,12 +11,16 @@
 //! * melt operation
 //! * df! macro
 //! * Rem trait implemented for Series and ChunkedArrays
+//! * ChunkedArrays broadcasting arithmetic
 //! * laziness api initiated.
-//!     - PredicatePushdown Optimizer
-//!     - ProjectionPushdown Optimizer
+//!     - Predicate pushdown optimizer
+//!     - Projection pushdown optimizer
+//!     - Type coercion optimizer
 //!     - Selection (filter, where clause)
 //!     - Projection (select foo from bar)
 //!     - Aggregation (groupby)
 //!         - all eager aggregations supported
 //!     - Joins
-//!     - DSL (col, lit, lt, lt_eq, alias, etc.)
+//!     - DSL
+//!         * (col, lit, lt, lt_eq, alias, etc.)
+//!         * arithmetic

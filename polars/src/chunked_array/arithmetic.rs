@@ -300,14 +300,7 @@ where
 
     fn add(self, rhs: N) -> Self::Output {
         let adder: T::Native = NumCast::from(rhs).unwrap();
-        if self.is_optimal_aligned() {
-            let intermed: Xob<_> = self.into_no_null_iter().map(|val| val + adder).collect();
-            intermed.into_inner()
-        } else {
-            self.into_iter()
-                .map(|opt_val| opt_val.map(|val| val + adder))
-                .collect()
-        }
+        self.apply(|val| val + adder)
     }
 }
 
@@ -326,14 +319,7 @@ where
 
     fn sub(self, rhs: N) -> Self::Output {
         let subber: T::Native = NumCast::from(rhs).unwrap();
-        if self.is_optimal_aligned() {
-            let intermed: Xob<_> = self.into_no_null_iter().map(|val| val - subber).collect();
-            intermed.into_inner()
-        } else {
-            self.into_iter()
-                .map(|opt_val| opt_val.map(|val| val - subber))
-                .collect()
-        }
+        self.apply(|val| val - subber)
     }
 }
 
@@ -352,14 +338,7 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let divider: T::Native = NumCast::from(rhs).unwrap();
-        if self.is_optimal_aligned() {
-            let intermed: Xob<_> = self.into_no_null_iter().map(|val| val / divider).collect();
-            intermed.into_inner()
-        } else {
-            self.into_iter()
-                .map(|opt_val| opt_val.map(|val| val / divider))
-                .collect()
-        }
+        self.apply(|val| val / divider)
     }
 }
 
@@ -378,17 +357,7 @@ where
 
     fn mul(self, rhs: N) -> Self::Output {
         let multiplier: T::Native = NumCast::from(rhs).unwrap();
-        if self.is_optimal_aligned() {
-            let intermed: Xob<_> = self
-                .into_no_null_iter()
-                .map(|val| val * multiplier)
-                .collect();
-            intermed.into_inner()
-        } else {
-            self.into_iter()
-                .map(|opt_val| opt_val.map(|val| val * multiplier))
-                .collect()
-        }
+        self.apply(|val| val * multiplier)
     }
 }
 
@@ -403,14 +372,7 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let operand: T::Native = NumCast::from(rhs).unwrap();
-        if self.is_optimal_aligned() {
-            let intermed: Xob<_> = self.into_no_null_iter().map(|val| val % operand).collect();
-            intermed.into_inner()
-        } else {
-            self.into_iter()
-                .map(|opt_val| opt_val.map(|val| val % operand))
-                .collect()
-        }
+        self.apply(|val| val % operand)
     }
 }
 
