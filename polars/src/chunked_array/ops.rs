@@ -560,6 +560,10 @@ pub trait ChunkFull<T> {
     fn full(name: &str, value: T, length: usize) -> Self
     where
         Self: std::marker::Sized;
+
+    fn full_null(_name: &str, _length: usize) -> Self
+    where
+        Self: std::marker::Sized;
 }
 
 impl<T> ChunkFull<T::Native> for ChunkedArray<T>
@@ -577,6 +581,16 @@ where
         }
         builder.finish()
     }
+
+    fn full_null(name: &str, length: usize) -> Self {
+        let mut builder = PrimitiveChunkedBuilder::new(name, length);
+
+        // todo: faster with null arrays or in one go allocation
+        for _ in 0..length {
+            builder.append_null()
+        }
+        builder.finish()
+    }
 }
 
 impl<'a> ChunkFull<&'a str> for Utf8Chunked {
@@ -585,6 +599,16 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 
         for _ in 0..length {
             builder.append_value(value);
+        }
+        builder.finish()
+    }
+
+    fn full_null(name: &str, length: usize) -> Self {
+        // todo: faster with null arrays or in one go allocation
+        let mut builder = Utf8ChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_null()
         }
         builder.finish()
     }

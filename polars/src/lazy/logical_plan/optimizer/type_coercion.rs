@@ -103,8 +103,7 @@ impl TypeCoercion {
         use LogicalPlan::*;
         match logical_plan {
             Selection { input, predicate } => {
-                let schema = input.schema();
-                let predicate = self.rewrite_expr(predicate, schema)?;
+                let predicate = self.rewrite_expr(predicate, input.schema())?;
                 let input = Box::new(self.coerce(*input)?);
                 Ok(Selection { input, predicate })
             }
@@ -115,7 +114,7 @@ impl TypeCoercion {
                 input,
                 schema,
             } => {
-                let expr = self.rewrite_expressions(expr, &schema)?;
+                let expr = self.rewrite_expressions(expr, input.schema())?;
                 Ok(Projection {
                     expr,
                     input,
@@ -141,7 +140,7 @@ impl TypeCoercion {
                 schema,
             } => {
                 let input = Box::new(self.coerce(*input)?);
-                let aggs = self.rewrite_expressions(aggs, &schema)?;
+                let aggs = self.rewrite_expressions(aggs, input.schema())?;
                 Ok(Aggregate {
                     input,
                     keys,

@@ -321,6 +321,25 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_arithmetic() {
+        let df = get_df();
+        let lf = df
+            .lazy()
+            .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
+            .sort("super_wide", false);
+
+        print_plans(&lf);
+
+        let new = lf.collect().unwrap();
+        println!("{:?}", new);
+        assert_eq!(new.height(), 7);
+        assert_eq!(
+            new.column("super_wide").unwrap().f64().unwrap().get(0),
+            Some(300.0)
+        );
+    }
+
+    #[test]
     fn test_lazy_logical_plan_filter_and_alias_combined() {
         let df = get_df();
         let lf = df

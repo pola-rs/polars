@@ -45,6 +45,11 @@ where
         self.builder.append_null().expect("could not append");
     }
 
+    /// Append multiple values at once. This is faster than per value.
+    pub fn append_values(&mut self, values: &[T::Native], is_valid: &[bool]) {
+        self.builder.append_values(values, is_valid).unwrap();
+    }
+
     /// Appends an `Option<T>` into the builder
     pub fn append_option(&mut self, v: Option<T::Native>) {
         self.builder.append_option(v).expect("could not append");
