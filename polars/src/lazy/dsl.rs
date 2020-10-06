@@ -51,7 +51,7 @@ pub enum Expr {
 
 impl Expr {
     /// Get DataType result of the expression. The schema is the input data.
-    fn get_type(&self, schema: &Schema) -> Result<ArrowDataType> {
+    pub fn get_type(&self, schema: &Schema) -> Result<ArrowDataType> {
         use Expr::*;
         match self {
             Alias(expr, ..) => expr.get_type(schema),
@@ -207,7 +207,7 @@ impl fmt::Debug for Expr {
     }
 }
 
-fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
+pub(crate) fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {
         left: Box::new(l),
         op,
@@ -314,11 +314,24 @@ impl Expr {
         }
     }
 
+    /// Get the group indexes of the group by operation.
+    pub fn agg_groups(self) -> Self {
+        Expr::AggGroups(Box::new(self))
+    }
+
     /// Cast expression to another data type.
     pub fn cast(self, data_type: ArrowDataType) -> Self {
         Expr::Cast {
             expr: Box::new(self),
             data_type,
+        }
+    }
+
+    /// Sort expression.
+    pub fn sort(self, reverse: bool) -> Self {
+        Expr::Sort {
+            expr: Box::new(self),
+            reverse,
         }
     }
 }

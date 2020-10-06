@@ -18,6 +18,7 @@ pub struct LazyFrame {
     pub(crate) logical_plan: LogicalPlan,
     projection_pushdown: bool,
     predicate_pushdown: bool,
+    type_coercion: bool,
 }
 
 impl From<LogicalPlan> for LazyFrame {
@@ -26,6 +27,7 @@ impl From<LogicalPlan> for LazyFrame {
             logical_plan: plan,
             projection_pushdown: true,
             predicate_pushdown: true,
+            type_coercion: true,
         }
     }
 }
@@ -35,15 +37,21 @@ impl LazyFrame {
         LogicalPlanBuilder::from(self.logical_plan)
     }
 
-    /// Toggle projection pushdown optimizaton on or off.
+    /// Toggle projection pushdown optimization on or off.
     pub fn with_projection_pushdown_optimization(mut self, toggle: bool) -> Self {
         self.projection_pushdown = toggle;
         self
     }
 
-    /// Toggle predicate pushdown optimizaton on or off.
+    /// Toggle predicate pushdown optimization on or off.
     pub fn with_predicate_pushdown_optimization(mut self, toggle: bool) -> Self {
         self.predicate_pushdown = toggle;
+        self
+    }
+
+    /// Toggle type coercion optimization on or off.
+    pub fn with_type_coercion_optimization(mut self, toggle: bool) -> Self {
+        self.type_coercion = toggle;
         self
     }
 
@@ -102,35 +110,41 @@ impl LazyFrame {
     pub fn collect(self) -> Result<DataFrame> {
         let predicate_pushdown = self.predicate_pushdown;
         let projection_pushdown = self.projection_pushdown;
+        let type_coercion = self.type_coercion;
         let mut logical_plan = self.get_plan_builder().build();
 
         let predicate_pushdown_opt = PredicatePushDown {};
         let projection_pushdown_opt = ProjectionPushDown {};
+        let type_coercion_opt = TypeCoercion {};
 
-        let logical_plan = if cfg!(debug_assertions) {
+        if cfg!(debug_assertions) {
             // check that the optimization don't interfere with the schema result.
             let prev_schema = logical_plan.schema().clone();
-            if predicate_pushdown {
-                logical_plan = predicate_pushdown_opt.optimize(logical_plan);
+            if projection_pushdown {
+                logical_plan = projection_pushdown_opt.optimize(logical_plan)
             }
             assert_eq!(logical_plan.schema(), &prev_schema);
+
             let prev_schema = logical_plan.schema().clone();
-            if projection_pushdown {
-                logical_plan = projection_pushdown_opt.optimize(logical_plan)
-            }
-            assert_eq!(logical_plan.schema(), &prev_schema);
-            logical_plan
-        } else {
-            // NOTE: the order is important. Projection pushdown must be later than predicate pushdown,
-            // because I want the projections to occur before the filtering.
             if predicate_pushdown {
                 logical_plan = predicate_pushdown_opt.optimize(logical_plan);
             }
+            assert_eq!(logical_plan.schema(), &prev_schema);
+        } else {
+            // NOTE: the order is important. Projection pushdown must be before predicate pushdown,
+            // The projection may have aliases that interfere with the predicate expressions.
             if projection_pushdown {
                 logical_plan = projection_pushdown_opt.optimize(logical_plan)
             }
-            logical_plan
+            if predicate_pushdown {
+                logical_plan = predicate_pushdown_opt.optimize(logical_plan);
+            }
         };
+
+        if type_coercion {
+            logical_plan = type_coercion_opt.optimize(logical_plan);
+        }
+
         let planner = DefaultPlanner::default();
         let physical_plan = planner.create_physical_plan(&logical_plan)?;
         physical_plan.execute()
@@ -402,6 +416,5 @@ mod test {
         println!("{:?}", lf.describe_optimized_plan());
         let new = lf.collect().unwrap();
         println!("{:?}", new);
-        assert!(false)
     }
 }

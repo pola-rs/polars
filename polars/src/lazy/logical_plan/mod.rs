@@ -321,6 +321,20 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_logical_plan_filter_and_alias_combined() {
+        let df = get_df();
+        let lf = df
+            .clone()
+            .lazy()
+            .filter(col("sepal.width").lt(lit(3.5)))
+            .select(&[col("variety").alias("foo")]);
+
+        print_plans(&lf);
+        let df = lf.collect().unwrap();
+        println!("{:?}", df);
+    }
+
+    #[test]
     fn test_lazy_logical_plan_schema() {
         let df = get_df();
         let lp = df
