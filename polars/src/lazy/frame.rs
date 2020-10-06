@@ -32,9 +32,32 @@ impl From<LogicalPlan> for LazyFrame {
     }
 }
 
+struct OptState {
+    projection_pushdown: bool,
+    predicate_pushdown: bool,
+    type_coercion: bool,
+}
+
 impl LazyFrame {
     fn get_plan_builder(self) -> LogicalPlanBuilder {
         LogicalPlanBuilder::from(self.logical_plan)
+    }
+
+    fn get_opt_state(&self) -> OptState {
+        OptState {
+            projection_pushdown: self.projection_pushdown,
+            predicate_pushdown: self.predicate_pushdown,
+            type_coercion: self.type_coercion,
+        }
+    }
+
+    fn from_logical_plan(logical_plan: LogicalPlan, opt_state: OptState) -> Self {
+        LazyFrame {
+            logical_plan,
+            projection_pushdown: opt_state.projection_pushdown,
+            predicate_pushdown: opt_state.predicate_pushdown,
+            type_coercion: opt_state.type_coercion,
+        }
     }
 
     /// Toggle projection pushdown optimization on or off.
@@ -84,10 +107,12 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn sort(self, by_column: &str, reverse: bool) -> Self {
-        self.get_plan_builder()
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
             .sort(by_column.into(), reverse)
-            .build()
-            .into()
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).
@@ -165,7 +190,9 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn filter(self, predicate: Expr) -> Self {
-        self.get_plan_builder().filter(predicate).build().into()
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().filter(predicate).build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Select (and rename) columns from the query.
@@ -183,10 +210,12 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
-        self.get_plan_builder()
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
             .project(exprs.as_ref().to_vec())
-            .build()
-            .into()
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Group by and aggregate.
@@ -209,6 +238,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(self, by: S) -> LazyGroupBy {
+        let opt_state = self.get_opt_state();
         let keys = by
             .to_selection_vec()
             .iter()
@@ -216,53 +246,61 @@ impl LazyFrame {
             .collect();
         LazyGroupBy {
             logical_plan: self.logical_plan,
+            opt_state,
             keys,
         }
     }
 
     /// Join query with other lazy query.
     pub fn left_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
-        self.get_plan_builder()
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
             .join(
                 other.logical_plan,
                 JoinType::Left,
                 Rc::new(left_on.into()),
                 Rc::new(right_on.into()),
             )
-            .build()
-            .into()
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Join query with other lazy query.
     pub fn outer_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
-        self.get_plan_builder()
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
             .join(
                 other.logical_plan,
                 JoinType::Outer,
                 Rc::new(left_on.into()),
                 Rc::new(right_on.into()),
             )
-            .build()
-            .into()
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Join query with other lazy query.
     pub fn inner_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
-        self.get_plan_builder()
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
             .join(
                 other.logical_plan,
                 JoinType::Inner,
                 Rc::new(left_on.into()),
                 Rc::new(right_on.into()),
             )
-            .build()
-            .into()
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 }
 
 /// Utility struct for lazy groupby operation.
 pub struct LazyGroupBy {
     pub(crate) logical_plan: LogicalPlan,
+    opt_state: OptState,
     keys: Vec<String>,
 }
 
@@ -287,10 +325,10 @@ impl LazyGroupBy {
     /// }
     /// ```
     pub fn agg(self, aggs: Vec<Expr>) -> LazyFrame {
-        LogicalPlanBuilder::from(self.logical_plan)
+        let lp = LogicalPlanBuilder::from(self.logical_plan)
             .groupby(Rc::new(self.keys), aggs)
-            .build()
-            .into()
+            .build();
+        LazyFrame::from_logical_plan(lp, self.opt_state)
     }
 }
 
