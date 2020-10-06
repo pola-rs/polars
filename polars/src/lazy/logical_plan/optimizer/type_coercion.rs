@@ -173,7 +173,7 @@ impl TypeCoercion {
 }
 
 impl Optimize for TypeCoercion {
-    fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan {
-        self.coerce(logical_plan).unwrap()
+    fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
+        self.coerce(logical_plan)
     }
 }

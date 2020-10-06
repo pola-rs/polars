@@ -316,7 +316,7 @@ mod test {
         println!("LOGICAL PLAN\n\n{}\n", lf.describe_plan());
         println!(
             "OPTIMIZED LOGICAL PLAN\n\n{}\n",
-            lf.describe_optimized_plan()
+            lf.describe_optimized_plan().unwrap()
         );
     }
 

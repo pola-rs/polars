@@ -61,13 +61,13 @@ impl LazyFrame {
     }
 
     /// Describe the optimized logical plan.
-    pub fn describe_optimized_plan(&self) -> String {
+    pub fn describe_optimized_plan(&self) -> Result<String> {
         let logical_plan = self.clone().get_plan_builder().build();
         let predicate_pushdown_opt = PredicatePushDown {};
         let projection_pushdown_opt = ProjectionPushDown {};
-        let logical_plan = predicate_pushdown_opt.optimize(logical_plan);
-        let logical_plan = projection_pushdown_opt.optimize(logical_plan);
-        logical_plan.describe()
+        let logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
+        let logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
+        Ok(logical_plan.describe())
     }
 
     /// Add a sort operation to the logical plan.
@@ -103,7 +103,7 @@ impl LazyFrame {
     ///       df.lazy()
     ///         .groupby("foo")
     ///         .agg(vec!(col("bar").agg_sum(),
-    ///                   col("ham").ag_mean().alias("avg_ham")))
+    ///                   col("ham").agg_mean().alias("avg_ham")))
     ///         .collect()
     /// }
     /// ```
@@ -121,28 +121,28 @@ impl LazyFrame {
             // check that the optimization don't interfere with the schema result.
             let prev_schema = logical_plan.schema().clone();
             if projection_pushdown {
-                logical_plan = projection_pushdown_opt.optimize(logical_plan)
+                logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
             }
             assert_eq!(logical_plan.schema(), &prev_schema);
 
             let prev_schema = logical_plan.schema().clone();
             if predicate_pushdown {
-                logical_plan = predicate_pushdown_opt.optimize(logical_plan);
+                logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
             }
             assert_eq!(logical_plan.schema(), &prev_schema);
         } else {
             // NOTE: the order is important. Projection pushdown must be before predicate pushdown,
             // The projection may have aliases that interfere with the predicate expressions.
             if projection_pushdown {
-                logical_plan = projection_pushdown_opt.optimize(logical_plan)
+                logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
             }
             if predicate_pushdown {
-                logical_plan = predicate_pushdown_opt.optimize(logical_plan);
+                logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
             }
         };
 
         if type_coercion {
-            logical_plan = type_coercion_opt.optimize(logical_plan);
+            logical_plan = type_coercion_opt.optimize(logical_plan)?;
         }
 
         let planner = DefaultPlanner::default();

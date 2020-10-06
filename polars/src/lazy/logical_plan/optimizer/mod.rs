@@ -10,5 +10,5 @@ fn check_down_node(expr: &Expr, down_schema: &Schema) -> bool {
 }
 
 pub trait Optimize {
-    fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan;
+    fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan>;
 }

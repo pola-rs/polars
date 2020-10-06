@@ -1,6 +1,7 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{expr_to_root_column, rename_expr_root_name};
+use crate::prelude::*;
 use fnv::FnvHashMap;
 use std::rc::Rc;
 
@@ -11,17 +12,17 @@ impl PredicatePushDown {
         &self,
         lp: LogicalPlan,
         acc_predicates: FnvHashMap<Rc<String>, Expr>,
-    ) -> LogicalPlan {
+    ) -> Result<LogicalPlan> {
         match acc_predicates.len() {
             // No filter in the logical plan
-            0 => lp,
+            0 => Ok(lp),
             _ => {
                 // TODO: create a single predicate
                 let mut builder = LogicalPlanBuilder::from(lp);
                 for expr in acc_predicates.values() {
                     builder = builder.filter(expr.clone());
                 }
-                builder.build()
+                Ok(builder.build())
             }
         }
     }
@@ -30,14 +31,14 @@ impl PredicatePushDown {
         &self,
         local_predicates: Vec<Expr>,
         mut builder: LogicalPlanBuilder,
-    ) -> LogicalPlan {
+    ) -> Result<LogicalPlan> {
         if local_predicates.len() > 0 {
             for expr in local_predicates {
                 builder = builder.filter(expr);
             }
-            builder.build()
+            Ok(builder.build())
         } else {
-            builder.build()
+            Ok(builder.build())
         }
     }
 
@@ -46,7 +47,7 @@ impl PredicatePushDown {
         &self,
         logical_plan: LogicalPlan,
         mut acc_predicates: FnvHashMap<Rc<String>, Expr>,
-    ) -> LogicalPlan {
+    ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
 
         match logical_plan {
@@ -74,9 +75,11 @@ impl PredicatePushDown {
                         }
                     }
                 }
-                LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
-                    .project(expr)
-                    .build()
+                Ok(
+                    LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
+                        .project(expr)
+                        .build(),
+                )
             }
             DataFrameScan { df, schema } => {
                 let lp = DataFrameScan { df, schema };
@@ -100,14 +103,18 @@ impl PredicatePushDown {
                 input,
                 column,
                 reverse,
-            } => LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
-                .sort(column, reverse)
-                .build(),
+            } => Ok(
+                LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
+                    .sort(column, reverse)
+                    .build(),
+            ),
             Aggregate {
                 input, keys, aggs, ..
-            } => LogicalPlanBuilder::from(self.push_down(*input, acc_predicates))
-                .groupby(keys, aggs)
-                .build(),
+            } => Ok(
+                LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
+                    .groupby(keys, aggs)
+                    .build(),
+            ),
             Join {
                 input_left,
                 input_right,
@@ -136,8 +143,8 @@ impl PredicatePushDown {
                     }
                 }
 
-                let lp_left = self.push_down(*input_left, pushdown_left);
-                let lp_right = self.push_down(*input_right, pushdown_right);
+                let lp_left = self.push_down(*input_left, pushdown_left)?;
+                let lp_right = self.push_down(*input_right, pushdown_right)?;
 
                 let builder =
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
@@ -148,7 +155,7 @@ impl PredicatePushDown {
 }
 
 impl Optimize for PredicatePushDown {
-    fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan {
+    fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
         self.push_down(logical_plan, FnvHashMap::default())
     }
 }

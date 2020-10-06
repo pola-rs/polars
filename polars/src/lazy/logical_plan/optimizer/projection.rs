@@ -1,18 +1,19 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::expr_to_root_column;
+use crate::prelude::*;
 use arrow::datatypes::Schema;
 
 pub struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
-    fn finish_at_leaf(&self, lp: LogicalPlan, acc_projections: Vec<Expr>) -> LogicalPlan {
+    fn finish_at_leaf(&self, lp: LogicalPlan, acc_projections: Vec<Expr>) -> Result<LogicalPlan> {
         match acc_projections.len() {
             // There was no Projection in the logical plan
-            0 => lp,
-            _ => LogicalPlanBuilder::from(lp)
+            0 => Ok(lp),
+            _ => Ok(LogicalPlanBuilder::from(lp)
                 .project(acc_projections)
-                .build(),
+                .build()),
         }
     }
 
@@ -39,11 +40,11 @@ impl ProjectionPushDown {
         &self,
         local_projections: Vec<Expr>,
         builder: LogicalPlanBuilder,
-    ) -> LogicalPlan {
+    ) -> Result<LogicalPlan> {
         if local_projections.len() > 0 {
-            builder.project(local_projections).build()
+            Ok(builder.project(local_projections).build())
         } else {
-            builder.build()
+            Ok(builder.build())
         }
     }
 
@@ -74,7 +75,11 @@ impl ProjectionPushDown {
     // The recursion stops at the nodes of the logical plan. These nodes IO or existing DataFrames. On top of
     // these nodes we apply the projection.
     // TODO: renaming operations and joins interfere with the schema. We need to keep track of the schema somehow.
-    fn push_down(&self, logical_plan: LogicalPlan, mut acc_projections: Vec<Expr>) -> LogicalPlan {
+    fn push_down(
+        &self,
+        logical_plan: LogicalPlan,
+        mut acc_projections: Vec<Expr>,
+    ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
         match logical_plan {
             Projection { expr, input, .. } => {
@@ -85,7 +90,7 @@ impl ProjectionPushDown {
                 let (acc_projections, local_projections) =
                     self.split_acc_projections(acc_projections, input.schema());
 
-                let lp = self.push_down(*input, acc_projections);
+                let lp = self.push_down(*input, acc_projections)?;
                 let builder = LogicalPlanBuilder::from(lp);
                 self.finish_node(local_projections, builder)
             }
@@ -111,14 +116,16 @@ impl ProjectionPushDown {
                 input,
                 column,
                 reverse,
-            } => LogicalPlanBuilder::from(self.push_down(*input, acc_projections))
-                .sort(column, reverse)
-                .build(),
-            Selection { predicate, input } => {
-                LogicalPlanBuilder::from(self.push_down(*input, acc_projections))
-                    .filter(predicate)
-                    .build()
-            }
+            } => Ok(
+                LogicalPlanBuilder::from(self.push_down(*input, acc_projections)?)
+                    .sort(column, reverse)
+                    .build(),
+            ),
+            Selection { predicate, input } => Ok(LogicalPlanBuilder::from(
+                self.push_down(*input, acc_projections)?,
+            )
+            .filter(predicate)
+            .build()),
             Aggregate {
                 input, keys, aggs, ..
             } => {
@@ -126,7 +133,7 @@ impl ProjectionPushDown {
                 let (acc_projections, local_projections) =
                     self.split_acc_projections(acc_projections, input.schema());
 
-                let lp = self.push_down(*input, acc_projections);
+                let lp = self.push_down(*input, acc_projections)?;
                 let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
                 self.finish_node(local_projections, builder)
             }
@@ -208,8 +215,8 @@ impl ProjectionPushDown {
                         }
                     }
                 }
-                let lp_left = self.push_down(*input_left, pushdown_left);
-                let lp_right = self.push_down(*input_right, pushdown_right);
+                let lp_left = self.push_down(*input_left, pushdown_left)?;
+                let lp_right = self.push_down(*input_right, pushdown_right)?;
                 let builder =
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
                 self.finish_node(local_projection, builder)
@@ -219,7 +226,7 @@ impl ProjectionPushDown {
 }
 
 impl Optimize for ProjectionPushDown {
-    fn optimize(&self, logical_plan: LogicalPlan) -> LogicalPlan {
+    fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
         self.push_down(logical_plan, Vec::default())
     }
 }
