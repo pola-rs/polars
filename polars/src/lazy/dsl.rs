@@ -3,8 +3,11 @@ use crate::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use crate::lazy::utils::{get_supertype, rename_field};
 use crate::{lazy::prelude::*, prelude::*};
 use arrow::datatypes::{Field, Schema};
-use std::fmt;
-use std::rc::Rc;
+use std::{
+    fmt,
+    ops::{Add, Div, Mul, Rem, Sub},
+    rc::Rc,
+};
 
 /// Queries consists of multiple expressions.
 #[derive(Clone)]
@@ -405,5 +408,46 @@ pub fn cast(expr: Expr, data_type: ArrowDataType) -> Expr {
     Expr::Cast {
         expr: Box::new(expr),
         data_type,
+    }
+}
+
+// Arithmetic ops
+impl Add for Expr {
+    type Output = Expr;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        binary_expr(self, Operator::Plus, rhs)
+    }
+}
+
+impl Sub for Expr {
+    type Output = Expr;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        binary_expr(self, Operator::Minus, rhs)
+    }
+}
+
+impl Div for Expr {
+    type Output = Expr;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        binary_expr(self, Operator::Divide, rhs)
+    }
+}
+
+impl Mul for Expr {
+    type Output = Expr;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        binary_expr(self, Operator::Multiply, rhs)
+    }
+}
+
+impl Rem for Expr {
+    type Output = Expr;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        binary_expr(self, Operator::Modulus, rhs)
     }
 }
