@@ -6,14 +6,14 @@ use arrow::datatypes::{Field, Schema};
 use std::{
     fmt,
     ops::{Add, Div, Mul, Rem, Sub},
-    rc::Rc,
+    sync::Arc,
 };
 
 /// Queries consists of multiple expressions.
 #[derive(Clone)]
 pub enum Expr {
-    Alias(Box<Expr>, Rc<String>),
-    Column(Rc<String>),
+    Alias(Box<Expr>, Arc<String>),
+    Column(Arc<String>),
     Literal(ScalarValue),
     BinaryExpr {
         left: Box<Expr>,
@@ -256,7 +256,7 @@ impl Expr {
 
     /// Rename Column.
     pub fn alias(self, name: &str) -> Expr {
-        Expr::Alias(Box::new(self), Rc::new(name.into()))
+        Expr::Alias(Box::new(self), Arc::new(name.into()))
     }
 
     /// Run is_null operation on `Expr`.
@@ -341,7 +341,7 @@ impl Expr {
 
 /// Create a Colum Expression based on a column name.
 pub fn col(name: &str) -> Expr {
-    Expr::Column(Rc::new(name.to_owned()))
+    Expr::Column(Arc::new(name.to_owned()))
 }
 
 pub trait Literal {

@@ -6,7 +6,7 @@ use crate::{
     lazy::prelude::*,
     prelude::*,
 };
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct LiteralExpr(pub ScalarValue);
@@ -62,13 +62,13 @@ impl PhysicalExpr for LiteralExpr {
 
 #[derive(Debug)]
 pub struct BinaryExpr {
-    left: Rc<dyn PhysicalExpr>,
+    left: Arc<dyn PhysicalExpr>,
     op: Operator,
-    right: Rc<dyn PhysicalExpr>,
+    right: Arc<dyn PhysicalExpr>,
 }
 
 impl BinaryExpr {
-    pub fn new(left: Rc<dyn PhysicalExpr>, op: Operator, right: Rc<dyn PhysicalExpr>) -> Self {
+    pub fn new(left: Arc<dyn PhysicalExpr>, op: Operator, right: Arc<dyn PhysicalExpr>) -> Self {
         Self { left, op, right }
     }
 }
@@ -108,10 +108,10 @@ impl PhysicalExpr for BinaryExpr {
 }
 
 #[derive(Debug)]
-pub struct ColumnExpr(Rc<String>);
+pub struct ColumnExpr(Arc<String>);
 
 impl ColumnExpr {
-    pub fn new(name: Rc<String>) -> Self {
+    pub fn new(name: Arc<String>) -> Self {
         Self(name)
     }
 }
@@ -129,12 +129,12 @@ impl PhysicalExpr for ColumnExpr {
 
 #[derive(Debug)]
 pub struct SortExpr {
-    expr: Rc<dyn PhysicalExpr>,
+    expr: Arc<dyn PhysicalExpr>,
     reverse: bool,
 }
 
 impl SortExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>, reverse: bool) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, reverse: bool) -> Self {
         Self { expr, reverse }
     }
 }
@@ -150,10 +150,10 @@ impl PhysicalExpr for SortExpr {
 }
 
 #[derive(Debug)]
-pub struct NotExpr(Rc<dyn PhysicalExpr>);
+pub struct NotExpr(Arc<dyn PhysicalExpr>);
 
 impl NotExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
         Self(expr)
     }
 }
@@ -173,12 +173,12 @@ impl PhysicalExpr for NotExpr {
 
 #[derive(Debug)]
 pub struct AliasExpr {
-    expr: Rc<dyn PhysicalExpr>,
-    name: Rc<String>,
+    expr: Arc<dyn PhysicalExpr>,
+    name: Arc<String>,
 }
 
 impl AliasExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>, name: Rc<String>) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, name: Arc<String>) -> Self {
         Self { expr, name }
     }
 }
@@ -216,11 +216,11 @@ impl AggPhysicalExpr for AliasExpr {
 
 #[derive(Debug)]
 pub struct IsNullExpr {
-    expr: Rc<dyn PhysicalExpr>,
+    expr: Arc<dyn PhysicalExpr>,
 }
 
 impl IsNullExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
         Self { expr }
     }
 }
@@ -237,11 +237,11 @@ impl PhysicalExpr for IsNullExpr {
 
 #[derive(Debug)]
 pub struct IsNotNullExpr {
-    expr: Rc<dyn PhysicalExpr>,
+    expr: Arc<dyn PhysicalExpr>,
 }
 
 impl IsNotNullExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
         Self { expr }
     }
 }
@@ -273,11 +273,11 @@ macro_rules! impl_aggregation {
     ($expr_struct:ident, $agg_method:ident, $groupby_method_variant:expr, $finish_evaluate:ident) => {
         #[derive(Debug)]
         pub struct $expr_struct {
-            expr: Rc<dyn PhysicalExpr>,
+            expr: Arc<dyn PhysicalExpr>,
         }
 
         impl $expr_struct {
-            pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+            pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
                 Self { expr }
             }
         }
@@ -373,12 +373,12 @@ impl_aggregation!(
 
 #[derive(Debug)]
 pub struct AggQuantileExpr {
-    expr: Rc<dyn PhysicalExpr>,
+    expr: Arc<dyn PhysicalExpr>,
     quantile: f64,
 }
 
 impl AggQuantileExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>, quantile: f64) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, quantile: f64) -> Self {
         Self { expr, quantile }
     }
 }
@@ -414,11 +414,11 @@ impl AggPhysicalExpr for AggQuantileExpr {
 
 #[derive(Debug)]
 pub struct AggGroupsExpr {
-    expr: Rc<dyn PhysicalExpr>,
+    expr: Arc<dyn PhysicalExpr>,
 }
 
 impl AggGroupsExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
         Self { expr }
     }
 }
@@ -460,11 +460,11 @@ impl AggPhysicalExpr for AggGroupsExpr {
 
 #[derive(Debug)]
 pub struct AggNUniqueExpr {
-    expr: Rc<dyn PhysicalExpr>,
+    expr: Arc<dyn PhysicalExpr>,
 }
 
 impl AggNUniqueExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
         Self { expr }
     }
 }
@@ -503,12 +503,12 @@ impl AggPhysicalExpr for AggNUniqueExpr {
 
 #[derive(Debug)]
 pub struct CastExpr {
-    expr: Rc<dyn PhysicalExpr>,
+    expr: Arc<dyn PhysicalExpr>,
     data_type: ArrowDataType,
 }
 
 impl CastExpr {
-    pub fn new(expr: Rc<dyn PhysicalExpr>, data_type: ArrowDataType) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, data_type: ArrowDataType) -> Self {
         Self { expr, data_type }
     }
 }

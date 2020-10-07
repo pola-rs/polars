@@ -3,7 +3,7 @@ use crate::lazy::prelude::*;
 use crate::lazy::utils::{expr_to_root_column, rename_expr_root_name};
 use crate::prelude::*;
 use fnv::FnvHashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct PredicatePushDown {}
 
@@ -11,7 +11,7 @@ impl PredicatePushDown {
     fn finish_at_leaf(
         &self,
         lp: LogicalPlan,
-        acc_predicates: FnvHashMap<Rc<String>, Expr>,
+        acc_predicates: FnvHashMap<Arc<String>, Expr>,
     ) -> Result<LogicalPlan> {
         match acc_predicates.len() {
             // No filter in the logical plan
@@ -46,7 +46,7 @@ impl PredicatePushDown {
     fn push_down(
         &self,
         logical_plan: LogicalPlan,
-        mut acc_predicates: FnvHashMap<Rc<String>, Expr>,
+        mut acc_predicates: FnvHashMap<Arc<String>, Expr>,
     ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
 
@@ -132,11 +132,12 @@ impl PredicatePushDown {
 
                 for predicate in acc_predicates.values() {
                     if check_down_node(&predicate, schema_left) {
-                        let name = Rc::new(predicate.to_field(schema_left).unwrap().name().clone());
+                        let name =
+                            Arc::new(predicate.to_field(schema_left).unwrap().name().clone());
                         pushdown_left.insert(name, predicate.clone());
                     } else if check_down_node(&predicate, schema_right) {
                         let name =
-                            Rc::new(predicate.to_field(schema_right).unwrap().name().clone());
+                            Arc::new(predicate.to_field(schema_right).unwrap().name().clone());
                         pushdown_right.insert(name, predicate.clone());
                     } else {
                         local_predicates.push(predicate.clone())

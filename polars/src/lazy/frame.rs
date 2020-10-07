@@ -1,7 +1,7 @@
 //! Lazy variant of a [DataFrame](crate::prelude::DataFrame).
 use crate::frame::select::Selection;
 use crate::{lazy::prelude::*, prelude::*};
-use std::rc::Rc;
+use std::sync::Arc;
 
 impl DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
@@ -259,8 +259,8 @@ impl LazyFrame {
             .join(
                 other.logical_plan,
                 JoinType::Left,
-                Rc::new(left_on.into()),
-                Rc::new(right_on.into()),
+                Arc::new(left_on.into()),
+                Arc::new(right_on.into()),
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
@@ -274,8 +274,8 @@ impl LazyFrame {
             .join(
                 other.logical_plan,
                 JoinType::Outer,
-                Rc::new(left_on.into()),
-                Rc::new(right_on.into()),
+                Arc::new(left_on.into()),
+                Arc::new(right_on.into()),
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
@@ -289,8 +289,8 @@ impl LazyFrame {
             .join(
                 other.logical_plan,
                 JoinType::Inner,
-                Rc::new(left_on.into()),
-                Rc::new(right_on.into()),
+                Arc::new(left_on.into()),
+                Arc::new(right_on.into()),
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
@@ -339,7 +339,7 @@ impl LazyGroupBy {
     /// ```
     pub fn agg(self, aggs: Vec<Expr>) -> LazyFrame {
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(Rc::new(self.keys), aggs)
+            .groupby(Arc::new(self.keys), aggs)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }

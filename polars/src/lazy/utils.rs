@@ -1,12 +1,12 @@
 use crate::{lazy::prelude::*, prelude::*};
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
     Field::new(name, field.data_type().clone(), field.is_nullable())
 }
 
 // unpack alias(col) to name of the root column
-pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Rc<String>> {
+pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
     match expr {
         Expr::Column(name) => Ok(name.clone()),
         Expr::Alias(expr, _) => expr_to_root_column(expr),
@@ -33,7 +33,7 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Rc<String>> {
     }
 }
 
-pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Rc<String>) -> Result<Expr> {
+pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Result<Expr> {
     match expr {
         Expr::Column(_) => Ok(Expr::Column(new_name)),
         Expr::Alias(expr, alias) => rename_expr_root_name(expr, new_name)

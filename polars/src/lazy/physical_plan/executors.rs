@@ -1,6 +1,6 @@
 use super::*;
-use std::cell::RefCell;
 use std::mem;
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct CsvExec {
@@ -35,12 +35,12 @@ impl Executor for CsvExec {
 
 #[derive(Debug)]
 pub struct FilterExec {
-    predicate: Rc<dyn PhysicalExpr>,
-    input: Rc<dyn Executor>,
+    predicate: Arc<dyn PhysicalExpr>,
+    input: Arc<dyn Executor>,
 }
 
 impl FilterExec {
-    pub fn new(predicate: Rc<dyn PhysicalExpr>, input: Rc<dyn Executor>) -> Self {
+    pub fn new(predicate: Arc<dyn PhysicalExpr>, input: Arc<dyn Executor>) -> Self {
         Self { predicate, input }
     }
 }
@@ -57,20 +57,19 @@ impl Executor for FilterExec {
 
 #[derive(Debug)]
 pub struct DataFrameExec {
-    df: Rc<RefCell<DataFrame>>,
+    df: Arc<Mutex<DataFrame>>,
 }
 
 impl DataFrameExec {
-    pub(crate) fn new(df: Rc<RefCell<DataFrame>>) -> Self {
+    pub(crate) fn new(df: Arc<Mutex<DataFrame>>) -> Self {
         DataFrameExec { df }
     }
 }
 
 impl Executor for DataFrameExec {
     fn execute(&self) -> Result<DataFrame> {
-        let mut ref_df = self.df.borrow_mut();
-        let df = &mut *ref_df;
-        let out = mem::take(df);
+        let mut guard = self.df.lock().unwrap();
+        let out = mem::take(&mut *guard);
         Ok(out)
     }
 }
@@ -80,15 +79,15 @@ impl Executor for DataFrameExec {
 pub struct PipeExec {
     /// i.e. sort, projection
     operation: &'static str,
-    input: Rc<dyn Executor>,
-    expr: Vec<Rc<dyn PhysicalExpr>>,
+    input: Arc<dyn Executor>,
+    expr: Vec<Arc<dyn PhysicalExpr>>,
 }
 
 impl PipeExec {
     pub(crate) fn new(
         operation: &'static str,
-        input: Rc<dyn Executor>,
-        expr: Vec<Rc<dyn PhysicalExpr>>,
+        input: Arc<dyn Executor>,
+        expr: Vec<Arc<dyn PhysicalExpr>>,
     ) -> Self {
         Self {
             operation,
@@ -123,13 +122,13 @@ impl Executor for PipeExec {
 
 #[derive(Debug)]
 pub struct SortExec {
-    input: Rc<dyn Executor>,
+    input: Arc<dyn Executor>,
     by_column: String,
     reverse: bool,
 }
 
 impl SortExec {
-    pub(crate) fn new(input: Rc<dyn Executor>, by_column: String, reverse: bool) -> Self {
+    pub(crate) fn new(input: Arc<dyn Executor>, by_column: String, reverse: bool) -> Self {
         Self {
             input,
             by_column,
@@ -148,16 +147,16 @@ impl Executor for SortExec {
 /// Take an input Executor and a multiple expressions
 #[derive(Debug)]
 pub struct GroupByExec {
-    input: Rc<dyn Executor>,
-    keys: Rc<Vec<String>>,
-    aggs: Vec<Rc<dyn PhysicalExpr>>,
+    input: Arc<dyn Executor>,
+    keys: Arc<Vec<String>>,
+    aggs: Vec<Arc<dyn PhysicalExpr>>,
 }
 
 impl GroupByExec {
     pub(crate) fn new(
-        input: Rc<dyn Executor>,
-        keys: Rc<Vec<String>>,
-        aggs: Vec<Rc<dyn PhysicalExpr>>,
+        input: Arc<dyn Executor>,
+        keys: Arc<Vec<String>>,
+        aggs: Vec<Arc<dyn PhysicalExpr>>,
     ) -> Self {
         Self { input, keys, aggs }
     }
@@ -184,20 +183,20 @@ impl Executor for GroupByExec {
 
 #[derive(Debug)]
 pub struct JoinExec {
-    input_left: Rc<dyn Executor>,
-    input_right: Rc<dyn Executor>,
+    input_left: Arc<dyn Executor>,
+    input_right: Arc<dyn Executor>,
     how: JoinType,
-    left_on: Rc<String>,
-    right_on: Rc<String>,
+    left_on: Arc<String>,
+    right_on: Arc<String>,
 }
 
 impl JoinExec {
     pub(crate) fn new(
-        input_left: Rc<dyn Executor>,
-        input_right: Rc<dyn Executor>,
+        input_left: Arc<dyn Executor>,
+        input_right: Arc<dyn Executor>,
         how: JoinType,
-        left_on: Rc<String>,
-        right_on: Rc<String>,
+        left_on: Arc<String>,
+        right_on: Arc<String>,
     ) -> Self {
         JoinExec {
             input_left,

@@ -5,8 +5,8 @@ use crate::{
 };
 use arrow::datatypes::DataType;
 use fnv::FnvHashSet;
-use std::cell::RefCell;
-use std::{fmt, rc::Rc};
+use std::sync::Mutex;
+use std::{fmt, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub enum ScalarValue {
@@ -93,7 +93,7 @@ pub enum LogicalPlan {
         delimiter: Option<u8>,
     },
     DataFrameScan {
-        df: Rc<RefCell<DataFrame>>,
+        df: Arc<Mutex<DataFrame>>,
         schema: Schema,
     },
     // vertical selection
@@ -109,7 +109,7 @@ pub enum LogicalPlan {
     },
     Aggregate {
         input: Box<LogicalPlan>,
-        keys: Rc<Vec<String>>,
+        keys: Arc<Vec<String>>,
         aggs: Vec<Expr>,
         schema: Schema,
     },
@@ -118,8 +118,8 @@ pub enum LogicalPlan {
         input_right: Box<LogicalPlan>,
         schema: Schema,
         how: JoinType,
-        left_on: Rc<String>,
-        right_on: Rc<String>,
+        left_on: Arc<String>,
+        right_on: Arc<String>,
     },
 }
 
@@ -223,7 +223,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn groupby(self, keys: Rc<Vec<String>>, aggs: Vec<Expr>) -> Self {
+    pub fn groupby(self, keys: Arc<Vec<String>>, aggs: Vec<Expr>) -> Self {
         let current_schema = self.0.schema();
 
         let fields = keys
@@ -252,7 +252,7 @@ impl LogicalPlanBuilder {
     pub fn from_existing_df(df: DataFrame) -> Self {
         let schema = df.schema();
         LogicalPlan::DataFrameScan {
-            df: Rc::new(RefCell::new(df)),
+            df: Arc::new(Mutex::new(df)),
             schema,
         }
         .into()
@@ -271,8 +271,8 @@ impl LogicalPlanBuilder {
         self,
         other: LogicalPlan,
         how: JoinType,
-        left_on: Rc<String>,
-        right_on: Rc<String>,
+        left_on: Arc<String>,
+        right_on: Arc<String>,
     ) -> Self {
         let schema_left = self.0.schema();
         let schema_right = other.schema();

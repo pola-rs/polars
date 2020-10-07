@@ -5,7 +5,7 @@ pub mod planner;
 use crate::{lazy::prelude::*, prelude::*};
 use arrow::datatypes::SchemaRef;
 use std::fmt::Debug;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub enum ExprVal {
     Series(Series),
@@ -16,7 +16,7 @@ pub trait PhysicalPlanner {
     fn create_physical_plan<'a>(
         &self,
         logical_plan: &'a LogicalPlan,
-    ) -> Result<Rc<dyn Executor + 'a>>;
+    ) -> Result<Arc<dyn Executor + 'a>>;
 }
 
 // Executor are the executors of the physical plan and produce DataFrames. They
