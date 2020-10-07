@@ -12,6 +12,7 @@
 //! * df! macro
 //! * Rem trait implemented for Series and ChunkedArrays
 //! * ChunkedArrays broadcasting arithmetic
+//! * ChunkedArray/Series expand_at_index operation
 //! * laziness api initiated.
 //!     - Predicate pushdown optimizer
 //!     - Projection pushdown optimizer

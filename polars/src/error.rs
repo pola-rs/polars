@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use thiserror::Error as ThisError;
 
+type ErrString = Cow<'static, str>;
+
 #[derive(Debug, ThisError)]
 pub enum PolarsError {
     #[error(transparent)]
@@ -16,7 +18,7 @@ pub enum PolarsError {
     #[error("Lengths don't match")]
     ShapeMisMatch,
     #[error("{0}")]
-    Other(Cow<'static, str>),
+    Other(ErrString),
     #[error("No selection was made")]
     NoSelection,
     #[error("Out of bounds")]
@@ -35,6 +37,8 @@ pub enum PolarsError {
     RandError(String),
     #[error("This operation requires data without Null values")]
     HasNullValues,
+    #[error("{0}")]
+    UnknownSchema(ErrString),
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

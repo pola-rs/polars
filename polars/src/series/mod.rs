@@ -441,6 +441,11 @@ impl Series {
         apply_method_all_series_and_return!(self, tail, [length],)
     }
 
+    /// Create a new Series filled with values at that index.
+    pub fn expand_at_index(&self, length: usize, index: usize) -> Self {
+        apply_method_all_series_and_return!(self, expand_at_index, [length, index],)
+    }
+
     /// Cast to some primitive type.
     pub fn cast<N>(&self) -> Result<Self>
     where

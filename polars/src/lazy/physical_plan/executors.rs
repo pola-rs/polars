@@ -101,11 +101,21 @@ impl PipeExec {
 impl Executor for PipeExec {
     fn execute(&self) -> Result<DataFrame> {
         let df = self.input.execute()?;
+        let height = df.height();
 
         let selected_columns = self
             .expr
             .iter()
-            .map(|expr| expr.evaluate(&df))
+            .map(|expr| {
+                expr.evaluate(&df).map(|series| {
+                    // literal series. Should be whole column size
+                    if series.len() == 1 && height > 1 {
+                        series.expand_at_index(height, 0)
+                    } else {
+                        series
+                    }
+                })
+            })
             .collect::<Result<Vec<Series>>>()?;
         Ok(DataFrame::new_no_checks(selected_columns))
     }

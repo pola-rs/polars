@@ -188,15 +188,30 @@ impl LogicalPlanBuilder {
         todo!()
     }
 
-    pub fn project(self, expr: Vec<Expr>) -> Self {
-        // TODO: don't panic
-        let schema = utils::expressions_to_schema(&expr, self.0.schema());
+    pub fn project(self, exprs: Vec<Expr>) -> Self {
+        let schema = utils::expressions_to_schema(&exprs, self.0.schema());
         LogicalPlan::Projection {
-            expr,
+            expr: exprs,
             input: Box::new(self.0),
             schema,
         }
         .into()
+    }
+
+    pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
+        // current schema
+        let schema = self.0.schema();
+
+        let current_columns = schema.fields();
+        let mut selection = Vec::with_capacity(current_columns.len() + exprs.len());
+
+        for column in current_columns {
+            selection.push(col(column.name()));
+        }
+        for expr in exprs {
+            selection.push(expr);
+        }
+        self.project(selection)
     }
 
     /// Apply a filter

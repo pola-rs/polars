@@ -11,9 +11,9 @@ pub use crate::{
         comparison::{CompToSeries, NumComp},
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
         ops::{
-            ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkFillNone, ChunkFilter, ChunkFull,
-            ChunkReverse, ChunkSet, ChunkShift, ChunkSort, ChunkTake, ChunkUnique,
-            FillNoneStrategy, TakeRandom, TakeRandomUtf8,
+            ChunkAgg, ChunkApply, ChunkCast, ChunkCompare, ChunkExpandAtIndex, ChunkFillNone,
+            ChunkFilter, ChunkFull, ChunkReverse, ChunkSet, ChunkShift, ChunkSort, ChunkTake,
+            ChunkUnique, FillNoneStrategy, TakeRandom, TakeRandomUtf8,
         },
         take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
         ChunkedArray, Downcast, NoNull,

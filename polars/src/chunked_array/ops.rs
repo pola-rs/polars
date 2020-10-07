@@ -614,6 +614,16 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     }
 }
 
+impl ChunkFull<Series> for LargeListChunked {
+    fn full(_name: &str, _value: Series, _length: usize) -> LargeListChunked {
+        unimplemented!()
+    }
+
+    fn full_null(_name: &str, _length: usize) -> LargeListChunked {
+        unimplemented!()
+    }
+}
+
 /// Reverse a ChunkedArray<T>
 pub trait ChunkReverse<T> {
     /// Return a reversed version of this array.
@@ -705,6 +715,43 @@ impl ChunkFilter<LargeListType> for LargeListChunked {
                 builder.append_opt_series(&opt_val)
             });
         Ok(builder.finish())
+    }
+}
+
+pub trait ChunkExpandAtIndex<T> {
+    /// Create a new ChunkedArray filled with values at that index.
+    fn expand_at_index(&self, length: usize, index: usize) -> ChunkedArray<T>;
+}
+
+macro_rules! impl_chunk_expand {
+    ($self:ident, $length:ident, $index:ident) => {{
+        let opt_val = $self.get($index);
+        match opt_val {
+            Some(val) => ChunkedArray::full($self.name(), val, $length),
+            None => ChunkedArray::full_null($self.name(), $length),
+        }
+    }};
+}
+
+impl<T> ChunkExpandAtIndex<T> for ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
+    T: ArrowPrimitiveType,
+{
+    fn expand_at_index(&self, length: usize, index: usize) -> ChunkedArray<T> {
+        impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
+    fn expand_at_index(&self, length: usize, index: usize) -> Utf8Chunked {
+        impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<LargeListType> for LargeListChunked {
+    fn expand_at_index(&self, length: usize, index: usize) -> LargeListChunked {
+        impl_chunk_expand!(self, length, index)
     }
 }
 

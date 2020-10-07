@@ -295,6 +295,19 @@ impl LazyFrame {
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
+
+    /// Add a column to a DataFrame
+    pub fn with_column(self, expr: Expr) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().with_columns(vec![expr]).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    pub fn with_columns(self, exprs: Vec<Expr>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().with_columns(exprs).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
 }
 
 /// Utility struct for lazy groupby operation.
@@ -337,6 +350,18 @@ mod test {
     use crate::lazy::prelude::*;
     use crate::lazy::tests::get_df;
     use crate::prelude::*;
+
+    #[test]
+    fn test_lazy_with_column() {
+        let df = get_df()
+            .lazy()
+            .with_column(lit(10).alias("foo"))
+            .collect()
+            .unwrap();
+        println!("{:?}", df);
+        assert_eq!(df.width(), 6);
+        assert!(df.column("foo").is_ok());
+    }
 
     #[test]
     fn test_lazy_exec() {
