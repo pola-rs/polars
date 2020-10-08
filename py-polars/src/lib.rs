@@ -1,19 +1,140 @@
 #[macro_use]
 extern crate polars;
-use crate::{dataframe::PyDataFrame, series::PySeries};
+use crate::{
+    dataframe::PyDataFrame,
+    lazy::dataframe::{PyLazyFrame, PyLazyGroupBy},
+    series::PySeries,
+};
+use polars::lazy::dsl;
 use pyo3::prelude::*;
+use pyo3::types::{PyFloat, PyInt};
+use pyo3::wrap_pyfunction;
 
 pub mod dataframe;
 pub mod datatypes;
 pub mod dispatch;
 pub mod error;
 pub mod file;
+pub mod lazy;
 pub mod npy;
 pub mod series;
+
+#[pyclass]
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct PyExpr {
+    pub inner: dsl::Expr,
+}
+
+#[pymethods]
+impl PyExpr {
+    pub fn eq(&self, other: PyExpr) -> PyExpr {
+        self.clone().inner.eq(other.inner).into()
+    }
+    pub fn neq(&self, other: PyExpr) -> PyExpr {
+        self.clone().inner.neq(other.inner).into()
+    }
+    pub fn gt(&self, other: PyExpr) -> PyExpr {
+        self.clone().inner.gt(other.inner).into()
+    }
+    pub fn gt_eq(&self, other: PyExpr) -> PyExpr {
+        self.clone().inner.gt_eq(other.inner).into()
+    }
+    pub fn lt_eq(&self, other: PyExpr) -> PyExpr {
+        self.clone().inner.lt_eq(other.inner).into()
+    }
+    pub fn lt(&self, other: PyExpr) -> PyExpr {
+        self.clone().inner.lt(other.inner).into()
+    }
+    pub fn not(&self) -> PyExpr {
+        self.clone().inner.not().into()
+    }
+    pub fn is_null(&self) -> PyExpr {
+        self.clone().inner.is_null().into()
+    }
+    pub fn is_not_null(&self) -> PyExpr {
+        self.clone().inner.is_not_null().into()
+    }
+    pub fn agg_min(&self) -> PyExpr {
+        self.clone().inner.agg_min().into()
+    }
+    pub fn agg_max(&self) -> PyExpr {
+        self.clone().inner.agg_max().into()
+    }
+    pub fn agg_mean(&self) -> PyExpr {
+        self.clone().inner.agg_mean().into()
+    }
+    pub fn agg_median(&self) -> PyExpr {
+        self.clone().inner.agg_median().into()
+    }
+    pub fn agg_sum(&self) -> PyExpr {
+        self.clone().inner.agg_sum().into()
+    }
+    pub fn agg_n_unique(&self) -> PyExpr {
+        self.clone().inner.agg_n_unique().into()
+    }
+    pub fn agg_first(&self) -> PyExpr {
+        self.clone().inner.agg_first().into()
+    }
+    pub fn agg_last(&self) -> PyExpr {
+        self.clone().inner.agg_last().into()
+    }
+    pub fn agg_quantile(&self, quantile: f64) -> PyExpr {
+        self.clone().inner.agg_quantile(quantile).into()
+    }
+    pub fn agg_groups(&self) -> PyExpr {
+        self.clone().inner.agg_groups().into()
+    }
+    pub fn cast(&self, _data_type: &str) -> PyExpr {
+        todo!()
+    }
+    pub fn sort(&self, reverse: bool) -> PyExpr {
+        self.clone().inner.sort(reverse).into()
+    }
+}
+
+impl From<dsl::Expr> for PyExpr {
+    fn from(expr: dsl::Expr) -> Self {
+        PyExpr { inner: expr }
+    }
+}
+
+#[pyfunction]
+pub fn col(name: &str) -> PyExpr {
+    dsl::col(name).into()
+}
+
+#[pyfunction]
+pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
+    let left = l.inner;
+    let right = r.inner;
+
+    let op = dsl::Operator::from(op);
+    dsl::binary_expr(left, op, right).into()
+}
+
+#[pyfunction]
+pub fn lit(value: &PyAny) -> PyExpr {
+    if let Ok(int) = value.downcast::<PyInt>() {
+        let val = int.extract::<i64>().unwrap();
+        dsl::lit(val).into()
+    } else if let Ok(float) = value.downcast::<PyFloat>() {
+        let val = float.extract::<f64>().unwrap();
+        dsl::lit(val).into()
+    } else {
+        panic!("could not convert type")
+    }
+}
 
 #[pymodule]
 fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
+    m.add_class::<PyLazyFrame>().unwrap();
+    m.add_class::<PyLazyGroupBy>().unwrap();
+    m.add_class::<PyExpr>().unwrap();
+    m.add_wrapped(wrap_pyfunction!(col)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
     Ok(())
 }

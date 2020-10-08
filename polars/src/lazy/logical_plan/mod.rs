@@ -1,4 +1,5 @@
 pub(crate) mod optimizer;
+use crate::lazy::logical_plan::LogicalPlan::CsvScan;
 use crate::{
     lazy::{prelude::*, utils},
     prelude::*,
@@ -58,26 +59,6 @@ impl ScalarValue {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum Operator {
-    Eq,
-    NotEq,
-    Lt,
-    LtEq,
-    Gt,
-    GtEq,
-    Plus,
-    Minus,
-    Multiply,
-    Divide,
-    Modulus,
-    And,
-    Or,
-    Not,
-    Like,
-    NotLike,
-}
-
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 pub enum LogicalPlan {
@@ -121,6 +102,17 @@ pub enum LogicalPlan {
         left_on: Arc<String>,
         right_on: Arc<String>,
     },
+}
+
+impl Default for LogicalPlan {
+    fn default() -> Self {
+        CsvScan {
+            path: "".to_string(),
+            schema: Schema::new(vec![Field::new("", ArrowDataType::Null, true)]),
+            has_header: false,
+            delimiter: None,
+        }
+    }
 }
 
 impl fmt::Debug for LogicalPlan {

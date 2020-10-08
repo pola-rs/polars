@@ -21,6 +21,17 @@ pub struct LazyFrame {
     type_coercion: bool,
 }
 
+impl Default for LazyFrame {
+    fn default() -> Self {
+        LazyFrame {
+            logical_plan: LogicalPlan::default(),
+            projection_pushdown: false,
+            predicate_pushdown: false,
+            type_coercion: false,
+        }
+    }
+}
+
 impl From<LogicalPlan> for LazyFrame {
     fn from(plan: LogicalPlan) -> Self {
         Self {

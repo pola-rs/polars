@@ -2,6 +2,7 @@ use polars::prelude::*;
 use pyo3::{exceptions::RuntimeError, prelude::*};
 
 use crate::datatypes::DataType;
+use crate::lazy::dataframe::PyLazyFrame;
 use crate::{
     error::PyPolarsEr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
@@ -16,6 +17,12 @@ pub struct PyDataFrame {
 
 impl PyDataFrame {
     fn new(df: DataFrame) -> Self {
+        PyDataFrame { df }
+    }
+}
+
+impl From<DataFrame> for PyDataFrame {
+    fn from(df: DataFrame) -> Self {
         PyDataFrame { df }
     }
 }
@@ -388,5 +395,9 @@ impl PyDataFrame {
     pub fn shift(&self, periods: i32) -> PyResult<Self> {
         let df = self.df.shift(periods).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
+    }
+
+    pub fn lazy(&self) -> PyLazyFrame {
+        self.df.clone().lazy().into()
     }
 }

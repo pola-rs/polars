@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 
 if not os.environ.get("DOC_BUILDING", False):
-    from .pypolars import PyDataFrame, PySeries
+    from .pypolars import PyDataFrame, PySeries, PyLazyFrame
 from typing import (
     Dict,
     Sequence,
@@ -72,7 +72,8 @@ class DataFrame:
 
     @staticmethod
     def read_parquet(
-        file: Union[str, BinaryIO], batch_size: int = 250000,
+        file: Union[str, BinaryIO],
+        batch_size: int = 250000,
     ) -> DataFrame:
         """
         Read into a DataFrame from a parquet file.
@@ -633,6 +634,9 @@ class DataFrame:
             Number of places to shift (may be negative).
         """
         return wrap_df(self._df.shift(periods))
+
+    def lazy(self) -> "LazyFrame":
+        pass
 
 
 class GroupBy:

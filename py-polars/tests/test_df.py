@@ -126,10 +126,18 @@ def test_groupby():
 
 def test_join():
     df_left = DataFrame(
-        {"a": ["a", "b", "a", "z"], "b": [1, 2, 3, 4], "c": [6, 5, 4, 3],}
+        {
+            "a": ["a", "b", "a", "z"],
+            "b": [1, 2, 3, 4],
+            "c": [6, 5, 4, 3],
+        }
     )
     df_right = DataFrame(
-        {"a": ["b", "c", "b", "a"], "k": [0, 3, 9, 6], "c": [1, 0, 2, 1],}
+        {
+            "a": ["b", "c", "b", "a"],
+            "k": [0, 3, 9, 6],
+            "c": [1, 0, 2, 1],
+        }
     )
 
     joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")

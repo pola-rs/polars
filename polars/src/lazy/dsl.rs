@@ -210,7 +210,51 @@ impl fmt::Debug for Expr {
     }
 }
 
-pub(crate) fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum Operator {
+    Eq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    Plus,
+    Minus,
+    Multiply,
+    Divide,
+    Modulus,
+    And,
+    Or,
+    Not,
+    Like,
+    NotLike,
+}
+
+impl From<u8> for Operator {
+    fn from(op: u8) -> Self {
+        match op {
+            0 => Operator::Eq,
+            1 => Operator::NotEq,
+            2 => Operator::Lt,
+            3 => Operator::LtEq,
+            4 => Operator::Gt,
+            5 => Operator::GtEq,
+            6 => Operator::Plus,
+            7 => Operator::Minus,
+            8 => Operator::Multiply,
+            9 => Operator::Divide,
+            10 => Operator::Modulus,
+            11 => Operator::And,
+            12 => Operator::Or,
+            13 => Operator::Not,
+            14 => Operator::Like,
+            15 => Operator::NotLike,
+            _ => panic!("not an operator"),
+        }
+    }
+}
+
+pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {
         left: Box::new(l),
         op,
