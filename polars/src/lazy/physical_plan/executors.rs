@@ -221,3 +221,38 @@ impl Executor for JoinExec {
         }
     }
 }
+#[derive(Debug)]
+pub struct StackExec {
+    input: Arc<dyn Executor>,
+    expr: Vec<Arc<dyn PhysicalExpr>>,
+}
+
+impl StackExec {
+    pub(crate) fn new(input: Arc<dyn Executor>, expr: Vec<Arc<dyn PhysicalExpr>>) -> Self {
+        Self { input, expr }
+    }
+}
+
+impl Executor for StackExec {
+    fn execute(&self) -> Result<DataFrame> {
+        let mut df = self.input.execute()?;
+        let height = df.height();
+
+        let added_columns = self
+            .expr
+            .iter()
+            .map(|expr| {
+                expr.evaluate(&df).map(|series| {
+                    // literal series. Should be whole column size
+                    if series.len() == 1 && height > 1 {
+                        series.expand_at_index(height, 0)
+                    } else {
+                        series
+                    }
+                })
+            })
+            .collect::<Result<Vec<Series>>>()?;
+        df.hstack(&added_columns)?;
+        Ok(df)
+    }
+}

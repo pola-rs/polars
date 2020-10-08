@@ -372,6 +372,14 @@ mod test {
         println!("{:?}", df);
         assert_eq!(df.width(), 6);
         assert!(df.column("foo").is_ok());
+
+        let df = get_df()
+            .lazy()
+            .with_column(lit(10).alias("foo"))
+            .select(&[col("foo"), col("sepal.width")])
+            .collect()
+            .unwrap();
+        println!("{:?}", df);
     }
 
     #[test]

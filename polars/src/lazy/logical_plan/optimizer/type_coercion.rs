@@ -167,6 +167,9 @@ impl TypeCoercion {
                     right_on,
                 })
             }
+            HStack { input, exprs, .. } => Ok(LogicalPlanBuilder::from(self.coerce(*input)?)
+                .with_columns(exprs)
+                .build()),
         }
     }
 }

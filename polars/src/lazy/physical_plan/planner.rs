@@ -1,4 +1,4 @@
-use crate::lazy::physical_plan::executors::JoinExec;
+use crate::lazy::physical_plan::executors::{JoinExec, StackExec};
 use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
 
@@ -16,6 +16,9 @@ impl PhysicalPlanner for DefaultPlanner {
 }
 
 impl DefaultPlanner {
+    fn create_physical_expressions(&self, exprs: &[Expr]) -> Result<Vec<Arc<dyn PhysicalExpr>>> {
+        exprs.iter().map(|e| self.create_physical_expr(e)).collect()
+    }
     pub fn create_initial_physical_plan(
         &self,
         logical_plan: &LogicalPlan,
@@ -39,10 +42,7 @@ impl DefaultPlanner {
             ))),
             LogicalPlan::Projection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(input)?;
-                let phys_expr = expr
-                    .iter()
-                    .map(|expr| self.create_physical_expr(expr))
-                    .collect::<Result<Vec<_>>>()?;
+                let phys_expr = self.create_physical_expressions(expr)?;
                 Ok(Arc::new(PipeExec::new("projection", input, phys_expr)))
             }
             LogicalPlan::DataFrameScan { df, .. } => Ok(Arc::new(DataFrameExec::new(df.clone()))),
@@ -60,10 +60,7 @@ impl DefaultPlanner {
                 input, keys, aggs, ..
             } => {
                 let input = self.create_initial_physical_plan(input)?;
-                let phys_aggs = aggs
-                    .iter()
-                    .map(|e| self.create_physical_expr(e))
-                    .collect::<Result<Vec<_>>>()?;
+                let phys_aggs = self.create_physical_expressions(aggs)?;
                 Ok(Arc::new(GroupByExec::new(input, keys.clone(), phys_aggs)))
             }
             LogicalPlan::Join {
@@ -83,6 +80,11 @@ impl DefaultPlanner {
                     left_on.clone(),
                     right_on.clone(),
                 )))
+            }
+            LogicalPlan::HStack { input, exprs, .. } => {
+                let input = self.create_initial_physical_plan(input)?;
+                let phys_expr = self.create_physical_expressions(exprs)?;
+                Ok(Arc::new(StackExec::new(input, phys_expr)))
             }
         }
     }

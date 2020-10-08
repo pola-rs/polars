@@ -151,6 +151,11 @@ impl PredicatePushDown {
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
                 self.finish_node(local_predicates, builder)
             }
+            HStack { input, exprs, .. } => Ok(LogicalPlanBuilder::from(
+                self.push_down(*input, acc_predicates)?,
+            )
+            .with_columns(exprs)
+            .build()),
         }
     }
 }

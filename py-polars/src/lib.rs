@@ -6,9 +6,10 @@ use crate::{
     series::PySeries,
 };
 use polars::lazy::dsl;
+use polars::lazy::dsl::Operator;
 use pyo3::prelude::*;
 use pyo3::types::{PyFloat, PyInt};
-use pyo3::wrap_pyfunction;
+use pyo3::{wrap_pyfunction, PyNumberProtocol};
 
 pub mod dataframe;
 pub mod datatypes;
@@ -24,6 +25,22 @@ pub mod series;
 #[derive(Clone)]
 pub struct PyExpr {
     pub inner: dsl::Expr,
+}
+
+#[pyproto]
+impl PyNumberProtocol for PyExpr {
+    fn __add__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(lhs.inner, Operator::Plus, rhs.inner).into())
+    }
+    fn __sub__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(lhs.inner, Operator::Minus, rhs.inner).into())
+    }
+    fn __mul__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(lhs.inner, Operator::Multiply, rhs.inner).into())
+    }
+    fn __truediv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(lhs.inner, Operator::Divide, rhs.inner).into())
+    }
 }
 
 #[pymethods]
@@ -45,6 +62,9 @@ impl PyExpr {
     }
     pub fn lt(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.lt(other.inner).into()
+    }
+    pub fn alias(&self, name: &str) -> PyExpr {
+        self.clone().inner.alias(name).into()
     }
     pub fn not(&self) -> PyExpr {
         self.clone().inner.not().into()

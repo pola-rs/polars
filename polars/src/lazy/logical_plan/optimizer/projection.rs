@@ -74,7 +74,6 @@ impl ProjectionPushDown {
     // Every non projection operation we recurse and rebuild that operation on the output of the recursion.
     // The recursion stops at the nodes of the logical plan. These nodes IO or existing DataFrames. On top of
     // these nodes we apply the projection.
-    // TODO: renaming operations and joins interfere with the schema. We need to keep track of the schema somehow.
     fn push_down(
         &self,
         logical_plan: LogicalPlan,
@@ -220,6 +219,18 @@ impl ProjectionPushDown {
                 let builder =
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
                 self.finish_node(local_projection, builder)
+            }
+            HStack { input, exprs, .. } => {
+                // todo! could just keep down if we accept a different order of the schema
+                let (mut acc_projections, mut local_projections) =
+                    self.split_acc_projections(acc_projections, input.schema());
+
+                let builder =
+                    LogicalPlanBuilder::from(self.push_down(*input, acc_projections.clone())?)
+                        .with_columns(exprs);
+                // locally re-project all columns plus the stacked columns to keep the order of the schema equal
+                local_projections.append(&mut acc_projections);
+                self.finish_node(local_projections, builder)
             }
         }
     }

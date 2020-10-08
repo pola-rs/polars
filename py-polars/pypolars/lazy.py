@@ -87,3 +87,9 @@ class LazyFrame:
         else:
             return NotImplemented
         return wrap_ldf(inner)
+
+    def with_columns(self, exprs: List[PyExpr]) -> LazyFrame:
+        return wrap_ldf(self._ldf.with_columns(exprs))
+
+    def with_column(self, expr: PyExpr) -> LazyFrame:
+        return self.with_columns([expr])

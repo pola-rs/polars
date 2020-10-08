@@ -102,6 +102,11 @@ pub enum LogicalPlan {
         left_on: Arc<String>,
         right_on: Arc<String>,
     },
+    HStack {
+        input: Box<LogicalPlan>,
+        exprs: Vec<Expr>,
+        schema: Schema,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -145,6 +150,7 @@ impl fmt::Debug for LogicalPlan {
                 "JOIN\n\t({:?})\nWITH\n\t({:?})\nON (left: {} right: {})",
                 input_left, input_right, left_on, right_on
             ),
+            HStack { input, exprs, .. } => write!(f, "\n{:?} WITH COLUMN(S) {:?}\n", input, exprs),
         }
     }
 }
@@ -162,6 +168,7 @@ impl LogicalPlan {
             Sort { input, .. } => input.schema(),
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
+            HStack { schema, .. } => schema,
         }
     }
     pub fn describe(&self) -> String {
@@ -194,16 +201,15 @@ impl LogicalPlanBuilder {
         // current schema
         let schema = self.0.schema();
 
-        let current_columns = schema.fields();
-        let mut selection = Vec::with_capacity(current_columns.len() + exprs.len());
+        let added_schema = utils::expressions_to_schema(&exprs, schema);
+        let new_schema = Schema::try_merge(&[schema.clone(), added_schema]).unwrap();
 
-        for column in current_columns {
-            selection.push(col(column.name()));
+        LogicalPlan::HStack {
+            input: Box::new(self.0),
+            exprs,
+            schema: new_schema,
         }
-        for expr in exprs {
-            selection.push(expr);
-        }
-        self.project(selection)
+        .into()
     }
 
     /// Apply a filter
