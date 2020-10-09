@@ -5,6 +5,7 @@ use crate::{
     lazy::dataframe::{PyLazyFrame, PyLazyGroupBy},
     series::PySeries,
 };
+use polars::datatypes::ArrowDataType;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use pyo3::prelude::*;
@@ -45,69 +46,108 @@ impl PyNumberProtocol for PyExpr {
 
 #[pymethods]
 impl PyExpr {
+    #[text_signature = "($self, other)"]
     pub fn eq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.eq(other.inner).into()
     }
+    #[text_signature = "($self, other)"]
     pub fn neq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.neq(other.inner).into()
     }
+    #[text_signature = "($self, other)"]
     pub fn gt(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.gt(other.inner).into()
     }
+    #[text_signature = "($self, other)"]
     pub fn gt_eq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.gt_eq(other.inner).into()
     }
+    #[text_signature = "($self, other)"]
     pub fn lt_eq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.lt_eq(other.inner).into()
     }
+    #[text_signature = "($self, other)"]
     pub fn lt(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.lt(other.inner).into()
     }
+    #[text_signature = "($self, name)"]
     pub fn alias(&self, name: &str) -> PyExpr {
         self.clone().inner.alias(name).into()
     }
+    #[text_signature = "($self)"]
     pub fn not(&self) -> PyExpr {
         self.clone().inner.not().into()
     }
+    #[text_signature = "($self)"]
     pub fn is_null(&self) -> PyExpr {
         self.clone().inner.is_null().into()
     }
+    #[text_signature = "($self)"]
     pub fn is_not_null(&self) -> PyExpr {
         self.clone().inner.is_not_null().into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_min(&self) -> PyExpr {
         self.clone().inner.agg_min().into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_max(&self) -> PyExpr {
         self.clone().inner.agg_max().into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_mean(&self) -> PyExpr {
         self.clone().inner.agg_mean().into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_median(&self) -> PyExpr {
         self.clone().inner.agg_median().into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_sum(&self) -> PyExpr {
         self.clone().inner.agg_sum().into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_n_unique(&self) -> PyExpr {
         self.clone().inner.agg_n_unique().into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_first(&self) -> PyExpr {
         self.clone().inner.agg_first().into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_last(&self) -> PyExpr {
         self.clone().inner.agg_last().into()
     }
+    #[text_signature = "($self, quantile)"]
     pub fn agg_quantile(&self, quantile: f64) -> PyExpr {
         self.clone().inner.agg_quantile(quantile).into()
     }
+    #[text_signature = "($self)"]
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
     }
-    pub fn cast(&self, _data_type: &str) -> PyExpr {
-        todo!()
+
+    #[text_signature = "($self, data_type)"]
+    pub fn cast(&self, data_type: &str) -> PyExpr {
+        // TODO! accept the DataType objects.
+        let expr = match data_type {
+            "u8" => self.inner.clone().cast(ArrowDataType::UInt8),
+            "u16" => self.inner.clone().cast(ArrowDataType::UInt16),
+            "u32" => self.inner.clone().cast(ArrowDataType::UInt32),
+            "u64" => self.inner.clone().cast(ArrowDataType::UInt64),
+            "i8" => self.inner.clone().cast(ArrowDataType::Int8),
+            "i16" => self.inner.clone().cast(ArrowDataType::Int16),
+            "i32" => self.inner.clone().cast(ArrowDataType::Int32),
+            "i64" => self.inner.clone().cast(ArrowDataType::Int64),
+            "f32" => self.inner.clone().cast(ArrowDataType::Float32),
+            "f64" => self.inner.clone().cast(ArrowDataType::Float64),
+            "bool" => self.inner.clone().cast(ArrowDataType::Boolean),
+            "utf8" => self.inner.clone().cast(ArrowDataType::Utf8),
+            _ => todo!(),
+        };
+        expr.into()
     }
+    #[text_signature = "($self, reverse)"]
     pub fn sort(&self, reverse: bool) -> PyExpr {
         self.clone().inner.sort(reverse).into()
     }
