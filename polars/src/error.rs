@@ -11,8 +11,8 @@ pub enum PolarsError {
     InvalidOperation,
     #[error("Chunks don't match")]
     ChunkMisMatch,
-    #[error("Data types don't match")]
-    DataTypeMisMatch,
+    #[error("Data types don't match {0}")]
+    DataTypeMisMatch(ErrString),
     #[error("Not found: {0}")]
     NotFound(String),
     #[error("Lengths don't match")]

@@ -899,8 +899,12 @@ impl ChunkShift<LargeListType, Series> for LargeListChunked {
 }
 
 pub trait ChunkZip<T> {
+    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+    /// from `other` where the mask evaluates `false`
     fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>>;
 
+    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+    /// from `other` where the mask evaluates `false`
     fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>>;
 }
 

@@ -183,7 +183,9 @@ impl<T> ChunkedArray<T> {
                     let ca = unsafe { mem::transmute::<_, &ChunkedArray<T>>(ca) };
                     Ok(ca)
                 } else {
-                    Err(PolarsError::DataTypeMisMatch)
+                    Err(PolarsError::DataTypeMisMatch(
+                        format!("cannot unpack series {:?} into matching type", series).into(),
+                    ))
                 }
             }};
         }
@@ -266,7 +268,14 @@ impl<T> ChunkedArray<T> {
             self.chunk_id = create_chunk_id(&self.chunks);
             Ok(())
         } else {
-            Err(PolarsError::DataTypeMisMatch)
+            Err(PolarsError::DataTypeMisMatch(
+                format!(
+                    "cannot append array of type {:?} in array of type {:?}",
+                    other.data_type(),
+                    self.dtype()
+                )
+                .into(),
+            ))
         }
     }
 

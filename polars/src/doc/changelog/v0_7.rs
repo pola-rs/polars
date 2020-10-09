@@ -12,7 +12,8 @@
 //! * df! macro
 //! * Rem trait implemented for Series and ChunkedArrays
 //! * ChunkedArrays broadcasting arithmetic
-//! * ChunkedArray/Series expand_at_index operation
+//! * ChunkedArray/Series `zip_with` operation
+//! * ChunkedArray/Series `expand_at_index` operation
 //! * laziness api initiated.
 //!     - Predicate pushdown optimizer
 //!     - Projection pushdown optimizer
@@ -22,6 +23,8 @@
 //!     - Aggregation (groupby)
 //!         - all eager aggregations supported
 //!     - Joins
+//!     - WithColumn operation
 //!     - DSL
 //!         * (col, lit, lt, lt_eq, alias, etc.)
 //!         * arithmetic
+//!         * when / then /otherwise

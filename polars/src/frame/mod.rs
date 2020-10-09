@@ -285,7 +285,14 @@ impl DataFrame {
         }
 
         if self.dtypes() != df.dtypes() {
-            return Err(PolarsError::DataTypeMisMatch);
+            return Err(PolarsError::DataTypeMisMatch(
+                format!(
+                    "cannot vstack: data types don't match of {:?} {:?}",
+                    self.head(Some(2)),
+                    df.head(Some(2))
+                )
+                .into(),
+            ));
         }
         self.columns
             .iter_mut()

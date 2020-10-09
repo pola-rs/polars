@@ -138,11 +138,19 @@ pub enum Series {
 }
 
 macro_rules! unpack_series {
-    ($self:ident, $variant:ident) => {
+    ($self:ident, $variant:ident, $ty:expr) => {
         if let Series::$variant(ca) = $self {
             Ok(ca)
         } else {
-            Err(PolarsError::DataTypeMisMatch)
+            Err(PolarsError::DataTypeMisMatch(
+                format!(
+                    "cannot unpack Series: {:?} of type {:?} into {:?}",
+                    $self.name(),
+                    $self.dtype(),
+                    $ty
+                )
+                .into(),
+            ))
         }
     };
 }
@@ -193,11 +201,11 @@ impl Series {
     }
 
     pub fn i8(&self) -> Result<&Int8Chunked> {
-        unpack_series!(self, Int8)
+        unpack_series!(self, Int8, "i8")
     }
 
     pub fn i16(&self) -> Result<&Int16Chunked> {
-        unpack_series!(self, Int16)
+        unpack_series!(self, Int16, "i16")
     }
 
     /// Unpack to ChunkedArray
@@ -215,137 +223,137 @@ impl Series {
     /// }).collect();
     /// ```
     pub fn i32(&self) -> Result<&Int32Chunked> {
-        unpack_series!(self, Int32)
+        unpack_series!(self, Int32, "i32")
     }
 
     /// Unpack to ChunkedArray
     pub fn i64(&self) -> Result<&Int64Chunked> {
-        unpack_series!(self, Int64)
+        unpack_series!(self, Int64, "i64")
     }
 
     /// Unpack to ChunkedArray
     pub fn f32(&self) -> Result<&Float32Chunked> {
-        unpack_series!(self, Float32)
+        unpack_series!(self, Float32, "f32")
     }
 
     /// Unpack to ChunkedArray
     pub fn f64(&self) -> Result<&Float64Chunked> {
-        unpack_series!(self, Float64)
+        unpack_series!(self, Float64, "f64")
     }
 
     /// Unpack to ChunkedArray
     pub fn u8(&self) -> Result<&UInt8Chunked> {
-        unpack_series!(self, UInt8)
+        unpack_series!(self, UInt8, "u8")
     }
 
     /// Unpack to ChunkedArray
     pub fn u16(&self) -> Result<&UInt16Chunked> {
-        unpack_series!(self, UInt16)
+        unpack_series!(self, UInt16, "u16")
     }
 
     /// Unpack to ChunkedArray
     pub fn u32(&self) -> Result<&UInt32Chunked> {
-        unpack_series!(self, UInt32)
+        unpack_series!(self, UInt32, "u32")
     }
 
     /// Unpack to ChunkedArray
     pub fn u64(&self) -> Result<&UInt64Chunked> {
-        unpack_series!(self, UInt64)
+        unpack_series!(self, UInt64, "u64")
     }
 
     /// Unpack to ChunkedArray
     pub fn bool(&self) -> Result<&BooleanChunked> {
-        unpack_series!(self, Bool)
+        unpack_series!(self, Bool, "bool")
     }
 
     /// Unpack to ChunkedArray
     pub fn utf8(&self) -> Result<&Utf8Chunked> {
-        unpack_series!(self, Utf8)
+        unpack_series!(self, Utf8, "utf8")
     }
 
     /// Unpack to ChunkedArray
     pub fn date32(&self) -> Result<&Date32Chunked> {
-        unpack_series!(self, Date32)
+        unpack_series!(self, Date32, "date32")
     }
 
     /// Unpack to ChunkedArray
     pub fn date64(&self) -> Result<&Date64Chunked> {
-        unpack_series!(self, Date64)
+        unpack_series!(self, Date64, "date64")
     }
 
     /// Unpack to ChunkedArray
     pub fn time32_millisecond(&self) -> Result<&Time32MillisecondChunked> {
-        unpack_series!(self, Time32Millisecond)
+        unpack_series!(self, Time32Millisecond, "time32millisecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn time32_second(&self) -> Result<&Time32SecondChunked> {
-        unpack_series!(self, Time32Second)
+        unpack_series!(self, Time32Second, "time32second")
     }
 
     /// Unpack to ChunkedArray
     pub fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
-        unpack_series!(self, Time64Nanosecond)
+        unpack_series!(self, Time64Nanosecond, "time64nanosecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn time64_microsecond(&self) -> Result<&Time64MicrosecondChunked> {
-        unpack_series!(self, Time64Microsecond)
+        unpack_series!(self, Time64Microsecond, "time64microsecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
-        unpack_series!(self, DurationNanosecond)
+        unpack_series!(self, DurationNanosecond, "durationnanosecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn duration_microsecond(&self) -> Result<&DurationMicrosecondChunked> {
-        unpack_series!(self, DurationMicrosecond)
+        unpack_series!(self, DurationMicrosecond, "durationmicrosecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
-        unpack_series!(self, DurationMillisecond)
+        unpack_series!(self, DurationMillisecond, "durationmillisecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn duration_second(&self) -> Result<&DurationSecondChunked> {
-        unpack_series!(self, DurationSecond)
+        unpack_series!(self, DurationSecond, "durationsecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn timestamp_nanosecond(&self) -> Result<&TimestampNanosecondChunked> {
-        unpack_series!(self, TimestampNanosecond)
+        unpack_series!(self, TimestampNanosecond, "timestampnanosecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn timestamp_microsecond(&self) -> Result<&TimestampMicrosecondChunked> {
-        unpack_series!(self, TimestampMicrosecond)
+        unpack_series!(self, TimestampMicrosecond, "timestampmicrosecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn timestamp_millisecond(&self) -> Result<&TimestampMillisecondChunked> {
-        unpack_series!(self, TimestampMillisecond)
+        unpack_series!(self, TimestampMillisecond, "timestampmillisecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn timestamp_second(&self) -> Result<&TimestampSecondChunked> {
-        unpack_series!(self, TimestampSecond)
+        unpack_series!(self, TimestampSecond, "timestampsecond")
     }
 
     /// Unpack to ChunkedArray
     pub fn interval_daytime(&self) -> Result<&IntervalDayTimeChunked> {
-        unpack_series!(self, IntervalDayTime)
+        unpack_series!(self, IntervalDayTime, "intervaldaytime")
     }
 
     /// Unpack to ChunkedArray
     pub fn interval_year_month(&self) -> Result<&IntervalYearMonthChunked> {
-        unpack_series!(self, IntervalYearMonth)
+        unpack_series!(self, IntervalYearMonth, "intervalyearmonth")
     }
 
     /// Unpack to ChunkedArray
     pub fn large_list(&self) -> Result<&LargeListChunked> {
-        unpack_series!(self, LargeList)
+        unpack_series!(self, LargeList, "largelist")
     }
 
     pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
@@ -369,7 +377,9 @@ impl Series {
             apply_method_all_series!(self, append, other.as_ref());
             Ok(self)
         } else {
-            Err(PolarsError::DataTypeMisMatch)
+            Err(PolarsError::DataTypeMisMatch(
+                "cannot append Series; data types don't match".into(),
+            ))
         }
     }
 
@@ -533,7 +543,9 @@ impl Series {
                 if *$ca.dtype() == N::get_data_type() {
                     unsafe { Ok(mem::transmute::<_, &ChunkedArray<N>>($ca)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch)
+                    Err(PolarsError::DataTypeMisMatch(
+                        "cannot unpack Series; data types don't match".into(),
+                    ))
                 }
             }};
         }
@@ -702,6 +714,8 @@ impl Series {
         Ok(apply_method_all_series_and_return!(self, fill_none, [strategy],?))
     }
 
+    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+    /// from `other` where the mask evaluates `false`
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Self> {
         Ok(apply_method_all_series_and_return!(self, zip_with_series, [mask, other],?))
     }

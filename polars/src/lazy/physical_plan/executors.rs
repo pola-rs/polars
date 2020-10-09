@@ -50,7 +50,7 @@ impl Executor for FilterExec {
     fn execute(&self) -> Result<DataFrame> {
         let df = self.input.execute()?;
         let s = self.predicate.evaluate(&df)?;
-        let mask = s.bool()?;
+        let mask = s.bool().expect("filter predicate wasn't of type boolean");
 
         Ok(df.filter(mask)?)
     }
