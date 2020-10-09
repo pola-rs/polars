@@ -1,6 +1,26 @@
 use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
 
+/// A pushed down projection can create an alias, create a new expr only containing the new names.
+pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
+    match expr {
+        Expr::Column(name) => Ok(Expr::Column(name.clone())),
+        Expr::Alias(_, name) => Ok(Expr::Column(name.clone())),
+        Expr::Sort { expr, .. } => projected_name(expr),
+        a => Err(PolarsError::Other(
+            format!(
+                "No root column name could be found for {:?} in projected_name utillity",
+                a
+            )
+            .into(),
+        )),
+    }
+}
+
+pub(crate) fn projected_names(exprs: &[Expr]) -> Result<Vec<Expr>> {
+    exprs.iter().map(|expr| projected_name(expr)).collect()
+}
+
 pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
     Field::new(name, field.data_type().clone(), field.is_nullable())
 }

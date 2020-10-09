@@ -1,6 +1,6 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::expr_to_root_column;
+use crate::lazy::utils::{expr_to_root_column, projected_names};
 use crate::prelude::*;
 use arrow::datatypes::Schema;
 
@@ -221,16 +221,17 @@ impl ProjectionPushDown {
                 self.finish_node(local_projection, builder)
             }
             HStack { input, exprs, .. } => {
-                // todo! could just keep down if we accept a different order of the schema
-                let (mut acc_projections, mut local_projections) =
+                // just the original projections at this level that may be renamed
+                let local_renamed_projections = projected_names(&acc_projections)?;
+
+                let (acc_projections, _) =
                     self.split_acc_projections(acc_projections, input.schema());
 
                 let builder =
                     LogicalPlanBuilder::from(self.push_down(*input, acc_projections.clone())?)
                         .with_columns(exprs);
                 // locally re-project all columns plus the stacked columns to keep the order of the schema equal
-                local_projections.append(&mut acc_projections);
-                self.finish_node(local_projections, builder)
+                self.finish_node(local_renamed_projections, builder)
             }
         }
     }
