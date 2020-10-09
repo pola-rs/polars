@@ -27,6 +27,7 @@ pub mod cast;
 pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
+pub mod kernels;
 #[cfg(feature = "ndarray")]
 #[doc(cfg(feature = "ndarray"))]
 mod ndarray;
@@ -43,6 +44,7 @@ pub mod take;
 pub mod temporal;
 pub mod unique;
 pub mod upstream_traits;
+
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
     DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,

@@ -11,6 +11,7 @@ use arrow::{
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -355,6 +356,19 @@ impl<T> AlignedVec<T> {
 
     pub fn as_ptr(&self) -> *const T {
         self.inner.as_ptr()
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.inner.as_mut_ptr()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.inner.capacity()
+    }
+
+    pub fn into_raw_parts(self) -> (*mut T, usize, usize) {
+        let mut me = ManuallyDrop::new(self);
+        (me.as_mut_ptr(), me.len(), me.capacity())
     }
 }
 

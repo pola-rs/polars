@@ -1,5 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use crate::chunked_array::builder::get_large_list_builder;
+use crate::chunked_array::kernels;
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::compute;
@@ -903,15 +904,14 @@ pub trait ChunkZip<T> {
     fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>>;
 }
 
-// TODO! fast paths and check mask has no null values.
 macro_rules! impl_ternary {
-    ($mask:expr, $truthy:expr, $other:expr) => {{
+    ($mask:expr, $self:expr, $other:expr, $ty:ty) => {{
         if $mask.null_count() > 0 {
             Err(PolarsError::HasNullValues)
         } else {
-            let val = $mask
+            let mut val: ChunkedArray<$ty> = $mask
                 .into_no_null_iter()
-                .zip($truthy)
+                .zip($self)
                 .zip($other)
                 .map(
                     |((mask_val, true_val), false_val)| {
@@ -923,7 +923,45 @@ macro_rules! impl_ternary {
                     },
                 )
                 .collect();
+            val.rename($self.name());
             Ok(val)
+        }
+    }};
+}
+macro_rules! impl_ternary_broadcast {
+    ($self:ident, $self_len:ident, $other_len:expr, $other:expr, $mask:expr, $ty:ty) => {{
+        match ($self_len, $other_len) {
+            (1, 1) => {
+                let left = $self.get(0);
+                let right = $other.get(0);
+                let mut val: ChunkedArray<$ty> = $mask
+                    .into_no_null_iter()
+                    .map(|mask_val| if mask_val { left } else { right })
+                    .collect();
+                val.rename($self.name());
+                Ok(val)
+            }
+            (_, 1) => {
+                let right = $other.get(0);
+                let mut val: ChunkedArray<$ty> = $mask
+                    .into_no_null_iter()
+                    .zip($self)
+                    .map(|(mask_val, left)| if mask_val { left } else { right })
+                    .collect();
+                val.rename($self.name());
+                Ok(val)
+            }
+            (1, _) => {
+                let left = $self.get(0);
+                let mut val: ChunkedArray<$ty> = $mask
+                    .into_no_null_iter()
+                    .zip($other)
+                    .map(|(mask_val, right)| if mask_val { left } else { right })
+                    .collect();
+                val.rename($self.name());
+                Ok(val)
+            }
+            (_, _) => Err(PolarsError::ShapeMisMatch),
         }
     }};
 }
@@ -937,57 +975,42 @@ where
         let other_len = other.len();
         let mask_len = mask.len();
 
+        // broadcasting path
         if self_len != mask_len || other_len != mask_len {
-            match (self_len, other_len) {
-                (1, 1) => {
-                    let left = self.get(0);
-                    let right = other.get(0);
-                    let val = mask
-                        .into_no_null_iter()
-                        .map(|mask_val| if mask_val { left } else { right })
-                        .collect();
-                    Ok(val)
-                }
-                (_, 1) => {
-                    let right = other.get(0);
-                    let val = mask
-                        .into_no_null_iter()
-                        .zip(self)
-                        .map(|(mask_val, left)| if mask_val { left } else { right })
-                        .collect();
-                    Ok(val)
-                }
-                (1, _) => {
-                    let left = self.get(0);
-                    let val = mask
-                        .into_no_null_iter()
-                        .zip(other)
-                        .map(|(mask_val, right)| if mask_val { left } else { right })
-                        .collect();
-                    Ok(val)
-                }
-                (_, _) => Err(PolarsError::ShapeMisMatch),
-            }
+            impl_ternary_broadcast!(self, self_len, other_len, other, mask, T)
+
+        // cache optimal path
+        } else if self.chunk_id == other.chunk_id && other.chunk_id == mask.chunk_id {
+            let chunks = self
+                .downcast_chunks()
+                .iter()
+                .zip(&other.downcast_chunks())
+                .zip(&mask.downcast_chunks())
+                .map(|((left_c, right_c), mask_c)| kernels::zip(mask_c, left_c, right_c))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+        // no null path
+        } else if self.null_count() == 0 && other.null_count() == 0 {
+            let val: Xob<ChunkedArray<_>> = mask
+                .into_no_null_iter()
+                .zip(self.into_no_null_iter())
+                .zip(other.into_no_null_iter())
+                .map(
+                    |((mask_val, true_val), false_val)| {
+                        if mask_val {
+                            true_val
+                        } else {
+                            false_val
+                        }
+                    },
+                )
+                .collect();
+            let mut ca = val.into_inner();
+            ca.rename(self.name());
+            Ok(ca)
+        // slowest path
         } else {
-            if self.null_count() == 0 && other.null_count() == 0 {
-                let val: Xob<ChunkedArray<_>> = mask
-                    .into_no_null_iter()
-                    .zip(self.into_no_null_iter())
-                    .zip(other.into_no_null_iter())
-                    .map(
-                        |((mask_val, true_val), false_val)| {
-                            if mask_val {
-                                true_val
-                            } else {
-                                false_val
-                            }
-                        },
-                    )
-                    .collect();
-                Ok(val.into_inner())
-            } else {
-                impl_ternary!(mask, self, other)
-            }
+            impl_ternary!(mask, self, other, T)
         }
     }
 
@@ -999,7 +1022,7 @@ where
 
 impl ChunkZip<BooleanType> for BooleanChunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &BooleanChunked) -> Result<BooleanChunked> {
-        impl_ternary!(mask, self, other)
+        impl_ternary!(mask, self, other, BooleanType)
     }
 
     fn zip_with_series(
@@ -1014,7 +1037,15 @@ impl ChunkZip<BooleanType> for BooleanChunked {
 
 impl ChunkZip<Utf8Type> for Utf8Chunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &Utf8Chunked) -> Result<Utf8Chunked> {
-        impl_ternary!(mask, self, other)
+        let self_len = self.len();
+        let other_len = other.len();
+        let mask_len = mask.len();
+
+        if self_len != mask_len || other_len != mask_len {
+            impl_ternary_broadcast!(self, self_len, other_len, other, mask, Utf8Type)
+        } else {
+            impl_ternary!(mask, self, other, Utf8Type)
+        }
     }
 
     fn zip_with_series(
