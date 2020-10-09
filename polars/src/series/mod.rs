@@ -702,6 +702,10 @@ impl Series {
         Ok(apply_method_all_series_and_return!(self, fill_none, [strategy],?))
     }
 
+    pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Self> {
+        Ok(apply_method_all_series_and_return!(self, zip_with_series, [mask, other],?))
+    }
+
     pub(crate) fn fmt_largelist(&self) -> String {
         apply_method_all_series!(self, fmt_largelist,)
     }

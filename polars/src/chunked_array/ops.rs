@@ -897,6 +897,106 @@ impl ChunkShift<LargeListType, Series> for LargeListChunked {
     }
 }
 
+pub trait ChunkZip<T> {
+    fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>>;
+
+    fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>>;
+}
+
+// TODO! fast paths and check mask has no null values.
+macro_rules! impl_ternary {
+    ($mask:ident, $truthy:ident, $other:ident) => {{
+        let val = $mask
+            .into_no_null_iter()
+            .zip($truthy)
+            .zip($other)
+            .map(
+                |((mask_val, true_val), false_val)| {
+                    if mask_val {
+                        true_val
+                    } else {
+                        false_val
+                    }
+                },
+            )
+            .collect();
+        Ok(val)
+    }};
+}
+
+impl<T> ChunkZip<T> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>> {
+        if mask.null_count() > 0 {
+            Err(PolarsError::HasNullValues)
+        } else {
+            impl_ternary!(mask, self, other)
+        }
+    }
+
+    fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>> {
+        let other = self.unpack_series_matching_type(other)?;
+        self.zip_with(mask, other)
+    }
+}
+
+impl ChunkZip<BooleanType> for BooleanChunked {
+    fn zip_with(&self, mask: &BooleanChunked, other: &BooleanChunked) -> Result<BooleanChunked> {
+        if mask.null_count() > 0 {
+            Err(PolarsError::HasNullValues)
+        } else {
+            impl_ternary!(mask, self, other)
+        }
+    }
+
+    fn zip_with_series(
+        &self,
+        mask: &BooleanChunked,
+        other: &Series,
+    ) -> Result<ChunkedArray<BooleanType>> {
+        let other = self.unpack_series_matching_type(other)?;
+        self.zip_with(mask, other)
+    }
+}
+
+impl ChunkZip<Utf8Type> for Utf8Chunked {
+    fn zip_with(&self, mask: &BooleanChunked, other: &Utf8Chunked) -> Result<Utf8Chunked> {
+        if mask.null_count() > 0 {
+            Err(PolarsError::HasNullValues)
+        } else {
+            impl_ternary!(mask, self, other)
+        }
+    }
+
+    fn zip_with_series(
+        &self,
+        mask: &BooleanChunked,
+        other: &Series,
+    ) -> Result<ChunkedArray<Utf8Type>> {
+        let other = self.unpack_series_matching_type(other)?;
+        self.zip_with(mask, other)
+    }
+}
+impl ChunkZip<LargeListType> for LargeListChunked {
+    fn zip_with(
+        &self,
+        _mask: &BooleanChunked,
+        _other: &ChunkedArray<LargeListType>,
+    ) -> Result<ChunkedArray<LargeListType>> {
+        unimplemented!()
+    }
+
+    fn zip_with_series(
+        &self,
+        _mask: &BooleanChunked,
+        _other: &Series,
+    ) -> Result<ChunkedArray<LargeListType>> {
+        unimplemented!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
