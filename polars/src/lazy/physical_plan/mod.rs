@@ -23,7 +23,7 @@ pub trait PhysicalPlanner {
 // combine physical expressions, which produce Series.
 
 /// Executors will evaluate physical expressions and collect them in a DataFrame.
-pub trait Executor: Debug {
+pub trait Executor: Debug + Send + Sync {
     fn schema(&self) -> SchemaRef {
         todo!()
     }
@@ -32,7 +32,7 @@ pub trait Executor: Debug {
 
 /// Take a DataFrame and evaluate the expressions.
 /// Implement this for Column, lt, eq, etc
-pub trait PhysicalExpr: Debug {
+pub trait PhysicalExpr: Debug + Send + Sync {
     fn data_type(&self, _input_schema: &Schema) -> Result<ArrowDataType> {
         unimplemented!()
     }

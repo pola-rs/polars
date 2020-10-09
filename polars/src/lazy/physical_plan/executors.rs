@@ -1,4 +1,5 @@
 use super::*;
+use rayon;
 use std::mem;
 use std::sync::Mutex;
 
@@ -210,14 +211,14 @@ impl JoinExec {
 
 impl Executor for JoinExec {
     fn execute(&self) -> Result<DataFrame> {
-        let df_left = self.input_left.execute()?;
-        let df_right = self.input_right.execute()?;
+        let (df_left, df_right) =
+            rayon::join(|| self.input_left.execute(), || self.input_right.execute());
 
         use JoinType::*;
         match self.how {
-            Left => df_left.left_join(&df_right, &self.left_on, &self.right_on),
-            Inner => df_left.inner_join(&df_right, &self.left_on, &self.right_on),
-            Outer => df_left.outer_join(&df_right, &self.left_on, &self.right_on),
+            Left => df_left?.left_join(&df_right?, &self.left_on, &self.right_on),
+            Inner => df_left?.inner_join(&df_right?, &self.left_on, &self.right_on),
+            Outer => df_left?.outer_join(&df_right?, &self.left_on, &self.right_on),
         }
     }
 }
