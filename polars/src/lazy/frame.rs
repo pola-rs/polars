@@ -369,10 +369,8 @@ mod test {
             .with_column(
                 when(col("sepal.length").lt(lit(5.0)))
                     .then(lit(10))
-                    .otherwise(lit(1)
-                    )
-                    .alias("new")
-                ,
+                    .otherwise(lit(1))
+                    .alias("new"),
             )
             .collect()
             .unwrap();

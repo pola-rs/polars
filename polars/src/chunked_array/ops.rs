@@ -913,13 +913,15 @@ macro_rules! impl_ternary {
                 .into_no_null_iter()
                 .zip($truthy)
                 .zip($other)
-                .map(|((mask_val, true_val), false_val)| {
-                    if mask_val {
-                        true_val
-                    } else {
-                        false_val
-                    }
-                })
+                .map(
+                    |((mask_val, true_val), false_val)| {
+                        if mask_val {
+                            true_val
+                        } else {
+                            false_val
+                        }
+                    },
+                )
                 .collect();
             Ok(val)
         }
@@ -931,7 +933,6 @@ where
     T: PolarsNumericType,
 {
     fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>> {
-
         let self_len = self.len();
         let other_len = other.len();
         let mask_len = mask.len();
@@ -939,28 +940,55 @@ where
         if self_len != mask_len || other_len != mask_len {
             match (self_len, other_len) {
                 (1, 1) => {
-                    let self_ = self.expand_at_index(mask_len, 0);
-                    let other = other.expand_at_index(mask_len, 0);
-                    println!("{:?}", (other.len(), self_.len()));
-                    impl_ternary!(mask, &self_, &other)
+                    let left = self.get(0);
+                    let right = other.get(0);
+                    let val = mask
+                        .into_no_null_iter()
+                        .map(|mask_val| if mask_val { left } else { right })
+                        .collect();
+                    Ok(val)
                 }
                 (_, 1) => {
-                    let other = other.expand_at_index(mask_len, 0);
-                    impl_ternary!(mask, self, &other)
+                    let right = other.get(0);
+                    let val = mask
+                        .into_no_null_iter()
+                        .zip(self)
+                        .map(|(mask_val, left)| if mask_val { left } else { right })
+                        .collect();
+                    Ok(val)
                 }
                 (1, _) => {
-                    let self_ = self.expand_at_index(mask_len, 0);
-                    impl_ternary!(mask, &self_, other)
+                    let left = self.get(0);
+                    let val = mask
+                        .into_no_null_iter()
+                        .zip(other)
+                        .map(|(mask_val, right)| if mask_val { left } else { right })
+                        .collect();
+                    Ok(val)
                 }
-                (_, _) => {
-                    Err(PolarsError::ShapeMisMatch)
-                }
+                (_, _) => Err(PolarsError::ShapeMisMatch),
             }
         } else {
-            impl_ternary!(mask, self, other)
+            if self.null_count() == 0 && other.null_count() == 0 {
+                let val: Xob<ChunkedArray<_>> = mask
+                    .into_no_null_iter()
+                    .zip(self.into_no_null_iter())
+                    .zip(other.into_no_null_iter())
+                    .map(
+                        |((mask_val, true_val), false_val)| {
+                            if mask_val {
+                                true_val
+                            } else {
+                                false_val
+                            }
+                        },
+                    )
+                    .collect();
+                Ok(val.into_inner())
+            } else {
+                impl_ternary!(mask, self, other)
+            }
         }
-
-
     }
 
     fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>> {
