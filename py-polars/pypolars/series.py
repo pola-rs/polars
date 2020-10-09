@@ -542,6 +542,12 @@ class Series:
     def __len__(self):
         return self.len()
 
+    def cast_utf8(self):
+        """
+        Cast this Series
+        """
+        return wrap_s(self._s.cast_utf8())
+
     def cast_u8(self):
         """
         Cast this Series
@@ -813,3 +819,20 @@ class Series:
             Number of places to shift (may be negative).
         """
         return wrap_s(self._s.shift(periods))
+
+    def zip_with(self, mask: Series, other: Series) -> Series:
+        """
+        Where mask evaluates true take values from self. Where mask evaluates false, take values from other.
+
+        Parameters
+        ----------
+        mask
+            Boolean Series
+        other
+            Series of same type
+
+        Returns
+        -------
+        New Series
+        """
+        return wrap_s(self._s.zip_with(mask._s, other._s))

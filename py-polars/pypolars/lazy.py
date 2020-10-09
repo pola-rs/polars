@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from typing import Union, List
+from typing import Union, List, Callable
 from pypolars.frame import DataFrame, wrap_df
 from .pypolars import PyLazyFrame, col, lit, binary_expr, PyExpr, PyLazyGroupBy, when
 
@@ -34,6 +34,21 @@ class LazyFrame:
         self._ldf = ldf
         return self
 
+    def pipe(self, func: Callable, *args, **kwargs):
+        """
+        Apply a function on Self
+
+        Parameters
+        ----------
+        func
+            Callable
+        args
+            Arguments
+        kwargs
+            Keyword arguments
+        """
+        return func(self, *args, **kwargs)
+
     def describe_plan(self) -> str:
         return self._ldf.describe_plan()
 
@@ -43,7 +58,15 @@ class LazyFrame:
     def sort(self, by_column: str) -> LazyFrame:
         return wrap_ldf(self._ldf.sort(by_column))
 
-    def collect(self) -> DataFrame:
+    def collect(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+    ) -> DataFrame:
+        self._ldf = self._ldf.optimization_toggle(
+            type_coercion, predicate_pushdown, projection_pushdown
+        )
         return wrap_df(self._ldf.collect())
 
     def filter(self, predicate: PyExpr) -> LazyFrame:

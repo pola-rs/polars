@@ -478,6 +478,15 @@ impl PySeries {
         let s = self.series.shift(periods).map_err(PyPolarsEr::from)?;
         Ok(PySeries::new(s))
     }
+
+    pub fn zip_with(&self, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
+        let mask = mask.series.bool().map_err(PyPolarsEr::from)?;
+        let s = self
+            .series
+            .zip_with(mask, &other.series)
+            .map_err(PyPolarsEr::from)?;
+        Ok(PySeries::new(s))
+    }
 }
 
 macro_rules! impl_ufuncs {
@@ -677,6 +686,7 @@ impl_cast!(cast_date32, Date32Type);
 impl_cast!(cast_date64, Date64Type);
 impl_cast!(cast_time64ns, Time64NanosecondType);
 impl_cast!(cast_duration_ns, DurationNanosecondType);
+impl_cast!(cast_utf8, Utf8Type);
 
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {

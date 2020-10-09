@@ -265,6 +265,10 @@ class DataFrame:
     def __setitem__(self, key, value):
         # df["foo"] = series
         if isinstance(key, str):
+            try:
+                self.drop_in_place(key)
+            except:
+                pass
             self.hstack([Series(key, value)])
         # df[idx] = series
         elif isinstance(key, int):
