@@ -519,11 +519,26 @@ impl PhysicalExpr for CastExpr {
         series.cast_with_arrow_datatype(&self.data_type)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = self.expr.to_field(input_schema)?;
-        Ok(Field::new(
-            field.name(),
-            self.data_type.clone(),
-            field.is_nullable(),
-        ))
+        self.expr.to_field(input_schema)
+    }
+}
+
+#[derive(Debug)]
+pub struct TernaryExpr {
+    pub predicate: Arc<dyn PhysicalExpr>,
+    pub truthy: Arc<dyn PhysicalExpr>,
+    pub falsy: Arc<dyn PhysicalExpr>,
+}
+
+impl PhysicalExpr for TernaryExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let mask_series = self.predicate.evaluate(df)?;
+        let mask = mask_series.bool()?;
+        let truthy = self.truthy.evaluate(df)?;
+        let falsy = self.falsy.evaluate(df)?;
+        truthy.zip_with(&mask, &falsy)
+    }
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.truthy.to_field(input_schema)
     }
 }

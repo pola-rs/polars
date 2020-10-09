@@ -186,6 +186,46 @@ pub fn lit(value: &PyAny) -> PyExpr {
     }
 }
 
+#[pyclass]
+#[derive(Clone)]
+pub struct When {
+    predicate: PyExpr,
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct WhenThen {
+    predicate: PyExpr,
+    then: PyExpr,
+}
+
+#[pymethods]
+impl When {
+    pub fn then(&self, expr: PyExpr) -> WhenThen {
+        WhenThen {
+            predicate: self.predicate.clone(),
+            then: expr,
+        }
+    }
+}
+
+#[pymethods]
+impl WhenThen {
+    pub fn otherwise(&self, expr: PyExpr) -> PyExpr {
+        dsl::ternary_expr(
+            self.predicate.inner.clone(),
+            self.then.inner.clone(),
+            expr.inner,
+        )
+        .into()
+    }
+}
+
+#[pyfunction]
+pub fn when(predicate: PyExpr) -> When {
+    When { predicate }
+}
+
 #[pymodule]
 fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -196,5 +236,6 @@ fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(when)).unwrap();
     Ok(())
 }

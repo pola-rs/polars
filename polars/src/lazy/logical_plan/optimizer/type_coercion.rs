@@ -96,6 +96,28 @@ impl TypeCoercion {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.agg_groups())
             }
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                let predicate = self.rewrite_expr(*predicate, input_schema)?;
+                let truthy = self.rewrite_expr(*truthy, input_schema)?;
+                let falsy = self.rewrite_expr(*falsy, input_schema)?;
+                let type_true = truthy.get_type(input_schema)?;
+                let type_false = falsy.get_type(input_schema)?;
+
+                if type_true == type_false {
+                    Ok(ternary_expr(predicate, truthy, falsy))
+                } else {
+                    let st = get_supertype(&type_true, &type_false)?;
+                    Ok(ternary_expr(
+                        predicate,
+                        truthy.cast(st.clone()),
+                        falsy.cast(st),
+                    ))
+                }
+            }
         }
     }
 

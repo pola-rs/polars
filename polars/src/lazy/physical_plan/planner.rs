@@ -163,6 +163,20 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(expr)?;
                 Ok(Arc::new(CastExpr::new(phys_expr, data_type.clone())))
             }
+            Expr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => {
+                let predicate = self.create_physical_expr(predicate)?;
+                let truthy = self.create_physical_expr(truthy)?;
+                let falsy = self.create_physical_expr(falsy)?;
+                Ok(Arc::new(TernaryExpr {
+                    predicate,
+                    truthy,
+                    falsy,
+                }))
+            }
         }
     }
 }

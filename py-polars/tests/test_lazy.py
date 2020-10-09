@@ -10,3 +10,11 @@ def test_lazy():
     ldf = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
 
     print(ldf.collect())
+
+    new = (
+        df.lazy()
+        .with_column(
+            when(col("a").gt(lit(2))).then(lit(10)).otherwise(lit(1)).alias("new")
+        )
+        .collect()
+    )

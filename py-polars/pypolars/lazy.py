@@ -1,11 +1,8 @@
 from __future__ import annotations
 import os
 from typing import Union, List
-
 from pypolars.frame import DataFrame, wrap_df
-
-if not os.environ.get("DOC_BUILDING", False):
-    from .pypolars import PyLazyFrame, col, lit, binary_expr, PyExpr, PyLazyGroupBy
+from .pypolars import PyLazyFrame, col, lit, binary_expr, PyExpr, PyLazyGroupBy, when
 
 
 def lazy(self) -> "LazyFrame":

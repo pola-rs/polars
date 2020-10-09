@@ -1,8 +1,6 @@
 from __future__ import annotations
 import os
-
-if not os.environ.get("DOC_BUILDING", False):
-    from .pypolars import PySeries
+from .pypolars import PySeries
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any, Callable
 from .ffi import ptr_to_numpy

@@ -905,22 +905,24 @@ pub trait ChunkZip<T> {
 
 // TODO! fast paths and check mask has no null values.
 macro_rules! impl_ternary {
-    ($mask:ident, $truthy:ident, $other:ident) => {{
-        let val = $mask
-            .into_no_null_iter()
-            .zip($truthy)
-            .zip($other)
-            .map(
-                |((mask_val, true_val), false_val)| {
+    ($mask:expr, $truthy:expr, $other:expr) => {{
+        if $mask.null_count() > 0 {
+            Err(PolarsError::HasNullValues)
+        } else {
+            let val = $mask
+                .into_no_null_iter()
+                .zip($truthy)
+                .zip($other)
+                .map(|((mask_val, true_val), false_val)| {
                     if mask_val {
                         true_val
                     } else {
                         false_val
                     }
-                },
-            )
-            .collect();
-        Ok(val)
+                })
+                .collect();
+            Ok(val)
+        }
     }};
 }
 
@@ -929,11 +931,36 @@ where
     T: PolarsNumericType,
 {
     fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>> {
-        if mask.null_count() > 0 {
-            Err(PolarsError::HasNullValues)
+
+        let self_len = self.len();
+        let other_len = other.len();
+        let mask_len = mask.len();
+
+        if self_len != mask_len || other_len != mask_len {
+            match (self_len, other_len) {
+                (1, 1) => {
+                    let self_ = self.expand_at_index(mask_len, 0);
+                    let other = other.expand_at_index(mask_len, 0);
+                    println!("{:?}", (other.len(), self_.len()));
+                    impl_ternary!(mask, &self_, &other)
+                }
+                (_, 1) => {
+                    let other = other.expand_at_index(mask_len, 0);
+                    impl_ternary!(mask, self, &other)
+                }
+                (1, _) => {
+                    let self_ = self.expand_at_index(mask_len, 0);
+                    impl_ternary!(mask, &self_, other)
+                }
+                (_, _) => {
+                    Err(PolarsError::ShapeMisMatch)
+                }
+            }
         } else {
             impl_ternary!(mask, self, other)
         }
+
+
     }
 
     fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>> {
@@ -944,11 +971,7 @@ where
 
 impl ChunkZip<BooleanType> for BooleanChunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &BooleanChunked) -> Result<BooleanChunked> {
-        if mask.null_count() > 0 {
-            Err(PolarsError::HasNullValues)
-        } else {
-            impl_ternary!(mask, self, other)
-        }
+        impl_ternary!(mask, self, other)
     }
 
     fn zip_with_series(
@@ -963,11 +986,7 @@ impl ChunkZip<BooleanType> for BooleanChunked {
 
 impl ChunkZip<Utf8Type> for Utf8Chunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &Utf8Chunked) -> Result<Utf8Chunked> {
-        if mask.null_count() > 0 {
-            Err(PolarsError::HasNullValues)
-        } else {
-            impl_ternary!(mask, self, other)
-        }
+        impl_ternary!(mask, self, other)
     }
 
     fn zip_with_series(

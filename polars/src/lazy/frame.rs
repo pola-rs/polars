@@ -363,6 +363,23 @@ mod test {
     use crate::prelude::*;
 
     #[test]
+    fn test_lazy_ternary() {
+        let df = get_df()
+            .lazy()
+            .with_column(
+                when(col("sepal.length").lt(lit(5.0)))
+                    .then(lit(10))
+                    .otherwise(lit(1)
+                    )
+                    .alias("new")
+                ,
+            )
+            .collect()
+            .unwrap();
+        assert_eq!(Some(43), df.column("new").unwrap().sum::<i32>());
+    }
+
+    #[test]
     fn test_lazy_with_column() {
         let df = get_df()
             .lazy()

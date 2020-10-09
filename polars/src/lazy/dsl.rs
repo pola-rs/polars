@@ -44,12 +44,17 @@ pub enum Expr {
         quantile: f64,
     },
     AggSum(Box<Expr>),
-    AggGroups(Box<Expr>), // ScalarFunction {
-                          //     name: String,
-                          //     args: Vec<Expr>,
-                          //     return_type: ArrowDataType,
-                          // },
-                          // Wildcard
+    AggGroups(Box<Expr>),
+    Ternary {
+        predicate: Box<Expr>,
+        truthy: Box<Expr>,
+        falsy: Box<Expr>,
+    }, // ScalarFunction {
+       //     name: String,
+       //     args: Vec<Expr>,
+       //     return_type: ArrowDataType,
+       // },
+       // Wildcard
 }
 
 impl Expr {
@@ -93,6 +98,7 @@ impl Expr {
             AggNUnique(_) => Ok(ArrowDataType::UInt32),
             AggQuantile { expr, .. } => expr.get_type(schema),
             Cast { data_type, .. } => Ok(data_type.clone()),
+            Ternary { truthy, .. } => truthy.get_type(schema),
         }
     }
 
@@ -176,6 +182,7 @@ impl Expr {
                     field.is_nullable(),
                 ))
             }
+            Ternary { truthy, .. } => truthy.to_field(schema),
         }
     }
 }
@@ -206,6 +213,11 @@ impl fmt::Debug for Expr {
             AggGroups(expr) => write!(f, "AGGREGATE GROUPS {:?}", expr),
             AggQuantile { expr, .. } => write!(f, "AGGREGATE QUANTILE {:?}", expr),
             Cast { expr, data_type } => write!(f, "CAST {:?} TO {:?}", expr, data_type),
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => write!(f, "WHEN {:?} {:?} OTHERWISE {:?}", predicate, truthy, falsy),
         }
     }
 }
@@ -259,6 +271,46 @@ pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
         left: Box::new(l),
         op,
         right: Box::new(r),
+    }
+}
+
+pub struct When {
+    predicate: Expr,
+}
+
+pub struct WhenThen {
+    predicate: Expr,
+    then: Expr,
+}
+
+impl When {
+    pub fn then(self, expr: Expr) -> WhenThen {
+        WhenThen {
+            predicate: self.predicate,
+            then: expr,
+        }
+    }
+}
+
+impl WhenThen {
+    pub fn otherwise(self, expr: Expr) -> Expr {
+        Expr::Ternary {
+            predicate: Box::new(self.predicate),
+            truthy: Box::new(self.then),
+            falsy: Box::new(expr),
+        }
+    }
+}
+
+pub fn when(predicate: Expr) -> When {
+    When { predicate }
+}
+
+pub fn ternary_expr(predicate: Expr, truthy: Expr, falsy: Expr) -> Expr {
+    Expr::Ternary {
+        predicate: Box::new(predicate),
+        truthy: Box::new(truthy),
+        falsy: Box::new(falsy),
     }
 }
 
