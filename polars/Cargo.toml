@@ -21,16 +21,16 @@ default = ["pretty", "docs", "temporal", "simd"]
 lazy = []
 
 [dependencies]
-arrow = {version = "1.0.1", default_features = false}
+arrow = {version = "1.0.1", default-features = false}
 thiserror = "^1.0.16"
 num = "^0.2.1"
 fnv = "^1.0.7"
 itertools = "^0.9.0"
 unsafe_unwrap = "^0.1.0"
 rayon = "^1.3.1"
-prettytable-rs = { version="^0.8.0", features=["win_crlf"], optional = true, default_features = false}
+prettytable-rs = { version="^0.8.0", features=["win_crlf"], optional = true, default-features = false}
 chrono = {version = "^0.4.13", optional = true}
 parquet = {version = "1", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
-ndarray = {version = "0.13", optional = true, default_features = false}
+ndarray = {version = "0.13", optional = true, default-features = false}
