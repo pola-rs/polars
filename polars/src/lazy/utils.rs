@@ -7,9 +7,26 @@ pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
         Expr::Column(name) => Ok(Expr::Column(name.clone())),
         Expr::Alias(_, name) => Ok(Expr::Column(name.clone())),
         Expr::Sort { expr, .. } => projected_name(expr),
+        Expr::Cast { expr, .. } => projected_name(expr),
         a => Err(PolarsError::Other(
             format!(
-                "No root column name could be found for {:?} in projected_name utillity",
+                "No root column name could be found for expr {:?} in projected_name utillity",
+                a
+            )
+            .into(),
+        )),
+    }
+}
+
+pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
+    match expr {
+        Expr::Column(name) => Ok(name.clone()),
+        Expr::Alias(_, name) => Ok(name.clone()),
+        Expr::Sort { expr, .. } => output_name(expr),
+        Expr::Cast { expr, .. } => output_name(expr),
+        a => Err(PolarsError::Other(
+            format!(
+                "No root column name could be found for expr {:?} in output name utillity",
                 a
             )
             .into(),

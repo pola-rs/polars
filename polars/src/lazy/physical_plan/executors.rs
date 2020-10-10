@@ -187,8 +187,8 @@ pub struct JoinExec {
     input_left: Arc<dyn Executor>,
     input_right: Arc<dyn Executor>,
     how: JoinType,
-    left_on: Arc<String>,
-    right_on: Arc<String>,
+    left_on: Arc<dyn PhysicalExpr>,
+    right_on: Arc<dyn PhysicalExpr>,
 }
 
 impl JoinExec {
@@ -196,8 +196,8 @@ impl JoinExec {
         input_left: Arc<dyn Executor>,
         input_right: Arc<dyn Executor>,
         how: JoinType,
-        left_on: Arc<String>,
-        right_on: Arc<String>,
+        left_on: Arc<dyn PhysicalExpr>,
+        right_on: Arc<dyn PhysicalExpr>,
     ) -> Self {
         JoinExec {
             input_left,
@@ -213,12 +213,17 @@ impl Executor for JoinExec {
     fn execute(&self) -> Result<DataFrame> {
         let (df_left, df_right) =
             rayon::join(|| self.input_left.execute(), || self.input_right.execute());
+        let df_left = df_left?;
+        let df_right = df_right?;
+
+        let s_left = self.left_on.evaluate(&df_left)?;
+        let s_right = self.right_on.evaluate(&df_right)?;
 
         use JoinType::*;
         match self.how {
-            Left => df_left?.left_join(&df_right?, &self.left_on, &self.right_on),
-            Inner => df_left?.inner_join(&df_right?, &self.left_on, &self.right_on),
-            Outer => df_left?.outer_join(&df_right?, &self.left_on, &self.right_on),
+            Left => df_left.left_join_from_series(&df_right, &s_left, &s_right),
+            Inner => df_left.inner_join_from_series(&df_right, &s_left, &s_right),
+            Outer => df_left.outer_join_from_series(&df_right, &s_left, &s_right),
         }
     }
 }

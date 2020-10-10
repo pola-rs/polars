@@ -97,34 +97,34 @@ impl PyLazyFrame {
     pub fn inner_join(
         &mut self,
         mut other: PyLazyFrame,
-        left_on: &str,
-        right_on: &str,
+        left_on: PyExpr,
+        right_on: PyExpr,
     ) -> PyLazyFrame {
         let ldf = self.ldf.take().unwrap();
         let other = other.ldf.take().unwrap();
-        ldf.inner_join(other, left_on, right_on).into()
+        ldf.inner_join(other, left_on.inner, right_on.inner).into()
     }
 
     pub fn outer_join(
         &mut self,
         mut other: PyLazyFrame,
-        left_on: &str,
-        right_on: &str,
+        left_on: PyExpr,
+        right_on: PyExpr,
     ) -> PyLazyFrame {
         let ldf = self.ldf.take().unwrap();
         let other = other.ldf.take().unwrap();
-        ldf.outer_join(other, left_on, right_on).into()
+        ldf.outer_join(other, left_on.inner, right_on.inner).into()
     }
 
     pub fn left_join(
         &mut self,
         mut other: PyLazyFrame,
-        left_on: &str,
-        right_on: &str,
+        left_on: PyExpr,
+        right_on: PyExpr,
     ) -> PyLazyFrame {
         let ldf = self.ldf.take().unwrap();
         let other = other.ldf.take().unwrap();
-        ldf.left_join(other, left_on, right_on).into()
+        ldf.left_join(other, left_on.inner, right_on.inner).into()
     }
 
     pub fn with_column(&mut self, expr: PyExpr) -> PyLazyFrame {

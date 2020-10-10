@@ -263,46 +263,31 @@ impl LazyFrame {
     }
 
     /// Join query with other lazy query.
-    pub fn left_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
+    pub fn left_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .join(
-                other.logical_plan,
-                JoinType::Left,
-                Arc::new(left_on.into()),
-                Arc::new(right_on.into()),
-            )
+            .join(other.logical_plan, JoinType::Left, left_on, right_on)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
 
     /// Join query with other lazy query.
-    pub fn outer_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
+    pub fn outer_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .join(
-                other.logical_plan,
-                JoinType::Outer,
-                Arc::new(left_on.into()),
-                Arc::new(right_on.into()),
-            )
+            .join(other.logical_plan, JoinType::Outer, left_on, right_on)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
 
     /// Join query with other lazy query.
-    pub fn inner_join(self, other: LazyFrame, left_on: &str, right_on: &str) -> LazyFrame {
+    pub fn inner_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .join(
-                other.logical_plan,
-                JoinType::Inner,
-                Arc::new(left_on.into()),
-                Arc::new(right_on.into()),
-            )
+            .join(other.logical_plan, JoinType::Inner, left_on, right_on)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }

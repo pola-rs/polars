@@ -661,7 +661,7 @@ impl Series {
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);
     ///
     ///     let shifted = s.shift(-1)?;
-    ///     assert_eq!(Vec::from(shifted.i32()?), &[Some(1), Some(2), None]);
+    ///     assert_eq!(Vec::from(shifted.i32()?), &[Some(2), Some(3), None]);
     ///
     ///     let shifted = s.shift(2)?;
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, None, Some(1)]);

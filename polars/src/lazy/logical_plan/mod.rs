@@ -99,8 +99,8 @@ pub enum LogicalPlan {
         input_right: Box<LogicalPlan>,
         schema: Schema,
         how: JoinType,
-        left_on: Arc<String>,
-        right_on: Arc<String>,
+        left_on: Expr,
+        right_on: Expr,
     },
     HStack {
         input: Box<LogicalPlan>,
@@ -147,7 +147,7 @@ impl fmt::Debug for LogicalPlan {
                 ..
             } => write!(
                 f,
-                "JOIN\n\t({:?})\nWITH\n\t({:?})\nON (left: {} right: {})",
+                "JOIN\n\t({:?})\nWITH\n\t({:?})\nON (left: {:?} right: {:?})",
                 input_left, input_right, left_on, right_on
             ),
             HStack { input, exprs, .. } => write!(f, "\n{:?} WITH COLUMN(S) {:?}\n", input, exprs),
@@ -265,13 +265,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn join(
-        self,
-        other: LogicalPlan,
-        how: JoinType,
-        left_on: Arc<String>,
-        right_on: Arc<String>,
-    ) -> Self {
+    pub fn join(self, other: LogicalPlan, how: JoinType, left_on: Expr, right_on: Expr) -> Self {
         let schema_left = self.0.schema();
         let schema_right = other.schema();
 
@@ -285,10 +279,12 @@ impl LogicalPlanBuilder {
             fields.push(f.clone());
         }
 
+        let right_name = utils::output_name(&right_on).expect("could not find name");
+
         for f in schema_right.fields() {
             let name = f.name();
 
-            if name != &*right_on {
+            if name != &*right_name {
                 if names.contains(name) {
                     let new_name = format!("{}_right", name);
                     let field = Field::new(&new_name, f.data_type().clone(), f.is_nullable());
@@ -406,7 +402,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), "days", "days");
+                .left_join(right.clone().lazy(), col("days"), col("days"));
 
             print_plans(&lf);
             // implicitly checks logical plan == optimized logical plan
@@ -419,7 +415,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), "days", "days")
+                .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp")]);
 
             print_plans(&lf);
@@ -432,7 +428,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), "days", "days")
+                .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp"), col("rain_right")]);
 
             print_plans(&lf);
@@ -446,7 +442,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), "days", "days")
+                .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp"), col("rain"), col("rain_right")]);
 
             print_plans(&lf);
@@ -460,7 +456,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), "days", "days")
+                .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")]);
 
             print_plans(&lf);
@@ -474,7 +470,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), "days", "days")
+                .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")])
                 .filter(col("foo").lt(lit(0.3)));
 

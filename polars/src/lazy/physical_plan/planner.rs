@@ -73,12 +73,14 @@ impl DefaultPlanner {
             } => {
                 let input_left = self.create_initial_physical_plan(input_left)?;
                 let input_right = self.create_initial_physical_plan(input_right)?;
+                let left_on = self.create_physical_expr(left_on)?;
+                let right_on = self.create_physical_expr(right_on)?;
                 Ok(Arc::new(JoinExec::new(
                     input_left,
                     input_right,
                     how.clone(),
-                    left_on.clone(),
-                    right_on.clone(),
+                    left_on,
+                    right_on,
                 )))
             }
             LogicalPlan::HStack { input, exprs, .. } => {

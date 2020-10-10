@@ -696,6 +696,15 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
+        self.inner_join_from_series(other, s_left, s_right)
+    }
+
+    pub(crate) fn inner_join_from_series(
+        &self,
+        other: &DataFrame,
+        s_left: &Series,
+        s_right: &Series,
+    ) -> Result<DataFrame> {
         let join_tuples = match self.parallel {
             true => apply_hash_join_on_series!(s_left, s_right, par_hash_join_inner),
             false => apply_hash_join_on_series!(s_left, s_right, hash_join_inner),
@@ -704,7 +713,7 @@ impl DataFrame {
         let (df_left, df_right) = rayon::join(
             || self.create_left_df(&join_tuples),
             || unsafe {
-                other.drop(right_on).unwrap().take_iter_unchecked(
+                other.drop(s_right.name()).unwrap().take_iter_unchecked(
                     join_tuples.iter().map(|(_left, right)| *right),
                     Some(join_tuples.len()),
                 )
@@ -725,6 +734,15 @@ impl DataFrame {
     pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
+        self.left_join_from_series(other, s_left, s_right)
+    }
+
+    pub(crate) fn left_join_from_series(
+        &self,
+        other: &DataFrame,
+        s_left: &Series,
+        s_right: &Series,
+    ) -> Result<DataFrame> {
         let opt_join_tuples = match self.parallel {
             true => apply_hash_join_on_series!(s_left, s_right, par_hash_join_left),
             false => apply_hash_join_on_series!(s_left, s_right, hash_join_left),
@@ -733,7 +751,7 @@ impl DataFrame {
         let (df_left, df_right) = rayon::join(
             || self.create_left_df(&opt_join_tuples),
             || unsafe {
-                other.drop(right_on).unwrap().take_opt_iter_unchecked(
+                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples.iter().map(|(_left, right)| *right),
                     Some(opt_join_tuples.len()),
                 )
@@ -759,7 +777,14 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
-
+        self.outer_join_from_series(other, s_left, s_right)
+    }
+    pub(crate) fn outer_join_from_series(
+        &self,
+        other: &DataFrame,
+        s_left: &Series,
+        s_right: &Series,
+    ) -> Result<DataFrame> {
         // Get the indexes of the joined relations
         let opt_join_tuples: Vec<(Option<usize>, Option<usize>)> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_outer);
@@ -767,13 +792,13 @@ impl DataFrame {
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = rayon::join(
             || unsafe {
-                self.drop(left_on).unwrap().take_opt_iter_unchecked(
+                self.drop(s_left.name()).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples.iter().map(|(left, _right)| *left),
                     Some(opt_join_tuples.len()),
                 )
             },
             || unsafe {
-                other.drop(right_on).unwrap().take_opt_iter_unchecked(
+                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples.iter().map(|(_left, right)| *right),
                     Some(opt_join_tuples.len()),
                 )
@@ -781,7 +806,7 @@ impl DataFrame {
         );
         let mut s =
             apply_method_all_series!(s_left, zip_outer_join_column, s_right, &opt_join_tuples);
-        s.rename(left_on);
+        s.rename(s_left.name());
         df_left.hstack(&[s])?;
         self.finish_join(df_left, df_right)
     }

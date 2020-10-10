@@ -94,8 +94,8 @@ class LazyFrame:
     def join(
         self,
         ldf: LazyFrame,
-        left_on: str,
-        right_on: str,
+        left_on: PyExpr,
+        right_on: PyExpr,
         how="inner",
     ) -> LazyFrame:
         if how == "inner":
