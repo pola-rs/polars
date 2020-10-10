@@ -767,6 +767,7 @@ fn chunk_shift_helper<T>(
     ca: &ChunkedArray<T>,
     builder: &mut PrimitiveChunkedBuilder<T>,
     amount: usize,
+    skip: usize,
 ) where
     T: PolarsNumericType,
     T::Native: Copy,
@@ -775,11 +776,13 @@ fn chunk_shift_helper<T>(
         // fast path
         Ok(slice) => slice
             .iter()
+            .skip(skip)
             .take(amount)
             .for_each(|v| builder.append_value(*v)),
         // slower path
         _ => {
             ca.into_iter()
+                .skip(skip)
                 .take(amount)
                 .for_each(|opt| builder.append_option(opt));
         }
@@ -803,10 +806,10 @@ where
             for _ in 0..periods {
                 builder.append_option(*fill_value)
             }
-            chunk_shift_helper(self, &mut builder, amount);
+            chunk_shift_helper(self, &mut builder, amount, 0);
         // Fill the back of the array
         } else {
-            chunk_shift_helper(self, &mut builder, amount);
+            chunk_shift_helper(self, &mut builder, amount, periods.abs() as usize);
             for _ in 0..periods.abs() {
                 builder.append_option(*fill_value)
             }
@@ -821,6 +824,7 @@ macro_rules! impl_shift {
     ($self:ident, $builder:ident, $periods:ident, $fill_value:ident,
     $append_method:ident, $append_fn:expr) => {{
         let amount = $self.len() - $periods.abs() as usize;
+        let skip = $periods.abs() as usize;
 
         // Fill the front of the array
         if $periods > 0 {
@@ -835,6 +839,7 @@ macro_rules! impl_shift {
         } else {
             $self
                 .into_iter()
+                .skip(skip)
                 .take(amount)
                 .for_each(|opt| $append_fn(&mut $builder, opt));
             for _ in 0..$periods.abs() {
@@ -1091,8 +1096,15 @@ mod test {
         let shifted = ca.shift(1, &None).unwrap();
         assert_eq!(Vec::from(&shifted), &[None, Some(1), Some(2)]);
         let shifted = ca.shift(-1, &None).unwrap();
-        assert_eq!(Vec::from(&shifted), &[Some(1), Some(2), None]);
+        assert_eq!(Vec::from(&shifted), &[Some(2), Some(3), None]);
         assert!(ca.shift(3, &None).is_err());
+
+        let s = Series::new("a", ["a", "b", "c"]);
+        let shifted = s.shift(-1).unwrap();
+        assert_eq!(
+            Vec::from(shifted.utf8().unwrap()),
+            &[Some("b"), Some("c"), None]
+        );
     }
 
     #[test]
