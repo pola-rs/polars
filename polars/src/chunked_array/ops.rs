@@ -739,19 +739,19 @@ where
     ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
     T: ArrowPrimitiveType,
 {
-    fn expand_at_index(&self, length: usize, index: usize) -> ChunkedArray<T> {
+    fn expand_at_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
         impl_chunk_expand!(self, length, index)
     }
 }
 
 impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
-    fn expand_at_index(&self, length: usize, index: usize) -> Utf8Chunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> Utf8Chunked {
         impl_chunk_expand!(self, length, index)
     }
 }
 
 impl ChunkExpandAtIndex<LargeListType> for LargeListChunked {
-    fn expand_at_index(&self, length: usize, index: usize) -> LargeListChunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> LargeListChunked {
         impl_chunk_expand!(self, length, index)
     }
 }

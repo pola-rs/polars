@@ -263,6 +263,17 @@ impl LazyFrame {
     }
 
     /// Join query with other lazy query.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    ///         ldf
+    ///         .left_join(other, col("foo"), col("bar"))
+    /// }
+    /// ```
     pub fn left_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
@@ -273,6 +284,17 @@ impl LazyFrame {
     }
 
     /// Join query with other lazy query.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    ///         ldf
+    ///         .outer_join(other, col("foo"), col("bar"))
+    /// }
+    /// ```
     pub fn outer_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
@@ -283,6 +305,17 @@ impl LazyFrame {
     }
 
     /// Join query with other lazy query.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    ///         ldf
+    ///         .inner_join(other, col("foo"), col("bar").cast(ArrowDataType::Utf8))
+    /// }
+    /// ```
     pub fn inner_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
@@ -293,12 +326,42 @@ impl LazyFrame {
     }
 
     /// Add a column to a DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    /// fn add_column(df: DataFrame) -> LazyFrame {
+    ///     df.lazy()
+    ///         .with_column(
+    ///             when(col("sepal.length").lt(lit(5.0)))
+    ///             .then(lit(10))
+    ///             .otherwise(lit(1))
+    ///             .alias("new_column_name"),
+    ///             )
+    /// }
+    /// ```
     pub fn with_column(self, expr: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(vec![expr]).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Add multiple columns to a DataFrame.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    /// fn add_columns(df: DataFrame) -> LazyFrame {
+    ///     df.lazy()
+    ///         .with_columns(
+    ///             vec![lit(10).alias("foo"), lit(100).alias("bar")]
+    ///          )
+    /// }
+    /// ```
     pub fn with_columns(self, exprs: Vec<Expr>) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(exprs).build();

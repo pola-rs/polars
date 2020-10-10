@@ -11,6 +11,7 @@
 //!
 //! The easiest way to get started is with the [LazyFrame](crate::lazy::frame::LazyFrame) struct.
 //! The method's docstrings show some examples to get you up to speed.
+//!
 pub mod dsl;
 pub mod frame;
 mod logical_plan;

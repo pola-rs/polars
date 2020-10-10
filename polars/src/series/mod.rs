@@ -452,8 +452,17 @@ impl Series {
     }
 
     /// Create a new Series filled with values at that index.
-    pub fn expand_at_index(&self, length: usize, index: usize) -> Self {
-        apply_method_all_series_and_return!(self, expand_at_index, [length, index],)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// let s = Series::new("a", [0i32, 1, 8]);
+    /// let expanded = s.expand_at_index(2, 4);
+    /// assert_eq!(Vec::from(expanded.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
+    /// ```
+    pub fn expand_at_index(&self, index: usize, length: usize) -> Self {
+        apply_method_all_series_and_return!(self, expand_at_index, [index, length],)
     }
 
     /// Cast to some primitive type.

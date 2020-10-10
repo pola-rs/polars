@@ -110,7 +110,7 @@ impl Executor for PipeExec {
                 expr.evaluate(&df).map(|series| {
                     // literal series. Should be whole column size
                     if series.len() == 1 && height > 1 {
-                        series.expand_at_index(height, 0)
+                        series.expand_at_index(0, height)
                     } else {
                         series
                     }
@@ -251,7 +251,7 @@ impl Executor for StackExec {
                 expr.evaluate(&df).map(|series| {
                     // literal series. Should be whole column size
                     if series.len() == 1 && height > 1 {
-                        series.expand_at_index(height, 0)
+                        series.expand_at_index(0, height)
                     } else {
                         series
                     }
