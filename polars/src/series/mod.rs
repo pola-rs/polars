@@ -1061,6 +1061,15 @@ impl Default for Series {
     }
 }
 
+impl<T> From<ChunkedArray<T>> for Series
+where
+    T: PolarsDataType,
+{
+    fn from(ca: ChunkedArray<T>) -> Self {
+        Series::from_chunked_array(ca)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
