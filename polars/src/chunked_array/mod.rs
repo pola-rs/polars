@@ -584,7 +584,7 @@ where
 {
     /// Create a new ChunkedArray by taking ownershipt of the AlignedVec. This operation is zero copy.
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
-        let arr = aligned_vec_to_primitive_array::<T>(v, None, 0);
+        let arr = aligned_vec_to_primitive_array::<T>(v, None, Some(0));
         Self::new_from_chunks(name, vec![Arc::new(arr)])
     }
 
@@ -616,7 +616,9 @@ where
     ) -> Self {
         let len = values.len();
         let arr = Arc::new(aligned_vec_to_primitive_array::<T>(
-            values, buffer, null_count,
+            values,
+            buffer,
+            Some(null_count),
         ));
         ChunkedArray {
             field: Arc::new(Field::new(name, T::get_data_type(), true)),

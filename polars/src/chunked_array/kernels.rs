@@ -1,7 +1,7 @@
+use crate::chunked_array::builder::aligned_vec_to_primitive_array;
 use crate::prelude::*;
-use arrow::array::{Array, ArrayData, ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowNumericType;
 use arrow::error::Result as ArrowResult;
 use std::ops::BitOr;
@@ -59,27 +59,18 @@ where
         let take_a = mask.value(i);
         if take_a {
             unsafe {
-                values.push(vals_a.get_unchecked(i));
+                values.push(*vals_a.get_unchecked(i));
             }
         } else {
             unsafe {
-                values.push(vals_b.get_unchecked(i));
+                values.push(*vals_b.get_unchecked(i));
             }
         }
     }
 
-    // give ownership to apache arrow without copying
-    let (ptr, len, cap) = values.into_raw_parts();
-
-    let buf = unsafe { Buffer::from_raw_parts(ptr as *const u8, len, cap) };
-    let data = ArrayData::new(
-        T::get_data_type(),
-        a.len(),
-        None,
+    Ok(Arc::new(aligned_vec_to_primitive_array::<T>(
+        values,
         null_bit_buffer,
-        a.offset(),
-        vec![buf],
-        vec![],
-    );
-    Ok(Arc::new(PrimitiveArray::<T>::from(Arc::new(data))))
+        None,
+    )))
 }

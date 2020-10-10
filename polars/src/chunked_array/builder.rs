@@ -160,18 +160,28 @@ where
 fn set_null_bits(
     mut builder: ArrayDataBuilder,
     null_bit_buffer: Option<Buffer>,
-    null_count: usize,
+    null_count: Option<usize>,
     len: usize,
 ) -> ArrayDataBuilder {
-    if null_count > 0 {
-        let null_bit_buffer =
-            null_bit_buffer.expect("implementation error. Should not be None if null_count > 0");
-        debug_assert!(null_count == len - bit_util::count_set_bits(null_bit_buffer.data()));
-        builder = builder
-            .null_count(null_count)
-            .null_bit_buffer(null_bit_buffer);
+    match null_count {
+        Some(null_count) => {
+            if null_count > 0 {
+                let null_bit_buffer = null_bit_buffer
+                    .expect("implementation error. Should not be None if null_count > 0");
+                debug_assert!(null_count == len - bit_util::count_set_bits(null_bit_buffer.data()));
+                builder = builder
+                    .null_count(null_count)
+                    .null_bit_buffer(null_bit_buffer);
+            }
+            builder
+        }
+        None => match null_bit_buffer {
+            None => builder.null_count(0),
+            Some(buffer) => builder
+                .null_count(bit_util::count_set_bits(buffer.data()))
+                .null_bit_buffer(buffer),
+        },
     }
-    builder
 }
 
 /// Take an existing slice and a null bitmap and construct an arrow array.
@@ -191,7 +201,7 @@ where
         .len(len)
         .add_buffer(Buffer::from(values.to_byte_slice()));
 
-    let builder = set_null_bits(builder, null_bit_buffer, null_count, len);
+    let builder = set_null_bits(builder, null_bit_buffer, Some(null_count), len);
     let data = builder.build();
     PrimitiveArray::<T>::from(data)
 }
@@ -219,7 +229,7 @@ where
         let mut chunks = vec![];
 
         for (values, (null_count, opt_buffer)) in iter {
-            let arr = aligned_vec_to_primitive_array::<T>(values, opt_buffer, null_count);
+            let arr = aligned_vec_to_primitive_array::<T>(values, opt_buffer, Some(null_count));
             chunks.push(Arc::new(arr) as ArrayRef)
         }
         ChunkedArray::new_from_chunks("from_iter", chunks)
@@ -244,7 +254,7 @@ fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
 pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
     values: AlignedVec<T::Native>,
     null_bit_buffer: Option<Buffer>,
-    null_count: usize,
+    null_count: Option<usize>,
 ) -> PrimitiveArray<T> {
     let values = unsafe { values.into_inner() };
     let vec_len = values.len();
@@ -321,6 +331,16 @@ impl<T> AlignedVec<T> {
             capacity,
             taken: false,
         }
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        let _me = ManuallyDrop::new(mem::take(&mut self.inner));
+        let ptr = self.as_mut_ptr() as *mut u8;
+        let capacity = self.capacity + std::mem::size_of::<T>() * additional;
+        let ptr = unsafe { memory::reallocate(ptr, self.capacity, capacity) as *mut T };
+        let v = unsafe { Vec::from_raw_parts(ptr, 0, capacity) };
+        self.inner = v;
+        self.capacity = capacity;
     }
 
     pub fn len(&self) -> usize {
@@ -674,7 +694,7 @@ mod test {
 
         let ptr = v.as_ptr();
         assert_eq!((ptr as usize) % 64, 0);
-        let a = aligned_vec_to_primitive_array::<Int32Type>(v, None, 0);
+        let a = aligned_vec_to_primitive_array::<Int32Type>(v, None, Some(0));
         assert_eq!(a.value_slice(0, 2), &[1, 2])
     }
 

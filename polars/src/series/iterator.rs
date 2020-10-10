@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::utils::Xob;
 use std::iter::FromIterator;
 
 macro_rules! from_iterator {
@@ -12,8 +13,8 @@ macro_rules! from_iterator {
 
         impl FromIterator<$native> for Series {
             fn from_iter<I: IntoIterator<Item = $native>>(iter: I) -> Self {
-                let ca = iter.into_iter().map(|v| Some(v)).collect();
-                Series::$variant(ca)
+                let ca: Xob<ChunkedArray<_>> = iter.into_iter().collect();
+                Series::$variant(ca.into_inner())
             }
         }
 
