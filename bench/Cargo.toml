@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 polars = {path = "../polars"}
-arrow = {version = "1.0.0", default_features = false}
+arrow = {version = "1.0.0", default-features = false}
