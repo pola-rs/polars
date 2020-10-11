@@ -1,3 +1,4 @@
+use super::kernels::vendor::comparison;
 use crate::{prelude::*, utils::Xob};
 use arrow::{
     array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray},
@@ -74,7 +75,8 @@ where
         // same length
         else if self.chunk_id == rhs.chunk_id {
             // should not fail if arrays are equal
-            self.comparison(rhs, compute::eq).expect("should not fail.")
+            self.comparison(rhs, comparison::eq)
+                .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
         }
@@ -91,7 +93,7 @@ where
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::neq)
+            self.comparison(rhs, comparison::neq)
                 .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
@@ -109,7 +111,8 @@ where
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::gt).expect("should not fail.")
+            self.comparison(rhs, comparison::gt)
+                .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
         }
@@ -126,7 +129,7 @@ where
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::gt_eq)
+            self.comparison(rhs, comparison::gt_eq)
                 .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
@@ -144,7 +147,8 @@ where
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::lt).expect("should not fail.")
+            self.comparison(rhs, comparison::lt)
+                .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
         }
@@ -161,7 +165,7 @@ where
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::lt_eq)
+            self.comparison(rhs, comparison::lt_eq)
                 .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)

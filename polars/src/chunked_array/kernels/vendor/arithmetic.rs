@@ -22,28 +22,26 @@
 //! `RUSTFLAGS="-C target-feature=+avx2"` for example.  See the documentation
 //! [here](https://doc.rust-lang.org/stable/core/arch/) for more information.
 
+use num::{One, Zero};
 #[cfg(feature = "simd")]
 use std::mem;
 use std::ops::{Add, Div, Mul, Sub};
 #[cfg(feature = "simd")]
 use std::slice::from_raw_parts_mut;
+#[cfg(feature = "simd")]
 use std::sync::Arc;
-
-use num::{One, Zero};
 
 use super::utils::apply_bin_op_to_option_bitmap;
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
 use super::utils::simd_load_set_invalid;
+use crate::chunked_array::builder::{aligned_vec_to_primitive_array, AlignedVec};
 use crate::datatypes::PolarsNumericType;
 use arrow::array::*;
 #[cfg(feature = "simd")]
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 #[cfg(feature = "simd")]
 use arrow::buffer::MutableBuffer;
-use arrow::datatypes::ToByteSlice;
 use arrow::error::{ArrowError, Result};
-use arrow::util::bit_util;
 
 /// Helper function to perform math lambda function on values from two arrays. If either
 /// left or right value is null then the output value is also null, so `1 + null` is
@@ -69,33 +67,12 @@ where
         |a, b| a & b,
     )?;
 
-    let mut values = Vec::with_capacity(left.len());
-    if let Some(b) = &null_bit_buffer {
-        for i in 0..left.len() {
-            unsafe {
-                if bit_util::get_bit_raw(b.raw_data(), i) {
-                    values.push(op(left.value(i), right.value(i))?);
-                } else {
-                    values.push(T::default_value())
-                }
-            }
-        }
-    } else {
-        for i in 0..left.len() {
-            values.push(op(left.value(i), right.value(i))?);
-        }
+    let mut values = AlignedVec::with_capacity_aligned(left.len());
+    for i in 0..left.len() {
+        values.push(op(left.value(i), right.value(i))?);
     }
-
-    let data = ArrayData::new(
-        T::get_data_type(),
-        left.len(),
-        None,
-        null_bit_buffer,
-        left.offset(),
-        vec![Buffer::from(values.to_byte_slice())],
-        vec![],
-    );
-    Ok(PrimitiveArray::<T>::from(Arc::new(data)))
+    let arr = aligned_vec_to_primitive_array::<T>(values, null_bit_buffer, None);
+    Ok(arr)
 }
 
 /// SIMD vectorized version of `math_op` above.
