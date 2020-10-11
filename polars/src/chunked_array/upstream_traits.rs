@@ -60,7 +60,7 @@ where
             let mut v = AlignedVec::with_capacity_aligned(get_iter_capacity(&iter));
 
             for val in iter {
-                unsafe { v.push(val) }
+                v.push(val)
             }
             // TODO: shrink capacity
             Xob::new(ChunkedArray::new_from_aligned_vec("", v))

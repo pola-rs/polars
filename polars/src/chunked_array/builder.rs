@@ -1,6 +1,8 @@
 use crate::prelude::*;
 use crate::utils::{get_iter_capacity, Xob};
-use arrow::array::{ArrayBuilder, ArrayDataBuilder, ArrayRef};
+use arrow::array::{
+    ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait,
+};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 pub use arrow::memory;
 use arrow::{
@@ -22,6 +24,10 @@ where
     pub builder: PrimitiveBuilder<T>,
     capacity: usize,
     field: Field,
+    aligned_vec: AlignedVec<T::Native>,
+    bitmap_builder: BooleanBufferBuilder,
+    null_pointer: usize,
+    null_count: usize,
 }
 
 impl<T> PrimitiveChunkedBuilder<T>
@@ -33,31 +39,66 @@ where
             builder: PrimitiveBuilder::<T>::new(capacity),
             capacity,
             field: Field::new(name, T::get_data_type(), true),
+            aligned_vec: AlignedVec::with_capacity_aligned(capacity),
+            bitmap_builder: BooleanBufferBuilder::new(capacity),
+            null_pointer: 0,
+            null_count: 0,
         }
+    }
+
+    fn update_null_bitmap(&mut self) {
+        // first append valid values that were added
+        let n_valid = self.aligned_vec.len() - self.null_pointer;
+        self.bitmap_builder
+            .append_n(n_valid, true)
+            .expect("memory error")
     }
 
     /// Appends a value of type `T` into the builder
     pub fn append_value(&mut self, v: T::Native) {
-        self.builder.append_value(v).expect("could not append");
+        if T::get_data_type() == ArrowDataType::Boolean {
+            self.builder.append_value(v).expect("memory error");
+        } else {
+            self.aligned_vec.push(v)
+        }
     }
 
     /// Appends a null slot into the builder
     pub fn append_null(&mut self) {
-        self.builder.append_null().expect("could not append");
-    }
-
-    /// Append multiple values at once. This is faster than per value.
-    pub fn append_values(&mut self, values: &[T::Native], is_valid: &[bool]) {
-        self.builder.append_values(values, is_valid).unwrap();
+        if T::get_data_type() == ArrowDataType::Boolean {
+            self.builder.append_null().expect("memory error");
+        } else {
+            self.update_null_bitmap();
+            self.null_pointer = self.aligned_vec.len() + 1;
+            self.bitmap_builder.append(false).expect("memory error");
+            self.null_count += 1;
+            unsafe {
+                self.aligned_vec.set_len(self.aligned_vec.len() + 1);
+            }
+        }
     }
 
     /// Appends an `Option<T>` into the builder
     pub fn append_option(&mut self, v: Option<T::Native>) {
-        self.builder.append_option(v).expect("could not append");
+        match v {
+            Some(v) => self.append_value(v),
+            None => self.append_null(),
+        }
     }
 
     pub fn finish(mut self) -> ChunkedArray<T> {
-        let arr = Arc::new(self.builder.finish());
+        let arr = if T::get_data_type() == ArrowDataType::Boolean {
+            Arc::new(self.builder.finish())
+        } else {
+            self.update_null_bitmap();
+            let null_bit_buffer = self.bitmap_builder.finish();
+            Arc::new(aligned_vec_to_primitive_array::<T>(
+                self.aligned_vec,
+                Some(null_bit_buffer),
+                Some(self.null_count),
+            ))
+        };
+
         let len = arr.len();
         ChunkedArray {
             field: Arc::new(self.field),
@@ -306,7 +347,7 @@ impl<T> FromIterator<T> for AlignedVec<T> {
         let mut av = Self::with_capacity_aligned(size);
 
         while let Some(v) = iter.next() {
-            unsafe { av.push(v) }
+            av.push(v)
         }
 
         // Iterator size hint wasn't correct and reallocation has occurred
@@ -369,11 +410,15 @@ impl<T> AlignedVec<T> {
     /// Push at the end of the Vec. This is unsafe because a push when the capacity of the
     /// inner Vec is reached will reallocate the Vec without the alignment, leaving this destructor's
     /// alignment incorrect
-    pub unsafe fn push(&mut self, value: T) {
+    pub fn push(&mut self, value: T) {
         if self.inner.len() == self.capacity {
             self.reserve(1);
         }
         self.inner.push(value)
+    }
+
+    pub unsafe fn set_len(&mut self, new_len: usize) {
+        self.inner.set_len(new_len)
     }
 
     pub fn as_ptr(&self) -> *const T {
@@ -669,6 +714,17 @@ mod test {
     use arrow::array::Int32Array;
 
     #[test]
+    fn test_primitive_builder() {
+        let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new("foo", 3);
+        let values = &[Some(1), None, Some(2), Some(3), None, Some(4)];
+        for val in values {
+            builder.append_option(*val);
+        }
+        let ca = builder.finish();
+        assert_eq!(Vec::from(&ca), values);
+    }
+
+    #[test]
     fn test_existing_null_bitmap() {
         let mut builder = PrimitiveBuilder::<UInt32Type>::new(3);
         for val in &[Some(1), None, Some(2)] {
@@ -688,10 +744,8 @@ mod test {
     fn from_vec() {
         // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
         let mut v = AlignedVec::with_capacity_aligned(2);
-        unsafe {
-            v.push(1);
-            v.push(2);
-        }
+        v.push(1);
+        v.push(2);
 
         let ptr = v.as_ptr();
         assert_eq!((ptr as usize) % 64, 0);
