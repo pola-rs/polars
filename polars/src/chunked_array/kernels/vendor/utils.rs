@@ -1,13 +1,14 @@
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
+use crate::datatypes::PolarsNumericType;
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use arrow::error::Result;
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
-use arrow::{
-    array::{ArrayDataRef, PrimitiveArray},
-    datatypes::ArrowNumericType,
-};
-#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
 use num::One;
+#[cfg(feature = "simd")]
+use std::cmp::min;
 
 /// Performs a SIMD load but sets all 'invalid' lanes to a constant value.
 ///
@@ -26,7 +27,7 @@ pub(crate) unsafe fn simd_load_set_invalid<T>(
     fill_value: T::Native,
 ) -> T::Simd
 where
-    T: ArrowNumericType,
+    T: PolarsNumericType,
     T::Native: One,
 {
     let simd_with_zeros = T::load(array.value_slice(i, simd_width));
@@ -58,4 +59,40 @@ where
             Some(ref r) => Ok(Some(op(&l.buffer_ref(), &r.buffer_ref())?)),
         },
     }
+}
+
+/// Creates a new SIMD mask, i.e. `packed_simd::m32x16` or similar. that indicates if the
+/// corresponding array slots represented by the mask are 'valid'.
+///
+/// Lanes of the SIMD mask can be set to 'valid' (`true`) if the corresponding array slot is not
+/// `NULL`, as indicated by it's `Bitmap`, and is within the length of the array.  Lanes outside the
+/// length represent padding and are set to 'invalid' (`false`).
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
+unsafe fn is_valid<T>(
+    bitmap: &Option<Bitmap>,
+    i: usize,
+    simd_width: usize,
+    array_len: usize,
+) -> T::SimdMask
+where
+    T: PolarsNumericType,
+{
+    let simd_upper_bound = i + simd_width;
+    let mut validity = T::mask_init(true);
+
+    // Validity based on `Bitmap`
+    if let Some(b) = bitmap {
+        for j in i..min(array_len, simd_upper_bound) {
+            if !b.is_set(j) {
+                validity = T::mask_set(validity, j - i, false);
+            }
+        }
+    }
+
+    // Validity based on the length of the Array
+    for j in array_len..simd_upper_bound {
+        validity = T::mask_set(validity, j - i, false);
+    }
+
+    validity
 }

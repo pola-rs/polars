@@ -34,13 +34,13 @@ use num::{One, Zero};
 use super::utils::apply_bin_op_to_option_bitmap;
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
 use super::utils::simd_load_set_invalid;
+use crate::datatypes::PolarsNumericType;
 use arrow::array::*;
 #[cfg(feature = "simd")]
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 #[cfg(feature = "simd")]
 use arrow::buffer::MutableBuffer;
-use arrow::datatypes;
 use arrow::datatypes::ToByteSlice;
 use arrow::error::{ArrowError, Result};
 use arrow::util::bit_util;
@@ -54,7 +54,7 @@ pub fn math_op<T, F>(
     op: F,
 ) -> Result<PrimitiveArray<T>>
 where
-    T: datatypes::ArrowNumericType,
+    T: PolarsNumericType,
     F: Fn(T::Native, T::Native) -> Result<T::Native>,
 {
     if left.len() != right.len() {
@@ -106,7 +106,7 @@ fn simd_math_op<T, F>(
     op: F,
 ) -> Result<PrimitiveArray<T>>
 where
-    T: datatypes::ArrowNumericType,
+    T: PolarsNumericType,
     T::Simd: Add<Output = T::Simd>
         + Sub<Output = T::Simd>
         + Mul<Output = T::Simd>
@@ -161,7 +161,7 @@ where
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
 fn simd_divide<T>(left: &PrimitiveArray<T>, right: &PrimitiveArray<T>) -> Result<PrimitiveArray<T>>
 where
-    T: datatypes::ArrowNumericType,
+    T: PolarsNumericType,
     T::Native: One + Zero,
 {
     if left.len() != right.len() {
@@ -203,7 +203,7 @@ where
         T::write(simd_result, result_slice);
     }
 
-    let null_bit_buffer = bitmap.map(|b| b.bits);
+    let null_bit_buffer = bitmap.map(|b| b.into_buffer());
 
     let data = ArrayData::new(
         T::get_data_type(),
@@ -221,7 +221,7 @@ where
 /// then the result is also null.
 pub fn add<T>(left: &PrimitiveArray<T>, right: &PrimitiveArray<T>) -> Result<PrimitiveArray<T>>
 where
-    T: datatypes::ArrowNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -239,7 +239,7 @@ where
 /// then the result is also null.
 pub fn subtract<T>(left: &PrimitiveArray<T>, right: &PrimitiveArray<T>) -> Result<PrimitiveArray<T>>
 where
-    T: datatypes::ArrowNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -257,7 +257,7 @@ where
 /// then the result is also null.
 pub fn multiply<T>(left: &PrimitiveArray<T>, right: &PrimitiveArray<T>) -> Result<PrimitiveArray<T>>
 where
-    T: datatypes::ArrowNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
@@ -276,7 +276,7 @@ where
 /// operation will be `Err(ArrowError::DivideByZero)`.
 pub fn divide<T>(left: &PrimitiveArray<T>, right: &PrimitiveArray<T>) -> Result<PrimitiveArray<T>>
 where
-    T: datatypes::ArrowNumericType,
+    T: PolarsNumericType,
     T::Native: Add<Output = T::Native>
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>

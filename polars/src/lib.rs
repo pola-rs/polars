@@ -181,7 +181,7 @@
 //!     - pretty printing of DataFrames
 //! * `temporal (default)`
 //!     - Conversions between Chrono and Polars for temporal data
-//! * `simd`
+//! * `simd (default)`
 //!     - SIMD operations
 //! * `parquet`
 //!     - Read Apache Parquet format
