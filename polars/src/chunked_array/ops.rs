@@ -3,7 +3,6 @@ use crate::chunked_array::builder::get_large_list_builder;
 use crate::chunked_array::kernels;
 use crate::prelude::*;
 use crate::utils::Xob;
-use arrow::compute;
 use itertools::Itertools;
 use num::{Num, NumCast};
 use std::cmp::Ordering;
@@ -681,22 +680,128 @@ pub trait ChunkFilter<T> {
         Self: Sized;
 }
 
+macro_rules! impl_filter_with_nulls_in_both {
+    ($self:expr, $filter:expr) => {{
+        let ca = $self
+            .into_iter()
+            .zip($filter)
+            .filter_map(|(val, valid)| match valid {
+                Some(valid) => {
+                    if valid {
+                        Some(val)
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            })
+            .collect();
+        Ok(ca)
+    }};
+}
+
+macro_rules! impl_filter_no_nulls_in_mask {
+    ($self:expr, $filter:expr) => {{
+        let ca = $self
+            .into_iter()
+            .zip($filter.into_no_null_iter())
+            .filter_map(|(val, valid)| if valid { Some(val) } else { None })
+            .collect();
+        Ok(ca)
+    }};
+}
+
+macro_rules! check_filter_len {
+    ($self:expr, $filter:expr) => {{
+        if $self.len() != $filter.len() {
+            return Err(PolarsError::ShapeMisMatch);
+        }
+    }};
+}
+
+macro_rules! impl_filter_no_nulls {
+    ($self:expr, $filter:expr) => {{
+        $self
+            .into_no_null_iter()
+            .zip($filter.into_no_null_iter())
+            .filter_map(|(val, valid)| if valid { Some(val) } else { None })
+            .collect()
+    }};
+}
+
+macro_rules! impl_filter_no_nulls_in_self {
+    ($self:expr, $filter:expr) => {{
+        $self
+            .into_no_null_iter()
+            .zip($filter)
+            .filter_map(|(val, valid)| match valid {
+                Some(valid) => {
+                    if valid {
+                        Some(val)
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            })
+            .collect()
+    }};
+}
+
 impl<T> ChunkFilter<T> for ChunkedArray<T>
 where
-    T: PolarsSingleType,
+    T: PolarsNumericType,
     ChunkedArray<T>: ChunkOps,
 {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<T>> {
-        let opt = self.optional_rechunk(filter)?;
-        let left = opt.as_ref().or(Some(self)).unwrap();
-        let chunks = left
-            .chunks
-            .iter()
-            .zip(&filter.downcast_chunks())
-            .map(|(arr, &fil)| compute::filter(&*(arr.clone()), fil))
-            .collect::<std::result::Result<Vec<_>, arrow::error::ArrowError>>()?;
+        check_filter_len!(self, filter);
+        match (self.null_count(), filter.null_count()) {
+            (0, 0) => {
+                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
+                Ok(ca.into_inner())
+            }
+            (0, _) => {
+                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
+                Ok(ca.into_inner())
+            }
+            (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
+            (_, _) => impl_filter_with_nulls_in_both!(self, filter),
+        }
+    }
+}
 
-        Ok(self.copy_with_chunks(chunks))
+impl ChunkFilter<BooleanType> for BooleanChunked {
+    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<BooleanType>> {
+        check_filter_len!(self, filter);
+        match (self.null_count(), filter.null_count()) {
+            (0, 0) => {
+                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
+                Ok(ca.into_inner())
+            }
+            (0, _) => {
+                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
+                Ok(ca.into_inner())
+            }
+            (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
+            (_, _) => impl_filter_with_nulls_in_both!(self, filter),
+        }
+    }
+}
+impl ChunkFilter<Utf8Type> for Utf8Chunked {
+    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<Utf8Type>> {
+        check_filter_len!(self, filter);
+        match (self.null_count(), filter.null_count()) {
+            (0, 0) => {
+                let ca = impl_filter_no_nulls!(self, filter);
+                Ok(ca)
+            }
+            (0, _) => {
+                let ca = impl_filter_no_nulls_in_self!(self, filter);
+                Ok(ca)
+            }
+            (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
+            (_, _) => impl_filter_with_nulls_in_both!(self, filter),
+        }
     }
 }
 
