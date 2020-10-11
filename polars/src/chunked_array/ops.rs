@@ -824,6 +824,7 @@ impl ChunkFilter<LargeListType> for LargeListChunked {
     }
 }
 
+/// Create a new ChunkedArray filled with values at that index.
 pub trait ChunkExpandAtIndex<T> {
     /// Create a new ChunkedArray filled with values at that index.
     fn expand_at_index(&self, length: usize, index: usize) -> ChunkedArray<T>;
@@ -1008,6 +1009,7 @@ impl ChunkShift<LargeListType, Series> for LargeListChunked {
     }
 }
 
+/// Combine 2 ChunkedArrays based on some predicate.
 pub trait ChunkZip<T> {
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
     /// from `other` where the mask evaluates `false`
