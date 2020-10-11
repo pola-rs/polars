@@ -582,7 +582,7 @@ impl<T> ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
-    /// Create a new ChunkedArray by taking ownershipt of the AlignedVec. This operation is zero copy.
+    /// Create a new ChunkedArray by taking ownership of the AlignedVec. This operation is zero copy.
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
         let arr = aligned_vec_to_primitive_array::<T>(v, None, Some(0));
         Self::new_from_chunks(name, vec![Arc::new(arr)])

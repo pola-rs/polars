@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::get_iter_capacity;
+use crate::utils::{get_iter_capacity, Xob};
 use arrow::array::{ArrayBuilder, ArrayDataBuilder, ArrayRef};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 pub use arrow::memory;
@@ -370,7 +370,9 @@ impl<T> AlignedVec<T> {
     /// inner Vec is reached will reallocate the Vec without the alignment, leaving this destructor's
     /// alignment incorrect
     pub unsafe fn push(&mut self, value: T) {
-        debug_assert!(self.inner.len() < self.capacity);
+        if self.inner.len() == self.capacity {
+            self.reserve(1);
+        }
         self.inner.push(value)
     }
 
@@ -408,9 +410,7 @@ where
     T: ArrowPrimitiveType,
 {
     fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, v.len());
-        v.iter().for_each(|&v| builder.append_value(v));
-        builder.finish()
+        Self::new_from_iter(name, v.into_iter().copied())
     }
 
     fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
@@ -430,9 +430,10 @@ where
 
     /// Create a new ChunkedArray from an iterator.
     fn new_from_iter(name: &str, it: impl Iterator<Item = T::Native>) -> ChunkedArray<T> {
-        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
-        it.for_each(|opt| builder.append_value(opt));
-        builder.finish()
+        let ca: Xob<ChunkedArray<_>> = it.collect();
+        let mut ca = ca.into_inner();
+        ca.rename(name);
+        ca
     }
 }
 

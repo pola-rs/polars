@@ -43,14 +43,28 @@ impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>
 where
     T: ArrowPrimitiveType,
 {
+    // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
+    // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
+        // bools are bit packed
+        if let ArrowDataType::Boolean = T::get_data_type() {
+            let iter = iter.into_iter();
+            let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
 
-        for val in iter {
-            builder.append_value(val);
+            for val in iter {
+                builder.append_value(val);
+            }
+            Xob::new(builder.finish())
+        } else {
+            let iter = iter.into_iter();
+            let mut v = AlignedVec::with_capacity_aligned(get_iter_capacity(&iter));
+
+            for val in iter {
+                unsafe { v.push(val) }
+            }
+            // TODO: shrink capacity
+            Xob::new(ChunkedArray::new_from_aligned_vec("", v))
         }
-        Xob::new(builder.finish())
     }
 }
 
