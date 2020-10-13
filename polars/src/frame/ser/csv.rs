@@ -141,8 +141,20 @@ where
     rechunk: bool,
     /// Continue with next batch when a ParserError is encountered.
     ignore_parser_error: bool,
-    // use by error ignore logic
+    /// Stop reading from the csv after this number of rows is reached
+    stop_after_n_rows: Option<usize>,
+    // used by error ignore logic
     max_records: Option<usize>,
+}
+
+impl<R> CsvReader<R>
+where
+    R: Read + Seek,
+{
+    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.stop_after_n_rows = num_rows;
+        self
+    }
 }
 
 impl<R> SerReader<R> for CsvReader<R>
@@ -156,6 +168,7 @@ where
             reader_builder: ReaderBuilder::new(),
             rechunk: true,
             ignore_parser_error: false,
+            stop_after_n_rows: None,
             max_records: None,
         }
     }
@@ -200,7 +213,12 @@ where
         } else {
             self.reader_builder.build(self.reader)?
         };
-        finish_reader(reader, self.rechunk, self.ignore_parser_error)
+        finish_reader(
+            reader,
+            self.rechunk,
+            self.ignore_parser_error,
+            self.stop_after_n_rows,
+        )
     }
 }
 

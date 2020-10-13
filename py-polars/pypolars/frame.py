@@ -40,6 +40,7 @@ class DataFrame:
         batch_size: int = 100000,
         has_headers: bool = True,
         ignore_errors: bool = False,
+        stop_after_n_rows: Optional[int] = None,
     ) -> DataFrame:
         """
         Read into a DataFrame from a csv file.
@@ -56,6 +57,9 @@ class DataFrame:
             If the CSV file has headers or not.
         ignore_errors
             Try to keep reading lines if some lines yield errors.
+        stop_after_n_rows
+            After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
+            on the batch size.
 
         Returns
         -------
@@ -63,7 +67,12 @@ class DataFrame:
         """
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_csv(
-            file, infer_schema_length, batch_size, has_headers, ignore_errors
+            file,
+            infer_schema_length,
+            batch_size,
+            has_headers,
+            ignore_errors,
+            stop_after_n_rows,
         )
         return self
 

@@ -86,7 +86,7 @@ where
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let ipc_reader = ArrowIPCFileReader::try_new(self.reader)?;
-        finish_reader(ipc_reader, rechunk, self.ignore_parser_error)
+        finish_reader(ipc_reader, rechunk, self.ignore_parser_error, None)
     }
 }
 

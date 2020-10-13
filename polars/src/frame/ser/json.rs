@@ -104,6 +104,7 @@ where
             self.reader_builder.build(self.reader)?,
             rechunk,
             self.ignore_parser_error,
+            None,
         )
     }
 }

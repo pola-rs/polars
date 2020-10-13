@@ -73,7 +73,7 @@ where
         let n_rows = file_reader.metadata().file_metadata().num_rows() as usize;
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
         let record_reader = arrow_reader.get_record_reader(n_rows)?;
-        finish_reader(record_reader, rechunk, self.ignore_parser_error)
+        finish_reader(record_reader, rechunk, self.ignore_parser_error, None)
     }
 }
 

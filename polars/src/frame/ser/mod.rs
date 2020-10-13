@@ -66,6 +66,7 @@ pub fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
     ignore_parser_error: bool,
+    stop_after_n_rows: Option<usize>,
 ) -> Result<DataFrame> {
     fn init_ca<T>(field: &Field) -> ChunkedArray<T>
     where
@@ -128,6 +129,7 @@ pub fn finish_reader<R: ArrowReader>(
         })
         .collect::<Vec<_>>();
 
+    let mut n_rows = 0;
     loop {
         let batch = match reader.next() {
             Err(ArrowError::ParseError(s)) => {
@@ -141,12 +143,18 @@ pub fn finish_reader<R: ArrowReader>(
             Ok(None) => break,
             Ok(Some(batch)) => batch,
         };
+        n_rows += batch.num_rows();
         batch
             .columns()
             .into_iter()
             .zip(&mut columns)
             .map(|(arr, ser)| ser.append_array(arr.clone()))
             .collect::<Result<Vec<_>>>()?;
+        if let Some(n) = stop_after_n_rows {
+            if n_rows > n {
+                break;
+            }
+        }
     }
     if rechunk {
         columns = columns
