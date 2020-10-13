@@ -25,10 +25,10 @@ pub fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArray1<T>, 
     let strides = [mem::size_of::<T>() as npy_intp];
     unsafe {
         let ptr = PY_ARRAY_API.PyArray_New(
-            PY_ARRAY_API.get_type_object(npyffi::ArrayType::PyArray_Type),
+            PY_ARRAY_API.get_type_object(npyffi::NpyTypes::PyArray_Type),
             dims.ndim_cint(),
             dims.as_dims_ptr(),
-            T::ffi_dtype() as i32,
+            T::npy_type() as i32,
             strides.as_ptr() as *mut _, // strides
             buffer_ptr as _,            // data
             mem::size_of::<T>() as i32, // itemsize

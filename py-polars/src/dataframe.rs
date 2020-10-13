@@ -1,5 +1,5 @@
 use polars::prelude::*;
-use pyo3::{exceptions::RuntimeError, prelude::*};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use crate::datatypes::DataType;
 use crate::lazy::dataframe::PyLazyFrame;
@@ -237,7 +237,7 @@ impl PyDataFrame {
             let df = self.df.filter(ca).map_err(PyPolarsEr::from)?;
             Ok(PyDataFrame::new(df))
         } else {
-            Err(RuntimeError::py_err("Expected a boolean mask"))
+            Err(PyRuntimeError::new_err("Expected a boolean mask"))
         }
     }
 

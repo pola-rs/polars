@@ -3,7 +3,7 @@ use parquet::{
     errors::ParquetError,
     file::reader::{Length, TryClone},
 };
-use pyo3::exceptions::TypeError;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 use std::borrow::Borrow;
@@ -39,7 +39,7 @@ impl PyFileLikeObject {
 
         if read {
             if let Err(_) = object.getattr(py, "read") {
-                return Err(PyErr::new::<TypeError, _>(
+                return Err(PyErr::new::<PyTypeError, _>(
                     "Object does not have a .read() method.",
                 ));
             }
@@ -47,7 +47,7 @@ impl PyFileLikeObject {
 
         if seek {
             if let Err(_) = object.getattr(py, "seek") {
-                return Err(PyErr::new::<TypeError, _>(
+                return Err(PyErr::new::<PyTypeError, _>(
                     "Object does not have a .seek() method.",
                 ));
             }
@@ -55,7 +55,7 @@ impl PyFileLikeObject {
 
         if write {
             if let Err(_) = object.getattr(py, "write") {
-                return Err(PyErr::new::<TypeError, _>(
+                return Err(PyErr::new::<PyTypeError, _>(
                     "Object does not have a .write() method.",
                 ));
             }
@@ -183,7 +183,7 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
     let py = gil.python();
 
     if let Ok(pstring) = py_f.cast_as::<PyString>(py) {
-        let rstring = pstring.to_string()?;
+        let rstring = pstring.to_string();
         let str_slice: &str = rstring.borrow();
         let f = if truncate {
             File::create(str_slice)?

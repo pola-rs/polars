@@ -1,5 +1,5 @@
 use polars::prelude::PolarsError;
-use pyo3::{exceptions::RuntimeError, prelude::*};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -12,6 +12,6 @@ pub enum PyPolarsEr {
 
 impl std::convert::From<PyPolarsEr> for PyErr {
     fn from(err: PyPolarsEr) -> PyErr {
-        RuntimeError::py_err(format!("{:?}", err))
+        PyRuntimeError::new_err(format!("{:?}", err))
     }
 }

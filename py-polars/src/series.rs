@@ -5,7 +5,7 @@ use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use polars::prelude::*;
 use pyo3::types::{PyList, PyTuple};
-use pyo3::{exceptions::RuntimeError, prelude::*, Python};
+use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
 #[pyclass]
 #[repr(transparent)]
@@ -149,7 +149,7 @@ impl PySeries {
             let series = self.series.filter(ca).map_err(PyPolarsEr::from)?;
             Ok(PySeries { series })
         } else {
-            Err(RuntimeError::py_err("Expected a boolean mask"))
+            Err(PyRuntimeError::new_err("Expected a boolean mask"))
         }
     }
 
