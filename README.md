@@ -4,37 +4,57 @@
 [![](http://meritbadge.herokuapp.com/polars)](https://crates.io/crates/polars)
 [![Gitter](https://badges.gitter.im/polars-rs/community.svg)](https://gitter.im/polars-rs/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
-## Blazingly fast (lazy) in memory DataFrames in Rust
+## Blazingly fast  DataFrames in Rust
 
-Polars is a DataFrames library implemented in Rust, using Apache Arrow as backend. 
-Its focus is being a fast in memory DataFrame library. 
+Polars is a blazingly fast DataFrames library implemented in Rust. Its memory model uses Apache Arrow as backend. 
 
-Polars is in rapid development, but it already supports most features needed for a useful DataFrame library. Do you
-miss something, please make an issue and/or sent a PR.
+It currently consists of an eager API similar to pandas and a lazy API that is somewhat similar to spark. Amongst
+more the eager API supports:
 
-## First run in Rust
-Take a look at the [10 minutes to Polars notebook](examples/10_minutes_to_polars.ipynb) to get you started.
-Want to run the notebook yourself? Clone the repo and run `$ cargo c && docker-compose up`. This will spin up a jupyter
-notebook on `http://localhost:8891`. The notebooks are in the `/examples` directory.
- 
-Oh yeah.. and get a cup of coffee because compilation will take while during the first run.
+* Filters
+* Shifts
+* IO (csv, parquet, Arrow IPC)
+* GroupBys + aggregations
+* Joins
+* Pivots
+* Melts
+* Filling null values with various strategies
+* Aggregations
+* Comparisons
+* Reversing
+* Sorting
+* Finding unique values
+* Arithmetic
+* Rust iterators
+* Closure application
 
-## First run in Python
-A subset of the Polars functionality is also exposed through Python bindings. You can install them with:
+The lazy API is built on top of the eager API and currently only supports a subset:
 
-`$ pip install py-polars`
-
-Next you can check the [10 minutes to py-polars notebook](examples/10_minutes_to_pypolars.ipynb) or take a look 
-at the [reference](https://py-polars.readthedocs.io/en/latest/).
+* Filters
+* Joins
+* GroupBys + aggregations
+* Comparisons
+* Arithmetic
+* Aggregations
+* Sorting
+* query optimization
+    - predicate pushdown optimization
+    - projection pushdown optimization
+    - type-coercion optimization
 
 
 ## Documentation
-Want to know what features Polars support? [Check the current master docs](https://ritchie46.github.io/polars). 
+Want to know about all the features Polars supports? [Check the current master docs](https://ritchie46.github.io/polars). 
 
 Most features are described on the [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html), 
 [Series](https://ritchie46.github.io/polars/polars/series/enum.Series.html), and [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
 structs in that order. For `ChunkedArray` a lot of functionality is also defined by `Traits` in the 
 [ops module](https://ritchie46.github.io/polars/polars/chunked_array/ops/index.html).
+Other useful parts of the documentation are:
+* [Time/ DateTime utilities](https://ritchie46.github.io/polars/polars/doc/time/index.html)
+* [Groupby, aggregations and pivots](https://ritchie46.github.io/polars/polars/frame/group_by/struct.GroupBy.html)
+* [Lazy DataFrame](https://ritchie46.github.io/polars/polars/lazy/frame/struct.LazyFrame.html)
+
 
 ## Performance
 Polars is written to be performant. Below are some comparisons with the (also very fast) Pandas DataFrame library.
@@ -45,149 +65,23 @@ Polars is written to be performant. Below are some comparisons with the (also ve
 #### Joins
 ![](pandas_cmp/img/join_80_000.png)
 
-## Functionality
 
-### Read and write CSV | JSON | IPC | Parquet
-
-```rust
- use polars::prelude::*;
- use std::fs::File;
+## First run in Rust
+Take a look at the [10 minutes to Polars notebook](examples/10_minutes_to_polars.ipynb) to get you started.
+Want to run the notebook yourself? Clone the repo and run `$ cargo c && docker-compose up`. This will spin up a jupyter
+notebook on `http://localhost:8891`. The notebooks are in the `/examples` directory.
  
- fn example() -> Result<DataFrame> {
-     let file = File::open("iris.csv")
-                     .expect("could not open file");
- 
-     CsvReader::new(file)
-             .infer_schema(None)
-             .has_header(true)
-             .finish()
- }
-```
+Oh yeah.. and get a cup of coffee because compilation will take a while during the first run.
 
-### Joins
+## First run in Python
+A subset of the Polars functionality is also exposed through Python bindings. You can install them with:
 
-```rust
- use polars::prelude::*;
+`$ pip install py-polars`
 
- fn join() -> Result<DataFrame> {
-     // Create first df.
-     let temp = df!("days" => &[0, 1, 2, 3, 4],
-                    "temp" => &[22.1, 19.9, 7., 2., 3.])?;
+Next you can check the [10 minutes to py-polars notebook](examples/10_minutes_to_pypolars.ipynb) or take a look 
+at the [reference](https://py-polars.readthedocs.io/en/latest/).
 
-     // Create second df.
-     let rain = df!("days" => &[1, 2],
-                    "rain" => &[0.1, 0.2])?;
 
-     // Left join on days column.
-     temp.left_join(&rain, "days", "days")
- }
-
- println!("{:?}", join().unwrap());
-```
-
-```text
- +------+------+------+
- | days | temp | rain |
- | ---  | ---  | ---  |
- | i32  | f64  | f64  |
- +======+======+======+
- | 0    | 22.1 | null |
- +------+------+------+
- | 1    | 19.9 | 0.1  |
- +------+------+------+
- | 2    | 7    | 0.2  |
- +------+------+------+
- | 3    | 2    | null |
- +------+------+------+
- | 4    | 3    | null |
- +------+------+------+
-```
-
-### Groupby's | aggregations | pivots | melts
-
-```rust
- use polars::prelude::*;
- fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
-     df.groupby(&["a", "b"])?
-     .select("agg_column_name")
-     .sum()
- }
-```
-
-### Arithmetic
-```rust
- use polars::prelude::*;
- let s = Series::new("foo", [1, 2, 3]);
- let s_squared = &s * &s;
-```
-
-### Rust iterators
-
-```rust
- use polars::prelude::*;
- 
- let s: Series = [1, 2, 3].iter().collect();
- let s_squared: Series = s.i32()
-      .expect("datatype mismatch")
-      .into_iter()
-      .map(|optional_v| {
-              match optional_v {
-                  Some(v) => Some(v * v),
-                  None => None, // null value
-              }
-          }).collect();
-```
-
-### Apply custom closures
-```rust
- use polars::prelude::*;
- 
- let s: Series = Series::new("values", [Some(1.0), None, Some(3.0)]);
- // null values are ignored automatically
- let squared = s.f64()
-     .unwrap()
-     .apply(|value| value.powf(2.0))
-     .into_series();
- 
- assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)]);
-```
-
-### Comparisons
-
-```rust
- use polars::prelude::*;
- use itertools::Itertools;
- let s = Series::new("dollars", &[1, 2, 3]);
- let mask = s.eq(1);
- 
- assert_eq!(Vec::from(mask), &[Some(true), Some(false), Some(false)]);
-```
-
-## Temporal data types
-
-```rust
- let dates = &[
- "2020-08-21",
- "2020-08-21",
- "2020-08-22",
- "2020-08-23",
- "2020-08-22",
- ];
- // date format
- let fmt = "%Y-%m-%d";
- // create date series
- let s0 = Date32Chunked::parse_from_str_slice("date", dates, fmt)
-         .into_series();
-```
-
-## And more...
-
-* [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html)
-* [Series](https://ritchie46.github.io/polars/polars/series/enum.Series.html)
-* [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
-     - [Operations implemented by Traits](https://ritchie46.github.io/polars/polars/chunked_array/ops/index.html)
-* [Time/ DateTime utilities](https://ritchie46.github.io/polars/polars/doc/time/index.html)
-* [Groupby, aggregations and pivots](https://ritchie46.github.io/polars/polars/frame/group_by/struct.GroupBy.html)
 
 ## Features
 
