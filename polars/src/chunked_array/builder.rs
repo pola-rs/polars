@@ -241,7 +241,6 @@ where
     let len = values.len();
     // See:
     // https://docs.rs/arrow/0.16.0/src/arrow/array/builder.rs.html#314
-    // TODO: make implementation for aligned owned vector for zero copy creation.
     let builder = ArrayData::builder(T::get_data_type())
         .len(len)
         .add_buffer(Buffer::from(values.to_byte_slice()));

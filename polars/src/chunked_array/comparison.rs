@@ -554,14 +554,11 @@ impl ChunkCompare<&str> for Utf8Chunked {
 macro_rules! impl_cmp_largelist {
     ($self:ident, $rhs:ident, $cmp_method:ident) => {{
         match ($self.null_count(), $rhs.null_count()) {
-            (0, 0) => {
-                $self
-                    .into_no_null_iter()
-                    .zip($rhs.into_no_null_iter())
-                    // TODO: use Xob to get rid of redundant Some<T>
-                    .map(|(left, right)| Some(left.$cmp_method(&right)))
-                    .collect()
-            }
+            (0, 0) => $self
+                .into_no_null_iter()
+                .zip($rhs.into_no_null_iter())
+                .map(|(left, right)| left.$cmp_method(&right))
+                .collect(),
             (0, _) => $self
                 .into_no_null_iter()
                 .zip($rhs.into_iter())
@@ -1049,7 +1046,7 @@ mod test {
 
     #[test]
     fn test_left_right() {
-        // This failed with arrow comparisons. TODO: check minimal arrow example with one array being
+        // This failed with arrow comparisons.
         // sliced
         let a1: Int32Chunked = (&[Some(1), Some(2)]).iter().copied().collect();
         let a1 = a1.slice(1, 1).unwrap();

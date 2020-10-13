@@ -62,7 +62,6 @@ where
             for val in iter {
                 v.push(val)
             }
-            // TODO: shrink capacity
             Xob::new(ChunkedArray::new_from_aligned_vec("", v))
         }
     }

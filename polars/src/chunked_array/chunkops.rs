@@ -3,8 +3,6 @@ use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
 use std::sync::Arc;
 
-// TODO: Test rechunking properly
-
 pub trait ChunkOps {
     /// Aggregate to chunk id.
     /// A chunk id is a vector of the chunk lengths.

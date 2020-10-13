@@ -21,7 +21,6 @@ impl<'a> ExactSizeIterator for Utf8IterManyChunk<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterManyChunkNullCheck<'a> {}
 
 /// Trait for ChunkedArrays that don't have null values.
-/// TODO: implement for faster paths
 pub trait IntoNoNullIterator {
     type Item;
     type IntoIter: Iterator<Item = Self::Item>;

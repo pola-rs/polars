@@ -7,8 +7,6 @@ use num::{Num, NumCast, ToPrimitive};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
-// TODO: Add Boolean arithmetic
-
 macro_rules! operand_on_primitive_arr {
     ($_self:expr, $rhs:tt, $operator:expr, $expect:expr) => {{
         let mut new_chunks = Vec::with_capacity($_self.chunks.len());
