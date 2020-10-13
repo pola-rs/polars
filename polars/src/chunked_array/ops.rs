@@ -356,7 +356,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum FillNoneStrategy {
     Backward,
     Forward,
@@ -536,7 +536,9 @@ impl ChunkFillNone<&str> for Utf8Chunked {
         match strategy {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
             FillNoneStrategy::Backward => impl_fill_backward!(self, builder),
-            _ => Err(PolarsError::InvalidOperation),
+            strat => Err(PolarsError::InvalidOperation(
+                format!("Strategy {:?} not supported", strat).into(),
+            )),
         }
     }
 
@@ -547,10 +549,14 @@ impl ChunkFillNone<&str> for Utf8Chunked {
 
 impl ChunkFillNone<&Series> for LargeListChunked {
     fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Self> {
-        Err(PolarsError::InvalidOperation)
+        Err(PolarsError::InvalidOperation(
+            "fill_none not supported for LargeList type".into(),
+        ))
     }
     fn fill_none_with_value(&self, _value: &Series) -> Result<Self> {
-        Err(PolarsError::InvalidOperation)
+        Err(PolarsError::InvalidOperation(
+            "fill_none_with_value not supported for LargeList type".into(),
+        ))
     }
 }
 
@@ -714,7 +720,9 @@ macro_rules! impl_filter_no_nulls_in_mask {
 macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{
         if $self.len() != $filter.len() {
-            return Err(PolarsError::ShapeMisMatch);
+            return Err(PolarsError::ShapeMisMatch(
+                "Filter's length differs from that of the ChunkedArray/ Series.".into(),
+            ));
         }
     }};
 }
@@ -902,7 +910,8 @@ where
 {
     fn shift(&self, periods: i32, fill_value: &Option<T::Native>) -> Result<ChunkedArray<T>> {
         if periods.abs() >= self.len() as i32 {
-            return Err(PolarsError::OutOfBounds);
+            return Err(PolarsError::OutOfBounds(
+                format!("The value of parameter `periods`: {} in the shift operation is larger than the length of the ChunkedArray: {}", periods, self.len()).into()));
         }
         let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
         let amount = self.len() - periods.abs() as usize;
@@ -959,7 +968,8 @@ macro_rules! impl_shift {
 impl ChunkShift<BooleanType, bool> for BooleanChunked {
     fn shift(&self, periods: i32, fill_value: &Option<bool>) -> Result<BooleanChunked> {
         if periods.abs() >= self.len() as i32 {
-            return Err(PolarsError::OutOfBounds);
+            return Err(PolarsError::OutOfBounds(
+                format!("The value of parameter `periods`: {} in the shift operation is larger than the length of the ChunkedArray: {}", periods, self.len()).into()));
         }
         let mut builder = PrimitiveChunkedBuilder::<BooleanType>::new(self.name(), self.len());
 
@@ -975,7 +985,8 @@ impl ChunkShift<BooleanType, bool> for BooleanChunked {
 impl ChunkShift<Utf8Type, &str> for Utf8Chunked {
     fn shift(&self, periods: i32, fill_value: &Option<&str>) -> Result<Utf8Chunked> {
         if periods.abs() >= self.len() as i32 {
-            return Err(PolarsError::OutOfBounds);
+            return Err(PolarsError::OutOfBounds(
+                format!("The value of parameter `periods`: {} in the shift operation is larger than the length of the ChunkedArray: {}", periods, self.len()).into()));
         }
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
         fn append_fn(builder: &mut Utf8ChunkedBuilder, v: Option<&str>) {
@@ -990,7 +1001,8 @@ impl ChunkShift<Utf8Type, &str> for Utf8Chunked {
 impl ChunkShift<LargeListType, Series> for LargeListChunked {
     fn shift(&self, periods: i32, fill_value: &Option<Series>) -> Result<LargeListChunked> {
         if periods.abs() >= self.len() as i32 {
-            return Err(PolarsError::OutOfBounds);
+            return Err(PolarsError::OutOfBounds(
+                format!("The value of parameter `periods`: {} in the shift operation is larger than the length of the ChunkedArray: {}", periods, self.len()).into()));
         }
         let dt = self.get_inner_dtype();
         let mut builder = get_large_list_builder(dt, self.len(), self.name());
@@ -1023,7 +1035,7 @@ pub trait ChunkZip<T> {
 macro_rules! impl_ternary {
     ($mask:expr, $self:expr, $other:expr, $ty:ty) => {{
         if $mask.null_count() > 0 {
-            Err(PolarsError::HasNullValues)
+            Err(PolarsError::HasNullValues("zip with operation does not support null values in mask (open an issue to prioritize)".into()))
         } else {
             let mut val: ChunkedArray<$ty> = $mask
                 .into_no_null_iter()
@@ -1077,7 +1089,10 @@ macro_rules! impl_ternary_broadcast {
                 val.rename($self.name());
                 Ok(val)
             }
-            (_, _) => Err(PolarsError::ShapeMisMatch),
+            (_, _) => Err(PolarsError::ShapeMisMatch(
+                "Shape of parameter `mask` and `other` could not be used in zip_with operation"
+                    .into(),
+            )),
         }
     }};
 }

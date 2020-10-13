@@ -20,7 +20,9 @@ impl LargeListChunked {
         N: PolarsNumericType,
     {
         if self.null_count() != 0 {
-            return Err(PolarsError::HasNullValues);
+            return Err(PolarsError::HasNullValues(
+                "Creation of ndarray with null values is not supported.".into(),
+            ));
         } else {
             let mut iter = self.into_no_null_iter();
 
@@ -41,7 +43,9 @@ impl LargeListChunked {
 
                 while let Some(series) = iter.next() {
                     if series.len() != width {
-                        return Err(PolarsError::ShapeMisMatch);
+                        return Err(PolarsError::ShapeMisMatch(
+                            "Could not create a 2D array. Series have different lengths".into(),
+                        ));
                     }
                     let series = series.cast::<N>()?;
                     let ca = series.unpack::<N>()?;
@@ -51,7 +55,9 @@ impl LargeListChunked {
                 }
                 Ok(ndarray)
             } else {
-                Err(PolarsError::NoData)
+                Err(PolarsError::NoData(
+                    "cannot create ndarray of empty LargeListChunked".into(),
+                ))
             }
         }
     }
@@ -85,7 +91,9 @@ impl DataFrame {
         let mut ndarr = Array2::zeros(self.shape());
         for (col_idx, series) in self.get_columns().iter().enumerate() {
             if series.null_count() != 0 {
-                return Err(PolarsError::HasNullValues);
+                return Err(PolarsError::HasNullValues(
+                    "Creation of ndarray with null values is not supported.".into(),
+                ));
             }
             // this is an Arc clone if already of type N
             let series = series.cast::<N>()?;

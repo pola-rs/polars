@@ -87,7 +87,7 @@ impl DataFrame {
             match first_len {
                 Some(len) => {
                     if series.len() != len {
-                        return Err(PolarsError::ShapeMisMatch);
+                        return Err(PolarsError::ShapeMisMatch("Could not create a new DataFrame from Series. The Series have different lengths".into()));
                     }
                 }
                 None => first_len = Some(series.len()),
@@ -138,7 +138,7 @@ impl DataFrame {
             let argmin = chunk_lens
                 .iter()
                 .position_min()
-                .ok_or(PolarsError::NoData)?;
+                .ok_or(PolarsError::NoData("No data in rechunk operation".into()))?;
             let min_chunks = chunk_lens[argmin];
 
             let to_rechunk = chunk_lens
@@ -186,7 +186,9 @@ impl DataFrame {
         Ok(self
             .columns
             .get(0)
-            .ok_or(PolarsError::NoData)?
+            .ok_or(PolarsError::NoData(
+                "Can not determine number of chunks if there is no data".into(),
+            ))?
             .chunks()
             .len())
     }
@@ -218,9 +220,9 @@ impl DataFrame {
     /// }
     /// ```
     pub fn shape(&self) -> (usize, usize) {
-        let rows = self.columns.len();
-        if rows > 0 {
-            (self.columns[0].len(), rows)
+        let columns = self.columns.len();
+        if columns > 0 {
+            (self.columns[0].len(), columns)
         } else {
             (0, 0)
         }
@@ -237,7 +239,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn width(&self) -> usize {
-        self.shape().1
+        self.columns.len()
     }
 
     /// Get height of DataFrame
@@ -269,7 +271,8 @@ impl DataFrame {
         let height = self.height();
         for col in columns {
             if col.len() != height {
-                return Err(PolarsError::ShapeMisMatch);
+                return Err(PolarsError::ShapeMisMatch(
+                    format!("Could not horizontally stack Series. The Series length {} differs from the DataFrame height: {}", col.len(), height).into()));
             } else {
                 self.columns.push(col.clone());
             }
@@ -281,7 +284,9 @@ impl DataFrame {
     /// Concatenate a DataFrame to this DataFrame
     pub fn vstack(&mut self, df: &DataFrame) -> Result<&mut Self> {
         if self.width() != df.width() {
-            return Err(PolarsError::ShapeMisMatch);
+            return Err(PolarsError::ShapeMisMatch(
+                format!("Could not vertically stack DataFrame. The DataFrames appended width {} differs from the parent DataFrames width {}", self.width(), df.width()).into()
+            ));
         }
 
         if self.dtypes() != df.dtypes() {
@@ -344,7 +349,14 @@ impl DataFrame {
             self.columns.push(series);
             Ok(self)
         } else {
-            Err(PolarsError::ShapeMisMatch)
+            Err(PolarsError::ShapeMisMatch(
+                format!(
+                    "Could add column. The Series length {} differs from the DataFrame height: {}",
+                    series.len(),
+                    self.height()
+                )
+                .into(),
+            ))
         }
     }
 
@@ -656,10 +668,20 @@ impl DataFrame {
     pub fn replace_at_idx<S: IntoSeries>(&mut self, idx: usize, new_col: S) -> Result<&mut Self> {
         let mut new_column = new_col.into_series();
         if new_column.len() != self.height() {
-            return Err(PolarsError::ShapeMisMatch);
+            return Err(PolarsError::ShapeMisMatch(
+                format!("Cannot replace Series at index {}. The shape of Series {} does not match that of the DataFrame {}",
+                idx, new_column.len(), self.height()
+                ).into()));
         };
         if idx >= self.width() {
-            return Err(PolarsError::OutOfBounds);
+            return Err(PolarsError::OutOfBounds(
+                format!(
+                    "Column index: {} outside of DataFrame with {} columns",
+                    idx,
+                    self.width()
+                )
+                .into(),
+            ));
         }
         let old_col = &mut self.columns[idx];
         mem::swap(old_col, &mut new_column);
@@ -750,7 +772,14 @@ impl DataFrame {
         F: FnOnce(&Series) -> S,
         S: IntoSeries,
     {
-        let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds)?;
+        let width = self.width();
+        let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds(
+            format!(
+                "Column index: {} outside of DataFrame with {} columns",
+                idx, width
+            )
+            .into(),
+        ))?;
         let name = col.name().to_string();
         let _ = mem::replace(col, f(col).into_series());
 
@@ -807,7 +836,14 @@ impl DataFrame {
         F: FnOnce(&Series) -> Result<S>,
         S: IntoSeries,
     {
-        let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds)?;
+        let width = self.width();
+        let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds(
+            format!(
+                "Column index: {} outside of DataFrame with {} columns",
+                idx, width
+            )
+            .into(),
+        ))?;
         let name = col.name().to_string();
 
         let _ = mem::replace(col, f(col).map(|s| s.into_series())?);

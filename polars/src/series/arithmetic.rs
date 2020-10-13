@@ -1,22 +1,53 @@
 use crate::prelude::*;
 use num::{Num, NumCast, ToPrimitive};
+use std::fmt::Debug;
 use std::ops;
 
-pub trait NumOpsDispatch {
-    fn subtract(&self, _rhs: &Series) -> Result<Series> {
-        Err(PolarsError::InvalidOperation)
+pub trait NumOpsDispatch: Debug {
+    fn subtract(&self, rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "subtraction operation not supported for {:?} and {:?}",
+                self, rhs
+            )
+            .into(),
+        ))
     }
-    fn add_to(&self, _rhs: &Series) -> Result<Series> {
-        Err(PolarsError::InvalidOperation)
+    fn add_to(&self, rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "addition operation not supported for {:?} and {:?}",
+                self, rhs
+            )
+            .into(),
+        ))
     }
-    fn multiply(&self, _rhs: &Series) -> Result<Series> {
-        Err(PolarsError::InvalidOperation)
+    fn multiply(&self, rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "multiplication operation not supported for {:?} and {:?}",
+                self, rhs
+            )
+            .into(),
+        ))
     }
-    fn divide(&self, _rhs: &Series) -> Result<Series> {
-        Err(PolarsError::InvalidOperation)
+    fn divide(&self, rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "division operation not supported for {:?} and {:?}",
+                self, rhs
+            )
+            .into(),
+        ))
     }
-    fn remainder(&self, _rhs: &Series) -> Result<Series> {
-        Err(PolarsError::InvalidOperation)
+    fn remainder(&self, rhs: &Series) -> Result<Series> {
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "remainder operation not supported for {:?} and {:?}",
+                self, rhs
+            )
+            .into(),
+        ))
     }
 }
 

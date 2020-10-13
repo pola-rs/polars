@@ -163,7 +163,9 @@ impl PhysicalExpr for NotExpr {
         if let Series::Bool(ca) = series {
             Ok((!ca).into_series())
         } else {
-            Err(PolarsError::InvalidOperation)
+            Err(PolarsError::InvalidOperation(
+                format!("NotExpr expected a boolean type, got: {:?}", series).into(),
+            ))
         }
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {

@@ -8,7 +8,14 @@ macro_rules! impl_set_at_idx_with {
 
         while let Some(current_idx) = idx_iter.next() {
             if current_idx > $self.len() {
-                return Err(PolarsError::OutOfBounds);
+                return Err(PolarsError::OutOfBounds(
+                    format!(
+                        "index: {} outside of ChunkedArray with length: {}",
+                        current_idx,
+                        $self.len()
+                    )
+                    .into(),
+                ));
             }
             while let Some((cnt_idx, opt_val)) = ca_iter.next() {
                 if cnt_idx == current_idx {
@@ -32,7 +39,9 @@ macro_rules! impl_set_at_idx_with {
 macro_rules! check_bounds {
     ($self:ident, $mask:ident) => {{
         if $self.len() != $mask.len() {
-            return Err(PolarsError::ShapeMisMatch);
+            return Err(PolarsError::ShapeMisMatch(
+                "Shape of parameter `mask` could not be used in `set` operation.".into(),
+            ));
         }
     }};
 }
@@ -186,7 +195,14 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
 
         while let Some(current_idx) = idx_iter.next() {
             if current_idx > self.len() {
-                return Err(PolarsError::OutOfBounds);
+                return Err(PolarsError::OutOfBounds(
+                    format!(
+                        "index: {} outside of ChunkedArray with length: {}",
+                        current_idx,
+                        self.len()
+                    )
+                    .into(),
+                ));
             }
             while let Some((cnt_idx, opt_val_self)) = ca_iter.next() {
                 if cnt_idx == current_idx {

@@ -7,26 +7,22 @@ type ErrString = Cow<'static, str>;
 pub enum PolarsError {
     #[error(transparent)]
     ArrowError(#[from] arrow::error::ArrowError),
-    #[error("Invalid operation")]
-    InvalidOperation,
-    #[error("Chunks don't match")]
-    ChunkMisMatch,
-    #[error("Data types don't match {0}")]
+    #[error("Invalid operation {0}")]
+    InvalidOperation(ErrString),
+    #[error("Data types don't match: {0}")]
     DataTypeMisMatch(ErrString),
     #[error("Not found: {0}")]
     NotFound(String),
-    #[error("Lengths don't match")]
-    ShapeMisMatch,
+    #[error("Lengths don't match: {0}")]
+    ShapeMisMatch(ErrString),
     #[error("{0}")]
     Other(ErrString),
-    #[error("No selection was made")]
-    NoSelection,
-    #[error("Out of bounds")]
-    OutOfBounds,
+    #[error("Out of bounds: {0}")]
+    OutOfBounds(ErrString),
     #[error("Not contiguous or null values")]
     NoSlice,
-    #[error("Such empty...")]
-    NoData,
+    #[error("Such empty...: {0}")]
+    NoData(ErrString),
     #[error("Memory should be 64 byte aligned")]
     MemoryNotAligned,
     #[cfg(feature = "parquet")]
@@ -36,7 +32,7 @@ pub enum PolarsError {
     #[error("{0}")]
     RandError(String),
     #[error("This operation requires data without Null values")]
-    HasNullValues,
+    HasNullValues(ErrString),
     #[error("{0}")]
     UnknownSchema(ErrString),
 }
