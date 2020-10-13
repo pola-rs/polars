@@ -1,5 +1,7 @@
-use crate::prelude::*;
-use crate::utils::{get_iter_capacity, Xob};
+use crate::{
+    prelude::*,
+    utils::{get_iter_capacity, Xob},
+};
 use arrow::array::{
     ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait,
 };
@@ -26,7 +28,9 @@ where
     field: Field,
     aligned_vec: AlignedVec<T::Native>,
     bitmap_builder: BooleanBufferBuilder,
+    // points the to last null value added
     null_pointer: usize,
+    // keep track of null such that we don't have to count them afterwards
     null_count: usize,
 }
 
@@ -318,10 +322,11 @@ pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
     PrimitiveArray::<T>::from(data)
 }
 
+/// A `Vec` wrapper with a memory alignment equal to Arrow's primitive arrays.
+/// Can be useful in creating a new ChunkedArray or Arrow Primitive array without copying.
 #[derive(Debug)]
 pub struct AlignedVec<T> {
     inner: Vec<T>,
-    capacity: usize,
     // if into_inner is called, this will be true and we can use the default Vec's destructor
     taken: bool,
 }
@@ -333,7 +338,7 @@ impl<T> Drop for AlignedVec<T> {
             let mut me = mem::ManuallyDrop::new(inner);
             let ptr: *mut T = me.as_mut_ptr();
             let ptr = ptr as *mut u8;
-            unsafe { memory::free_aligned(ptr, self.capacity) }
+            unsafe { memory::free_aligned(ptr, self.capacity()) }
         }
     }
 }
@@ -366,22 +371,22 @@ impl<T> AlignedVec<T> {
         let t_size = std::mem::size_of::<T>();
         let capacity = size * t_size;
         let ptr = memory::allocate_aligned(capacity) as *mut T;
-        let v = unsafe { Vec::from_raw_parts(ptr, 0, capacity) };
+        let v = unsafe { Vec::from_raw_parts(ptr, 0, size) };
         AlignedVec {
             inner: v,
-            capacity,
             taken: false,
         }
     }
 
     pub fn reserve(&mut self, additional: usize) {
-        let _me = ManuallyDrop::new(mem::take(&mut self.inner));
-        let ptr = self.as_mut_ptr() as *mut u8;
-        let capacity = self.capacity + std::mem::size_of::<T>() * additional;
-        let ptr = unsafe { memory::reallocate(ptr, self.capacity, capacity) as *mut T };
-        let v = unsafe { Vec::from_raw_parts(ptr, 0, capacity) };
+        let mut me = ManuallyDrop::new(mem::take(&mut self.inner));
+        let ptr = me.as_mut_ptr() as *mut u8;
+        let t_size = mem::size_of::<T>();
+        let old_capacity = t_size * me.capacity();
+        let new_capacity = old_capacity + t_size * additional;
+        let ptr = unsafe { memory::reallocate(ptr, old_capacity, new_capacity) as *mut T };
+        let v = unsafe { Vec::from_raw_parts(ptr, me.len(), me.len() + additional) };
         self.inner = v;
-        self.capacity = capacity;
     }
 
     pub fn len(&self) -> usize {
@@ -394,7 +399,6 @@ impl<T> AlignedVec<T> {
         let v = Vec::from_raw_parts(ptr, len, capacity);
         Self {
             inner: v,
-            capacity,
             taken: false,
         }
     }
@@ -402,8 +406,9 @@ impl<T> AlignedVec<T> {
     /// Take ownership of the Vec. This is UB because the destructor of Vec<T> probably has a different
     /// alignment than what we allocated.
     unsafe fn into_inner(mut self) -> Vec<T> {
-        let inner = mem::take(&mut self.inner);
+        self.shrink_to_fit();
         self.taken = true;
+        let inner = mem::take(&mut self.inner);
         inner
     }
 
@@ -411,7 +416,7 @@ impl<T> AlignedVec<T> {
     /// inner Vec is reached will reallocate the Vec without the alignment, leaving this destructor's
     /// alignment incorrect
     pub fn push(&mut self, value: T) {
-        if self.inner.len() == self.capacity {
+        if self.inner.len() == self.capacity() {
             self.reserve(1);
         }
         self.inner.push(value)
@@ -436,6 +441,22 @@ impl<T> AlignedVec<T> {
     pub fn into_raw_parts(self) -> (*mut T, usize, usize) {
         let mut me = ManuallyDrop::new(self);
         (me.as_mut_ptr(), me.len(), me.capacity())
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        if self.capacity() > self.len() {
+            let mut me = ManuallyDrop::new(mem::take(&mut self.inner));
+            let ptr = me.as_mut_ptr() as *mut u8;
+
+            let t_size = mem::size_of::<T>();
+            let new_size = t_size * me.len();
+            let old_size = t_size * me.capacity();
+            let v = unsafe {
+                let ptr = memory::reallocate(ptr, old_size, new_size) as *mut T;
+                Vec::from_raw_parts(ptr, me.len(), me.len())
+            };
+            self.inner = v;
+        }
     }
 }
 
@@ -741,14 +762,28 @@ mod test {
     }
 
     #[test]
-    fn from_vec() {
+    fn test_aligned_vec_allocations() {
         // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
+        // check if we can increase above initial capacity and keep the Arrow alignment
         let mut v = AlignedVec::with_capacity_aligned(2);
         v.push(1);
         v.push(2);
+        v.push(3);
+        v.push(4);
 
         let ptr = v.as_ptr();
-        assert_eq!((ptr as usize) % 64, 0);
+        assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
+
+        // check if we can shrink to fit
+        let mut v = AlignedVec::with_capacity_aligned(10);
+        v.push(1);
+        v.push(2);
+        v.shrink_to_fit();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v.capacity(), 2);
+        let ptr = v.as_ptr();
+        assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
+
         let a = aligned_vec_to_primitive_array::<Int32Type>(v, None, Some(0));
         assert_eq!(a.value_slice(0, 2), &[1, 2])
     }
