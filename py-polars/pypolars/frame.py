@@ -70,7 +70,6 @@ class DataFrame:
     @staticmethod
     def read_parquet(
         file: Union[str, BinaryIO],
-        batch_size: int = 250000,
     ) -> DataFrame:
         """
         Read into a DataFrame from a parquet file.
@@ -79,15 +78,13 @@ class DataFrame:
         ----------
         file
             Path to a file or a file like object.
-        batch_size
-            Number of lines to read into the buffer at once. Modify this to change performance.
 
         Returns
         -------
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_parquet(file, batch_size)
+        self._df = PyDataFrame.read_parquet(file)
         return self
 
     @staticmethod
@@ -638,6 +635,12 @@ class DataFrame:
 
     def lazy(self) -> "LazyFrame":
         pass
+
+    def n_chunks(self) -> int:
+        """
+        Get number of chunks used by the ChunkedArrays of this DataFrame
+        """
+        return self._df.n_chunks()
 
 
 class GroupBy:

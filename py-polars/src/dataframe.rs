@@ -60,11 +60,11 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    pub fn read_parquet(py_f: PyObject, batch_size: usize) -> PyResult<Self> {
+    pub fn read_parquet(py_f: PyObject) -> PyResult<Self> {
         use EitherRustPythonFile::*;
         let result = match get_either_file(py_f, false)? {
-            Py(f) => ParquetReader::new(f).with_batch_size(batch_size).finish(),
-            Rust(f) => ParquetReader::new(f).with_batch_size(batch_size).finish(),
+            Py(f) => ParquetReader::new(f).finish(),
+            Rust(f) => ParquetReader::new(f).finish(),
         };
         let df = result.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
