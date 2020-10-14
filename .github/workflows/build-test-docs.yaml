@@ -13,7 +13,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-04-22
+          toolchain: nightly-2020-10-09
           override: true
           components: rustfmt, clippy
       - name: Set up Python
@@ -30,7 +30,7 @@ jobs:
           black --check .
       - name: Run tests
         run: |
-          cd polars && cargo test
+          cd polars && cargo test --all-features
           cd ../py-polars && ./tasks.sh build-run-tests
       - name: deploy docs
         run: |
