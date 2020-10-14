@@ -769,7 +769,7 @@ where
 {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<T>> {
         check_filter_len!(self, filter);
-        match (self.null_count(), filter.null_count()) {
+        let out = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
                 let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
                 Ok(ca.into_inner())
@@ -780,14 +780,18 @@ where
             }
             (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
             (_, _) => impl_filter_with_nulls_in_both!(self, filter),
-        }
+        };
+        out.map(|mut ca| {
+            ca.rename(self.name());
+            ca
+        })
     }
 }
 
 impl ChunkFilter<BooleanType> for BooleanChunked {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<BooleanType>> {
         check_filter_len!(self, filter);
-        match (self.null_count(), filter.null_count()) {
+        let out = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
                 let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
                 Ok(ca.into_inner())
@@ -798,13 +802,17 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             }
             (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
             (_, _) => impl_filter_with_nulls_in_both!(self, filter),
-        }
+        };
+        out.map(|mut ca| {
+            ca.rename(self.name());
+            ca
+        })
     }
 }
 impl ChunkFilter<Utf8Type> for Utf8Chunked {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<Utf8Type>> {
         check_filter_len!(self, filter);
-        match (self.null_count(), filter.null_count()) {
+        let out: Result<Utf8Chunked> = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
                 let ca = impl_filter_no_nulls!(self, filter);
                 Ok(ca)
@@ -815,7 +823,12 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
             }
             (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
             (_, _) => impl_filter_with_nulls_in_both!(self, filter),
-        }
+        };
+
+        out.map(|mut ca| {
+            ca.rename(self.name());
+            ca
+        })
     }
 }
 
