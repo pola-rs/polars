@@ -151,20 +151,26 @@ pub trait ChunkApply<'a, A, B> {
 
 /// Aggregation operations
 pub trait ChunkAgg<T> {
+    /// Aggregate the sum of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
     fn sum(&self) -> Option<T>;
+
     fn min(&self) -> Option<T>;
     /// Returns the maximum value in the array, according to the natural order.
-    /// Returns an option because the array is nullable.
+    /// Returns `None` if the array is empty or only contains null values.
     fn max(&self) -> Option<T>;
 
     /// Returns the mean value in the array.
-    /// Returns an option because the array is nullable.
+    /// Returns `None` if the array is empty or only contains null values.
     fn mean(&self) -> Option<T>;
 
     /// Returns the mean value in the array.
-    /// Returns an option because the array is nullable.
+    /// Returns `None` if the array is empty or only contains null values.
     fn median(&self) -> Option<T>;
+
+    /// Aggregate a given quantile of the ChunkedArray.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn quantile(&self, quantile: f64) -> Result<Option<T>>;
 }
 
 /// Compare [Series](series/series/enum.Series.html)

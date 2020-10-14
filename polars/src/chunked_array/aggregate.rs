@@ -36,6 +36,23 @@ macro_rules! agg_float_with_nans {
     }};
 }
 
+macro_rules! impl_quantile {
+    ($self:expr, $quantile:expr) => {{
+        let null_count = $self.null_count();
+        let opt = $self
+            .sort(false)
+            .slice(
+                ((($self.len() - null_count) as f64) * $quantile + null_count as f64) as usize,
+                1,
+            )
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        opt
+    }};
+}
+
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -90,13 +107,18 @@ where
     }
 
     fn median(&self) -> Option<T::Native> {
-        let null_count = self.null_count();
-        self.sort(false)
-            .slice((self.len() - null_count) / 2 + null_count, 1)
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap()
+        self.quantile(0.5).unwrap()
+    }
+
+    fn quantile(&self, quantile: f64) -> Result<Option<T::Native>> {
+        if quantile < 0.0 || quantile > 1.0 {
+            Err(PolarsError::ValueError(
+                "quantile should be between 0.0 and 1.0".into(),
+            ))
+        } else {
+            let opt = impl_quantile!(self, quantile);
+            Ok(opt)
+        }
     }
 }
 
@@ -157,15 +179,18 @@ impl ChunkAgg<u32> for BooleanChunked {
     }
 
     fn median(&self) -> Option<u32> {
-        let null_count = self.null_count();
-        let opt_v = self
-            .sort(false)
-            .slice((self.len() - null_count) / 2 + null_count, 1)
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap();
-        opt_v.map(|v| v as u32)
+        self.quantile(0.5).unwrap()
+    }
+
+    fn quantile(&self, quantile: f64) -> Result<Option<u32>> {
+        if quantile < 0.0 || quantile > 1.0 {
+            Err(PolarsError::ValueError(
+                "quantile should be between 0.0 and 1.0".into(),
+            ))
+        } else {
+            let opt = impl_quantile!(self, quantile);
+            Ok(opt.map(|v| v as u32))
+        }
     }
 }
 

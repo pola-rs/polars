@@ -23,6 +23,8 @@ pub enum PolarsError {
     NoSlice,
     #[error("Such empty...: {0}")]
     NoData(ErrString),
+    #[error("Invalid value: {0}")]
+    ValueError(ErrString),
     #[error("Memory should be 64 byte aligned")]
     MemoryNotAligned,
     #[cfg(feature = "parquet")]
