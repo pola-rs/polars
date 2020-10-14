@@ -9,6 +9,19 @@ use std::{
     sync::Arc,
 };
 
+pub trait Udf: Send + Sync {
+    fn call_udf(&self, s: Series) -> Series;
+}
+
+impl<F> Udf for F
+where
+    F: Fn(Series) -> Series + Send + Sync,
+{
+    fn call_udf(&self, s: Series) -> Series {
+        self(s)
+    }
+}
+
 /// Queries consists of multiple expressions.
 #[derive(Clone)]
 pub enum Expr {
@@ -49,6 +62,11 @@ pub enum Expr {
         predicate: Box<Expr>,
         truthy: Box<Expr>,
         falsy: Box<Expr>,
+    },
+    Apply {
+        input: Box<Expr>,
+        function: Arc<dyn Udf>,
+        output_type: ArrowDataType,
     }, // ScalarFunction {
        //     name: String,
        //     args: Vec<Expr>,
@@ -99,6 +117,7 @@ impl Expr {
             AggQuantile { expr, .. } => expr.get_type(schema),
             Cast { data_type, .. } => Ok(data_type.clone()),
             Ternary { truthy, .. } => truthy.get_type(schema),
+            Apply { output_type, .. } => Ok(output_type.clone()),
         }
     }
 
@@ -183,6 +202,16 @@ impl Expr {
                 ))
             }
             Ternary { truthy, .. } => truthy.to_field(schema),
+            Apply {
+                output_type, input, ..
+            } => {
+                let input_field = input.to_field(schema)?;
+                Ok(Field::new(
+                    input_field.name(),
+                    output_type.clone(),
+                    input_field.is_nullable(),
+                ))
+            }
         }
     }
 }
@@ -218,6 +247,7 @@ impl fmt::Debug for Expr {
                 truthy,
                 falsy,
             } => write!(f, "WHEN {:?} {:?} OTHERWISE {:?}", predicate, truthy, falsy),
+            Apply { input, .. } => write!(f, "APPLY({:?})", input),
         }
     }
 }
@@ -431,6 +461,17 @@ impl Expr {
         Expr::Sort {
             expr: Box::new(self),
             reverse,
+        }
+    }
+
+    pub fn apply<F>(self, function: F, output_type: ArrowDataType) -> Self
+    where
+        F: Udf + 'static,
+    {
+        Expr::Apply {
+            input: Box::new(self),
+            function: Arc::new(function),
+            output_type,
         }
     }
 }

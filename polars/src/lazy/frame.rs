@@ -479,6 +479,20 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_udf() {
+        let df = get_df();
+        let new = df
+            .lazy()
+            .select(&[col("sepal.width").apply(|s| s * 200.0, ArrowDataType::Float64)])
+            .collect()
+            .unwrap();
+        assert_eq!(
+            new.column("sepal.width").unwrap().f64().unwrap().get(0),
+            Some(700.0)
+        );
+    }
+
+    #[test]
     fn test_lazy_is_null() {
         let df = get_df();
         let new = df

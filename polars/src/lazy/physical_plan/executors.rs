@@ -3,7 +3,6 @@ use rayon;
 use std::mem;
 use std::sync::Mutex;
 
-#[derive(Debug)]
 pub struct CsvExec {
     path: String,
     schema: Schema,
@@ -34,7 +33,6 @@ impl Executor for CsvExec {
     }
 }
 
-#[derive(Debug)]
 pub struct FilterExec {
     predicate: Arc<dyn PhysicalExpr>,
     input: Arc<dyn Executor>,
@@ -56,7 +54,6 @@ impl Executor for FilterExec {
     }
 }
 
-#[derive(Debug)]
 pub struct DataFrameExec {
     df: Arc<Mutex<DataFrame>>,
 }
@@ -76,7 +73,6 @@ impl Executor for DataFrameExec {
 }
 
 /// Take an input Executor and a multiple expressions
-#[derive(Debug)]
 pub struct PipeExec {
     /// i.e. sort, projection
     operation: &'static str,
@@ -121,7 +117,6 @@ impl Executor for PipeExec {
     }
 }
 
-#[derive(Debug)]
 pub struct SortExec {
     input: Arc<dyn Executor>,
     by_column: String,
@@ -146,7 +141,6 @@ impl Executor for SortExec {
 }
 
 /// Take an input Executor and a multiple expressions
-#[derive(Debug)]
 pub struct GroupByExec {
     input: Arc<dyn Executor>,
     keys: Arc<Vec<String>>,
@@ -182,7 +176,6 @@ impl Executor for GroupByExec {
     }
 }
 
-#[derive(Debug)]
 pub struct JoinExec {
     input_left: Arc<dyn Executor>,
     input_right: Arc<dyn Executor>,
@@ -227,7 +220,6 @@ impl Executor for JoinExec {
         }
     }
 }
-#[derive(Debug)]
 pub struct StackExec {
     input: Arc<dyn Executor>,
     expr: Vec<Arc<dyn PhysicalExpr>>,

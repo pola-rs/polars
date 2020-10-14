@@ -8,7 +8,6 @@ use crate::{
 };
 use std::sync::Arc;
 
-#[derive(Debug)]
 pub struct LiteralExpr(pub ScalarValue);
 
 impl LiteralExpr {
@@ -60,7 +59,6 @@ impl PhysicalExpr for LiteralExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct BinaryExpr {
     left: Arc<dyn PhysicalExpr>,
     op: Operator,
@@ -107,7 +105,6 @@ impl PhysicalExpr for BinaryExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct ColumnExpr(Arc<String>);
 
 impl ColumnExpr {
@@ -127,7 +124,6 @@ impl PhysicalExpr for ColumnExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct SortExpr {
     expr: Arc<dyn PhysicalExpr>,
     reverse: bool,
@@ -149,7 +145,6 @@ impl PhysicalExpr for SortExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct NotExpr(Arc<dyn PhysicalExpr>);
 
 impl NotExpr {
@@ -173,7 +168,6 @@ impl PhysicalExpr for NotExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct AliasExpr {
     expr: Arc<dyn PhysicalExpr>,
     name: Arc<String>,
@@ -216,7 +210,6 @@ impl AggPhysicalExpr for AliasExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct IsNullExpr {
     expr: Arc<dyn PhysicalExpr>,
 }
@@ -237,7 +230,6 @@ impl PhysicalExpr for IsNullExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct IsNotNullExpr {
     expr: Arc<dyn PhysicalExpr>,
 }
@@ -273,7 +265,6 @@ macro_rules! impl_to_field_for_agg {
 
 macro_rules! impl_aggregation {
     ($expr_struct:ident, $agg_method:ident, $groupby_method_variant:expr, $finish_evaluate:ident) => {
-        #[derive(Debug)]
         pub struct $expr_struct {
             expr: Arc<dyn PhysicalExpr>,
         }
@@ -373,7 +364,6 @@ impl_aggregation!(
     rename_and_cast_to_series
 );
 
-#[derive(Debug)]
 pub struct AggQuantileExpr {
     expr: Arc<dyn PhysicalExpr>,
     quantile: f64,
@@ -414,7 +404,6 @@ impl AggPhysicalExpr for AggQuantileExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct AggGroupsExpr {
     expr: Arc<dyn PhysicalExpr>,
 }
@@ -460,7 +449,6 @@ impl AggPhysicalExpr for AggGroupsExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct AggNUniqueExpr {
     expr: Arc<dyn PhysicalExpr>,
 }
@@ -503,7 +491,6 @@ impl AggPhysicalExpr for AggNUniqueExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct CastExpr {
     expr: Arc<dyn PhysicalExpr>,
     data_type: ArrowDataType,
@@ -525,7 +512,6 @@ impl PhysicalExpr for CastExpr {
     }
 }
 
-#[derive(Debug)]
 pub struct TernaryExpr {
     pub predicate: Arc<dyn PhysicalExpr>,
     pub truthy: Arc<dyn PhysicalExpr>,
@@ -542,5 +528,31 @@ impl PhysicalExpr for TernaryExpr {
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.truthy.to_field(input_schema)
+    }
+}
+
+pub struct ApplyExpr {
+    pub input: Arc<dyn PhysicalExpr>,
+    pub function: Arc<dyn Udf>,
+    pub output_type: ArrowDataType,
+}
+
+impl PhysicalExpr for ApplyExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let input = self.input.evaluate(df)?;
+        let in_name = input.name().to_string();
+        let mut out = self.function.call_udf(input);
+        if &in_name != out.name() {
+            out.rename(&in_name);
+        }
+        Ok(out)
+    }
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        let input_field = self.input.to_field(input_schema)?;
+        Ok(Field::new(
+            input_field.name(),
+            self.output_type.clone(),
+            input_field.is_nullable(),
+        ))
     }
 }

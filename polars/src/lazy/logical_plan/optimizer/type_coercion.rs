@@ -118,6 +118,19 @@ impl TypeCoercion {
                     ))
                 }
             }
+            Apply {
+                input,
+                function,
+                output_type,
+            } => {
+                // todo Maybe don't coerce these types, as it may interfere with the function types.
+                let input = self.rewrite_expr(*input, input_schema)?;
+                Ok(Apply {
+                    input: Box::new(input),
+                    function,
+                    output_type,
+                })
+            }
         }
     }
 

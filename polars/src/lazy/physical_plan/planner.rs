@@ -179,6 +179,18 @@ impl DefaultPlanner {
                     falsy,
                 }))
             }
+            Expr::Apply {
+                input,
+                function,
+                output_type,
+            } => {
+                let input = self.create_physical_expr(input)?;
+                Ok(Arc::new(ApplyExpr {
+                    input,
+                    function: function.clone(),
+                    output_type: output_type.clone(),
+                }))
+            }
         }
     }
 }

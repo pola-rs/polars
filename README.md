@@ -13,7 +13,7 @@ more the eager API supports:
 
 * Filters
 * Shifts
-* IO (csv, parquet, Arrow IPC)
+* IO (csv, json, parquet, Arrow IPC)
 * GroupBys + aggregations
 * Joins
 * Pivots

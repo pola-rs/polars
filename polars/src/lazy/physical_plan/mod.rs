@@ -4,7 +4,6 @@ pub mod planner;
 
 use crate::{lazy::prelude::*, prelude::*};
 use arrow::datatypes::SchemaRef;
-use std::fmt::Debug;
 use std::sync::Arc;
 
 pub enum ExprVal {
@@ -23,7 +22,7 @@ pub trait PhysicalPlanner {
 // combine physical expressions, which produce Series.
 
 /// Executors will evaluate physical expressions and collect them in a DataFrame.
-pub trait Executor: Debug + Send + Sync {
+pub trait Executor: Send + Sync {
     fn schema(&self) -> SchemaRef {
         todo!()
     }
@@ -32,7 +31,7 @@ pub trait Executor: Debug + Send + Sync {
 
 /// Take a DataFrame and evaluate the expressions.
 /// Implement this for Column, lt, eq, etc
-pub trait PhysicalExpr: Debug + Send + Sync {
+pub trait PhysicalExpr: Send + Sync {
     fn data_type(&self, _input_schema: &Schema) -> Result<ArrowDataType> {
         unimplemented!()
     }
@@ -43,9 +42,7 @@ pub trait PhysicalExpr: Debug + Send + Sync {
     fn to_field(&self, input_schema: &Schema) -> Result<Field>;
 
     fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        Err(PolarsError::Other(
-            format!("not an agg expression: {:?}", self).into(),
-        ))
+        Err(PolarsError::Other(format!("not an agg expression").into()))
     }
 }
 
