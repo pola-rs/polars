@@ -173,6 +173,13 @@ impl PyExpr {
         };
         Ok(self.clone().inner.fill_none(strat).into())
     }
+    pub fn str_lengths(&self) -> PyExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.str_lengths().into_series())
+        };
+        self.clone().inner.apply(function, None).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

@@ -487,6 +487,12 @@ impl PySeries {
             .map_err(PyPolarsEr::from)?;
         Ok(PySeries::new(s))
     }
+
+    pub fn str_lengths(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.str_lengths().into_series();
+        Ok(PySeries::new(s))
+    }
 }
 
 macro_rules! impl_ufuncs {

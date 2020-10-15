@@ -55,6 +55,10 @@ impl<'a> ChunkApply<'a, &'a str, String> for Utf8Chunked {
     where
         F: Fn(&'a str) -> String,
     {
-        self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
+        if self.null_count() == 0 {
+            self.into_no_null_iter().map(f).collect()
+        } else {
+            self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
+        }
     }
 }

@@ -45,6 +45,7 @@ pub mod temporal;
 pub mod unique;
 pub mod upstream_traits;
 
+use crate::utils::Xob;
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
     DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
@@ -572,14 +573,16 @@ where
 }
 
 impl Utf8Chunked {
-    #[deprecated(since = "3.1", note = "Use `new_from_slice`")]
-    pub fn new_utf8_from_slice<S: AsRef<str>>(name: &str, v: &[S]) -> Self {
-        Utf8Chunked::new_from_slice(name, v)
-    }
-
-    #[deprecated(since = "3.1", note = "Use `new_from_opt_slice`")]
-    pub fn new_utf8_from_opt_slice<S: AsRef<str>>(name: &str, opt_v: &[Option<S>]) -> Self {
-        Utf8Chunked::new_from_opt_slice(name, opt_v)
+    /// Get the length of the string values.
+    pub fn str_lengths(&self) -> UInt32Chunked {
+        if self.null_count() == 0 {
+            let ca: Xob<_> = self.into_no_null_iter().map(|s| s.len() as u32).collect();
+            ca.into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_s| opt_s.map(|s| s.len() as u32))
+                .collect()
+        }
     }
 }
 

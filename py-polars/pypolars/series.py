@@ -836,3 +836,13 @@ class Series:
         New Series
         """
         return wrap_s(self._s.zip_with(mask._s, other._s))
+
+    def str_lengths(self) -> Series:
+        """
+        Get length of the string values in the Series.
+
+        Returns
+        -------
+        Series[u32]
+        """
+        return wrap_s(self._s.str_lengths())
