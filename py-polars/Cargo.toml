@@ -7,13 +7,12 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars = {path = "../polars", features = ["parquet", "simd", "parallel", "lazy"]}
+polars = {path = "../polars", features = ["parquet", "simd", "parallel", "lazy", "strings"]}
 pyo3 = {version = "0.12", features = ["extension-module"] }
 thiserror = "1.0.20"
 numpy = "0.12"
 ndarray = "0.13.1"
 parquet = "1.0.1"
-enum_dispatch = "^0.3.2"
 
 
 [lib]

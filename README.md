@@ -96,6 +96,8 @@ Additional cargo features:
     - Convert from `DataFrame` to `ndarray`
 * `lazy`
     - Lazy api
+* `strings`
+    - String utilities for `Utf8Chunked`
 
 ## Contribution
 Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).

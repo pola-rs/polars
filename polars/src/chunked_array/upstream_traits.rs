@@ -5,6 +5,7 @@ use crate::utils::get_iter_capacity;
 use crate::utils::Xob;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::collections::LinkedList;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
@@ -88,6 +89,39 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
 
         for val in iter {
             builder.append_value(val);
+        }
+        builder.finish()
+    }
+}
+
+impl<'a> FromIterator<Cow<'a, str>> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = Cow<'a, str>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for cow in iter {
+            match cow {
+                Cow::Borrowed(val) => builder.append_value(val),
+                Cow::Owned(val) => builder.append_value(&val),
+            }
+        }
+        builder.finish()
+    }
+}
+
+impl<'a> FromIterator<Option<Cow<'a, str>>> for Utf8Chunked {
+    fn from_iter<I: IntoIterator<Item = Option<Cow<'a, str>>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for opt_val in iter {
+            match opt_val {
+                Some(cow) => match cow {
+                    Cow::Borrowed(val) => builder.append_value(val),
+                    Cow::Owned(val) => builder.append_value(&val),
+                },
+                None => builder.append_null(),
+            }
         }
         builder.finish()
     }

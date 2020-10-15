@@ -19,6 +19,8 @@ random = ["rand", "rand_distr"]
 parallel = []
 default = ["pretty", "docs", "temporal", "simd"]
 lazy = []
+# extra utilities for Utf8Chunked
+strings = ["regex"]
 
 [dependencies]
 arrow = {version = "1.0.1", default_features = false}
@@ -35,3 +37,5 @@ rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
 packed_simd_2 = "0.3.4"
+regex = {version = "1.4", optional = true }
+anyhow = "1.0"

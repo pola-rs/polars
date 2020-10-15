@@ -180,6 +180,39 @@ impl PyExpr {
         };
         self.clone().inner.apply(function, None).into()
     }
+
+    pub fn str_replace(&self, pat: String, val: String) -> PyExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.replace(&pat, &val) {
+                Ok(ca) => Ok(ca.into_series()),
+                Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
+            }
+        };
+        self.clone().inner.apply(function, None).into()
+    }
+
+    pub fn str_replace_all(&self, pat: String, val: String) -> PyExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.replace_all(&pat, &val) {
+                Ok(ca) => Ok(ca.into_series()),
+                Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
+            }
+        };
+        self.clone().inner.apply(function, None).into()
+    }
+
+    pub fn str_contains(&self, pat: String) -> PyExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.contains(&pat) {
+                Ok(ca) => Ok(ca.into_series()),
+                Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
+            }
+        };
+        self.clone().inner.apply(function, None).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

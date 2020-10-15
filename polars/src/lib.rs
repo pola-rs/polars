@@ -193,6 +193,8 @@
 //!     - Parallel variants of operation
 //! * `lazy`
 //!     - Lazy api
+//! * `strings`
+//!     - String utilities for `Utf8Chunked`
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]

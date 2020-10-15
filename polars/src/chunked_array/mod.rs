@@ -38,6 +38,9 @@ pub mod par;
 #[doc(cfg(feature = "random"))]
 mod random;
 pub mod set;
+#[cfg(feature = "strings")]
+#[doc(cfg(feature = "strings"))]
+pub mod strings;
 pub mod take;
 #[cfg(feature = "temporal")]
 #[doc(cfg(feature = "temporal"))]
@@ -45,7 +48,6 @@ pub mod temporal;
 pub mod unique;
 pub mod upstream_traits;
 
-use crate::utils::Xob;
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
     DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
@@ -568,20 +570,6 @@ where
                 AnyType::LargeList(("", v).into())
             }
             _ => unimplemented!(),
-        }
-    }
-}
-
-impl Utf8Chunked {
-    /// Get the length of the string values.
-    pub fn str_lengths(&self) -> UInt32Chunked {
-        if self.null_count() == 0 {
-            let ca: Xob<_> = self.into_no_null_iter().map(|s| s.len() as u32).collect();
-            ca.into_inner()
-        } else {
-            self.into_iter()
-                .map(|opt_s| opt_s.map(|s| s.len() as u32))
-                .collect()
         }
     }
 }
