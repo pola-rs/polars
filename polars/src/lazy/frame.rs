@@ -182,7 +182,7 @@ impl LazyFrame {
         }
 
         let planner = DefaultPlanner::default();
-        let physical_plan = planner.create_physical_plan(&logical_plan)?;
+        let physical_plan = planner.create_physical_plan(logical_plan)?;
         physical_plan.execute()
     }
 
