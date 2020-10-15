@@ -41,6 +41,7 @@ The lazy API is built on top of the eager API and currently only supports a subs
     - predicate pushdown optimization
     - projection pushdown optimization
     - type-coercion optimization
+* Closure application (User Defined Functions)
 
 
 ## Documentation

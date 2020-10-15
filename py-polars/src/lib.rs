@@ -21,6 +21,24 @@ pub mod lazy;
 pub mod npy;
 pub mod series;
 
+fn str_to_arrow_type(s: &str) -> ArrowDataType {
+    match s {
+        "u8" => ArrowDataType::UInt8,
+        "u16" => ArrowDataType::UInt16,
+        "u32" => ArrowDataType::UInt32,
+        "u64" => ArrowDataType::UInt64,
+        "i8" => ArrowDataType::Int8,
+        "i16" => ArrowDataType::Int16,
+        "i32" => ArrowDataType::Int32,
+        "i64" => ArrowDataType::Int64,
+        "f32" => ArrowDataType::Float32,
+        "f64" => ArrowDataType::Float64,
+        "bool" => ArrowDataType::Boolean,
+        "utf8" => ArrowDataType::Utf8,
+        _ => todo!(),
+    }
+}
+
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
@@ -75,7 +93,7 @@ impl PyExpr {
         self.clone().inner.alias(name).into()
     }
     #[text_signature = "($self)"]
-    pub fn not(&self) -> PyExpr {
+    pub fn is_not(&self) -> PyExpr {
         self.clone().inner.not().into()
     }
     #[text_signature = "($self)"]
@@ -130,21 +148,9 @@ impl PyExpr {
     #[text_signature = "($self, data_type)"]
     pub fn cast(&self, data_type: &str) -> PyExpr {
         // TODO! accept the DataType objects.
-        let expr = match data_type {
-            "u8" => self.inner.clone().cast(ArrowDataType::UInt8),
-            "u16" => self.inner.clone().cast(ArrowDataType::UInt16),
-            "u32" => self.inner.clone().cast(ArrowDataType::UInt32),
-            "u64" => self.inner.clone().cast(ArrowDataType::UInt64),
-            "i8" => self.inner.clone().cast(ArrowDataType::Int8),
-            "i16" => self.inner.clone().cast(ArrowDataType::Int16),
-            "i32" => self.inner.clone().cast(ArrowDataType::Int32),
-            "i64" => self.inner.clone().cast(ArrowDataType::Int64),
-            "f32" => self.inner.clone().cast(ArrowDataType::Float32),
-            "f64" => self.inner.clone().cast(ArrowDataType::Float64),
-            "bool" => self.inner.clone().cast(ArrowDataType::Boolean),
-            "utf8" => self.inner.clone().cast(ArrowDataType::Utf8),
-            _ => todo!(),
-        };
+
+        let dt = str_to_arrow_type(data_type);
+        let expr = self.inner.clone().cast(dt);
         expr.into()
     }
     #[text_signature = "($self, reverse)"]
