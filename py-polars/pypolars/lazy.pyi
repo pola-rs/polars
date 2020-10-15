@@ -24,6 +24,20 @@ class Expr:
     def cast(self, data_type: str) -> Expr: ...
     def sort(self, reverse: bool) -> Expr: ...
     def shift(self, periods: int) -> Expr: ...
+    def fill_none(self, strategy: str) -> Expr:
+        """
+        Fill null values with a fill strategy.
+
+        Parameters
+        ----------
+        strategy
+               * "backward"
+               * "forward"
+               * "min"
+               * "max"
+               * "mean"
+        """
+        ...
 
 class WhenThen:
     def otherwise(self, expr: Expr) -> Expr: ...

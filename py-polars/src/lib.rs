@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate polars;
+use crate::error::PyPolarsEr;
 use crate::{
     dataframe::PyDataFrame,
     lazy::dataframe::{PyLazyFrame, PyLazyGroupBy},
@@ -8,6 +9,7 @@ use crate::{
 use polars::datatypes::ArrowDataType;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
+use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyFloat, PyInt};
 use pyo3::{wrap_pyfunction, PyNumberProtocol};
@@ -159,6 +161,17 @@ impl PyExpr {
     }
     pub fn shift(&self, periods: i32) -> PyExpr {
         self.clone().inner.shift(periods).into()
+    }
+    pub fn fill_none(&self, strategy: &str) -> PyResult<PyExpr> {
+        let strat = match strategy {
+            "backward" => FillNoneStrategy::Backward,
+            "forward" => FillNoneStrategy::Forward,
+            "min" => FillNoneStrategy::Min,
+            "max" => FillNoneStrategy::Max,
+            "mean" => FillNoneStrategy::Mean,
+            s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
+        };
+        Ok(self.clone().inner.fill_none(strat).into())
     }
 }
 

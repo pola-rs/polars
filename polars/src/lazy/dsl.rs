@@ -471,7 +471,7 @@ impl Expr {
         }
     }
 
-    /// Sort expression.
+    /// Sort expression. See [the eager implementation](Series::sort).
     pub fn sort(self, reverse: bool) -> Self {
         Expr::Sort {
             expr: Box::new(self),
@@ -481,23 +481,30 @@ impl Expr {
 
     /// Apply a function/closure once the logical plan get executed.
     /// It is the responsibility of the caller that the schema is correct by giving
-    /// the correct output_type.
-    pub fn apply<F>(self, function: F, output_type: ArrowDataType) -> Self
+    /// the correct output_type. If None given the output type of the input expr is used.
+    pub fn apply<F>(self, function: F, output_type: Option<ArrowDataType>) -> Self
     where
         F: Udf + 'static,
     {
         Expr::Apply {
             input: Box::new(self),
             function: Arc::new(function),
-            output_type: Some(output_type),
+            output_type,
         }
     }
 
+    /// Shift the values in the array by some period. See [the eager implementation](Series::shift).
     pub fn shift(self, periods: i32) -> Self {
         Expr::Shift {
             input: Box::new(self),
             periods,
         }
+    }
+
+    /// Shift the values in the array by some period. See [the eager implementation](Series::fill_none).
+    pub fn fill_none(self, strategy: FillNoneStrategy) -> Self {
+        let function = move |s: Series| s.fill_none(strategy);
+        self.apply(function, None)
     }
 }
 

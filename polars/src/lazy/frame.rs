@@ -483,7 +483,7 @@ mod test {
         let df = get_df();
         let new = df
             .lazy()
-            .select(&[col("sepal.width").apply(|s| Ok(s * 200.0), ArrowDataType::Float64)])
+            .select(&[col("sepal.width").apply(|s| Ok(s * 200.0), None)])
             .collect()
             .unwrap();
         assert_eq!(
