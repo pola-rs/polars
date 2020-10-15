@@ -243,7 +243,6 @@ where
             opt_val
         };
         self.idx_left += 1;
-        // opt_val.map(Some)
         opt_val
     }
 

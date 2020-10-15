@@ -420,7 +420,12 @@ impl<T> ChunkedArray<T> {
     where
         Self: std::marker::Sized,
     {
-        self.chunks.extend(other.chunks.clone())
+        // replace an empty array
+        if self.chunks.len() == 1 && self.len() == 0 {
+            self.chunks = other.chunks.clone();
+        } else {
+            self.chunks.extend(other.chunks.clone())
+        }
     }
 
     /// Name of the ChunkedArray.
@@ -984,5 +989,15 @@ pub(crate) mod test {
 
         let s = Utf8Chunked::new_from_opt_slice("", &[Some("a"), None, Some("c")]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), None, Some("a")]);
+    }
+
+    #[test]
+    fn test_null_sized_chunks() {
+        let mut s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());
+        s.append(&Float64Chunked::new_from_slice("s2", &vec![1., 2., 3.]));
+        dbg!(&s);
+
+        let s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());
+        dbg!(&s.into_iter().next());
     }
 }
