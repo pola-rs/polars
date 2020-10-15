@@ -534,25 +534,44 @@ impl PhysicalExpr for TernaryExpr {
 pub struct ApplyExpr {
     pub input: Arc<dyn PhysicalExpr>,
     pub function: Arc<dyn Udf>,
-    pub output_type: ArrowDataType,
+    pub output_type: Option<ArrowDataType>,
+}
+
+impl ApplyExpr {
+    pub fn new(
+        input: Arc<dyn PhysicalExpr>,
+        function: Arc<dyn Udf>,
+        output_type: Option<ArrowDataType>,
+    ) -> Self {
+        ApplyExpr {
+            input,
+            function,
+            output_type,
+        }
+    }
 }
 
 impl PhysicalExpr for ApplyExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let input = self.input.evaluate(df)?;
         let in_name = input.name().to_string();
-        let mut out = self.function.call_udf(input);
+        let mut out = self.function.call_udf(input)?;
         if &in_name != out.name() {
             out.rename(&in_name);
         }
         Ok(out)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let input_field = self.input.to_field(input_schema)?;
-        Ok(Field::new(
-            input_field.name(),
-            self.output_type.clone(),
-            input_field.is_nullable(),
-        ))
+        match &self.output_type {
+            Some(output_type) => {
+                let input_field = self.input.to_field(input_schema)?;
+                Ok(Field::new(
+                    input_field.name(),
+                    output_type.clone(),
+                    input_field.is_nullable(),
+                ))
+            }
+            None => self.input.to_field(input_schema),
+        }
     }
 }

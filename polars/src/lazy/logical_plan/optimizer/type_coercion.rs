@@ -131,6 +131,13 @@ impl TypeCoercion {
                     output_type,
                 })
             }
+            Shift { input, periods } => {
+                let input = self.rewrite_expr(*input, input_schema)?;
+                Ok(Shift {
+                    input: Box::new(input),
+                    periods,
+                })
+            }
         }
     }
 

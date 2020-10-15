@@ -10,14 +10,14 @@ use std::{
 };
 
 pub trait Udf: Send + Sync {
-    fn call_udf(&self, s: Series) -> Series;
+    fn call_udf(&self, s: Series) -> Result<Series>;
 }
 
 impl<F> Udf for F
 where
-    F: Fn(Series) -> Series + Send + Sync,
+    F: Fn(Series) -> Result<Series> + Send + Sync,
 {
-    fn call_udf(&self, s: Series) -> Series {
+    fn call_udf(&self, s: Series) -> Result<Series> {
         self(s)
     }
 }
@@ -66,7 +66,11 @@ pub enum Expr {
     Apply {
         input: Box<Expr>,
         function: Arc<dyn Udf>,
-        output_type: ArrowDataType,
+        output_type: Option<ArrowDataType>,
+    },
+    Shift {
+        input: Box<Expr>,
+        periods: i32,
     }, // ScalarFunction {
        //     name: String,
        //     args: Vec<Expr>,
@@ -117,7 +121,13 @@ impl Expr {
             AggQuantile { expr, .. } => expr.get_type(schema),
             Cast { data_type, .. } => Ok(data_type.clone()),
             Ternary { truthy, .. } => truthy.get_type(schema),
-            Apply { output_type, .. } => Ok(output_type.clone()),
+            Apply {
+                input, output_type, ..
+            } => match output_type {
+                Some(output_type) => Ok(output_type.clone()),
+                None => input.get_type(schema),
+            },
+            Shift { input, .. } => input.get_type(schema),
         }
     }
 
@@ -204,14 +214,18 @@ impl Expr {
             Ternary { truthy, .. } => truthy.to_field(schema),
             Apply {
                 output_type, input, ..
-            } => {
-                let input_field = input.to_field(schema)?;
-                Ok(Field::new(
-                    input_field.name(),
-                    output_type.clone(),
-                    input_field.is_nullable(),
-                ))
-            }
+            } => match output_type {
+                None => input.to_field(schema),
+                Some(output_type) => {
+                    let input_field = input.to_field(schema)?;
+                    Ok(Field::new(
+                        input_field.name(),
+                        output_type.clone(),
+                        input_field.is_nullable(),
+                    ))
+                }
+            },
+            Shift { input, .. } => input.to_field(schema),
         }
     }
 }
@@ -248,6 +262,7 @@ impl fmt::Debug for Expr {
                 falsy,
             } => write!(f, "WHEN {:?} {:?} OTHERWISE {:?}", predicate, truthy, falsy),
             Apply { input, .. } => write!(f, "APPLY({:?})", input),
+            Shift { input, periods, .. } => write!(f, "SHIFT {:?} by {}", input, periods),
         }
     }
 }
@@ -464,6 +479,9 @@ impl Expr {
         }
     }
 
+    /// Apply a function/closure once the logical plan get executed.
+    /// It is the responsibility of the caller that the schema is correct by giving
+    /// the correct output_type.
     pub fn apply<F>(self, function: F, output_type: ArrowDataType) -> Self
     where
         F: Udf + 'static,
@@ -471,7 +489,14 @@ impl Expr {
         Expr::Apply {
             input: Box::new(self),
             function: Arc::new(function),
-            output_type,
+            output_type: Some(output_type),
+        }
+    }
+
+    pub fn shift(self, periods: i32) -> Self {
+        Expr::Shift {
+            input: Box::new(self),
+            periods,
         }
     }
 }

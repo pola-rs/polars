@@ -483,7 +483,7 @@ mod test {
         let df = get_df();
         let new = df
             .lazy()
-            .select(&[col("sepal.width").apply(|s| s * 200.0, ArrowDataType::Float64)])
+            .select(&[col("sepal.width").apply(|s| Ok(s * 200.0), ArrowDataType::Float64)])
             .collect()
             .unwrap();
         assert_eq!(
@@ -575,5 +575,16 @@ mod test {
         println!("{:?}", lf.describe_optimized_plan());
         let new = lf.collect().unwrap();
         println!("{:?}", new);
+    }
+
+    #[test]
+    fn test_lazy_shift() {
+        let df = get_df();
+        let new = df
+            .lazy()
+            .select(&[col("sepal.width").alias("foo").shift(2)])
+            .collect()
+            .unwrap();
+        assert_eq!(new.column("foo").unwrap().f64().unwrap().get(0), None);
     }
 }

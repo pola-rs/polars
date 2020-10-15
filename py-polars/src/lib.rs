@@ -157,6 +157,9 @@ impl PyExpr {
     pub fn sort(&self, reverse: bool) -> PyExpr {
         self.clone().inner.sort(reverse).into()
     }
+    pub fn shift(&self, periods: i32) -> PyExpr {
+        self.clone().inner.shift(periods).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

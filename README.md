@@ -8,40 +8,34 @@
 
 Polars is a blazingly fast DataFrames library implemented in Rust. Its memory model uses Apache Arrow as backend. 
 
-It currently consists of an eager API similar to pandas and a lazy API that is somewhat similar to spark. Amongst
-more the eager API supports:
+It currently consists of an eager API similar to pandas and a lazy API that is somewhat similar to spark. 
+Amongst more, Polars has the following functionalities.
 
-* Filters
-* Shifts
-* IO (csv, json, parquet, Arrow IPC)
-* GroupBys + aggregations
-* Joins
-* Pivots
-* Melts
-* Filling null values with various strategies
-* Aggregations
-* Comparisons
-* Reversing
-* Sorting
-* Finding unique values
-* Arithmetic
-* Rust iterators
-* Closure application
 
-The lazy API is built on top of the eager API and currently only supports a subset:
+| Functionality                                     | Eager | Lazy |
+|---------------------------------------------------|-------|------|
+| Filters                                           | ✔     | ✔    |
+| Shifts                                            | ✔     | ✔    |
+| Joins                                             | ✔     | ✔    |
+| GroupBys + aggregations                           | ✔     | ✔    |
+| Comparisons                                       | ✔     | ✔    |
+| Arithmetic                                        | ✔     | ✔    |
+| Sorting                                           | ✔     | ✔    |
+| Reversing                                         | ✔     | ✔    |
+| Closure application (User Defined Functions)      | ✔     | ✔    |
+| SIMD                                              | ✔     | ✔    |
+| Pivots                                            | ✔     | ✗    |
+| Melts                                             | ✔     | ✗    |
+| Filling nulls + fill strategies                   | ✔     | ✗    |
+| Aggregations                                      | ✔     | ✗    |
+| Find unique values                                | ✔     | ✗    |
+| Rust iterators                                    | ✔     | ✗    |
+| IO (csv, json, parquet, Arrow IPC                 | ✔     | ✗    |
+| Query optimization: (predicate pushdown)          | ✗     | ✔    |
+| Query optimization: (projection pushdown)         | ✗     | ✔    |
+| Query optimization: (type coercion)               | ✗     | ✔    |
 
-* Filters
-* Joins
-* GroupBys + aggregations
-* Comparisons
-* Arithmetic
-* Aggregations
-* Sorting
-* query optimization
-    - predicate pushdown optimization
-    - projection pushdown optimization
-    - type-coercion optimization
-* Closure application (User Defined Functions)
+**Note that almost all eager operations supported by Eager on `Series`/`ChunkedArrays` can be use in Lazy via UDF's**
 
 
 ## Documentation

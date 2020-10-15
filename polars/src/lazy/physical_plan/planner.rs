@@ -43,7 +43,7 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expressions(expr)?;
                 Ok(Arc::new(PipeExec::new("projection", input, phys_expr)))
             }
-            LogicalPlan::DataFrameScan { df, .. } => Ok(Arc::new(DataFrameExec::new(df.clone()))),
+            LogicalPlan::DataFrameScan { df, .. } => Ok(Arc::new(DataFrameExec::new(df))),
             LogicalPlan::Sort {
                 input,
                 column,
@@ -92,13 +92,13 @@ impl DefaultPlanner {
     // todo! add schema and ctxt
     pub fn create_physical_expr(&self, expr: Expr) -> Result<Arc<dyn PhysicalExpr>> {
         match expr {
-            Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value.clone()))),
+            Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value))),
             Expr::BinaryExpr { left, op, right } => {
                 let lhs = self.create_physical_expr(*left)?;
                 let rhs = self.create_physical_expr(*right)?;
-                Ok(Arc::new(BinaryExpr::new(lhs.clone(), op, rhs.clone())))
+                Ok(Arc::new(BinaryExpr::new(lhs, op, rhs)))
             }
-            Expr::Column(column) => Ok(Arc::new(ColumnExpr::new(column.clone()))),
+            Expr::Column(column) => Ok(Arc::new(ColumnExpr::new(column))),
             Expr::Sort { expr, reverse } => {
                 let phys_expr = self.create_physical_expr(*expr)?;
                 Ok(Arc::new(SortExpr::new(phys_expr, reverse)))
@@ -109,7 +109,7 @@ impl DefaultPlanner {
             }
             Expr::Alias(expr, name) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AliasExpr::new(phys_expr, name.clone())))
+                Ok(Arc::new(AliasExpr::new(phys_expr, name)))
             }
             Expr::IsNull(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
@@ -161,7 +161,7 @@ impl DefaultPlanner {
             }
             Expr::Cast { expr, data_type } => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(CastExpr::new(phys_expr, data_type.clone())))
+                Ok(Arc::new(CastExpr::new(phys_expr, data_type)))
             }
             Expr::Ternary {
                 predicate,
@@ -185,9 +185,14 @@ impl DefaultPlanner {
                 let input = self.create_physical_expr(*input)?;
                 Ok(Arc::new(ApplyExpr {
                     input,
-                    function: function.clone(),
-                    output_type: output_type.clone(),
+                    function,
+                    output_type,
                 }))
+            }
+            Expr::Shift { input, periods } => {
+                let input = self.create_physical_expr(*input)?;
+                let function = Arc::new(move |s: Series| s.shift(periods));
+                Ok(Arc::new(ApplyExpr::new(input, function, None)))
             }
         }
     }
