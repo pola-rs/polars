@@ -236,7 +236,7 @@ impl fmt::Debug for Expr {
         match self {
             Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
             Column(name) => write!(f, "COLUMN {}", name),
-            Literal(v) => write!(f, "{:?}", v),
+            Literal(v) => write!(f, "LIT {:?}", v),
             BinaryExpr { left, op, right } => write!(f, "{:?} {:?} {:?}", left, op, right),
             Not(expr) => write!(f, "NOT {:?}", expr),
             IsNull(expr) => write!(f, "{:?} IS NULL", expr),
@@ -260,7 +260,11 @@ impl fmt::Debug for Expr {
                 predicate,
                 truthy,
                 falsy,
-            } => write!(f, "WHEN {:?} {:?} OTHERWISE {:?}", predicate, truthy, falsy),
+            } => write!(
+                f,
+                "\nWHEN {:?}\n\t{:?}\nOTHERWISE\n\t{:?}",
+                predicate, truthy, falsy
+            ),
             Apply { input, .. } => write!(f, "APPLY({:?})", input),
             Shift { input, periods, .. } => write!(f, "SHIFT {:?} by {}", input, periods),
         }

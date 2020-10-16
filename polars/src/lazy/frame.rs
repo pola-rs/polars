@@ -587,4 +587,32 @@ mod test {
             .unwrap();
         assert_eq!(new.column("foo").unwrap().f64().unwrap().get(0), None);
     }
+
+    #[test]
+    fn test_lazy_ternary_and_predicates() {
+        let df = get_df();
+        // test if this runs. This failed because is_not_null changes the schema name, so we
+        // really need to check the root column
+        let ldf = df
+            .clone()
+            .lazy()
+            .with_column(lit(3).alias("foo"))
+            .filter(col("foo").is_not_null());
+        let _new = ldf.collect().unwrap();
+
+        let ldf = df
+            .lazy()
+            .with_column(
+                when(col("sepal.length").lt(lit(5.0)))
+                    .then(
+                        lit(3.0), // todo! this fails if integer. Fix type coercion.
+                    )
+                    .otherwise(col("sepal.width"))
+                    .alias("foo"),
+            )
+            .filter(col("foo").gt(lit(3.0)));
+
+        let new = ldf.collect().unwrap();
+        dbg!(new);
+    }
 }

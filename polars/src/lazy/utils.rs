@@ -42,7 +42,8 @@ pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
     Field::new(name, field.data_type().clone(), field.is_nullable())
 }
 
-// unpack alias(col) to name of the root column
+// unpack alias(col) to name of the root column name
+// TODO! reuse expr_to_root_column_expr
 pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
     match expr {
         Expr::Column(name) => Ok(name.clone()),
@@ -66,6 +67,34 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::Sort { expr, .. } => expr_to_root_column(expr),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),
+        )),
+    }
+}
+
+// unpack alias(col) to name of the root column name
+pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
+    match expr {
+        Expr::Column(_) => Ok(expr),
+        Expr::Alias(expr, _) => expr_to_root_column_expr(expr),
+        Expr::Not(expr) => expr_to_root_column_expr(expr),
+        Expr::IsNull(expr) => expr_to_root_column_expr(expr),
+        Expr::IsNotNull(expr) => expr_to_root_column_expr(expr),
+        Expr::BinaryExpr { left, right, .. } => match expr_to_root_column_expr(left) {
+            Err(_) => expr_to_root_column_expr(right),
+            Ok(expr) => match expr_to_root_column_expr(right) {
+                Ok(_) => Err(PolarsError::Other(
+                    format!(
+                        "cannot find root column expr for binary expression {:?}, {:?}",
+                        left, right
+                    )
+                    .into(),
+                )),
+                Err(_) => Ok(expr),
+            },
+        },
+        Expr::Sort { expr, .. } => expr_to_root_column_expr(expr),
+        a => Err(PolarsError::Other(
+            format!("No root column expr could be found for {:?}", a).into(),
         )),
     }
 }

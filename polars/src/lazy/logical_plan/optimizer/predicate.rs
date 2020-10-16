@@ -151,12 +151,38 @@ impl PredicatePushDown {
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
                 self.finish_node(local_predicates, builder)
             }
-            HStack { input, exprs, .. } => Ok(LogicalPlanBuilder::from(
-                self.push_down(*input, acc_predicates)?,
-            )
-            .with_columns(exprs)
-            .build()),
+            HStack { input, exprs, .. } => {
+                let (local, acc_predicates) =
+                    self.split_pushdown_and_local(acc_predicates, input.schema());
+                let mut lp_builder =
+                    LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
+                        .with_columns(exprs);
+
+                for predicate in local {
+                    lp_builder = lp_builder.filter(predicate);
+                }
+                Ok(lp_builder.build())
+            }
         }
+    }
+
+    /// Check if a predicate can be pushed down or not. If it cannot remove it from the accumulated predicates.
+    fn split_pushdown_and_local(
+        &self,
+        mut acc_predicates: FnvHashMap<Arc<String>, Expr>,
+        schema: &Schema,
+    ) -> (Vec<Expr>, FnvHashMap<Arc<String>, Expr>) {
+        let mut local = Vec::with_capacity(acc_predicates.len());
+        let mut local_keys = Vec::with_capacity(acc_predicates.len());
+        for (key, predicate) in &acc_predicates {
+            if !check_down_node(predicate, schema) {
+                local_keys.push(key.clone());
+            }
+        }
+        for key in local_keys {
+            local.push(acc_predicates.remove(&key).unwrap());
+        }
+        (local, acc_predicates)
     }
 }
 

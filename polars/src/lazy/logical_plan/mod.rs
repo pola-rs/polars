@@ -124,7 +124,9 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
-            Selection { predicate, input } => write!(f, "Filter {:?}\n{:?}", predicate, input),
+            Selection { predicate, input } => {
+                write!(f, "Filter\n\t{:?}\nFROM\n\t{:?}", predicate, input)
+            }
             CsvScan { path, .. } => write!(f, "CSVScan {}", path),
             DataFrameScan { schema, .. } => write!(
                 f,
@@ -150,7 +152,9 @@ impl fmt::Debug for LogicalPlan {
                 "JOIN\n\t({:?})\nWITH\n\t({:?})\nON (left: {:?} right: {:?})",
                 input_left, input_right, left_on, right_on
             ),
-            HStack { input, exprs, .. } => write!(f, "\n{:?} WITH COLUMN(S) {:?}\n", input, exprs),
+            HStack { input, exprs, .. } => {
+                write!(f, "\n{:?}\n\tWITH COLUMN(S)\n{:?}\n", input, exprs)
+            }
         }
     }
 }
