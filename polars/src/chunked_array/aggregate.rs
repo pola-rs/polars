@@ -5,7 +5,6 @@ use crate::{datatypes::PolarsNumericType, prelude::*};
 use arrow::compute;
 use num::{Num, NumCast, ToPrimitive};
 use std::cmp::{Ordering, PartialOrd};
-use std::ops::{Add, Div};
 
 macro_rules! cmp_float_with_nans {
     ($a:expr, $b:expr, $precision:ty) => {{
@@ -56,12 +55,7 @@ macro_rules! impl_quantile {
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Add<Output = T::Native>
-        + PartialOrd
-        + Div<Output = T::Native>
-        + Num
-        + NumCast
-        + ToPrimitive,
+    T::Native: PartialOrd + Num + NumCast,
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_chunks()
@@ -193,6 +187,79 @@ impl ChunkAgg<u32> for BooleanChunked {
         }
     }
 }
+
+impl<T> ChunkAggSeries for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: PartialOrd + Num + NumCast,
+{
+    fn sum_as_series(&self) -> Series {
+        let v = self.sum();
+        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn max_as_series(&self) -> Series {
+        let v = self.max();
+        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn min_as_series(&self) -> Series {
+        let v = self.min();
+        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn mean_as_series(&self) -> Series {
+        let v = self.mean();
+        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn median_as_series(&self) -> Series {
+        let v = self.median();
+        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
+        let v = self.quantile(quantile)?;
+        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        Ok(ca.into())
+    }
+}
+
+impl ChunkAggSeries for BooleanChunked {
+    fn sum_as_series(&self) -> Series {
+        let v = self.sum().map(|v| v != 0);
+        let ca: BooleanChunked = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn max_as_series(&self) -> Series {
+        let v = self.max().map(|v| v != 0);
+        let ca: BooleanChunked = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn min_as_series(&self) -> Series {
+        let v = self.min().map(|v| v != 0);
+        let ca: BooleanChunked = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn mean_as_series(&self) -> Series {
+        let v = self.mean().map(|v| v != 0);
+        let ca: BooleanChunked = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn median_as_series(&self) -> Series {
+        let v = self.median().map(|v| v != 0);
+        let ca: BooleanChunked = [v].iter().copied().collect();
+        ca.into()
+    }
+    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
+        let v = self.quantile(quantile)?.map(|v| v != 0);
+        let ca: BooleanChunked = [v].iter().copied().collect();
+        Ok(ca.into())
+    }
+}
+
+impl ChunkAggSeries for Utf8Chunked {}
+impl ChunkAggSeries for LargeListChunked {}
 
 #[cfg(test)]
 mod test {

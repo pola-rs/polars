@@ -729,6 +729,31 @@ impl Series {
         Ok(apply_method_all_series_and_return!(self, zip_with_series, [mask, other],?))
     }
 
+    /// Get the sum of the Series as a new Series of length 1.
+    pub fn sum_as_series(&self) -> Series {
+        apply_method_all_series!(self, sum_as_series,)
+    }
+    /// Get the max of the Series as a new Series of length 1.
+    pub fn max_as_series(&self) -> Series {
+        apply_method_all_series!(self, max_as_series,)
+    }
+    /// Get the min of the Series as a new Series of length 1.
+    pub fn min_as_series(&self) -> Series {
+        apply_method_all_series!(self, min_as_series,)
+    }
+    /// Get the mean of the Series as a new Series of length 1.
+    pub fn mean_as_series(&self) -> Series {
+        apply_method_all_series!(self, mean_as_series,)
+    }
+    /// Get the median of the Series as a new Series of length 1.
+    pub fn median_as_series(&self) -> Series {
+        apply_method_all_series!(self, median_as_series,)
+    }
+    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    pub fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
+        apply_method_all_series!(self, quantile_as_series, quantile)
+    }
+
     pub(crate) fn fmt_largelist(&self) -> String {
         apply_method_all_series!(self, fmt_largelist,)
     }
