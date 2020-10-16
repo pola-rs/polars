@@ -491,6 +491,12 @@ class Series:
         """
         return self._s.arg_unique()
 
+    def unique(self) -> Series:
+        """
+        Get unique elements in series.
+        """
+        return wrap_s(self._s.unique())
+
     def take(self, indices: Union[np.ndarray, List[int]]) -> Series:
         """
         Take values by index.

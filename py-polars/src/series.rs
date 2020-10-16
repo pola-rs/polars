@@ -84,6 +84,12 @@ init_method_opt!(new_opt_date64, i64);
 init_method_opt!(new_opt_duration_ns, i64);
 init_method_opt!(new_opt_time_ns, i64);
 
+impl From<Series> for PySeries {
+    fn from(s: Series) -> Self {
+        PySeries::new(s)
+    }
+}
+
 #[pymethods]
 impl PySeries {
     #[staticmethod]
@@ -189,6 +195,10 @@ impl PySeries {
         let gil = pyo3::Python::acquire_gil();
         let pyarray = PyArray1::from_vec(gil.python(), self.series.argsort(reverse));
         pyarray.to_owned()
+    }
+
+    pub fn unique(&self) -> Self {
+        self.series.unique().into()
     }
 
     pub fn arg_unique(&self) -> Py<PyArray1<usize>> {
