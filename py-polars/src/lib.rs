@@ -173,6 +173,24 @@ impl PyExpr {
         };
         Ok(self.clone().inner.fill_none(strat).into())
     }
+    pub fn max(&self) -> PyExpr {
+        self.clone().inner.max().into()
+    }
+    pub fn min(&self) -> PyExpr {
+        self.clone().inner.min().into()
+    }
+    pub fn sum(&self) -> PyExpr {
+        self.clone().inner.sum().into()
+    }
+    pub fn mean(&self) -> PyExpr {
+        self.clone().inner.mean().into()
+    }
+    pub fn median(&self) -> PyExpr {
+        self.clone().inner.median().into()
+    }
+    pub fn quantile(&self, quantile: f64) -> PyExpr {
+        self.clone().inner.quantile(quantile).into()
+    }
     pub fn str_lengths(&self) -> PyExpr {
         let function = |s: Series| {
             let ca = s.utf8()?;

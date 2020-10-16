@@ -510,9 +510,45 @@ impl Expr {
         let function = move |s: Series| s.fill_none(strategy);
         self.apply(function, None)
     }
+
+    /// Get the maximum value of the Series.
+    pub fn max(self) -> Self {
+        let function = move |s: Series| Ok(s.max_as_series());
+        self.apply(function, None)
+    }
+
+    /// Get the minimum value of the Series.
+    pub fn min(self) -> Self {
+        let function = move |s: Series| Ok(s.min_as_series());
+        self.apply(function, None)
+    }
+
+    /// Get the sum value of the Series.
+    pub fn sum(self) -> Self {
+        let function = move |s: Series| Ok(s.sum_as_series());
+        self.apply(function, None)
+    }
+
+    /// Get the mean value of the Series.
+    pub fn mean(self) -> Self {
+        let function = move |s: Series| Ok(s.mean_as_series());
+        self.apply(function, None)
+    }
+
+    /// Get the median value of the Series.
+    pub fn median(self) -> Self {
+        let function = move |s: Series| Ok(s.median_as_series());
+        self.apply(function, None)
+    }
+
+    /// Get the quantile value of the Series.
+    pub fn quantile(self, quantile: f64) -> Self {
+        let function = move |s: Series| s.quantile_as_series(quantile);
+        self.apply(function, None)
+    }
 }
 
-/// Create a Colum Expression based on a column name.
+/// Create a Column Expression based on a column name.
 pub fn col(name: &str) -> Expr {
     Expr::Column(Arc::new(name.to_owned()))
 }

@@ -1,4 +1,4 @@
-//! # Changelog v0.7
+//! # Changelog v0.8
 //!
 //! * Add quantile aggregation to `ChunkedArray`
 //! * Option to stop reading CSV after n rows.
@@ -11,3 +11,4 @@
 //! * Lazy
 //!     - fill_none expression
 //!     - shift expression
+//!     - Series aggregations
