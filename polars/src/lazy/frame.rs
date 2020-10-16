@@ -605,7 +605,7 @@ mod test {
             .with_column(
                 when(col("sepal.length").lt(lit(5.0)))
                     .then(
-                        lit(3.0), // todo! this fails if integer. Fix type coercion.
+                        lit(3), // is another type on purpose to check type coercion
                     )
                     .otherwise(col("sepal.width"))
                     .alias("foo"),

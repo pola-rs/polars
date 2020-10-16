@@ -209,9 +209,11 @@ impl TypeCoercion {
                     right_on,
                 })
             }
-            HStack { input, exprs, .. } => Ok(LogicalPlanBuilder::from(self.coerce(*input)?)
-                .with_columns(exprs)
-                .build()),
+            HStack { input, exprs, .. } => {
+                let input = self.coerce(*input)?;
+                let exprs = self.rewrite_expressions(exprs, input.schema())?;
+                Ok(LogicalPlanBuilder::from(input).with_columns(exprs).build())
+            }
         }
     }
 }
