@@ -1,7 +1,6 @@
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
-use crate::lazy::utils::py_exprs_to_exprs;
-use crate::PyExpr;
+use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use polars::lazy::frame::{LazyFrame, LazyGroupBy};
 use pyo3::prelude::*;
 
