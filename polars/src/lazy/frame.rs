@@ -615,4 +615,15 @@ mod test {
         let new = ldf.collect().unwrap();
         dbg!(new);
     }
+
+    #[test]
+    fn test_lazy_binary_ops() {
+        let df = df!("a" => &[1, 2, 3, 4, 5, ]).unwrap();
+        let new = df
+            .lazy()
+            .select(&[col("a").eq(lit(2)).alias("foo")])
+            .collect()
+            .unwrap();
+        assert_eq!(new.column("foo").unwrap().sum::<i32>(), Some(1));
+    }
 }

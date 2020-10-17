@@ -5,7 +5,7 @@ use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyFloat, PyInt};
-use pyo3::PyNumberProtocol;
+use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
 
 #[pyclass]
 #[repr(transparent)]
@@ -27,6 +27,20 @@ impl PyNumberProtocol for PyExpr {
     }
     fn __truediv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
         Ok(dsl::binary_expr(lhs.inner, Operator::Divide, rhs.inner).into())
+    }
+}
+
+#[pyproto]
+impl<'p> PyObjectProtocol<'p> for PyExpr {
+    fn __richcmp__(&'p self, other: PyExpr, op: CompareOp) -> PyExpr {
+        match op {
+            CompareOp::Eq => self.eq(other),
+            CompareOp::Ne => self.neq(other),
+            CompareOp::Gt => self.gt(other),
+            CompareOp::Lt => self.lt(other),
+            CompareOp::Ge => self.gt_eq(other),
+            CompareOp::Le => self.lt_eq(other),
+        }
     }
 }
 

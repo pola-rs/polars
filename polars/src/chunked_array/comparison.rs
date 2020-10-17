@@ -745,7 +745,7 @@ pub trait CompToSeries {
 macro_rules! impl_comp_to_series {
     ($SELF:ident, $METHOD_NAME:ident, $OPERATION:ident, $RHS:ident, $NAME:expr, $TYPE:ty) => {{
         match $SELF.unpack_series_matching_type($RHS) {
-            Ok(ca) => $SELF.lt(ca),
+            Ok(ca) => $SELF.$OPERATION(ca),
             Err(_) => match $RHS.cast::<$TYPE>() {
                 Ok(s) => $SELF.$METHOD_NAME(&s),
                 Err(_) => BooleanChunked::full($NAME, false, $SELF.len()),
