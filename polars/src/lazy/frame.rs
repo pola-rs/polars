@@ -628,7 +628,9 @@ mod test {
     }
 
     #[test]
-    fn test_lazy_groupby_projection_pushdown() {
+    fn test_lazy_query() {
+        // test on aggregation pushdown
+        // and a filter that is not in the projection
         let df_a = df!("a" => &[1, 2, 3, 4, 5],
                      "b" => &["a", "a", "b", "c", "c"],
                      "c" => &[1, 2, 3, 4, 5]
@@ -639,6 +641,7 @@ mod test {
             .left_join(df_b.lazy(), col("b"), col("b"))
             .groupby("b")
             .agg(vec![col("b").agg_first(), col("c").agg_first()])
+            .filter(col("a").lt(lit(2)))
             .select(&[col("b"), col("c_first")])
             .collect()
             .unwrap();

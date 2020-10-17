@@ -1,6 +1,9 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::{expr_to_root_column, expressions_to_root_column_exprs, projected_names};
+use crate::lazy::utils::{
+    expr_to_root_column, expr_to_root_column_expr, expressions_to_root_column_exprs,
+    projected_names,
+};
 use crate::prelude::*;
 use arrow::datatypes::Schema;
 use fnv::{FnvBuildHasher, FnvHashSet};
@@ -121,18 +124,23 @@ impl ProjectionPushDown {
                     .sort(column, reverse)
                     .build(),
             ),
-            Selection { predicate, input } => Ok(LogicalPlanBuilder::from(
-                self.push_down(*input, acc_projections)?,
-            )
-            .filter(predicate)
-            .build()),
+            Selection { predicate, input } => {
+                let local_projections = if acc_projections.len() > 0 {
+                    let local_projections = projected_names(&acc_projections)?;
+                    acc_projections.push(expr_to_root_column_expr(&predicate)?.clone());
+                    local_projections
+                } else {
+                    vec![]
+                };
+
+                let builder = LogicalPlanBuilder::from(self.push_down(*input, acc_projections)?)
+                    .filter(predicate);
+                self.finish_node(local_projections, builder)
+            }
             Aggregate {
                 input, keys, aggs, ..
             } => {
                 let (acc_projections, local_projections) = if acc_projections.len() > 0 {
-                    // keep the original projections for the schema
-                    let original_projections = acc_projections.clone();
-
                     // todo! remove unnecessary vec alloc.
                     let (mut acc_projections, _local_projections) =
                         self.split_acc_projections(acc_projections, input.schema());
@@ -141,7 +149,6 @@ impl ProjectionPushDown {
                     // todo! remove aggregations that aren't selected?
                     let root_projections = expressions_to_root_column_exprs(&aggs)?;
 
-                    // TODO: store this globally in recursion?
                     let mut names = FnvHashSet::with_capacity_and_hasher(
                         acc_projections.len(),
                         FnvBuildHasher::default(),
@@ -157,11 +164,18 @@ impl ProjectionPushDown {
                         }
                     }
 
-                    // make sure the keys is projected
+                    // create local projections. This is the key plus the aggregations
+                    let mut local_projections = Vec::with_capacity(aggs.len() + keys.len());
+
+                    // make sure the keys are projected
                     for key in &*keys {
+                        local_projections.push(col(key));
                         acc_projections.push(col(key))
                     }
-                    let local_projections = original_projections;
+                    for agg in &aggs {
+                        local_projections.push(col(agg.to_field(input.schema())?.name()))
+                    }
+
                     (acc_projections, local_projections)
                 } else {
                     (vec![], vec![])
