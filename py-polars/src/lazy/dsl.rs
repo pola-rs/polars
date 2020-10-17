@@ -1,4 +1,5 @@
 use crate::error::PyPolarsEr;
+use crate::series::PySeries;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -194,6 +195,31 @@ impl PyExpr {
                 Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
             }
         };
+        self.clone().inner.apply(function, None).into()
+    }
+
+    pub fn apply(&self, lambda: PyObject) -> PyExpr {
+        let function = move |s: Series| {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            // get the pypolars module
+            let pypolars = PyModule::import(py, "pypolars").unwrap();
+            // create a PySeries struct/object for Python
+            let pyseries = PySeries::new(s);
+            // Wrap this PySeries object in the python side Series wrapper
+            let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+            // call the lambda en get a python side Series wrapper
+            let result_series_wrapper = lambda.call1(py, (python_series_wrapper,)).unwrap();
+            // unpack the wrapper in a PySeries
+            let py_pyseries = result_series_wrapper
+                .getattr(py, "_s")
+                .expect("could net get series attribute '_s'");
+            // Downcast to Rust
+            let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
+            // Finally get the actual Series
+            Ok(pyseries.series)
+        };
+
         self.clone().inner.apply(function, None).into()
     }
 }

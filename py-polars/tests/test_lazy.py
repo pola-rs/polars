@@ -6,11 +6,10 @@ import pytest
 
 def test_lazy():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    print(df)
     ldf = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
 
     print(ldf.collect())
-
+    # test if it executes
     new = (
         df.lazy()
         .with_column(
@@ -18,3 +17,8 @@ def test_lazy():
         )
         .collect()
     )
+
+
+def test_apply():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    new = df.lazy().with_column(col("a").apply(lambda s: s * 2)).collect()
