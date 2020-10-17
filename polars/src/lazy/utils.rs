@@ -65,10 +65,33 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
             },
         },
         Expr::Sort { expr, .. } => expr_to_root_column(expr),
+        Expr::AggFirst(expr) => expr_to_root_column(expr),
+        Expr::AggLast(expr) => expr_to_root_column(expr),
+        Expr::AggGroups(expr) => expr_to_root_column(expr),
+        Expr::AggNUnique(expr) => expr_to_root_column(expr),
+        Expr::AggQuantile { expr, .. } => expr_to_root_column(expr),
+        Expr::AggSum(expr) => expr_to_root_column(expr),
+        Expr::AggMin(expr) => expr_to_root_column(expr),
+        Expr::AggMax(expr) => expr_to_root_column(expr),
+        Expr::AggMedian(expr) => expr_to_root_column(expr),
+        Expr::AggMean(expr) => expr_to_root_column(expr),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),
         )),
     }
+}
+
+pub(crate) fn expressions_to_root_columns(exprs: &[Expr]) -> Result<Vec<Arc<String>>> {
+    exprs.iter().map(expr_to_root_column).collect()
+}
+pub(crate) fn expressions_to_root_column_exprs(exprs: &[Expr]) -> Result<Vec<Expr>> {
+    exprs
+        .iter()
+        .map(|e| match expr_to_root_column_expr(e) {
+            Ok(e) => Ok(e.clone()),
+            Err(e) => Err(e),
+        })
+        .collect()
 }
 
 // unpack alias(col) to name of the root column name
@@ -79,6 +102,16 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
         Expr::Not(expr) => expr_to_root_column_expr(expr),
         Expr::IsNull(expr) => expr_to_root_column_expr(expr),
         Expr::IsNotNull(expr) => expr_to_root_column_expr(expr),
+        Expr::AggFirst(expr) => expr_to_root_column_expr(expr),
+        Expr::AggLast(expr) => expr_to_root_column_expr(expr),
+        Expr::AggGroups(expr) => expr_to_root_column_expr(expr),
+        Expr::AggNUnique(expr) => expr_to_root_column_expr(expr),
+        Expr::AggQuantile { expr, .. } => expr_to_root_column_expr(expr),
+        Expr::AggSum(expr) => expr_to_root_column_expr(expr),
+        Expr::AggMin(expr) => expr_to_root_column_expr(expr),
+        Expr::AggMax(expr) => expr_to_root_column_expr(expr),
+        Expr::AggMedian(expr) => expr_to_root_column_expr(expr),
+        Expr::AggMean(expr) => expr_to_root_column_expr(expr),
         Expr::BinaryExpr { left, right, .. } => match expr_to_root_column_expr(left) {
             Err(_) => expr_to_root_column_expr(right),
             Ok(expr) => match expr_to_root_column_expr(right) {

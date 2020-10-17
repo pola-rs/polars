@@ -1,8 +1,9 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::{expr_to_root_column, projected_names};
+use crate::lazy::utils::{expr_to_root_column, expressions_to_root_column_exprs, projected_names};
 use crate::prelude::*;
 use arrow::datatypes::Schema;
+use fnv::{FnvBuildHasher, FnvHashSet};
 
 pub struct ProjectionPushDown {}
 
@@ -128,9 +129,43 @@ impl ProjectionPushDown {
             Aggregate {
                 input, keys, aggs, ..
             } => {
-                // TODO: projections of resulting columns of gb, should be renamed and pushed down
-                let (acc_projections, local_projections) =
-                    self.split_acc_projections(acc_projections, input.schema());
+                let (acc_projections, local_projections) = if acc_projections.len() > 0 {
+                    // keep the original projections for the schema
+                    let original_projections = acc_projections.clone();
+
+                    // todo! remove unnecessary vec alloc.
+                    let (mut acc_projections, _local_projections) =
+                        self.split_acc_projections(acc_projections, input.schema());
+
+                    // add the columns used in the aggregations to the projection
+                    // todo! remove aggregations that aren't selected?
+                    let root_projections = expressions_to_root_column_exprs(&aggs)?;
+
+                    // TODO: store this globally in recursion?
+                    let mut names = FnvHashSet::with_capacity_and_hasher(
+                        acc_projections.len(),
+                        FnvBuildHasher::default(),
+                    );
+                    for proj in &acc_projections {
+                        let name = expr_to_root_column(proj)?;
+                        names.insert(name);
+                    }
+                    for proj in root_projections {
+                        let name = expr_to_root_column(&proj)?;
+                        if !names.contains(&name) {
+                            acc_projections.push(proj)
+                        }
+                    }
+
+                    // make sure the keys is projected
+                    for key in &*keys {
+                        acc_projections.push(col(key))
+                    }
+                    let local_projections = original_projections;
+                    (acc_projections, local_projections)
+                } else {
+                    (vec![], vec![])
+                };
 
                 let lp = self.push_down(*input, acc_projections)?;
                 let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
@@ -209,7 +244,7 @@ impl ProjectionPushDown {
                             // FROM
                             // JOIN (["days", "temp"]) WITH (["days", "rain"]) ON (left: days right: days)
                             //
-                            // should drop the days column afther the join.
+                            // should drop the days column after the join.
                             local_projection.push(proj)
                         }
                     }

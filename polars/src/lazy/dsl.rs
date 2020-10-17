@@ -79,6 +79,33 @@ pub enum Expr {
        // Wildcard
 }
 
+macro_rules! impl_partial_eq {
+    ($variant:ident, $left:expr, $other:expr) => {{
+        if let Expr::$variant(right) = $other {
+            $left.eq(right)
+        } else {
+            false
+        }
+    }};
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Expr::AggMean(left) => impl_partial_eq!(AggMean, left, other),
+            Expr::AggMedian(left) => impl_partial_eq!(AggMedian, left, other),
+            Expr::AggFirst(left) => impl_partial_eq!(AggFirst, left, other),
+            Expr::AggLast(left) => impl_partial_eq!(AggLast, left, other),
+            Expr::AggGroups(left) => impl_partial_eq!(AggGroups, left, other),
+            Expr::AggNUnique(left) => impl_partial_eq!(AggNUnique, left, other),
+            Expr::AggMin(left) => impl_partial_eq!(AggMin, left, other),
+            Expr::AggMax(left) => impl_partial_eq!(AggMax, left, other),
+            Expr::Column(left) => impl_partial_eq!(Column, left, other),
+            _ => panic!("rest of partialEq not yet implemented for dsl::Expr"),
+        }
+    }
+}
+
 impl Expr {
     /// Get DataType result of the expression. The schema is the input data.
     pub fn get_type(&self, schema: &Schema) -> Result<ArrowDataType> {

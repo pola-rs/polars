@@ -342,6 +342,24 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_cols))
     }
 
+    /// Insert a new column at a given index
+    pub fn insert_at_idx<S: IntoSeries>(&mut self, index: usize, column: S) -> Result<&mut Self> {
+        let series = column.into_series();
+        if series.len() == self.height() {
+            self.columns.insert(index, series);
+            Ok(self)
+        } else {
+            Err(PolarsError::ShapeMisMatch(
+                format!(
+                    "Could add column. The Series length {} differs from the DataFrame height: {}",
+                    series.len(),
+                    self.height()
+                )
+                .into(),
+            ))
+        }
+    }
+
     /// Add a new column to this `DataFrame`.
     pub fn add_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
         let series = column.into_series();

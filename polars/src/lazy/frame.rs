@@ -159,13 +159,13 @@ impl LazyFrame {
             if projection_pushdown {
                 logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
             }
-            assert_eq!(logical_plan.schema(), &prev_schema);
+            assert_eq!(&prev_schema, logical_plan.schema());
 
             let prev_schema = logical_plan.schema().clone();
             if predicate_pushdown {
                 logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
             }
-            assert_eq!(logical_plan.schema(), &prev_schema);
+            assert_eq!(&prev_schema, logical_plan.schema());
         } else {
             // NOTE: the order is important. Projection pushdown must be before predicate pushdown,
             // The projection may have aliases that interfere with the predicate expressions.
@@ -625,5 +625,22 @@ mod test {
             .collect()
             .unwrap();
         assert_eq!(new.column("foo").unwrap().sum::<i32>(), Some(1));
+    }
+
+    #[test]
+    fn test_lazy_groupby_projection_pushdown() {
+        let df_a = df!("a" => &[1, 2, 3, 4, 5],
+                     "b" => &["a", "a", "b", "c", "c"],
+                     "c" => &[1, 2, 3, 4, 5]
+        )
+        .unwrap();
+        let df_b = df_a.clone();
+        df_a.lazy()
+            .left_join(df_b.lazy(), col("b"), col("b"))
+            .groupby("b")
+            .agg(vec![col("b").agg_first(), col("c").agg_first()])
+            .select(&[col("b"), col("c_first")])
+            .collect()
+            .unwrap();
     }
 }

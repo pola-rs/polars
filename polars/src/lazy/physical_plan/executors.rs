@@ -1,6 +1,5 @@
 use super::*;
 use rayon;
-use std::mem;
 use std::sync::Mutex;
 
 pub struct CsvExec {
@@ -66,8 +65,8 @@ impl DataFrameExec {
 
 impl Executor for DataFrameExec {
     fn execute(&self) -> Result<DataFrame> {
-        let mut guard = self.df.lock().unwrap();
-        let out = mem::take(&mut *guard);
+        let guard = self.df.lock().unwrap();
+        let out = guard.clone();
         Ok(out)
     }
 }
