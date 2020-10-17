@@ -280,6 +280,13 @@ impl PyDataFrame {
         Ok(())
     }
 
+    pub fn insert_at_idx(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
+        self.df
+            .insert_at_idx(index, new_col.series)
+            .map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
     pub fn slice(&self, offset: usize, length: usize) -> PyResult<Self> {
         let df = self.df.slice(offset, length).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))

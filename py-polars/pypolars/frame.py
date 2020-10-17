@@ -130,6 +130,17 @@ class DataFrame:
         """
         return DataFrame.read_ipc(file)
 
+    def to_pandas(self) -> "pd.DataFrame":
+        """
+        cast to a Pandas DataFrame.
+        """
+        import pandas as pd
+
+        data = {}
+        for col in self.columns:
+            data[col] = self[col].to_numpy()
+        return pd.DataFrame(data)
+
     def to_csv(
         self,
         file: Union[TextIO, str],
@@ -301,6 +312,9 @@ class DataFrame:
 
     def __len__(self):
         return self.height
+
+    def insert_at_idx(self, index: int, series: Series):
+        self._df.insert_at_idx(index, series._s)
 
     @property
     def shape(self) -> Tuple[int, int]:

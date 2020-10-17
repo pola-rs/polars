@@ -64,10 +64,10 @@ class LazyFrame:
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
     ) -> DataFrame:
-        self._ldf = self._ldf.optimization_toggle(
+        ldf = self._ldf.optimization_toggle(
             type_coercion, predicate_pushdown, projection_pushdown
         )
-        return wrap_df(self._ldf.collect())
+        return wrap_df(ldf.collect())
 
     def filter(self, predicate: PyExpr) -> LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate))

@@ -25,38 +25,36 @@ impl PyLazyGroupBy {
 #[derive(Clone)]
 pub struct PyLazyFrame {
     // option because we cannot get a self by value in pyo3
-    pub ldf: Option<LazyFrame>,
+    pub ldf: LazyFrame,
 }
 
 impl From<LazyFrame> for PyLazyFrame {
     fn from(ldf: LazyFrame) -> Self {
-        PyLazyFrame { ldf: Some(ldf) }
+        PyLazyFrame { ldf }
     }
 }
 
 #[pymethods]
 impl PyLazyFrame {
     pub fn describe_plan(&self) -> String {
-        self.ldf.as_ref().unwrap().describe_plan()
+        self.ldf.describe_plan()
     }
 
     pub fn describe_optimized_plan(&self) -> PyResult<String> {
         let result = self
             .ldf
-            .as_ref()
-            .unwrap()
             .describe_optimized_plan()
             .map_err(PyPolarsEr::from)?;
         Ok(result)
     }
 
     pub fn optimization_toggle(
-        &mut self,
+        &self,
         type_coercion: bool,
         predicate_pushdown: bool,
         projection_pushdown: bool,
     ) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
         let ldf = ldf
             .with_type_coercion_optimization(type_coercion)
             .with_predicate_pushdown_optimization(predicate_pushdown)
@@ -64,30 +62,30 @@ impl PyLazyFrame {
         ldf.into()
     }
 
-    pub fn sort(&mut self, by_column: &str, reverse: bool) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
+    pub fn sort(&self, by_column: &str, reverse: bool) -> PyLazyFrame {
+        let ldf = self.ldf.clone();
         ldf.sort(by_column, reverse).into()
     }
 
-    pub fn collect(&mut self) -> PyResult<PyDataFrame> {
-        let ldf = self.ldf.take().unwrap();
+    pub fn collect(&self) -> PyResult<PyDataFrame> {
+        let ldf = self.ldf.clone();
         let df = ldf.collect().map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
     pub fn filter(&mut self, predicate: PyExpr) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
         ldf.filter(predicate.inner).into()
     }
 
     pub fn select(&mut self, exprs: Vec<PyExpr>) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
         let exprs = py_exprs_to_exprs(exprs);
         ldf.select(exprs).into()
     }
 
     pub fn groupby(&mut self, by: Vec<&str>) -> PyLazyGroupBy {
-        let ldf = self.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
         let lazy_gb = ldf.groupby(by);
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
@@ -95,48 +93,48 @@ impl PyLazyFrame {
 
     pub fn inner_join(
         &mut self,
-        mut other: PyLazyFrame,
+        other: PyLazyFrame,
         left_on: PyExpr,
         right_on: PyExpr,
     ) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
-        let other = other.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
+        let other = other.ldf.clone();
         ldf.inner_join(other, left_on.inner, right_on.inner).into()
     }
 
     pub fn outer_join(
         &mut self,
-        mut other: PyLazyFrame,
+        other: PyLazyFrame,
         left_on: PyExpr,
         right_on: PyExpr,
     ) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
-        let other = other.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
+        let other = other.ldf.clone();
         ldf.outer_join(other, left_on.inner, right_on.inner).into()
     }
 
     pub fn left_join(
         &mut self,
-        mut other: PyLazyFrame,
+        other: PyLazyFrame,
         left_on: PyExpr,
         right_on: PyExpr,
     ) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
-        let other = other.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
+        let other = other.ldf.clone();
         ldf.left_join(other, left_on.inner, right_on.inner).into()
     }
 
     pub fn with_column(&mut self, expr: PyExpr) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
         ldf.with_column(expr.inner).into()
     }
 
     pub fn with_columns(&mut self, exprs: Vec<PyExpr>) -> PyLazyFrame {
-        let ldf = self.ldf.take().unwrap();
+        let ldf = self.ldf.clone();
         ldf.with_columns(py_exprs_to_exprs(exprs)).into()
     }
 
     pub fn clone(&self) -> PyLazyFrame {
-        self.ldf.as_ref().unwrap().clone().into()
+        self.ldf.clone().into()
     }
 }
