@@ -207,6 +207,21 @@ impl JoinExec {
     }
 }
 
+fn process_predicates(
+    predicates: &Option<Vec<Arc<dyn PhysicalExpr>>>,
+    df: &DataFrame,
+) -> Option<ChunkedArray<BooleanType>> {
+    predicates.as_ref().map(|exprs| {
+        exprs
+            .iter()
+            // todo! remove redundant allocation of full booleanchunked
+            .fold(BooleanChunked::full("", true, df.height()), |acc, e| {
+                let mask = e.evaluate(df).expect("predicate failed");
+                mask.bool().unwrap() & &acc
+            })
+    })
+}
+
 impl Executor for JoinExec {
     fn execute(&self) -> Result<DataFrame> {
         let (df_left, df_right) =
@@ -217,24 +232,32 @@ impl Executor for JoinExec {
         let s_left = self.left_on.evaluate(&df_left)?;
         let s_right = self.right_on.evaluate(&df_right)?;
 
-        let predicates_left = self
-            .predicates_left
-            .map(|exprs| {
-                exprs.iter().fold(None, |acc, e| {
-                    let mask = e.evaluate(&df_left).expect("predicate failed");
-                    match acc {
-                        None => Some(mask.bool().unwrap().clone()),
-                        Some(other_mask) => Some(mask.bool().unwrap() & &other_mask),
-                    }
-                })
-            })
-            .flatten();
+        let predicates_left = process_predicates(&self.predicates_left, &df_left);
+        let predicates_right = process_predicates(&self.predicates_right, &df_right);
 
         use JoinType::*;
         match self.how {
-            Left => df_left.left_join_from_series(&df_right, &s_left, &s_right),
-            Inner => df_left.inner_join_from_series(&df_right, &s_left, &s_right),
-            Outer => df_left.outer_join_from_series(&df_right, &s_left, &s_right),
+            Left => df_left.left_join_from_series(
+                &df_right,
+                &s_left,
+                &s_right,
+                predicates_left.as_ref(),
+                predicates_right.as_ref(),
+            ),
+            Inner => df_left.inner_join_from_series(
+                &df_right,
+                &s_left,
+                &s_right,
+                predicates_left.as_ref(),
+                predicates_right.as_ref(),
+            ),
+            Outer => df_left.outer_join_from_series(
+                &df_right,
+                &s_left,
+                &s_right,
+                predicates_left.as_ref(),
+                predicates_right.as_ref(),
+            ),
         }
     }
 }
