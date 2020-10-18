@@ -34,6 +34,25 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
     }
 }
 
+// count the number of projections down in the tree
+pub(crate) fn count_downtree_projections(lp: &LogicalPlan, n: usize) -> usize {
+    use LogicalPlan::*;
+    match lp {
+        Selection { input, .. } => count_downtree_projections(input, n),
+        Sort { input, .. } => count_downtree_projections(input, n),
+        CsvScan { .. } => n,
+        DataFrameScan { .. } => n,
+        Aggregate { input, .. } => count_downtree_projections(input, n),
+        Join {
+            input_left,
+            input_right,
+            ..
+        } => count_downtree_projections(input_left, n) + count_downtree_projections(input_right, n),
+        HStack { input, .. } => count_downtree_projections(input, n),
+        Projection { input, .. } => count_downtree_projections(input, n + 1),
+    }
+}
+
 pub(crate) fn projected_names(exprs: &[Expr]) -> Result<Vec<Expr>> {
     exprs.iter().map(|expr| projected_name(expr)).collect()
 }

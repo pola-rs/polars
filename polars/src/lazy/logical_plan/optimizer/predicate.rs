@@ -1,6 +1,6 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::{expr_to_root_column, rename_expr_root_name};
+use crate::lazy::utils::{count_downtree_projections, expr_to_root_column, rename_expr_root_name};
 use crate::prelude::*;
 use fnv::FnvHashMap;
 use std::sync::Arc;
@@ -60,26 +60,39 @@ impl PredicatePushDown {
                 }
                 self.push_down(*input, acc_predicates)
             }
-            Projection { expr, input, .. } => {
-                // maybe update predicate name if a projection is an alias
-                for e in &expr {
-                    // check if there is an alias
-                    if let Expr::Alias(e, name) = e {
-                        // if this alias refers to one of the predicates in the upper nodes
-                        // we rename the column of the predicate before we push it downwards.
-                        if let Some(predicate) = acc_predicates.remove(name) {
-                            let new_name = expr_to_root_column(e).unwrap();
-                            let new_predicate =
-                                rename_expr_root_name(&predicate, new_name.clone()).unwrap();
-                            acc_predicates.insert(new_name, new_predicate);
+            Projection {
+                expr,
+                input,
+                schema,
+            } => {
+                // don't filter before the last projection that is more expensive as projections are free
+                if count_downtree_projections(&input, 0) == 0 {
+                    Ok(LogicalPlan::Projection {
+                        expr,
+                        input,
+                        schema,
+                    })
+                } else {
+                    // maybe update predicate name if a projection is an alias
+                    for e in &expr {
+                        // check if there is an alias
+                        if let Expr::Alias(e, name) = e {
+                            // if this alias refers to one of the predicates in the upper nodes
+                            // we rename the column of the predicate before we push it downwards.
+                            if let Some(predicate) = acc_predicates.remove(name) {
+                                let new_name = expr_to_root_column(e).unwrap();
+                                let new_predicate =
+                                    rename_expr_root_name(&predicate, new_name.clone()).unwrap();
+                                acc_predicates.insert(new_name, new_predicate);
+                            }
                         }
                     }
+                    Ok(
+                        LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
+                            .project(expr)
+                            .build(),
+                    )
                 }
-                Ok(
-                    LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
-                        .project(expr)
-                        .build(),
-                )
             }
             DataFrameScan { df, schema } => {
                 let lp = DataFrameScan { df, schema };
@@ -109,12 +122,19 @@ impl PredicatePushDown {
                     .build(),
             ),
             Aggregate {
-                input, keys, aggs, ..
-            } => Ok(
-                LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
-                    .groupby(keys, aggs)
-                    .build(),
-            ),
+                input,
+                keys,
+                aggs,
+                schema,
+            } => {
+                // dont push down predicate. An aggregation needs all rows
+                Ok(Aggregate {
+                    input,
+                    keys,
+                    aggs,
+                    schema,
+                })
+            }
             Join {
                 input_left,
                 input_right,
