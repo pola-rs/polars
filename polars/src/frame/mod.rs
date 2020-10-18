@@ -4,10 +4,9 @@ use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
-use rayon::prelude::*;
+use rayon_cond::CondIterator;
 use std::marker::Sized;
-use std::mem;
-use std::sync::Arc;
+use std::{env, mem, sync::Arc};
 
 pub mod explode;
 pub mod group_by;
@@ -65,6 +64,10 @@ impl DataFrame {
         } else {
             Ok(idx)
         }
+    }
+
+    fn run_parallel(&self) -> bool {
+        env::var("POLARS_RUN_PARALLEL").is_ok()
     }
 
     /// Create a DataFrame from a Vector of Series.
@@ -490,9 +493,7 @@ impl DataFrame {
 
     /// Take DataFrame rows by a boolean mask.
     pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
-        let new_col = self
-            .columns
-            .par_iter()
+        let new_col = CondIterator::new(&self.columns, self.run_parallel())
             .map(|col| col.filter(mask))
             .collect::<Result<Vec<_>>>()?;
         Ok(DataFrame::new_no_checks(new_col))
@@ -513,9 +514,7 @@ impl DataFrame {
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
-        let new_col = self
-            .columns
-            .par_iter()
+        let new_col = CondIterator::new(&self.columns, self.run_parallel())
             .map(|s| {
                 let mut i = iter.clone();
                 s.take_iter(&mut i, capacity)
@@ -539,9 +538,7 @@ impl DataFrame {
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
-        let new_col = self
-            .columns
-            .par_iter()
+        let new_col = CondIterator::new(&self.columns, self.run_parallel())
             .map(|s| {
                 let mut i = iter.clone();
                 s.take_iter_unchecked(&mut i, capacity)
@@ -565,9 +562,7 @@ impl DataFrame {
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
-        let new_col = self
-            .columns
-            .par_iter()
+        let new_col = CondIterator::new(&self.columns, self.run_parallel())
             .map(|s| {
                 let mut i = iter.clone();
                 s.take_opt_iter(&mut i, capacity)
@@ -592,9 +587,7 @@ impl DataFrame {
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
-        let new_col = self
-            .columns
-            .par_iter()
+        let new_col = CondIterator::new(&self.columns, self.run_parallel())
             .map(|s| {
                 let mut i = iter.clone();
                 s.take_opt_iter_unchecked(&mut i, capacity)
@@ -615,9 +608,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn take<T: AsTakeIndex + Sync>(&self, indices: &T) -> Result<Self> {
-        let new_col = self
-            .columns
-            .par_iter()
+        let new_col = CondIterator::new(&self.columns, self.run_parallel())
             .map(|s| s.take(indices))
             .collect::<Result<Vec<_>>>()?;
 
@@ -648,10 +639,7 @@ impl DataFrame {
         let s = self.column(by_column)?;
 
         let take = s.argsort(reverse);
-
-        self.columns = self
-            .columns
-            .par_iter()
+        self.columns = CondIterator::new(&self.columns, self.run_parallel())
             .map(|s| s.take(&take))
             .collect::<Result<Vec<_>>>()?;
         Ok(self)
@@ -929,9 +917,7 @@ impl DataFrame {
 
     /// Slice the DataFrame along the rows.
     pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
-        let col = self
-            .columns
-            .par_iter()
+        let col = CondIterator::new(&self.columns, self.run_parallel())
             .map(|s| s.slice(offset, length))
             .collect::<Result<Vec<_>>>()?;
         Ok(DataFrame::new_no_checks(col))

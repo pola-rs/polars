@@ -130,17 +130,24 @@ impl fmt::Debug for LogicalPlan {
             CsvScan { path, .. } => write!(f, "CSVScan {}", path),
             DataFrameScan { schema, .. } => write!(
                 f,
-                "TABLE: {:?}",
+                "TABLE: {:?} TOTAL {} columns",
                 schema
                     .fields()
                     .iter()
                     .map(|f| f.name())
                     .take(4)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
+                schema.fields().len()
             ),
             Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
             Sort { input, column, .. } => write!(f, "Sort\n\t{:?}\n{:?}", column, input),
-            Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
+            Aggregate {
+                keys, aggs, input, ..
+            } => write!(
+                f,
+                "Aggregate\n\t{:?} BY {:?} ON TABLE {:?}",
+                aggs, keys, input
+            ),
             Join {
                 input_left,
                 input_right,

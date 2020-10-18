@@ -7,13 +7,18 @@ use arrow::array::{PrimitiveBuilder, StringBuilder};
 use fnv::FnvBuildHasher;
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
-use rayon::prelude::*;
+use rayon_cond::CondIterator;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::{
+    env,
     fmt::{Debug, Formatter},
     ops::Add,
 };
+
+fn run_parallel() -> bool {
+    env::var("POLARS_GROUPBY_NO_PARALLEL").is_ok()
+}
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
 where
@@ -301,8 +306,7 @@ where
 {
     fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(Series::Float64(
-            groups
-                .par_iter()
+            CondIterator::new(groups, run_parallel())
                 .map(|(_first, idx)| {
                     // Fast path
                     if let Ok(slice) = self.cont_slice() {
@@ -325,8 +329,7 @@ where
 
     fn agg_min(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(
-            groups
-                .par_iter()
+            CondIterator::new(groups, run_parallel())
                 .map(|(_first, idx)| {
                     if let Ok(slice) = self.cont_slice() {
                         let mut min = None;
@@ -359,8 +362,7 @@ where
 
     fn agg_max(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(
-            groups
-                .par_iter()
+            CondIterator::new(groups, run_parallel())
                 .map(|(_first, idx)| {
                     if let Ok(slice) = self.cont_slice() {
                         let mut max = None;
@@ -393,8 +395,7 @@ where
 
     fn agg_sum(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(
-            groups
-                .par_iter()
+            CondIterator::new(groups, run_parallel())
                 .map(|(_first, idx)| {
                     if let Ok(slice) = self.cont_slice() {
                         let mut sum = Zero::zero();
@@ -493,8 +494,7 @@ pub(crate) trait AggNUnique {
 
 macro_rules! impl_agg_n_unique {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
-        $groups
-            .into_par_iter()
+        CondIterator::new($groups, run_parallel())
             .map(|(_first, idx)| {
                 if $self.null_count() == 0 {
                     let mut set = HashSet::with_hasher(FnvBuildHasher::default());
@@ -561,8 +561,7 @@ where
 {
     fn agg_quantile(&self, groups: &[(usize, Vec<usize>)], quantile: f64) -> Option<Series> {
         Some(
-            groups
-                .into_par_iter()
+            CondIterator::new(groups, run_parallel())
                 .map(|(_first, idx)| {
                     let group_vals =
                         unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };

@@ -15,6 +15,11 @@
 //! ### Lazy
 //! Read more in the [lazy](lazy/index.html) module
 //!
+//! ## Parallelism
+//! If you want to add more parallelism to polars set the `POLARS_RUN_PARALLEL` and/or
+//! the `POLARS_GROUPBY_NO_PARALLEL` env var. The potential speed up is really dependent on your
+//! specific situation as it increases latency and potential cache misses or false sharing.
+//!
 //! ## Read and write CSV/ JSON
 //!
 //! ```
@@ -162,7 +167,6 @@
 //! let s0 = Date32Chunked::parse_from_str_slice("date", dates, fmt)
 //!         .into_series();
 //! ```
-//!
 //!
 //! ## And more...
 //!

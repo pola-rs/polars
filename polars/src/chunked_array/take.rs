@@ -160,7 +160,15 @@ where
         indices: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Self {
-        impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
+        let capacity = capacity.unwrap_or(indices.size_hint().0);
+
+        let mut av = AlignedVec::with_capacity_aligned(capacity);
+        let taker = self.take_rand();
+        for idx in indices {
+            let v = taker.get_unchecked(idx);
+            av.push(v);
+        }
+        ChunkedArray::new_from_aligned_vec(self.name(), av)
     }
 
     fn take_opt(

@@ -39,3 +39,4 @@ ndarray = {version = "0.13", optional = true, default_features = false}
 packed_simd_2 = "0.3.4"
 regex = {version = "1.4", optional = true }
 anyhow = "1.0"
+rayon-cond = "0.1.0"

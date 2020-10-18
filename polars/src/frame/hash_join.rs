@@ -94,7 +94,7 @@ macro_rules! apply_hash_join_on_series {
             Series::IntervalYearMonth(ca_left) => {
                 $join_macro!($s_right, ca_left, interval_year_month)
             }
-            _ => unimplemented!(),
+            _ => panic!("cannot join on this dtype"),
         }
     }};
 }
@@ -105,7 +105,8 @@ pub(crate) fn prepare_hashed_relation<T>(
 where
     T: Hash + Eq + Copy,
 {
-    let mut hash_tbl = FnvHashMap::default();
+    let mut hash_tbl =
+        FnvHashMap::with_capacity_and_hasher(b.size_hint().0, FnvBuildHasher::default());
 
     b.enumerate()
         .for_each(|(idx, key)| hash_tbl.entry(key).or_insert_with(Vec::new).push(idx));
