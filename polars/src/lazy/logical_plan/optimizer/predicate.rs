@@ -2,8 +2,12 @@ use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{count_downtree_projections, expr_to_root_column, rename_expr_root_name};
 use crate::prelude::*;
-use fnv::FnvHashMap;
+use fnv::{FnvBuildHasher, FnvHashMap};
 use std::sync::Arc;
+
+// arbitrary constant to reduce reallocation.
+// don't expect more than 100 predicates.
+const HASHMAP_SIZE: usize = 100;
 
 pub struct PredicatePushDown {}
 
@@ -60,18 +64,19 @@ impl PredicatePushDown {
                 }
                 self.push_down(*input, acc_predicates)
             }
-            Projection {
-                expr,
-                input,
-                schema,
-            } => {
+            Projection { expr, input, .. } => {
                 // don't filter before the last projection that is more expensive as projections are free
                 if count_downtree_projections(&input, 0) == 0 {
-                    Ok(LogicalPlan::Projection {
-                        expr,
-                        input,
-                        schema,
-                    })
+                    let builder = LogicalPlanBuilder::from(self.push_down(
+                        *input,
+                        FnvHashMap::with_capacity_and_hasher(
+                            HASHMAP_SIZE,
+                            FnvBuildHasher::default(),
+                        ),
+                    )?)
+                    .project(expr);
+                    // todo! write utility that takes hashmap values by value
+                    self.finish_node(acc_predicates.values().cloned().collect(), builder)
                 } else {
                     // maybe update predicate name if a projection is an alias
                     for e in &expr {
@@ -208,6 +213,9 @@ impl PredicatePushDown {
 
 impl Optimize for PredicatePushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.push_down(logical_plan, FnvHashMap::default())
+        self.push_down(
+            logical_plan,
+            FnvHashMap::with_capacity_and_hasher(HASHMAP_SIZE, FnvBuildHasher::default()),
+        )
     }
 }
