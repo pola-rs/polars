@@ -3,11 +3,16 @@ use crate::lazy::prelude::*;
 use crate::lazy::utils::{count_downtree_projections, expr_to_root_column, rename_expr_root_name};
 use crate::prelude::*;
 use fnv::{FnvBuildHasher, FnvHashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // arbitrary constant to reduce reallocation.
 // don't expect more than 100 predicates.
 const HASHMAP_SIZE: usize = 100;
+
+fn init_hashmap<K, V>() -> HashMap<K, V, FnvBuildHasher> {
+    FnvHashMap::with_capacity_and_hasher(HASHMAP_SIZE, FnvBuildHasher::default())
+}
 
 pub struct PredicatePushDown {}
 
@@ -67,14 +72,8 @@ impl PredicatePushDown {
             Projection { expr, input, .. } => {
                 // don't filter before the last projection that is more expensive as projections are free
                 if count_downtree_projections(&input, 0) == 0 {
-                    let builder = LogicalPlanBuilder::from(self.push_down(
-                        *input,
-                        FnvHashMap::with_capacity_and_hasher(
-                            HASHMAP_SIZE,
-                            FnvBuildHasher::default(),
-                        ),
-                    )?)
-                    .project(expr);
+                    let builder = LogicalPlanBuilder::from(self.push_down(*input, init_hashmap())?)
+                        .project(expr);
                     // todo! write utility that takes hashmap values by value
                     self.finish_node(acc_predicates.values().cloned().collect(), builder)
                 } else {
@@ -148,33 +147,53 @@ impl PredicatePushDown {
                 how,
                 ..
             } => {
-                let schema_left = input_left.schema();
-                let schema_right = input_right.schema();
+                // todo! if we have csv scan we push predicate down, otherwise we combine with join operation
+                let csv_scan = false;
 
-                let mut pushdown_left = FnvHashMap::default();
-                let mut pushdown_right = FnvHashMap::default();
-                let mut local_predicates = vec![];
+                // for csv_scan
+                if csv_scan {
+                    self.pushdown_from_join(
+                        input_left,
+                        input_right,
+                        left_on,
+                        right_on,
+                        how,
+                        acc_predicates,
+                    )
+                } else {
+                    let schema_left = input_left.schema();
+                    let schema_right = input_right.schema();
+                    let mut predicates_left = Vec::with_capacity(acc_predicates.len());
+                    let mut predicates_right = Vec::with_capacity(acc_predicates.len());
+                    let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
-                for predicate in acc_predicates.values() {
-                    if check_down_node(&predicate, schema_left) {
-                        let name =
-                            Arc::new(predicate.to_field(schema_left).unwrap().name().clone());
-                        pushdown_left.insert(name, predicate.clone());
-                    } else if check_down_node(&predicate, schema_right) {
-                        let name =
-                            Arc::new(predicate.to_field(schema_right).unwrap().name().clone());
-                        pushdown_right.insert(name, predicate.clone());
-                    } else {
-                        local_predicates.push(predicate.clone())
+                    for predicate in acc_predicates.values() {
+                        if check_down_node(&predicate, schema_left) {
+                            predicates_left.push(predicate.clone());
+                        } else if check_down_node(&predicate, schema_right) {
+                            predicates_right.push(predicate.clone());
+                        } else {
+                            local_predicates.push(predicate.clone())
+                        }
                     }
+
+                    // start with an empty predicate accumulation
+                    let lp_left = self.push_down(*input_left, init_hashmap())?;
+                    let lp_right = self.push_down(*input_right, init_hashmap())?;
+                    let mut builder = LogicalPlanBuilder::from(lp_left).join(
+                        lp_right,
+                        how,
+                        left_on,
+                        right_on,
+                        Some(predicates_left),
+                        Some(predicates_right),
+                    );
+
+                    for predicate in local_predicates {
+                        builder = builder.filter(predicate);
+                    }
+                    Ok(builder.build())
                 }
-
-                let lp_left = self.push_down(*input_left, pushdown_left)?;
-                let lp_right = self.push_down(*input_right, pushdown_right)?;
-
-                let builder =
-                    LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
-                self.finish_node(local_predicates, builder)
             }
             HStack { input, exprs, .. } => {
                 let (local, acc_predicates) =
@@ -189,6 +208,40 @@ impl PredicatePushDown {
                 Ok(lp_builder.build())
             }
         }
+    }
+
+    fn pushdown_from_join(
+        &self,
+        input_left: Box<LogicalPlan>,
+        input_right: Box<LogicalPlan>,
+        left_on: Expr,
+        right_on: Expr,
+        how: JoinType,
+        acc_predicates: FnvHashMap<Arc<String>, Expr>,
+    ) -> Result<LogicalPlan> {
+        let schema_left = input_left.schema();
+        let schema_right = input_right.schema();
+        let mut pushdown_left = init_hashmap();
+        let mut pushdown_right = init_hashmap();
+        let mut local_predicates = vec![];
+
+        for predicate in acc_predicates.values() {
+            if check_down_node(&predicate, schema_left) {
+                let name = Arc::new(predicate.to_field(schema_left).unwrap().name().clone());
+                pushdown_left.insert(name, predicate.clone());
+            } else if check_down_node(&predicate, schema_right) {
+                let name = Arc::new(predicate.to_field(schema_right).unwrap().name().clone());
+                pushdown_right.insert(name, predicate.clone());
+            } else {
+                local_predicates.push(predicate.clone())
+            }
+        }
+
+        let lp_left = self.push_down(*input_left, pushdown_left)?;
+        let lp_right = self.push_down(*input_right, pushdown_right)?;
+        let builder =
+            LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on, None, None);
+        self.finish_node(local_predicates, builder)
     }
 
     /// Check if a predicate can be pushed down or not. If it cannot remove it from the accumulated predicates.
@@ -213,9 +266,6 @@ impl PredicatePushDown {
 
 impl Optimize for PredicatePushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.push_down(
-            logical_plan,
-            FnvHashMap::with_capacity_and_hasher(HASHMAP_SIZE, FnvBuildHasher::default()),
-        )
+        self.push_down(logical_plan, init_hashmap())
     }
 }

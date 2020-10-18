@@ -679,6 +679,13 @@ impl DataFrame {
         }
     }
 
+    fn create_left_df_from_iter<I>(&self, join_tuples: I) -> DataFrame
+    where
+        I: Iterator<Item = usize> + Clone + Sync,
+    {
+        unsafe { self.take_iter_unchecked(join_tuples, None) }
+    }
+
     /// Perform an inner join on two DataFrames.
     ///
     /// # Example
@@ -735,7 +742,7 @@ impl DataFrame {
     pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
-        self.left_join_from_series(other, s_left, s_right)
+        self.left_join_from_series(other, s_left, s_right, None)
     }
 
     pub(crate) fn left_join_from_series(
@@ -743,22 +750,58 @@ impl DataFrame {
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
+        // used by lazy executor
+        mask: Option<&BooleanChunked>,
     ) -> Result<DataFrame> {
         let opt_join_tuples = match self.parallel {
             true => apply_hash_join_on_series!(s_left, s_right, par_hash_join_left),
             false => apply_hash_join_on_series!(s_left, s_right, hash_join_left),
         };
 
-        let (df_left, df_right) = rayon::join(
-            || self.create_left_df(&opt_join_tuples),
-            || unsafe {
-                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
-                    opt_join_tuples.iter().map(|(_left, right)| *right),
-                    Some(opt_join_tuples.len()),
-                )
-            },
-        );
-        self.finish_join(df_left, df_right)
+        let iter_right = opt_join_tuples.iter().map(|(_left, right)| *right);
+        let iter_left = opt_join_tuples.iter().map(|(left, _right)| *left);
+
+        match mask {
+            Some(mask) => {
+                let iter_left = iter_left
+                    .zip(mask.into_no_null_iter())
+                    .filter(|(_idx, mask)| *mask)
+                    .map(|(idx, _)| idx);
+                let iter_right = iter_right
+                    .zip(mask.into_no_null_iter())
+                    .filter(|(_idx, mask)| *mask)
+                    .map(|(idx, _)| idx);
+                todo!()
+            }
+            None => {
+                let (df_left, df_right) = rayon::join(
+                    || self.create_left_df_from_iter(iter_left),
+                    || unsafe {
+                        other
+                            .drop(s_right.name())
+                            .unwrap()
+                            .take_opt_iter_unchecked(iter_right, Some(opt_join_tuples.len()))
+                    },
+                );
+                self.finish_join(df_left, df_right)
+            }
+        }
+        //
+        //
+        // let (iter_left, iter_right) = match mask {
+        //     None => (Box::new(iter_left) as Box<dyn Iterator<Item=usize>>, Box::new(iter_right) as Box<dyn Iterator<Item=Option<usize>>>),
+        //     Some(mask) => {
+        //         // todo! check if this is certainly no null
+        //         (Box::new(iter_left.zip(mask.into_no_null_iter())
+        //             .filter(|(_idx, mask)| *mask).map(|(idx, _)| idx)
+        //         ) as Box<dyn Iterator<Item=usize>>,
+        //          Box::new(iter_right.zip(mask.into_no_null_iter())
+        //              .filter(|(_idx, mask)| *mask).map(|(idx, _)| idx)
+        //          ) as Box<dyn Iterator<Item=Option<usize>>>)
+        //     }
+        // };
+
+        // self.finish_join(df_left, df_right)
     }
 
     /// Perform an outer join on two DataFrames

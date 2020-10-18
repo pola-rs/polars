@@ -67,18 +67,28 @@ impl DefaultPlanner {
                 how,
                 left_on,
                 right_on,
+                predicates_left,
+                predicates_right,
                 ..
             } => {
                 let input_left = self.create_initial_physical_plan(*input_left)?;
                 let input_right = self.create_initial_physical_plan(*input_right)?;
                 let left_on = self.create_physical_expr(left_on)?;
                 let right_on = self.create_physical_expr(right_on)?;
+                let predicates_left = predicates_left
+                    .map(|p| self.create_physical_expressions(p))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+                let predicates_right = predicates_right
+                    .map(|p| self.create_physical_expressions(p))
+                    .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Arc::new(JoinExec::new(
                     input_left,
                     input_right,
                     how,
                     left_on,
                     right_on,
+                    predicates_left,
+                    predicates_right,
                 )))
             }
             LogicalPlan::HStack { input, exprs, .. } => {

@@ -278,7 +278,14 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Left, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Left,
+                left_on,
+                right_on,
+                None,
+                None,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -299,7 +306,14 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Outer, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Outer,
+                left_on,
+                right_on,
+                None,
+                None,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -320,7 +334,14 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Inner, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Inner,
+                left_on,
+                right_on,
+                None,
+                None,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
