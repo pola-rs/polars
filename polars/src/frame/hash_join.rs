@@ -703,7 +703,7 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
-        self.inner_join_from_series(other, s_left, s_right)
+        self.inner_join_from_series(other, s_left, s_right, None, None)
     }
 
     pub(crate) fn inner_join_from_series(
@@ -711,10 +711,35 @@ impl DataFrame {
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
+        // used by lazy executor
+        mask_left: Option<&BooleanChunked>,
+        mask_right: Option<&BooleanChunked>,
     ) -> Result<DataFrame> {
         let join_tuples = match self.parallel {
             true => apply_hash_join_on_series!(s_left, s_right, par_hash_join_inner),
             false => apply_hash_join_on_series!(s_left, s_right, hash_join_inner),
+        };
+
+        let join_tuples = if let Some(mask_left) = mask_left {
+            let mask_right =
+                mask_right.expect("both mask_left and mask_right should be given as arguments");
+            let taker_left = mask_left.take_rand();
+            let taker_right = mask_right.take_rand();
+
+            let left_valid = |idx| unsafe { taker_left.get_unchecked(idx) };
+            let right_valid = |idx| unsafe { taker_right.get_unchecked(idx) };
+
+            // inner join both left and right must be valid
+
+            // iterate over the tuples and check in the mask if they are valid
+            let join_tuples = join_tuples
+                .into_iter()
+                .filter(|(idx_left, idx_right)| left_valid(*idx_left) && right_valid(*idx_right))
+                .collect::<Vec<_>>();
+
+            join_tuples
+        } else {
+            join_tuples
         };
 
         let (df_left, df_right) = rayon::join(
@@ -741,7 +766,7 @@ impl DataFrame {
     pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
-        self.left_join_from_series(other, s_left, s_right, None)
+        self.left_join_from_series(other, s_left, s_right, None, None)
     }
 
     pub(crate) fn left_join_from_series(
@@ -750,7 +775,8 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
         // used by lazy executor
-        mask: Option<&BooleanChunked>,
+        mask_left: Option<&BooleanChunked>,
+        mask_right: Option<&BooleanChunked>,
     ) -> Result<DataFrame> {
         let opt_join_tuples = match self.parallel {
             true => apply_hash_join_on_series!(s_left, s_right, par_hash_join_left),
@@ -760,47 +786,64 @@ impl DataFrame {
         let iter_right = opt_join_tuples.iter().map(|(_left, right)| *right);
         let iter_left = opt_join_tuples.iter().map(|(left, _right)| *left);
 
-        match mask {
-            Some(mask) => {
-                let iter_left = iter_left
-                    .zip(mask.into_no_null_iter())
-                    .filter(|(_idx, mask)| *mask)
-                    .map(|(idx, _)| idx);
-                let iter_right = iter_right
-                    .zip(mask.into_no_null_iter())
-                    .filter(|(_idx, mask)| *mask)
-                    .map(|(idx, _)| idx);
-                todo!()
-            }
-            None => {
-                let (df_left, df_right) = rayon::join(
-                    || self.create_left_df_from_iter(iter_left),
-                    || unsafe {
-                        other
-                            .drop(s_right.name())
-                            .unwrap()
-                            .take_opt_iter_unchecked(iter_right, Some(opt_join_tuples.len()))
-                    },
-                );
-                self.finish_join(df_left, df_right)
-            }
-        }
-        //
-        //
-        // let (iter_left, iter_right) = match mask {
-        //     None => (Box::new(iter_left) as Box<dyn Iterator<Item=usize>>, Box::new(iter_right) as Box<dyn Iterator<Item=Option<usize>>>),
-        //     Some(mask) => {
-        //         // todo! check if this is certainly no null
-        //         (Box::new(iter_left.zip(mask.into_no_null_iter())
-        //             .filter(|(_idx, mask)| *mask).map(|(idx, _)| idx)
-        //         ) as Box<dyn Iterator<Item=usize>>,
-        //          Box::new(iter_right.zip(mask.into_no_null_iter())
-        //              .filter(|(_idx, mask)| *mask).map(|(idx, _)| idx)
-        //          ) as Box<dyn Iterator<Item=Option<usize>>>)
-        //     }
-        // };
+        let (df_left, df_right) = if let Some(mask_left) = mask_left {
+            let mask_right =
+                mask_right.expect("both mask_left and mask_right should be given as arguments");
+            let taker_left = mask_left.take_rand();
+            let taker_right = mask_right.take_rand();
 
-        // self.finish_join(df_left, df_right)
+            let left_valid = |idx| unsafe { taker_left.get_unchecked(idx) };
+            let right_valid = |idx| unsafe { taker_right.get_unchecked(idx) };
+
+            // left_join all valid tuples left remain
+
+            // iterate over the tuples and check in the mask if they are valid
+            let idx_left = iter_left.filter(|idx| left_valid(*idx)).collect::<Vec<_>>();
+
+            // right side is bit more complicated:
+            //      if left is is invalid right is invalid
+            //      if left is valid and right is valid keep idx
+            //      if left is valid and right is invalid right should become None
+
+            let idx_right = opt_join_tuples
+                .iter()
+                .filter(|(idx_left, _opt_idx_right)| left_valid(*idx_left))
+                .map(|(_idx_left, opt_idx_right)| match *opt_idx_right {
+                    Some(idx) => {
+                        if right_valid(idx) {
+                            Some(idx)
+                        } else {
+                            None
+                        }
+                    }
+                    None => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(idx_left.len(), idx_right.len());
+            let (df_left, df_right) = rayon::join(
+                || self.create_left_df_from_iter(idx_left.iter().copied()),
+                || unsafe {
+                    other
+                        .drop(s_right.name())
+                        .unwrap()
+                        .take_opt_iter_unchecked(idx_right.into_iter(), None)
+                },
+            );
+            (df_left, df_right)
+        } else {
+            let (df_left, df_right) = rayon::join(
+                || self.create_left_df_from_iter(iter_left),
+                || unsafe {
+                    other
+                        .drop(s_right.name())
+                        .unwrap()
+                        .take_opt_iter_unchecked(iter_right, Some(opt_join_tuples.len()))
+                },
+            );
+            (df_left, df_right)
+        };
+
+        self.finish_join(df_left, df_right)
     }
 
     /// Perform an outer join on two DataFrames
@@ -820,17 +863,52 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
-        self.outer_join_from_series(other, s_left, s_right)
+        self.outer_join_from_series(other, s_left, s_right, None, None)
     }
     pub(crate) fn outer_join_from_series(
         &self,
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
+        // used by lazy executor
+        mask_left: Option<&BooleanChunked>,
+        mask_right: Option<&BooleanChunked>,
     ) -> Result<DataFrame> {
         // Get the indexes of the joined relations
         let opt_join_tuples: Vec<(Option<usize>, Option<usize>)> =
             apply_hash_join_on_series!(s_left, s_right, hash_join_outer);
+
+        let opt_join_tuples = if let Some(mask_left) = mask_left {
+            let mask_right =
+                mask_right.expect("both mask_left and mask_right should be given as arguments");
+            let taker_left = mask_left.take_rand();
+            let taker_right = mask_right.take_rand();
+
+            let left_valid = |idx| unsafe { taker_left.get_unchecked(idx) };
+            let right_valid = |idx| unsafe { taker_right.get_unchecked(idx) };
+
+            // outer join: if left is Some(idx) left must be valid if both right is Some(idx) right must be valid
+
+            // iterate over the tuples and check in the mask if they are valid
+            let opt_join_tuples = opt_join_tuples
+                .into_iter()
+                .filter(|(opt_idx_left, opt_idx_right)| {
+                    let left = match opt_idx_left {
+                        Some(idx) => left_valid(*idx),
+                        None => true,
+                    };
+                    let right = match opt_idx_right {
+                        Some(idx) => right_valid(*idx),
+                        None => true,
+                    };
+                    left && right
+                })
+                .collect::<Vec<_>>();
+
+            opt_join_tuples
+        } else {
+            opt_join_tuples
+        };
 
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = rayon::join(
