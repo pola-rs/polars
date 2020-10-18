@@ -181,6 +181,8 @@ pub struct JoinExec {
     how: JoinType,
     left_on: Arc<dyn PhysicalExpr>,
     right_on: Arc<dyn PhysicalExpr>,
+    predicates_left: Option<Vec<Arc<dyn PhysicalExpr>>>,
+    predicates_right: Option<Vec<Arc<dyn PhysicalExpr>>>,
 }
 
 impl JoinExec {
@@ -190,6 +192,8 @@ impl JoinExec {
         how: JoinType,
         left_on: Arc<dyn PhysicalExpr>,
         right_on: Arc<dyn PhysicalExpr>,
+        predicates_left: Option<Vec<Arc<dyn PhysicalExpr>>>,
+        predicates_right: Option<Vec<Arc<dyn PhysicalExpr>>>,
     ) -> Self {
         JoinExec {
             input_left,
@@ -197,6 +201,8 @@ impl JoinExec {
             how,
             left_on,
             right_on,
+            predicates_left,
+            predicates_right,
         }
     }
 }
@@ -210,6 +216,19 @@ impl Executor for JoinExec {
 
         let s_left = self.left_on.evaluate(&df_left)?;
         let s_right = self.right_on.evaluate(&df_right)?;
+
+        let predicates_left = self
+            .predicates_left
+            .map(|exprs| {
+                exprs.iter().fold(None, |acc, e| {
+                    let mask = e.evaluate(&df_left).expect("predicate failed");
+                    match acc {
+                        None => Some(mask.bool().unwrap().clone()),
+                        Some(other_mask) => Some(mask.bool().unwrap() & &other_mask),
+                    }
+                })
+            })
+            .flatten();
 
         use JoinType::*;
         match self.how {

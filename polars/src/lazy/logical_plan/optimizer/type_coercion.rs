@@ -193,6 +193,8 @@ impl TypeCoercion {
             Join {
                 input_left,
                 input_right,
+                predicates_left,
+                predicates_right,
                 schema,
                 how,
                 left_on,
@@ -203,6 +205,8 @@ impl TypeCoercion {
                 Ok(Join {
                     input_left,
                     input_right,
+                    predicates_left,
+                    predicates_right,
                     schema,
                     how,
                     left_on,

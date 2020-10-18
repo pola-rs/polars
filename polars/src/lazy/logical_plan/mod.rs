@@ -97,6 +97,9 @@ pub enum LogicalPlan {
     Join {
         input_left: Box<LogicalPlan>,
         input_right: Box<LogicalPlan>,
+        // combine a filter with a join to save an expensive filter operation
+        predicates_left: Option<Vec<Expr>>,
+        predicates_right: Option<Vec<Expr>>,
         schema: Schema,
         how: JoinType,
         left_on: Expr,
@@ -269,7 +272,15 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn join(self, other: LogicalPlan, how: JoinType, left_on: Expr, right_on: Expr) -> Self {
+    pub fn join(
+        self,
+        other: LogicalPlan,
+        how: JoinType,
+        left_on: Expr,
+        right_on: Expr,
+        predicates_left: Option<Vec<Expr>>,
+        predicates_right: Option<Vec<Expr>>,
+    ) -> Self {
         let schema_left = self.0.schema();
         let schema_right = other.schema();
 
@@ -303,6 +314,8 @@ impl LogicalPlanBuilder {
         LogicalPlan::Join {
             input_left: Box::new(self.0),
             input_right: Box::new(other),
+            predicates_left,
+            predicates_right,
             how,
             schema,
             left_on,
