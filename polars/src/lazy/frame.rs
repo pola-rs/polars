@@ -627,15 +627,19 @@ mod test {
         assert_eq!(new.column("foo").unwrap().sum::<i32>(), Some(1));
     }
 
-    #[test]
-    fn test_lazy_query() {
-        // test on aggregation pushdown
-        // and a filter that is not in the projection
-        let df_a = df!("a" => &[1, 2, 3, 4, 5],
+    fn load_df() -> DataFrame {
+        df!("a" => &[1, 2, 3, 4, 5],
                      "b" => &["a", "a", "b", "c", "c"],
                      "c" => &[1, 2, 3, 4, 5]
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn test_lazy_query_1() {
+        // test on aggregation pushdown
+        // and a filter that is not in the projection
+        let df_a = load_df();
         let df_b = df_a.clone();
         df_a.lazy()
             .left_join(df_b.lazy(), col("b"), col("b"))
@@ -645,5 +649,18 @@ mod test {
             .select(&[col("b"), col("c_first")])
             .collect()
             .unwrap();
+    }
+
+    #[test]
+    fn test_lazy_query_2() {
+        let df = load_df();
+        let ldf = df
+            .lazy()
+            .with_column(col("a").apply(|s| Ok(s * 2), None).alias("foo"))
+            .filter(col("a").lt(lit(2)))
+            .select(&[col("b"), col("a")]);
+
+        let new = ldf.collect().unwrap();
+        assert_eq!(new.shape(), (1, 2));
     }
 }
