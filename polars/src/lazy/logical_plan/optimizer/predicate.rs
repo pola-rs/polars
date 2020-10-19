@@ -14,6 +14,10 @@ fn init_hashmap<K, V>() -> HashMap<K, V, FnvBuildHasher> {
     FnvHashMap::with_capacity_and_hasher(HASHMAP_SIZE, FnvBuildHasher::default())
 }
 
+fn init_bubble_up() -> Vec<Expr> {
+    Vec::with_capacity(HASHMAP_SIZE)
+}
+
 pub struct PredicatePushDown {}
 
 fn combine_predicates<'a, I>(mut iter: I) -> Expr
@@ -35,16 +39,17 @@ impl PredicatePushDown {
         &self,
         lp: LogicalPlan,
         acc_predicates: FnvHashMap<Arc<String>, Expr>,
-    ) -> Result<LogicalPlan> {
+        bubble_up: Vec<Expr>,
+    ) -> Result<(LogicalPlan, Vec<Expr>)> {
         match acc_predicates.len() {
             // No filter in the logical plan
-            0 => Ok(lp),
+            0 => Ok((lp, bubble_up)),
             _ => {
                 let mut builder = LogicalPlanBuilder::from(lp);
 
                 let predicate = combine_predicates(acc_predicates.values());
                 builder = builder.filter(predicate);
-                Ok(builder.build())
+                Ok((builder.build(), bubble_up))
             }
         }
     }
@@ -53,14 +58,15 @@ impl PredicatePushDown {
         &self,
         local_predicates: Vec<Expr>,
         mut builder: LogicalPlanBuilder,
-    ) -> Result<LogicalPlan> {
+        bubble_up: Vec<Expr>,
+    ) -> Result<(LogicalPlan, Vec<Expr>)> {
         if local_predicates.len() > 0 {
             for expr in local_predicates {
                 builder = builder.filter(expr);
             }
-            Ok(builder.build())
+            Ok((builder.build(), bubble_up))
         } else {
-            Ok(builder.build())
+            Ok((builder.build(), bubble_up))
         }
     }
 
@@ -69,7 +75,8 @@ impl PredicatePushDown {
         &self,
         logical_plan: LogicalPlan,
         mut acc_predicates: FnvHashMap<Arc<String>, Expr>,
-    ) -> Result<LogicalPlan> {
+        // the result is the rewritten logical plan and the predicates that should bubble up to the join
+    ) -> Result<(LogicalPlan, Vec<Expr>)> {
         use LogicalPlan::*;
 
         match logical_plan {
@@ -85,10 +92,14 @@ impl PredicatePushDown {
             Projection { expr, input, .. } => {
                 // don't filter before the last projection that is more expensive as projections are free
                 if count_downtree_projections(&input, 0) == 0 {
-                    let builder = LogicalPlanBuilder::from(self.push_down(*input, init_hashmap())?)
-                        .project(expr);
+                    let (lp, bubble_up) = self.push_down(*input, init_hashmap())?;
+                    let builder = LogicalPlanBuilder::from(lp).project(expr);
                     // todo! write utility that takes hashmap values by value
-                    self.finish_node(acc_predicates.values().cloned().collect(), builder)
+                    self.finish_node(
+                        acc_predicates.values().cloned().collect(),
+                        builder,
+                        bubble_up,
+                    )
                 } else {
                     // maybe update predicate name if a projection is an alias
                     for e in &expr {
@@ -104,16 +115,17 @@ impl PredicatePushDown {
                             }
                         }
                     }
-                    Ok(
-                        LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
-                            .project(expr)
-                            .build(),
-                    )
+
+                    let (lp, bubble_up) = self.push_down(*input, acc_predicates)?;
+                    Ok((
+                        LogicalPlanBuilder::from(lp).project(expr).build(),
+                        bubble_up,
+                    ))
                 }
             }
             DataFrameScan { df, schema } => {
                 let lp = DataFrameScan { df, schema };
-                self.finish_at_leaf(lp, acc_predicates)
+                self.finish_at_leaf(lp, acc_predicates, init_bubble_up())
             }
             CsvScan {
                 path,
@@ -127,17 +139,19 @@ impl PredicatePushDown {
                     has_header,
                     delimiter,
                 };
-                self.finish_at_leaf(lp, acc_predicates)
+                self.finish_at_leaf(lp, acc_predicates, init_bubble_up())
             }
             Sort {
                 input,
                 column,
                 reverse,
-            } => Ok(
-                LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
-                    .sort(column, reverse)
-                    .build(),
-            ),
+            } => {
+                let (lp, bubble_up) = self.push_down(*input, acc_predicates)?;
+                Ok((
+                    LogicalPlanBuilder::from(lp).sort(column, reverse).build(),
+                    bubble_up,
+                ))
+            }
             Aggregate {
                 input,
                 keys,
@@ -145,13 +159,22 @@ impl PredicatePushDown {
                 schema,
             } => {
                 // dont push down predicates. An aggregation needs all rows
+                let (lp, bubble_up) = self.push_down(*input, init_hashmap())?;
+
+                // do filter before aggregations as this influence the result
+                let lp = if bubble_up.len() > 0 {
+                    let predicate = combine_predicates(bubble_up.iter());
+                    LogicalPlanBuilder::from(lp).filter(predicate).build()
+                } else {
+                    lp
+                };
                 let lp = Aggregate {
-                    input: Box::new(self.push_down(*input, init_hashmap())?),
+                    input: Box::new(lp),
                     keys,
                     aggs,
                     schema,
                 };
-                self.finish_at_leaf(lp, acc_predicates)
+                self.finish_at_leaf(lp, acc_predicates, init_bubble_up())
             }
             Join {
                 input_left,
@@ -175,25 +198,31 @@ impl PredicatePushDown {
                         acc_predicates,
                     )
                 } else {
-                    let schema_left = input_left.schema();
-                    let schema_right = input_right.schema();
-                    let mut predicates_left = Vec::with_capacity(acc_predicates.len());
-                    let mut predicates_right = Vec::with_capacity(acc_predicates.len());
-                    let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+                    // start with an empty predicate accumulation
+                    let schema_left = input_left.schema().clone();
+                    let schema_right = input_right.schema().clone();
 
+                    let (lp_left, bubble_up_left) = self.push_down(*input_left, init_hashmap())?;
+                    let (lp_right, bubble_up_right) =
+                        self.push_down(*input_right, init_hashmap())?;
+
+                    let mut predicates_left = bubble_up_left;
+                    let mut predicates_right = bubble_up_right;
+                    let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+                    predicates_left.reserve(acc_predicates.len());
+                    predicates_right.reserve(acc_predicates.len());
+
+                    // check for which table the predicates are
                     for predicate in acc_predicates.values() {
-                        if check_down_node(&predicate, schema_left) {
+                        if check_down_node(&predicate, &schema_left) {
                             predicates_left.push(predicate.clone());
-                        } else if check_down_node(&predicate, schema_right) {
+                        } else if check_down_node(&predicate, &schema_right) {
                             predicates_right.push(predicate.clone());
                         } else {
                             local_predicates.push(predicate.clone())
                         }
                     }
 
-                    // start with an empty predicate accumulation
-                    let lp_left = self.push_down(*input_left, init_hashmap())?;
-                    let lp_right = self.push_down(*input_right, init_hashmap())?;
                     let mut builder = LogicalPlanBuilder::from(lp_left).join(
                         lp_right,
                         how,
@@ -207,21 +236,21 @@ impl PredicatePushDown {
                         let predicate = combine_predicates(local_predicates.iter());
                         builder = builder.filter(predicate);
                     }
-                    Ok(builder.build())
+                    Ok((builder.build(), init_bubble_up()))
                 }
             }
             HStack { input, exprs, .. } => {
                 let (local, acc_predicates) =
                     self.split_pushdown_and_local(acc_predicates, input.schema());
-                let mut lp_builder =
-                    LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
-                        .with_columns(exprs);
+
+                let (lp, bubble_up) = self.push_down(*input, acc_predicates)?;
+                let mut lp_builder = LogicalPlanBuilder::from(lp).with_columns(exprs);
 
                 if local.len() > 0 {
                     let predicate = combine_predicates(local.iter());
                     lp_builder = lp_builder.filter(predicate);
                 }
-                Ok(lp_builder.build())
+                Ok((lp_builder.build(), bubble_up))
             }
         }
     }
@@ -234,7 +263,7 @@ impl PredicatePushDown {
         right_on: Expr,
         how: JoinType,
         acc_predicates: FnvHashMap<Arc<String>, Expr>,
-    ) -> Result<LogicalPlan> {
+    ) -> Result<(LogicalPlan, Vec<Expr>)> {
         let schema_left = input_left.schema();
         let schema_right = input_right.schema();
         let mut pushdown_left = init_hashmap();
@@ -253,11 +282,11 @@ impl PredicatePushDown {
             }
         }
 
-        let lp_left = self.push_down(*input_left, pushdown_left)?;
-        let lp_right = self.push_down(*input_right, pushdown_right)?;
+        let (lp_left, _bubble_up) = self.push_down(*input_left, pushdown_left)?;
+        let (lp_right, _bubble_up) = self.push_down(*input_right, pushdown_right)?;
         let builder =
             LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on, None, None);
-        self.finish_node(local_predicates, builder)
+        self.finish_node(local_predicates, builder, init_bubble_up())
     }
 
     /// Check if a predicate can be pushed down or not. If it cannot remove it from the accumulated predicates.
@@ -282,6 +311,8 @@ impl PredicatePushDown {
 
 impl Optimize for PredicatePushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.push_down(logical_plan, init_hashmap())
+        let (lp, bubble_up) = self.push_down(logical_plan, init_hashmap())?;
+        assert_eq!(bubble_up.len(), 0);
+        Ok(lp)
     }
 }
