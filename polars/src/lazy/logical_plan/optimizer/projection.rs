@@ -86,16 +86,26 @@ impl ProjectionPushDown {
         use LogicalPlan::*;
         match logical_plan {
             Projection { expr, input, .. } => {
-                for e in expr {
-                    acc_projections.push(e);
+                // add the root of the projections to accumulation,
+                // but also do them locally to keep the schema and the alias.
+                for e in &expr {
+                    let expr = expr_to_root_column_expr(e)?;
+                    acc_projections.push(expr.clone());
                 }
 
-                let (acc_projections, local_projections) =
+                let (acc_projections, _local_projections) =
                     self.split_acc_projections(acc_projections, input.schema());
-
                 let lp = self.push_down(*input, acc_projections)?;
+
+                let mut local_projection = Vec::with_capacity(expr.len());
+                for expr in expr {
+                    if expr.to_field(lp.schema()).is_ok() {
+                        local_projection.push(expr);
+                    }
+                }
+
                 let builder = LogicalPlanBuilder::from(lp);
-                self.finish_node(local_projections, builder)
+                self.finish_node(local_projection, builder)
             }
             DataFrameScan { df, schema } => {
                 let lp = DataFrameScan { df, schema };
@@ -164,6 +174,7 @@ impl ProjectionPushDown {
                         }
                     }
 
+                    // todo! maybe we need this later if an uptree udf needs a column?
                     // create local projections. This is the key plus the aggregations
                     let mut local_projections = Vec::with_capacity(aggs.len() + keys.len());
 
