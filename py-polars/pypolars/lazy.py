@@ -1,5 +1,4 @@
 from __future__ import annotations
-import os
 from typing import Union, List, Callable
 from pypolars.frame import DataFrame, wrap_df
 from .pypolars import PyLazyFrame, col, lit, binary_expr, PyExpr, PyLazyGroupBy, when

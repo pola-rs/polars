@@ -13,6 +13,7 @@ from typing import (
 )
 from .series import Series, wrap_s
 from .datatypes import *
+import numpy as np
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
@@ -265,6 +266,9 @@ class DataFrame:
         # select rows by mask or index
         # df[[1, 2, 3]]
         # df[true, false, true]
+        if isinstance(item, np.ndarray):
+            if item.dtype == int:
+                return wrap_df(self._df.take(item))
         if isinstance(item, (Series, Sequence)):
             if isinstance(item, Sequence):
                 # only bool or integers allowed
@@ -277,7 +281,6 @@ class DataFrame:
                 return wrap_df(self._df.filter(item.inner()))
             if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
-        return NotImplemented
 
     def __setitem__(self, key, value):
         # df["foo"] = series

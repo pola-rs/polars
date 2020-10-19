@@ -1,5 +1,4 @@
 from __future__ import annotations
-import os
 from .pypolars import PySeries
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any, Callable
