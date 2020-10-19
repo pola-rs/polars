@@ -573,6 +573,11 @@ impl Expr {
         let function = move |s: Series| s.quantile_as_series(quantile);
         self.apply(function, None)
     }
+
+    /// and operation
+    pub fn and(self, expr: Expr) -> Self {
+        binary_expr(self, Operator::And, expr)
+    }
 }
 
 /// Create a Column Expression based on a column name.

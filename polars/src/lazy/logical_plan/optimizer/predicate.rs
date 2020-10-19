@@ -16,6 +16,20 @@ fn init_hashmap<K, V>() -> HashMap<K, V, FnvBuildHasher> {
 
 pub struct PredicatePushDown {}
 
+fn combine_predicates<'a, I>(mut iter: I) -> Expr
+where
+    I: Iterator<Item = &'a Expr>,
+{
+    let mut single_pred = None;
+    while let Some(expr) = iter.next() {
+        single_pred = match single_pred {
+            None => Some(expr.clone()),
+            Some(e) => Some(e.and(expr.clone())),
+        };
+    }
+    single_pred.unwrap()
+}
+
 impl PredicatePushDown {
     fn finish_at_leaf(
         &self,
@@ -26,11 +40,10 @@ impl PredicatePushDown {
             // No filter in the logical plan
             0 => Ok(lp),
             _ => {
-                // TODO: create a single predicate
                 let mut builder = LogicalPlanBuilder::from(lp);
-                for expr in acc_predicates.values() {
-                    builder = builder.filter(expr.clone());
-                }
+
+                let predicate = combine_predicates(acc_predicates.values());
+                builder = builder.filter(predicate);
                 Ok(builder.build())
             }
         }
@@ -131,13 +144,14 @@ impl PredicatePushDown {
                 aggs,
                 schema,
             } => {
-                // dont push down predicate. An aggregation needs all rows
-                Ok(Aggregate {
-                    input,
+                // dont push down predicates. An aggregation needs all rows
+                let lp = Aggregate {
+                    input: Box::new(self.push_down(*input, init_hashmap())?),
                     keys,
                     aggs,
                     schema,
-                })
+                };
+                self.finish_at_leaf(lp, acc_predicates)
             }
             Join {
                 input_left,
@@ -189,7 +203,8 @@ impl PredicatePushDown {
                         Some(predicates_right),
                     );
 
-                    for predicate in local_predicates {
+                    if local_predicates.len() > 0 {
+                        let predicate = combine_predicates(local_predicates.iter());
                         builder = builder.filter(predicate);
                     }
                     Ok(builder.build())
@@ -202,7 +217,8 @@ impl PredicatePushDown {
                     LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
                         .with_columns(exprs);
 
-                for predicate in local {
+                if local.len() > 0 {
+                    let predicate = combine_predicates(local.iter());
                     lp_builder = lp_builder.filter(predicate);
                 }
                 Ok(lp_builder.build())

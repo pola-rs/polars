@@ -664,9 +664,9 @@ mod test {
         let df_b = df_a.clone();
         df_a.lazy()
             .left_join(df_b.lazy(), col("b"), col("b"))
+            .filter(col("a").lt(lit(2)))
             .groupby("b")
             .agg(vec![col("b").agg_first(), col("c").agg_first()])
-            .filter(col("a").lt(lit(2)))
             .select(&[col("b"), col("c_first")])
             .collect()
             .unwrap();
