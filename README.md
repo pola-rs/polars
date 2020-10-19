@@ -31,12 +31,11 @@ Amongst more, Polars has the following functionalities.
 | Find unique values                                | ✔     |                  | ✗             |
 | Rust iterators                                    | ✔     |                  | ✗             |
 | IO (csv, json, parquet, Arrow IPC                 | ✔     | ✗                |               |
-| Query optimization: (predicate pushdown)          | ✗     | ✔                |               |
+| Query optimization: (predicate pushdown/up)       | ✗     | ✔                |               |
 | Query optimization: (projection pushdown)         | ✗     | ✔                |               |
 | Query optimization: (type coercion)               | ✗     | ✔                |               |
 
 **Note that almost all eager operations supported by Eager on `Series`/`ChunkedArrays` can be used in Lazy via UDF's**
-
 
 ## Documentation
 Want to know about all the features Polars supports? [Check the current master docs](https://ritchie46.github.io/polars). 

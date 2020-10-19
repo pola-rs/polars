@@ -1,6 +1,8 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::{count_downtree_projections, expr_to_root_column, rename_expr_root_name};
+use crate::lazy::utils::{
+    count_downtree_joins, count_downtree_projections, expr_to_root_column, rename_expr_root_name,
+};
 use crate::prelude::*;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::collections::HashMap;
@@ -71,28 +73,39 @@ impl PredicatePushDown {
     }
 
     // acc predicates maps the root column names to predicates
-    fn push_down(
+    fn push_downup(
         &self,
         logical_plan: LogicalPlan,
         mut acc_predicates: FnvHashMap<Arc<String>, Expr>,
-        // the result is the rewritten logical plan and the predicates that should bubble up to the join
+        // Used to determine if we should bubble up predicates
+        join_encountered: bool, // the result is the rewritten logical plan and the predicates that should bubble up to the join
     ) -> Result<(LogicalPlan, Vec<Expr>)> {
         use LogicalPlan::*;
 
         match logical_plan {
             Selection { predicate, input } => {
-                match expr_to_root_column(&predicate) {
-                    Ok(name) => {
-                        acc_predicates.insert(name, predicate);
+                // bubble up/ push up
+                if join_encountered && count_downtree_joins(&*input, 0) > 0 {
+                    let (lp, mut bubble_up) =
+                        self.push_downup(*input, acc_predicates, join_encountered)?;
+                    bubble_up.push(predicate);
+                    Ok((lp, bubble_up))
+                // push down
+                } else {
+                    match expr_to_root_column(&predicate) {
+                        Ok(name) => {
+                            acc_predicates.insert(name, predicate);
+                        }
+                        Err(_) => panic!("implement logic for binary expr with 2 root columns"),
                     }
-                    Err(_) => panic!("implement logic for binary expr with 2 root columns"),
+                    self.push_downup(*input, acc_predicates, join_encountered)
                 }
-                self.push_down(*input, acc_predicates)
             }
             Projection { expr, input, .. } => {
                 // don't filter before the last projection that is more expensive as projections are free
                 if count_downtree_projections(&input, 0) == 0 {
-                    let (lp, bubble_up) = self.push_down(*input, init_hashmap())?;
+                    let (lp, bubble_up) =
+                        self.push_downup(*input, init_hashmap(), join_encountered)?;
                     let builder = LogicalPlanBuilder::from(lp).project(expr);
                     // todo! write utility that takes hashmap values by value
                     self.finish_node(
@@ -116,7 +129,8 @@ impl PredicatePushDown {
                         }
                     }
 
-                    let (lp, bubble_up) = self.push_down(*input, acc_predicates)?;
+                    let (lp, bubble_up) =
+                        self.push_downup(*input, acc_predicates, join_encountered)?;
                     Ok((
                         LogicalPlanBuilder::from(lp).project(expr).build(),
                         bubble_up,
@@ -146,7 +160,7 @@ impl PredicatePushDown {
                 column,
                 reverse,
             } => {
-                let (lp, bubble_up) = self.push_down(*input, acc_predicates)?;
+                let (lp, bubble_up) = self.push_downup(*input, acc_predicates, join_encountered)?;
                 Ok((
                     LogicalPlanBuilder::from(lp).sort(column, reverse).build(),
                     bubble_up,
@@ -159,7 +173,7 @@ impl PredicatePushDown {
                 schema,
             } => {
                 // dont push down predicates. An aggregation needs all rows
-                let (lp, bubble_up) = self.push_down(*input, init_hashmap())?;
+                let (lp, bubble_up) = self.push_downup(*input, init_hashmap(), false)?;
 
                 // do filter before aggregations as this influence the result
                 let lp = if bubble_up.len() > 0 {
@@ -189,7 +203,7 @@ impl PredicatePushDown {
 
                 // for csv_scan
                 if csv_scan {
-                    self.pushdown_from_join(
+                    self.pushdown_from_join_for_csv(
                         input_left,
                         input_right,
                         left_on,
@@ -202,9 +216,10 @@ impl PredicatePushDown {
                     let schema_left = input_left.schema().clone();
                     let schema_right = input_right.schema().clone();
 
-                    let (lp_left, bubble_up_left) = self.push_down(*input_left, init_hashmap())?;
+                    let (lp_left, bubble_up_left) =
+                        self.push_downup(*input_left, init_hashmap(), true)?;
                     let (lp_right, bubble_up_right) =
-                        self.push_down(*input_right, init_hashmap())?;
+                        self.push_downup(*input_right, init_hashmap(), true)?;
 
                     let mut predicates_left = bubble_up_left;
                     let mut predicates_right = bubble_up_right;
@@ -243,7 +258,7 @@ impl PredicatePushDown {
                 let (local, acc_predicates) =
                     self.split_pushdown_and_local(acc_predicates, input.schema());
 
-                let (lp, bubble_up) = self.push_down(*input, acc_predicates)?;
+                let (lp, bubble_up) = self.push_downup(*input, acc_predicates, join_encountered)?;
                 let mut lp_builder = LogicalPlanBuilder::from(lp).with_columns(exprs);
 
                 if local.len() > 0 {
@@ -255,7 +270,7 @@ impl PredicatePushDown {
         }
     }
 
-    fn pushdown_from_join(
+    fn pushdown_from_join_for_csv(
         &self,
         input_left: Box<LogicalPlan>,
         input_right: Box<LogicalPlan>,
@@ -282,8 +297,8 @@ impl PredicatePushDown {
             }
         }
 
-        let (lp_left, _bubble_up) = self.push_down(*input_left, pushdown_left)?;
-        let (lp_right, _bubble_up) = self.push_down(*input_right, pushdown_right)?;
+        let (lp_left, _bubble_up) = self.push_downup(*input_left, pushdown_left, false)?;
+        let (lp_right, _bubble_up) = self.push_downup(*input_right, pushdown_right, false)?;
         let builder =
             LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on, None, None);
         self.finish_node(local_predicates, builder, init_bubble_up())
@@ -311,7 +326,7 @@ impl PredicatePushDown {
 
 impl Optimize for PredicatePushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        let (lp, bubble_up) = self.push_down(logical_plan, init_hashmap())?;
+        let (lp, bubble_up) = self.push_downup(logical_plan, init_hashmap(), false)?;
         assert_eq!(bubble_up.len(), 0);
         Ok(lp)
     }

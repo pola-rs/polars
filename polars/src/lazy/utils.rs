@@ -54,6 +54,25 @@ pub(crate) fn count_downtree_projections(lp: &LogicalPlan, n: usize) -> usize {
     }
 }
 
+// count the number of joins down in the tree
+pub(crate) fn count_downtree_joins(lp: &LogicalPlan, n: usize) -> usize {
+    use LogicalPlan::*;
+    match lp {
+        Selection { input, .. } => count_downtree_joins(input, n),
+        Sort { input, .. } => count_downtree_joins(input, n),
+        CsvScan { .. } => n,
+        DataFrameScan { .. } => n,
+        Aggregate { input, .. } => count_downtree_joins(input, n),
+        Join {
+            input_left,
+            input_right,
+            ..
+        } => count_downtree_joins(input_left, n + 1) + count_downtree_joins(input_right, n),
+        HStack { input, .. } => count_downtree_joins(input, n),
+        Projection { input, .. } => count_downtree_joins(input, n + 1),
+    }
+}
+
 pub(crate) fn projected_names(exprs: &[Expr]) -> Result<Vec<Expr>> {
     exprs.iter().map(|expr| projected_name(expr)).collect()
 }
