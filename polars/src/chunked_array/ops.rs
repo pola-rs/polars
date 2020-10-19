@@ -1,13 +1,16 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use crate::chunked_array::builder::get_large_list_builder;
 use crate::chunked_array::kernels;
+use crate::chunked_array::kernels::vendor::filter::filter_primitive_array;
 use crate::prelude::*;
 use crate::utils::Xob;
+use arrow::array::ArrayRef;
 use itertools::Itertools;
 use num::{Num, NumCast};
 use std::cmp::Ordering;
 use std::marker::Sized;
 use std::ops::{Add, Div};
+use std::sync::Arc;
 
 /// Random access
 pub trait TakeRandom {
@@ -769,6 +772,17 @@ where
 {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<T>> {
         check_filter_len!(self, filter);
+        if self.chunk_id == filter.chunk_id {
+            let chunks = self
+                .downcast_chunks()
+                .iter()
+                .zip(filter.downcast_chunks())
+                .map(|(&left, mask)| {
+                    Arc::new(filter_primitive_array(left, mask).unwrap()) as ArrayRef
+                })
+                .collect::<Vec<_>>();
+            return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        }
         let out = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
                 let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
