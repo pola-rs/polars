@@ -4,10 +4,15 @@ use crate::lazy::utils::{count_downtree_projections, expr_to_root_column, rename
 use crate::prelude::*;
 use fnv::{FnvBuildHasher, FnvHashMap};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 // arbitrary constant to reduce reallocation.
 // don't expect more than 100 predicates.
 const HASHMAP_SIZE: usize = 100;
+
+fn init_hashmap<K, V>() -> HashMap<K, V, FnvBuildHasher> {
+    FnvHashMap::with_capacity_and_hasher(HASHMAP_SIZE, FnvBuildHasher::default())
+}
 
 pub struct PredicatePushDown {}
 
@@ -164,16 +169,18 @@ impl PredicatePushDown {
                 let schema_left = input_left.schema();
                 let schema_right = input_right.schema();
 
-                let mut pushdown_left = FnvHashMap::default();
-                let mut pushdown_right = FnvHashMap::default();
+                let mut pushdown_left = init_hashmap();
+                let mut pushdown_right = init_hashmap();
                 let mut local_predicates = vec![];
 
                 for predicate in acc_predicates.values() {
+                    // no else if. predicate can be in both tables.
                     if check_down_node(&predicate, schema_left) {
                         let name =
                             Arc::new(predicate.to_field(schema_left).unwrap().name().clone());
                         pushdown_left.insert(name, predicate.clone());
-                    } else if check_down_node(&predicate, schema_right) {
+                    }
+                    if check_down_node(&predicate, schema_right) {
                         let name =
                             Arc::new(predicate.to_field(schema_right).unwrap().name().clone());
                         pushdown_right.insert(name, predicate.clone());
