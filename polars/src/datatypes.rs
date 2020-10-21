@@ -19,13 +19,6 @@ pub use arrow::datatypes::{
     UInt64Type, UInt8Type,
 };
 
-#[cfg(feature = "simd")]
-use arrow::datatypes::ToByteSlice;
-#[cfg(feature = "simd")]
-use packed_simd_2::*;
-#[cfg(feature = "simd")]
-use std::ops::{Add, Div, Mul, Sub};
-
 pub struct Utf8Type {}
 
 pub struct LargeListType {}
@@ -95,233 +88,34 @@ pub type TimestampMicrosecondChunked = ChunkedArray<TimestampMicrosecondType>;
 pub type TimestampMillisecondChunked = ChunkedArray<TimestampMillisecondType>;
 pub type TimestampSecondChunked = ChunkedArray<TimestampSecondType>;
 
-#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
-pub trait PolarsNumericType: ArrowNumericType
-where
-    Self::Simd: Add<Output = Self::Simd>
-        + Sub<Output = Self::Simd>
-        + Mul<Output = Self::Simd>
-        + Div<Output = Self::Simd>
-        + Copy,
-{
-    /// Defines the SIMD type that should be used for this numeric type
-    type Simd;
-
-    /// Defines the SIMD Mask type that should be used for this numeric type
-    type SimdMask;
-
-    /// The number of SIMD lanes available
-    fn lanes() -> usize;
-
-    /// Initializes a SIMD register to a constant value
-    fn init(value: Self::Native) -> Self::Simd;
-
-    /// Loads a slice into a SIMD register
-    fn load(slice: &[Self::Native]) -> Self::Simd;
-
-    /// Creates a new SIMD mask for this SIMD type filling it with `value`
-    fn mask_init(value: bool) -> Self::SimdMask;
-
-    /// Gets the value of a single lane in a SIMD mask
-    fn mask_get(mask: &Self::SimdMask, idx: usize) -> bool;
-
-    /// Gets the bitmask for a SimdMask as a byte slice and passes it to the closure used as the action parameter
-    fn bitmask<T>(mask: &Self::SimdMask, action: T)
-    where
-        T: FnMut(&[u8]);
-
-    /// Sets the value of a single lane of a SIMD mask
-    fn mask_set(mask: Self::SimdMask, idx: usize, value: bool) -> Self::SimdMask;
-
-    /// Selects elements of `a` and `b` using `mask`
-    fn mask_select(mask: Self::SimdMask, a: Self::Simd, b: Self::Simd) -> Self::Simd;
-
-    /// Returns `true` if any of the lanes in the mask are `true`
-    fn mask_any(mask: Self::SimdMask) -> bool;
-
-    /// Performs a SIMD binary operation
-    fn bin_op<F: Fn(Self::Simd, Self::Simd) -> Self::Simd>(
-        left: Self::Simd,
-        right: Self::Simd,
-        op: F,
-    ) -> Self::Simd;
-
-    /// SIMD version of equal
-    fn eq(left: Self::Simd, right: Self::Simd) -> Self::SimdMask;
-
-    /// SIMD version of not equal
-    fn ne(left: Self::Simd, right: Self::Simd) -> Self::SimdMask;
-
-    /// SIMD version of less than
-    fn lt(left: Self::Simd, right: Self::Simd) -> Self::SimdMask;
-
-    /// SIMD version of less than or equal to
-    fn le(left: Self::Simd, right: Self::Simd) -> Self::SimdMask;
-
-    /// SIMD version of greater than
-    fn gt(left: Self::Simd, right: Self::Simd) -> Self::SimdMask;
-
-    /// SIMD version of greater than or equal to
-    fn ge(left: Self::Simd, right: Self::Simd) -> Self::SimdMask;
-
-    /// Writes a SIMD result back to a slice
-    fn write(simd_result: Self::Simd, slice: &mut [Self::Native]);
-}
-
-#[cfg(any(
-    not(any(target_arch = "x86", target_arch = "x86_64")),
-    not(feature = "simd")
-))]
 pub trait PolarsNumericType: ArrowNumericType {}
+impl PolarsNumericType for UInt8Type {}
+impl PolarsNumericType for UInt16Type {}
+impl PolarsNumericType for UInt32Type {}
+impl PolarsNumericType for UInt64Type {}
+impl PolarsNumericType for Int8Type {}
+impl PolarsNumericType for Int16Type {}
+impl PolarsNumericType for Int32Type {}
+impl PolarsNumericType for Int64Type {}
+impl PolarsNumericType for Float32Type {}
+impl PolarsNumericType for Float64Type {}
+impl PolarsNumericType for Date32Type {}
+impl PolarsNumericType for Date64Type {}
+impl PolarsNumericType for Time64NanosecondType {}
+impl PolarsNumericType for Time64MicrosecondType {}
+impl PolarsNumericType for Time32MillisecondType {}
+impl PolarsNumericType for Time32SecondType {}
+impl PolarsNumericType for DurationNanosecondType {}
+impl PolarsNumericType for DurationMicrosecondType {}
+impl PolarsNumericType for DurationMillisecondType {}
+impl PolarsNumericType for DurationSecondType {}
+impl PolarsNumericType for IntervalYearMonthType {}
+impl PolarsNumericType for IntervalDayTimeType {}
+impl PolarsNumericType for TimestampNanosecondType {}
+impl PolarsNumericType for TimestampMicrosecondType {}
+impl PolarsNumericType for TimestampMillisecondType {}
+impl PolarsNumericType for TimestampSecondType {}
 
-macro_rules! make_numeric_type {
-    ($impl_ty:ty, $native_ty:ty, $simd_ty:ident, $simd_mask_ty:ident) => {
-        #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
-        impl PolarsNumericType for $impl_ty {
-            type Simd = $simd_ty;
-
-            type SimdMask = $simd_mask_ty;
-
-            fn lanes() -> usize {
-                Self::Simd::lanes()
-            }
-
-            fn init(value: Self::Native) -> Self::Simd {
-                Self::Simd::splat(value)
-            }
-
-            fn load(slice: &[Self::Native]) -> Self::Simd {
-                unsafe { Self::Simd::from_slice_unaligned_unchecked(slice) }
-            }
-
-            fn mask_init(value: bool) -> Self::SimdMask {
-                Self::SimdMask::splat(value)
-            }
-
-            fn mask_get(mask: &Self::SimdMask, idx: usize) -> bool {
-                unsafe { mask.extract_unchecked(idx) }
-            }
-
-            fn bitmask<T>(mask: &Self::SimdMask, mut action: T)
-            where
-                T: FnMut(&[u8]),
-            {
-                action(mask.bitmask().to_byte_slice());
-            }
-
-            fn mask_set(mask: Self::SimdMask, idx: usize, value: bool) -> Self::SimdMask {
-                unsafe { mask.replace_unchecked(idx, value) }
-            }
-
-            /// Selects elements of `a` and `b` using `mask`
-            fn mask_select(mask: Self::SimdMask, a: Self::Simd, b: Self::Simd) -> Self::Simd {
-                mask.select(a, b)
-            }
-
-            fn mask_any(mask: Self::SimdMask) -> bool {
-                mask.any()
-            }
-
-            fn bin_op<F: Fn(Self::Simd, Self::Simd) -> Self::Simd>(
-                left: Self::Simd,
-                right: Self::Simd,
-                op: F,
-            ) -> Self::Simd {
-                op(left, right)
-            }
-
-            fn eq(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
-                left.eq(right)
-            }
-
-            fn ne(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
-                left.ne(right)
-            }
-
-            fn lt(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
-                left.lt(right)
-            }
-
-            fn le(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
-                left.le(right)
-            }
-
-            fn gt(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
-                left.gt(right)
-            }
-
-            fn ge(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
-                left.ge(right)
-            }
-
-            fn write(simd_result: Self::Simd, slice: &mut [Self::Native]) {
-                unsafe { simd_result.write_to_slice_unaligned_unchecked(slice) };
-            }
-        }
-        #[cfg(any(
-            not(any(target_arch = "x86", target_arch = "x86_64")),
-            not(feature = "simd")
-        ))]
-        impl PolarsNumericType for $impl_ty {}
-    };
-}
-
-make_numeric_type!(Int8Type, i8, i8x64, m8x64);
-make_numeric_type!(Int16Type, i16, i16x32, m16x32);
-make_numeric_type!(Int32Type, i32, i32x16, m32x16);
-make_numeric_type!(Int64Type, i64, i64x8, m64x8);
-make_numeric_type!(UInt8Type, u8, u8x64, m8x64);
-make_numeric_type!(UInt16Type, u16, u16x32, m16x32);
-make_numeric_type!(UInt32Type, u32, u32x16, m32x16);
-make_numeric_type!(UInt64Type, u64, u64x8, m64x8);
-make_numeric_type!(Float32Type, f32, f32x16, m32x16);
-make_numeric_type!(Float64Type, f64, f64x8, m64x8);
-
-make_numeric_type!(TimestampSecondType, i64, i64x8, m64x8);
-make_numeric_type!(TimestampMillisecondType, i64, i64x8, m64x8);
-make_numeric_type!(TimestampMicrosecondType, i64, i64x8, m64x8);
-make_numeric_type!(TimestampNanosecondType, i64, i64x8, m64x8);
-make_numeric_type!(Date32Type, i32, i32x16, m32x16);
-make_numeric_type!(Date64Type, i64, i64x8, m64x8);
-make_numeric_type!(Time32SecondType, i32, i32x16, m32x16);
-make_numeric_type!(Time32MillisecondType, i32, i32x16, m32x16);
-make_numeric_type!(Time64MicrosecondType, i64, i64x8, m64x8);
-make_numeric_type!(Time64NanosecondType, i64, i64x8, m64x8);
-make_numeric_type!(IntervalYearMonthType, i32, i32x16, m32x16);
-make_numeric_type!(IntervalDayTimeType, i64, i64x8, m64x8);
-make_numeric_type!(DurationSecondType, i64, i64x8, m64x8);
-make_numeric_type!(DurationMillisecondType, i64, i64x8, m64x8);
-make_numeric_type!(DurationMicrosecondType, i64, i64x8, m64x8);
-make_numeric_type!(DurationNanosecondType, i64, i64x8, m64x8);
-
-// pub trait PolarsNumericType: ArrowNumericType {}
-// impl PolarsNumericType for UInt8Type {}
-// impl PolarsNumericType for UInt16Type {}
-// impl PolarsNumericType for UInt32Type {}
-// impl PolarsNumericType for UInt64Type {}
-// impl PolarsNumericType for Int8Type {}
-// impl PolarsNumericType for Int16Type {}
-// impl PolarsNumericType for Int32Type {}
-// impl PolarsNumericType for Int64Type {}
-// impl PolarsNumericType for Float32Type {}
-// impl PolarsNumericType for Float64Type {}
-// impl PolarsNumericType for Date32Type {}
-// impl PolarsNumericType for Date64Type {}
-// impl PolarsNumericType for Time64NanosecondType {}
-// impl PolarsNumericType for Time64MicrosecondType {}
-// impl PolarsNumericType for Time32MillisecondType {}
-// impl PolarsNumericType for Time32SecondType {}
-// impl PolarsNumericType for DurationNanosecondType {}
-// impl PolarsNumericType for DurationMicrosecondType {}
-// impl PolarsNumericType for DurationMillisecondType {}
-// impl PolarsNumericType for DurationSecondType {}
-// impl PolarsNumericType for IntervalYearMonthType {}
-// impl PolarsNumericType for IntervalDayTimeType {}
-// impl PolarsNumericType for TimestampNanosecondType {}
-// impl PolarsNumericType for TimestampMicrosecondType {}
-// impl PolarsNumericType for TimestampMillisecondType {}
-// impl PolarsNumericType for TimestampSecondType {}
-//
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
 impl PolarsIntegerType for UInt16Type {}

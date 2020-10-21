@@ -12,7 +12,7 @@ readme = "../README.md"
 
 [features]
 pretty = ["prettytable-rs"]
-simd = [] #["arrow/simd"]
+simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono"]
 random = ["rand", "rand_distr"]
@@ -36,6 +36,5 @@ parquet = {version = "2", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
-packed_simd_2 = "0.3.4"
 regex = {version = "1.4", optional = true }
 anyhow = "1.0"
