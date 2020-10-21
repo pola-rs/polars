@@ -63,7 +63,7 @@ impl ScalarValue {
 pub enum DataFrameOperation {
     Sort { by_column: String, reverse: bool },
     Reverse,
-    Shift { periods: i32},
+    Shift { periods: i32 },
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -150,7 +150,9 @@ impl fmt::Debug for LogicalPlan {
             } => match operation {
                 DataFrameOperation::Sort { .. } => write!(f, "SORT {:?}", input),
                 DataFrameOperation::Reverse => write!(f, "REVERSE {:?}", input),
-                DataFrameOperation::Shift {periods} => write!(f, "SHIFT {:?} BY {}", input, periods),
+                DataFrameOperation::Shift { periods } => {
+                    write!(f, "SHIFT {:?} BY {}", input, periods)
+                }
             },
             Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
             Join {
@@ -291,8 +293,9 @@ impl LogicalPlanBuilder {
     pub fn shift(self, periods: i32) -> Self {
         LogicalPlan::DataFrameOp {
             input: Box::new(self.0),
-            operation: DataFrameOperation::Shift {periods}
-        }.into()
+            operation: DataFrameOperation::Shift { periods },
+        }
+        .into()
     }
 
     pub fn join(self, other: LogicalPlan, how: JoinType, left_on: Expr, right_on: Expr) -> Self {

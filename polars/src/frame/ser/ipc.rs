@@ -36,7 +36,6 @@ use crate::prelude::*;
 use arrow::ipc::{
     reader::FileReader as ArrowIPCFileReader, writer::FileWriter as ArrowIPCFileWriter,
 };
-use arrow::record_batch::RecordBatchReader;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -53,8 +52,8 @@ impl<R> ArrowReader for ArrowIPCFileReader<R>
 where
     R: Read + Seek,
 {
-    fn next(&mut self) -> ArrowResult<Option<RecordBatch>> {
-        self.next_batch()
+    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
+        self.next().map_or(Ok(None), |v| v.map(Some))
     }
 
     fn schema(&self) -> Arc<Schema> {

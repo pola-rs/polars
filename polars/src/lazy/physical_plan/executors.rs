@@ -134,7 +134,7 @@ impl Executor for DataFrameOpsExec {
         match &self.operation {
             DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
             DataFrameOperation::Reverse => Ok(df.reverse()),
-            DataFrameOperation::Shift {periods} => df.shift(*periods)
+            DataFrameOperation::Shift { periods } => df.shift(*periods),
         }
     }
 }

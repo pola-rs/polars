@@ -6,7 +6,7 @@ use crate::prelude::*;
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-        Int64Array, Int8Array, PrimitiveArray, PrimitiveBuilder, StringArray,
+        Int64Array, Int8Array, PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder, StringArray,
         Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,

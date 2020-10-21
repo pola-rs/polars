@@ -33,8 +33,8 @@ pub struct ParquetReader<R> {
 }
 
 impl ArrowReader for ParquetRecordBatchReader {
-    fn next(&mut self) -> ArrowResult<Option<RecordBatch>> {
-        self.next_batch()
+    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
+        self.next().map_or(Ok(None), |v| v.map(Some))
     }
 
     fn schema(&self) -> Arc<Schema> {

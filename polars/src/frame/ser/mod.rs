@@ -37,14 +37,14 @@ where
 }
 
 pub trait ArrowReader {
-    fn next(&mut self) -> ArrowResult<Option<RecordBatch>>;
+    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>>;
 
     fn schema(&self) -> Arc<Schema>;
 }
 
 impl<R: Read> ArrowReader for ArrowCsvReader<R> {
-    fn next(&mut self) -> ArrowResult<Option<RecordBatch>> {
-        self.next()
+    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
+        self.next().map_or(Ok(None), |v| v.map(Some))
     }
 
     fn schema(&self) -> Arc<Schema> {
@@ -53,7 +53,7 @@ impl<R: Read> ArrowReader for ArrowCsvReader<R> {
 }
 
 impl<R: Read> ArrowReader for ArrowJsonReader<R> {
-    fn next(&mut self) -> ArrowResult<Option<RecordBatch>> {
+    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
         self.next()
     }
 
@@ -131,7 +131,7 @@ pub fn finish_reader<R: ArrowReader>(
 
     let mut n_rows = 0;
     loop {
-        let batch = match reader.next() {
+        let batch = match reader.next_record_batch() {
             Err(ArrowError::ParseError(s)) => {
                 if ignore_parser_error {
                     continue;

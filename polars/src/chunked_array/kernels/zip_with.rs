@@ -1,6 +1,6 @@
 use crate::chunked_array::builder::aligned_vec_to_primitive_array;
 use crate::prelude::*;
-use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray, PrimitiveArrayOps};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowNumericType;
 use arrow::error::Result as ArrowResult;

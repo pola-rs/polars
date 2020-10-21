@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use arrow::array::{
-    Array, ArrayDataRef, ArrayRef, BooleanArray, LargeListArray, PrimitiveArray, StringArray,
+    Array, ArrayDataRef, ArrayRef, BooleanArray, LargeListArray, PrimitiveArray, PrimitiveArrayOps,
+    StringArray,
 };
 use std::iter::Copied;
 use std::slice::Iter;

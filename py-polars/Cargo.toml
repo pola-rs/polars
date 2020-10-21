@@ -12,7 +12,7 @@ pyo3 = {version = "0.12", features = ["extension-module"] }
 thiserror = "1.0.20"
 numpy = "0.12"
 ndarray = "0.13.1"
-parquet = "1.0.1"
+parquet = "2"
 
 
 [lib]
