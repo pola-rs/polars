@@ -1067,7 +1067,23 @@ pub trait ChunkZip<T> {
 macro_rules! impl_ternary {
     ($mask:expr, $self:expr, $other:expr, $ty:ty) => {{
         if $mask.null_count() > 0 {
-            Err(PolarsError::HasNullValues("zip with operation does not support null values in mask (open an issue to prioritize)".into()))
+            let mut val: ChunkedArray<$ty> = $mask
+                .into_iter()
+                .zip($self)
+                .zip($other)
+                .map(|((opt_mask_val, true_val), false_val)| match opt_mask_val {
+                    None => None,
+                    Some(mask_val) => {
+                        if mask_val {
+                            true_val
+                        } else {
+                            false_val
+                        }
+                    }
+                })
+                .collect();
+            val.rename($self.name());
+            Ok(val)
         } else {
             let mut val: ChunkedArray<$ty> = $mask
                 .into_no_null_iter()
