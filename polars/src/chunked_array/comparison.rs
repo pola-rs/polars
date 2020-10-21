@@ -1,8 +1,8 @@
-use super::kernels::vendor::comparison;
 use crate::{prelude::*, utils::Xob};
 use arrow::{
     array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray},
     compute,
+    compute::kernels::comparison,
 };
 use num::{Num, NumCast, ToPrimitive};
 use std::ops::{BitAnd, BitOr, Not};
@@ -441,6 +441,17 @@ where
     ca.into_no_null_iter().map(cmp_fn).collect()
 }
 
+macro_rules! kernel_cmp {
+    ($self:ident, $kernel:ident, $rhs:expr) => {{
+        let chunks = $self
+            .downcast_chunks()
+            .into_iter()
+            .map(|arr| Arc::new(comparison::$kernel(arr, $rhs).unwrap()) as ArrayRef)
+            .collect();
+        BooleanChunked::new_from_chunks($self.name(), chunks)
+    }};
+}
+
 pub trait NumComp: Num + NumCast + PartialOrd {}
 
 impl NumComp for f32 {}
@@ -466,60 +477,33 @@ where
 
     fn eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        match self.null_count() {
-            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs == rhs),
-            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs == Some(rhs)),
-        }
+        kernel_cmp!(self, eq_scalar, rhs)
     }
 
     fn neq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        match self.null_count() {
-            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs != rhs),
-            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs != Some(rhs)),
-        }
+        kernel_cmp!(self, neq_scalar, rhs)
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        match self.null_count() {
-            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs > rhs),
-            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs > Some(rhs)),
-        }
+        kernel_cmp!(self, gt_scalar, rhs)
     }
 
     fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        match self.null_count() {
-            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs >= rhs),
-            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs >= Some(rhs)),
-        }
+        kernel_cmp!(self, gt_eq_scalar, rhs)
     }
 
     fn lt(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        match self.null_count() {
-            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs < rhs),
-            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs < Some(rhs)),
-        }
+        kernel_cmp!(self, lt_scalar, rhs)
     }
 
     fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        match self.null_count() {
-            0 => cmp_chunked_array_to_num_no_null(self, &|lhs| lhs <= rhs),
-            _ => cmp_chunked_array_to_num(self, &|lhs: Option<T::Native>| lhs <= Some(rhs)),
-        }
+        kernel_cmp!(self, lt_eq_scalar, rhs)
     }
-}
-
-fn cmp_utf8chunked_to_str(ca: &Utf8Chunked, cmp_fn: &dyn Fn(&str) -> bool) -> BooleanChunked {
-    ca.into_iter()
-        .map(|opt_s| match opt_s {
-            None => false,
-            Some(s) => cmp_fn(s),
-        })
-        .collect()
 }
 
 impl ChunkCompare<&str> for Utf8Chunked {
@@ -528,26 +512,26 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 
     fn eq(&self, rhs: &str) -> BooleanChunked {
-        cmp_utf8chunked_to_str(self, &|lhs| lhs == rhs)
+        kernel_cmp!(self, eq_utf8_scalar, rhs)
     }
     fn neq(&self, rhs: &str) -> BooleanChunked {
-        cmp_utf8chunked_to_str(self, &|lhs| lhs != rhs)
+        kernel_cmp!(self, neq_utf8_scalar, rhs)
     }
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
-        cmp_utf8chunked_to_str(self, &|lhs| lhs > rhs)
+        kernel_cmp!(self, gt_utf8_scalar, rhs)
     }
 
     fn gt_eq(&self, rhs: &str) -> BooleanChunked {
-        cmp_utf8chunked_to_str(self, &|lhs| lhs >= rhs)
+        kernel_cmp!(self, gt_eq_utf8_scalar, rhs)
     }
 
     fn lt(&self, rhs: &str) -> BooleanChunked {
-        cmp_utf8chunked_to_str(self, &|lhs| lhs < rhs)
+        kernel_cmp!(self, lt_utf8_scalar, rhs)
     }
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
-        cmp_utf8chunked_to_str(self, &|lhs| lhs <= rhs)
+        kernel_cmp!(self, lt_eq_utf8_scalar, rhs)
     }
 }
 

@@ -1,10 +1,9 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use crate::chunked_array::builder::get_large_list_builder;
 use crate::chunked_array::kernels;
-use crate::chunked_array::kernels::vendor::filter::filter_primitive_array;
 use crate::prelude::*;
 use crate::utils::Xob;
-use arrow::array::ArrayRef;
+use arrow::{array::ArrayRef, compute::kernels::filter::filter_primitive_array};
 use itertools::Itertools;
 use num::{Num, NumCast};
 use std::cmp::Ordering;

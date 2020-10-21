@@ -1,8 +1,7 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
-use super::kernels::vendor::arithmetic as compute;
 use crate::prelude::*;
 use crate::utils::Xob;
-use arrow::array::ArrayRef;
+use arrow::{array::ArrayRef, compute};
 use num::{Num, NumCast, ToPrimitive};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
