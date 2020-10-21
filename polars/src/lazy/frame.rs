@@ -144,6 +144,16 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with `Nones`.
+    ///
+    /// See the method on [Series](Series::shift) for more info on the `shift` operation.
+    pub fn shift(self, periods: i32) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().shift(periods).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).
     /// Before execution the query is being optimized.
     ///

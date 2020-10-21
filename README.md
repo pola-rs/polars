@@ -15,7 +15,7 @@ Amongst more, Polars has the following functionalities.
 | Functionality                                     | Eager | Lazy (DataFrame) | Lazy (Series) |
 |---------------------------------------------------|-------|------------------|---------------|
 | Filters                                           | ✔     | ✔                | ✔             |
-| Shifts                                            | ✔     | ✗                | ✔             |
+| Shifts                                            | ✔     | ✔                | ✔             |
 | Joins                                             | ✔     | ✔                |               |
 | GroupBys + aggregations                           | ✔     | ✔                |               |
 | Comparisons                                       | ✔     | ✔                | ✔             |
@@ -29,7 +29,7 @@ Amongst more, Polars has the following functionalities.
 | Filling nulls + fill strategies                   | ✔     | ✗                | ✔             |
 | Aggregations                                      | ✔     | ✗                | ✔             |
 | Find unique values                                | ✔     |                  | ✗             |
-| Rust iterators                                    | ✔     |                  | ✗             |
+| Rust iterators                                    | ✔     |                  | ✔             |
 | IO (csv, json, parquet, Arrow IPC                 | ✔     | ✗                |               |
 | Query optimization: (predicate pushdown)          | ✗     | ✔                |               |
 | Query optimization: (projection pushdown)         | ✗     | ✔                |               |

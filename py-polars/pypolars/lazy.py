@@ -118,3 +118,15 @@ class LazyFrame:
         Reverse the DataFrame.
         """
         return wrap_ldf(self._ldf.reverse())
+
+    def shift(self, periods: int):
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with `Nones`.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        """
+        return wrap_ldf(self._ldf.shift(periods))
