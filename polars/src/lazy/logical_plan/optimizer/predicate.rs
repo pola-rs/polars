@@ -3,8 +3,8 @@ use crate::lazy::prelude::*;
 use crate::lazy::utils::{count_downtree_projections, expr_to_root_column, rename_expr_root_name};
 use crate::prelude::*;
 use fnv::{FnvBuildHasher, FnvHashMap};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 // arbitrary constant to reduce reallocation.
 // don't expect more than 100 predicates.
@@ -134,15 +134,13 @@ impl PredicatePushDown {
                 };
                 self.finish_at_leaf(lp, acc_predicates)
             }
-            Sort {
-                input,
-                column,
-                reverse,
-            } => Ok(
-                LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
-                    .sort(column, reverse)
-                    .build(),
-            ),
+            DataFrameOp { input, operation } => {
+                let input = self.push_down(*input, acc_predicates)?;
+                Ok(DataFrameOp {
+                    input: Box::new(input),
+                    operation,
+                })
+            }
             Aggregate {
                 input,
                 keys,

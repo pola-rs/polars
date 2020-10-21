@@ -125,15 +125,13 @@ impl ProjectionPushDown {
                 };
                 self.finish_at_leaf(lp, acc_projections)
             }
-            Sort {
-                input,
-                column,
-                reverse,
-            } => Ok(
-                LogicalPlanBuilder::from(self.push_down(*input, acc_projections)?)
-                    .sort(column, reverse)
-                    .build(),
-            ),
+            DataFrameOp { input, operation } => {
+                let input = self.push_down(*input, acc_projections)?;
+                Ok(DataFrameOp {
+                    input: Box::new(input),
+                    operation,
+                })
+            }
             Selection { predicate, input } => {
                 let local_projections = if acc_projections.len() > 0 {
                     let local_projections = projected_names(&acc_projections)?;

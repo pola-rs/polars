@@ -21,7 +21,7 @@ Amongst more, Polars has the following functionalities.
 | Comparisons                                       | ✔     | ✔                | ✔             |
 | Arithmetic                                        | ✔     |                  | ✔             |
 | Sorting                                           | ✔     | ✔                | ✔             |
-| Reversing                                         | ✔     | ✗                | ✔             |
+| Reversing                                         | ✔     | ✔                | ✔             |
 | Closure application (User Defined Functions)      | ✔     |                  | ✔             |
 | SIMD                                              | ✔     |                  | ✔             |
 | Pivots                                            | ✔     | ✗                |               |

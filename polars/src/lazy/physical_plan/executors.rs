@@ -1,4 +1,5 @@
 use super::*;
+use crate::lazy::logical_plan::DataFrameOperation;
 use rayon;
 use std::sync::Mutex;
 
@@ -116,26 +117,24 @@ impl Executor for PipeExec {
     }
 }
 
-pub struct SortExec {
+pub struct DataFrameOpsExec {
     input: Arc<dyn Executor>,
-    by_column: String,
-    reverse: bool,
+    operation: DataFrameOperation,
 }
 
-impl SortExec {
-    pub(crate) fn new(input: Arc<dyn Executor>, by_column: String, reverse: bool) -> Self {
-        Self {
-            input,
-            by_column,
-            reverse,
-        }
+impl DataFrameOpsExec {
+    pub(crate) fn new(input: Arc<dyn Executor>, operation: DataFrameOperation) -> Self {
+        Self { input, operation }
     }
 }
 
-impl Executor for SortExec {
+impl Executor for DataFrameOpsExec {
     fn execute(&self) -> Result<DataFrame> {
         let df = self.input.execute()?;
-        df.sort(&self.by_column, self.reverse)
+        match &self.operation {
+            DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
+            DataFrameOperation::Reverse => Ok(df.reverse()),
+        }
     }
 }
 

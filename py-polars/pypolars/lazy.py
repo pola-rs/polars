@@ -112,3 +112,9 @@ class LazyFrame:
 
     def with_column(self, expr: PyExpr) -> LazyFrame:
         return self.with_columns([expr])
+
+    def reverse(self) -> LazyFrame:
+        """
+        Reverse the DataFrame.
+        """
+        return wrap_ldf(self._ldf.reverse())

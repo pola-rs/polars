@@ -8,7 +8,7 @@ pub use crate::lazy::{
         JoinType, LogicalPlan, LogicalPlanBuilder, ScalarValue,
     },
     physical_plan::{
-        executors::{CsvExec, DataFrameExec, FilterExec, GroupByExec, PipeExec, SortExec},
+        executors::{CsvExec, DataFrameExec, DataFrameOpsExec, FilterExec, GroupByExec, PipeExec},
         expressions::*,
         planner::DefaultPlanner,
         Executor, PhysicalExpr, PhysicalPlanner,

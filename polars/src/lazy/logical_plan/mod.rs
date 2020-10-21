@@ -59,6 +59,12 @@ impl ScalarValue {
     }
 }
 
+#[derive(Clone)]
+pub enum DataFrameOperation {
+    Sort { by_column: String, reverse: bool },
+    Reverse,
+}
+
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 pub enum LogicalPlan {
@@ -83,10 +89,9 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         schema: Schema,
     },
-    Sort {
+    DataFrameOp {
         input: Box<LogicalPlan>,
-        column: String,
-        reverse: bool,
+        operation: DataFrameOperation,
     },
     Aggregate {
         input: Box<LogicalPlan>,
@@ -139,7 +144,12 @@ impl fmt::Debug for LogicalPlan {
                     .collect::<Vec<_>>()
             ),
             Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
-            Sort { input, column, .. } => write!(f, "Sort\n\t{:?}\n{:?}", column, input),
+            DataFrameOp {
+                input, operation, ..
+            } => match operation {
+                DataFrameOperation::Sort { .. } => write!(f, "SORT\t{:?}", input),
+                DataFrameOperation::Reverse => write!(f, "REVERSE\t{:?}", input),
+            },
             Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
             Join {
                 input_left,
@@ -169,7 +179,7 @@ impl LogicalPlan {
             Selection { input, .. } => input.schema(),
             CsvScan { schema, .. } => schema,
             Projection { schema, .. } => schema,
-            Sort { input, .. } => input.schema(),
+            DataFrameOp { input, .. } => input.schema(),
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
@@ -261,10 +271,17 @@ impl LogicalPlanBuilder {
     }
 
     pub fn sort(self, by_column: String, reverse: bool) -> Self {
-        LogicalPlan::Sort {
+        LogicalPlan::DataFrameOp {
             input: Box::new(self.0),
-            column: by_column,
-            reverse,
+            operation: DataFrameOperation::Sort { by_column, reverse },
+        }
+        .into()
+    }
+
+    pub fn reverse(self) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::Reverse,
         }
         .into()
     }

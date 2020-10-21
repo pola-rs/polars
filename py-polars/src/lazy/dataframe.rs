@@ -134,6 +134,11 @@ impl PyLazyFrame {
         ldf.with_columns(py_exprs_to_exprs(exprs)).into()
     }
 
+    pub fn reverse(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.reverse().into()
+    }
+
     pub fn clone(&self) -> PyLazyFrame {
         self.ldf.clone().into()
     }

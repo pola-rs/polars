@@ -44,15 +44,11 @@ impl DefaultPlanner {
                 Ok(Arc::new(PipeExec::new("projection", input, phys_expr)))
             }
             LogicalPlan::DataFrameScan { df, .. } => Ok(Arc::new(DataFrameExec::new(df))),
-            LogicalPlan::Sort {
-                input,
-                column,
-                reverse,
-            } => {
+            LogicalPlan::DataFrameOp { input, operation } => {
                 // this isn't a sort
                 let input = self.create_initial_physical_plan(*input)?;
 
-                Ok(Arc::new(SortExec::new(input, column, reverse)))
+                Ok(Arc::new(DataFrameOpsExec::new(input, operation)))
             }
             LogicalPlan::Aggregate {
                 input, keys, aggs, ..

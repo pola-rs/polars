@@ -163,16 +163,11 @@ impl TypeCoercion {
                     schema,
                 })
             }
-            Sort {
-                input,
-                column,
-                reverse,
-            } => {
-                let input = Box::new(self.coerce(*input)?);
-                Ok(Sort {
-                    input,
-                    column,
-                    reverse,
+            DataFrameOp { input, operation } => {
+                let input = self.coerce(*input)?;
+                Ok(DataFrameOp {
+                    input: Box::new(input),
+                    operation,
                 })
             }
             Aggregate {

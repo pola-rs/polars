@@ -126,6 +126,24 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Reverse the DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .reverse()
+    /// }
+    /// ```
+    pub fn reverse(self) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().reverse().build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).
     /// Before execution the query is being optimized.
     ///

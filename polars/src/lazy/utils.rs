@@ -40,7 +40,7 @@ pub(crate) fn count_downtree_projections(lp: &LogicalPlan, n: usize) -> usize {
     use LogicalPlan::*;
     match lp {
         Selection { input, .. } => count_downtree_projections(input, n),
-        Sort { input, .. } => count_downtree_projections(input, n),
+        DataFrameOp { input, .. } => count_downtree_projections(input, n),
         CsvScan { .. } => n,
         DataFrameScan { .. } => n,
         Aggregate { input, .. } => count_downtree_projections(input, n),
