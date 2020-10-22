@@ -1,4 +1,5 @@
 //! Implementations of the ChunkAgg trait.
+use crate::chunked_array::builder::get_large_list_builder;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*};
@@ -258,8 +259,63 @@ impl ChunkAggSeries for BooleanChunked {
     }
 }
 
-impl ChunkAggSeries for Utf8Chunked {}
-impl ChunkAggSeries for LargeListChunked {}
+macro_rules! one_null_utf8 {
+    ($self:ident) => {{
+        let mut builder = Utf8ChunkedBuilder::new($self.name(), 1);
+        builder.append_null();
+        builder.finish().into_series()
+    }};
+}
+
+impl ChunkAggSeries for Utf8Chunked {
+    fn sum_as_series(&self) -> Series {
+        one_null_utf8!(self)
+    }
+    fn max_as_series(&self) -> Series {
+        one_null_utf8!(self)
+    }
+    fn min_as_series(&self) -> Series {
+        one_null_utf8!(self)
+    }
+    fn mean_as_series(&self) -> Series {
+        one_null_utf8!(self)
+    }
+    fn median_as_series(&self) -> Series {
+        one_null_utf8!(self)
+    }
+    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+        Ok(one_null_utf8!(self))
+    }
+}
+
+macro_rules! one_null_largelist {
+    ($self:ident) => {{
+        let mut builder = get_large_list_builder(&ArrowDataType::Null, 1, $self.name());
+        builder.append_opt_series(&None);
+        builder.finish().into_series()
+    }};
+}
+
+impl ChunkAggSeries for LargeListChunked {
+    fn sum_as_series(&self) -> Series {
+        one_null_largelist!(self)
+    }
+    fn max_as_series(&self) -> Series {
+        one_null_largelist!(self)
+    }
+    fn min_as_series(&self) -> Series {
+        one_null_largelist!(self)
+    }
+    fn mean_as_series(&self) -> Series {
+        one_null_largelist!(self)
+    }
+    fn median_as_series(&self) -> Series {
+        one_null_largelist!(self)
+    }
+    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+        Ok(one_null_largelist!(self))
+    }
+}
 
 #[cfg(test)]
 mod test {

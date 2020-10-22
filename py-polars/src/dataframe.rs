@@ -409,4 +409,28 @@ impl PyDataFrame {
     pub fn lazy(&self) -> PyLazyFrame {
         self.df.clone().lazy().into()
     }
+
+    pub fn max(&self) -> Self {
+        self.df.max().into()
+    }
+
+    pub fn min(&self) -> Self {
+        self.df.min().into()
+    }
+
+    pub fn sum(&self) -> Self {
+        self.df.sum().into()
+    }
+
+    pub fn mean(&self) -> Self {
+        self.df.mean().into()
+    }
+
+    pub fn median(&self) -> Self {
+        self.df.median().into()
+    }
+
+    pub fn quantile(&self, quantile: f64) -> Result<Self> {
+        self.df.quantile(quantile).into()
+    }
 }

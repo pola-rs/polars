@@ -668,6 +668,24 @@ class DataFrame:
         """
         return self._df.n_chunks()
 
+    def max(self) -> DataFrame:
+        return self._df.max()
+
+    def min(self) -> DataFrame:
+        return self._df.min()
+
+    def sum(self) -> DataFrame:
+        return self._df.sum()
+
+    def mean(self) -> DataFrame:
+        return self._df.mean()
+
+    def median(self) -> DataFrame:
+        return self._df.median()
+
+    def quantile(self, quantile: float) -> DataFrame:
+        return self._df.quantile(quantile)
+
 
 class GroupBy:
     def __init__(self, df: DataFrame, by: List[str]):

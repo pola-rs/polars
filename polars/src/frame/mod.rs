@@ -1038,6 +1038,54 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(col))
     }
 
+    /// Aggregate the columns to their maximum values.
+    pub fn max(&self) -> Self {
+        let columns = self.columns.par_iter().map(|s| s.max_as_series()).collect();
+        DataFrame::new_no_checks(columns)
+    }
+
+    /// Aggregate the columns to their minimum values.
+    pub fn min(&self) -> Self {
+        let columns = self.columns.par_iter().map(|s| s.min_as_series()).collect();
+        DataFrame::new_no_checks(columns)
+    }
+
+    /// Aggregate the columns to their sum values.
+    pub fn sum(&self) -> Self {
+        let columns = self.columns.par_iter().map(|s| s.sum_as_series()).collect();
+        DataFrame::new_no_checks(columns)
+    }
+
+    /// Aggregate the columns to their mean values.
+    pub fn mean(&self) -> Self {
+        let columns = self
+            .columns
+            .par_iter()
+            .map(|s| s.mean_as_series())
+            .collect();
+        DataFrame::new_no_checks(columns)
+    }
+
+    /// Aggregate the columns to their median values.
+    pub fn median(&self) -> Self {
+        let columns = self
+            .columns
+            .par_iter()
+            .map(|s| s.median_as_series())
+            .collect();
+        DataFrame::new_no_checks(columns)
+    }
+
+    /// Aggregate the columns to their quantile values.
+    pub fn quantile(&self, quantile: f64) -> Result<Self> {
+        let columns = self
+            .columns
+            .par_iter()
+            .map(|s| s.quantile_as_series(quantile))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(DataFrame::new_no_checks(columns))
+    }
+
     /// Pipe different functions/ closure operations that work on a DataFrame together.
     pub fn pipe<F, B>(self, f: F) -> Result<B>
     where
