@@ -1165,7 +1165,9 @@ where
                 .iter()
                 .zip(&other.downcast_chunks())
                 .zip(&mask.downcast_chunks())
-                .map(|((left_c, right_c), mask_c)| kernels::zip(mask_c, left_c, right_c))
+                .map(|((left_c, right_c), mask_c)| {
+                    kernels::zip(mask_c, left_c, right_c).map(|arr| Arc::new(arr) as ArrayRef)
+                })
                 .collect::<Result<Vec<_>>>()?;
             Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
         // no null path

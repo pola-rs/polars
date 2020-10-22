@@ -202,7 +202,7 @@ where
     ca
 }
 
-fn set_null_bits(
+pub(crate) fn set_null_bits(
     mut builder: ArrayDataBuilder,
     null_bit_buffer: Option<Buffer>,
     null_count: Option<usize>,
