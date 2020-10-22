@@ -1,5 +1,7 @@
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::{chunked_array::kernels::set::set_with_value, utils::Xob};
+use arrow::array::ArrayRef;
+use std::sync::Arc;
 
 macro_rules! impl_set_at_idx_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
@@ -48,10 +50,7 @@ macro_rules! check_bounds {
 
 impl<'a, T> ChunkSet<'a, T::Native, T::Native> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
-    &'a ChunkedArray<T>:
-        IntoNoNullIterator<Item = T::Native> + IntoIterator<Item = Option<T::Native>>,
-    T::Native: Copy,
+    T: PolarsNumericType,
 {
     fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<T::Native>) -> Result<Self> {
         self.set_at_idx_with(idx, |_| value)
@@ -67,6 +66,22 @@ where
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
+        if T::get_data_type() != ArrowDataType::Boolean
+            && value.is_some()
+            && self.chunk_id() == mask.chunk_id()
+        {
+            let value = value.unwrap();
+            let chunks = self
+                .downcast_chunks()
+                .into_iter()
+                .zip(mask.downcast_chunks())
+                .map(|(arr, mask)| {
+                    let a = set_with_value(mask, arr, value);
+                    Arc::new(a) as ArrayRef
+                })
+                .collect();
+            return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        }
         // all the code does practically the same but has different fast paths. We do this
         // again because we don't need the return option in all cases. Otherwise we would have called
         // set_with
@@ -135,6 +150,138 @@ where
 
         // fast path because self has no nulls
         let mut ca: ChunkedArray<T> = if self.is_optimal_aligned() {
+            // fast path because mask has no nulls
+            if mask.is_optimal_aligned() {
+                self.into_no_null_iter()
+                    .zip(mask.into_no_null_iter())
+                    .map(|(val, mask)| match mask {
+                        true => f(Some(val)),
+                        false => Some(val),
+                    })
+                    .collect()
+
+            // slower path, mask has null values
+            } else {
+                self.into_no_null_iter()
+                    .zip(mask)
+                    .map(|(val, opt_mask)| match opt_mask {
+                        None => Some(val),
+                        Some(true) => f(Some(val)),
+                        Some(false) => Some(val),
+                    })
+                    .collect()
+            }
+        } else {
+            // mask has no nulls, self has
+            if mask.is_optimal_aligned() {
+                self.into_iter()
+                    .zip(mask.into_no_null_iter())
+                    .map(|(opt_val, mask)| match mask {
+                        true => f(opt_val),
+                        false => opt_val,
+                    })
+                    .collect()
+            } else {
+                // slowest path, mask and self have null values
+                self.into_iter()
+                    .zip(mask)
+                    .map(|(opt_val, opt_mask)| match opt_mask {
+                        None => opt_val,
+                        Some(true) => f(opt_val),
+                        Some(false) => opt_val,
+                    })
+                    .collect()
+            }
+        };
+
+        ca.rename(self.name());
+        Ok(ca)
+    }
+}
+
+impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
+    fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<bool>) -> Result<Self> {
+        self.set_at_idx_with(idx, |_| value)
+    }
+
+    fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
+    where
+        F: Fn(Option<bool>) -> Option<bool>,
+    {
+        // TODO: implement fast path
+        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
+        impl_set_at_idx_with!(self, builder, idx, f)
+    }
+
+    fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> Result<Self> {
+        // all the code does practically the same but has different fast paths. We do this
+        // again because we don't need the return option in all cases. Otherwise we would have called
+        // set_with
+        match value {
+            Some(new_value) => {
+                // fast path because self has no nulls
+                let mut ca = if self.is_optimal_aligned() {
+                    // fast path because mask has no nulls
+                    if mask.is_optimal_aligned() {
+                        let ca: Xob<_> = self
+                            .into_no_null_iter()
+                            .zip(mask.into_no_null_iter())
+                            .map(|(val, mask)| match mask {
+                                true => new_value,
+                                false => val,
+                            })
+                            .collect();
+                        ca.into_inner()
+                    // slower path, mask has null values
+                    } else {
+                        let ca: Xob<_> = self
+                            .into_no_null_iter()
+                            .zip(mask)
+                            .map(|(val, opt_mask)| match opt_mask {
+                                None => val,
+                                Some(true) => new_value,
+                                Some(false) => val,
+                            })
+                            .collect();
+                        ca.into_inner()
+                    }
+                } else {
+                    // mask has no nulls, self has
+                    if mask.is_optimal_aligned() {
+                        self.into_iter()
+                            .zip(mask.into_no_null_iter())
+                            .map(|(opt_val, mask)| match mask {
+                                true => Some(new_value),
+                                false => opt_val,
+                            })
+                            .collect()
+                    } else {
+                        // slowest path, mask and self have null values
+                        self.into_iter()
+                            .zip(mask)
+                            .map(|(opt_val, opt_mask)| match opt_mask {
+                                None => opt_val,
+                                Some(true) => Some(new_value),
+                                Some(false) => opt_val,
+                            })
+                            .collect()
+                    }
+                };
+                ca.rename(self.name());
+                Ok(ca)
+            }
+            None => self.set_with(mask, |_| value),
+        }
+    }
+
+    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
+    where
+        F: Fn(Option<bool>) -> Option<bool>,
+    {
+        check_bounds!(self, mask);
+
+        // fast path because self has no nulls
+        let mut ca: BooleanChunked = if self.is_optimal_aligned() {
             // fast path because mask has no nulls
             if mask.is_optimal_aligned() {
                 self.into_no_null_iter()
