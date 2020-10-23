@@ -1,3 +1,4 @@
+import pytest
 from pypolars import Series
 from pypolars.datatypes import *
 import numpy as np
@@ -186,3 +187,14 @@ def test_shift():
     assert a.shift(1) == [None, 1, 2]
     assert a.shift(-1) == [1, 2, None]
     assert a.shift(-2) == [1, None, None]
+
+
+@pytest.mark.parametrize(
+    "dtype, fmt, null_values", [(Date32, "%d-%m-%Y", 0), (Date32, "%Y-%m-%d", 3)]
+)
+def test_parse_date(dtype, fmt, null_values):
+    dates = ["25-08-1988", "20-01-1993", "25-09-2020"]
+    result = Series.parse_date("dates", dates, dtype, fmt)
+    # Why results Date64 into `nan`?
+    assert result.dtype == dtype
+    assert result.is_null().sum() == null_values
