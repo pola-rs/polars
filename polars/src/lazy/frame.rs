@@ -395,6 +395,48 @@ impl LazyFrame {
         let lp = self.get_plan_builder().with_columns(exprs).build();
         Self::from_logical_plan(lp, opt_state)
     }
+
+    /// Aggregate all the columns as their maximum values.
+    pub fn max(self) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().max().build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Aggregate all the columns as their minimum values.
+    pub fn min(self) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().min().build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Aggregate all the columns as their sum values.
+    pub fn sum(self) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().sum().build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Aggregate all the columns as their mean values.
+    pub fn mean(self) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().sum().build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Aggregate all the columns as their median values.
+    pub fn median(self) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().median().build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Aggregate all the columns as their quantile values.
+    pub fn quantile(self, quantile: f64) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().quantile(quantile).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
 }
 
 /// Utility struct for lazy groupby operation.

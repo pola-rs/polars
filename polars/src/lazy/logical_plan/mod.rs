@@ -64,6 +64,12 @@ pub enum DataFrameOperation {
     Sort { by_column: String, reverse: bool },
     Reverse,
     Shift { periods: i32 },
+    Max,
+    Min,
+    Sum,
+    Mean,
+    Median,
+    Quantile(f64)
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -153,6 +159,12 @@ impl fmt::Debug for LogicalPlan {
                 DataFrameOperation::Shift { periods } => {
                     write!(f, "SHIFT {:?} BY {}", input, periods)
                 }
+                DataFrameOperation::Max => write!(f, "MAX {:?}", input),
+                DataFrameOperation::Min => write!(f, "MIN {:?}", input),
+                DataFrameOperation::Sum => write!(f, "SUM {:?}", input),
+                DataFrameOperation::Mean => write!(f, "MEAN {:?}", input),
+                DataFrameOperation::Median => write!(f, "MEDIAN {:?}", input),
+                DataFrameOperation::Quantile(_) => write!(f, "Quantile {:?}", input),
             },
             Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
             Join {
@@ -296,6 +308,54 @@ impl LogicalPlanBuilder {
             operation: DataFrameOperation::Shift { periods },
         }
         .into()
+    }
+
+    pub fn min(self) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::Min,
+        }
+            .into()
+    }
+
+    pub fn max(self) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::Max,
+        }
+            .into()
+    }
+
+    pub fn sum(self) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::Sum,
+        }
+            .into()
+    }
+
+    pub fn mean(self) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::Mean,
+        }
+            .into()
+    }
+
+    pub fn median(self) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::Median,
+        }
+            .into()
+    }
+
+    pub fn quantile(self, quantile: f64) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::Quantile(quantile),
+        }
+            .into()
     }
 
     pub fn join(self, other: LogicalPlan, how: JoinType, left_on: Expr, right_on: Expr) -> Self {

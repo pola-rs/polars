@@ -27,7 +27,7 @@ Amongst more, Polars has the following functionalities.
 | Pivots                                            | ✔     | ✗                |               |
 | Melts                                             | ✔     | ✗                |               |
 | Filling nulls + fill strategies                   | ✔     | ✗                | ✔             |
-| Aggregations                                      | ✔     | ✗                | ✔             |
+| Aggregations                                      | ✔     | ✔                | ✔             |
 | Find unique values                                | ✔     |                  | ✗             |
 | Rust iterators                                    | ✔     |                  | ✔             |
 | IO (csv, json, parquet, Arrow IPC                 | ✔     | ✗                |               |

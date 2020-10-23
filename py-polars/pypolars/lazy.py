@@ -130,3 +130,39 @@ class LazyFrame:
             Number of places to shift (may be negative).
         """
         return wrap_ldf(self._ldf.shift(periods))
+
+    def max(self) -> LazyFrame:
+        """
+        Aggregate the columns in the DataFrame to their maximum value
+        """
+        return wrap_ldf(self._ldf.max())
+
+    def min(self) -> LazyFrame:
+        """
+        Aggregate the columns in the DataFrame to their minimum value
+        """
+        return wrap_ldf(self._ldf.min())
+
+    def sum(self) -> LazyFrame:
+        """
+        Aggregate the columns in the DataFrame to their sum value
+        """
+        return wrap_ldf(self._ldf.sum())
+
+    def mean(self) -> LazyFrame:
+        """
+        Aggregate the columns in the DataFrame to their mean value
+        """
+        return wrap_ldf(self._ldf.mean())
+
+    def median(self) -> LazyFrame:
+        """
+        Aggregate the columns in the DataFrame to their median value
+        """
+        return wrap_ldf(self._ldf.median())
+
+    def quantile(self, quantile: float) -> LazyFrame:
+        """
+        Aggregate the columns in the DataFrame to their quantile value
+        """
+        return wrap_ldf(self._ldf.quantile(quantile))

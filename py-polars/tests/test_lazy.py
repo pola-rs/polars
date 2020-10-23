@@ -22,3 +22,9 @@ def test_lazy():
 def test_apply():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = df.lazy().with_column(col("a").apply(lambda s: s * 2)).collect()
+
+
+def test_agg():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    ldf = df.lazy().min()
+    assert ldf.collect().shape == (1, 2)

@@ -135,6 +135,12 @@ impl Executor for DataFrameOpsExec {
             DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
             DataFrameOperation::Reverse => Ok(df.reverse()),
             DataFrameOperation::Shift { periods } => df.shift(*periods),
+            DataFrameOperation::Max => Ok(df.max()),
+            DataFrameOperation::Min => Ok(df.min()),
+            DataFrameOperation::Sum => Ok(df.sum()),
+            DataFrameOperation::Mean => Ok(df.mean()),
+            DataFrameOperation::Median => Ok(df.median()),
+            DataFrameOperation::Quantile(quantile) => df.quantile(*quantile)
         }
     }
 }

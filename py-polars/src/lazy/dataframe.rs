@@ -144,6 +144,36 @@ impl PyLazyFrame {
         ldf.shift(periods).into()
     }
 
+    pub fn min(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.min().into()
+    }
+
+    pub fn max(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.max().into()
+    }
+
+    pub fn sum(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.sum().into()
+    }
+
+    pub fn mean(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.mean().into()
+    }
+
+    pub fn median(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.median().into()
+    }
+
+    pub fn quantile(&self, quantile: f64) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.quantile(quantile).into()
+    }
+
     pub fn clone(&self) -> PyLazyFrame {
         self.ldf.clone().into()
     }
