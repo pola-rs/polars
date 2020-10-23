@@ -2,7 +2,7 @@ use crate::frame::group_by::{fmt_groupby_column, GroupByMethod, NumericAggSync};
 use crate::lazy::physical_plan::AggPhysicalExpr;
 use crate::utils::Xob;
 use crate::{
-    frame::group_by::{AggFirst, AggLast, AggNUnique, AggQuantile},
+    frame::group_by::{AggFirst, AggLast, AggList, AggNUnique, AggQuantile},
     lazy::prelude::*,
     prelude::*,
 };
@@ -465,8 +465,47 @@ impl PhysicalExpr for AggNUniqueExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        impl_to_field_for_agg!(self, input_schema, GroupByMethod::List)
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+impl AggPhysicalExpr for AggListExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
+        let series = self.expr.evaluate(df)?;
+        let new_name = fmt_groupby_column(series.name(), GroupByMethod::List);
+        let opt_agg = apply_method_all_series!(series, agg_list, groups);
+
+        let opt_agg = opt_agg.map(|mut agg| {
+            agg.rename(&new_name);
+            agg.into_series()
+        });
+
+        Ok(opt_agg)
+    }
+}
+
+pub struct AggListExpr {
+    expr: Arc<dyn PhysicalExpr>,
+}
+
+impl AggListExpr {
+    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
+        Self { expr }
+    }
+}
+
+impl PhysicalExpr for AggListExpr {
+    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), GroupByMethod::NUnique);
+        let new_name = fmt_groupby_column(field.name(), GroupByMethod::List);
         let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
         Ok(new_field)
     }

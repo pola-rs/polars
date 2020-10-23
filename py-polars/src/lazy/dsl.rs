@@ -118,6 +118,9 @@ impl PyExpr {
     pub fn agg_last(&self) -> PyExpr {
         self.clone().inner.agg_last().into()
     }
+    pub fn agg_list(&self) -> PyExpr {
+        self.clone().inner.agg_list().into()
+    }
     #[text_signature = "($self, quantile)"]
     pub fn agg_quantile(&self, quantile: f64) -> PyExpr {
         self.clone().inner.agg_quantile(quantile).into()
@@ -128,10 +131,11 @@ impl PyExpr {
     }
 
     #[text_signature = "($self, data_type)"]
-    pub fn cast(&self, data_type: &str) -> PyExpr {
+    pub fn cast(&self, data_type: &PyAny) -> PyExpr {
         // TODO! accept the DataType objects.
 
-        let dt = str_to_arrow_type(data_type);
+        let str_repr = data_type.str().unwrap().to_str().unwrap();
+        let dt = str_to_arrow_type(str_repr);
         let expr = self.inner.clone().cast(dt);
         expr.into()
     }
@@ -212,7 +216,15 @@ impl PyExpr {
         self.clone().inner.apply(function, None).into()
     }
 
-    pub fn apply(&self, lambda: PyObject) -> PyExpr {
+    pub fn apply(&self, lambda: PyObject, output_type: &PyAny) -> PyExpr {
+        let output_type = match output_type.is_none() {
+            true => None,
+            false => {
+                let str_repr = output_type.str().unwrap().to_str().unwrap();
+                Some(str_to_arrow_type(str_repr))
+            }
+        };
+
         let function = move |s: Series| {
             let gil = Python::acquire_gil();
             let py = gil.python();
@@ -234,25 +246,27 @@ impl PyExpr {
             Ok(pyseries.series)
         };
 
-        self.clone().inner.apply(function, None).into()
+        self.clone().inner.apply(function, output_type).into()
     }
 }
 
 fn str_to_arrow_type(s: &str) -> ArrowDataType {
     match s {
-        "u8" => ArrowDataType::UInt8,
-        "u16" => ArrowDataType::UInt16,
-        "u32" => ArrowDataType::UInt32,
-        "u64" => ArrowDataType::UInt64,
-        "i8" => ArrowDataType::Int8,
-        "i16" => ArrowDataType::Int16,
-        "i32" => ArrowDataType::Int32,
-        "i64" => ArrowDataType::Int64,
-        "f32" => ArrowDataType::Float32,
-        "f64" => ArrowDataType::Float64,
-        "bool" => ArrowDataType::Boolean,
-        "utf8" => ArrowDataType::Utf8,
-        _ => todo!(),
+        "<class 'pypolars.datatypes.UInt8'>" => ArrowDataType::UInt8,
+        "<class 'pypolars.datatypes.UInt16'>" => ArrowDataType::UInt16,
+        "<class 'pypolars.datatypes.UInt32'>" => ArrowDataType::UInt32,
+        "<class 'pypolars.datatypes.UInt64'>" => ArrowDataType::UInt64,
+        "<class 'pypolars.datatypes.Int8'>" => ArrowDataType::Int8,
+        "<class 'pypolars.datatypes.Int16'>" => ArrowDataType::Int16,
+        "<class 'pypolars.datatypes.Int32'>" => ArrowDataType::Int32,
+        "<class 'pypolars.datatypes.Int64'>" => ArrowDataType::Int64,
+        "<class 'pypolars.datatypes.Float32'>" => ArrowDataType::Float32,
+        "<class 'pypolars.datatypes.Float64'>" => ArrowDataType::Float64,
+        "<class 'pypolars.datatypes.Boolean'>" => ArrowDataType::Boolean,
+        "<class 'pypolars.datatypes.Utf8'>" => ArrowDataType::Utf8,
+        "<class 'pypolars.datatypes.Date32'>" => ArrowDataType::Date32(DateUnit::Day),
+        "<class 'pypolars.datatypes.Date64'>" => ArrowDataType::Date64(DateUnit::Millisecond),
+        tp => panic!(format!("Type {} not implemented in str_to_arrow_type", tp)),
     }
 }
 

@@ -52,6 +52,7 @@ pub enum Expr {
     AggFirst(Box<Expr>),
     AggLast(Box<Expr>),
     AggMean(Box<Expr>),
+    AggList(Box<Expr>),
     AggQuantile {
         expr: Box<Expr>,
         quantile: f64,
@@ -141,6 +142,7 @@ impl Expr {
             AggSum(expr) => expr.get_type(schema),
             AggFirst(expr) => expr.get_type(schema),
             AggLast(expr) => expr.get_type(schema),
+            AggList(expr) => expr.get_type(schema),
             AggMean(expr) => expr.get_type(schema),
             AggMedian(expr) => expr.get_type(schema),
             AggGroups(_) => Ok(ArrowDataType::UInt32),
@@ -206,6 +208,11 @@ impl Expr {
             AggLast(expr) => {
                 let field = expr.to_field(schema)?;
                 let new_name = fmt_groupby_column(field.name(), GroupByMethod::Last);
+                Ok(rename_field(&field, &new_name))
+            }
+            AggList(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::List);
                 Ok(rename_field(&field, &new_name))
             }
             AggNUnique(expr) => {
@@ -278,6 +285,7 @@ impl fmt::Debug for Expr {
             AggMean(expr) => write!(f, "AGGREGATE MEAN {:?}", expr),
             AggFirst(expr) => write!(f, "AGGREGATE FIRST {:?}", expr),
             AggLast(expr) => write!(f, "AGGREGATE LAST {:?}", expr),
+            AggList(expr) => write!(f, "AGGREGATE LIST {:?}", expr),
             AggNUnique(expr) => write!(f, "AGGREGATE N UNIQUE {:?}", expr),
             AggSum(expr) => write!(f, "AGGREGATE SUM {:?}", expr),
             AggGroups(expr) => write!(f, "AGGREGATE GROUPS {:?}", expr),
@@ -479,6 +487,11 @@ impl Expr {
     /// Get the last value in the group.
     pub fn agg_last(self) -> Self {
         Expr::AggLast(Box::new(self))
+    }
+
+    /// Aggregate the group to a Series
+    pub fn agg_list(self) -> Self {
+        Expr::AggList(Box::new(self))
     }
 
     /// Compute the quantile per group.

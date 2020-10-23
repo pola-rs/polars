@@ -1,4 +1,5 @@
 use crate::series::PySeries;
+use polars::chunked_array::builder::get_large_list_builder;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
@@ -150,4 +151,117 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
     }
 }
 
-impl<'a, 'b> ApplyLambda<'a, 'b> for LargeListChunked {}
+impl<'a, 'b> ApplyLambda<'a, 'b> for LargeListChunked {
+    fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        // get the pypolars module
+        let pypolars = PyModule::import(py, "pypolars")?;
+
+        match self.dtype() {
+            ArrowDataType::LargeList(dt) => {
+                let mut builder = get_large_list_builder(&*dt, self.len(), self.name());
+                let ca = if self.null_count() == 0 {
+                    let mut it = self.into_no_null_iter();
+
+                    while let Some(series) = it.next() {
+                        // create a PySeries struct/object for Python
+                        let pyseries = PySeries::new(series);
+                        // Wrap this PySeries object in the python side Series wrapper
+                        let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
+                        // call the lambda en get a python side Series wrapper
+                        let out = lambda.call1((python_series_wrapper,));
+                        match out {
+                            Ok(out) => {
+                                // unpack the wrapper in a PySeries
+                                let py_pyseries = out
+                                    .getattr("_s")
+                                    .expect("could net get series attribute '_s'");
+                                let pyseries = py_pyseries.extract::<PySeries>()?;
+                                builder.append_series(&pyseries.series);
+                            }
+                            Err(_) => {
+                                builder.append_opt_series(&None);
+                            }
+                        };
+                    }
+                    builder.finish()
+                } else {
+                    let mut it = self.into_iter();
+                    while let Some(opt_series) = it.next() {
+                        if let Some(series) = opt_series {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(series);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
+                            // call the lambda en get a python side Series wrapper
+                            let out = lambda.call1((python_series_wrapper,));
+                            match out {
+                                Ok(out) => {
+                                    // unpack the wrapper in a PySeries
+                                    let py_pyseries = out
+                                        .getattr("_s")
+                                        .expect("could net get series attribute '_s'");
+                                    let pyseries = py_pyseries.extract::<PySeries>()?;
+                                    builder.append_series(&pyseries.series);
+                                }
+                                Err(_) => {
+                                    builder.append_opt_series(&None);
+                                }
+                            };
+                        } else {
+                            builder.append_opt_series(&None)
+                        }
+                    }
+                    builder.finish()
+                };
+                Ok(PySeries::new(ca.into_series()))
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    fn apply_lambda_with_primitive_dtype<D>(
+        &'b self,
+        py: Python,
+        lambda: &'a PyAny,
+    ) -> PyResult<ChunkedArray<D>>
+    where
+        D: PyArrowPrimitiveType,
+        D::Native: ToPyObject + FromPyObject<'a>,
+    {
+        // get the pypolars module
+        let pypolars = PyModule::import(py, "pypolars")?;
+        let mut builder = PrimitiveChunkedBuilder::<D>::new(self.name(), self.len());
+
+        let ca = if self.null_count() == 0 {
+            let mut it = self.into_no_null_iter();
+
+            while let Some(series) = it.next() {
+                // create a PySeries struct/object for Python
+                let pyseries = PySeries::new(series);
+                // Wrap this PySeries object in the python side Series wrapper
+                let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
+                // call the lambda en get a python side Series wrapper
+                let out = lambda.call1((python_series_wrapper,))?;
+                builder.append_value(out.extract()?)
+            }
+            builder.finish()
+        } else {
+            let mut it = self.into_iter();
+            while let Some(opt_series) = it.next() {
+                if let Some(series) = opt_series {
+                    // create a PySeries struct/object for Python
+                    let pyseries = PySeries::new(series);
+                    // Wrap this PySeries object in the python side Series wrapper
+                    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
+                    // call the lambda en get a python side Series wrapper
+                    let out = lambda.call1((python_series_wrapper,))?;
+                    builder.append_value(out.extract()?)
+                } else {
+                    builder.append_null()
+                }
+            }
+            builder.finish()
+        };
+        Ok(ca)
+    }
+}

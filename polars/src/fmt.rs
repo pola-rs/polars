@@ -88,7 +88,11 @@ macro_rules! format_utf8_array {
                 write!($f, "\tnull\n").ok();
             }
             Some(s) => {
-                write!($f, "\t\"{}\"\n", &s[..std::cmp::min($limit, s.len())]).ok();
+                if s.len() >= $limit {
+                    write!($f, "\t\"{}...\"\n", &s[..$limit]).ok();
+                } else {
+                    write!($f, "\t\"{}\"\n", &s).ok();
+                }
             }
         });
         write![$f, "]"]
@@ -129,8 +133,7 @@ where
 
 impl Debug for Utf8Chunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = set_limit!(self);
-        format_utf8_array!(limit, f, self, self.name(), "ChunkedArray")
+        format_utf8_array!(LIMIT, f, self, self.name(), "ChunkedArray")
     }
 }
 
@@ -199,7 +202,7 @@ impl Debug for Series {
             Series::TimestampSecond(a) => {
                 format_array!(limit, f, a, "timestamp(s)", a.name(), "Series")
             }
-            Series::Utf8(a) => format_utf8_array!(limit, f, a, a.name(), "Series"),
+            Series::Utf8(a) => format_utf8_array!(LIMIT, f, a, a.name(), "Series"),
             Series::LargeList(a) => format_list_array!(limit, f, a, a.name(), "Series"),
         }
     }
@@ -257,7 +260,7 @@ impl Display for DataFrame {
 
 fn fmt_integer<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: i64 = NumCast::from(v).unwrap();
-    if v > 9999 {
+    if v > u32::MAX as i64 {
         write!(f, "{:>width$e}", v, width = width)
     } else {
         write!(f, "{:>width$}", v, width = width)
@@ -478,5 +481,11 @@ mod test {
 ]"#,
             format!("{:?}", ca)
         );
+    }
+
+    #[test]
+    fn test_series() {
+        let s = Series::new("foo", &["Somelongstringto eeat wit me oundaf"]);
+        dbg!(s);
     }
 }

@@ -143,6 +143,10 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(*expr)?;
                 Ok(Arc::new(AggLastExpr::new(phys_expr)))
             }
+            Expr::AggList(expr) => {
+                let phys_expr = self.create_physical_expr(*expr)?;
+                Ok(Arc::new(AggListExpr::new(phys_expr)))
+            }
             Expr::AggNUnique(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
                 Ok(Arc::new(AggNUniqueExpr::new(phys_expr)))

@@ -544,6 +544,56 @@ impl AggNUnique for Utf8Chunked {
     }
 }
 
+pub(crate) trait AggList {
+    fn agg_list(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        None
+    }
+}
+impl<T> AggList for ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    fn agg_list(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        macro_rules! impl_gb {
+            ($type:ty, $agg_col:expr) => {{
+                let values_builder = PrimitiveBuilder::<$type>::new(groups.len());
+                let mut builder =
+                    LargeListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
+                for (_first, idx) in groups {
+                    let s = unsafe {
+                        $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
+                    };
+                    builder.append_opt_series(&Some(s))
+                }
+                builder.finish().into_series()
+            }};
+        }
+
+        macro_rules! impl_gb_utf8 {
+            ($agg_col:expr) => {{
+                let values_builder = StringBuilder::new(groups.len());
+                let mut builder =
+                    LargeListUtf8ChunkedBuilder::new("", values_builder, groups.len());
+                for (_first, idx) in groups {
+                    let s = unsafe {
+                        $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
+                    };
+                    builder.append_series(&s)
+                }
+                builder.finish().into_series()
+            }};
+        }
+
+        let s = self.clone().into_series();
+        Some(match_arrow_data_type_apply_macro!(
+            s.dtype(),
+            impl_gb,
+            impl_gb_utf8,
+            s
+        ))
+    }
+}
+
 pub(crate) trait AggQuantile {
     fn agg_quantile(&self, _groups: &[(usize, Vec<usize>)], _quantile: f64) -> Option<Series> {
         None

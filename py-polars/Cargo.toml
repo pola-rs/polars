@@ -24,6 +24,6 @@ crate-type = ["cdylib"]
 requires-dist = ["numpy"]
 
 [profile.release]
-codegen-units = 1
-target-cpu = "native"
-lto = "fat"
+#codegen-units = 1
+#target-cpu = "native"
+#lto = "fat"

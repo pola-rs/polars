@@ -381,6 +381,7 @@ impl PySeries {
                 }
             }
             Series::Utf8(_) => self.to_list(),
+            Series::LargeList(_) => self.to_list(),
             _ => todo!(),
         }
     }
@@ -389,12 +390,12 @@ impl PySeries {
         PySeries::new(self.series.clone())
     }
 
-    pub fn apply_lambda(&self, lambda: &PyAny, dtype: Option<u8>) -> PyResult<PySeries> {
+    pub fn apply_lambda(&self, lambda: &PyAny, out_dtype: Option<u8>) -> PyResult<PySeries> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let series = &self.series;
 
-        let out = match dtype {
+        let out = match out_dtype {
             Some(0) => {
                 let ca: Int8Chunked = apply_method_all_series!(
                     series,
@@ -494,6 +495,8 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
+            None => return apply_method_all_series!(series, apply_lambda, py, lambda),
+
             _ => return apply_method_all_series!(series, apply_lambda, py, lambda),
         };
 
@@ -679,6 +682,7 @@ impl_get!(get_i8, Int8, i8);
 impl_get!(get_i16, Int16, i16);
 impl_get!(get_i32, Int32, i32);
 impl_get!(get_i64, Int64, i64);
+impl_get!(get_str, Utf8, &str);
 
 // Not public methods.
 macro_rules! impl_unsafe_from_ptr {

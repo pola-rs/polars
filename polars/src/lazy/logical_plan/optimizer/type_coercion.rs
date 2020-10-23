@@ -80,6 +80,10 @@ impl TypeCoercion {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.agg_last())
             }
+            AggList(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.agg_list())
+            }
             AggMean(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.agg_mean())

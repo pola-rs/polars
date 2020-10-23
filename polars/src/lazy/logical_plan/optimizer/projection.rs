@@ -8,6 +8,10 @@ use crate::prelude::*;
 use arrow::datatypes::Schema;
 use fnv::{FnvBuildHasher, FnvHashSet};
 
+fn init_vec() -> Vec<Expr> {
+    Vec::with_capacity(100)
+}
+
 pub struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
@@ -202,9 +206,9 @@ impl ProjectionPushDown {
                 how,
                 ..
             } => {
-                let mut pushdown_left = vec![];
-                let mut pushdown_right = vec![];
-                let mut local_projection = vec![];
+                let mut pushdown_left = init_vec();
+                let mut pushdown_right = init_vec();
+                let mut local_projection = init_vec();
 
                 // if there are no projections we don't have to do anything
                 if acc_projections.len() > 0 {
@@ -282,6 +286,17 @@ impl ProjectionPushDown {
                 // just the original projections at this level that may be renamed
                 let local_renamed_projections = projected_names(&acc_projections)?;
 
+                // Make sure that columns selected with_columns are available
+                if acc_projections.len() > 0 {
+                    for e in &exprs {
+                        match expr_to_root_column_expr(e) {
+                            Ok(e) => acc_projections.push(e.clone()),
+                            // literal value
+                            Err(_) => (),
+                        }
+                    }
+                }
+
                 let (acc_projections, _) =
                     self.split_acc_projections(acc_projections, input.schema());
 
@@ -297,6 +312,6 @@ impl ProjectionPushDown {
 
 impl Optimize for ProjectionPushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.push_down(logical_plan, Vec::default())
+        self.push_down(logical_plan, init_vec())
     }
 }
