@@ -90,6 +90,22 @@ impl From<Series> for PySeries {
     }
 }
 
+macro_rules! parse_temporal_from_str_slice {
+    ($name:ident, $ca_type:ident) => {
+        #[pymethods]
+        impl PySeries {
+            #[staticmethod]
+            pub fn $name(name: &str, val: Vec<&str>, fmt: &str) -> Self {
+                let parsed = $ca_type::parse_from_str_slice(name, &val, fmt);
+                PySeries::new(parsed.into_series())
+            }
+        }
+    };
+}
+
+// TODO: add other temporals
+parse_temporal_from_str_slice!(parse_date32_from_str_slice, Date32Chunked);
+
 #[pymethods]
 impl PySeries {
     #[staticmethod]

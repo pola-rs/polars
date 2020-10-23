@@ -851,3 +851,12 @@ class Series:
         Series[u32]
         """
         return wrap_s(self._s.str_lengths())
+
+    @staticmethod
+    def parse_date(
+        name: str, values: Sequence[str], dtype: "DataType", fmt: str
+    ) -> Series:
+        f = get_ffi_func("parse_<>_from_str_slice", dtype, PySeries)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(name, values, fmt))
