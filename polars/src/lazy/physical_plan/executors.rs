@@ -140,7 +140,7 @@ impl Executor for DataFrameOpsExec {
             DataFrameOperation::Sum => Ok(df.sum()),
             DataFrameOperation::Mean => Ok(df.mean()),
             DataFrameOperation::Median => Ok(df.median()),
-            DataFrameOperation::Quantile(quantile) => df.quantile(*quantile)
+            DataFrameOperation::Quantile(quantile) => df.quantile(*quantile),
         }
     }
 }

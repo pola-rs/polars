@@ -69,7 +69,7 @@ pub enum DataFrameOperation {
     Sum,
     Mean,
     Median,
-    Quantile(f64)
+    Quantile(f64),
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -315,7 +315,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             operation: DataFrameOperation::Min,
         }
-            .into()
+        .into()
     }
 
     pub fn max(self) -> Self {
@@ -323,7 +323,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             operation: DataFrameOperation::Max,
         }
-            .into()
+        .into()
     }
 
     pub fn sum(self) -> Self {
@@ -331,7 +331,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             operation: DataFrameOperation::Sum,
         }
-            .into()
+        .into()
     }
 
     pub fn mean(self) -> Self {
@@ -339,7 +339,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             operation: DataFrameOperation::Mean,
         }
-            .into()
+        .into()
     }
 
     pub fn median(self) -> Self {
@@ -347,7 +347,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             operation: DataFrameOperation::Median,
         }
-            .into()
+        .into()
     }
 
     pub fn quantile(self, quantile: f64) -> Self {
@@ -355,7 +355,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             operation: DataFrameOperation::Quantile(quantile),
         }
-            .into()
+        .into()
     }
 
     pub fn join(self, other: LogicalPlan, how: JoinType, left_on: Expr, right_on: Expr) -> Self {
