@@ -427,6 +427,16 @@ mod test {
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(5), Some(3)]);
 
+        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let mask = BooleanChunked::new_from_opt_slice("mask", &[None, None, None]);
+        let ca = ca.set(&mask, Some(5)).unwrap();
+        assert_eq!(Vec::from(&ca), &[Some(1), Some(2), Some(3)]);
+
+        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let mask = BooleanChunked::new_from_opt_slice("mask", &[Some(true), Some(false), None]);
+        let ca = ca.set(&mask, Some(5)).unwrap();
+        assert_eq!(Vec::from(&ca), &[Some(5), Some(2), Some(3)]);
+
         let ca = ca.set_at_idx(&[0, 1], Some(10)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(10), Some(10), Some(3)]);
 

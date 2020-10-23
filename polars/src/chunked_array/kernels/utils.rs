@@ -1,8 +1,9 @@
 use crate::prelude::*;
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::Bitmap;
-use arrow::buffer::MutableBuffer;
+use arrow::buffer::{Buffer, MutableBuffer};
 use arrow::error::Result as ArrowResult;
+use std::ops::BitOr;
 
 pub(crate) fn apply_bin_op_to_option_bitmap<F>(
     left: &Option<Bitmap>,
@@ -22,6 +23,23 @@ where
             Some(ref r) => Ok(Some(op(&l, &r)?)),
         },
     }
+}
+
+/// Combine two null bitmaps.
+fn get_new_null_bit_buffer(left: &impl Array, right: &impl Array) -> Option<Buffer> {
+    // get data buffers
+    let data_array = right.data();
+    let data_mask = left.data();
+
+    // get null bitmasks
+    let mask_bitmap = data_mask.null_bitmap();
+    let array_bitmap = data_array.null_bitmap();
+
+    // Compute final null values by bitor ops
+    let bitmap =
+        apply_bin_op_to_option_bitmap(mask_bitmap, array_bitmap, |a, b| a.bitor(b)).unwrap();
+    let null_bit_buffer = bitmap.map(|bitmap| bitmap.into_buffer());
+    null_bit_buffer
 }
 
 #[inline]

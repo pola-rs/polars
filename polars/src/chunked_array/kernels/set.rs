@@ -1,31 +1,13 @@
-use super::utils::apply_bin_op_to_option_bitmap;
 use crate::chunked_array::builder::set_null_bits;
 use crate::chunked_array::kernels::utils::{get_bitmasks, BitMaskU64Prep};
 use arrow::array::{Array, ArrayData, BooleanArray, PrimitiveArray};
-use arrow::buffer::{Buffer, MutableBuffer};
+use arrow::buffer::MutableBuffer;
 use arrow::datatypes::{ArrowNumericType, ToByteSlice};
 use arrow::util::bit_util::count_set_bits_offset;
 use std::mem;
-use std::ops::BitOr;
-
-/// Get new null bit buffer from 2 arrays.
-fn get_new_null_bit_buffer(mask: &BooleanArray, array: &impl Array) -> Option<Buffer> {
-    // get data buffers
-    let data_array = array.data();
-    let data_mask = mask.data();
-
-    // get null bitmasks
-    let mask_bitmap = data_mask.null_bitmap();
-    let array_bitmap = data_array.null_bitmap();
-
-    // Compute final null values by bitor ops
-    let bitmap =
-        apply_bin_op_to_option_bitmap(mask_bitmap, array_bitmap, |a, b| a.bitor(b)).unwrap();
-    let null_bit_buffer = bitmap.map(|bitmap| bitmap.into_buffer());
-    null_bit_buffer
-}
 
 /// Is very fast when large parts of the mask are false, or true. The mask should have no offset.
+/// Not that the nulls of the mask are ignored.
 pub fn set_with_value<T>(
     mask: &BooleanArray,
     left: &PrimitiveArray<T>,
@@ -115,15 +97,19 @@ where
     let builder = ArrayData::builder(T::get_data_type())
         .len(left.len())
         .add_buffer(target_buffer.freeze());
-    let null_bit_buffer = get_new_null_bit_buffer(mask, left);
+    let null_bit_buffer = left
+        .data()
+        .null_bitmap()
+        .as_ref()
+        .map(|bm| bm.clone().into_buffer());
     let null_count = null_bit_buffer
         .as_ref()
-        .map(|buf| count_set_bits_offset(buf.data(), 0, left.len()));
-
+        .map(|buf| left.len() - count_set_bits_offset(buf.data(), 0, left.len()));
     let builder = set_null_bits(builder, null_bit_buffer, null_count, left.len());
     let data = builder.build();
     PrimitiveArray::<T>::from(data)
 }
+
 #[cfg(test)]
 mod test {
     use super::*;

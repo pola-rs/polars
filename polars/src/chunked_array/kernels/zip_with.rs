@@ -119,7 +119,7 @@ where
     let null_bit_buffer = get_new_null_bit_buffer(mask, left, right);
     let null_count = null_bit_buffer
         .as_ref()
-        .map(|buf| count_set_bits_offset(buf.data(), 0, left.len()));
+        .map(|buf| left.len() - count_set_bits_offset(buf.data(), 0, left.len()));
 
     let builder = set_null_bits(builder, null_bit_buffer, null_count, left.len());
     let data = builder.build();
