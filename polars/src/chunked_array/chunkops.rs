@@ -1,6 +1,7 @@
 use crate::chunked_array::builder::get_large_list_builder;
 use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
+use arrow::compute::concat;
 use std::sync::Arc;
 
 pub trait ChunkOps {
@@ -50,6 +51,11 @@ where
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
             // No rechunking needed.
             (1, Some(1)) | (1, None) => Ok(self.clone()),
+            // use arrows concat logic
+            (_, Some(1)) => {
+                let chunks = vec![concat(&self.chunks)?];
+                Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            }
             // Left contains a single chunk. We can cheaply mimic right as arrow slices are zero copy
             (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
             // Left will be aggregated to match right
@@ -84,6 +90,10 @@ impl ChunkOps for BooleanChunked {
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
             (1, Some(1)) | (1, None) => Ok(self.clone()),
+            (_, Some(1)) => {
+                let chunks = vec![concat(&self.chunks)?];
+                Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            }
             (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
             (_, Some(_)) | (_, None) => {
                 let default = &[self.len()];
@@ -117,6 +127,10 @@ impl ChunkOps for Utf8Chunked {
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
             (1, Some(1)) | (1, None) => Ok(self.clone()),
+            (_, Some(1)) => {
+                let chunks = vec![concat(&self.chunks)?];
+                Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            }
             (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
             (_, Some(_)) | (_, None) => {
                 let default = &[self.len()];
