@@ -57,8 +57,12 @@ pub(crate) fn timestamp_seconds_as_datetime(seconds: i64) -> NaiveDateTime {
 }
 
 // date64 is number of milliseconds since the Unix Epoch
-pub(crate) fn naive_datetime_to_date64(v: &NaiveDateTime) -> i64 {
+pub fn naive_datetime_to_date64(v: &NaiveDateTime) -> i64 {
     v.timestamp_millis()
+}
+
+pub fn naive_datetime_to_date32(v: &NaiveDateTime) -> i32 {
+    (naive_datetime_to_date64(v) / (MILLISECONDS_IN_SECOND * SECONDS_IN_DAY)) as i32
 }
 
 pub(crate) fn naive_datetime_to_timestamp_nanoseconds(v: &NaiveDateTime) -> i64 {
@@ -210,7 +214,7 @@ impl_as_naivetime!(Time32MillisecondChunked, time32_millisecond_as_time);
 impl_as_naivetime!(Time64NanosecondChunked, time64_nanosecond_as_time);
 impl_as_naivetime!(Time64MicrosecondChunked, time64_microsecond_as_time);
 
-fn parse_naive_datetime_from_str(s: &str, fmt: &str) -> Option<NaiveDateTime> {
+pub fn parse_naive_datetime_from_str(s: &str, fmt: &str) -> Option<NaiveDateTime> {
     NaiveDateTime::parse_from_str(s, fmt).ok()
 }
 
@@ -267,11 +271,13 @@ pub trait FromNaiveDate<T, N> {
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self;
 }
 
-fn naive_date_to_date32(nd: NaiveDate, unix_time: NaiveDate) -> i32 {
-    nd.signed_duration_since(unix_time).num_days() as i32
+pub fn naive_date_to_date32(nd: NaiveDate) -> i32 {
+    let nt = NaiveTime::from_hms(0, 0, 0);
+    let ndt = NaiveDateTime::new(nd, nt);
+    naive_datetime_to_date32(&ndt)
 }
 
-fn parse_naive_date_from_str(s: &str, fmt: &str) -> Option<NaiveDate> {
+pub fn parse_naive_date_from_str(s: &str, fmt: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, fmt).ok()
 }
 
@@ -281,24 +287,20 @@ fn unix_time_naive_date() -> NaiveDate {
 
 impl FromNaiveDate<Date32Type, NaiveDate> for Date32Chunked {
     fn new_from_naive_date(name: &str, v: &[NaiveDate]) -> Self {
-        let unix_date = unix_time_naive_date();
-
         let unit = v
             .iter()
-            .map(|v| naive_date_to_date32(*v, unix_date))
+            .map(|v| naive_date_to_date32(*v))
             .collect::<AlignedVec<_>>();
         ChunkedArray::new_from_aligned_vec(name, unit)
     }
 
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
-        let unix_date = unix_time_naive_date();
-
         ChunkedArray::new_from_opt_iter(
             name,
             v.iter().map(|s| {
                 parse_naive_date_from_str(s, fmt)
                     .as_ref()
-                    .map(|v| naive_date_to_date32(*v, unix_date))
+                    .map(|v| naive_date_to_date32(*v))
             }),
         )
     }
@@ -348,6 +350,59 @@ impl AsNaiveDate for Date32Chunked {
                 })
             })
             .collect()
+    }
+}
+
+impl Utf8Chunked {
+    pub fn as_date32(&self, fmt: &str) -> Date32Chunked {
+        let mut ca: Date32Chunked = match self.null_count() {
+            0 => self
+                .into_no_null_iter()
+                .map(|s| parse_naive_date_from_str(s, fmt).map(|dt| naive_date_to_date32(dt)))
+                .collect(),
+            _ => self
+                .into_iter()
+                .map(|opt_s| {
+                    let opt_nd = opt_s.map(|s| {
+                        parse_naive_date_from_str(s, fmt).map(|dt| naive_date_to_date32(dt))
+                    });
+                    match opt_nd {
+                        None => None,
+                        Some(None) => None,
+                        Some(Some(nd)) => Some(nd),
+                    }
+                })
+                .collect(),
+        };
+        ca.rename(self.name());
+        ca
+    }
+
+    pub fn as_date64(&self, fmt: &str) -> Date64Chunked {
+        let mut ca: Date64Chunked = match self.null_count() {
+            0 => self
+                .into_no_null_iter()
+                .map(|s| {
+                    parse_naive_datetime_from_str(s, fmt).map(|dt| naive_datetime_to_date64(&dt))
+                })
+                .collect(),
+            _ => self
+                .into_iter()
+                .map(|opt_s| {
+                    let opt_nd = opt_s.map(|s| {
+                        parse_naive_datetime_from_str(s, fmt)
+                            .map(|dt| naive_datetime_to_date64(&dt))
+                    });
+                    match opt_nd {
+                        None => None,
+                        Some(None) => None,
+                        Some(Some(nd)) => Some(nd),
+                    }
+                })
+                .collect(),
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 

@@ -852,6 +852,13 @@ class Series:
         """
         return wrap_s(self._s.str_lengths())
 
+    def str_parse_date(self, datatype: "DataType", fmt: str):
+        if datatype == Date32:
+            return wrap_s(self._s.str_parse_date32(fmt))
+        if datatype == Date64:
+            return wrap_s(self._s.str_parse_date64(fmt))
+        return NotImplemented
+
     @staticmethod
     def parse_date(
         name: str, values: Sequence[str], dtype: "DataType", fmt: str

@@ -519,6 +519,24 @@ impl PySeries {
         let s = ca.str_lengths().into_series();
         Ok(PySeries::new(s))
     }
+
+    pub fn str_parse_date32(&self, fmt: &str) -> PyResult<Self> {
+        if let Series::Utf8(ca) = &self.series {
+            let ca = ca.as_date32(fmt);
+            Ok(PySeries::new(ca.into_series()))
+        } else {
+            Err(PyPolarsEr::Other("cannot parse date32 expected utf8 type".into()).into())
+        }
+    }
+
+    pub fn str_parse_date64(&self, fmt: &str) -> PyResult<Self> {
+        if let Series::Utf8(ca) = &self.series {
+            let ca = ca.as_date64(fmt);
+            Ok(ca.into_series().into())
+        } else {
+            Err(PyPolarsEr::Other("cannot parse date64 expected utf8 type".into()).into())
+        }
+    }
 }
 
 macro_rules! impl_ufuncs {
