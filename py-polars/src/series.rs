@@ -523,18 +523,18 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn str_parse_date32(&self, fmt: &str) -> PyResult<Self> {
+    pub fn str_parse_date32(&self, fmt: Option<&str>) -> PyResult<Self> {
         if let Series::Utf8(ca) = &self.series {
-            let ca = ca.as_date32(fmt);
+            let ca = ca.as_date32(fmt).map_err(PyPolarsEr::from)?;
             Ok(PySeries::new(ca.into_series()))
         } else {
             Err(PyPolarsEr::Other("cannot parse date32 expected utf8 type".into()).into())
         }
     }
 
-    pub fn str_parse_date64(&self, fmt: &str) -> PyResult<Self> {
+    pub fn str_parse_date64(&self, fmt: Option<&str>) -> PyResult<Self> {
         if let Series::Utf8(ca) = &self.series {
-            let ca = ca.as_date64(fmt);
+            let ca = ca.as_date64(fmt).map_err(PyPolarsEr::from)?;
             Ok(ca.into_series().into())
         } else {
             Err(PyPolarsEr::Other("cannot parse date64 expected utf8 type".into()).into())
@@ -545,8 +545,9 @@ impl PySeries {
         if let Series::LargeList(ca) = &self.series {
             let s = ca.get(index);
             s.map(|s| s.into())
-        } else { None
-             }
+        } else {
+            None
+        }
     }
 }
 

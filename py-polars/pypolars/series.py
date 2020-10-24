@@ -875,7 +875,7 @@ class Series:
         """
         return wrap_s(self._s.str_lengths())
 
-    def str_parse_date(self, datatype: "DataType", fmt: str):
+    def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None):
         if datatype == Date32:
             return wrap_s(self._s.str_parse_date32(fmt))
         if datatype == Date64:

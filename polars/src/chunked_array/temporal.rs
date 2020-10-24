@@ -1,6 +1,7 @@
 //! Traits and utilities for temporal data.
 use crate::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use regex::Regex;
 
 // Conversion extracted from:
 // https://docs.rs/arrow/1.0.0/src/arrow/array/array.rs.html#589
@@ -354,7 +355,59 @@ impl AsNaiveDate for Date32Chunked {
 }
 
 impl Utf8Chunked {
-    pub fn as_date32(&self, fmt: &str) -> Date32Chunked {
+    fn get_first_val(&self) -> Result<&str> {
+        let idx = match self.first_non_null() {
+            Some(idx) => idx,
+            None => {
+                return Err(PolarsError::HasNullValues(
+                    "Cannot determine date parsing format, all values are null".into(),
+                ))
+            }
+        };
+        let val = self.get(idx).expect("should not be null");
+        Ok(val)
+    }
+
+    fn sniff_fmt_date64(&self) -> Result<&'static str> {
+        let val = self.get_first_val()?;
+        let pat = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s*$";
+        let reg = Regex::new(pat).expect("wrong regex");
+        if reg.is_match(val) {
+            return Ok("%Y-%m-%d %H:%M:%S");
+        }
+        let pat = r"^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}\s*$";
+        let reg = Regex::new(pat).expect("wrong regex");
+        if reg.is_match(val) {
+            return Ok("%Y/%m/%d %H:%M:%S");
+        }
+        Err(PolarsError::Other(
+            "Could not find an appropriate format to parse dates, please define a fmt".into(),
+        ))
+    }
+
+    fn sniff_fmt_date32(&self) -> Result<&'static str> {
+        let val = self.get_first_val()?;
+        let pat = r"^\d{4}-\d{2}-\d{2}\s*$";
+        let reg = Regex::new(pat).expect("wrong regex");
+        if reg.is_match(val) {
+            return Ok("%Y-%m-%d");
+        }
+        let pat = r"^\d{4}\/\d{2}\/\d{2}\s*$";
+        let reg = Regex::new(pat).expect("wrong regex");
+        if reg.is_match(val) {
+            return Ok("%Y/%m/%d %H:%M:%S");
+        }
+        Err(PolarsError::Other(
+            "Could not find an appropriate format to parse dates, please define a fmt".into(),
+        ))
+    }
+
+    pub fn as_date32(&self, fmt: Option<&str>) -> Result<Date32Chunked> {
+        let fmt = match fmt {
+            Some(fmt) => fmt,
+            None => self.sniff_fmt_date32()?,
+        };
+
         let mut ca: Date32Chunked = match self.null_count() {
             0 => self
                 .into_no_null_iter()
@@ -375,10 +428,15 @@ impl Utf8Chunked {
                 .collect(),
         };
         ca.rename(self.name());
-        ca
+        Ok(ca)
     }
 
-    pub fn as_date64(&self, fmt: &str) -> Date64Chunked {
+    pub fn as_date64(&self, fmt: Option<&str>) -> Result<Date64Chunked> {
+        let fmt = match fmt {
+            Some(fmt) => fmt,
+            None => self.sniff_fmt_date64()?,
+        };
+
         let mut ca: Date64Chunked = match self.null_count() {
             0 => self
                 .into_no_null_iter()
@@ -402,7 +460,7 @@ impl Utf8Chunked {
                 .collect(),
         };
         ca.rename(self.name());
-        ca
+        Ok(ca)
     }
 }
 

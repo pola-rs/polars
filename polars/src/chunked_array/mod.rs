@@ -55,6 +55,7 @@ use arrow::array::{
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     TimestampSecondArray,
 };
+use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
@@ -168,6 +169,37 @@ impl<T> ChunkedArray<T> {
     /// Get Arrow ArrayData
     pub fn array_data(&self) -> Vec<ArrayDataRef> {
         self.chunks.iter().map(|arr| arr.data()).collect()
+    }
+
+    /// Get the index of the first non null value in this ChunkedArray.
+    pub fn first_non_null(&self) -> Option<usize> {
+        if self.null_count() == self.len() {
+            None
+        } else if self.null_count() == 0 {
+            Some(0)
+        } else {
+            let mut offset = 0;
+            for (idx, (null_count, null_bit_buffer)) in self.null_bits().iter().enumerate() {
+                if *null_count == 0 {
+                    return Some(offset);
+                } else {
+                    let arr = &self.chunks[idx];
+                    let null_bit_buffer = null_bit_buffer.as_ref().unwrap();
+                    let bit_end = arr.offset() + arr.len();
+
+                    let byte_start = std::cmp::min(round_upto_power_of_2(arr.offset(), 8), bit_end);
+                    let data = null_bit_buffer.data();
+
+                    for i in arr.offset()..byte_start {
+                        if get_bit(data, i) {
+                            return Some(offset + i);
+                        }
+                    }
+                    offset += arr.len()
+                }
+            }
+            None
+        }
     }
 
     /// Get the null count and the buffer of bits representing null values
