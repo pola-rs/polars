@@ -641,6 +641,12 @@ class Series:
         """
         Convert this Series to a Python List
         """
+        if self.dtype == LargeList:
+            column = []
+            for i in range(len(self)):
+                subseries = self[i]
+                column.append(subseries.to_numpy())
+            return column
         return self._s.to_list()
 
     def rechunk(self, in_place: bool = False) -> Optional[Series]:
@@ -708,6 +714,9 @@ class Series:
         """
         Convert this Series to numpy. This operation clones data.
         """
+        if self.dtype == LargeList:
+            return np.array(self.to_list())
+
         a = self._s.to_numpy()
         # strings are returned in lists
         if isinstance(a, list):
@@ -790,6 +799,7 @@ class Series:
         self,
         func: Union[Callable[["T"], "T"], Callable[["T"], "S"]],
         dtype_out: Optional["DataType"] = None,
+        sniff_dtype: bool = True,
     ):
         """
         Apply a function over elements in this Series and return a new Series.
@@ -807,6 +817,19 @@ class Series:
         -------
         Series
         """
+        if sniff_dtype and dtype_out is None:
+            if self.is_numeric():
+                dtype_out = out_to_dtype(func(1))
+            elif self.dtype == Bool:
+                dtype_out = out_to_dtype(func(True))
+            elif self.dtype == LargeList:
+                dtype_out = out_to_dtype(func(Series("", [1, 2])))
+            elif self.dtype == Utf8:
+                dtype_out = out_to_dtype(func("foo"))
+            else:
+                # try a numeric input for temporal data
+                dtype_out = out_to_dtype(func(1))
+
         if dtype_out is None:
             return wrap_s(self._s.apply_lambda(func))
         else:
@@ -867,3 +890,17 @@ class Series:
         if f is None:
             return NotImplemented
         return wrap_s(f(name, values, fmt))
+
+
+def out_to_dtype(out: Any) -> "Datatype":
+    if isinstance(out, float):
+        return Float64
+    if isinstance(out, int):
+        return Int64
+    if isinstance(out, str):
+        return Utf8
+    if isinstance(out, bool):
+        return Bool
+    if isinstance(out, Series):
+        return LargeList
+    return NotImplemented

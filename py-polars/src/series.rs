@@ -540,6 +540,14 @@ impl PySeries {
             Err(PyPolarsEr::Other("cannot parse date64 expected utf8 type".into()).into())
         }
     }
+
+    pub fn get_large_list(&self, index: usize) -> Option<Self> {
+        if let Series::LargeList(ca) = &self.series {
+            let s = ca.get(index);
+            s.map(|s| s.into())
+        } else { None
+             }
+    }
 }
 
 macro_rules! impl_ufuncs {
@@ -683,6 +691,8 @@ impl_get!(get_i16, Int16, i16);
 impl_get!(get_i32, Int32, i32);
 impl_get!(get_i64, Int64, i64);
 impl_get!(get_str, Utf8, &str);
+impl_get!(get_date32, Date32, i32);
+impl_get!(get_date64, Date64, i64);
 
 // Not public methods.
 macro_rules! impl_unsafe_from_ptr {

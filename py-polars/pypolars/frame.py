@@ -139,7 +139,13 @@ class DataFrame:
 
         data = {}
         for col in self.columns:
-            data[col] = self[col].to_numpy()
+            series = self[col]
+            if series.dtype == LargeList:
+                data[col] = series.to_list()
+            elif series.dtype == Utf8:
+                data[col] = series.to_list()
+            else:
+                data[col] = series.to_numpy()
         return pd.DataFrame(data)
 
     def to_csv(
