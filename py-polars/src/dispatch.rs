@@ -151,6 +151,54 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
     }
 }
 
+fn append_series(
+    pypolars: &PyModule,
+    builder: &mut (impl LargListBuilderTrait + ?Sized),
+    lambda: &PyAny,
+    series: Series,
+) -> PyResult<()> {
+    // create a PySeries struct/object for Python
+    let pyseries = PySeries::new(series);
+    // Wrap this PySeries object in the python side Series wrapper
+    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
+    // call the lambda en get a python side Series wrapper
+    let out = lambda.call1((python_series_wrapper,));
+    match out {
+        Ok(out) => {
+            // unpack the wrapper in a PySeries
+            let py_pyseries = out
+                .getattr("_s")
+                .expect("could net get series attribute '_s'");
+            let pyseries = py_pyseries.extract::<PySeries>()?;
+            builder.append_series(&pyseries.series);
+        }
+        Err(_) => {
+            builder.append_opt_series(&None);
+        }
+    };
+    Ok(())
+}
+
+fn large_list_lambda_append_primitive<'a, D>(
+    pypolars: &PyModule,
+    builder: &mut PrimitiveChunkedBuilder<D>,
+    lambda: &'a PyAny,
+    series: Series,
+) -> PyResult<()>
+where
+    D: PyArrowPrimitiveType,
+    D::Native: ToPyObject + FromPyObject<'a>,
+{
+    // create a PySeries struct/object for Python
+    let pyseries = PySeries::new(series);
+    // Wrap this PySeries object in the python side Series wrapper
+    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
+    // call the lambda en get a python side Series wrapper
+    let out = lambda.call1((python_series_wrapper,))?;
+    builder.append_value(out.extract()?);
+    Ok(())
+}
+
 impl<'a, 'b> ApplyLambda<'a, 'b> for LargeListChunked {
     fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
         // get the pypolars module
@@ -163,50 +211,14 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for LargeListChunked {
                     let mut it = self.into_no_null_iter();
 
                     while let Some(series) = it.next() {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(series);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
-                        // call the lambda en get a python side Series wrapper
-                        let out = lambda.call1((python_series_wrapper,));
-                        match out {
-                            Ok(out) => {
-                                // unpack the wrapper in a PySeries
-                                let py_pyseries = out
-                                    .getattr("_s")
-                                    .expect("could net get series attribute '_s'");
-                                let pyseries = py_pyseries.extract::<PySeries>()?;
-                                builder.append_series(&pyseries.series);
-                            }
-                            Err(_) => {
-                                builder.append_opt_series(&None);
-                            }
-                        };
+                        append_series(pypolars, &mut *builder, lambda, series)?;
                     }
                     builder.finish()
                 } else {
                     let mut it = self.into_iter();
                     while let Some(opt_series) = it.next() {
                         if let Some(series) = opt_series {
-                            // create a PySeries struct/object for Python
-                            let pyseries = PySeries::new(series);
-                            // Wrap this PySeries object in the python side Series wrapper
-                            let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
-                            // call the lambda en get a python side Series wrapper
-                            let out = lambda.call1((python_series_wrapper,));
-                            match out {
-                                Ok(out) => {
-                                    // unpack the wrapper in a PySeries
-                                    let py_pyseries = out
-                                        .getattr("_s")
-                                        .expect("could net get series attribute '_s'");
-                                    let pyseries = py_pyseries.extract::<PySeries>()?;
-                                    builder.append_series(&pyseries.series);
-                                }
-                                Err(_) => {
-                                    builder.append_opt_series(&None);
-                                }
-                            };
+                            append_series(pypolars, &mut *builder, lambda, series)?;
                         } else {
                             builder.append_opt_series(&None)
                         }
@@ -232,36 +244,23 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for LargeListChunked {
         let pypolars = PyModule::import(py, "pypolars")?;
         let mut builder = PrimitiveChunkedBuilder::<D>::new(self.name(), self.len());
 
-        let ca = if self.null_count() == 0 {
+        if self.null_count() == 0 {
             let mut it = self.into_no_null_iter();
 
             while let Some(series) = it.next() {
-                // create a PySeries struct/object for Python
-                let pyseries = PySeries::new(series);
-                // Wrap this PySeries object in the python side Series wrapper
-                let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
-                // call the lambda en get a python side Series wrapper
-                let out = lambda.call1((python_series_wrapper,))?;
-                builder.append_value(out.extract()?)
+                large_list_lambda_append_primitive(pypolars, &mut builder, lambda, series)?;
             }
-            builder.finish()
         } else {
             let mut it = self.into_iter();
             while let Some(opt_series) = it.next() {
                 if let Some(series) = opt_series {
-                    // create a PySeries struct/object for Python
-                    let pyseries = PySeries::new(series);
-                    // Wrap this PySeries object in the python side Series wrapper
-                    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
-                    // call the lambda en get a python side Series wrapper
-                    let out = lambda.call1((python_series_wrapper,))?;
-                    builder.append_value(out.extract()?)
+                    large_list_lambda_append_primitive(pypolars, &mut builder, lambda, series)?;
                 } else {
                     builder.append_null()
                 }
             }
-            builder.finish()
         };
+        let ca = builder.finish();
         Ok(ca)
     }
 }
