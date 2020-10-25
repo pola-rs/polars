@@ -103,7 +103,7 @@ pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = T>,
 ) -> HashMap<T, Vec<usize>, FnvBuildHasher>
 where
-    T: Hash + Eq + Copy,
+    T: Hash + Eq,
 {
     let mut hash_tbl = FnvHashMap::default();
 

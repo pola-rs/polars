@@ -2,7 +2,7 @@ use super::hash_join::prepare_hashed_relation;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::{IntoDynamicZip, Xob};
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use fnv::FnvBuildHasher;
 use itertools::Itertools;
@@ -17,7 +17,7 @@ use std::{
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
 where
-    T: Hash + Eq + Copy,
+    T: Hash + Eq,
 {
     let hash_tbl = prepare_hashed_relation(a);
 
@@ -170,40 +170,14 @@ impl DataFrame {
                 let series = &selected_keys[0];
                 apply_method_all_series!(series, group_tuples,)
             }
-            2 => {
-                let iter = selected_keys[0]
-                    .as_groupable_iter()?
-                    .zip(selected_keys[1].as_groupable_iter()?);
-                groupby(iter)
-            }
-            3 => {
-                let iter = selected_keys[0]
-                    .as_groupable_iter()?
-                    .zip(selected_keys[1].as_groupable_iter()?)
-                    .zip(selected_keys[2].as_groupable_iter()?);
-                groupby(iter)
-            }
-            4 => {
-                let iter = selected_keys[0]
-                    .as_groupable_iter()?
-                    .zip(selected_keys[1].as_groupable_iter()?)
-                    .zip(selected_keys[2].as_groupable_iter()?)
-                    .zip(selected_keys[3].as_groupable_iter()?);
-                groupby(iter)
-            }
-            5 => {
-                let iter = selected_keys[0]
-                    .as_groupable_iter()?
-                    .zip(selected_keys[1].as_groupable_iter()?)
-                    .zip(selected_keys[2].as_groupable_iter()?)
-                    .zip(selected_keys[3].as_groupable_iter()?)
-                    .zip(selected_keys[4].as_groupable_iter()?);
-                groupby(iter)
-            }
             _ => {
-                return Err(PolarsError::Other(
-                    "more than 5 combined keys are currently not supported".into(),
-                ));
+                let iter = selected_keys
+                    .iter()
+                    .map(|sk| sk.as_groupable_iter())
+                    .collect::<Result<Vec<_>>>()?
+                    .into_dynamic_zip();
+
+                groupby(iter)
             }
         };
 
