@@ -1776,4 +1776,58 @@ mod test {
             &[None, Some(3), None]
         );
     }
+
+    #[test]
+    fn test_groupby_by_6_columns() {
+        // Build GroupBy DataFrame.
+        let s0 = Series::new("G1", ["A", "A", "B", "B", "C"].as_ref());
+        let s1 = Series::new("N", [1, 2, 2, 4, 2].as_ref());
+        let s2 = Series::new("G2", ["k", "l", "m", "m", "l"].as_ref());
+        let s3 = Series::new("G3", ["a", "b", "c", "c", "d"].as_ref());
+        let s4 = Series::new("G4", ["1", "2", "3", "3", "4"].as_ref());
+        let s5 = Series::new("G5", ["X", "Y", "Z", "Z", "W"].as_ref());
+        let s6 = Series::new("G6", ["aa", "bb", "zz", "zz", "ww"].as_ref());
+        
+        let df = DataFrame::new(vec![s0, s1, s2, s3, s4, s5, s6]).unwrap();
+        println!("{:?}", df);
+
+        let adf = df.groupby(&["G1", "G2", "G3", "G4", "G5", "G6"])
+                .unwrap()
+                .select("N")
+                .sum()
+                .unwrap();
+
+        println!("{:?}", adf);
+
+        // Check that the result is the expected one.
+        assert_eq!(
+            Vec::from(adf.column("G1").unwrap().utf8().unwrap()),
+            &[Some("A"), Some("B"), Some("A"), Some("C")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G2").unwrap().utf8().unwrap()),
+            &[Some("l"), Some("m"), Some("k"), Some("l")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G3").unwrap().utf8().unwrap()),
+            &[Some("b"), Some("c"), Some("a"), Some("d")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G4").unwrap().utf8().unwrap()),
+            &[Some("2"), Some("3"), Some("1"), Some("4")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G5").unwrap().utf8().unwrap()),
+            &[Some("Y"), Some("Z"), Some("X"), Some("W")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G6").unwrap().utf8().unwrap()),
+            &[Some("bb"), Some("zz"), Some("aa"), Some("ww")]
+        );
+    }
 }
