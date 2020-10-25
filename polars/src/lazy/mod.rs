@@ -9,8 +9,145 @@
 //! Before execution this logical plan is optimized and may change the order of operations if this will increase performance.
 //! Or implicit type casts may be added such that execution of the query won't lead to a type error (if it can be resolved).
 //!
-//! The easiest way to get started is with the [LazyFrame](crate::lazy::frame::LazyFrame) struct.
+//! # Reference
+//! The easiest way to get started is with the [LazyFrame](crate::lazy::frame::LazyFrame) struct in
+//! combination with the [Expr](crate::lazy::dsl::Expr) struct.
 //! The method's docstrings show some examples to get you up to speed.
+//!
+//! # Lazy DSL
+//!
+//! The lazy API of polars can be used as long we operation on one or multiple DataFrame(s) and
+//! Series of the same length as the DataFrame. To get started we call the [lazy](crate::prelude::DataFrame::lazy)
+//! method. This returns a [LazyFrame](crate::lazy::frame::LazyFrame) exposing the lazy API.
+//!
+//! Lazy operations don't execute until we call [collect](crate::lazy::frame::LazyFrame::collect).
+//! This allows polars to optimize/reorder the query which may lead to faster queries or less type errors.
+//!
+//! ## Examples
+//!
+//! #### Adding a new column to a lazy DataFrame
+//!
+//!```rust
+//! #[macro_use] extern crate polars;
+//! use polars::prelude::*;
+//! use polars::lazy::dsl::*;
+//!
+//! let df = df! {
+//!     "column_a" => &[1, 2, 3, 4, 5],
+//!     "column_b" => &["a", "b", "c", "d", "e"]
+//! }.unwrap();
+//!
+//! let new = df.lazy()
+//!     // Note the reverse here!!
+//!     .reverse()
+//!     .with_column(
+//!         // always rename a new column
+//!         (col("column_a") * lit(10)).alias("new_column")
+//!     )
+//!     .collect()
+//!     .unwrap();
+//!
+//! assert!(new.column("new_column")
+//!     .unwrap()
+//!     .series_equal(
+//!         &Series::new("valid", &[50, 40, 30, 20, 10])
+//!     )
+//! );
+//! ```
+//! #### Modifying a column based on some predicate
+//!
+//!```rust
+//! #[macro_use] extern crate polars;
+//! use polars::prelude::*;
+//! use polars::lazy::dsl::*;
+//!
+//! let df = df! {
+//!     "column_a" => &[1, 2, 3, 4, 5],
+//!     "column_b" => &["a", "b", "c", "d", "e"]
+//! }.unwrap();
+//!
+//! let new = df.lazy()
+//!     .with_column(
+//!         // value = 100 if x < 3 else x
+//!         when(
+//!             col("column_a").lt(lit(3))
+//!         ).then(
+//!             lit(100)
+//!         ).otherwise(
+//!             col("column_a")
+//!         ).alias("new_column")
+//!     )
+//!     .collect()
+//!     .unwrap();
+//!
+//! assert!(new.column("new_column")
+//!     .unwrap()
+//!     .series_equal(
+//!         &Series::new("valid", &[100, 100, 3, 4, 5])
+//!     )
+//! );
+//! ```
+//! #### Groupby + Aggregations
+//!
+//!```rust
+//! use polars::prelude::*;
+//! use polars::lazy::dsl::*;
+//!
+//! let s0 = Date32Chunked::parse_from_str_slice(
+//!     "date",
+//!     &[
+//!         "2020-08-21",
+//!         "2020-08-21",
+//!         "2020-08-22",
+//!         "2020-08-23",
+//!         "2020-08-22",
+//!     ],
+//!     "%Y-%m-%d",
+//! )
+//! .into_series();
+//! let s1 = Series::new("temp", &[20, 10, 7, 9, 1]);
+//! let s2 = Series::new("rain", &[0.2, 0.1, 0.3, 0.1, 0.01]);
+//! let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
+//!
+//! let new = df
+//!     .lazy()
+//!     .groupby("date")
+//!     .agg(vec![
+//!         col("rain").agg_min(),
+//!         col("rain").agg_sum(),
+//!         col("rain").agg_quantile(0.5).alias("median_rain"),
+//!     ])
+//!     .sort("date", false)
+//!     .collect()
+//!     .unwrap();
+//! ```
+//!
+//! #### Calling any function
+//!
+//!```rust
+//! #[macro_use] extern crate polars;
+//! use polars::prelude::*;
+//! use polars::lazy::dsl::*;
+//! use polars::datatypes::ArrowDataType;
+//!
+//! let df = df! {
+//!     "column_a" => &[1, 2, 3, 4, 5],
+//!     "column_b" => &["a", "b", "c", "d", "e"]
+//! }.unwrap();
+//!
+//! let new = df.lazy()
+//!     .with_column(
+//!         col("column_a")
+//!         // apply a custom closure Series => Result<Series>
+//!         .apply(|_s| {
+//!             Ok(Series::new("", &[6.0f32, 6.0, 6.0, 6.0, 6.0]))
+//!         },
+//!         // return type of the closure
+//!         Some(ArrowDataType::Float64)).alias("new_column")
+//!     )
+//!     .collect()
+//!     .unwrap();
+//! ```
 //!
 pub mod dsl;
 pub mod frame;
