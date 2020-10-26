@@ -163,6 +163,45 @@ impl DataFrame {
     /// }
     /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
+        macro_rules! static_zip {
+            ($selected_keys:ident, 0) => {
+                $selected_keys[0].as_groupable_iter()?
+            };
+            ($selected_keys:ident, 1) => {
+                static_zip!($selected_keys, 0).zip($selected_keys[1].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 2) => {
+                static_zip!($selected_keys, 1).zip($selected_keys[2].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 3) => {
+                static_zip!($selected_keys, 2).zip($selected_keys[3].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 4) => {
+                static_zip!($selected_keys, 3).zip($selected_keys[4].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 5) => {
+                static_zip!($selected_keys, 4).zip($selected_keys[5].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 6) => {
+                static_zip!($selected_keys, 5).zip($selected_keys[6].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 7) => {
+                static_zip!($selected_keys, 6).zip($selected_keys[7].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 8) => {
+                static_zip!($selected_keys, 7).zip($selected_keys[8].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 9) => {
+                static_zip!($selected_keys, 8).zip($selected_keys[9].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 10) => {
+                static_zip!($selected_keys, 9).zip($selected_keys[10].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 11) => {
+                static_zip!($selected_keys, 10).zip($selected_keys[11].as_groupable_iter()?)
+            };
+        }
+
         let selected_keys = self.select_series(by)?;
 
         let groups = match selected_keys.len() {
@@ -170,6 +209,17 @@ impl DataFrame {
                 let series = &selected_keys[0];
                 apply_method_all_series!(series, group_tuples,)
             }
+            2 => groupby(static_zip!(selected_keys, 1)),
+            3 => groupby(static_zip!(selected_keys, 2)),
+            4 => groupby(static_zip!(selected_keys, 3)),
+            5 => groupby(static_zip!(selected_keys, 4)),
+            6 => groupby(static_zip!(selected_keys, 5)),
+            7 => groupby(static_zip!(selected_keys, 6)),
+            8 => groupby(static_zip!(selected_keys, 7)),
+            9 => groupby(static_zip!(selected_keys, 8)),
+            10 => groupby(static_zip!(selected_keys, 9)),
+            11 => groupby(static_zip!(selected_keys, 10)),
+            12 => groupby(static_zip!(selected_keys, 11)),
             _ => {
                 let iter = selected_keys
                     .iter()
@@ -1817,7 +1867,7 @@ mod test {
 
         assert_eq!(
             Vec::from(adf.column("G4").unwrap().utf8().unwrap()),
-            &[Some("2"), Some("3"), Some("1"), Some("4")]
+            &[Some("2"), Some("3"), Some("1"), Some("2")]
         );
 
         assert_eq!(
