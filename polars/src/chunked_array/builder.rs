@@ -12,6 +12,7 @@ use arrow::{
     buffer::Buffer,
     util::bit_util,
 };
+use std::fmt::Debug;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem;
@@ -77,7 +78,13 @@ where
             self.bitmap_builder.append(false).expect("memory error");
             self.null_count += 1;
             unsafe {
-                self.aligned_vec.set_len(self.aligned_vec.len() + 1);
+                let len = self.aligned_vec.len();
+                let new_len = len + 1;
+                self.aligned_vec.set_len(new_len);
+                let cap = self.aligned_vec.capacity();
+                if new_len >= cap {
+                    self.aligned_vec.reserve(1);
+                }
             }
         }
     }
@@ -381,10 +388,11 @@ impl<T> AlignedVec<T> {
         let mut me = ManuallyDrop::new(mem::take(&mut self.inner));
         let ptr = me.as_mut_ptr() as *mut u8;
         let t_size = mem::size_of::<T>();
-        let old_capacity = t_size * me.capacity();
+        let cap = me.capacity();
+        let old_capacity = t_size * cap;
         let new_capacity = old_capacity + t_size * additional;
         let ptr = unsafe { memory::reallocate(ptr, old_capacity, new_capacity) as *mut T };
-        let v = unsafe { Vec::from_raw_parts(ptr, me.len(), me.len() + additional) };
+        let v = unsafe { Vec::from_raw_parts(ptr, me.len(), cap + additional) };
         self.inner = v;
     }
 
@@ -422,7 +430,7 @@ impl<T> AlignedVec<T> {
     }
 
     pub unsafe fn set_len(&mut self, new_len: usize) {
-        self.inner.set_len(new_len)
+        self.inner.set_len(new_len);
     }
 
     pub fn as_ptr(&self) -> *const T {
