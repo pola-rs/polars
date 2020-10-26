@@ -231,6 +231,8 @@ impl DataFrame {
             }
         };
 
+        println!("GROUPS: {:?}", groups);
+
         Ok(GroupBy {
             df: self,
             selected_keys,
@@ -1828,7 +1830,7 @@ mod test {
     }
 
     #[test]
-    fn test_groupby_by_6_columns() {
+    fn test_static_groupby_by_12_columns() {
         // Build GroupBy DataFrame.
         let s0 = Series::new("G1", ["A", "A", "B", "B", "C"].as_ref());
         let s1 = Series::new("N", [1, 2, 2, 4, 2].as_ref());
@@ -1836,48 +1838,145 @@ mod test {
         let s3 = Series::new("G3", ["a", "b", "c", "c", "d"].as_ref());
         let s4 = Series::new("G4", ["1", "2", "3", "3", "4"].as_ref());
         let s5 = Series::new("G5", ["X", "Y", "Z", "Z", "W"].as_ref());
-        let s6 = Series::new("G6", ["aa", "bb", "zz", "zz", "ww"].as_ref());
-        
-        let df = DataFrame::new(vec![s0, s1, s2, s3, s4, s5, s6]).unwrap();
+        let s6 = Series::new("G6", [false, true, true, true, false].as_ref());
+        let s7 = Series::new("G7", ["r", "x", "q", "q", "o"].as_ref());
+        let s8 = Series::new("G8", ["R", "X", "Q", "Q", "O"].as_ref());
+        let s9 = Series::new("G9", [1, 2, 3, 3, 4].as_ref());
+        let s10 = Series::new("G10", [".", "!", "?", "?", "/"].as_ref());
+        let s11 = Series::new("G11", ["(", ")", "@", "@", "$"].as_ref());
+        let s12 = Series::new("G12", ["-", "_", ";", ";", ","].as_ref());
+
+        let df =
+            DataFrame::new(vec![s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12]).unwrap();
         println!("{:?}", df);
 
-        let adf = df.groupby(&["G1", "G2", "G3", "G4", "G5", "G6"])
-                .unwrap()
-                .select("N")
-                .sum()
-                .unwrap();
+        let adf = df
+            .groupby(&[
+                "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
+            ])
+            .unwrap()
+            .select("N")
+            .sum()
+            .unwrap();
 
         println!("{:?}", adf);
 
         // Check that the result is the expected one.
         assert_eq!(
             Vec::from(adf.column("G1").unwrap().utf8().unwrap()),
-            &[Some("A"), Some("B"), Some("A"), Some("C")]
+            &[Some("B"), Some("A"), Some("C"), Some("A")]
         );
 
         assert_eq!(
             Vec::from(adf.column("G2").unwrap().utf8().unwrap()),
-            &[Some("l"), Some("m"), Some("k"), Some("l")]
+            &[Some("m"), Some("l"), Some("l"), Some("k")]
         );
 
         assert_eq!(
             Vec::from(adf.column("G3").unwrap().utf8().unwrap()),
-            &[Some("b"), Some("c"), Some("a"), Some("d")]
+            &[Some("c"), Some("b"), Some("d"), Some("a")]
         );
 
         assert_eq!(
             Vec::from(adf.column("G4").unwrap().utf8().unwrap()),
-            &[Some("2"), Some("3"), Some("1"), Some("2")]
+            &[Some("3"), Some("2"), Some("4"), Some("1")]
         );
 
         assert_eq!(
             Vec::from(adf.column("G5").unwrap().utf8().unwrap()),
-            &[Some("Y"), Some("Z"), Some("X"), Some("W")]
+            &[Some("Z"), Some("Y"), Some("W"), Some("X")]
         );
 
         assert_eq!(
-            Vec::from(adf.column("G6").unwrap().utf8().unwrap()),
-            &[Some("bb"), Some("zz"), Some("aa"), Some("ww")]
+            Vec::from(adf.column("G6").unwrap().bool().unwrap()),
+            &[Some(true), Some(true), Some(false), Some(false)]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G7").unwrap().utf8().unwrap()),
+            &[Some("q"), Some("x"), Some("o"), Some("r")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G8").unwrap().utf8().unwrap()),
+            &[Some("Q"), Some("X"), Some("O"), Some("R")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G9").unwrap().i32().unwrap()),
+            &[Some(3), Some(2), Some(4), Some(1)]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G10").unwrap().utf8().unwrap()),
+            &[Some("?"), Some("!"), Some("/"), Some(".")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G11").unwrap().utf8().unwrap()),
+            &[Some("@"), Some(")"), Some("$"), Some("(")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G12").unwrap().utf8().unwrap()),
+            &[Some(";"), Some("_"), Some(","), Some("-")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("N_sum").unwrap().i32().unwrap()),
+            &[Some(6), Some(2), Some(2), Some(1)]
+        );
+    }
+
+    #[test]
+    fn test_dynamic_groupby_by_13_columns() {
+        // The content for every group by serie.
+        let series_content = ["A", "A", "B", "B", "C"];
+
+        // The name of every group by serie.
+        let series_names = [
+            "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12", "G13",
+        ];
+
+        // Vector to contain every serie.
+        let mut series = Vec::with_capacity(14);
+
+        // Create a serie for every group name.
+        for series_name in &series_names {
+            let serie = Series::new(series_name, series_content.as_ref());
+            series.push(serie);
+        }
+
+        // Create a serie for the aggregation column.
+        let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
+        series.push(serie);
+
+        // Creat the dataframe with the computed series.
+        let df = DataFrame::new(series).unwrap();
+        println!("{:?}", df);
+
+        // Compute the aggregated DataFrame by the 13 colums defined in `series_names`.
+        let adf = df
+            .groupby(&series_names)
+            .unwrap()
+            .select("N")
+            .sum()
+            .unwrap();
+        println!("{:?}", adf);
+
+        // Check that the results of the group-by are correct. The content of every column
+        // is equal, then, the grouped columns shall be equal and in the same order.
+        for series_name in &series_names {
+            assert_eq!(
+                Vec::from(adf.column(series_name).unwrap().utf8().unwrap()),
+                &[Some("A"), Some("C"), Some("B")]
+            );
+        }
+
+        // Check the aggregated column is the exppected one.
+        assert_eq!(
+            Vec::from(adf.column("N_sum").unwrap().i32().unwrap()),
+            &[Some(3), Some(4), Some(6)]
         );
     }
 }
