@@ -9,11 +9,6 @@
 //! Before execution this logical plan is optimized and may change the order of operations if this will increase performance.
 //! Or implicit type casts may be added such that execution of the query won't lead to a type error (if it can be resolved).
 //!
-//! # Reference
-//! The easiest way to get started is with the [LazyFrame](crate::lazy::frame::LazyFrame) struct in
-//! combination with the [Expr](crate::lazy::dsl::Expr) struct.
-//! The method's docstrings show some examples to get you up to speed.
-//!
 //! # Lazy DSL
 //!
 //! The lazy API of polars can be used as long we operation on one or multiple DataFrame(s) and
@@ -22,6 +17,10 @@
 //!
 //! Lazy operations don't execute until we call [collect](crate::lazy::frame::LazyFrame::collect).
 //! This allows polars to optimize/reorder the query which may lead to faster queries or less type errors.
+//!
+//! The DSL is mostly defined by [LazyFrame](crate::lazy::frame::LazyFrame) for operations on DataFrames and
+//! the [Expr](crate::lazy::dsl::Expr) and functions in the [dsl modules](crate::lazy::dsl) that operate
+//! on expressions.
 //!
 //! ## Examples
 //!
@@ -124,6 +123,11 @@
 //!
 //! #### Calling any function
 //!
+//! Below we lazily call a custom closure of type `Series => Result<Series>`. Because the closure
+//! changes the type/variant of the Series we also define the return type. This is important because
+//! due to the lazyness the types should be known beforehand. Note that by applying these custom
+//! functions you have access the the whole **eager API** of the Series/ChunkedArrays.
+//!
 //!```rust
 //! #[macro_use] extern crate polars;
 //! use polars::prelude::*;
@@ -147,6 +151,32 @@
 //!     )
 //!     .collect()
 //!     .unwrap();
+//! ```
+//!
+//! #### Joins, filters and projections
+//!
+//! In the query below we do a lazy join and afterwards we filter rows based on the predicate `a < 2`.
+//! And last we select the columns `"b"` and `"c_first"`. In an eager API this query would be very
+//! suboptimal because we join on DataFrames with more columns and rows than needed. In this case
+//! the query optimizer will do the selection of the columns (projection) and the filtering of the
+//! rows (selection) before the join, thereby reducing the amount of work done by the query.
+//!
+//! ```rust
+//! # use polars::prelude::*;
+//! # use polars::lazy::dsl::*;
+//!
+//! fn example(df_a: DataFrame, df_b: DataFrame) -> LazyFrame {
+//!     df_a.lazy()
+//!     .left_join(df_b.lazy(), col("b_left"), col("b_right"))
+//!     .filter(
+//!         col("a").lt(lit(2))
+//!     )
+//!     .groupby("b")
+//!     .agg(
+//!         vec![col("b").agg_first(), col("c").agg_first()]
+//!      )
+//!     .select(&[col("b"), col("c_first")])
+//! }
 //! ```
 //!
 pub mod dsl;

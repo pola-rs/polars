@@ -386,6 +386,7 @@ impl WhenThen {
     }
 }
 
+/// Start a when-then-otherwise expression
 pub fn when(predicate: Expr) -> When {
     When { predicate }
 }
