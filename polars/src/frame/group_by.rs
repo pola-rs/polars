@@ -2,7 +2,7 @@ use super::hash_join::prepare_hashed_relation;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::{IntoDynamicZip, Xob};
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use fnv::FnvBuildHasher;
 use itertools::Itertools;
@@ -17,7 +17,7 @@ use std::{
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
 where
-    T: Hash + Eq + Copy,
+    T: Hash + Eq,
 {
     let hash_tbl = prepare_hashed_relation(a);
 
@@ -163,6 +163,45 @@ impl DataFrame {
     /// }
     /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
+        macro_rules! static_zip {
+            ($selected_keys:ident, 0) => {
+                $selected_keys[0].as_groupable_iter()?
+            };
+            ($selected_keys:ident, 1) => {
+                static_zip!($selected_keys, 0).zip($selected_keys[1].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 2) => {
+                static_zip!($selected_keys, 1).zip($selected_keys[2].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 3) => {
+                static_zip!($selected_keys, 2).zip($selected_keys[3].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 4) => {
+                static_zip!($selected_keys, 3).zip($selected_keys[4].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 5) => {
+                static_zip!($selected_keys, 4).zip($selected_keys[5].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 6) => {
+                static_zip!($selected_keys, 5).zip($selected_keys[6].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 7) => {
+                static_zip!($selected_keys, 6).zip($selected_keys[7].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 8) => {
+                static_zip!($selected_keys, 7).zip($selected_keys[8].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 9) => {
+                static_zip!($selected_keys, 8).zip($selected_keys[9].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 10) => {
+                static_zip!($selected_keys, 9).zip($selected_keys[10].as_groupable_iter()?)
+            };
+            ($selected_keys:ident, 11) => {
+                static_zip!($selected_keys, 10).zip($selected_keys[11].as_groupable_iter()?)
+            };
+        }
+
         let selected_keys = self.select_series(by)?;
 
         let groups = match selected_keys.len() {
@@ -170,40 +209,25 @@ impl DataFrame {
                 let series = &selected_keys[0];
                 apply_method_all_series!(series, group_tuples,)
             }
-            2 => {
-                let iter = selected_keys[0]
-                    .as_groupable_iter()?
-                    .zip(selected_keys[1].as_groupable_iter()?);
-                groupby(iter)
-            }
-            3 => {
-                let iter = selected_keys[0]
-                    .as_groupable_iter()?
-                    .zip(selected_keys[1].as_groupable_iter()?)
-                    .zip(selected_keys[2].as_groupable_iter()?);
-                groupby(iter)
-            }
-            4 => {
-                let iter = selected_keys[0]
-                    .as_groupable_iter()?
-                    .zip(selected_keys[1].as_groupable_iter()?)
-                    .zip(selected_keys[2].as_groupable_iter()?)
-                    .zip(selected_keys[3].as_groupable_iter()?);
-                groupby(iter)
-            }
-            5 => {
-                let iter = selected_keys[0]
-                    .as_groupable_iter()?
-                    .zip(selected_keys[1].as_groupable_iter()?)
-                    .zip(selected_keys[2].as_groupable_iter()?)
-                    .zip(selected_keys[3].as_groupable_iter()?)
-                    .zip(selected_keys[4].as_groupable_iter()?);
-                groupby(iter)
-            }
+            2 => groupby(static_zip!(selected_keys, 1)),
+            3 => groupby(static_zip!(selected_keys, 2)),
+            4 => groupby(static_zip!(selected_keys, 3)),
+            5 => groupby(static_zip!(selected_keys, 4)),
+            6 => groupby(static_zip!(selected_keys, 5)),
+            7 => groupby(static_zip!(selected_keys, 6)),
+            8 => groupby(static_zip!(selected_keys, 7)),
+            9 => groupby(static_zip!(selected_keys, 8)),
+            10 => groupby(static_zip!(selected_keys, 9)),
+            11 => groupby(static_zip!(selected_keys, 10)),
+            12 => groupby(static_zip!(selected_keys, 11)),
             _ => {
-                return Err(PolarsError::Other(
-                    "more than 5 combined keys are currently not supported".into(),
-                ));
+                let iter = selected_keys
+                    .iter()
+                    .map(|sk| sk.as_groupable_iter())
+                    .collect::<Result<Vec<_>>>()?
+                    .into_dynamic_zip();
+
+                groupby(iter)
             }
         };
 
@@ -1800,6 +1824,157 @@ mod test {
         assert_eq!(
             Vec::from(pvt.column("m").unwrap().i32().unwrap()),
             &[None, Some(3), None]
+        );
+    }
+
+    #[test]
+    fn test_static_groupby_by_12_columns() {
+        // Build GroupBy DataFrame.
+        let s0 = Series::new("G1", ["A", "A", "B", "B", "C"].as_ref());
+        let s1 = Series::new("N", [1, 2, 2, 4, 2].as_ref());
+        let s2 = Series::new("G2", ["k", "l", "m", "m", "l"].as_ref());
+        let s3 = Series::new("G3", ["a", "b", "c", "c", "d"].as_ref());
+        let s4 = Series::new("G4", ["1", "2", "3", "3", "4"].as_ref());
+        let s5 = Series::new("G5", ["X", "Y", "Z", "Z", "W"].as_ref());
+        let s6 = Series::new("G6", [false, true, true, true, false].as_ref());
+        let s7 = Series::new("G7", ["r", "x", "q", "q", "o"].as_ref());
+        let s8 = Series::new("G8", ["R", "X", "Q", "Q", "O"].as_ref());
+        let s9 = Series::new("G9", [1, 2, 3, 3, 4].as_ref());
+        let s10 = Series::new("G10", [".", "!", "?", "?", "/"].as_ref());
+        let s11 = Series::new("G11", ["(", ")", "@", "@", "$"].as_ref());
+        let s12 = Series::new("G12", ["-", "_", ";", ";", ","].as_ref());
+
+        let df =
+            DataFrame::new(vec![s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12]).unwrap();
+        println!("{:?}", df);
+
+        let adf = df
+            .groupby(&[
+                "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
+            ])
+            .unwrap()
+            .select("N")
+            .sum()
+            .unwrap();
+
+        println!("{:?}", adf);
+
+        // Check that the result is the expected one.
+        assert_eq!(
+            Vec::from(adf.column("G1").unwrap().utf8().unwrap()),
+            &[Some("B"), Some("A"), Some("C"), Some("A")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G2").unwrap().utf8().unwrap()),
+            &[Some("m"), Some("l"), Some("l"), Some("k")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G3").unwrap().utf8().unwrap()),
+            &[Some("c"), Some("b"), Some("d"), Some("a")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G4").unwrap().utf8().unwrap()),
+            &[Some("3"), Some("2"), Some("4"), Some("1")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G5").unwrap().utf8().unwrap()),
+            &[Some("Z"), Some("Y"), Some("W"), Some("X")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G6").unwrap().bool().unwrap()),
+            &[Some(true), Some(true), Some(false), Some(false)]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G7").unwrap().utf8().unwrap()),
+            &[Some("q"), Some("x"), Some("o"), Some("r")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G8").unwrap().utf8().unwrap()),
+            &[Some("Q"), Some("X"), Some("O"), Some("R")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G9").unwrap().i32().unwrap()),
+            &[Some(3), Some(2), Some(4), Some(1)]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G10").unwrap().utf8().unwrap()),
+            &[Some("?"), Some("!"), Some("/"), Some(".")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G11").unwrap().utf8().unwrap()),
+            &[Some("@"), Some(")"), Some("$"), Some("(")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("G12").unwrap().utf8().unwrap()),
+            &[Some(";"), Some("_"), Some(","), Some("-")]
+        );
+
+        assert_eq!(
+            Vec::from(adf.column("N_sum").unwrap().i32().unwrap()),
+            &[Some(6), Some(2), Some(2), Some(1)]
+        );
+    }
+
+    #[test]
+    fn test_dynamic_groupby_by_13_columns() {
+        // The content for every group by serie.
+        let series_content = ["A", "A", "B", "B", "C"];
+
+        // The name of every group by serie.
+        let series_names = [
+            "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12", "G13",
+        ];
+
+        // Vector to contain every serie.
+        let mut series = Vec::with_capacity(14);
+
+        // Create a serie for every group name.
+        for series_name in &series_names {
+            let serie = Series::new(series_name, series_content.as_ref());
+            series.push(serie);
+        }
+
+        // Create a serie for the aggregation column.
+        let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
+        series.push(serie);
+
+        // Creat the dataframe with the computed series.
+        let df = DataFrame::new(series).unwrap();
+        println!("{:?}", df);
+
+        // Compute the aggregated DataFrame by the 13 colums defined in `series_names`.
+        let adf = df
+            .groupby(&series_names)
+            .unwrap()
+            .select("N")
+            .sum()
+            .unwrap();
+        println!("{:?}", adf);
+
+        // Check that the results of the group-by are correct. The content of every column
+        // is equal, then, the grouped columns shall be equal and in the same order.
+        for series_name in &series_names {
+            assert_eq!(
+                Vec::from(adf.column(series_name).unwrap().utf8().unwrap()),
+                &[Some("A"), Some("C"), Some("B")]
+            );
+        }
+
+        // Check the aggregated column is the exppected one.
+        assert_eq!(
+            Vec::from(adf.column("N_sum").unwrap().i32().unwrap()),
+            &[Some(3), Some(4), Some(6)]
         );
     }
 }

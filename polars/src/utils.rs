@@ -62,6 +62,47 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
     }
 }
 
+/// An iterator that iterates an unknown at compile time number
+/// of iterators simultaneously.
+///
+/// IMPORTANT: It differs from `std::iter::Zip` in the return type
+/// of `next`. It returns a `Vec` instead of a `tuple`, which implies
+/// that the result is non-copiable anymore.
+pub struct DynamicZip<I>
+where
+    I: Iterator,
+{
+    iterators: Vec<I>,
+}
+
+impl<I, T> Iterator for DynamicZip<I>
+where
+    I: Iterator<Item = T>,
+{
+    type Item = Vec<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iterators.iter_mut().map(|iter| iter.next()).collect()
+    }
+}
+
+/// A trait to convert a value to a `DynamicZip`.
+pub trait IntoDynamicZip<I>
+where
+    I: Iterator,
+{
+    fn into_dynamic_zip(self: Self) -> DynamicZip<I>;
+}
+
+impl<I> IntoDynamicZip<I> for Vec<I>
+where
+    I: Iterator,
+{
+    fn into_dynamic_zip(self: Self) -> DynamicZip<I> {
+        DynamicZip { iterators: self }
+    }
+}
+
 #[macro_export]
 macro_rules! match_arrow_data_type_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident $(, $opt_args:expr)*) => {{
