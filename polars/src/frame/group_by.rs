@@ -231,8 +231,6 @@ impl DataFrame {
             }
         };
 
-        println!("GROUPS: {:?}", groups);
-
         Ok(GroupBy {
             df: self,
             selected_keys,
