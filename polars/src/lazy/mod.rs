@@ -179,6 +179,20 @@
 //! }
 //! ```
 //!
+//! If we want to do an aggregation on all columns we can use the wildcard operator `*` to achieve this.
+//!
+//! ```rust
+//! # use polars::prelude::*;
+//! # use polars::lazy::dsl::*;
+//!
+//! fn aggregate_all_columns(df_a: DataFrame) -> LazyFrame {
+//!     df_a.lazy()
+//!     .groupby("b")
+//!     .agg(
+//!         vec![col("*").agg_first()]
+//!      )
+//! }
+//! ```
 pub mod dsl;
 pub mod frame;
 mod logical_plan;

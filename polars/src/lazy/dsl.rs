@@ -73,11 +73,11 @@ pub enum Expr {
         input: Box<Expr>,
         periods: i32,
     }, // ScalarFunction {
-       //     name: String,
-       //     args: Vec<Expr>,
-       //     return_type: ArrowDataType,
-       // },
-       // Wildcard
+    //     name: String,
+    //     args: Vec<Expr>,
+    //     return_type: ArrowDataType,
+    // },
+    Wildcard,
 }
 
 macro_rules! impl_partial_eq {
@@ -101,8 +101,92 @@ impl PartialEq for Expr {
             Expr::AggNUnique(left) => impl_partial_eq!(AggNUnique, left, other),
             Expr::AggMin(left) => impl_partial_eq!(AggMin, left, other),
             Expr::AggMax(left) => impl_partial_eq!(AggMax, left, other),
+            Expr::AggSum(left) => impl_partial_eq!(AggSum, left, other),
+            Expr::AggList(left) => impl_partial_eq!(AggList, left, other),
             Expr::Column(left) => impl_partial_eq!(Column, left, other),
-            _ => panic!("rest of partialEq not yet implemented for dsl::Expr"),
+            Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
+            Expr::Wildcard => {
+                if let Expr::Wildcard = other {
+                    true
+                } else {
+                    false
+                }
+            }
+            Expr::AggQuantile { expr, quantile } => {
+                let left = expr;
+                let left_q = quantile;
+                if let Expr::AggQuantile { expr, quantile } = other {
+                    if left_q == quantile {
+                        left.eq(expr)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            Expr::Apply { .. } => false,
+            Expr::BinaryExpr { .. } => false, // todo: should it?
+            Expr::Ternary { .. } => false,
+            Expr::IsNull(left) => impl_partial_eq!(IsNull, left, other),
+            Expr::IsNotNull(left) => impl_partial_eq!(IsNotNull, left, other),
+            Expr::Not(left) => impl_partial_eq!(Not, left, other),
+            Expr::Alias(left, name) => {
+                if let Expr::Alias(right, r_name) = other {
+                    if name == r_name {
+                        left.eq(right)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            Expr::Cast { expr, data_type } => {
+                let left = expr;
+                let ldtype = data_type;
+                if let Expr::Cast { expr, data_type } = other {
+                    let right = expr;
+                    let rdtype = data_type;
+                    if ldtype == rdtype {
+                        left.eq(right)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            Expr::Sort { expr, reverse } => {
+                let left = expr;
+                let lreverse = reverse;
+                if let Expr::Sort { expr, reverse } = other {
+                    let right = expr;
+                    let rreverse = reverse;
+                    if lreverse == rreverse {
+                        left.eq(right)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            Expr::Shift { input, periods } => {
+                let left = input;
+                let lperiods = periods;
+                if let Expr::Shift { input, periods } = other {
+                    let right = input;
+                    let rperiods = periods;
+                    if lperiods == rperiods {
+                        left.eq(right)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
         }
     }
 }
@@ -157,6 +241,7 @@ impl Expr {
                 None => input.get_type(schema),
             },
             Shift { input, .. } => input.get_type(schema),
+            Wildcard => panic!("should be no wildcard at this point"),
         }
     }
 
@@ -260,6 +345,7 @@ impl Expr {
                 }
             },
             Shift { input, .. } => input.to_field(schema),
+            Wildcard => panic!("should be no wildcard at this point"),
         }
     }
 }
@@ -302,6 +388,7 @@ impl fmt::Debug for Expr {
             ),
             Apply { input, .. } => write!(f, "APPLY({:?})", input),
             Shift { input, periods, .. } => write!(f, "SHIFT {:?} by {}", input, periods),
+            Wildcard => write!(f, "*"),
         }
     }
 }
@@ -596,7 +683,10 @@ impl Expr {
 
 /// Create a Column Expression based on a column name.
 pub fn col(name: &str) -> Expr {
-    Expr::Column(Arc::new(name.to_owned()))
+    match name {
+        "*" => Expr::Wildcard,
+        _ => Expr::Column(Arc::new(name.to_owned())),
+    }
 }
 
 pub trait Literal {

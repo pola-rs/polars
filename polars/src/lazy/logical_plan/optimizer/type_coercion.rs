@@ -142,6 +142,7 @@ impl TypeCoercion {
                     periods,
                 })
             }
+            Wildcard => panic!("should be no wildcard at this point"),
         }
     }
 

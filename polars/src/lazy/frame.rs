@@ -236,6 +236,9 @@ impl LazyFrame {
 
     /// Select (and rename) columns from the query.
     ///
+    /// Columns can be selected with [col](crate::lazy::dsl::col);
+    /// If you want to select all columns use `col("*")`.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -448,6 +451,9 @@ pub struct LazyGroupBy {
 
 impl LazyGroupBy {
     /// Group by and aggregate.
+    ///
+    /// Select a column with [col](crate::lazy::dsl::col) and choose an aggregation.
+    /// If you want to aggregate all columns use `col("*")`.
     ///
     /// # Example
     ///
@@ -732,5 +738,20 @@ mod test {
 
         let new = ldf.collect().unwrap();
         assert_eq!(new.shape(), (1, 2));
+    }
+
+    #[test]
+    fn test_lazy_wildcard() {
+        let df = load_df();
+        let new = df.clone().lazy().select(&[col("*")]).collect().unwrap();
+        assert_eq!(new.shape(), (5, 3));
+
+        let new = df
+            .lazy()
+            .groupby("b")
+            .agg(vec![col("*").agg_sum(), col("*").agg_first()])
+            .collect()
+            .unwrap();
+        assert_eq!(new.shape(), (3, 6));
     }
 }

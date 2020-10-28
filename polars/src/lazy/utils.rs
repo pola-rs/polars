@@ -148,6 +148,7 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
         Expr::Sort { expr, .. } => expr_to_root_column_expr(expr),
         Expr::Shift { input, .. } => expr_to_root_column_expr(input),
         Expr::Apply { input, .. } => expr_to_root_column_expr(input),
+        Expr::Wildcard => Ok(expr),
         a => Err(PolarsError::Other(
             format!("No root column expr could be found for {:?}", a).into(),
         )),

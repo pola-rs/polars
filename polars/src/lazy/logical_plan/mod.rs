@@ -1,5 +1,6 @@
 pub(crate) mod optimizer;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
+use crate::lazy::utils::expr_to_root_column_expr;
 use crate::{
     lazy::{prelude::*, utils},
     prelude::*,
@@ -9,7 +10,7 @@ use fnv::FnvHashSet;
 use std::sync::Mutex;
 use std::{fmt, sync::Arc};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ScalarValue {
     Null,
     /// A binary true or false.
@@ -185,6 +186,102 @@ impl fmt::Debug for LogicalPlan {
     }
 }
 
+fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
+    match expr {
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => Expr::Ternary {
+            predicate: Box::new(replace_wildcard_with_column(*predicate, column_name)),
+            truthy,
+            falsy,
+        },
+        Expr::Apply {
+            input,
+            function,
+            output_type,
+        } => Expr::Apply {
+            input: Box::new(replace_wildcard_with_column(*input, column_name)),
+            function,
+            output_type,
+        },
+        Expr::BinaryExpr { left, op, right } => Expr::BinaryExpr {
+            left: Box::new(replace_wildcard_with_column(*left, column_name.clone())),
+            op,
+            right: Box::new(replace_wildcard_with_column(*right, column_name)),
+        },
+        Expr::Wildcard => Expr::Column(column_name),
+        Expr::IsNotNull(e) => {
+            Expr::IsNotNull(Box::new(replace_wildcard_with_column(*e, column_name)))
+        }
+        Expr::IsNull(e) => Expr::IsNull(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Not(e) => Expr::Not(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Alias(e, name) => Expr::Alias(
+            Box::new(replace_wildcard_with_column(*e, column_name)),
+            name,
+        ),
+        Expr::AggMean(e) => Expr::AggMean(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::AggMedian(e) => {
+            Expr::AggMedian(Box::new(replace_wildcard_with_column(*e, column_name)))
+        }
+        Expr::AggMax(e) => Expr::AggMax(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::AggMin(e) => Expr::AggMin(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::AggSum(e) => Expr::AggSum(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::AggLast(e) => Expr::AggLast(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::AggFirst(e) => {
+            Expr::AggFirst(Box::new(replace_wildcard_with_column(*e, column_name)))
+        }
+        Expr::AggNUnique(e) => {
+            Expr::AggNUnique(Box::new(replace_wildcard_with_column(*e, column_name)))
+        }
+        Expr::AggGroups(e) => {
+            Expr::AggGroups(Box::new(replace_wildcard_with_column(*e, column_name)))
+        }
+        Expr::AggQuantile { expr, quantile } => Expr::AggQuantile {
+            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
+            quantile,
+        },
+        Expr::AggList(e) => Expr::AggList(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Shift { input, periods } => Expr::Shift {
+            input: Box::new(replace_wildcard_with_column(*input, column_name)),
+            periods,
+        },
+        Expr::Sort { expr, reverse } => Expr::Sort {
+            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
+            reverse,
+        },
+        Expr::Cast { expr, data_type } => Expr::Cast {
+            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
+            data_type,
+        },
+        Expr::Column(_) => expr,
+        Expr::Literal(_) => expr,
+    }
+}
+
+/// In case of single col(*) -> do nothing, no selection is the same as select all
+/// In other cases replace the wildcard with an expression with all columns
+fn remove_wildcard_from_exprs(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
+    if exprs.len() == 1 && exprs[0] == Expr::Wildcard {
+        // no projection needed
+        return vec![];
+    };
+    let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
+    for expr in exprs {
+        if expr_to_root_column_expr(&expr).expect("should have a root column") == &Expr::Wildcard {
+            for field in schema.fields() {
+                let name = field.name();
+                let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
+                result.push(new_expr)
+            }
+        } else {
+            result.push(expr)
+        };
+    }
+    result
+}
+
 pub struct LogicalPlanBuilder(LogicalPlan);
 
 impl LogicalPlan {
@@ -218,19 +315,25 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
+        let exprs = remove_wildcard_from_exprs(exprs, &self.0.schema());
         let schema = utils::expressions_to_schema(&exprs, self.0.schema());
-        LogicalPlan::Projection {
-            expr: exprs,
-            input: Box::new(self.0),
-            schema,
+
+        // if len == 0, no projection has to be done. This is a select all operation.
+        if exprs.len() > 0 {
+            LogicalPlan::Projection {
+                expr: exprs,
+                input: Box::new(self.0),
+                schema,
+            }
+            .into()
+        } else {
+            self
         }
-        .into()
     }
 
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
         let schema = self.0.schema();
-
         let added_schema = utils::expressions_to_schema(&exprs, schema);
         let new_schema = Schema::try_merge(&[schema.clone(), added_schema]).unwrap();
 
@@ -253,6 +356,7 @@ impl LogicalPlanBuilder {
 
     pub fn groupby(self, keys: Arc<Vec<String>>, aggs: Vec<Expr>) -> Self {
         let current_schema = self.0.schema();
+        let aggs = remove_wildcard_from_exprs(aggs, current_schema);
 
         let fields = keys
             .iter()
