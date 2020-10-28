@@ -44,12 +44,14 @@ impl PyDataFrame {
         has_header: bool,
         ignore_errors: bool,
         stop_after_n_rows: Option<usize>,
+        sep: &str,
     ) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let reader = CsvReader::new(file)
             .infer_schema(Some(infer_schema_length))
             .has_header(has_header)
             .with_stop_after_n_rows(stop_after_n_rows)
+            .with_delimiter(sep.as_bytes()[0])
             .with_batch_size(batch_size);
 
         let reader = if ignore_errors {

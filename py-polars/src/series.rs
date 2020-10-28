@@ -751,7 +751,7 @@ impl_cast!(cast_date32, Date32Type);
 impl_cast!(cast_date64, Date64Type);
 impl_cast!(cast_time64ns, Time64NanosecondType);
 impl_cast!(cast_duration_ns, DurationNanosecondType);
-impl_cast!(cast_utf8, Utf8Type);
+impl_cast!(cast_str, Utf8Type);
 
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {

@@ -547,95 +547,17 @@ class Series:
     def __len__(self):
         return self.len()
 
-    def cast_utf8(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_utf8())
-
-    def cast_u8(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_u8())
-
-    def cast_u16(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_u16())
-
-    def cast_u32(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_u32())
-
-    def cast_u64(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_u64())
-
-    def cast_i8(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_i8())
-
-    def cast_i16(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_i16())
-
-    def cast_i32(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_i32())
-
-    def cast_i64(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_i64())
-
-    def cast_f32(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_f32())
-
-    def cast_f64(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_f64())
-
-    def cast_date32(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_date32())
-
-    def cast_date64(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_date64())
-
-    def cast_time64ns(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_time64ns())
-
-    def cast_duration_ns(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_duration_ns())
+    def cast(self, data_type="DataType"):
+        if data_type == int:
+            data_type = Int64
+        elif data_type == str:
+            data_type = Utf8
+        elif data_type == float:
+            data_type = Float64
+        f = get_ffi_func("cast_<>", data_type, self._s)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f())
 
     def to_list(self) -> List[Optional[Any]]:
         """

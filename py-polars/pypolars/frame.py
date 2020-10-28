@@ -20,6 +20,26 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
     return DataFrame.from_pydf(df)
 
 
+def read_csv(
+    file: Union[str, TextIO],
+    infer_schema_length: int = 100,
+    batch_size: int = 100000,
+    has_headers: bool = True,
+    ignore_errors: bool = False,
+    stop_after_n_rows: Optional[int] = None,
+    sep: str = ",",
+) -> "DataFrame":
+    return DataFrame.read_csv(
+        file,
+        infer_schema_length,
+        batch_size,
+        has_headers,
+        ignore_errors,
+        stop_after_n_rows,
+        sep,
+    )
+
+
 class DataFrame:
     def __init__(self, data: Dict[str, Sequence], nullable: bool = False):
         columns = []
@@ -42,6 +62,7 @@ class DataFrame:
         has_headers: bool = True,
         ignore_errors: bool = False,
         stop_after_n_rows: Optional[int] = None,
+        sep: str = ",",
     ) -> DataFrame:
         """
         Read into a DataFrame from a csv file.
@@ -61,6 +82,8 @@ class DataFrame:
         stop_after_n_rows
             After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
             on the batch size.
+        sep
+            Delimiter/ value seperator
 
         Returns
         -------
@@ -74,6 +97,7 @@ class DataFrame:
             has_headers,
             ignore_errors,
             stop_after_n_rows,
+            sep,
         )
         return self
 
