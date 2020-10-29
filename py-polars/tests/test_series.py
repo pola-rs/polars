@@ -101,12 +101,12 @@ def test_filter():
 def test_cast():
     a = Series("a", range(20))
 
-    assert a.cast_f32().dtype == Float32
-    assert a.cast_f64().dtype == Float64
-    assert a.cast_i32().dtype == Int32
-    assert a.cast_u32().dtype == UInt32
-    assert a.cast_date64().dtype == Date64
-    assert a.cast_date32().dtype == Date32
+    assert a.cast(Float32).dtype == Float32
+    assert a.cast(Float64).dtype == Float64
+    assert a.cast(Int32).dtype == Int32
+    assert a.cast(UInt32).dtype == UInt32
+    assert a.cast(Date64).dtype == Date64
+    assert a.cast(Date32).dtype == Date32
 
 
 def test_to_python():
