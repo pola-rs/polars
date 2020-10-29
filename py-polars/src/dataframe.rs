@@ -377,6 +377,7 @@ impl PyDataFrame {
             "mean" => pivot.mean(),
             "median" => pivot.median(),
             "sum" => pivot.sum(),
+            "count" => pivot.count(),
             a => Err(PolarsError::Other(
                 format!("agg fn {} does not exists", a).into(),
             )),

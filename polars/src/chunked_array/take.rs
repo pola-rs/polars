@@ -52,7 +52,21 @@ where
         impl_take_random_get_unchecked!(self, index, PrimitiveArray<T>)
     }
 }
+
+impl<'a> TakeRandom for &'a Utf8Chunked {
+    type Item = &'a str;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        impl_take_random_get!(self, index, StringArray)
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        impl_take_random_get_unchecked!(self, index, StringArray)
+    }
+}
+
 // extra trait such that it also works without extra reference.
+// Autoref will insert the refererence and
 impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
     type Item = &'a str;
 

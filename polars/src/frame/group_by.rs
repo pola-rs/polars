@@ -4,12 +4,12 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{IntoDynamicZip, Xob};
 use arrow::array::{PrimitiveBuilder, StringBuilder};
-use fnv::FnvBuildHasher;
+use fnv::{FnvBuildHasher, FnvHasher};
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
+use std::hash::{BuildHasherDefault, Hash};
 use std::{
     fmt::{Debug, Formatter},
     ops::Add,
@@ -1413,8 +1413,59 @@ trait ChunkPivot {
         _groups: &Vec<(usize, Vec<usize>)>,
         _agg_type: PivotAgg,
     ) -> Result<DataFrame> {
-        unimplemented!()
+        Err(PolarsError::InvalidOperation(
+            "Pivot operation not implemented for this type".into(),
+        ))
     }
+
+    fn pivot_count(
+        &self,
+        _pivot_series: &Series,
+        _keys: Vec<Series>,
+        _groups: &Vec<(usize, Vec<usize>)>,
+    ) -> Result<DataFrame> {
+        Err(PolarsError::InvalidOperation(
+            "Pivot count operation not implemented for this type".into(),
+        ))
+    }
+}
+
+/// Create a hashmap that maps column/keys names to values. This is not yet the result of the aggregation.
+fn create_column_values_map<'a, T>(
+    pivot_vec: &'a [Option<Groupable>],
+    size: usize,
+) -> HashMap<&'a Groupable<'a>, Vec<Option<T>>, FnvBuildHasher> {
+    let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, FnvBuildHasher::default());
+    for opt_column_name in pivot_vec {
+        if let Some(column_name) = opt_column_name {
+            columns_agg_map
+                .entry(column_name)
+                .or_insert_with(|| Vec::new());
+        }
+    }
+
+    columns_agg_map
+}
+
+/// Create a hashmap that maps columns/keys to the result of the aggregation.
+fn create_new_column_builder_map<'a, T>(
+    pivot_vec: &'a [Option<Groupable>],
+    groups: &[(usize, Vec<usize>)],
+) -> HashMap<&'a Groupable<'a>, PrimitiveChunkedBuilder<T>, BuildHasherDefault<FnvHasher>>
+where
+    T: PolarsNumericType,
+{
+    // create a hash map that will be filled with the results of the aggregation.
+    let mut columns_agg_map_main =
+        HashMap::with_capacity_and_hasher(pivot_vec.len(), FnvBuildHasher::default());
+    for opt_column_name in pivot_vec {
+        if let Some(column_name) = opt_column_name {
+            columns_agg_map_main.entry(column_name).or_insert_with(|| {
+                PrimitiveChunkedBuilder::<T>::new(&format!("{:?}", column_name), groups.len())
+            });
+        }
+    }
+    columns_agg_map_main
 }
 
 impl<T> ChunkPivot for ChunkedArray<T>
@@ -1431,42 +1482,17 @@ where
     ) -> Result<DataFrame> {
         // TODO: save an allocation by creating a random access struct for the Groupable utility type.
         let pivot_vec: Vec<_> = pivot_series.as_groupable_iter()?.collect();
-
         let values_taker = self.take_rand();
-
-        let new_column_map = |size| {
-            // create a new hashmap that will be filled with new Vecs that later will be aggegrated
-            let mut columns_agg_map =
-                HashMap::with_capacity_and_hasher(size, FnvBuildHasher::default());
-            for opt_column_name in &pivot_vec {
-                if let Some(column_name) = opt_column_name {
-                    columns_agg_map
-                        .entry(column_name)
-                        .or_insert_with(|| Vec::new());
-                }
-            }
-
-            columns_agg_map
-        };
-
         // create a hash map that will be filled with the results of the aggregation.
-        // let mut columns_agg_map_main = new_column_map(groups.len());
-        let mut columns_agg_map_main =
-            HashMap::with_capacity_and_hasher(pivot_vec.len(), FnvBuildHasher::default());
-        for opt_column_name in &pivot_vec {
-            if let Some(column_name) = opt_column_name {
-                columns_agg_map_main.entry(column_name).or_insert_with(|| {
-                    PrimitiveChunkedBuilder::<T>::new(&format!("{:?}", column_name), groups.len())
-                });
-            }
-        }
+        let mut columns_agg_map_main = create_new_column_builder_map::<T>(&pivot_vec, groups);
 
         // iterate over the groups that need to be aggregated
         // idxes are the indexes of the groups in the keys, pivot, and values columns
         for (_first, idx) in groups {
             // for every group do the aggregation by adding them to the vector belonging by that column
             // the columns are hashed with the pivot values
-            let mut columns_agg_map_group = new_column_map(idx.len());
+            let mut columns_agg_map_group =
+                create_column_values_map::<T::Native>(&pivot_vec, idx.len());
             for &i in idx {
                 let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
 
@@ -1508,10 +1534,83 @@ where
 
         DataFrame::new(cols)
     }
+
+    fn pivot_count(
+        &self,
+        pivot_series: &Series,
+        keys: Vec<Series>,
+        groups: &Vec<(usize, Vec<usize>)>,
+    ) -> Result<DataFrame> {
+        pivot_count_impl(self, pivot_series, keys, groups)
+    }
 }
 
-impl ChunkPivot for BooleanChunked {}
-impl ChunkPivot for Utf8Chunked {}
+fn pivot_count_impl<CA: TakeRandom>(
+    ca: &CA,
+    pivot_series: &Series,
+    keys: Vec<Series>,
+    groups: &Vec<(usize, Vec<usize>)>,
+) -> Result<DataFrame> {
+    let pivot_vec: Vec<_> = pivot_series.as_groupable_iter()?.collect();
+    // create a hash map that will be filled with the results of the aggregation.
+    let mut columns_agg_map_main = create_new_column_builder_map::<UInt32Type>(&pivot_vec, groups);
+
+    // iterate over the groups that need to be aggregated
+    // idxes are the indexes of the groups in the keys, pivot, and values columns
+    for (_first, idx) in groups {
+        // for every group do the aggregation by adding them to the vector belonging by that column
+        // the columns are hashed with the pivot values
+        let mut columns_agg_map_group = create_column_values_map::<CA::Item>(&pivot_vec, idx.len());
+        for &i in idx {
+            let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
+
+            if let Some(pivot_val) = opt_pivot_val {
+                let values_val = ca.get(i);
+                columns_agg_map_group
+                    .get_mut(&pivot_val)
+                    .map(|v| v.push(values_val));
+            }
+        }
+
+        // After the vectors are filled we really do the aggregation and add the result to the main
+        // hash map, mapping pivot values as column to aggregate result.
+        for (k, v) in &mut columns_agg_map_group {
+            let main_builder = columns_agg_map_main.get_mut(k).unwrap();
+            main_builder.append_value(v.len() as u32)
+        }
+    }
+    // Finalize the pivot by creating a vec of all the columns and creating a DataFrame
+    let mut cols = keys;
+    cols.reserve_exact(columns_agg_map_main.len());
+
+    for (_, builder) in columns_agg_map_main {
+        let ca = builder.finish();
+        cols.push(ca.into_series());
+    }
+
+    DataFrame::new(cols)
+}
+
+impl ChunkPivot for BooleanChunked {
+    fn pivot_count(
+        &self,
+        pivot_series: &Series,
+        keys: Vec<Series>,
+        groups: &Vec<(usize, Vec<usize>)>,
+    ) -> Result<DataFrame> {
+        pivot_count_impl(self, pivot_series, keys, groups)
+    }
+}
+impl ChunkPivot for Utf8Chunked {
+    fn pivot_count(
+        &self,
+        pivot_series: &Series,
+        keys: Vec<Series>,
+        groups: &Vec<(usize, Vec<usize>)>,
+    ) -> Result<DataFrame> {
+        pivot_count_impl(&self, pivot_series, keys, groups)
+    }
+}
 impl ChunkPivot for LargeListChunked {}
 
 enum PivotAgg {
@@ -1605,6 +1704,19 @@ where
 }
 
 impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
+    /// Aggregate the pivot results by taking the count the values.
+    pub fn count(&self) -> Result<DataFrame> {
+        let pivot_series = self.gb.df.column(self.pivot_column)?;
+        let values_series = self.gb.df.column(self.values_column)?;
+        apply_method_all_series!(
+            values_series,
+            pivot_count,
+            pivot_series,
+            self.gb.keys(),
+            &self.gb.groups
+        )
+    }
+
     /// Aggregate the pivot results by taking the first occurring value.
     pub fn first(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
@@ -1824,6 +1936,16 @@ mod test {
         assert_eq!(
             Vec::from(pvt.column("m").unwrap().i32().unwrap()),
             &[None, Some(3), None]
+        );
+        let pvt = df
+            .groupby("foo")
+            .unwrap()
+            .pivot("bar", "N")
+            .count()
+            .unwrap();
+        assert_eq!(
+            Vec::from(pvt.column("m").unwrap().u32().unwrap()),
+            &[Some(0), Some(2), Some(0)]
         );
     }
 

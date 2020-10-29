@@ -905,6 +905,14 @@ class PivotOps:
             self._df.pivot(self.by, self.pivot_column, self.values_column, "mean")
         )
 
+    def count(self):
+        """
+        Count the values per group.
+        """
+        return wrap_df(
+            self._df.pivot(self.by, self.pivot_column, self.values_column, "count")
+        )
+
     def median(self):
         """
         Get the median value per group.
