@@ -7,12 +7,16 @@ use std::hash::{BuildHasherDefault, Hash};
 use unsafe_unwrap::UnsafeUnwrap;
 
 impl ChunkUnique<LargeListType> for LargeListChunked {
-    fn unique(&self) -> ChunkedArray<LargeListType> {
-        unimplemented!()
+    fn unique(&self) -> Result<ChunkedArray<LargeListType>> {
+        Err(PolarsError::InvalidOperation(
+            "unique not support for large list".into(),
+        ))
     }
 
-    fn arg_unique(&self) -> Vec<usize> {
-        unimplemented!()
+    fn arg_unique(&self) -> Result<Vec<usize>> {
+        Err(PolarsError::InvalidOperation(
+            "unique not support for large list".into(),
+        ))
     }
 }
 
@@ -53,36 +57,39 @@ where
     T::Native: Hash + Eq,
     ChunkedArray<T>: ChunkOps,
 {
-    fn unique(&self) -> Self {
+    fn unique(&self) -> Result<Self> {
         let set = match self.cont_slice() {
             Ok(slice) => fill_set(slice.iter().map(|v| Some(*v)), self.len()),
             Err(_) => fill_set(self.into_iter(), self.len()),
         };
 
-        Self::new_from_opt_iter(self.name(), set.iter().copied())
+        Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
     }
 
-    fn arg_unique(&self) -> Vec<usize> {
+    fn arg_unique(&self) -> Result<Vec<usize>> {
         match self.cont_slice() {
-            Ok(slice) => arg_unique(slice.iter(), self.len()),
-            Err(_) => arg_unique(self.into_iter(), self.len()),
+            Ok(slice) => Ok(arg_unique(slice.iter(), self.len())),
+            Err(_) => Ok(arg_unique(self.into_iter(), self.len())),
         }
     }
 }
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
-    fn unique(&self) -> Self {
+    fn unique(&self) -> Result<Self> {
         let set = fill_set(self.into_iter(), self.len());
-        Utf8Chunked::new_from_opt_iter(self.name(), set.iter().copied())
+        Ok(Utf8Chunked::new_from_opt_iter(
+            self.name(),
+            set.iter().copied(),
+        ))
     }
 
-    fn arg_unique(&self) -> Vec<usize> {
-        arg_unique(self.into_iter(), self.len())
+    fn arg_unique(&self) -> Result<Vec<usize>> {
+        Ok(arg_unique(self.into_iter(), self.len()))
     }
 }
 
 impl ChunkUnique<BooleanType> for BooleanChunked {
-    fn unique(&self) -> Self {
+    fn unique(&self) -> Result<Self> {
         // can be None, Some(true), Some(false)
         let mut unique = Vec::with_capacity(3);
         for v in self {
@@ -93,11 +100,11 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
                 unique.push(v)
             }
         }
-        ChunkedArray::new_from_opt_slice(self.name(), &unique)
+        Ok(ChunkedArray::new_from_opt_slice(self.name(), &unique))
     }
 
-    fn arg_unique(&self) -> Vec<usize> {
-        arg_unique(self.into_iter(), self.len())
+    fn arg_unique(&self) -> Result<Vec<usize>> {
+        Ok(arg_unique(self.into_iter(), self.len()))
     }
 }
 
@@ -109,7 +116,7 @@ where
     T::Native: NumCast + ToPrimitive,
     ChunkedArray<T>: ChunkOps,
 {
-    fn unique(&self) -> ChunkedArray<T> {
+    fn unique(&self) -> Result<ChunkedArray<T>> {
         let set = match self.cont_slice() {
             Ok(slice) => fill_set(
                 slice
@@ -125,7 +132,7 @@ where
         };
 
         // let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
-        ChunkedArray::new_from_opt_iter(
+        Ok(ChunkedArray::new_from_opt_iter(
             self.name(),
             set.iter().copied().map(|opt| match opt {
                 Some((mantissa, exponent, sign)) => {
@@ -135,12 +142,12 @@ where
                 }
                 None => None,
             }),
-        )
+        ))
     }
 
-    fn arg_unique(&self) -> Vec<usize> {
+    fn arg_unique(&self) -> Result<Vec<usize>> {
         match self.cont_slice() {
-            Ok(slice) => arg_unique(
+            Ok(slice) => Ok(arg_unique(
                 slice.iter().map(|v| {
                     let v = v.to_f64();
                     debug_assert!(v.is_some());
@@ -148,8 +155,8 @@ where
                     integer_decode(v)
                 }),
                 self.len(),
-            ),
-            Err(_) => arg_unique(
+            )),
+            Err(_) => Ok(arg_unique(
                 self.into_iter().map(|opt_v| {
                     opt_v.map(|v| {
                         let v = v.to_f64();
@@ -159,7 +166,7 @@ where
                     })
                 }),
                 self.len(),
-            ),
+            )),
         }
     }
 }
@@ -211,23 +218,29 @@ mod test {
     fn unique() {
         let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 3, 2, 1]);
         assert_eq!(
-            ca.unique().into_iter().collect_vec(),
+            ca.unique().unwrap().into_iter().collect_vec(),
             vec![Some(1), Some(2), Some(3)]
         );
         let ca = BooleanChunked::new_from_slice("a", &[true, false, true]);
         assert_eq!(
-            ca.unique().into_iter().collect_vec(),
+            ca.unique().unwrap().into_iter().collect_vec(),
             vec![Some(true), Some(false)]
         );
 
         let ca =
             Utf8Chunked::new_from_opt_slice("", &[Some("a"), None, Some("a"), Some("b"), None]);
-        assert_eq!(Vec::from(&ca.unique()), &[Some("a"), None, Some("b")]);
+        assert_eq!(
+            Vec::from(&ca.unique().unwrap()),
+            &[Some("a"), None, Some("b")]
+        );
     }
 
     #[test]
     fn arg_unique() {
         let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 1, 1, 3]);
-        assert_eq!(ca.arg_unique().into_iter().collect_vec(), vec![0, 1, 4]);
+        assert_eq!(
+            ca.arg_unique().unwrap().into_iter().collect_vec(),
+            vec![0, 1, 4]
+        );
     }
 }

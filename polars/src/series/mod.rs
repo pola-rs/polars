@@ -618,12 +618,12 @@ impl Series {
     }
 
     /// Get unique values in the Series.
-    pub fn unique(&self) -> Self {
-        apply_method_all_series_and_return!(self, unique, [],)
+    pub fn unique(&self) -> Result<Self> {
+        Ok(apply_method_all_series_and_return!(self, unique, [],?))
     }
 
     /// Get first indexes of unique values.
-    pub fn arg_unique(&self) -> Vec<usize> {
+    pub fn arg_unique(&self) -> Result<Vec<usize>> {
         apply_method_all_series!(self, arg_unique,)
     }
 

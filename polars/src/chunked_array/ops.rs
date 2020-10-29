@@ -218,14 +218,14 @@ pub trait ChunkCompare<Rhs> {
 pub trait ChunkUnique<T> {
     // We don't return Self to be able to use AutoRef specialization
     /// Get unique values of a ChunkedArray
-    fn unique(&self) -> ChunkedArray<T>;
+    fn unique(&self) -> Result<ChunkedArray<T>>;
 
     /// Get first index of the unique values in a `ChunkedArray`.
-    fn arg_unique(&self) -> Vec<usize>;
+    fn arg_unique(&self) -> Result<Vec<usize>>;
 
     /// Number of unique values in the `ChunkedArray`
-    fn n_unique(&self) -> usize {
-        self.arg_unique().len()
+    fn n_unique(&self) -> Result<usize> {
+        self.arg_unique().map(|v| v.len())
     }
 }
 
