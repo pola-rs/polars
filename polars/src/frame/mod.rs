@@ -416,7 +416,7 @@ impl DataFrame {
     ///
     /// *Note: the length of the Series should remain the same otherwise the DataFrame is invalid.*
     /// For this reason the method is not public
-    fn select_idx_mut(&mut self, idx: usize) -> Option<&mut Series> {
+    fn select_at_idx_mut(&mut self, idx: usize) -> Option<&mut Series> {
         self.columns.get_mut(idx)
     }
 
@@ -483,7 +483,7 @@ impl DataFrame {
         let opt_idx = self.find_idx_by_name(name);
 
         match opt_idx {
-            Some(idx) => self.select_idx_mut(idx),
+            Some(idx) => self.select_at_idx_mut(idx),
             None => None,
         }
     }
@@ -1109,6 +1109,84 @@ impl DataFrame {
     {
         f(self, args)
     }
+
+    /// Create dummy variables.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    ///
+    /// # #[macro_use] extern crate polars;
+    /// # fn main() {
+    ///
+    ///  use polars::prelude::*;
+    ///
+    ///  let df = df! {
+    ///       "id" => &[1, 2, 3, 1, 2, 3, 1, 1],
+    ///       "type" => &["A", "B", "B", "B", "C", "C", "C", "B"],
+    ///       "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
+    ///   }.unwrap();
+    ///
+    ///   let dummies = df.to_dummies().unwrap();
+    ///   dbg!(dummies);
+    /// # }
+    /// ```
+    /// Outputs:
+    /// ```text
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    ///  | id_1 | id_3 | id_2 | type_A | type_B | type_C | code_X1 | code_X2 | code_X3 |
+    ///  | ---  | ---  | ---  | ---    | ---    | ---    | ---     | ---     | ---     |
+    ///  | u32  | u32  | u32  | u32    | u32    | u32    | u32     | u32     | u32     |
+    ///  +======+======+======+========+========+========+=========+=========+=========+
+    ///  | 1    | 0    | 0    | 1      | 0      | 0      | 1       | 0       | 0       |
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    ///  | 0    | 0    | 1    | 0      | 1      | 0      | 0       | 1       | 0       |
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    ///  | 0    | 1    | 0    | 0      | 1      | 0      | 0       | 0       | 1       |
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    ///  | 1    | 0    | 0    | 0      | 1      | 0      | 0       | 0       | 1       |
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    ///  | 0    | 0    | 1    | 0      | 0      | 1      | 0       | 1       | 0       |
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    ///  | 0    | 1    | 0    | 0      | 0      | 1      | 0       | 1       | 0       |
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    ///  | 1    | 0    | 0    | 0      | 0      | 1      | 1       | 0       | 0       |
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    ///  | 1    | 0    | 0    | 0      | 1      | 0      | 1       | 0       | 0       |
+    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
+    /// ```
+    pub fn to_dummies(&self) -> Result<Self> {
+        let mut df = self.clone();
+        let df_index_name = "--__CUSTOM_INDEX_FOR_TO_DUMMIES__--";
+        let s = UInt32Chunked::new_from_aligned_vec(
+            df_index_name,
+            (0u32..self.height() as u32).collect(),
+        );
+        df.add_column(s).unwrap();
+
+        let gb = df.groupby(df_index_name)?;
+
+        let mut columns = Vec::with_capacity(self.columns.len() * 256);
+        for col in &self.columns {
+            let pivot_col = col.name();
+            // value column is not important in count
+            let value_col = pivot_col;
+            let mut pivot_df = gb
+                .clone()
+                .pivot(pivot_col, value_col)
+                .count()?
+                .sort(df_index_name, false)?;
+            pivot_df.drop_in_place(df_index_name).unwrap();
+
+            // rename columns
+            for i in 0..(pivot_df.width()) {
+                let s = pivot_df.select_at_idx_mut(i).unwrap();
+                s.rename(&format!("{}_{}", pivot_col, s.name()));
+                columns.push(s.clone())
+            }
+        }
+        Ok(DataFrame::new_no_checks(columns))
+    }
 }
 
 pub struct RecordBatchIter<'a> {
@@ -1183,5 +1261,30 @@ mod test {
         let sliced_df = df.slice(0, 2).expect("slice");
         assert_eq!(sliced_df.shape(), (2, 2));
         println!("{:?}", df)
+    }
+
+    #[test]
+    fn get_dummies() {
+        let df = df! {
+            "id" => &[1, 2, 3, 1, 2, 3, 1, 1],
+            "type" => &["A", "B", "B", "B", "C", "C", "C", "B"],
+            "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
+        }
+        .unwrap();
+        let dummies = df.to_dummies().unwrap();
+        assert_eq!(
+            Vec::from(dummies.column("id_1").unwrap().u32().unwrap()),
+            &[
+                Some(1),
+                Some(0),
+                Some(0),
+                Some(1),
+                Some(0),
+                Some(0),
+                Some(1),
+                Some(1)
+            ]
+        );
+        dbg!(dummies);
     }
 }
