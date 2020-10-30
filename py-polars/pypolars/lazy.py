@@ -186,6 +186,9 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.quantile(quantile))
 
+    def explode(self, column: str) -> LazyFrame:
+        return wrap_ldf(self._ldf.explode(column))
+
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
     return Expr.from_pyexpr(pyexpr)

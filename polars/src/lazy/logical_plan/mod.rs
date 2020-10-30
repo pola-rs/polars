@@ -71,6 +71,7 @@ pub enum DataFrameOperation {
     Mean,
     Median,
     Quantile(f64),
+    Explode(String),
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -165,7 +166,8 @@ impl fmt::Debug for LogicalPlan {
                 DataFrameOperation::Sum => write!(f, "SUM {:?}", input),
                 DataFrameOperation::Mean => write!(f, "MEAN {:?}", input),
                 DataFrameOperation::Median => write!(f, "MEDIAN {:?}", input),
-                DataFrameOperation::Quantile(_) => write!(f, "Quantile {:?}", input),
+                DataFrameOperation::Quantile(_) => write!(f, "QUANTILE {:?}", input),
+                DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
             },
             Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
             Join {
@@ -410,6 +412,14 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameOp {
             input: Box::new(self.0),
             operation: DataFrameOperation::Shift { periods },
+        }
+        .into()
+    }
+
+    pub fn explode(self, column: &str) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::Explode(column.to_owned()),
         }
         .into()
     }
