@@ -12,7 +12,8 @@ pub use crate::{
         ops::{
             ChunkAgg, ChunkAggSeries, ChunkApply, ChunkCast, ChunkCompare, ChunkExpandAtIndex,
             ChunkFillNone, ChunkFilter, ChunkFull, ChunkReverse, ChunkSet, ChunkShift, ChunkSort,
-            ChunkTake, ChunkUnique, ChunkZip, FillNoneStrategy, TakeRandom, TakeRandomUtf8,
+            ChunkTake, ChunkUnique, ChunkWindow, ChunkZip, FillNoneStrategy, TakeRandom,
+            TakeRandomUtf8,
         },
         take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
         ChunkedArray, Downcast, NoNull,

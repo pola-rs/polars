@@ -11,6 +11,25 @@ use std::marker::Sized;
 use std::ops::{Add, Div};
 use std::sync::Arc;
 
+pub trait ChunkWindow<T> {
+    fn rolling_sum(&self, _window_size: usize, _weight: Option<&[T]>) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling sum not supported for this datatype".into(),
+        ))
+    }
+    fn rolling_mean(&self, _window_size: usize, _weight: Option<&[T]>) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+}
+
 /// Random access
 pub trait TakeRandom {
     type Item;

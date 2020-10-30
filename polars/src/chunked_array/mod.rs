@@ -47,6 +47,7 @@ pub mod take;
 pub mod temporal;
 pub mod unique;
 pub mod upstream_traits;
+pub mod window;
 
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,

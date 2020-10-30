@@ -288,11 +288,7 @@ where
     T: PolarsNumericType,
     T::Native: NumCast,
     N: Num + ToPrimitive,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
+    T::Native: Add<Output = T::Native>,
 {
     type Output = ChunkedArray<T>;
 
@@ -307,11 +303,7 @@ where
     T: PolarsNumericType,
     T::Native: NumCast,
     N: Num + ToPrimitive,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
+    T::Native: Sub<Output = T::Native>,
 {
     type Output = ChunkedArray<T>;
 
@@ -326,11 +318,7 @@ where
     T: PolarsNumericType,
     T::Native: NumCast,
     N: Num + ToPrimitive,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
+    T::Native: Div<Output = T::Native>,
 {
     type Output = ChunkedArray<T>;
 
@@ -345,11 +333,7 @@ where
     T: PolarsNumericType,
     T::Native: NumCast,
     N: Num + ToPrimitive,
-    T::Native: Add<Output = T::Native>
-        + Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Div<Output = T::Native>
-        + num::Zero,
+    T::Native: Mul<Output = T::Native>,
 {
     type Output = ChunkedArray<T>;
 
