@@ -1164,7 +1164,7 @@ impl DataFrame {
         );
         df.add_column(s).unwrap();
 
-        let gb = df.groupby(df_index_name)?;
+        let mut gb = df.groupby(df_index_name)?;
 
         let mut columns = Vec::with_capacity(self.columns.len() * 256);
         for col in &self.columns {
@@ -1172,7 +1172,6 @@ impl DataFrame {
             // value column is not important in count
             let value_col = pivot_col;
             let mut pivot_df = gb
-                .clone()
                 .pivot(pivot_col, value_col)
                 .count()?
                 .sort(df_index_name, false)?;

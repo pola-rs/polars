@@ -199,3 +199,11 @@ def test_shift():
     a = df.shift(1)
     b = DataFrame({"A": [None, "a", "b"], "B": [None, 1, 3]}, nullable=True)
     assert a.frame_equal(b, null_equal=True)
+
+
+def test_to_dummies():
+    df = DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    dummies = df.to_dummies()
+    assert dummies["A_a"].to_list() == [1, 0, 0]
+    assert dummies["A_b"].to_list() == [0, 1, 0]
+    assert dummies["A_c"].to_list() == [0, 0, 1]

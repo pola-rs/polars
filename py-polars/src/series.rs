@@ -213,14 +213,16 @@ impl PySeries {
         pyarray.to_owned()
     }
 
-    pub fn unique(&self) -> Self {
-        self.series.unique().into()
+    pub fn unique(&self) -> PyResult<Self> {
+        let unique = self.series.unique().map_err(PyPolarsEr::from)?;
+        Ok(unique.into())
     }
 
-    pub fn arg_unique(&self) -> Py<PyArray1<usize>> {
+    pub fn arg_unique(&self) -> PyResult<Py<PyArray1<usize>>> {
         let gil = pyo3::Python::acquire_gil();
-        let pyarray = PyArray1::from_vec(gil.python(), self.series.arg_unique());
-        pyarray.to_owned()
+        let arg_unique = self.series.arg_unique().map_err(PyPolarsEr::from)?;
+        let pyarray = PyArray1::from_vec(gil.python(), arg_unique);
+        Ok(pyarray.to_owned())
     }
 
     pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {

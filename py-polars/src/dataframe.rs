@@ -437,4 +437,9 @@ impl PyDataFrame {
         let df = self.df.quantile(quantile).map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
+
+    pub fn to_dummies(&self) -> PyResult<Self> {
+        let df = self.df.to_dummies().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
 }

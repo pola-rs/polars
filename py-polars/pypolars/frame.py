@@ -20,26 +20,6 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
     return DataFrame.from_pydf(df)
 
 
-def read_csv(
-    file: Union[str, TextIO],
-    infer_schema_length: int = 100,
-    batch_size: int = 100000,
-    has_headers: bool = True,
-    ignore_errors: bool = False,
-    stop_after_n_rows: Optional[int] = None,
-    sep: str = ",",
-) -> "DataFrame":
-    return DataFrame.read_csv(
-        file,
-        infer_schema_length,
-        batch_size,
-        has_headers,
-        ignore_errors,
-        stop_after_n_rows,
-        sep,
-    )
-
-
 class DataFrame:
     def __init__(self, data: Dict[str, Sequence], nullable: bool = False):
         columns = []
@@ -715,6 +695,12 @@ class DataFrame:
 
     def quantile(self, quantile: float) -> DataFrame:
         return self._df.quantile(quantile)
+
+    def to_dummies(self) -> DataFrame:
+        """
+        Get one hot encoded dummy variables.
+        """
+        return wrap_df(self._df.to_dummies())
 
 
 class GroupBy:
