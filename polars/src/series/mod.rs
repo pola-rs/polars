@@ -7,8 +7,8 @@ pub(crate) mod aggregate;
 pub(crate) mod arithmetic;
 mod comparison;
 pub(crate) mod iterator;
-use crate::chunked_array::builder::get_large_list_builder;
-use crate::fmt::FmtLargeList;
+use crate::chunked_array::builder::get_list_builder;
+use crate::fmt::FmtList;
 use arrow::array::ArrayDataRef;
 
 /// # Series
@@ -134,7 +134,7 @@ pub enum Series {
     TimestampMicrosecond(TimestampMicrosecondChunked),
     TimestampMillisecond(TimestampMillisecondChunked),
     TimestampSecond(TimestampSecondChunked),
-    LargeList(LargeListChunked),
+    List(ListChunked),
 }
 
 macro_rules! unpack_series {
@@ -352,8 +352,8 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray
-    pub fn large_list(&self) -> Result<&LargeListChunked> {
-        unpack_series!(self, LargeList, "largelist")
+    pub fn list(&self) -> Result<&ListChunked> {
+        unpack_series!(self, List, "list")
     }
 
     pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
@@ -499,7 +499,7 @@ impl Series {
             Series::TimestampSecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::IntervalDayTime(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::IntervalYearMonth(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::LargeList(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::List(arr) => pack_ca_to_series(arr.cast::<N>()?),
         };
         Ok(s)
     }
@@ -535,7 +535,7 @@ impl Series {
             Timestamp(TimeUnit::Second, _) => self.cast::<TimestampSecondType>(),
             Interval(IntervalUnit::DayTime) => self.cast::<IntervalDayTimeType>(),
             Interval(IntervalUnit::YearMonth) => self.cast::<IntervalYearMonthType>(),
-            LargeList(_) => self.cast::<LargeListType>(),
+            List(_) => self.cast::<ListType>(),
             dt => Err(PolarsError::Other(
                 format!("Casting to {:?} is not supported", dt).into(),
             )),
@@ -587,7 +587,7 @@ impl Series {
             Series::TimestampSecond(arr) => unpack_if_match!(arr),
             Series::IntervalDayTime(arr) => unpack_if_match!(arr),
             Series::IntervalYearMonth(arr) => unpack_if_match!(arr),
-            Series::LargeList(arr) => unpack_if_match!(arr),
+            Series::List(arr) => unpack_if_match!(arr),
         }
     }
 
@@ -754,8 +754,8 @@ impl Series {
         apply_method_all_series!(self, quantile_as_series, quantile)
     }
 
-    pub(crate) fn fmt_largelist(&self) -> String {
-        apply_method_all_series!(self, fmt_largelist,)
+    pub(crate) fn fmt_list(&self) -> String {
+        apply_method_all_series!(self, fmt_list,)
     }
 }
 
@@ -818,7 +818,7 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Interval(IntervalUnit::DayTime) => {
                 Series::IntervalDayTime(mem::transmute(ca))
             }
-            ArrowDataType::LargeList(_) => Series::LargeList(mem::transmute(ca)),
+            ArrowDataType::List(_) => Series::List(mem::transmute(ca)),
             _ => panic!("Not implemented: {:?}", N::get_data_type()),
         }
     }
@@ -875,11 +875,11 @@ impl_named_from!([Option<i64>], Int64, new_from_opt_slice);
 impl_named_from!([Option<f32>], Float32, new_from_opt_slice);
 impl_named_from!([Option<f64>], Float64, new_from_opt_slice);
 
-impl<T: AsRef<[Series]>> NamedFrom<T, LargeListType> for Series {
+impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
         let series_slice = s.as_ref();
         let dt = series_slice[0].dtype();
-        let mut builder = get_large_list_builder(dt, series_slice.len(), name);
+        let mut builder = get_list_builder(dt, series_slice.len(), name);
         for series in series_slice {
             builder.append_series(series)
         }
@@ -928,7 +928,7 @@ impl_as_ref_ca!(TimestampMillisecondType, TimestampMillisecond);
 impl_as_ref_ca!(TimestampSecondType, TimestampSecond);
 impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
 impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
-impl_as_ref_ca!(LargeListType, LargeList);
+impl_as_ref_ca!(ListType, List);
 
 macro_rules! impl_as_mut_ca {
     ($type:ident, $series_var:ident) => {
@@ -971,7 +971,7 @@ impl_as_mut_ca!(TimestampMillisecondType, TimestampMillisecond);
 impl_as_mut_ca!(TimestampSecondType, TimestampSecond);
 impl_as_mut_ca!(IntervalDayTimeType, IntervalDayTime);
 impl_as_mut_ca!(IntervalYearMonthType, IntervalYearMonth);
-impl_as_mut_ca!(LargeListType, LargeList);
+impl_as_mut_ca!(ListType, List);
 
 macro_rules! from_series_to_ca {
     ($variant:ident, $ca:ident) => {
@@ -1013,7 +1013,7 @@ from_series_to_ca!(TimestampMicrosecond, TimestampMicrosecondChunked);
 from_series_to_ca!(TimestampNanosecond, TimestampNanosecondChunked);
 from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
 from_series_to_ca!(IntervalYearMonth, IntervalYearMonthChunked);
-from_series_to_ca!(LargeList, LargeListChunked);
+from_series_to_ca!(List, ListChunked);
 
 // TODO: add types
 impl From<(&str, ArrayRef)> for Series {
@@ -1081,9 +1081,7 @@ impl From<(&str, ArrayRef)> for Series {
             ArrowDataType::Timestamp(TimeUnit::Second, _) => {
                 TimestampSecondChunked::new_from_chunks(name, chunk).into_series()
             }
-            ArrowDataType::LargeList(_) => {
-                LargeListChunked::new_from_chunks(name, chunk).into_series()
-            }
+            ArrowDataType::List(_) => ListChunked::new_from_chunks(name, chunk).into_series(),
             _ => unimplemented!(),
         }
     }

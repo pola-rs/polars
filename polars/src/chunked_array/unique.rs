@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
 use unsafe_unwrap::UnsafeUnwrap;
 
-impl ChunkUnique<LargeListType> for LargeListChunked {
-    fn unique(&self) -> Result<ChunkedArray<LargeListType>> {
+impl ChunkUnique<ListType> for ListChunked {
+    fn unique(&self) -> Result<ChunkedArray<ListType>> {
         Err(PolarsError::InvalidOperation(
             "unique not support for large list".into(),
         ))

@@ -228,7 +228,7 @@ pub(crate) fn get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Result<Arro
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 fn _get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Option<ArrowDataType> {
     use arrow::datatypes::DataType::*;
-    // TODO! add largelist and temporal types
+    // TODO! add list and temporal types
     match (l, r) {
         (UInt8, Int8) => Some(Int8),
         (UInt8, Int16) => Some(Int16),

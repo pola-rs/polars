@@ -535,7 +535,7 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 }
 
-macro_rules! impl_cmp_largelist {
+macro_rules! impl_cmp_list {
     ($self:ident, $rhs:ident, $cmp_method:ident) => {{
         match ($self.null_count(), $rhs.null_count()) {
             (0, 0) => $self
@@ -567,33 +567,33 @@ macro_rules! impl_cmp_largelist {
     }};
 }
 
-impl ChunkCompare<&LargeListChunked> for LargeListChunked {
-    fn eq_missing(&self, rhs: &LargeListChunked) -> BooleanChunked {
-        impl_cmp_largelist!(self, rhs, series_equal_missing)
+impl ChunkCompare<&ListChunked> for ListChunked {
+    fn eq_missing(&self, rhs: &ListChunked) -> BooleanChunked {
+        impl_cmp_list!(self, rhs, series_equal_missing)
     }
 
-    fn eq(&self, rhs: &LargeListChunked) -> BooleanChunked {
-        impl_cmp_largelist!(self, rhs, series_equal)
+    fn eq(&self, rhs: &ListChunked) -> BooleanChunked {
+        impl_cmp_list!(self, rhs, series_equal)
     }
 
-    fn neq(&self, rhs: &LargeListChunked) -> BooleanChunked {
+    fn neq(&self, rhs: &ListChunked) -> BooleanChunked {
         self.eq(rhs).not()
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense
-    fn gt(&self, _rhs: &LargeListChunked) -> BooleanChunked {
+    fn gt(&self, _rhs: &ListChunked) -> BooleanChunked {
         unimplemented!()
     }
 
-    fn gt_eq(&self, _rhs: &LargeListChunked) -> BooleanChunked {
+    fn gt_eq(&self, _rhs: &ListChunked) -> BooleanChunked {
         unimplemented!()
     }
 
-    fn lt(&self, _rhs: &LargeListChunked) -> BooleanChunked {
+    fn lt(&self, _rhs: &ListChunked) -> BooleanChunked {
         unimplemented!()
     }
 
-    fn lt_eq(&self, _rhs: &LargeListChunked) -> BooleanChunked {
+    fn lt_eq(&self, _rhs: &ListChunked) -> BooleanChunked {
         unimplemented!()
     }
 }
@@ -819,7 +819,7 @@ impl CompToSeries for Utf8Chunked {
         impl_comp_to_series!(self, neq_series, neq, rhs, "neq", Utf8Type)
     }
 }
-impl CompToSeries for LargeListChunked {}
+impl CompToSeries for ListChunked {}
 
 impl BooleanChunked {
     pub fn all_true(&self) -> bool {

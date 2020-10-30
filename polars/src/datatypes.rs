@@ -21,7 +21,7 @@ pub use arrow::datatypes::{
 
 pub struct Utf8Type {}
 
-pub struct LargeListType {}
+pub struct ListType {}
 
 pub trait PolarsDataType {
     fn get_data_type() -> ArrowDataType;
@@ -42,10 +42,10 @@ impl PolarsDataType for Utf8Type {
     }
 }
 
-impl PolarsDataType for LargeListType {
+impl PolarsDataType for ListType {
     fn get_data_type() -> ArrowDataType {
         // null as we cannot no anything without self.
-        ArrowDataType::LargeList(Box::new(ArrowDataType::Null))
+        ArrowDataType::List(Box::new(ArrowDataType::Null))
     }
 }
 
@@ -56,7 +56,7 @@ impl<T> PolarsSingleType for T where T: ArrowPrimitiveType + PolarsDataType {}
 
 impl PolarsSingleType for Utf8Type {}
 
-pub type LargeListChunked = ChunkedArray<LargeListType>;
+pub type ListChunked = ChunkedArray<ListType>;
 pub type BooleanChunked = ChunkedArray<BooleanType>;
 pub type UInt8Chunked = ChunkedArray<UInt8Type>;
 pub type UInt16Chunked = ChunkedArray<UInt16Type>;
@@ -188,7 +188,7 @@ pub enum AnyType<'a> {
     /// (e.g. days can differ in length during day light savings time transitions).
     IntervalDayTime(i64),
     IntervalYearMonth(i32),
-    LargeList(Series),
+    List(Series),
 }
 
 pub trait ToStr {
@@ -229,7 +229,7 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Duration(TimeUnit::Second) => "duration(s)",
             ArrowDataType::Interval(IntervalUnit::DayTime) => "interval(daytime)",
             ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
-            ArrowDataType::LargeList(tp) => return format!("list [{}]", tp.to_str()),
+            ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
             _ => panic!(format!("{:?} not implemented", self)),
         };
         s.into()

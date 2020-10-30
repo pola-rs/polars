@@ -1,5 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use crate::chunked_array::builder::get_large_list_builder;
+use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::kernels;
 use crate::prelude::*;
 use crate::utils::Xob;
@@ -329,7 +329,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
-impl ChunkSort<LargeListType> for LargeListChunked {
+impl ChunkSort<ListType> for ListChunked {
     fn sort(&self, _reverse: bool) -> Self {
         println!("A ListChunked cannot be sorted. Doing nothing");
         self.clone()
@@ -555,15 +555,15 @@ impl ChunkFillNone<&str> for Utf8Chunked {
     }
 }
 
-impl ChunkFillNone<&Series> for LargeListChunked {
+impl ChunkFillNone<&Series> for ListChunked {
     fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
-            "fill_none not supported for LargeList type".into(),
+            "fill_none not supported for List type".into(),
         ))
     }
     fn fill_none_with_value(&self, _value: &Series) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
-            "fill_none_with_value not supported for LargeList type".into(),
+            "fill_none_with_value not supported for List type".into(),
         ))
     }
 }
@@ -628,12 +628,12 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     }
 }
 
-impl ChunkFull<Series> for LargeListChunked {
-    fn full(_name: &str, _value: Series, _length: usize) -> LargeListChunked {
+impl ChunkFull<Series> for ListChunked {
+    fn full(_name: &str, _value: Series, _length: usize) -> ListChunked {
         unimplemented!()
     }
 
-    fn full_null(_name: &str, _length: usize) -> LargeListChunked {
+    fn full_null(_name: &str, _length: usize) -> ListChunked {
         unimplemented!()
     }
 }
@@ -675,7 +675,7 @@ macro_rules! impl_reverse {
 
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
-impl_reverse!(LargeListType, LargeListChunked);
+impl_reverse!(ListType, ListChunked);
 
 /// Filter values by a boolean mask.
 pub trait ChunkFilter<T> {
@@ -845,10 +845,10 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
     }
 }
 
-impl ChunkFilter<LargeListType> for LargeListChunked {
-    fn filter(&self, filter: &BooleanChunked) -> Result<LargeListChunked> {
+impl ChunkFilter<ListType> for ListChunked {
+    fn filter(&self, filter: &BooleanChunked) -> Result<ListChunked> {
         let dt = self.get_inner_dtype();
-        let mut builder = get_large_list_builder(dt, self.len(), self.name());
+        let mut builder = get_list_builder(dt, self.len(), self.name());
         filter
             .into_iter()
             .zip(self.into_iter())
@@ -896,8 +896,8 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     }
 }
 
-impl ChunkExpandAtIndex<LargeListType> for LargeListChunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> LargeListChunked {
+impl ChunkExpandAtIndex<ListType> for ListChunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> ListChunked {
         impl_chunk_expand!(self, length, index)
     }
 }
@@ -966,7 +966,7 @@ where
 }
 
 macro_rules! impl_shift {
-    // append_method and append_fn do almost the same. Only for largelist type, the closure
+    // append_method and append_fn do almost the same. Only for list type, the closure
     // accepts an owned value, while fill_value is a reference. That's why we have two options.
     ($self:ident, $builder:ident, $periods:ident, $fill_value:ident,
     $append_method:ident, $append_fn:expr) => {{
@@ -1030,15 +1030,15 @@ impl ChunkShift<Utf8Type, &str> for Utf8Chunked {
     }
 }
 
-impl ChunkShift<LargeListType, Series> for LargeListChunked {
-    fn shift(&self, periods: i32, fill_value: &Option<Series>) -> Result<LargeListChunked> {
+impl ChunkShift<ListType, Series> for ListChunked {
+    fn shift(&self, periods: i32, fill_value: &Option<Series>) -> Result<ListChunked> {
         if periods.abs() >= self.len() as i32 {
             return Err(PolarsError::OutOfBounds(
                 format!("The value of parameter `periods`: {} in the shift operation is larger than the length of the ChunkedArray: {}", periods, self.len()).into()));
         }
         let dt = self.get_inner_dtype();
-        let mut builder = get_large_list_builder(dt, self.len(), self.name());
-        fn append_fn(builder: &mut Box<dyn LargListBuilderTrait>, v: Option<Series>) {
+        let mut builder = get_list_builder(dt, self.len(), self.name());
+        fn append_fn(builder: &mut Box<dyn ListBuilderTrait>, v: Option<Series>) {
             builder.append_opt_series(&v);
         }
 
@@ -1238,12 +1238,12 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
         self.zip_with(mask, other)
     }
 }
-impl ChunkZip<LargeListType> for LargeListChunked {
+impl ChunkZip<ListType> for ListChunked {
     fn zip_with(
         &self,
         _mask: &BooleanChunked,
-        _other: &ChunkedArray<LargeListType>,
-    ) -> Result<ChunkedArray<LargeListType>> {
+        _other: &ChunkedArray<ListType>,
+    ) -> Result<ChunkedArray<ListType>> {
         unimplemented!()
     }
 
@@ -1251,7 +1251,7 @@ impl ChunkZip<LargeListType> for LargeListChunked {
         &self,
         _mask: &BooleanChunked,
         _other: &Series,
-    ) -> Result<ChunkedArray<LargeListType>> {
+    ) -> Result<ChunkedArray<ListType>> {
         unimplemented!()
     }
 }

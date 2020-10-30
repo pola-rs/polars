@@ -1,5 +1,5 @@
 //! Implementations of upstream traits for ChunkedArray<T>
-use crate::chunked_array::builder::get_large_list_builder;
+use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use crate::utils::Xob;
@@ -190,14 +190,14 @@ impl FromIterator<Option<String>> for Utf8Chunked {
     }
 }
 
-impl FromIterator<Series> for LargeListChunked {
+impl FromIterator<Series> for ListChunked {
     fn from_iter<I: IntoIterator<Item = Series>>(iter: I) -> Self {
         let mut it = iter.into_iter();
         let capacity = get_iter_capacity(&it);
 
         // first take one to get the dtype. We panic if we have an empty iterator
         let v = it.next().unwrap();
-        let mut builder = get_large_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
 
         builder.append_opt_series(&Some(v));
         while let Some(s) = it.next() {
@@ -207,14 +207,14 @@ impl FromIterator<Series> for LargeListChunked {
     }
 }
 
-impl<'a> FromIterator<&'a Series> for LargeListChunked {
+impl<'a> FromIterator<&'a Series> for ListChunked {
     fn from_iter<I: IntoIterator<Item = &'a Series>>(iter: I) -> Self {
         let mut it = iter.into_iter();
         let capacity = get_iter_capacity(&it);
 
         // first take one to get the dtype. We panic if we have an empty iterator
         let v = it.next().unwrap();
-        let mut builder = get_large_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
 
         builder.append_series(v);
         while let Some(s) = it.next() {
@@ -255,7 +255,7 @@ macro_rules! impl_from_iter_opt_series {
             }
         }
         let capacity = get_iter_capacity(&it);
-        let mut builder = get_large_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
 
         // first fill all None's we encountered
         while cnt > 0 {
@@ -276,13 +276,13 @@ macro_rules! impl_from_iter_opt_series {
     }}
 }
 
-impl FromIterator<Option<Series>> for LargeListChunked {
+impl FromIterator<Option<Series>> for ListChunked {
     fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
         impl_from_iter_opt_series!(iter)
     }
 }
 
-impl<'a> FromIterator<&'a Option<Series>> for LargeListChunked {
+impl<'a> FromIterator<&'a Option<Series>> for ListChunked {
     fn from_iter<I: IntoIterator<Item = &'a Option<Series>>>(iter: I) -> Self {
         impl_from_iter_opt_series!(iter)
     }
@@ -504,14 +504,14 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_collect_into_large_listt() {
+    fn test_collect_into_list() {
         let s1 = Series::new("", &[true, false, true]);
         let s2 = Series::new("", &[true, false, true]);
 
-        let ll: LargeListChunked = [&s1, &s2].iter().map(|&s| s).collect();
+        let ll: ListChunked = [&s1, &s2].iter().map(|&s| s).collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 0);
-        let ll: LargeListChunked = [None, Some(s2)].iter().collect();
+        let ll: ListChunked = [None, Some(s2)].iter().collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 1);
     }

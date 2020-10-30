@@ -3,12 +3,12 @@ use crate::{
     utils::{get_iter_capacity, Xob},
 };
 use arrow::array::{
-    ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait,
+    ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, ListBuilder,
 };
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 pub use arrow::memory;
 use arrow::{
-    array::{Array, ArrayData, LargeListBuilder, PrimitiveArray, PrimitiveBuilder, StringBuilder},
+    array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
     buffer::Buffer,
     util::bit_util,
 };
@@ -556,17 +556,17 @@ where
     }
 }
 
-pub trait LargListBuilderTrait {
+pub trait ListBuilderTrait {
     fn append_opt_series(&mut self, opt_s: &Option<Series>);
     fn append_series(&mut self, s: &Series);
-    fn finish(&mut self) -> LargeListChunked;
+    fn finish(&mut self) -> ListChunked;
 }
 
-pub struct LargeListPrimitiveChunkedBuilder<T>
+pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
-    pub builder: LargeListBuilder<PrimitiveBuilder<T>>,
+    pub builder: ListBuilder<PrimitiveBuilder<T>>,
     field: Field,
 }
 
@@ -601,11 +601,11 @@ macro_rules! append_series {
     }};
 }
 
-macro_rules! finish_largelist_builder {
+macro_rules! finish_list_builder {
     ($self:ident) => {{
         let arr = Arc::new($self.builder.finish());
         let len = arr.len();
-        LargeListChunked {
+        ListChunked {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
             chunk_id: vec![len],
@@ -614,19 +614,19 @@ macro_rules! finish_largelist_builder {
     }};
 }
 
-impl<T> LargeListPrimitiveChunkedBuilder<T>
+impl<T> ListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
     pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
-        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
+        let builder = ListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(
             name,
-            ArrowDataType::LargeList(Box::new(T::get_data_type())),
+            ArrowDataType::List(Box::new(T::get_data_type())),
             true,
         );
 
-        LargeListPrimitiveChunkedBuilder { builder, field }
+        ListPrimitiveChunkedBuilder { builder, field }
     }
 
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
@@ -665,7 +665,7 @@ where
     }
 }
 
-impl<T> LargListBuilderTrait for LargeListPrimitiveChunkedBuilder<T>
+impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
 where
     T: ArrowPrimitiveType,
 {
@@ -677,30 +677,30 @@ where
         append_series!(self, s);
     }
 
-    fn finish(&mut self) -> LargeListChunked {
-        finish_largelist_builder!(self)
+    fn finish(&mut self) -> ListChunked {
+        finish_list_builder!(self)
     }
 }
 
-pub struct LargeListUtf8ChunkedBuilder {
-    builder: LargeListBuilder<StringBuilder>,
+pub struct ListUtf8ChunkedBuilder {
+    builder: ListBuilder<StringBuilder>,
     field: Field,
 }
 
-impl LargeListUtf8ChunkedBuilder {
+impl ListUtf8ChunkedBuilder {
     pub fn new(name: &str, values_builder: StringBuilder, capacity: usize) -> Self {
-        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
+        let builder = ListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(
             name,
-            ArrowDataType::LargeList(Box::new(ArrowDataType::Utf8)),
+            ArrowDataType::List(Box::new(ArrowDataType::Utf8)),
             true,
         );
 
-        LargeListUtf8ChunkedBuilder { builder, field }
+        ListUtf8ChunkedBuilder { builder, field }
     }
 }
 
-impl LargListBuilderTrait for LargeListUtf8ChunkedBuilder {
+impl ListBuilderTrait for ListUtf8ChunkedBuilder {
     fn append_opt_series(&mut self, opt_s: &Option<Series>) {
         append_opt_series!(self, opt_s)
     }
@@ -709,27 +709,27 @@ impl LargListBuilderTrait for LargeListUtf8ChunkedBuilder {
         append_series!(self, s);
     }
 
-    fn finish(&mut self) -> LargeListChunked {
-        finish_largelist_builder!(self)
+    fn finish(&mut self) -> ListChunked {
+        finish_list_builder!(self)
     }
 }
 
-pub fn get_large_list_builder(
+pub fn get_list_builder(
     dt: &ArrowDataType,
     capacity: usize,
     name: &str,
-) -> Box<dyn LargListBuilderTrait> {
+) -> Box<dyn ListBuilderTrait> {
     macro_rules! get_primitive_builder {
         ($type:ty) => {{
             let values_builder = PrimitiveBuilder::<$type>::new(capacity);
-            let builder = LargeListPrimitiveChunkedBuilder::new(&name, values_builder, capacity);
+            let builder = ListPrimitiveChunkedBuilder::new(&name, values_builder, capacity);
             Box::new(builder)
         }};
     }
     macro_rules! get_utf8_builder {
         () => {{
             let values_builder = StringBuilder::new(capacity);
-            let builder = LargeListUtf8ChunkedBuilder::new(&name, values_builder, capacity);
+            let builder = ListUtf8ChunkedBuilder::new(&name, values_builder, capacity);
             Box::new(builder)
         }};
     }
@@ -798,7 +798,7 @@ mod test {
     #[test]
     fn test_list_builder() {
         let values_builder = Int32Array::builder(10);
-        let mut builder = LargeListPrimitiveChunkedBuilder::new("a", values_builder, 10);
+        let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
 
         // create a series containing two chunks
         let mut s1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]).into_series();
@@ -808,13 +808,13 @@ mod test {
         builder.append_series(&s1);
         builder.append_series(&s2);
         let ls = builder.finish();
-        if let AnyType::LargeList(s) = ls.get_any(0) {
+        if let AnyType::List(s) = ls.get_any(0) {
             // many chunks are aggregated to one in the ListArray
             assert_eq!(s.len(), 6)
         } else {
             assert!(false)
         }
-        if let AnyType::LargeList(s) = ls.get_any(1) {
+        if let AnyType::List(s) = ls.get_any(1) {
             assert_eq!(s.len(), 3)
         } else {
             assert!(false)

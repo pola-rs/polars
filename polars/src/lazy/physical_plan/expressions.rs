@@ -436,7 +436,7 @@ impl AggPhysicalExpr for AggGroupsExpr {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::Groups);
 
-        let mut column: LargeListChunked = groups
+        let mut column: ListChunked = groups
             .iter()
             .map(|(_first, idx)| {
                 let ca: Xob<UInt32Chunked> = idx.into_iter().map(|&v| v as u32).collect();

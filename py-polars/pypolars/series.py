@@ -563,7 +563,7 @@ class Series:
         """
         Convert this Series to a Python List
         """
-        if self.dtype == LargeList:
+        if self.dtype == List:
             column = []
             for i in range(len(self)):
                 subseries = self[i]
@@ -588,7 +588,7 @@ class Series:
         """
         Check if this Series datatype is numeric.
         """
-        return self.dtype not in (Utf8, Bool, LargeList)
+        return self.dtype not in (Utf8, Bool, List)
 
     def is_float(self) -> bool:
         """
@@ -636,7 +636,7 @@ class Series:
         """
         Convert this Series to numpy. This operation clones data.
         """
-        if self.dtype == LargeList:
+        if self.dtype == List:
             return np.array(self.to_list())
 
         a = self._s.to_numpy()
@@ -744,7 +744,7 @@ class Series:
                 dtype_out = out_to_dtype(func(1))
             elif self.dtype == Bool:
                 dtype_out = out_to_dtype(func(True))
-            elif self.dtype == LargeList:
+            elif self.dtype == List:
                 dtype_out = out_to_dtype(func(Series("", [1, 2])))
             elif self.dtype == Utf8:
                 dtype_out = out_to_dtype(func("foo"))
@@ -824,5 +824,5 @@ def out_to_dtype(out: Any) -> "Datatype":
     if isinstance(out, bool):
         return Bool
     if isinstance(out, Series):
-        return LargeList
+        return List
     return NotImplemented

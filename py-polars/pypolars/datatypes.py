@@ -49,7 +49,7 @@ class Utf8:
     pass
 
 
-class LargeList:
+class List:
     pass
 
 
@@ -131,7 +131,7 @@ dtypes = [
     Float64,
     Bool,
     Utf8,
-    LargeList,
+    List,
     Date32,
     Date64,
     Time32Millisecond,
@@ -162,7 +162,7 @@ DTYPE_TO_FFINAME = {
     Float64: "f64",
     Bool: "bool",
     Utf8: "str",
-    LargeList: "large_list",
+    List: "list",
     Date32: "date32",
     Date64: "date64",
     Time32Millisecond: "time32_millisecond",

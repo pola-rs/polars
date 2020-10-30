@@ -105,7 +105,7 @@ macro_rules! format_list_array {
         for i in 0..$limit {
             let opt_v = $a.get(i);
             match opt_v {
-                Some(v) => write!($f, "\t{}\n", v.fmt_largelist())?,
+                Some(v) => write!($f, "\t{}\n", v.fmt_list())?,
                 None => write!($f, "\tnull\n")?,
             }
         }
@@ -137,7 +137,7 @@ impl Debug for Utf8Chunked {
     }
 }
 
-impl Debug for LargeListChunked {
+impl Debug for ListChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
         format_list_array!(limit, f, self, self.name(), "ChunkedArray")
@@ -203,7 +203,7 @@ impl Debug for Series {
                 format_array!(limit, f, a, "timestamp(s)", a.name(), "Series")
             }
             Series::Utf8(a) => format_utf8_array!(LIMIT, f, a, a.name(), "Series"),
-            Series::LargeList(a) => format_list_array!(limit, f, a, a.name(), "Series"),
+            Series::List(a) => format_list_array!(limit, f, a, a.name(), "Series"),
         }
     }
 }
@@ -332,7 +332,7 @@ impl Display for AnyType<'_> {
             }
             AnyType::IntervalDayTime(v) => write!(f, "{}", v),
             AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
-            AnyType::LargeList(s) => write!(f, "{:?}", s.fmt_largelist()),
+            AnyType::List(s) => write!(f, "{:?}", s.fmt_list()),
             _ => unimplemented!(),
         }
     }
@@ -347,7 +347,7 @@ macro_rules! fmt_option {
     }};
 }
 
-macro_rules! impl_fmt_largelist {
+macro_rules! impl_fmt_list {
     ($self:ident) => {{
         match $self.len() {
             1 => format!("[{}]", fmt_option!($self.get(0))),
@@ -372,28 +372,28 @@ macro_rules! impl_fmt_largelist {
     }};
 }
 
-pub(crate) trait FmtLargeList {
-    fn fmt_largelist(&self) -> String;
+pub(crate) trait FmtList {
+    fn fmt_list(&self) -> String;
 }
 
-impl<T> FmtLargeList for ChunkedArray<T>
+impl<T> FmtList for ChunkedArray<T>
 where
     T: ArrowPrimitiveType,
 {
-    fn fmt_largelist(&self) -> String {
-        impl_fmt_largelist!(self)
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
     }
 }
 
-impl FmtLargeList for Utf8Chunked {
-    fn fmt_largelist(&self) -> String {
-        impl_fmt_largelist!(self)
+impl FmtList for Utf8Chunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
     }
 }
 
-impl FmtLargeList for LargeListChunked {
-    fn fmt_largelist(&self) -> String {
-        impl_fmt_largelist!(self)
+impl FmtList for ListChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
     }
 }
 
@@ -405,7 +405,7 @@ mod test {
     fn list() {
         use arrow::array::Int32Array;
         let values_builder = Int32Array::builder(10);
-        let mut builder = LargeListPrimitiveChunkedBuilder::new("a", values_builder, 10);
+        let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
         builder.append_slice(Some(&[1, 2, 3]));
         builder.append_slice(None);
         let list = builder.finish().into_series();

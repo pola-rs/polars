@@ -2,7 +2,7 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use std::collections::VecDeque;
 
-impl LargeListChunked {
+impl ListChunked {
     pub fn explode(&self) -> Result<(Series, Vec<usize>)> {
         macro_rules! impl_with_builder {
             ($self:expr, $builder:expr, $dtype:ty) => {{
@@ -121,7 +121,7 @@ impl DataFrame {
     /// ```
     pub fn explode(&self, column: &str) -> Result<DataFrame> {
         let s = self.column(column)?;
-        if let Series::LargeList(ca) = s {
+        if let Series::List(ca) = s {
             let (exploded, row_idx) = ca.explode()?;
             let col_idx = self.name_to_idx(column)?;
             let df = self.drop(column)?;

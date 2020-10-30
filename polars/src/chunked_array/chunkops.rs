@@ -1,4 +1,4 @@
-use crate::chunked_array::builder::get_large_list_builder;
+use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
 use arrow::compute::concat;
@@ -159,7 +159,7 @@ impl ChunkOps for Utf8Chunked {
         optional_rechunk!(self, rhs)
     }
 }
-impl ChunkOps for LargeListChunked {
+impl ChunkOps for ListChunked {
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
             (1, Some(1)) | (1, None) => Ok(self.clone()),
@@ -171,8 +171,7 @@ impl ChunkOps for LargeListChunked {
                 let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
 
                 for &chunk_length in chunk_id {
-                    let mut builder =
-                        get_large_list_builder(self.dtype(), chunk_length, self.name());
+                    let mut builder = get_list_builder(self.dtype(), chunk_length, self.name());
                     while let Some(v) = iter.next() {
                         builder.append_opt_series(&v)
                     }

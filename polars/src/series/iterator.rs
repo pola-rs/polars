@@ -49,21 +49,21 @@ impl<'a> FromIterator<&'a str> for Series {
 impl<'a> FromIterator<&'a Series> for Series {
     fn from_iter<I: IntoIterator<Item = &'a Series>>(iter: I) -> Self {
         let ca = iter.into_iter().collect();
-        Series::LargeList(ca)
+        Series::List(ca)
     }
 }
 
 impl FromIterator<Series> for Series {
     fn from_iter<I: IntoIterator<Item = Series>>(iter: I) -> Self {
         let ca = iter.into_iter().collect();
-        Series::LargeList(ca)
+        Series::List(ca)
     }
 }
 
 impl FromIterator<Option<Series>> for Series {
     fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
         let ca = iter.into_iter().collect();
-        Series::LargeList(ca)
+        Series::List(ca)
     }
 }
 

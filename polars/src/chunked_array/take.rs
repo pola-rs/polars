@@ -4,11 +4,11 @@
 //! There are several structs that implement the fastest path for random access.
 //!
 use crate::chunked_array::builder::{
-    get_large_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
+    get_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::prelude::*;
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, LargeListArray, PrimitiveArray, PrimitiveArrayOps, StringArray,
+    Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps, StringArray,
 };
 use std::sync::Arc;
 
@@ -79,16 +79,16 @@ impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
     }
 }
 
-impl TakeRandom for LargeListChunked {
+impl TakeRandom for ListChunked {
     type Item = Series;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
-        let opt_arr = impl_take_random_get!(self, index, LargeListArray);
+        let opt_arr = impl_take_random_get!(self, index, ListArray);
         opt_arr.map(|arr| (self.name(), arr).into())
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
+        let arr = impl_take_random_get_unchecked!(self, index, ListArray);
         (self.name(), arr).into()
     }
 }
@@ -263,13 +263,13 @@ impl ChunkTake for Utf8Chunked {
     }
 }
 
-impl ChunkTake for LargeListChunked {
+impl ChunkTake for ListChunked {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
-            ArrowDataType::LargeList(dt) => {
-                let mut builder = get_large_list_builder(&**dt, capacity, self.name());
+            ArrowDataType::List(dt) => {
+                let mut builder = get_list_builder(&**dt, capacity, self.name());
                 let taker = self.take_rand();
 
                 for idx in indices {
@@ -288,8 +288,8 @@ impl ChunkTake for LargeListChunked {
     ) -> Self {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
         match self.dtype() {
-            ArrowDataType::LargeList(dt) => {
-                let mut builder = get_large_list_builder(&**dt, capacity, self.name());
+            ArrowDataType::List(dt) => {
+                let mut builder = get_list_builder(&**dt, capacity, self.name());
                 let taker = self.take_rand();
                 for idx in indices {
                     let v = taker.get_unchecked(idx);
@@ -309,8 +309,8 @@ impl ChunkTake for LargeListChunked {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
-            ArrowDataType::LargeList(dt) => {
-                let mut builder = get_large_list_builder(&**dt, capacity, self.name());
+            ArrowDataType::List(dt) => {
+                let mut builder = get_list_builder(&**dt, capacity, self.name());
 
                 let taker = self.take_rand();
 
@@ -337,8 +337,8 @@ impl ChunkTake for LargeListChunked {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
-            ArrowDataType::LargeList(dt) => {
-                let mut builder = get_large_list_builder(&**dt, capacity, self.name());
+            ArrowDataType::List(dt) => {
+                let mut builder = get_list_builder(&**dt, capacity, self.name());
                 let taker = self.take_rand();
 
                 for opt_idx in indices {
@@ -511,7 +511,7 @@ impl<'a> IntoTakeRandom<'a> for &'a BooleanChunked {
     }
 }
 
-impl<'a> IntoTakeRandom<'a> for &'a LargeListChunked {
+impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
     type Item = Series;
     type TakeRandom = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
@@ -695,8 +695,8 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
     }
 }
 pub struct ListTakeRandom<'a> {
-    ca: &'a LargeListChunked,
-    chunks: Vec<&'a LargeListArray>,
+    ca: &'a ListChunked,
+    chunks: Vec<&'a ListArray>,
 }
 
 impl<'a> TakeRandom for ListTakeRandom<'a> {
@@ -714,7 +714,7 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
 }
 
 pub struct ListTakeRandomSingleChunk<'a> {
-    arr: &'a LargeListArray,
+    arr: &'a ListArray,
     name: &'a str,
 }
 

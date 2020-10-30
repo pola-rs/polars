@@ -152,7 +152,7 @@ fn normalize(mut df: DataFrame) -> Result<DataFrame> {
 fn one_hot_encode(mut df: DataFrame) -> Result<DataFrame> {
     let y = df["class"].utf8().unwrap();
 
-    let unique = y.unique();
+    let unique = y.unique()?;
     let n_unique = unique.len();
 
     let mut ohe = y
@@ -206,10 +206,7 @@ fn pipe() -> Result<DataFrame> {
 fn train(mut df: DataFrame) -> Result<()> {
     let feat = df.select(&FEATURES)?.to_ndarray::<Float64Type>()?;
 
-    let target = df
-        .column("ohe")?
-        .large_list()?
-        .to_ndarray::<Float64Type>()?;
+    let target = df.column("ohe")?.list()?.to_ndarray::<Float64Type>()?;
     todo!()
 }
 

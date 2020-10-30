@@ -124,7 +124,7 @@ pub fn finish_reader<R: ArrowReader>(
             ArrowDataType::Timestamp(TimeUnit::Second, _) => {
                 Series::TimestampSecond(init_ca(field))
             }
-            ArrowDataType::LargeList(_) => Series::LargeList(init_ca(field)),
+            ArrowDataType::List(_) => Series::List(init_ca(field)),
             t => panic!(format!("Arrow datatype {:?} is not supported", t)),
         })
         .collect::<Vec<_>>();

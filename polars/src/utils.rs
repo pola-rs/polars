@@ -172,7 +172,7 @@ macro_rules! apply_method_all_series {
             Series::TimestampSecond(a) => a.$method($($args),*),
             Series::IntervalDayTime(a) => a.$method($($args),*),
             Series::IntervalYearMonth(a) => a.$method($($args),*),
-            Series::LargeList(a) => a.$method($($args),*),
+            Series::List(a) => a.$method($($args),*),
         }
     }
 }
@@ -279,7 +279,7 @@ macro_rules! apply_method_all_series_and_return {
             Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
             Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
             Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
-            Series::LargeList(a) => Series::LargeList(a.$method($($args),*)$($opt_question_mark)*),
+            Series::List(a) => Series::List(a.$method($($args),*)$($opt_question_mark)*),
         }
     }
 }

@@ -607,7 +607,7 @@ where
 
 impl ZipOuterJoinColumn for Float32Chunked {}
 impl ZipOuterJoinColumn for Float64Chunked {}
-impl ZipOuterJoinColumn for LargeListChunked {}
+impl ZipOuterJoinColumn for ListChunked {}
 
 macro_rules! impl_zip_outer_join {
     ($chunkedtype:ident) => {

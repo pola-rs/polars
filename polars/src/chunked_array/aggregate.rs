@@ -1,5 +1,5 @@
 //! Implementations of the ChunkAgg trait.
-use crate::chunked_array::builder::get_large_list_builder;
+use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*};
@@ -288,32 +288,32 @@ impl ChunkAggSeries for Utf8Chunked {
     }
 }
 
-macro_rules! one_null_largelist {
+macro_rules! one_null_list {
     ($self:ident) => {{
-        let mut builder = get_large_list_builder(&ArrowDataType::Null, 1, $self.name());
+        let mut builder = get_list_builder(&ArrowDataType::Null, 1, $self.name());
         builder.append_opt_series(&None);
         builder.finish().into_series()
     }};
 }
 
-impl ChunkAggSeries for LargeListChunked {
+impl ChunkAggSeries for ListChunked {
     fn sum_as_series(&self) -> Series {
-        one_null_largelist!(self)
+        one_null_list!(self)
     }
     fn max_as_series(&self) -> Series {
-        one_null_largelist!(self)
+        one_null_list!(self)
     }
     fn min_as_series(&self) -> Series {
-        one_null_largelist!(self)
+        one_null_list!(self)
     }
     fn mean_as_series(&self) -> Series {
-        one_null_largelist!(self)
+        one_null_list!(self)
     }
     fn median_as_series(&self) -> Series {
-        one_null_largelist!(self)
+        one_null_list!(self)
     }
     fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
-        Ok(one_null_largelist!(self))
+        Ok(one_null_list!(self))
     }
 }
 

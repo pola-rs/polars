@@ -1,5 +1,5 @@
 use crate::series::PySeries;
-use polars::chunked_array::builder::get_large_list_builder;
+use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
@@ -153,7 +153,7 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
 
 fn append_series(
     pypolars: &PyModule,
-    builder: &mut (impl LargListBuilderTrait + ?Sized),
+    builder: &mut (impl ListBuilderTrait + ?Sized),
     lambda: &PyAny,
     series: Series,
 ) -> PyResult<()> {
@@ -179,7 +179,7 @@ fn append_series(
     Ok(())
 }
 
-fn large_list_lambda_append_primitive<'a, D>(
+fn list_lambda_append_primitive<'a, D>(
     pypolars: &PyModule,
     builder: &mut PrimitiveChunkedBuilder<D>,
     lambda: &'a PyAny,
@@ -199,14 +199,14 @@ where
     Ok(())
 }
 
-impl<'a, 'b> ApplyLambda<'a, 'b> for LargeListChunked {
+impl<'a, 'b> ApplyLambda<'a, 'b> for ListChunked {
     fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
         // get the pypolars module
         let pypolars = PyModule::import(py, "pypolars")?;
 
         match self.dtype() {
-            ArrowDataType::LargeList(dt) => {
-                let mut builder = get_large_list_builder(&*dt, self.len(), self.name());
+            ArrowDataType::List(dt) => {
+                let mut builder = get_list_builder(&*dt, self.len(), self.name());
                 let ca = if self.null_count() == 0 {
                     let mut it = self.into_no_null_iter();
 
@@ -248,13 +248,13 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for LargeListChunked {
             let mut it = self.into_no_null_iter();
 
             while let Some(series) = it.next() {
-                large_list_lambda_append_primitive(pypolars, &mut builder, lambda, series)?;
+                list_lambda_append_primitive(pypolars, &mut builder, lambda, series)?;
             }
         } else {
             let mut it = self.into_iter();
             while let Some(opt_series) = it.next() {
                 if let Some(series) = opt_series {
-                    large_list_lambda_append_primitive(pypolars, &mut builder, lambda, series)?;
+                    list_lambda_append_primitive(pypolars, &mut builder, lambda, series)?;
                 } else {
                     builder.append_null()
                 }

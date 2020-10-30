@@ -383,7 +383,7 @@ impl PySeries {
                 }
             }
             Series::Utf8(_) => self.to_list(),
-            Series::LargeList(_) => self.to_list(),
+            Series::List(_) => self.to_list(),
             _ => todo!(),
         }
     }
@@ -543,8 +543,8 @@ impl PySeries {
         }
     }
 
-    pub fn get_large_list(&self, index: usize) -> Option<Self> {
-        if let Series::LargeList(ca) = &self.series {
+    pub fn get_list(&self, index: usize) -> Option<Self> {
+        if let Series::List(ca) = &self.series {
             let s = ca.get(index);
             s.map(|s| s.into())
         } else {

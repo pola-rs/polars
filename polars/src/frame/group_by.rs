@@ -71,7 +71,7 @@ impl IntoGroupTuples for Utf8Chunked {
 
 impl IntoGroupTuples for Float64Chunked {}
 impl IntoGroupTuples for Float32Chunked {}
-impl IntoGroupTuples for LargeListChunked {}
+impl IntoGroupTuples for ListChunked {}
 
 /// Utility enum used for grouping on multiple columns
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
@@ -316,7 +316,7 @@ pub(crate) trait NumericAggSync {
 
 impl NumericAggSync for BooleanChunked {}
 impl NumericAggSync for Utf8Chunked {}
-impl NumericAggSync for LargeListChunked {}
+impl NumericAggSync for ListChunked {}
 
 impl<T> NumericAggSync for ChunkedArray<T>
 where
@@ -468,9 +468,9 @@ impl AggFirst for Utf8Chunked {
     }
 }
 
-impl AggFirst for LargeListChunked {
+impl AggFirst for ListChunked {
     fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
-        impl_agg_first!(self, groups, LargeListChunked)
+        impl_agg_first!(self, groups, ListChunked)
     }
 }
 
@@ -503,9 +503,9 @@ impl AggLast for Utf8Chunked {
     }
 }
 
-impl AggLast for LargeListChunked {
+impl AggLast for ListChunked {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
-        impl_agg_last!(self, groups, LargeListChunked)
+        impl_agg_last!(self, groups, ListChunked)
     }
 }
 
@@ -553,7 +553,7 @@ where
 
 impl AggNUnique for Float32Chunked {}
 impl AggNUnique for Float64Chunked {}
-impl AggNUnique for LargeListChunked {}
+impl AggNUnique for ListChunked {}
 
 // TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
@@ -582,7 +582,7 @@ where
             ($type:ty, $agg_col:expr) => {{
                 let values_builder = PrimitiveBuilder::<$type>::new(groups.len());
                 let mut builder =
-                    LargeListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
+                    ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
@@ -596,8 +596,7 @@ where
         macro_rules! impl_gb_utf8 {
             ($agg_col:expr) => {{
                 let values_builder = StringBuilder::new(groups.len());
-                let mut builder =
-                    LargeListUtf8ChunkedBuilder::new("", values_builder, groups.len());
+                let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
@@ -653,7 +652,7 @@ where
 
 impl AggQuantile for Utf8Chunked {}
 impl AggQuantile for BooleanChunked {}
-impl AggQuantile for LargeListChunked {}
+impl AggQuantile for ListChunked {}
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Select the column by which the determine the groups.
@@ -1092,7 +1091,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     pub fn groups(&self) -> Result<DataFrame> {
         let mut cols = self.keys();
 
-        let mut column: LargeListChunked = self
+        let mut column: ListChunked = self
             .groups
             .iter()
             .map(|(_first, idx)| {
@@ -1244,7 +1243,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             ($type:ty, $agg_col:expr) => {{
                 let values_builder = PrimitiveBuilder::<$type>::new(self.groups.len());
                 let mut builder =
-                    LargeListPrimitiveChunkedBuilder::new("", values_builder, self.groups.len());
+                    ListPrimitiveChunkedBuilder::new("", values_builder, self.groups.len());
                 for (_first, idx) in &self.groups {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
@@ -1259,7 +1258,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             ($agg_col:expr) => {{
                 let values_builder = StringBuilder::new(self.groups.len());
                 let mut builder =
-                    LargeListUtf8ChunkedBuilder::new("", values_builder, self.groups.len());
+                    ListUtf8ChunkedBuilder::new("", values_builder, self.groups.len());
                 for (_first, idx) in &self.groups {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
@@ -1611,7 +1610,7 @@ impl ChunkPivot for Utf8Chunked {
         pivot_count_impl(&self, pivot_series, keys, groups)
     }
 }
-impl ChunkPivot for LargeListChunked {}
+impl ChunkPivot for ListChunked {}
 
 enum PivotAgg {
     First,

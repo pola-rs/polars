@@ -13,7 +13,7 @@ where
     }
 }
 
-impl LargeListChunked {
+impl ListChunked {
     /// If all nested `Series` have the same length, a 2 dimensional `ndarray::Array` is returned.
     pub fn to_ndarray<N>(&self) -> Result<Array2<N::Native>>
     where
@@ -56,7 +56,7 @@ impl LargeListChunked {
                 Ok(ndarray)
             } else {
                 Err(PolarsError::NoData(
-                    "cannot create ndarray of empty LargeListChunked".into(),
+                    "cannot create ndarray of empty ListChunked".into(),
                 ))
             }
         }

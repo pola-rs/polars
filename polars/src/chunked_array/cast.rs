@@ -53,4 +53,4 @@ macro_rules! impl_chunkcast {
 
 impl_chunkcast!(Utf8Chunked);
 impl_chunkcast!(BooleanChunked);
-impl_chunkcast!(LargeListChunked);
+impl_chunkcast!(ListChunked);

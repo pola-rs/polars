@@ -51,7 +51,7 @@ pub mod upstream_traits;
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
     DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
-    LargeListArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
+    ListArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     TimestampSecondArray,
 };
@@ -597,9 +597,9 @@ where
                 let v = downcast!(TimestampSecondArray);
                 AnyType::TimeStamp(v, TimeUnit::Second)
             }
-            ArrowDataType::LargeList(_) => {
-                let v = downcast!(LargeListArray);
-                AnyType::LargeList(("", v).into())
+            ArrowDataType::List(_) => {
+                let v = downcast!(ListArray);
+                AnyType::List(("", v).into())
             }
             _ => unimplemented!(),
         }
@@ -781,10 +781,10 @@ where
     }
 }
 
-impl LargeListChunked {
+impl ListChunked {
     pub(crate) fn get_inner_dtype(&self) -> &Box<ArrowDataType> {
         match self.dtype() {
-            ArrowDataType::LargeList(dt) => dt,
+            ArrowDataType::List(dt) => dt,
             _ => panic!("should not happen"),
         }
     }
@@ -832,13 +832,13 @@ impl Downcast<StringArray> for Utf8Chunked {
     }
 }
 
-impl Downcast<LargeListArray> for LargeListChunked {
-    fn downcast_chunks(&self) -> Vec<&LargeListArray> {
+impl Downcast<ListArray> for ListChunked {
+    fn downcast_chunks(&self) -> Vec<&ListArray> {
         self.chunks
             .iter()
             .map(|arr| {
                 let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const LargeListArray) }
+                unsafe { &*(arr as *const dyn Array as *const ListArray) }
             })
             .collect::<Vec<_>>()
     }

@@ -144,7 +144,7 @@ class DataFrame:
         data = {}
         for col in self.columns:
             series = self[col]
-            if series.dtype == LargeList:
+            if series.dtype == List:
                 data[col] = series.to_list()
             elif series.dtype == Utf8:
                 data[col] = series.to_list()
