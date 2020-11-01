@@ -53,6 +53,21 @@ where
     }
 }
 
+impl<'a, T> TakeRandom for &'a ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    type Item = T::Native;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        (*self).get(index)
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        (*self).get_unchecked(index)
+    }
+}
+
 impl<'a> TakeRandom for &'a Utf8Chunked {
     type Item = &'a str;
 
