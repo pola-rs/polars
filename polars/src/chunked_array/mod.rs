@@ -17,14 +17,11 @@ use std::iter::{Copied, Map};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub mod aggregate;
-pub mod apply;
 pub mod ops;
 #[macro_use]
 pub mod arithmetic;
 pub mod builder;
 pub mod cast;
-pub mod chunkops;
 pub mod comparison;
 pub mod iterator;
 pub mod kernels;
@@ -37,17 +34,13 @@ pub mod par;
 #[cfg(feature = "random")]
 #[doc(cfg(feature = "random"))]
 mod random;
-pub mod set;
 #[cfg(feature = "strings")]
 #[doc(cfg(feature = "strings"))]
 pub mod strings;
-pub mod take;
 #[cfg(feature = "temporal")]
 #[doc(cfg(feature = "temporal"))]
 pub mod temporal;
-pub mod unique;
 pub mod upstream_traits;
-pub mod window;
 
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,

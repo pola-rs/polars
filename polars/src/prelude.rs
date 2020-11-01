@@ -1,22 +1,24 @@
 //! Everything you need to get started with Polars.
 pub use crate::{
     chunked_array::{
-        window::InitFold,
         arithmetic::Pow,
         builder::{
             AlignedVec, BooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
             ListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
-        chunkops::ChunkOps,
         comparison::{CompToSeries, NumComp},
         iterator::{IntoNoNullIterator, NumericChunkIterDispatch},
+        ops::{
+            chunkops::ChunkOps,
+            take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
+            window::InitFold,
+        },
         ops::{
             ChunkAgg, ChunkAggSeries, ChunkApply, ChunkCast, ChunkCompare, ChunkExpandAtIndex,
             ChunkFillNone, ChunkFilter, ChunkFull, ChunkReverse, ChunkSet, ChunkShift, ChunkSort,
             ChunkTake, ChunkUnique, ChunkWindow, ChunkZip, FillNoneStrategy, TakeRandom,
             TakeRandomUtf8,
         },
-        take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
         ChunkedArray, Downcast, NoNull,
     },
     datatypes,

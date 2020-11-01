@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use num::{NumCast, Zero, Bounded};
+use num::{Bounded, NumCast, Zero};
 use std::ops::{Add, Div, Mul};
 
 /// a fold function to compute the sum. Returns a Null if there is a single null in the window
@@ -112,7 +112,12 @@ fn update_state<T>(
 }
 
 /// Apply weight to the current window and accumulate with a `fold_fn`.
-fn apply_window<T, F>(weight: Option<&[T]>, window: &[Option<T>], fold_fn: F, init_fold: InitFold) -> Option<T>
+fn apply_window<T, F>(
+    weight: Option<&[T]>,
+    window: &[Option<T>],
+    fold_fn: F,
+    init_fold: InitFold,
+) -> Option<T>
 where
     T: Copy + Add<Output = T> + Zero + Mul<Output = T> + Bounded,
     F: Fn(Option<T>, Option<T>) -> Option<T>,
@@ -120,7 +125,7 @@ where
     let init = match init_fold {
         InitFold::Zero => Zero::zero(),
         InitFold::Min => Bounded::min_value(),
-        InitFold::Max => Bounded::max_value()
+        InitFold::Max => Bounded::max_value(),
     };
 
     match weight {
@@ -148,8 +153,13 @@ fn finish_rolling_method<T, F>(
 ) -> Result<ChunkedArray<T>>
 where
     T: PolarsNumericType,
-    T::Native:
-        Zero + Bounded + NumCast + Div<Output = T::Native> + Mul<Output = T::Native> + PartialOrd + Copy,
+    T::Native: Zero
+        + Bounded
+        + NumCast
+        + Div<Output = T::Native>
+        + Mul<Output = T::Native>
+        + PartialOrd
+        + Copy,
     F: Fn(Option<T::Native>, Option<T::Native>) -> Option<T::Native> + Copy,
 {
     let weight: Option<Vec<T::Native>> = weight.map(weight_to_native);
@@ -180,14 +190,19 @@ where
 pub enum InitFold {
     Zero,
     Max,
-    Min
+    Min,
 }
 
 impl<T> ChunkWindow<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native:
-        Zero + Bounded + NumCast + Div<Output = T::Native> + Mul<Output = T::Native> + PartialOrd + Copy,
+    T::Native: Zero
+        + Bounded
+        + NumCast
+        + Div<Output = T::Native>
+        + Mul<Output = T::Native>
+        + PartialOrd
+        + Copy,
 {
     fn rolling_sum(
         &self,
@@ -249,7 +264,7 @@ where
         window_size: usize,
         weight: Option<&[f64]>,
         fold_fn: F,
-        init_fold: InitFold
+        init_fold: InitFold,
     ) -> Result<Self>
     where
         F: Fn(Option<T::Native>, Option<T::Native>) -> Option<T::Native> + Copy,

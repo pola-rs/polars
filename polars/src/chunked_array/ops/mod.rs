@@ -11,6 +11,14 @@ use std::marker::Sized;
 use std::ops::{Add, Div};
 use std::sync::Arc;
 
+pub mod aggregate;
+pub mod apply;
+pub mod chunkops;
+pub mod set;
+pub mod take;
+pub mod unique;
+pub mod window;
+
 pub trait ChunkWindow<T> {
     /// Apply a rolling sum (moving sum) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
@@ -139,7 +147,7 @@ pub trait ChunkWindow<T> {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _fold_fn: F,
-        _init_fold: InitFold
+        _init_fold: InitFold,
     ) -> Result<Self>
     where
         F: Fn(Option<T>, Option<T>) -> Option<T> + Copy,
