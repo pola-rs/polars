@@ -39,7 +39,7 @@ We use GitHub issues to track public bugs. Report a bug by [opening a new issue]
 We test the code formatting in the CI pipelines. If you don't want these to fail, you need to format:
 
 * **Rust** code with `$ cargo fmt`
-* **Python** code with [black (version 19.10b)](https://github.com/psf/black), running `$ black .`
+* **Python** code with [black (version 20.8b1)](https://github.com/psf/black), running `$ black .`
 
 ## License
 By contributing, you agree that your contributions will be licensed under its MIT License.
