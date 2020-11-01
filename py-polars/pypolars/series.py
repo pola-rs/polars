@@ -1,5 +1,11 @@
 from __future__ import annotations
-from .pypolars import PySeries
+
+try:
+    from .pypolars import PySeries
+except:
+    import warnings
+
+    warnings.warn("binary files missing")
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any, Callable
 from .ffi import ptr_to_numpy

@@ -1,5 +1,11 @@
 from __future__ import annotations
-from .pypolars import PyDataFrame, PySeries, PyLazyFrame
+
+try:
+    from .pypolars import PyDataFrame, PySeries, PyLazyFrame
+except:
+    import warnings
+
+    warnings.warn("binary files missing")
 from typing import (
     Dict,
     Sequence,

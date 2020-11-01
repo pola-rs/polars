@@ -3,15 +3,21 @@ from typing import Union, List, Callable, Optional
 
 from pypolars import Series
 from pypolars.frame import DataFrame, wrap_df
-from .pypolars import (
-    PyLazyFrame,
-    col as pycol,
-    lit as pylit,
-    binary_expr,
-    PyExpr,
-    PyLazyGroupBy,
-    when as pywhen,
-)
+
+try:
+    from .pypolars import (
+        PyLazyFrame,
+        col as pycol,
+        lit as pylit,
+        binary_expr,
+        PyExpr,
+        PyLazyGroupBy,
+        when as pywhen,
+    )
+except:
+    import warnings
+
+    warnings.warn("binary files missing")
 
 
 def lazy(self) -> "LazyFrame":

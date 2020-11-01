@@ -75,7 +75,7 @@ A subset of the Polars functionality is also exposed through Python bindings. Yo
 `$ pip install py-polars`
 
 Next you can check the [10 minutes to py-polars notebook](examples/10_minutes_to_pypolars.ipynb) or take a look 
-at the [reference](https://py-polars.readthedocs.io/en/latest/).
+at the [reference](https://ritchie46.github.io/polars/pypolars/index.html).
 
 
 
