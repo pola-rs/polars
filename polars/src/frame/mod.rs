@@ -1015,7 +1015,7 @@ impl DataFrame {
     pub fn shift(&self, periods: i32) -> Result<Self> {
         let col = self
             .columns
-            .iter()
+            .par_iter()
             .map(|s| s.shift(periods))
             .collect::<Result<Vec<_>>>()?;
         Ok(DataFrame::new_no_checks(col))
@@ -1032,7 +1032,7 @@ impl DataFrame {
     pub fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         let col = self
             .columns
-            .iter()
+            .par_iter()
             .map(|s| s.fill_none(strategy))
             .collect::<Result<Vec<_>>>()?;
         Ok(DataFrame::new_no_checks(col))
