@@ -202,3 +202,10 @@ def test_parse_date(dtype, fmt, null_values):
     # Why results Date64 into `nan`?
     assert result.dtype == dtype
     assert result.is_null().sum() == null_values
+
+
+def test_rolling():
+    a = Series("a", [1, 2, 3, 2, 1])
+    assert a.rolling_min(2) == [None, 1, 2, 2, 1]
+    assert a.rolling_max(2) == [None, 2, 3, 3, 2]
+    assert a.rolling_sum(2) == [None, 3, 5, 5, 3]

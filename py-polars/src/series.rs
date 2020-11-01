@@ -551,6 +551,56 @@ impl PySeries {
             None
         }
     }
+    pub fn rolling_sum(
+        &self,
+        window_size: usize,
+        weight: Option<Vec<f64>>,
+        ignore_null: bool,
+    ) -> PyResult<Self> {
+        let s = self
+            .series
+            .rolling_sum(window_size, weight.as_deref(), ignore_null)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn rolling_mean(
+        &self,
+        window_size: usize,
+        weight: Option<Vec<f64>>,
+        ignore_null: bool,
+    ) -> PyResult<Self> {
+        let s = self
+            .series
+            .rolling_mean(window_size, weight.as_deref(), ignore_null)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn rolling_max(
+        &self,
+        window_size: usize,
+        weight: Option<Vec<f64>>,
+        ignore_null: bool,
+    ) -> PyResult<Self> {
+        let s = self
+            .series
+            .rolling_max(window_size, weight.as_deref(), ignore_null)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+    pub fn rolling_min(
+        &self,
+        window_size: usize,
+        weight: Option<Vec<f64>>,
+        ignore_null: bool,
+    ) -> PyResult<Self> {
+        let s = self
+            .series
+            .rolling_min(window_size, weight.as_deref(), ignore_null)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
 }
 
 macro_rules! impl_ufuncs {

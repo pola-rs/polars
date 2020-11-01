@@ -12,7 +12,25 @@ use std::ops::{Add, Div};
 use std::sync::Arc;
 
 pub trait ChunkWindow<T> {
-    fn rolling_sum(&self, _window_size: usize, _weight: Option<&[T]>) -> Result<Self>
+    /// Apply a rolling sum (moving sum) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their sum.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    fn rolling_sum(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Self>
     where
         Self: std::marker::Sized,
     {
@@ -20,8 +38,111 @@ pub trait ChunkWindow<T> {
             "rolling sum not supported for this datatype".into(),
         ))
     }
-    fn rolling_mean(&self, _window_size: usize, _weight: Option<&[T]>) -> Result<Self>
+    /// Apply a rolling mean (moving mean) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their mean.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    fn rolling_mean(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Self>
     where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+
+    /// Apply a rolling min (moving min) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their min.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    fn rolling_min(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+
+    /// Apply a rolling max (moving max) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their max.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    fn rolling_max(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+
+    /// Apply a rolling aggregation over the values in this array.
+    ///
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their max.
+    ///
+    /// You can pass a custom closure that will be used in the `fold` operation to aggregate the window.
+    /// The closure/fn of type `Fn(Option<T>, Option<T>) -> Option<T>` takes an `accumulator` and
+    /// a `value` as argument.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    fn rolling_custom<F>(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _fold_fn: F,
+        _init_fold: InitFold
+    ) -> Result<Self>
+    where
+        F: Fn(Option<T>, Option<T>) -> Option<T> + Copy,
         Self: std::marker::Sized,
     {
         Err(PolarsError::InvalidOperation(

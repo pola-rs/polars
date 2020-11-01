@@ -804,6 +804,38 @@ class Series:
             return wrap_s(self._s.str_parse_date64(fmt))
         return NotImplemented
 
+    def rolling_min(
+        self,
+        window_size: int,
+        weight: Optional[List[float]] = None,
+        ignore_null: bool = False,
+    ):
+        return wrap_s(self._s.rolling_min(window_size, weight, ignore_null))
+
+    def rolling_max(
+        self,
+        window_size: int,
+        weight: Optional[List[float]] = None,
+        ignore_null: bool = False,
+    ):
+        return wrap_s(self._s.rolling_max(window_size, weight, ignore_null))
+
+    def rolling_mean(
+        self,
+        window_size: int,
+        weight: Optional[List[float]] = None,
+        ignore_null: bool = False,
+    ):
+        return wrap_s(self._s.rolling_mean(window_size, weight, ignore_null))
+
+    def rolling_sum(
+        self,
+        window_size: int,
+        weight: Optional[List[float]] = None,
+        ignore_null: bool = False,
+    ):
+        return wrap_s(self._s.rolling_sum(window_size, weight, ignore_null))
+
     @staticmethod
     def parse_date(
         name: str, values: Sequence[str], dtype: "DataType", fmt: str

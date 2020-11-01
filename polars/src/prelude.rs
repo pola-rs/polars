@@ -1,6 +1,7 @@
 //! Everything you need to get started with Polars.
 pub use crate::{
     chunked_array::{
+        window::InitFold,
         arithmetic::Pow,
         builder::{
             AlignedVec, BooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,

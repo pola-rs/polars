@@ -753,16 +753,48 @@ impl Series {
     pub fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
         apply_method_all_series!(self, quantile_as_series, quantile)
     }
-    /// Apply a rolling mean to a Series. If you want to apply a weight use method on
+    /// Apply a rolling mean to a Series. See:
     /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
-    pub fn rolling_mean(&self, window_size: usize) -> Result<Self> {
-        let s = apply_method_all_series_and_return!(self, rolling_mean, [window_size, None], ?);
+    pub fn rolling_mean(
+        &self,
+        window_size: usize,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+    ) -> Result<Self> {
+        let s = apply_method_all_series_and_return!(self, rolling_mean, [window_size, weight, ignore_null], ?);
         Ok(s)
     }
-    /// Apply a rolling sum to a Series. If you want to apply a weight use method on
+    /// Apply a rolling sum to a Series. See:
     /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_sum).
-    pub fn rolling_sum(&self, window_size: usize) -> Result<Self> {
-        let s = apply_method_all_series_and_return!(self, rolling_sum, [window_size, None], ?);
+    pub fn rolling_sum(
+        &self,
+        window_size: usize,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+    ) -> Result<Self> {
+        let s = apply_method_all_series_and_return!(self, rolling_sum, [window_size, weight, ignore_null], ?);
+        Ok(s)
+    }
+    /// Apply a rolling min to a Series. See:
+    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_min).
+    pub fn rolling_min(
+        &self,
+        window_size: usize,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+    ) -> Result<Self> {
+        let s = apply_method_all_series_and_return!(self, rolling_min, [window_size, weight, ignore_null], ?);
+        Ok(s)
+    }
+    /// Apply a rolling max to a Series. See:
+    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_max).
+    pub fn rolling_max(
+        &self,
+        window_size: usize,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+    ) -> Result<Self> {
+        let s = apply_method_all_series_and_return!(self, rolling_max, [window_size, weight, ignore_null], ?);
         Ok(s)
     }
 
