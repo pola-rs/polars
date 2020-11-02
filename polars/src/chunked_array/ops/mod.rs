@@ -8,16 +8,16 @@ use std::cmp::Ordering;
 use std::marker::Sized;
 use std::sync::Arc;
 
-pub mod aggregate;
-pub mod apply;
-pub mod chunkops;
-pub mod fill_none;
-pub mod set;
-pub mod shift;
-pub mod take;
-pub mod unique;
-pub mod window;
-pub mod zip;
+pub(crate) mod aggregate;
+pub(crate) mod apply;
+pub(crate) mod chunkops;
+pub(crate) mod fill_none;
+pub(crate) mod set;
+pub(crate) mod shift;
+pub(crate) mod take;
+pub(crate) mod unique;
+pub(crate) mod window;
+pub(crate) mod zip;
 
 pub trait ChunkWindow<T> {
     /// Apply a rolling sum (moving sum) over the values in this array.
