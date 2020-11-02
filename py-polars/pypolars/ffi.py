@@ -7,7 +7,7 @@ from typing import Any
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
 
 
-def ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
+def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     """
 
     Parameters

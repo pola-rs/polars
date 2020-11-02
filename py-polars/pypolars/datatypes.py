@@ -1,5 +1,7 @@
 import ctypes
 
+__pdoc__ = {"dtype_to_ctype": False, "dtype_to_int": False}
+
 
 class Int8:
     pass

@@ -6,6 +6,8 @@ except:
     import warnings
 
     warnings.warn("binary files missing")
+    __pdoc__ = {"wrap_df": False}
+
 from typing import (
     Dict,
     Sequence,
@@ -23,7 +25,7 @@ import numpy as np
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
-    return DataFrame.from_pydf(df)
+    return DataFrame._from_pydf(df)
 
 
 class DataFrame:
@@ -35,7 +37,7 @@ class DataFrame:
         self._df = PyDataFrame(columns)
 
     @staticmethod
-    def from_pydf(df: "PyDataFrame") -> "DataFrame":
+    def _from_pydf(df: "PyDataFrame") -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
         self._df = df
         return self
@@ -125,22 +127,6 @@ class DataFrame:
         self._df = PyDataFrame.read_ipc(file)
         return self
 
-    @staticmethod
-    def read_feather(file: Union[str, BinaryIO]) -> DataFrame:
-        """
-        Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
-
-        Parameters
-        ----------
-        file
-            Path to a file or a file like object.
-
-        Returns
-        -------
-        DataFrame
-        """
-        return DataFrame.read_ipc(file)
-
     def to_pandas(self) -> "pd.DataFrame":
         """
         cast to a Pandas DataFrame.
@@ -193,19 +179,6 @@ class DataFrame:
             Size of the write buffer. Increase to have faster io.
         """
         self._df.to_ipc(file, batch_size)
-
-    def to_feather(self, file: Union[BinaryIO, str], batch_size):
-        """
-        Write to Arrow IPC binary stream, or a feather file.
-
-        Parameters
-        ----------
-        file
-            write location
-        batch_size
-            Size of the write buffer. Increase to have faster io.
-        """
-        self.to_ipc(file, batch_size)
 
     def __str__(self) -> str:
         return self._df.as_str()

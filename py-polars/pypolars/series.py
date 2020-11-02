@@ -6,12 +6,16 @@ except:
     import warnings
 
     warnings.warn("binary files missing")
+    __pdoc__ = {
+        "wrap_s": False,
+        "find_first_non_none": False,
+        "out_to_dtype": False,
+        "get_ffi_func": False,
+    }
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any, Callable
-from .ffi import ptr_to_numpy
+from .ffi import _ptr_to_numpy
 from .datatypes import *
-
-import ctypes
 from numbers import Number
 
 
@@ -52,7 +56,7 @@ def get_ffi_func(
 
 
 def wrap_s(s: PySeries) -> Series:
-    return Series.from_pyseries(s)
+    return Series._from_pyseries(s)
 
 
 def find_first_non_none(a: List[Optional[Any]]) -> Any:
@@ -89,7 +93,7 @@ class Series:
         self._s: PySeries
         # series path
         if isinstance(values, Series):
-            self.from_pyseries(values)
+            self._from_pyseries(values)
             return
         elif isinstance(values, dict):
             raise ValueError(
@@ -144,7 +148,7 @@ class Series:
                 raise ValueError(f"dtype: {dtype} not known")
 
     @staticmethod
-    def from_pyseries(s: "PySeries") -> "Series":
+    def _from_pyseries(s: "PySeries") -> "Series":
         self = Series.__new__(Series)
         self._s = s
         return self
@@ -162,7 +166,7 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.eq(other._s))
+            return Series._from_pyseries(self._s.eq(other._s))
         f = get_ffi_func("eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -172,7 +176,7 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.neq(other._s))
+            return Series._from_pyseries(self._s.neq(other._s))
         f = get_ffi_func("neq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -182,7 +186,7 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.gt(other._s))
+            return Series._from_pyseries(self._s.gt(other._s))
         f = get_ffi_func("gt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -192,7 +196,7 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.lt(other._s))
+            return Series._from_pyseries(self._s.lt(other._s))
         f = get_ffi_func("lt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -202,7 +206,7 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.gt_eq(other._s))
+            return Series._from_pyseries(self._s.gt_eq(other._s))
         f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -212,7 +216,7 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.lt_eq(other._s))
+            return Series._from_pyseries(self._s.lt_eq(other._s))
         f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -220,7 +224,7 @@ class Series:
 
     def __add__(self, other) -> Series:
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.add(other._s))
+            return Series._from_pyseries(self._s.add(other._s))
         f = get_ffi_func("add_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -228,7 +232,7 @@ class Series:
 
     def __sub__(self, other) -> Series:
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.sub(other._s))
+            return Series._from_pyseries(self._s.sub(other._s))
         f = get_ffi_func("sub_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -246,7 +250,7 @@ class Series:
 
     def __mul__(self, other) -> Series:
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.mul(other._s))
+            return Series._from_pyseries(self._s.mul(other._s))
         f = get_ffi_func("mul_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -254,7 +258,7 @@ class Series:
 
     def __radd__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.add(other._s))
+            return Series._from_pyseries(self._s.add(other._s))
         f = get_ffi_func("add_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -262,7 +266,7 @@ class Series:
 
     def __rsub__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(other._s.sub(self._s))
+            return Series._from_pyseries(other._s.sub(self._s))
         f = get_ffi_func("sub_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -277,7 +281,7 @@ class Series:
 
     def __rfloordiv__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(other._s.div(self._s))
+            return Series._from_pyseries(other._s.div(self._s))
         f = get_ffi_func("div_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -285,7 +289,7 @@ class Series:
 
     def __rmul__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.mul(other._s))
+            return Series._from_pyseries(self._s.mul(other._s))
         f = get_ffi_func("mul_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -294,7 +298,7 @@ class Series:
     def __getitem__(self, item):
         # assume it is boolean mask
         if isinstance(item, Series):
-            return Series.from_pyseries(self._s.filter(item._s))
+            return Series._from_pyseries(self._s.filter(item._s))
         # slice
         if type(item) == slice:
             start, stop, stride = item.indices(self.len())
@@ -399,7 +403,7 @@ class Series:
         num_elements
             Amount of elements to take.
         """
-        return Series.from_pyseries(self._s.limit(num_elements))
+        return Series._from_pyseries(self._s.limit(num_elements))
 
     def slice(self, offset: int, length: int) -> Series:
         """
@@ -412,7 +416,7 @@ class Series:
         length
             Length of the slice.
         """
-        return Series.from_pyseries(self._s.slice(offset, length))
+        return Series._from_pyseries(self._s.slice(offset, length))
 
     def append(self, other: Series):
         """
@@ -434,7 +438,7 @@ class Series:
         filter
             Boolean mask
         """
-        return Series.from_pyseries(self._s.filter(filter._s))
+        return Series._from_pyseries(self._s.filter(filter._s))
 
     def head(self, length: Optional[int] = None) -> Series:
         """
@@ -445,7 +449,7 @@ class Series:
         length
             Length of the head
         """
-        return Series.from_pyseries(self._s.head(length))
+        return Series._from_pyseries(self._s.head(length))
 
     def tail(self, length: Optional[int] = None) -> Series:
         """
@@ -456,7 +460,7 @@ class Series:
         length
             Length of the tail
         """
-        return Series.from_pyseries(self._s.tail(length))
+        return Series._from_pyseries(self._s.tail(length))
 
     def sort(self, in_place: bool = False, reverse: bool = False) -> Optional[Series]:
         """
@@ -513,7 +517,7 @@ class Series:
         """
         if isinstance(indices, list):
             indices = np.array(indices)
-        return Series.from_pyseries(self._s.take(indices))
+        return Series._from_pyseries(self._s.take(indices))
 
     def null_count(self) -> int:
         """
@@ -529,7 +533,7 @@ class Series:
         -------
         Boolean Series
         """
-        return Series.from_pyseries(self._s.is_null())
+        return Series._from_pyseries(self._s.is_null())
 
     def series_equal(self, other: Series, null_equal: bool = False) -> bool:
         """
@@ -609,7 +613,7 @@ class Series:
         """
         ptr_type = dtype_to_ctype(self.dtype)
         ptr = self._s.as_single_ptr()
-        array = ptr_to_numpy(ptr, self.len(), ptr_type)
+        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
         array.setflags(write=False)
         return array
 

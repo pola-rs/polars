@@ -19,6 +19,8 @@ except:
 
     warnings.warn("binary files missing")
 
+    __pdoc__ = {"wrap_ldf": False, "wrap_expr": False}
+
 
 def lazy(self) -> "LazyFrame":
     return wrap_ldf(self._df.lazy())

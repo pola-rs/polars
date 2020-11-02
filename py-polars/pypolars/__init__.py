@@ -4,3 +4,5 @@ from .pandas import *
 
 # needed for side effects
 from pypolars.lazy import *
+
+__pdoc__ = {"ffi": False}
