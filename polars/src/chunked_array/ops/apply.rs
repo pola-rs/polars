@@ -1,6 +1,7 @@
 //! Implementations of the ChunkApply Trait.
 use crate::prelude::*;
 use crate::utils::Xob;
+use arrow::array::{ArrayRef, PrimitiveArray, StringArray};
 
 impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
@@ -46,7 +47,11 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     where
         F: Fn(bool) -> bool + Copy,
     {
-        self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
+        if self.null_count() == 0 {
+            self.into_no_null_iter().map(f).collect()
+        } else {
+            self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
+        }
     }
 }
 
@@ -60,5 +65,28 @@ impl<'a> ChunkApply<'a, &'a str, String> for Utf8Chunked {
         } else {
             self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
         }
+    }
+}
+
+impl<T> ChunkApplyKernel<PrimitiveArray<T>> for ChunkedArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn apply_kernel<F>(&self, f: F) -> Self
+    where
+        F: Fn(&PrimitiveArray<T>) -> ArrayRef,
+    {
+        let chunks = self.downcast_chunks().into_iter().map(f).collect();
+        ChunkedArray::new_from_chunks(self.name(), chunks)
+    }
+}
+
+impl ChunkApplyKernel<StringArray> for Utf8Chunked {
+    fn apply_kernel<F>(&self, f: F) -> Self
+    where
+        F: Fn(&StringArray) -> ArrayRef,
+    {
+        let chunks = self.downcast_chunks().into_iter().map(f).collect();
+        ChunkedArray::new_from_chunks(self.name(), chunks)
     }
 }

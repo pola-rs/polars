@@ -919,6 +919,14 @@ pub trait ChunkAggSeries {
     }
 }
 
+/// Apply kernels on the arrow array chunks in a ChunkedArray.
+pub trait ChunkApplyKernel<A> {
+    /// Apply kernel and return result as a new ChunkedArray.
+    fn apply_kernel<F>(&self, f: F) -> Self
+    where
+        F: Fn(&A) -> ArrayRef;
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
