@@ -1,11 +1,13 @@
 use crate::prelude::*;
 use crate::utils::Xob;
-use fnv::{FnvBuildHasher, FnvHashMap};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
+use std::hash::{BuildHasherDefault, Hash};
 use unsafe_unwrap::UnsafeUnwrap;
+
+type SeaBuildHasher = BuildHasherDefault<SeaHasher>;
 
 macro_rules! hash_join_inner {
     ($s_right:ident, $ca_left:ident, $type_:ident) => {{
@@ -101,11 +103,12 @@ macro_rules! apply_hash_join_on_series {
 
 pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = T>,
-) -> HashMap<T, Vec<usize>, FnvBuildHasher>
+) -> HashMap<T, Vec<usize>, SeaBuildHasher>
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl = FnvHashMap::default();
+    let mut hash_tbl =
+        HashMap::with_capacity_and_hasher(b.size_hint().0 / 10, BuildHasherDefault::default());
 
     b.enumerate()
         .for_each(|(idx, key)| hash_tbl.entry(key).or_insert_with(Vec::new).push(idx));
@@ -153,11 +156,11 @@ macro_rules! par_prepare_hashed_relation {
     ($b:expr) => {{
         $b
             // acc is the hashmap
-            .fold(FnvHashMap::default, |mut acc, (idx, key)| {
+            .fold(SeaBuildHasher::default, |mut acc, (idx, key)| {
                 acc.entry(key).or_insert_with(Vec::new).push(idx);
                 acc
             })
-            .reduce(FnvHashMap::default, |mut map1, map2| {
+            .reduce(SeaBuildHasher::default, |mut map1, map2| {
                 map1.extend(map2.into_iter());
                 map1
             })
@@ -647,7 +650,7 @@ impl DataFrame {
     /// Utility method to finish a join.
     fn finish_join(&self, mut df_left: DataFrame, mut df_right: DataFrame) -> Result<DataFrame> {
         let mut left_names =
-            HashSet::with_capacity_and_hasher(df_left.width(), FnvBuildHasher::default());
+            HashSet::with_capacity_and_hasher(df_left.width(), SeaBuildHasher::default());
 
         df_left.columns.iter().for_each(|series| {
             left_names.insert(series.name());

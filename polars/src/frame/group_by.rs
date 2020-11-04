@@ -4,13 +4,12 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{IntoDynamicZip, Xob};
 use arrow::array::{PrimitiveBuilder, StringBuilder};
-use fnv::{FnvBuildHasher, FnvHasher};
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
+use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
-use seahash::SeaHasher;
 
 type SeaBuildHasher = BuildHasherDefault<SeaHasher>;
 
