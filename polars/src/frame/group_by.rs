@@ -10,6 +10,10 @@ use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
+use seahash::SeaHasher;
+
+type SeaBuildHasher = BuildHasherDefault<SeaHasher>;
+
 use std::{
     fmt::{Debug, Formatter},
     ops::Add,
@@ -521,14 +525,14 @@ macro_rules! impl_agg_n_unique {
             .into_par_iter()
             .map(|(_first, idx)| {
                 if $self.null_count() == 0 {
-                    let mut set = HashSet::with_hasher(FnvBuildHasher::default());
+                    let mut set = HashSet::with_hasher(SeaBuildHasher::default());
                     for i in idx {
                         let v = unsafe { $self.get_unchecked(*i) };
                         set.insert(v);
                     }
                     set.len() as u32
                 } else {
-                    let mut set = HashSet::with_hasher(FnvBuildHasher::default());
+                    let mut set = HashSet::with_hasher(SeaBuildHasher::default());
                     for i in idx {
                         let opt_v = $self.get(*i);
                         set.insert(opt_v);
@@ -1152,7 +1156,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     {
         // create a mapping from columns to aggregations on that column
         let mut map =
-            HashMap::with_capacity_and_hasher(column_to_agg.len(), FnvBuildHasher::default());
+            HashMap::with_capacity_and_hasher(column_to_agg.len(), SeaBuildHasher::default());
         column_to_agg
             .into_iter()
             .for_each(|(column, aggregations)| {
@@ -1433,8 +1437,8 @@ trait ChunkPivot {
 fn create_column_values_map<'a, T>(
     pivot_vec: &'a [Option<Groupable>],
     size: usize,
-) -> HashMap<&'a Groupable<'a>, Vec<Option<T>>, FnvBuildHasher> {
-    let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, FnvBuildHasher::default());
+) -> HashMap<&'a Groupable<'a>, Vec<Option<T>>, SeaBuildHasher> {
+    let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, SeaBuildHasher::default());
     for opt_column_name in pivot_vec {
         if let Some(column_name) = opt_column_name {
             columns_agg_map
@@ -1450,13 +1454,13 @@ fn create_column_values_map<'a, T>(
 fn create_new_column_builder_map<'a, T>(
     pivot_vec: &'a [Option<Groupable>],
     groups: &[(usize, Vec<usize>)],
-) -> HashMap<&'a Groupable<'a>, PrimitiveChunkedBuilder<T>, BuildHasherDefault<FnvHasher>>
+) -> HashMap<&'a Groupable<'a>, PrimitiveChunkedBuilder<T>, SeaBuildHasher>
 where
     T: PolarsNumericType,
 {
     // create a hash map that will be filled with the results of the aggregation.
     let mut columns_agg_map_main =
-        HashMap::with_capacity_and_hasher(pivot_vec.len(), FnvBuildHasher::default());
+        HashMap::with_capacity_and_hasher(pivot_vec.len(), SeaBuildHasher::default());
     for opt_column_name in pivot_vec {
         if let Some(column_name) = opt_column_name {
             columns_agg_map_main.entry(column_name).or_insert_with(|| {

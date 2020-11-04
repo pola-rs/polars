@@ -38,6 +38,7 @@ rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
 regex = {version = "1.4", optional = true }
 anyhow = "1.0"
+seahash = "4.0.1"
 
 [package.metadata.docs.rs]
 all-features = true
