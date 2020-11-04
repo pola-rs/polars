@@ -61,7 +61,7 @@ Want to know about all the features Polars support? Read the docs!
 * [lazy py-polars notebook](examples/lazy_py-polars.ipynb)
 
 ## Performance
-Polars is written to be performant. Below are some comparisons with the (also very fast) Pandas DataFrame library.
+Polars is written to be performant. Below are some comparisons with pandas and pydatatable DataFrame library **(lower is better)**.
 
 #### GroupBy
 ![](pandas_cmp/img/groupby10_.png)
