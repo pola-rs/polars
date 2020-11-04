@@ -6,13 +6,13 @@ groups = np.arange(10)
 str_groups = np.array(list("0123456789"))
 np.random.seed(1)
 
-for size in [1e2, 1e3, 1e4, 1e5, 1e6]:
+for size in [1e3, 1e4, 1e5, 1e6, 1e7, 1e8]:
     size = int(size)
     g = np.random.choice(groups, size)
     sg = np.random.choice(str_groups, size)
     v = np.random.randn(size)
     df = pd.DataFrame({"groups": g, "values": v, "str": sg})
-    df.to_csv(f"../data/{size}.csv", index=False)
+    df.to_csv(f"../../data/{size}.csv", index=False)
 
 print("data created")
 
@@ -30,5 +30,5 @@ right = pd.DataFrame(
     {"key": indices[2000:], "key2": indices2[2000:], "value2": np.random.randn(8000)}
 )
 
-left.to_csv("../data/join_left_80000.csv", index=False)
-right.to_csv("../data/join_right_80000.csv", index=False)
+left.to_csv("../../data/join_left_80000.csv", index=False)
+right.to_csv("../../data/join_right_80000.csv", index=False)

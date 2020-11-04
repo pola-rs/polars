@@ -65,6 +65,7 @@ Polars is written to be performant. Below are some comparisons with the (also ve
 
 #### GroupBy
 ![](pandas_cmp/img/groupby10_.png)
+![](pandas_cmp/img/groupby10_mem.png)
 
 #### Joins
 ![](pandas_cmp/img/join_80_000.png)
