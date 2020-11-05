@@ -213,4 +213,5 @@ def test_from_pandas():
     import pandas as pd
 
     df = pd.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    print("HIER", isinstance(df, pd.DataFrame))
     DataFrame(df)

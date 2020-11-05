@@ -1,6 +1,6 @@
 use crate::datatypes::DataType;
 use crate::error::PyPolarsEr;
-use crate::{dispatch::ApplyLambda, npy::aligned_array};
+use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use polars::prelude::*;
@@ -59,30 +59,30 @@ macro_rules! init_method_opt {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            pub fn $name(name: &str, val: Vec<Option<$type>>) -> PySeries {
-                PySeries {
-                    series: Series::new(name, &val),
-                }
+            pub fn $name(name: &str, val: Wrap<ChunkedArray<$type>>) -> PySeries {
+                let mut s = val.0.into_series();
+                s.rename(name);
+                PySeries { series: s }
             }
         }
     };
 }
 
-init_method_opt!(new_opt_u8, u8);
-init_method_opt!(new_opt_u16, u16);
-init_method_opt!(new_opt_u32, u32);
-init_method_opt!(new_opt_u64, u64);
-init_method_opt!(new_opt_i8, i8);
-init_method_opt!(new_opt_i16, i16);
-init_method_opt!(new_opt_i32, i32);
-init_method_opt!(new_opt_i64, i64);
-init_method_opt!(new_opt_f32, f32);
-init_method_opt!(new_opt_f64, f64);
-init_method_opt!(new_opt_bool, bool);
-init_method_opt!(new_opt_date32, i32);
-init_method_opt!(new_opt_date64, i64);
-init_method_opt!(new_opt_duration_ns, i64);
-init_method_opt!(new_opt_time_ns, i64);
+init_method_opt!(new_opt_u8, UInt8Type);
+init_method_opt!(new_opt_u16, UInt16Type);
+init_method_opt!(new_opt_u32, UInt32Type);
+init_method_opt!(new_opt_u64, UInt64Type);
+init_method_opt!(new_opt_i8, Int8Type);
+init_method_opt!(new_opt_i16, Int16Type);
+init_method_opt!(new_opt_i32, Int32Type);
+init_method_opt!(new_opt_i64, Int64Type);
+init_method_opt!(new_opt_f32, Float32Type);
+init_method_opt!(new_opt_f64, Float64Type);
+init_method_opt!(new_opt_bool, BooleanType);
+init_method_opt!(new_opt_date32, Int32Type);
+init_method_opt!(new_opt_date64, Int64Type);
+init_method_opt!(new_opt_duration_ns, Int64Type);
+init_method_opt!(new_opt_time_ns, Int64Type);
 
 impl From<Series> for PySeries {
     fn from(s: Series) -> Self {
@@ -109,13 +109,10 @@ parse_temporal_from_str_slice!(parse_date32_from_str_slice, Date32Chunked);
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn new_str(name: &str, val: Vec<&str>) -> Self {
-        PySeries::new(Series::new(name, &val))
-    }
-
-    #[staticmethod]
-    pub fn new_opt_str(name: &str, val: Vec<Option<&str>>) -> Self {
-        PySeries::new(Series::new(name, &val))
+    pub fn new_str(name: &str, val: Wrap<Utf8Chunked>) -> Self {
+        let mut s = val.0.into_series();
+        s.rename(name);
+        PySeries::new(s)
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {

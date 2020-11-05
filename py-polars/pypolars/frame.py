@@ -41,11 +41,13 @@ class DataFrame:
 
                 if isinstance(data, pd.DataFrame):
                     for c in data.columns:
-                        columns.append(
-                            Series(c, data[c].values, nullable=nullable).inner()
-                        )
-
-                raise ValueError("a dictionary was expected.")
+                        if nullable:
+                            s = Series(c, data[c].to_list(), nullable=True).inner()
+                        else:
+                            s = Series(c, data[c].values, nullable=False).inner()
+                        columns.append(s)
+                else:
+                    raise ValueError("a dictionary was expected.")
             except ImportError:
                 raise ValueError("a dictionary was expected.")
 

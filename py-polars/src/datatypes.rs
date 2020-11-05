@@ -1,4 +1,4 @@
-use polars::datatypes::{ArrowDataType, IntervalUnit, TimeUnit};
+use polars::prelude::*;
 
 // Don't change the order of these!
 #[repr(u8)]
@@ -71,3 +71,32 @@ impl From<&ArrowDataType> for DataType {
         }
     }
 }
+
+pub trait PyPolarsPrimitiveType: ArrowPrimitiveType {}
+impl PyPolarsPrimitiveType for UInt8Type {}
+impl PyPolarsPrimitiveType for UInt16Type {}
+impl PyPolarsPrimitiveType for UInt32Type {}
+impl PyPolarsPrimitiveType for UInt64Type {}
+impl PyPolarsPrimitiveType for Int8Type {}
+impl PyPolarsPrimitiveType for Int16Type {}
+impl PyPolarsPrimitiveType for Int32Type {}
+impl PyPolarsPrimitiveType for Int64Type {}
+impl PyPolarsPrimitiveType for Float32Type {}
+impl PyPolarsPrimitiveType for Float64Type {}
+impl PyPolarsPrimitiveType for Date32Type {}
+impl PyPolarsPrimitiveType for Date64Type {}
+impl PyPolarsPrimitiveType for Time64NanosecondType {}
+impl PyPolarsPrimitiveType for Time64MicrosecondType {}
+impl PyPolarsPrimitiveType for Time32MillisecondType {}
+impl PyPolarsPrimitiveType for Time32SecondType {}
+impl PyPolarsPrimitiveType for DurationNanosecondType {}
+impl PyPolarsPrimitiveType for DurationMicrosecondType {}
+impl PyPolarsPrimitiveType for DurationMillisecondType {}
+impl PyPolarsPrimitiveType for DurationSecondType {}
+impl PyPolarsPrimitiveType for IntervalYearMonthType {}
+impl PyPolarsPrimitiveType for IntervalDayTimeType {}
+impl PyPolarsPrimitiveType for TimestampNanosecondType {}
+impl PyPolarsPrimitiveType for TimestampMicrosecondType {}
+impl PyPolarsPrimitiveType for TimestampMillisecondType {}
+impl PyPolarsPrimitiveType for TimestampSecondType {}
+impl PyPolarsPrimitiveType for BooleanType {}

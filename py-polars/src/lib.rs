@@ -12,6 +12,7 @@ use crate::{
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+pub mod conversion;
 pub mod dataframe;
 pub mod datatypes;
 pub mod dispatch;
@@ -19,6 +20,7 @@ pub mod error;
 pub mod file;
 pub mod lazy;
 pub mod npy;
+pub mod prelude;
 pub mod series;
 
 #[pyfunction]

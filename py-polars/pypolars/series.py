@@ -141,7 +141,7 @@ class Series:
             elif isinstance(dtype, float):
                 self._s = PySeries.new_opt_f64(name, values)
             elif isinstance(dtype, str):
-                self._s = PySeries.new_opt_str(name, values)
+                self._s = PySeries.new_str(name, values)
             elif isinstance(dtype, bool):
                 self._s = PySeries.new_opt_bool(name, values)
             else:
