@@ -30,9 +30,24 @@ def wrap_df(df: PyDataFrame) -> DataFrame:
 
 class DataFrame:
     def __init__(self, data: Dict[str, Sequence], nullable: bool = False):
+
         columns = []
-        for k, v in data.items():
-            columns.append(Series(k, v, nullable=nullable).inner())
+        if isinstance(data, dict):
+            for k, v in data.items():
+                columns.append(Series(k, v, nullable=nullable).inner())
+        else:
+            try:
+                import pandas as pd
+
+                if isinstance(data, pd.DataFrame):
+                    for c in data.columns:
+                        columns.append(
+                            Series(c, data[c].values, nullable=nullable).inner()
+                        )
+
+                raise ValueError("a dictionary was expected.")
+            except ImportError:
+                raise ValueError("a dictionary was expected.")
 
         self._df = PyDataFrame(columns)
 
@@ -471,7 +486,6 @@ class DataFrame:
         left_on: str,
         right_on: str,
         how="inner",
-        parallel: bool = False,
     ) -> DataFrame:
         """
         SQL like joins
@@ -489,14 +503,11 @@ class DataFrame:
                 - "inner"
                 - "left"
                 - "outer"
-        parallel
-            Use parallel join strategy.
 
         Returns
         -------
             Joined DataFrame
         """
-        self._df.with_parallel(parallel)
         try:
             if how == "inner":
                 inner = self._df.inner_join(df._df, left_on, right_on)

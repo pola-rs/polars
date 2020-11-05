@@ -16,7 +16,6 @@ simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
-parallel = []
 default = ["pretty", "docs", "temporal", "simd"]
 lazy = []
 # extra utilities for Utf8Chunked

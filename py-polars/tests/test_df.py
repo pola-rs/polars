@@ -207,3 +207,10 @@ def test_to_dummies():
     assert dummies["A_a"].to_list() == [1, 0, 0]
     assert dummies["A_b"].to_list() == [0, 1, 0]
     assert dummies["A_c"].to_list() == [0, 0, 1]
+
+
+def test_from_pandas():
+    import pandas as pd
+
+    df = pd.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    DataFrame(df)

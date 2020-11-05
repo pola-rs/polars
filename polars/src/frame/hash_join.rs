@@ -1,7 +1,5 @@
 use crate::prelude::*;
 use crate::utils::Xob;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
@@ -17,27 +15,11 @@ macro_rules! hash_join_inner {
     }};
 }
 
-macro_rules! par_hash_join_inner {
-    ($s_right:ident, $ca_left:ident, $type_:ident) => {{
-        // call the type method series.i32()
-        let ca_right = $s_right.$type_()?;
-        $ca_left.par_hash_join_inner(ca_right)
-    }};
-}
-
 macro_rules! hash_join_left {
     ($s_right:ident, $ca_left:ident, $type_:ident) => {{
         // call the type method series.i32()
         let ca_right = $s_right.$type_()?;
         $ca_left.hash_join_left(ca_right)
-    }};
-}
-
-macro_rules! par_hash_join_left {
-    ($s_right:ident, $ca_left:ident, $type_:ident) => {{
-        // call the type method series.i32()
-        let ca_right = $s_right.$type_()?;
-        $ca_left.par_hash_join_left(ca_right)
     }};
 }
 
@@ -151,88 +133,6 @@ where
     results
 }
 
-#[cfg(feature = "parallel")]
-macro_rules! par_prepare_hashed_relation {
-    ($b:expr) => {{
-        $b
-            // acc is the hashmap
-            .fold(SeaBuildHasher::default, |mut acc, (idx, key)| {
-                acc.entry(key).or_insert_with(Vec::new).push(idx);
-                acc
-            })
-            .reduce(SeaBuildHasher::default, |mut map1, map2| {
-                map1.extend(map2.into_iter());
-                map1
-            })
-    }};
-}
-
-#[cfg(feature = "parallel")]
-macro_rules! par_hash_join_tuples_inner {
-    ($a:expr, $b:expr, $swap:expr) => {{
-        // First we hash one relation
-        let hash_tbl = par_prepare_hashed_relation!($b);
-
-        // Next we probe the other relation in the hash table
-        // code duplication is because we want to only do the swap check once
-        if $swap {
-            $a.map(|(idx_a, key)| {
-                if let Some(indexes_b) = hash_tbl.get(&key) {
-                    let tuples: Vec<_> = indexes_b.iter().map(|&idx_b| (idx_b, idx_a)).collect();
-                    tuples
-                } else {
-                    Vec::with_capacity(0)
-                }
-            })
-            .reduce(Vec::new, |mut v1, v2| {
-                v1.extend(v2);
-                v1
-            })
-        } else {
-            $a.map(|(idx_a, key)| {
-                if let Some(indexes_b) = hash_tbl.get(&key) {
-                    let tuples: Vec<_> = indexes_b.iter().map(|&idx_b| (idx_a, idx_b)).collect();
-                    tuples
-                } else {
-                    Vec::with_capacity(0)
-                }
-            })
-            .reduce(Vec::new, |mut v1, v2| {
-                v1.extend(v2);
-                v1
-            })
-        }
-    }};
-}
-
-#[cfg(feature = "parallel")]
-macro_rules! par_hash_join_tuples_left {
-    ($a:expr, $b:expr) => {{
-        // First we hash one relation
-        let hash_tbl = par_prepare_hashed_relation!($b);
-
-        // Next we probe the other relation in the hash table
-        $a.map(|(idx_a, key)| {
-            match hash_tbl.get(&key) {
-                // left and right matches
-                Some(indexes_b) => {
-                    let tuples: Vec<_> = indexes_b
-                        .iter()
-                        .map(|&idx_b| (idx_a, Some(idx_b)))
-                        .collect();
-                    tuples
-                }
-                // only left values, right = null
-                None => vec![(idx_a, None)],
-            }
-        })
-        .reduce(Vec::new, |mut v1, v2| {
-            v1.extend(v2);
-            v1
-        })
-    }};
-}
-
 /// Hash join left. None/ Nulls are regarded as Equal
 /// All left values are joined so no Option<usize> there.
 fn hash_join_tuples_left<T>(
@@ -321,13 +221,7 @@ where
 
 pub trait HashJoin<T> {
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)>;
-    fn par_hash_join_inner(&self, _other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
-        panic!("set parallel feature to use parallel joins")
-    }
     fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)>;
-    fn par_hash_join_left(&self, _other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
-        panic!("set parallel feature to use parallel joins")
-    }
     fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<usize>, Option<usize>)>;
 }
 
@@ -372,50 +266,6 @@ where
                 hash_join_tuples_inner(a.into_iter(), b_slice.iter().map(|v| Some(*v)), swap)
             }
             (Err(_), Err(_)) => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
-        }
-    }
-
-    #[cfg(feature = "parallel")]
-    fn par_hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
-
-        match (a.cont_slice(), b.cont_slice()) {
-            (Ok(a_slice), Ok(b_slice)) => par_hash_join_tuples_inner!(
-                a_slice.into_par_iter().enumerate(),
-                b_slice.into_par_iter().enumerate(),
-                swap
-            ),
-            (Ok(a_slice), Err(_)) => {
-                hash_join_tuples_inner(
-                    a_slice.iter().map(|v| Some(*v)), // take ownership
-                    b.into_iter(),
-                    swap,
-                )
-            }
-            (Err(_), Ok(b_slice)) => {
-                hash_join_tuples_inner(a.into_iter(), b_slice.iter().map(|v| Some(*v)), swap)
-            }
-            (Err(_), Err(_)) => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
-        }
-    }
-
-    #[cfg(feature = "parallel")]
-    fn par_hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
-        match (self.cont_slice(), other.cont_slice()) {
-            (Ok(a_slice), Ok(b_slice)) => par_hash_join_tuples_left!(
-                a_slice.par_iter().enumerate(),
-                b_slice.into_par_iter().enumerate()
-            ),
-            (Ok(a_slice), Err(_)) => {
-                hash_join_tuples_left(
-                    a_slice.iter().map(|v| Some(*v)), // take ownership
-                    other.into_iter(),
-                )
-            }
-            (Err(_), Ok(b_slice)) => {
-                hash_join_tuples_left(self.into_iter(), b_slice.iter().map(|v| Some(*v)))
-            }
-            (Err(_), Err(_)) => hash_join_tuples_left(self.into_iter(), other.into_iter()),
         }
     }
 
@@ -470,10 +320,6 @@ impl HashJoin<BooleanType> for BooleanChunked {
             _ => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
         }
     }
-    #[cfg(feature = "parallel")]
-    fn par_hash_join_inner(&self, other: &BooleanChunked) -> Vec<(usize, usize)> {
-        self.hash_join_inner(other)
-    }
 
     fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(usize, Option<usize>)> {
         match (self.is_optimal_aligned(), other.is_optimal_aligned()) {
@@ -482,11 +328,6 @@ impl HashJoin<BooleanType> for BooleanChunked {
             }
             _ => hash_join_tuples_left(self.into_iter(), other.into_iter()),
         }
-    }
-
-    #[cfg(feature = "parallel")]
-    fn par_hash_join_left(&self, other: &BooleanChunked) -> Vec<(usize, Option<usize>)> {
-        self.hash_join_left(other)
     }
 
     fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<usize>, Option<usize>)> {
@@ -513,45 +354,12 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         }
     }
 
-    #[cfg(feature = "parallel")]
-    fn par_hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(usize, usize)> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
-
-        // Create the join tuples
-        match (a.is_optimal_aligned(), b.is_optimal_aligned()) {
-            (true, true) => par_hash_join_tuples_inner!(
-                NoNull(a).into_par_iter().enumerate(),
-                NoNull(b).into_par_iter().enumerate(),
-                swap
-            ),
-            _ => par_hash_join_tuples_inner!(
-                a.into_par_iter().enumerate(),
-                b.into_par_iter().enumerate(),
-                swap
-            ),
-        }
-    }
-
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
         match (self.is_optimal_aligned(), other.is_optimal_aligned()) {
             (true, true) => {
                 hash_join_tuples_left(self.into_no_null_iter(), other.into_no_null_iter())
             }
             _ => hash_join_tuples_left(self.into_iter(), other.into_iter()),
-        }
-    }
-
-    #[cfg(feature = "parallel")]
-    fn par_hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
-        match (self.is_optimal_aligned(), other.is_optimal_aligned()) {
-            (true, true) => par_hash_join_tuples_left!(
-                NoNull(self).into_par_iter().enumerate(),
-                NoNull(other).into_par_iter().enumerate()
-            ),
-            _ => par_hash_join_tuples_left!(
-                self.into_par_iter().enumerate(),
-                other.into_par_iter().enumerate()
-            ),
         }
     }
 
@@ -708,10 +516,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
-        let join_tuples = match self.parallel {
-            true => apply_hash_join_on_series!(s_left, s_right, par_hash_join_inner),
-            false => apply_hash_join_on_series!(s_left, s_right, hash_join_inner),
-        };
+        let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
 
         let (df_left, df_right) = rayon::join(
             || self.create_left_df(&join_tuples),
@@ -746,10 +551,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
-        let opt_join_tuples = match self.parallel {
-            true => apply_hash_join_on_series!(s_left, s_right, par_hash_join_left),
-            false => apply_hash_join_on_series!(s_left, s_right, hash_join_left),
-        };
+        let opt_join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_left);
 
         let (df_left, df_right) = rayon::join(
             || self.create_left_df(&opt_join_tuples),

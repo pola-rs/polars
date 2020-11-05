@@ -1921,23 +1921,23 @@ mod test {
 
         let pvt = df.groupby("foo").unwrap().pivot("bar", "N").sum().unwrap();
         assert_eq!(
-            Vec::from(pvt.column("m").unwrap().i32().unwrap()),
-            &[None, Some(6), None]
+            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
+            &[None, None, Some(6)]
         );
         let pvt = df.groupby("foo").unwrap().pivot("bar", "N").min().unwrap();
         assert_eq!(
-            Vec::from(pvt.column("m").unwrap().i32().unwrap()),
-            &[None, Some(2), None]
+            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
+            &[None, None, Some(2)]
         );
         let pvt = df.groupby("foo").unwrap().pivot("bar", "N").max().unwrap();
         assert_eq!(
-            Vec::from(pvt.column("m").unwrap().i32().unwrap()),
-            &[None, Some(4), None]
+            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
+            &[None, None, Some(4)]
         );
         let pvt = df.groupby("foo").unwrap().pivot("bar", "N").mean().unwrap();
         assert_eq!(
-            Vec::from(pvt.column("m").unwrap().i32().unwrap()),
-            &[None, Some(3), None]
+            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
+            &[None, None, Some(3)]
         );
         let pvt = df
             .groupby("foo")
@@ -1946,8 +1946,8 @@ mod test {
             .count()
             .unwrap();
         assert_eq!(
-            Vec::from(pvt.column("m").unwrap().u32().unwrap()),
-            &[Some(0), Some(2), Some(0)]
+            Vec::from(&pvt.column("m").unwrap().u32().unwrap().sort(false)),
+            &[Some(0), Some(0), Some(2)]
         );
     }
 
@@ -1983,93 +1983,32 @@ mod test {
 
         println!("{:?}", adf);
 
-        // Check that the result is the expected one.
         assert_eq!(
-            Vec::from(adf.column("G1").unwrap().utf8().unwrap()),
-            &[Some("B"), Some("A"), Some("C"), Some("A")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G2").unwrap().utf8().unwrap()),
-            &[Some("m"), Some("l"), Some("l"), Some("k")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G3").unwrap().utf8().unwrap()),
-            &[Some("c"), Some("b"), Some("d"), Some("a")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G4").unwrap().utf8().unwrap()),
-            &[Some("3"), Some("2"), Some("4"), Some("1")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G5").unwrap().utf8().unwrap()),
-            &[Some("Z"), Some("Y"), Some("W"), Some("X")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G6").unwrap().bool().unwrap()),
-            &[Some(true), Some(true), Some(false), Some(false)]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G7").unwrap().utf8().unwrap()),
-            &[Some("q"), Some("x"), Some("o"), Some("r")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G8").unwrap().utf8().unwrap()),
-            &[Some("Q"), Some("X"), Some("O"), Some("R")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G9").unwrap().i32().unwrap()),
-            &[Some(3), Some(2), Some(4), Some(1)]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G10").unwrap().utf8().unwrap()),
-            &[Some("?"), Some("!"), Some("/"), Some(".")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G11").unwrap().utf8().unwrap()),
-            &[Some("@"), Some(")"), Some("$"), Some("(")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("G12").unwrap().utf8().unwrap()),
-            &[Some(";"), Some("_"), Some(","), Some("-")]
-        );
-
-        assert_eq!(
-            Vec::from(adf.column("N_sum").unwrap().i32().unwrap()),
-            &[Some(6), Some(2), Some(2), Some(1)]
+            Vec::from(&adf.column("N_sum").unwrap().i32().unwrap().sort(false)),
+            &[Some(1), Some(2), Some(2), Some(6)]
         );
     }
 
     #[test]
     fn test_dynamic_groupby_by_13_columns() {
-        // The content for every group by serie.
+        // The content for every groupby series.
         let series_content = ["A", "A", "B", "B", "C"];
 
-        // The name of every group by serie.
+        // The name of every groupby series.
         let series_names = [
             "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12", "G13",
         ];
 
-        // Vector to contain every serie.
+        // Vector to contain every series.
         let mut series = Vec::with_capacity(14);
 
-        // Create a serie for every group name.
+        // Create a series for every group name.
         for series_name in &series_names {
             let serie = Series::new(series_name, series_content.as_ref());
             series.push(serie);
         }
 
-        // Create a serie for the aggregation column.
+        // Create a series for the aggregation column.
         let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
         series.push(serie);
 
@@ -2077,7 +2016,7 @@ mod test {
         let df = DataFrame::new(series).unwrap();
         println!("{:?}", df);
 
-        // Compute the aggregated DataFrame by the 13 colums defined in `series_names`.
+        // Compute the aggregated DataFrame by the 13 columns defined in `series_names`.
         let adf = df
             .groupby(&series_names)
             .unwrap()
@@ -2090,14 +2029,14 @@ mod test {
         // is equal, then, the grouped columns shall be equal and in the same order.
         for series_name in &series_names {
             assert_eq!(
-                Vec::from(adf.column(series_name).unwrap().utf8().unwrap()),
-                &[Some("A"), Some("C"), Some("B")]
+                Vec::from(&adf.column(series_name).unwrap().utf8().unwrap().sort(false)),
+                &[Some("A"), Some("B"), Some("C")]
             );
         }
 
-        // Check the aggregated column is the exppected one.
+        // Check the aggregated column is the expected one.
         assert_eq!(
-            Vec::from(adf.column("N_sum").unwrap().i32().unwrap()),
+            Vec::from(&adf.column("N_sum").unwrap().i32().unwrap().sort(false)),
             &[Some(3), Some(4), Some(6)]
         );
     }

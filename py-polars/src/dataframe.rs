@@ -112,10 +112,6 @@ impl PyDataFrame {
         format!("{:?}", self.df)
     }
 
-    pub fn with_parallel(&mut self, parallel: bool) {
-        self.df.with_parallel(parallel);
-    }
-
     pub fn fill_none(&self, strategy: &str) -> PyResult<Self> {
         let strat = match strategy {
             "backward" => FillNoneStrategy::Backward,

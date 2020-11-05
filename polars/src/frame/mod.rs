@@ -47,7 +47,6 @@ type DfColumns = Vec<DfSeries>;
 #[derive(Clone)]
 pub struct DataFrame {
     columns: DfColumns,
-    parallel: bool,
 }
 
 impl DataFrame {
@@ -96,25 +95,14 @@ impl DataFrame {
         }
         let mut df = DataFrame {
             columns: series_cols,
-            parallel: false,
         };
         df.rechunk()?;
         Ok(df)
     }
 
-    /// Opt in parallel operations.
-    #[cfg(feature = "parallel")]
-    pub fn with_parallel(&mut self, parallel: bool) -> &mut Self {
-        self.parallel = parallel;
-        self
-    }
-
     // doesn't check Series sizes.
     pub(crate) fn new_no_checks(columns: Vec<Series>) -> DataFrame {
-        DataFrame {
-            columns,
-            parallel: false,
-        }
+        DataFrame { columns }
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
