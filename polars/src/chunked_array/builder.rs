@@ -12,13 +12,25 @@ use arrow::{
     buffer::Buffer,
     util::bit_util,
 };
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem;
 use std::mem::ManuallyDrop;
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+
+pub trait ChunkedBuilder<N, T> {
+    fn append_value(&mut self, val: N);
+    fn append_null(&mut self);
+    fn append_option(&mut self, opt_val: Option<N>) {
+        match opt_val {
+            Some(v) => self.append_value(v),
+            None => self.append_null(),
+        }
+    }
+    fn finish(self) -> ChunkedArray<T>;
+}
 
 pub struct PrimitiveChunkedBuilder<T>
 where
@@ -33,6 +45,63 @@ where
     null_pointer: usize,
     // keep track of null such that we don't have to count them afterwards
     null_count: usize,
+}
+
+impl<T> ChunkedBuilder<T::Native, T> for PrimitiveChunkedBuilder<T>
+where
+    T: ArrowPrimitiveType,
+{
+    /// Appends a value of type `T` into the builder
+    fn append_value(&mut self, v: T::Native) {
+        if T::get_data_type() == ArrowDataType::Boolean {
+            self.builder.append_value(v).expect("memory error");
+        } else {
+            self.aligned_vec.push(v)
+        }
+    }
+
+    /// Appends a null slot into the builder
+    fn append_null(&mut self) {
+        if T::get_data_type() == ArrowDataType::Boolean {
+            self.builder.append_null().expect("memory error");
+        } else {
+            self.update_null_bitmap();
+            self.null_pointer = self.aligned_vec.len() + 1;
+            self.bitmap_builder.append(false).expect("memory error");
+            self.null_count += 1;
+            unsafe {
+                let len = self.aligned_vec.len();
+                let new_len = len + 1;
+                self.aligned_vec.set_len(new_len);
+                let cap = self.aligned_vec.capacity();
+                if new_len >= cap {
+                    self.aligned_vec.reserve(1);
+                }
+            }
+        }
+    }
+
+    fn finish(mut self) -> ChunkedArray<T> {
+        let arr = if T::get_data_type() == ArrowDataType::Boolean {
+            Arc::new(self.builder.finish())
+        } else {
+            self.update_null_bitmap();
+            let null_bit_buffer = self.bitmap_builder.finish();
+            Arc::new(aligned_vec_to_primitive_array::<T>(
+                self.aligned_vec,
+                Some(null_bit_buffer),
+                Some(self.null_count),
+            ))
+        };
+
+        let len = arr.len();
+        ChunkedArray {
+            field: Arc::new(self.field),
+            chunks: vec![arr],
+            chunk_id: vec![len],
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<T> PrimitiveChunkedBuilder<T>
@@ -57,80 +126,6 @@ where
         self.bitmap_builder
             .append_n(n_valid, true)
             .expect("memory error")
-    }
-
-    /// Appends a value of type `T` into the builder
-    pub fn append_value(&mut self, v: T::Native) {
-        if T::get_data_type() == ArrowDataType::Boolean {
-            self.builder.append_value(v).expect("memory error");
-        } else {
-            self.aligned_vec.push(v)
-        }
-    }
-
-    /// Appends a null slot into the builder
-    pub fn append_null(&mut self) {
-        if T::get_data_type() == ArrowDataType::Boolean {
-            self.builder.append_null().expect("memory error");
-        } else {
-            self.update_null_bitmap();
-            self.null_pointer = self.aligned_vec.len() + 1;
-            self.bitmap_builder.append(false).expect("memory error");
-            self.null_count += 1;
-            unsafe {
-                let len = self.aligned_vec.len();
-                let new_len = len + 1;
-                self.aligned_vec.set_len(new_len);
-                let cap = self.aligned_vec.capacity();
-                if new_len >= cap {
-                    self.aligned_vec.reserve(1);
-                }
-            }
-        }
-    }
-
-    /// Appends an `Option<T>` into the builder
-    pub fn append_option(&mut self, v: Option<T::Native>) {
-        match v {
-            Some(v) => self.append_value(v),
-            None => self.append_null(),
-        }
-    }
-
-    pub fn finish(mut self) -> ChunkedArray<T> {
-        let arr = if T::get_data_type() == ArrowDataType::Boolean {
-            Arc::new(self.builder.finish())
-        } else {
-            self.update_null_bitmap();
-            let null_bit_buffer = self.bitmap_builder.finish();
-            Arc::new(aligned_vec_to_primitive_array::<T>(
-                self.aligned_vec,
-                Some(null_bit_buffer),
-                Some(self.null_count),
-            ))
-        };
-
-        let len = arr.len();
-        ChunkedArray {
-            field: Arc::new(self.field),
-            chunks: vec![arr],
-            chunk_id: vec![len],
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<T: ArrowPrimitiveType> Deref for PrimitiveChunkedBuilder<T> {
-    type Target = PrimitiveBuilder<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.builder
-    }
-}
-
-impl<T: ArrowPrimitiveType> DerefMut for PrimitiveChunkedBuilder<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.builder
     }
 }
 
@@ -182,17 +177,29 @@ impl Utf8ChunkedBuilder {
     }
 }
 
-impl Deref for Utf8ChunkedBuilder {
-    type Target = StringBuilder;
+pub struct Utf8ChunkedBuilderCow {
+    builder: Utf8ChunkedBuilder,
+}
 
-    fn deref(&self) -> &Self::Target {
-        &self.builder
+impl Utf8ChunkedBuilderCow {
+    pub fn new(name: &str, capacity: usize) -> Self {
+        Utf8ChunkedBuilderCow {
+            builder: Utf8ChunkedBuilder::new(name, capacity),
+        }
     }
 }
 
-impl DerefMut for Utf8ChunkedBuilder {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.builder
+impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
+    fn append_value(&mut self, val: Cow<'_, str>) {
+        self.builder.append_value(val.as_ref())
+    }
+
+    fn append_null(&mut self) {
+        self.builder.append_null()
+    }
+
+    fn finish(self) -> ChunkedArray<Utf8Type> {
+        self.builder.finish()
     }
 }
 
