@@ -196,7 +196,8 @@ where
 {
     fn sum_as_series(&self) -> Series {
         let v = self.sum();
-        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn max_as_series(&self) -> Series {
@@ -206,22 +207,26 @@ where
     }
     fn min_as_series(&self) -> Series {
         let v = self.min();
-        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn mean_as_series(&self) -> Series {
         let v = self.mean();
-        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn median_as_series(&self) -> Series {
         let v = self.median();
-        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
         let v = self.quantile(quantile)?;
-        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.rename(self.name());
         Ok(ca.into())
     }
 }

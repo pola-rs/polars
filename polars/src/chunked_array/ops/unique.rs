@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode};
-use fnv::{FnvBuildHasher, FnvHasher};
 use num::{NumCast, ToPrimitive};
+use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
 use unsafe_unwrap::UnsafeUnwrap;
@@ -23,11 +23,11 @@ impl ChunkUnique<ListType> for ListChunked {
 fn fill_set<A>(
     a: impl Iterator<Item = A>,
     capacity: usize,
-) -> HashSet<A, BuildHasherDefault<FnvHasher>>
+) -> HashSet<A, BuildHasherDefault<SeaHasher>>
 where
     A: Hash + Eq,
 {
-    let mut set = HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
+    let mut set = HashSet::with_capacity_and_hasher(capacity, BuildHasherDefault::default());
 
     for val in a {
         set.insert(val);
@@ -40,7 +40,8 @@ fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<usize>
 where
     T: Hash + Eq,
 {
-    let mut set = HashSet::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
+    let mut set =
+        HashSet::with_capacity_and_hasher(capacity, BuildHasherDefault::<SeaHasher>::default());
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
@@ -49,6 +50,19 @@ where
     });
 
     unique
+}
+
+fn arg_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> Result<Vec<usize>>
+where
+    &'a ChunkedArray<T>: IntoIterator + IntoNoNullIterator,
+    T: 'a,
+    <&'a ChunkedArray<T> as IntoIterator>::Item: Eq + Hash,
+    <&'a ChunkedArray<T> as IntoNoNullIterator>::Item: Eq + Hash,
+{
+    match ca.null_count() {
+        0 => Ok(arg_unique(ca.into_no_null_iter(), ca.len())),
+        _ => Ok(arg_unique(ca.into_iter(), ca.len())),
+    }
 }
 
 impl<T> ChunkUnique<T> for ChunkedArray<T>
@@ -67,10 +81,7 @@ where
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        match self.cont_slice() {
-            Ok(slice) => Ok(arg_unique(slice.iter(), self.len())),
-            Err(_) => Ok(arg_unique(self.into_iter(), self.len())),
-        }
+        arg_unique_ca(self)
     }
 }
 
@@ -84,7 +95,7 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        Ok(arg_unique(self.into_iter(), self.len()))
+        arg_unique_ca(self)
     }
 }
 
@@ -104,7 +115,7 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        Ok(arg_unique(self.into_iter(), self.len()))
+        arg_unique_ca(self)
     }
 }
 
@@ -130,8 +141,6 @@ where
                 self.len(),
             ),
         };
-
-        // let builder = PrimitiveChunkedBuilder::new(self.name(), set.len());
         Ok(ChunkedArray::new_from_opt_iter(
             self.name(),
             set.iter().copied().map(|opt| match opt {
@@ -146,9 +155,9 @@ where
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        match self.cont_slice() {
-            Ok(slice) => Ok(arg_unique(
-                slice.iter().map(|v| {
+        match self.null_count() {
+            0 => Ok(arg_unique(
+                self.into_no_null_iter().map(|v| {
                     let v = v.to_f64();
                     debug_assert!(v.is_some());
                     let v = unsafe { v.unsafe_unwrap() };
@@ -156,7 +165,7 @@ where
                 }),
                 self.len(),
             )),
-            Err(_) => Ok(arg_unique(
+            _ => Ok(arg_unique(
                 self.into_iter().map(|opt_v| {
                     opt_v.map(|v| {
                         let v = v.to_f64();
@@ -175,17 +184,17 @@ pub trait ValueCounts<T>
 where
     T: ArrowPrimitiveType,
 {
-    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, BuildHasherDefault<FnvHasher>>;
+    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, BuildHasherDefault<SeaHasher>>;
 }
 
 fn fill_set_value_count<K>(
     a: impl Iterator<Item = K>,
     capacity: usize,
-) -> HashMap<K, u32, BuildHasherDefault<FnvHasher>>
+) -> HashMap<K, u32, BuildHasherDefault<SeaHasher>>
 where
     K: Hash + Eq,
 {
-    let mut kv_store = HashMap::with_capacity_and_hasher(capacity, FnvBuildHasher::default());
+    let mut kv_store = HashMap::with_capacity_and_hasher(capacity, BuildHasherDefault::default());
 
     for key in a {
         let count = kv_store.entry(key).or_insert(0);
@@ -201,10 +210,10 @@ where
     T::Native: Hash + Eq,
     ChunkedArray<T>: ChunkOps,
 {
-    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, BuildHasherDefault<FnvHasher>> {
-        match self.cont_slice() {
-            Ok(slice) => fill_set_value_count(slice.iter().map(|v| Some(*v)), self.len()),
-            Err(_) => fill_set_value_count(self.into_iter(), self.len()),
+    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, BuildHasherDefault<SeaHasher>> {
+        match self.null_count() {
+            0 => fill_set_value_count(self.into_no_null_iter().map(|v| Some(v)), self.len()),
+            _ => fill_set_value_count(self.into_iter(), self.len()),
         }
     }
 }
@@ -218,7 +227,7 @@ mod test {
     fn unique() {
         let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 3, 2, 1]);
         assert_eq!(
-            ca.unique().unwrap().into_iter().collect_vec(),
+            ca.unique().unwrap().sort(false).into_iter().collect_vec(),
             vec![Some(1), Some(2), Some(3)]
         );
         let ca = BooleanChunked::new_from_slice("a", &[true, false, true]);
@@ -230,8 +239,8 @@ mod test {
         let ca =
             Utf8Chunked::new_from_opt_slice("", &[Some("a"), None, Some("a"), Some("b"), None]);
         assert_eq!(
-            Vec::from(&ca.unique().unwrap()),
-            &[Some("a"), None, Some("b")]
+            Vec::from(&ca.unique().unwrap().sort(false)),
+            &[None, Some("a"), Some("b")]
         );
     }
 

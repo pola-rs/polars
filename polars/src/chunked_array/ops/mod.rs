@@ -19,6 +19,10 @@ pub(crate) mod unique;
 pub(crate) mod window;
 pub(crate) mod zip;
 
+pub trait ChunkBytes {
+    fn to_byte_slices(&self) -> Vec<&[u8]>;
+}
+
 pub trait ChunkWindow<T> {
     /// Apply a rolling sum (moving sum) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window

@@ -543,6 +543,16 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_null())
 
+    def is_not_null(self) -> Series:
+        """
+        Get mask of non null values
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_not_null())
+
     def series_equal(self, other: Series, null_equal: bool = False) -> bool:
         """
         Check if series equal with another Series.

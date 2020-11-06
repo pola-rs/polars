@@ -213,6 +213,11 @@ impl PyDataFrame {
         Ok(PySeries { series: s })
     }
 
+    pub fn drop_nulls(&self) -> PyResult<Self> {
+        let df = self.df.drop_nulls().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn drop(&self, name: &str) -> PyResult<Self> {
         let df = self.df.drop(name).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))

@@ -393,7 +393,7 @@ impl<R: Read + Sync> Reader<R> {
         projection: &[usize],
         rows: &[StringRecord],
     ) -> Result<()> {
-        let _ = projection
+        projection
             .par_iter()
             .zip(builders)
             .map(|(i, builder)| {
@@ -409,6 +409,7 @@ impl<R: Read + Sync> Reader<R> {
                 }
             })
             .collect::<Result<_>>()?;
+
         Ok(())
     }
 

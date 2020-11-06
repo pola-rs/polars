@@ -492,6 +492,12 @@ class DataFrame:
         """
         return wrap_df(self._df.tail(length))
 
+    def drop_nulls(self) -> "DataFrame":
+        """
+        Return a new DataFrame where the null values are dropped
+        """
+        return wrap_df(self._df.drop_nulls())
+
     def pipe(self, func: Callable, *args, **kwargs):
         """
         Apply a function on Self
@@ -709,22 +715,22 @@ class DataFrame:
         return self._df.n_chunks()
 
     def max(self) -> DataFrame:
-        return self._df.max()
+        return wrap_df(self._df.max())
 
     def min(self) -> DataFrame:
-        return self._df.min()
+        return wrap_df(self._df.min())
 
     def sum(self) -> DataFrame:
-        return self._df.sum()
+        return wrap_df(self._df.sum())
 
     def mean(self) -> DataFrame:
         return self._df.mean()
 
     def median(self) -> DataFrame:
-        return self._df.median()
+        return wrap_df(self._df.median())
 
     def quantile(self, quantile: float) -> DataFrame:
-        return self._df.quantile(quantile)
+        return wrap_df(self._df.quantile(quantile))
 
     def to_dummies(self) -> DataFrame:
         """

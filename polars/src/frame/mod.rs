@@ -314,6 +314,20 @@ impl DataFrame {
         result
     }
 
+    /// Return a new DataFrame where all null values are dropped
+    pub fn drop_nulls(&self) -> Result<Self> {
+        let mut iter = self.columns.iter();
+        let mask = iter
+            .next()
+            .ok_or(PolarsError::NoData("No data to drop nulls from".into()))?;
+        let mut mask = mask.is_not_null();
+
+        while let Some(s) = iter.next() {
+            mask = mask & s.is_not_null();
+        }
+        self.filter(&mask)
+    }
+
     /// Drop a column by name.
     /// This is a pure method and will return a new DataFrame instead of modifying
     /// the current one in place.

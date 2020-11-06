@@ -244,6 +244,10 @@ impl PySeries {
         Self::new(Series::Bool(self.series.is_null()))
     }
 
+    pub fn is_not_null(&self) -> PySeries {
+        Self::new(Series::Bool(self.series.is_not_null()))
+    }
+
     pub fn series_equal(&self, other: &PySeries, null_equal: bool) -> bool {
         if null_equal {
             self.series.series_equal_missing(&other.series)
