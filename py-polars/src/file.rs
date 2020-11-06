@@ -147,7 +147,7 @@ impl Seek for PyFileLikeObject {
     }
 }
 
-pub trait FileLike: Read + Write + Seek {}
+pub trait FileLike: Read + Write + Seek + Sync {}
 
 // Needed for arrow parquet
 impl Length for PyFileLikeObject {

@@ -127,6 +127,25 @@ where
             .append_n(n_valid, true)
             .expect("memory error")
     }
+
+    pub fn reserve(&mut self, additional: usize) {
+        // todo! reserve the boolean builder
+        self.aligned_vec.reserve(additional);
+        self.bitmap_builder.reserve(additional).unwrap();
+        self.capacity += additional;
+    }
+
+    pub fn len(&self) -> usize {
+        if T::get_data_type() == ArrowDataType::Boolean {
+            self.builder.len()
+        } else {
+            self.aligned_vec.len()
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
 }
 
 pub type BooleanChunkedBuilder = PrimitiveChunkedBuilder<BooleanType>;

@@ -48,11 +48,10 @@
 //! assert_eq!("sepal.length", df.get_columns()[0].name());
 //! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
+use crate::frame::ser::vendor::csv::ReaderBuilder;
 use crate::prelude::*;
-use crate::{frame::ser::finish_reader, utils::clone};
-pub use arrow::csv::{ReaderBuilder, WriterBuilder};
-use arrow::error::ArrowError;
-use std::io::{Read, Seek, Write};
+pub use arrow::csv::WriterBuilder;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::sync::Arc;
 
 /// Write a DataFrame to csv.
@@ -139,12 +138,11 @@ where
     reader_builder: ReaderBuilder,
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
-    /// Continue with next batch when a ParserError is encountered.
-    ignore_parser_error: bool,
     /// Stop reading from the csv after this number of rows is reached
     stop_after_n_rows: Option<usize>,
     // used by error ignore logic
     max_records: Option<usize>,
+    skip_rows: usize,
 }
 
 impl<R> CsvReader<R>
@@ -159,7 +157,7 @@ where
 
 impl<R> SerReader<R> for CsvReader<R>
 where
-    R: Read + Seek,
+    R: Read + Seek + Sync,
 {
     /// Create a new CsvReader from a file/ stream
     fn new(reader: R) -> Self {
@@ -167,64 +165,51 @@ where
             reader,
             reader_builder: ReaderBuilder::new(),
             rechunk: true,
-            ignore_parser_error: false,
             stop_after_n_rows: None,
             max_records: None,
+            skip_rows: 0,
         }
     }
 
-    /// Rechunk to one contiguous chunk of memory after all data is read
-    fn set_rechunk(mut self, rechunk: bool) -> Self {
-        self.rechunk = rechunk;
-        self
-    }
-
     /// Continue with next batch when a ParserError is encountered.
-    fn with_ignore_parser_error(mut self) -> Self {
-        self.ignore_parser_error = true;
+    fn with_ignore_parser_errors(mut self) -> Self {
+        self.reader_builder = self.reader_builder.with_ignore_parser_errors();
         self
     }
 
     /// Read the file and create the DataFrame.
     fn finish(mut self) -> Result<DataFrame> {
-        // It could be that we could not infer schema due to invalid lines.
-        // If we have a CsvError or ParserError we half the number of lines we use for
-        // schema inference
-        let reader = if self.ignore_parser_error && self.max_records.is_some() {
-            if self.max_records < Some(1) {
-                return Err(PolarsError::Other("Could not infer schema".into()));
+        let capacity = match self.stop_after_n_rows {
+            Some(n) => n,
+            None => {
+                let current_pos = self.reader.seek(SeekFrom::Current(0))?;
+                let cap = count_lines(&mut self.reader)?;
+                self.reader.seek(SeekFrom::Start(current_pos))?;
+                cap
             }
-            let reader_val;
-            loop {
-                let rb = clone(&self.reader_builder);
-                match rb.build(clone(&self.reader)) {
-                    Err(ArrowError::CsvError(_)) | Err(ArrowError::ParseError(_)) => {
-                        self.max_records = self.max_records.map(|v| v / 2);
-                        self.reader_builder = self.reader_builder.infer_schema(self.max_records);
-                    }
-                    Err(e) => return Err(PolarsError::ArrowError(e)),
-                    Ok(reader) => {
-                        reader_val = reader;
-                        break;
-                    }
-                }
-            }
-            reader_val
-        } else {
-            self.reader_builder.build(self.reader)?
         };
-        finish_reader(
-            reader,
-            self.rechunk,
-            self.ignore_parser_error,
-            self.stop_after_n_rows,
-        )
+        let csv_reader = self.reader_builder.build(self.reader)?;
+        csv_reader.into_df(capacity, Some(capacity), self.skip_rows)
     }
+}
+
+fn count_lines<R: Read + Seek>(reader: &mut R) -> anyhow::Result<usize> {
+    const LF: u8 = '\n' as u8;
+    let mut reader = BufReader::new(reader);
+    let mut count = 0;
+    let mut line: Vec<u8> = Vec::new();
+    while match reader.read_until(LF, &mut line)? {
+        n if n > 0 => true,
+        _ => false,
+    } {
+        count += 1;
+    }
+    Ok(count)
 }
 
 impl<R> CsvReader<R>
 where
-    R: Read + Seek,
+    R: Read + Seek + Sync,
 {
     /// Create a new DataFrame by reading a csv file.
     ///
@@ -247,6 +232,11 @@ where
     /// Set the CSV file's schema
     pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
         self.reader_builder = self.reader_builder.with_schema(schema);
+        self
+    }
+
+    pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
+        self.skip_rows = skip_rows;
         self
     }
 
@@ -301,15 +291,33 @@ mod test {
     }
 
     #[test]
-    fn test_parser_error_ignore() {
+    fn test_parser() {
         use std::io::Cursor;
+
+        let s = r#"
+ "sepal.length","sepal.width","petal.length","petal.width","variety"
+ 5.1,3.5,1.4,.2,"Setosa"
+ 4.9,3,1.4,.2,"Setosa"
+ 4.7,3.2,1.3,.2,"Setosa"
+ 4.6,3.1,1.5,.2,"Setosa"
+ 5,3.6,1.4,.2,"Setosa"
+ 5.4,3.9,1.7,.4,"Setosa"
+ 4.6,3.4,1.4,.3,"Setosa"#;
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file)
+            .infer_schema(Some(100))
+            .has_header(true)
+            .with_ignore_parser_errors()
+            .with_batch_size(100)
+            .finish()
+            .unwrap();
+        dbg!(df.select_at_idx(0).unwrap().n_chunks());
 
         let s = r#"
          "sepal.length","sepal.width","petal.length","petal.width","variety"
          5.1,3.5,1.4,.2,"Setosa"
-         5.1,3.5,1.4,.2,"Setosa"
-         4.9,3,1.4,.2,"Setosa", "extra-column"
-         "#;
+         5.1,3.5,1.4,.2,"Setosa"#;
 
         let file = Cursor::new(s);
 
@@ -319,7 +327,7 @@ mod test {
             .infer_schema(Some(10))
             .has_header(true)
             .with_batch_size(2)
-            .with_ignore_parser_error()
+            .with_ignore_parser_errors()
             .finish()
             .unwrap();
     }

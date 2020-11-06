@@ -455,6 +455,7 @@ impl<T> ChunkedArray<T> {
         } else {
             self.chunks.extend(other.chunks.clone())
         }
+        self.chunk_id = create_chunk_id(&self.chunks);
     }
 
     /// Name of the ChunkedArray.

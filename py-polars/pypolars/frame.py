@@ -63,11 +63,14 @@ class DataFrame:
     def read_csv(
         file: Union[str, TextIO],
         infer_schema_length: int = 100,
-        batch_size: int = 100000,
+        batch_size: int = 1000,
         has_headers: bool = True,
         ignore_errors: bool = False,
         stop_after_n_rows: Optional[int] = None,
+        skip_rows: int = 0,
+        projection: Optional[List[int]] = None,
         sep: str = ",",
+        cols: Optional[List[str]] = None,
     ) -> DataFrame:
         """
         Read into a DataFrame from a csv file.
@@ -87,13 +90,39 @@ class DataFrame:
         stop_after_n_rows
             After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
             on the batch size.
+        skip_rows
+            Start reading after `skip_rows`.
+        projection
+            Indexes of columns to select
         sep
             Delimiter/ value seperator
+        cols
+            Columns to project/ select
 
         Returns
         -------
         DataFrame
         """
+        if cols is not None:
+            if projection is not None:
+                print(projection, cols)
+                raise ValueError("only one of cols or projection should be set")
+
+            df = DataFrame.read_csv(
+                file=file,
+                infer_schema_length=infer_schema_length,
+                batch_size=1,
+                has_headers=has_headers,
+                ignore_errors=ignore_errors,
+                stop_after_n_rows=1,  # stop_after_nrows
+                skip_rows=0,  # skip_rows
+                projection=None,  # projection,
+                sep=sep,
+                cols=None,
+            )
+            col = df.columns
+            projection = [col.index(p) for p in cols]
+
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_csv(
             file,
@@ -102,6 +131,8 @@ class DataFrame:
             has_headers,
             ignore_errors,
             stop_after_n_rows,
+            skip_rows,
+            projection,
             sep,
         )
         return self
@@ -196,6 +227,13 @@ class DataFrame:
             Size of the write buffer. Increase to have faster io.
         """
         self._df.to_ipc(file, batch_size)
+
+    def to_numpy(self) -> np.ndarray:
+        """
+        Convert DataFrame to a 2d numpy array.
+        This operation clones data.
+        """
+        return np.vstack([self[:, i].to_numpy() for i in range(self.width)]).T
 
     def __str__(self) -> str:
         return self._df.as_str()

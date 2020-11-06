@@ -272,6 +272,11 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
+    def __invert__(self):
+        if self.dtype == Bool:
+            return wrap_s(self._s._not())
+        return NotImplemented
+
     def __rtruediv__(self, other):
         if not self.is_float():
             out_dtype = Float64
@@ -387,6 +392,9 @@ class Series:
             New name
         """
         self._s.rename(name)
+
+    def chunk_lengths(self) -> List[int]:
+        return self._s.chunk_lengths()
 
     def n_chunks(self) -> int:
         """
@@ -571,7 +579,7 @@ class Series:
 
     def to_list(self) -> List[Optional[Any]]:
         """
-        Convert this Series to a Python List
+        Convert this Series to a Python List. This operation clones data.
         """
         if self.dtype == List:
             column = []

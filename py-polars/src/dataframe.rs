@@ -44,6 +44,8 @@ impl PyDataFrame {
         has_header: bool,
         ignore_errors: bool,
         stop_after_n_rows: Option<usize>,
+        skip_rows: usize,
+        projection: Option<Vec<usize>>,
         sep: &str,
     ) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
@@ -52,10 +54,17 @@ impl PyDataFrame {
             .has_header(has_header)
             .with_stop_after_n_rows(stop_after_n_rows)
             .with_delimiter(sep.as_bytes()[0])
+            .with_skip_rows(skip_rows)
             .with_batch_size(batch_size);
 
         let reader = if ignore_errors {
-            reader.with_ignore_parser_error()
+            reader.with_ignore_parser_errors()
+        } else {
+            reader
+        };
+
+        let reader = if projection.is_some() {
+            reader.with_projection(projection.unwrap())
         } else {
             reader
         };

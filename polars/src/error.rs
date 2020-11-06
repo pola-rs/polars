@@ -37,6 +37,10 @@ pub enum PolarsError {
     HasNullValues(ErrString),
     #[error("{0}")]
     UnknownSchema(ErrString),
+    #[error(transparent)]
+    Various(#[from] anyhow::Error),
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

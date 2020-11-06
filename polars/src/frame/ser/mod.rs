@@ -4,6 +4,8 @@ pub mod json;
 #[cfg(feature = "parquet")]
 #[doc(cfg(feature = "parquet"))]
 pub mod parquet;
+pub(crate) mod vendor;
+
 use crate::prelude::*;
 use arrow::{
     csv::Reader as ArrowCsvReader, error::ArrowError, error::Result as ArrowResult,
@@ -19,10 +21,15 @@ where
     fn new(reader: R) -> Self;
 
     /// Rechunk to a single chunk after Reading file.
-    fn set_rechunk(self, rechunk: bool) -> Self;
+    fn set_rechunk(self, _rechunk: bool) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        self
+    }
 
     /// Continue with next batch when a ParserError is encountered.
-    fn with_ignore_parser_error(self) -> Self;
+    fn with_ignore_parser_errors(self) -> Self;
 
     /// Take the SerReader and return a parsed DataFrame.
     fn finish(self) -> Result<DataFrame>;

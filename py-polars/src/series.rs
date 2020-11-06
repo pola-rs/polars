@@ -3,7 +3,6 @@ use crate::error::PyPolarsEr;
 use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
-use polars::prelude::*;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
@@ -123,6 +122,10 @@ impl PySeries {
         } else {
             Some(PySeries::new(series))
         }
+    }
+
+    pub fn chunk_lengths(&self) -> Vec<usize> {
+        self.series.chunk_lengths().clone()
     }
 
     pub fn name(&self) -> &str {
@@ -270,6 +273,11 @@ impl PySeries {
 
     pub fn lt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
         Ok(Self::new(Series::Bool(self.series.lt_eq(&rhs.series))))
+    }
+
+    pub fn _not(&self) -> PyResult<Self> {
+        let bool = self.series.bool().map_err(PyPolarsEr::from)?;
+        Ok((!bool).into_series().into())
     }
 
     pub fn as_str(&self) -> PyResult<String> {
