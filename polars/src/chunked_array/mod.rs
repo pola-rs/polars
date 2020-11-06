@@ -23,6 +23,7 @@ pub mod arithmetic;
 pub mod builder;
 pub mod cast;
 pub mod comparison;
+pub mod float;
 pub mod iterator;
 pub mod kernels;
 #[cfg(feature = "ndarray")]

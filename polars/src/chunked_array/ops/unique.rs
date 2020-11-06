@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::{floating_encode_f64, integer_decode};
+use crate::utils::{floating_encode_f64, integer_decode_f64};
 use num::{NumCast, ToPrimitive};
 use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
@@ -132,12 +132,12 @@ where
             Ok(slice) => fill_set(
                 slice
                     .iter()
-                    .map(|v| Some(integer_decode(v.to_f64().unwrap()))),
+                    .map(|v| Some(integer_decode_f64(v.to_f64().unwrap()))),
                 self.len(),
             ),
             Err(_) => fill_set(
                 self.into_iter()
-                    .map(|opt_v| opt_v.map(|v| integer_decode(v.to_f64().unwrap()))),
+                    .map(|opt_v| opt_v.map(|v| integer_decode_f64(v.to_f64().unwrap()))),
                 self.len(),
             ),
         };
@@ -161,7 +161,7 @@ where
                     let v = v.to_f64();
                     debug_assert!(v.is_some());
                     let v = unsafe { v.unsafe_unwrap() };
-                    integer_decode(v)
+                    integer_decode_f64(v)
                 }),
                 self.len(),
             )),
@@ -171,7 +171,7 @@ where
                         let v = v.to_f64();
                         debug_assert!(v.is_some());
                         let v = unsafe { v.unsafe_unwrap() };
-                        integer_decode(v)
+                        integer_decode_f64(v)
                     })
                 }),
                 self.len(),
