@@ -637,6 +637,11 @@ impl Series {
         apply_method_all_series!(self, is_not_null,)
     }
 
+    /// Get a mask of all the unique values.
+    pub fn is_unique(&self) -> Result<BooleanChunked> {
+        apply_method_all_series!(self, is_unique,)
+    }
+
     /// Get the bits that represent the null values of the underlying ChunkedArray
     pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
         apply_method_all_series!(self, null_bits,)

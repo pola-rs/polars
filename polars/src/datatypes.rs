@@ -142,6 +142,10 @@ impl PolarsIntegerType for TimestampMicrosecondType {}
 impl PolarsIntegerType for TimestampMillisecondType {}
 impl PolarsIntegerType for TimestampSecondType {}
 
+pub trait PolarsFloatType: PolarsNumericType {}
+impl PolarsFloatType for Float32Type {}
+impl PolarsFloatType for Float64Type {}
+
 #[derive(Debug)]
 pub enum AnyType<'a> {
     Null,

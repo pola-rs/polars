@@ -1,10 +1,38 @@
 use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode_f64};
+use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
 use num::{NumCast, ToPrimitive};
 use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
-use unsafe_unwrap::UnsafeUnwrap;
+
+fn is_unique<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: IntoGroupTuples,
+{
+    let mut unique_idx_iter = ca
+        .group_tuples()
+        .into_iter()
+        .filter(|(_, groups)| groups.len() == 1)
+        .map(|(first, _)| first);
+    let mut next_unique_idx = unique_idx_iter.next();
+    let mask = (0..ca.len())
+        .into_iter()
+        .map(|idx| match next_unique_idx {
+            Some(unique_idx) => {
+                if idx == unique_idx {
+                    next_unique_idx = unique_idx_iter.next();
+                    true
+                } else {
+                    false
+                }
+            }
+            None => false,
+        })
+        .collect();
+    Ok(mask)
+}
 
 impl ChunkUnique<ListType> for ListChunked {
     fn unique(&self) -> Result<ChunkedArray<ListType>> {
@@ -72,9 +100,9 @@ where
     ChunkedArray<T>: ChunkOps,
 {
     fn unique(&self) -> Result<Self> {
-        let set = match self.cont_slice() {
-            Ok(slice) => fill_set(slice.iter().map(|v| Some(*v)), self.len()),
-            Err(_) => fill_set(self.into_iter(), self.len()),
+        let set = match self.null_count() {
+            0 => fill_set(self.into_no_null_iter().map(|v| Some(v)), self.len()),
+            _ => fill_set(self.into_iter(), self.len()),
         };
 
         Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
@@ -82,6 +110,10 @@ where
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
         arg_unique_ca(self)
+    }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        is_unique(self)
     }
 }
 
@@ -96,6 +128,10 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
         arg_unique_ca(self)
+    }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        is_unique(self)
     }
 }
 
@@ -117,66 +153,85 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     fn arg_unique(&self) -> Result<Vec<usize>> {
         arg_unique_ca(self)
     }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        is_unique(self)
+    }
 }
 
-// Use stable form of specialization using autoref
-// https://github.com/dtolnay/case-studies/blob/master/autoref-specialization/README.md
-impl<T> ChunkUnique<T> for &ChunkedArray<T>
+fn float_unique<T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<T>>
 where
-    T: PolarsNumericType,
+    T: PolarsFloatType,
     T::Native: NumCast + ToPrimitive,
-    ChunkedArray<T>: ChunkOps,
 {
-    fn unique(&self) -> Result<ChunkedArray<T>> {
-        let set = match self.cont_slice() {
-            Ok(slice) => fill_set(
-                slice
-                    .iter()
-                    .map(|v| Some(integer_decode_f64(v.to_f64().unwrap()))),
-                self.len(),
-            ),
-            Err(_) => fill_set(
-                self.into_iter()
-                    .map(|opt_v| opt_v.map(|v| integer_decode_f64(v.to_f64().unwrap()))),
-                self.len(),
-            ),
-        };
-        Ok(ChunkedArray::new_from_opt_iter(
-            self.name(),
-            set.iter().copied().map(|opt| match opt {
-                Some((mantissa, exponent, sign)) => {
-                    let flt = floating_encode_f64(mantissa, exponent, sign);
-                    let val: T::Native = NumCast::from(flt).unwrap();
-                    Some(val)
-                }
-                None => None,
-            }),
-        ))
+    let set = match ca.null_count() {
+        0 => fill_set(
+            ca.into_no_null_iter()
+                .map(|v| Some(integer_decode_f64(v.to_f64().unwrap()))),
+            ca.len(),
+        ),
+        _ => fill_set(
+            ca.into_iter()
+                .map(|opt_v| opt_v.map(|v| integer_decode_f64(v.to_f64().unwrap()))),
+            ca.len(),
+        ),
+    };
+    Ok(ChunkedArray::new_from_opt_iter(
+        ca.name(),
+        set.iter().copied().map(|opt| match opt {
+            Some((mantissa, exponent, sign)) => {
+                let flt = floating_encode_f64(mantissa, exponent, sign);
+                let val: T::Native = NumCast::from(flt).unwrap();
+                Some(val)
+            }
+            None => None,
+        }),
+    ))
+}
+
+fn float_arg_unique<T>(ca: &ChunkedArray<T>) -> Result<Vec<usize>>
+where
+    T: PolarsFloatType,
+    T::Native: IntegerDecode,
+{
+    match ca.null_count() {
+        0 => Ok(arg_unique(
+            ca.into_no_null_iter().map(|v| v.integer_decode()),
+            ca.len(),
+        )),
+        _ => Ok(arg_unique(
+            ca.into_iter()
+                .map(|opt_v| opt_v.map(|v| v.integer_decode())),
+            ca.len(),
+        )),
+    }
+}
+
+impl ChunkUnique<Float32Type> for Float32Chunked {
+    fn unique(&self) -> Result<ChunkedArray<Float32Type>> {
+        float_unique(self)
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        match self.null_count() {
-            0 => Ok(arg_unique(
-                self.into_no_null_iter().map(|v| {
-                    let v = v.to_f64();
-                    debug_assert!(v.is_some());
-                    let v = unsafe { v.unsafe_unwrap() };
-                    integer_decode_f64(v)
-                }),
-                self.len(),
-            )),
-            _ => Ok(arg_unique(
-                self.into_iter().map(|opt_v| {
-                    opt_v.map(|v| {
-                        let v = v.to_f64();
-                        debug_assert!(v.is_some());
-                        let v = unsafe { v.unsafe_unwrap() };
-                        integer_decode_f64(v)
-                    })
-                }),
-                self.len(),
-            )),
-        }
+        float_arg_unique(self)
+    }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        is_unique(self)
+    }
+}
+
+impl ChunkUnique<Float64Type> for Float64Chunked {
+    fn unique(&self) -> Result<ChunkedArray<Float64Type>> {
+        float_unique(self)
+    }
+
+    fn arg_unique(&self) -> Result<Vec<usize>> {
+        float_arg_unique(self)
+    }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        is_unique(self)
     }
 }
 
@@ -250,6 +305,21 @@ mod test {
         assert_eq!(
             ca.arg_unique().unwrap().into_iter().collect_vec(),
             vec![0, 1, 4]
+        );
+    }
+
+    #[test]
+    fn is_unique() {
+        let ca = Float32Chunked::new_from_slice("a", &[1., 2., 1., 1., 3.]);
+        assert_eq!(
+            Vec::from(&ca.is_unique().unwrap()),
+            &[
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(true)
+            ]
         );
     }
 }

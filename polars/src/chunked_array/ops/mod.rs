@@ -373,11 +373,18 @@ pub trait ChunkUnique<T> {
     fn unique(&self) -> Result<ChunkedArray<T>>;
 
     /// Get first index of the unique values in a `ChunkedArray`.
+    /// This Vec is sorted.
     fn arg_unique(&self) -> Result<Vec<usize>>;
 
     /// Number of unique values in the `ChunkedArray`
     fn n_unique(&self) -> Result<usize> {
         self.arg_unique().map(|v| v.len())
+    }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        Err(PolarsError::InvalidOperation(
+            "is_unique is not implemented for this dtype".into(),
+        ))
     }
 }
 

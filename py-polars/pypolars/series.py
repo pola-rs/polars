@@ -553,6 +553,16 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_not_null())
 
+    def is_unique(self) -> Series:
+        """
+        Get mask of all unique values
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return wrap_s(self._s.is_unique())
+
     def series_equal(self, other: Series, null_equal: bool = False) -> bool:
         """
         Check if series equal with another Series.

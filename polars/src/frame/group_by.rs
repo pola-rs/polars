@@ -33,7 +33,11 @@ where
         .collect()
 }
 
-trait IntoGroupTuples {
+/// Used to create the tuples for a groupby operation.
+pub trait IntoGroupTuples {
+    /// Create the tuples need for a groupby operation.
+    ///     * The first value in te tuple is the first index of the group.
+    ///     * The second value in the tuple is are the indexes of the groups including the first value.
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
         unimplemented!()
     }
