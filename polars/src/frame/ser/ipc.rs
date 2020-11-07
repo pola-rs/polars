@@ -77,8 +77,8 @@ where
         self
     }
 
-    fn with_ignore_parser_errors(mut self) -> Self {
-        self.ignore_parser_error = true;
+    fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
+        self.ignore_parser_error = ignore;
         self
     }
 

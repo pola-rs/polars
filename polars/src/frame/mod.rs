@@ -105,6 +105,16 @@ impl DataFrame {
         DataFrame { columns }
     }
 
+    /// Aggregate all chunks to contiguous memory.
+    pub fn agg_chunks(&self) -> Self {
+        let cols = self
+            .columns
+            .par_iter()
+            .map(|s| s.rechunk(Some(&[1])).expect("can always rechunk to single"))
+            .collect();
+        DataFrame::new_no_checks(cols)
+    }
+
     /// Ensure all the chunks in the DataFrame are aligned.
     fn rechunk(&mut self) -> Result<&mut Self> {
         let mut chunk_lens = Vec::with_capacity(self.columns.len());

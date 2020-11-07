@@ -48,10 +48,10 @@
 //! assert_eq!("sepal.length", df.get_columns()[0].name());
 //! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
-use crate::frame::ser::vendor::csv::ReaderBuilder;
+use crate::frame::ser::fork::csv::build_csv_reader;
 use crate::prelude::*;
 pub use arrow::csv::WriterBuilder;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Read, Seek, Write};
 use std::sync::Arc;
 
 /// Write a DataFrame to csv.
@@ -127,15 +127,40 @@ where
     }
 }
 
-/// Creates a DataFrame after reading a csv.
+/// Create a new DataFrame by reading a csv file.
+///
+/// Depending on the initialization method, the csv will be parsed sequentially or in parallel.
+/// For parallel parsing the file path should be known as open file handlers cannot be copied to
+/// multiple threads.
+///
+/// # Example
+///
+/// ```
+/// use polars::prelude::*;
+/// use std::fs::File;
+///
+/// fn example() -> Result<DataFrame> {
+///     let file = File::open("iris.csv").expect("could not open file");
+///
+///     // sequential csv reader
+///     CsvReader::new(file)
+///             .infer_schema(None)
+///             .has_header(true)
+///             .finish();
+///
+///     // parallel csv reader
+///     CsvReader::from_file_name("iris.csv".into())
+///             .infer_schema(None)
+///             .has_header(true)
+///             .finish()
+/// }
+/// ```
 pub struct CsvReader<R>
 where
     R: Read + Seek,
 {
     /// File or Stream object
     reader: R,
-    /// Builds an Arrow csv reader
-    reader_builder: ReaderBuilder,
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
     /// Stop reading from the csv after this number of rows is reached
@@ -143,53 +168,151 @@ where
     // used by error ignore logic
     max_records: Option<usize>,
     skip_rows: usize,
+    projection: Option<Vec<usize>>,
+    batch_size: usize,
+    delimiter: Option<u8>,
+    has_header: bool,
+    ignore_parser_errors: bool,
+    schema: Option<Arc<Schema>>,
+    file_name: Option<String>,
+    n_threads: Option<usize>,
+}
+
+impl CsvReader<std::fs::File> {
+    /// Create a CsvReader from a file path. This optionally enables parallel csv parsing
+    /// (only if `stop_after_n_rows` is not set).
+    pub fn from_file_name(name: String) -> Result<Self> {
+        let reader = std::fs::File::open(&name)?;
+        let new = Self::new(reader);
+        Ok(new.with_file_path(name))
+    }
 }
 
 impl<R> CsvReader<R>
 where
-    R: Read + Seek,
+    R: Read + Seek + Sync,
 {
+    /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
+    /// sequentially.
     pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.stop_after_n_rows = num_rows;
+        self
+    }
+
+    /// Set the CSV file's schema
+    pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    /// Skip the first `n` rows during parsing.
+    pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
+        self.skip_rows = skip_rows;
+        self
+    }
+
+    /// Rechunk the DataFrame to contiguous memory after the CSV is parsed.
+    pub fn with_rechunk(mut self, rechunk: bool) -> Self {
+        self.rechunk = rechunk;
+        self
+    }
+
+    /// Use `n` threads during parallel parsing.
+    pub fn with_n_threads(mut self, n_threads: usize) -> Self {
+        self.n_threads = Some(n_threads);
+        self
+    }
+
+    /// Set whether the CSV file has headers
+    pub fn has_header(mut self, has_header: bool) -> Self {
+        self.has_header = has_header;
+        self
+    }
+
+    /// Set the CSV file's column delimiter as a byte character
+    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
+        self.delimiter = Some(delimiter);
+        self
+    }
+
+    /// Set the CSV reader to infer the schema of the file
+    pub fn infer_schema(mut self, max_records: Option<usize>) -> Self {
+        // used by error ignore logic
+        self.max_records = max_records;
+        self
+    }
+
+    /// Set the batch size (number of records to load at one time)
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = batch_size;
+        self
+    }
+
+    /// Set the reader's column projection
+    pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
+        self.projection = projection;
+        self
+    }
+
+    /// File handlers are not clone, so if we want to parallelize csv reading we need a path to
+    /// open multiple paths
+    pub fn with_file_path(mut self, file_name: String) -> Self {
+        self.file_name = Some(file_name);
         self
     }
 }
 
 impl<R> SerReader<R> for CsvReader<R>
 where
-    R: Read + Seek + Sync,
+    R: 'static + Read + Seek + Sync,
 {
     /// Create a new CsvReader from a file/ stream
     fn new(reader: R) -> Self {
         CsvReader {
             reader,
-            reader_builder: ReaderBuilder::new(),
             rechunk: true,
             stop_after_n_rows: None,
             max_records: None,
             skip_rows: 0,
+            projection: None,
+            batch_size: 1024,
+            delimiter: None,
+            has_header: true,
+            ignore_parser_errors: false,
+            schema: None,
+            file_name: None,
+            n_threads: Some(4),
         }
     }
 
     /// Continue with next batch when a ParserError is encountered.
-    fn with_ignore_parser_errors(mut self) -> Self {
-        self.reader_builder = self.reader_builder.with_ignore_parser_errors();
+    fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
+        self.ignore_parser_errors = ignore;
         self
     }
 
     /// Read the file and create the DataFrame.
-    fn finish(mut self) -> Result<DataFrame> {
-        let capacity = match self.stop_after_n_rows {
-            Some(n) => n,
-            None => {
-                let current_pos = self.reader.seek(SeekFrom::Current(0))?;
-                let cap = count_lines(&mut self.reader)?;
-                self.reader.seek(SeekFrom::Start(current_pos))?;
-                cap
-            }
-        };
-        let csv_reader = self.reader_builder.build(self.reader)?;
-        csv_reader.into_df(capacity, Some(capacity), self.skip_rows)
+    fn finish(self) -> Result<DataFrame> {
+        let mut csv_reader = build_csv_reader(
+            self.reader,
+            self.stop_after_n_rows,
+            self.skip_rows,
+            self.projection,
+            self.batch_size,
+            self.max_records,
+            self.delimiter,
+            self.has_header,
+            self.ignore_parser_errors,
+            self.schema,
+            self.file_name,
+            self.n_threads,
+        )?;
+
+        let df = csv_reader.into_df()?;
+        match self.rechunk {
+            true => Ok(df.agg_chunks()),
+            false => Ok(df),
+        }
     }
 }
 
@@ -205,72 +328,6 @@ fn count_lines<R: Read + Seek>(reader: &mut R) -> anyhow::Result<usize> {
         count += 1;
     }
     Ok(count)
-}
-
-impl<R> CsvReader<R>
-where
-    R: Read + Seek + Sync,
-{
-    /// Create a new DataFrame by reading a csv file.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars::prelude::*;
-    /// use std::fs::File;
-    ///
-    /// fn example() -> Result<DataFrame> {
-    ///     let file = File::open("iris.csv").expect("could not open file");
-    ///
-    ///     CsvReader::new(file)
-    ///             .infer_schema(None)
-    ///             .has_header(true)
-    ///             .finish()
-    /// }
-    /// ```
-
-    /// Set the CSV file's schema
-    pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
-        self.reader_builder = self.reader_builder.with_schema(schema);
-        self
-    }
-
-    pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
-        self.skip_rows = skip_rows;
-        self
-    }
-
-    /// Set whether the CSV file has headers
-    pub fn has_header(mut self, has_header: bool) -> Self {
-        self.reader_builder = self.reader_builder.has_header(has_header);
-        self
-    }
-
-    /// Set the CSV file's column delimiter as a byte character
-    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.reader_builder = self.reader_builder.with_delimiter(delimiter);
-        self
-    }
-
-    /// Set the CSV reader to infer the schema of the file
-    pub fn infer_schema(mut self, max_records: Option<usize>) -> Self {
-        // used by error ignore logic
-        self.max_records = max_records;
-        self.reader_builder = self.reader_builder.infer_schema(max_records);
-        self
-    }
-
-    /// Set the batch size (number of records to load at one time)
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
-        self.reader_builder = self.reader_builder.with_batch_size(batch_size);
-        self
-    }
-
-    /// Set the reader's column projection
-    pub fn with_projection(mut self, projection: Vec<usize>) -> Self {
-        self.reader_builder = self.reader_builder.with_projection(projection);
-        self
-    }
 }
 
 #[cfg(test)]
@@ -308,7 +365,7 @@ mod test {
         let df = CsvReader::new(file)
             .infer_schema(Some(100))
             .has_header(true)
-            .with_ignore_parser_errors()
+            .with_ignore_parser_errors(true)
             .with_batch_size(100)
             .finish()
             .unwrap();
@@ -327,7 +384,7 @@ mod test {
             .infer_schema(Some(10))
             .has_header(true)
             .with_batch_size(2)
-            .with_ignore_parser_errors()
+            .with_ignore_parser_errors(true)
             .finish()
             .unwrap();
     }

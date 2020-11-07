@@ -71,6 +71,8 @@ class DataFrame:
         projection: Optional[List[int]] = None,
         sep: str = ",",
         cols: Optional[List[str]] = None,
+        n_threads: int = 4,
+        rechunk: bool = True,
     ) -> DataFrame:
         """
         Read into a DataFrame from a csv file.
@@ -98,6 +100,10 @@ class DataFrame:
             Delimiter/ value seperator
         cols
             Columns to project/ select
+        n_threads
+            The number of threads used in case of parallel parsing
+        rechunk
+            Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
 
         Returns
         -------
@@ -119,6 +125,8 @@ class DataFrame:
                 projection=None,  # projection,
                 sep=sep,
                 cols=None,
+                n_threads=n_threads,
+                rechunk=False,
             )
             col = df.columns
             projection = [col.index(p) for p in cols]
@@ -134,6 +142,8 @@ class DataFrame:
             skip_rows,
             projection,
             sep,
+            n_threads,
+            rechunk,
         )
         return self
 
@@ -762,6 +772,9 @@ class DataFrame:
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
         return wrap_df(self._df.drop_duplicates())
+
+    def _rechunk(self) -> DataFrame:
+        return wrap_df(self._df.rechunk())
 
 
 class GroupBy:

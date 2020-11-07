@@ -8,6 +8,7 @@ use crate::{
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
+use pyo3::types::PyString;
 
 #[pyclass]
 #[repr(transparent)]
@@ -47,29 +48,45 @@ impl PyDataFrame {
         skip_rows: usize,
         projection: Option<Vec<usize>>,
         sep: &str,
+        n_threads: usize,
+        rechunk: bool,
     ) -> PyResult<Self> {
-        let file = get_file_like(py_f, false)?;
-        let reader = CsvReader::new(file)
-            .infer_schema(Some(infer_schema_length))
-            .has_header(has_header)
-            .with_stop_after_n_rows(stop_after_n_rows)
-            .with_delimiter(sep.as_bytes()[0])
-            .with_skip_rows(skip_rows)
-            .with_batch_size(batch_size);
-
-        let reader = if ignore_errors {
-            reader.with_ignore_parser_errors()
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        // if a file name is provided we can read in parallel
+        if let Ok(pystring) = py_f.cast_as::<PyString>(py) {
+            let file_name = pystring.to_string();
+            let df = CsvReader::from_file_name(file_name)
+                .expect("path not found")
+                .infer_schema(Some(infer_schema_length))
+                .has_header(has_header)
+                .with_stop_after_n_rows(stop_after_n_rows)
+                .with_delimiter(sep.as_bytes()[0])
+                .with_skip_rows(skip_rows)
+                .with_ignore_parser_errors(ignore_errors)
+                .with_n_threads(n_threads)
+                .with_projection(projection)
+                .with_batch_size(batch_size)
+                .with_rechunk(rechunk)
+                .finish()
+                .map_err(PyPolarsEr::from)?;
+            Ok(df.into())
         } else {
-            reader
-        };
-
-        let reader = if projection.is_some() {
-            reader.with_projection(projection.unwrap())
-        } else {
-            reader
-        };
-        let df = reader.finish().map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
+            let file = get_file_like(py_f, false)?;
+            let df = CsvReader::new(file)
+                .infer_schema(Some(infer_schema_length))
+                .has_header(has_header)
+                .with_stop_after_n_rows(stop_after_n_rows)
+                .with_delimiter(sep.as_bytes()[0])
+                .with_skip_rows(skip_rows)
+                .with_ignore_parser_errors(ignore_errors)
+                .with_projection(projection)
+                .with_rechunk(rechunk)
+                .with_batch_size(batch_size)
+                .finish()
+                .map_err(PyPolarsEr::from)?;
+            Ok(df.into())
+        }
     }
 
     #[staticmethod]
@@ -114,6 +131,10 @@ impl PyDataFrame {
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
+    }
+
+    pub fn rechunk(&mut self) -> Self {
+        self.df.agg_chunks().into()
     }
 
     /// Format `DataFrame` as String

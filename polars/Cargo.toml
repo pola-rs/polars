@@ -39,6 +39,7 @@ regex = {version = "1.4", optional = true }
 anyhow = "1.0"
 seahash = "4.0.1"
 csv = "1.1"
+csv-index = "0.1"
 lazy_static = "1.4"
 
 [package.metadata.docs.rs]

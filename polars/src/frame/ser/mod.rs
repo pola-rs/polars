@@ -1,10 +1,10 @@
 pub mod csv;
+pub(crate) mod fork;
 pub mod ipc;
 pub mod json;
 #[cfg(feature = "parquet")]
 #[doc(cfg(feature = "parquet"))]
 pub mod parquet;
-pub(crate) mod vendor;
 
 use crate::prelude::*;
 use arrow::{
@@ -29,7 +29,7 @@ where
     }
 
     /// Continue with next batch when a ParserError is encountered.
-    fn with_ignore_parser_errors(self) -> Self;
+    fn with_ignore_parser_errors(self, ignore: bool) -> Self;
 
     /// Take the SerReader and return a parsed DataFrame.
     fn finish(self) -> Result<DataFrame>;
