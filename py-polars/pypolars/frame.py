@@ -715,21 +715,39 @@ class DataFrame:
         return self._df.n_chunks()
 
     def max(self) -> DataFrame:
+        """
+        Aggregate the columns of this DataFrame to their maximum value
+        """
         return wrap_df(self._df.max())
 
     def min(self) -> DataFrame:
+        """
+        Aggregate the columns of this DataFrame to their minimum value
+        """
         return wrap_df(self._df.min())
 
     def sum(self) -> DataFrame:
+        """
+        Aggregate the columns of this DataFrame to their sum value
+        """
         return wrap_df(self._df.sum())
 
     def mean(self) -> DataFrame:
+        """
+        Aggregate the columns of this DataFrame to their mean value
+        """
         return self._df.mean()
 
     def median(self) -> DataFrame:
+        """
+        Aggregate the columns of this DataFrame to their median value
+        """
         return wrap_df(self._df.median())
 
     def quantile(self, quantile: float) -> DataFrame:
+        """
+        Aggregate the columns of this DataFrame to their quantile value
+        """
         return wrap_df(self._df.quantile(quantile))
 
     def to_dummies(self) -> DataFrame:
@@ -737,6 +755,13 @@ class DataFrame:
         Get one hot encoded dummy variables.
         """
         return wrap_df(self._df.to_dummies())
+
+    def drop_duplicates(self) -> DataFrame:
+        """
+        Drop duplicate rows from this DataFrame.
+        Note that this fails if there is a column of type `List` in the DataFrame.
+        """
+        return wrap_df(self._df.drop_duplicates())
 
 
 class GroupBy:

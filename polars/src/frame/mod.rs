@@ -980,6 +980,7 @@ impl DataFrame {
         Ok(record_batches)
     }
 
+    /// Iterator over the rows in this DataFrame as Arrow RecordBatches.
     pub fn iter_record_batches(
         &mut self,
         buffer_size: usize,
@@ -1188,6 +1189,51 @@ impl DataFrame {
         }
         Ok(DataFrame::new_no_checks(columns))
     }
+
+    /// Drop duplicate rows from a DataFrame.
+    /// *This fails when there is a column of type List in DataFrame*
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    ///
+    /// # #[macro_use] extern crate polars;
+    /// # fn main() {
+    ///  use polars::prelude::*;
+    ///
+    ///  fn example() -> Result<DataFrame> {
+    ///      let df = df! {
+    ///                    "flt" => [1., 1., 2., 2., 3., 3.],
+    ///                    "int" => [1, 1, 2, 2, 3, 3, ],
+    ///                    "str" => ["a", "a", "b", "b", "c", "c"]
+    ///                }?;
+    ///      df.drop_duplicates()?
+    ///          .sort("flt", false)
+    ///  }
+    /// # }
+    /// ```
+    /// Returns
+    ///
+    /// ```text
+    /// +-----+-----+-----+
+    /// | flt | int | str |
+    /// | --- | --- | --- |
+    /// | f64 | i32 | str |
+    /// +=====+=====+=====+
+    /// | 1   | 1   | "a" |
+    /// +-----+-----+-----+
+    /// | 2   | 2   | "b" |
+    /// +-----+-----+-----+
+    /// | 3   | 3   | "c" |
+    /// +-----+-----+-----+
+    /// ```
+    pub fn drop_duplicates(&self) -> Result<Self> {
+        let gb = self.groupby(self.columns())?;
+        let groups = gb.get_groups().into_iter().map(|v| v.0);
+        let cap = Some(groups.size_hint().0);
+        let df = unsafe { self.take_iter_unchecked(groups, cap) };
+        Ok(df)
+    }
 }
 
 pub struct RecordBatchIter<'a> {
@@ -1287,5 +1333,25 @@ mod test {
             ]
         );
         dbg!(dummies);
+    }
+
+    #[test]
+    fn drop_duplicates() {
+        let df = df! {
+            "flt" => [1., 1., 2., 2., 3., 3.],
+            "int" => [1, 1, 2, 2, 3, 3, ],
+            "str" => ["a", "a", "b", "b", "c", "c"]
+        }
+        .unwrap();
+        dbg!(&df);
+        let df = df.drop_duplicates().unwrap().sort("flt", false).unwrap();
+        let valid = df! {
+            "flt" => [1., 2., 3.],
+            "int" => [1, 2, 3],
+            "str" => ["a", "b", "c"]
+        }
+        .unwrap();
+        dbg!(&df);
+        assert!(df.frame_equal(&valid));
     }
 }

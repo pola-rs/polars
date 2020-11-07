@@ -8,3 +8,4 @@
 //! * Groupby floating point keys
 //! * DataFrame operations
 //!     - drop_nulls
+//!     - drop duplicate rows

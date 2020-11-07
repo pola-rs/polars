@@ -419,6 +419,11 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
+    pub fn drop_duplicates(&self) -> PyResult<Self> {
+        let df = self.df.drop_duplicates().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn lazy(&self) -> PyLazyFrame {
         self.df.clone().lazy().into()
     }

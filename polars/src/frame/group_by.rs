@@ -199,7 +199,9 @@ impl Series {
             Series::Utf8(ca) => as_groupable_iter!(ca, Utf8),
             Series::Float32(ca) => float_to_groupable_iter(ca),
             Series::Float64(ca) => float_to_groupable_iter(ca),
-            _ => Err(PolarsError::Other("Column is not groupable".into())),
+            s => Err(PolarsError::Other(
+                format!("Column with dtype {:?} is not groupable", s.dtype()).into(),
+            )),
         }
     }
 }
@@ -710,8 +712,11 @@ impl AggQuantile for BooleanChunked {}
 impl AggQuantile for ListChunked {}
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
-    /// Select the column by which the determine the groups.
+    /// Select the column(s) that should be aggregated.
     /// You can select a single column or a slice of columns.
+    ///
+    /// Note that making a selection with this method is not required. If you
+    /// skip it all columns (except for the keys) will be selected for aggregation.
     pub fn select<S, J>(mut self, selection: S) -> Self
     where
         S: Selection<'selection_str, J>,
@@ -720,7 +725,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         self
     }
 
-    pub(crate) fn get_groups(&self) -> &Vec<(usize, Vec<usize>)> {
+    /// Get the internal representation of the GroupBy operation.
+    /// The Vec returned contains:
+    ///     (first_idx, Vec<indexes>)
+    ///     Where second value in the tuple is a vector with all matching indexes.
+    pub fn get_groups(&self) -> &Vec<(usize, Vec<usize>)> {
         &self.groups
     }
 
