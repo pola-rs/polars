@@ -563,6 +563,16 @@ class Series:
         """
         return wrap_s(self._s.is_unique())
 
+    def is_duplicated(self) -> Series:
+        """
+        Get mask of all duplicated values
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return wrap_s(self._s.is_unique())
+
     def series_equal(self, other: Series, null_equal: bool = False) -> bool:
         """
         Check if series equal with another Series.

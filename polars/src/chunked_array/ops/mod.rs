@@ -381,9 +381,17 @@ pub trait ChunkUnique<T> {
         self.arg_unique().map(|v| v.len())
     }
 
+    /// Get a mask of all the unique values.
     fn is_unique(&self) -> Result<BooleanChunked> {
         Err(PolarsError::InvalidOperation(
             "is_unique is not implemented for this dtype".into(),
+        ))
+    }
+
+    /// Get a mask of all the duplicated values.
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        Err(PolarsError::InvalidOperation(
+            "is_duplicated is not implemented for this dtype".into(),
         ))
     }
 }

@@ -6,11 +6,16 @@ use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
 
-fn is_unique<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
+fn is_unique_helper<T>(
+    ca: &ChunkedArray<T>,
+    unique_val: bool,
+    duplicated_val: bool,
+) -> Result<BooleanChunked>
 where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
+    debug_assert_ne!(unique_val, duplicated_val);
     let mut unique_idx_iter = ca
         .group_tuples()
         .into_iter()
@@ -23,15 +28,31 @@ where
             Some(unique_idx) => {
                 if idx == unique_idx {
                     next_unique_idx = unique_idx_iter.next();
-                    true
+                    unique_val
                 } else {
-                    false
+                    duplicated_val
                 }
             }
-            None => false,
+            None => duplicated_val,
         })
         .collect();
     Ok(mask)
+}
+
+fn is_unique<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: IntoGroupTuples,
+{
+    is_unique_helper(ca, true, false)
+}
+
+fn is_duplicated<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: IntoGroupTuples,
+{
+    is_unique_helper(ca, false, true)
 }
 
 impl ChunkUnique<ListType> for ListChunked {
@@ -115,6 +136,10 @@ where
     fn is_unique(&self) -> Result<BooleanChunked> {
         is_unique(self)
     }
+
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        is_duplicated(self)
+    }
 }
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
@@ -132,6 +157,9 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
 
     fn is_unique(&self) -> Result<BooleanChunked> {
         is_unique(self)
+    }
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        is_duplicated(self)
     }
 }
 
@@ -156,6 +184,9 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
 
     fn is_unique(&self) -> Result<BooleanChunked> {
         is_unique(self)
+    }
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        is_duplicated(self)
     }
 }
 
@@ -219,6 +250,9 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
     fn is_unique(&self) -> Result<BooleanChunked> {
         is_unique(self)
     }
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        is_duplicated(self)
+    }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
@@ -232,6 +266,9 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
 
     fn is_unique(&self) -> Result<BooleanChunked> {
         is_unique(self)
+    }
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        is_duplicated(self)
     }
 }
 

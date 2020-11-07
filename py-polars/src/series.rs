@@ -253,6 +253,11 @@ impl PySeries {
         Ok(Series::Bool(ca).into())
     }
 
+    pub fn is_duplicated(&self) -> PyResult<Self> {
+        let ca = self.series.is_duplicated().map_err(PyPolarsEr::from)?;
+        Ok(Series::Bool(ca).into())
+    }
+
     pub fn series_equal(&self, other: &PySeries, null_equal: bool) -> bool {
         if null_equal {
             self.series.series_equal_missing(&other.series)

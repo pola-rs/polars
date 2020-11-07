@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 def parse_result(f):
     return [float(a) / 1000 for a in f.read().split("\n")[:-1]]
+
 
 with open("../data/python_bench.txt") as f:
     pandas = parse_result(f)
@@ -77,8 +79,8 @@ for i in range(len(pypolars)):
         [pypolars[i], datatable[i], pandas[i]],
         color=["C0", "C1", "C2"],
         alpha=0.75,
-        width=0.4
-        )
+        width=0.4,
+    )
     ca.set_xticks(x)
     ca.set_xticklabels(lib, rotation=30)
     ca.set_ylabel("process memory [GB]")
