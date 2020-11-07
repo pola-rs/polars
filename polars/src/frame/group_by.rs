@@ -1,5 +1,5 @@
 use super::hash_join::prepare_hashed_relation;
-use crate::chunked_array::builder::PrimitiveChunkedBuilder;
+use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{IntoDynamicZip, Xob};
@@ -39,41 +39,62 @@ trait IntoGroupTuples {
     }
 }
 
+fn group_tuples<'a, T>(ca: &'a ChunkedArray<T>) -> Vec<(usize, Vec<usize>)>
+where
+    &'a ChunkedArray<T>: IntoNoNullIterator + IntoIterator,
+    <&'a ChunkedArray<T> as IntoIterator>::Item: Eq + Hash,
+    <&'a ChunkedArray<T> as IntoNoNullIterator>::Item: Eq + Hash,
+{
+    if ca.null_count() == 0 {
+        groupby(ca.into_no_null_iter())
+    } else {
+        groupby(ca.into_iter())
+    }
+}
+
 impl<T> IntoGroupTuples for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Eq + Hash,
 {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        if let Ok(slice) = self.cont_slice() {
-            groupby(slice.iter())
-        } else {
-            groupby(self.into_iter())
-        }
+        group_tuples(self)
     }
 }
 impl IntoGroupTuples for BooleanChunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        if self.is_optimal_aligned() {
-            groupby(self.into_no_null_iter())
-        } else {
-            groupby(self.into_iter())
-        }
+        group_tuples(self)
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        if self.is_optimal_aligned() {
-            groupby(self.into_no_null_iter())
-        } else {
-            groupby(self.into_iter())
-        }
+        group_tuples(self)
     }
 }
 
-impl IntoGroupTuples for Float64Chunked {}
-impl IntoGroupTuples for Float32Chunked {}
+impl IntoGroupTuples for Float64Chunked {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        match self.null_count() {
+            0 => groupby(self.into_no_null_iter().map(|v| v.integer_decode())),
+            _ => groupby(
+                self.into_iter()
+                    .map(|opt_v| opt_v.map(|v| v.integer_decode())),
+            ),
+        }
+    }
+}
+impl IntoGroupTuples for Float32Chunked {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        match self.null_count() {
+            0 => groupby(self.into_no_null_iter().map(|v| v.integer_decode())),
+            _ => groupby(
+                self.into_iter()
+                    .map(|opt_v| opt_v.map(|v| v.integer_decode())),
+            ),
+        }
+    }
+}
 impl IntoGroupTuples for ListChunked {}
 
 /// Utility enum used for grouping on multiple columns
@@ -89,6 +110,9 @@ enum Groupable<'a> {
     Int16(i16),
     Int32(i32),
     Int64(i64),
+    // mantissa, exponent, sign.
+    Float32(u64, i16, i8),
+    Float64(u64, i16, i8),
 }
 
 impl<'a> Debug for Groupable<'a> {
@@ -105,8 +129,34 @@ impl<'a> Debug for Groupable<'a> {
             Int16(v) => write!(f, "{}", v),
             Int32(v) => write!(f, "{}", v),
             Int64(v) => write!(f, "{}", v),
+            Float32(m, e, s) => write!(f, "float32 mantissa: {} exponent: {} sign: {}", m, e, s),
+            Float64(m, e, s) => write!(f, "float64 mantissa: {} exponent: {} sign: {}", m, e, s),
         }
     }
+}
+
+impl From<f64> for Groupable<'_> {
+    fn from(v: f64) -> Self {
+        let (m, e, s) = v.integer_decode();
+        Groupable::Float64(m, e, s)
+    }
+}
+impl From<f32> for Groupable<'_> {
+    fn from(v: f32) -> Self {
+        let (m, e, s) = v.integer_decode();
+        Groupable::Float64(m, e, s)
+    }
+}
+
+fn float_to_groupable_iter<'a, T>(
+    ca: &'a ChunkedArray<T>,
+) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>>
+where
+    T: PolarsNumericType,
+    T::Native: Into<Groupable<'a>>,
+{
+    let iter = ca.into_iter().map(|opt_v| opt_v.map(|v| v.into()));
+    Ok(Box::new(iter))
 }
 
 impl Series {
@@ -147,6 +197,8 @@ impl Series {
             Series::IntervalDayTime(ca) => as_groupable_iter!(ca, Int64),
             Series::IntervalYearMonth(ca) => as_groupable_iter!(ca, Int32),
             Series::Utf8(ca) => as_groupable_iter!(ca, Utf8),
+            Series::Float32(ca) => float_to_groupable_iter(ca),
+            Series::Float64(ca) => float_to_groupable_iter(ca),
             _ => Err(PolarsError::Other("Column is not groupable".into())),
         }
     }
@@ -2038,6 +2090,20 @@ mod test {
         assert_eq!(
             Vec::from(&adf.column("N_sum").unwrap().i32().unwrap().sort(false)),
             &[Some(3), Some(4), Some(6)]
+        );
+    }
+
+    #[test]
+    fn test_groupby_floats() {
+        let df = df! {"flt" => [1., 1., 2., 2., 3.],
+                    "val" => [1, 1, 1, 1, 1]
+        }
+        .unwrap();
+        let res = df.groupby("flt").unwrap().sum().unwrap();
+        let res = res.sort("flt", false).unwrap();
+        assert_eq!(
+            Vec::from(res.column("val_sum").unwrap().i32().unwrap()),
+            &[Some(2), Some(2), Some(1)]
         );
     }
 }
