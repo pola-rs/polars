@@ -5,5 +5,6 @@ members = [
     "polars",
     "pandas_cmp",
     "py-polars",
-    "examples/iris_classifier"
+    "examples/iris_classifier",
+    "examples/aggregate_multiple_files_in_chunks"
 ]
