@@ -129,10 +129,6 @@ where
 
 /// Create a new DataFrame by reading a csv file.
 ///
-/// Depending on the initialization method, the csv will be parsed sequentially or in parallel.
-/// For parallel parsing the file path should be known as open file handlers cannot be copied to
-/// multiple threads.
-///
 /// # Example
 ///
 /// ```
@@ -142,14 +138,7 @@ where
 /// fn example() -> Result<DataFrame> {
 ///     let file = File::open("iris.csv").expect("could not open file");
 ///
-///     // sequential csv reader
 ///     CsvReader::new(file)
-///             .infer_schema(None)
-///             .has_header(true)
-///             .finish();
-///
-///     // parallel csv reader
-///     CsvReader::from_file_name("iris.csv".into())
 ///             .infer_schema(None)
 ///             .has_header(true)
 ///             .finish()
@@ -174,18 +163,6 @@ where
     has_header: bool,
     ignore_parser_errors: bool,
     schema: Option<Arc<Schema>>,
-    file_name: Option<String>,
-    n_threads: Option<usize>,
-}
-
-impl CsvReader<std::fs::File> {
-    /// Create a CsvReader from a file path. This optionally enables parallel csv parsing
-    /// (only if `stop_after_n_rows` is not set).
-    pub fn from_file_name(name: String) -> Result<Self> {
-        let reader = std::fs::File::open(&name)?;
-        let new = Self::new(reader);
-        Ok(new.with_file_path(name))
-    }
 }
 
 impl<R> CsvReader<R>
@@ -214,12 +191,6 @@ where
     /// Rechunk the DataFrame to contiguous memory after the CSV is parsed.
     pub fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
-        self
-    }
-
-    /// Use `n` threads during parallel parsing.
-    pub fn with_n_threads(mut self, n_threads: usize) -> Self {
-        self.n_threads = Some(n_threads);
         self
     }
 
@@ -253,13 +224,6 @@ where
         self.projection = projection;
         self
     }
-
-    /// File handlers are not clone, so if we want to parallelize csv reading we need a path to
-    /// open multiple paths
-    pub fn with_file_path(mut self, file_name: String) -> Self {
-        self.file_name = Some(file_name);
-        self
-    }
 }
 
 impl<R> SerReader<R> for CsvReader<R>
@@ -280,8 +244,6 @@ where
             has_header: true,
             ignore_parser_errors: false,
             schema: None,
-            file_name: None,
-            n_threads: Some(4),
         }
     }
 
@@ -304,8 +266,6 @@ where
             self.has_header,
             self.ignore_parser_errors,
             self.schema,
-            self.file_name,
-            self.n_threads,
         )?;
 
         let df = csv_reader.into_df()?;

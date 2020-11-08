@@ -19,7 +19,6 @@ def read_csv(
     projection: Optional[List[int]] = None,
     sep: str = ",",
     cols: Optional[List[str]] = None,
-    n_threads: int = 4,
     rechunk: bool = True,
 ) -> "DataFrame":
     return DataFrame.read_csv(
@@ -33,6 +32,5 @@ def read_csv(
         projection=projection,
         sep=sep,
         cols=cols,
-        n_threads=n_threads,
         rechunk=rechunk,
     )

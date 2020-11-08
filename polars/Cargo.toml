@@ -14,12 +14,12 @@ readme = "../README.md"
 pretty = ["prettytable-rs"]
 simd = ["arrow/simd"]
 docs = []
-temporal = ["chrono", "regex"]
+temporal = ["chrono"]
 random = ["rand", "rand_distr"]
 default = ["pretty", "docs", "temporal", "simd"]
 lazy = []
 # extra utilities for Utf8Chunked
-strings = ["regex"]
+strings = []
 
 [dependencies]
 arrow = {version = "2", default_features = false}
@@ -35,11 +35,10 @@ parquet = {version = "2", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
-regex = {version = "1.4", optional = true }
+regex = {version = "1.4" }
 anyhow = "1.0"
 seahash = "4.0.1"
 csv = "1.1"
-csv-index = "0.1"
 lazy_static = "1.4"
 
 [package.metadata.docs.rs]

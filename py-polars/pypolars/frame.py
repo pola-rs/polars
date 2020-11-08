@@ -71,7 +71,6 @@ class DataFrame:
         projection: Optional[List[int]] = None,
         sep: str = ",",
         cols: Optional[List[str]] = None,
-        n_threads: int = 4,
         rechunk: bool = True,
     ) -> DataFrame:
         """
@@ -100,8 +99,6 @@ class DataFrame:
             Delimiter/ value seperator
         cols
             Columns to project/ select
-        n_threads
-            The number of threads used in case of parallel parsing
         rechunk
             Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
 
@@ -125,7 +122,6 @@ class DataFrame:
                 projection=None,  # projection,
                 sep=sep,
                 cols=None,
-                n_threads=n_threads,
                 rechunk=False,
             )
             col = df.columns
@@ -142,7 +138,6 @@ class DataFrame:
             skip_rows,
             projection,
             sep,
-            n_threads,
             rechunk,
         )
         return self

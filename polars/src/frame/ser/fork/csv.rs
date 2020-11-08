@@ -18,8 +18,7 @@
 use crate::prelude::*;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
-use csv::{Position, StringRecord, StringRecordsIntoIter};
-use csv_index::RandomAccessSimple;
+use csv::{StringRecord, StringRecordsIntoIter};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
 use regex::{Regex, RegexBuilder};
@@ -27,7 +26,7 @@ use seahash::SeaHasher;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::BuildHasherDefault;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
 lazy_static! {
@@ -37,10 +36,6 @@ lazy_static! {
         .case_insensitive(true)
         .build()
         .unwrap();
-}
-
-pub trait IntoDF {
-    fn into_df(&mut self) -> Result<DataFrame>;
 }
 
 /// Infer the data type of a record
@@ -253,204 +248,6 @@ fn builders_to_df(builders: Vec<Builder>) -> DataFrame {
     DataFrame::new_no_checks(columns)
 }
 
-pub struct ParReader {
-    schema: SchemaRef,
-    projection: Option<Vec<usize>>,
-    batch_size: usize,
-    ignore_parser_errors: bool,
-    header_offset: usize,
-    skip_rows: usize,
-    n_rows: Option<usize>,
-    file_path: String,
-    has_header: bool,
-    delimiter: u8,
-    indexed_csv: RandomAccessSimple<io::Cursor<Vec<u8>>>,
-    n_threads: usize,
-}
-
-impl ParReader {
-    pub fn from_reader<R: Read>(
-        reader: R,
-        schema: SchemaRef,
-        has_header: bool,
-        delimiter: u8,
-        batch_size: usize,
-        projection: Option<Vec<usize>>,
-        ignore_parser_errors: bool,
-        n_rows: Option<usize>,
-        skip_rows: usize,
-        file_path: String,
-        n_threads: usize,
-    ) -> Self {
-        let mut wtr = io::Cursor::new(Vec::with_capacity(batch_size * 128));
-        let mut csv_reader = init_csv_reader(reader, has_header, delimiter);
-        RandomAccessSimple::create(&mut csv_reader, &mut wtr)
-            .expect("could not create index for csv file");
-        let indexed_csv = RandomAccessSimple::open(wtr).expect("could not open csv index");
-        let header_offset = if has_header { 1 } else { 0 };
-
-        Self {
-            schema,
-            projection,
-            batch_size,
-            ignore_parser_errors,
-            header_offset,
-            skip_rows,
-            n_rows,
-            file_path,
-            has_header,
-            delimiter,
-            indexed_csv,
-            n_threads,
-        }
-    }
-
-    fn next_rows(
-        &self,
-        rows: &mut Vec<StringRecord>,
-        record_iter: &mut impl Iterator<Item = csv::Result<StringRecord>>,
-    ) -> Result<()> {
-        for _ in 0..self.batch_size {
-            match record_iter.next() {
-                Some(Ok(r)) => {
-                    rows.push(r);
-                }
-                Some(Err(e)) => {
-                    if self.ignore_parser_errors {
-                        continue;
-                    } else {
-                        return Err(PolarsError::Other(
-                            format!("Error parsing line {:?}", e).into(),
-                        ));
-                    }
-                }
-                None => break,
-            }
-        }
-        Ok(())
-    }
-
-    fn add_to_builders(
-        &self,
-        builders: &mut [Builder],
-        projection: &[usize],
-        rows: &[StringRecord],
-    ) -> Result<()> {
-        impl_add_to_builders!(self, projection, rows, builders)
-    }
-
-    fn add_to_primitive<T>(
-        &self,
-        rows: &[StringRecord],
-        col_idx: usize,
-        builder: &mut PrimitiveChunkedBuilder<T>,
-    ) -> Result<()>
-    where
-        T: ArrowPrimitiveType,
-    {
-        let is_boolean_type = *self.schema.field(col_idx).data_type() == ArrowDataType::Boolean;
-
-        for row in rows.iter() {
-            match row.get(col_idx) {
-                Some(s) => {
-                    if s.is_empty() {
-                        builder.append_null();
-                        continue;
-                    }
-                    let parsed = if is_boolean_type {
-                        s.to_lowercase().parse::<T::Native>()
-                    } else {
-                        s.parse::<T::Native>()
-                    };
-                    match parsed {
-                        Ok(e) => builder.append_value(e),
-                        Err(_) => {
-                            if self.ignore_parser_errors {
-                                builder.append_null();
-                                continue;
-                            }
-                            return Err(PolarsError::Other(
-                                format!("Error while parsing value {} for column {}", s, col_idx,)
-                                    .into(),
-                            ));
-                        }
-                    }
-                }
-                None => builder.append_null(),
-            }
-        }
-        Ok(())
-    }
-
-    fn process_thread(
-        &self,
-        start_pos: Position,
-        chunk_size: usize,
-        projection: &[usize],
-    ) -> Result<DataFrame> {
-        let f = std::fs::File::open(&self.file_path).expect("csv file");
-        let mut csv_reader = init_csv_reader(f, false, self.delimiter);
-        csv_reader
-            .seek(start_pos)
-            .expect("position should be there");
-
-        let mut builders = init_builders(projection, chunk_size, &self.schema)?;
-        let mut record_iter = csv_reader.records().take(chunk_size);
-        // we reuse this container to amortize allocations
-        let mut rows = Vec::with_capacity(self.batch_size);
-
-        loop {
-            rows.clear();
-            self.next_rows(&mut rows, &mut record_iter)?;
-            // stop when the whole file is processed
-            if rows.len() == 0 {
-                break;
-            }
-
-            self.add_to_builders(&mut builders, &projection, &rows)?;
-        }
-        Ok(builders_to_df(builders))
-    }
-}
-
-impl IntoDF for ParReader {
-    fn into_df(&mut self) -> Result<DataFrame> {
-        // only take projections once
-        let projection = take_projection(&mut self.projection, &self.schema);
-        let offset = self.skip_rows + self.header_offset;
-        let end = match self.n_rows {
-            Some(n) => std::cmp::min(offset + n, self.indexed_csv.len() as usize),
-            None => self.indexed_csv.len() as usize,
-        };
-
-        let chunk_size = (end - offset) / self.n_threads;
-        let positions = (0..self.n_threads)
-            .into_iter()
-            .map(|i| {
-                let start_row = offset + i * chunk_size;
-                let start_pos = self.indexed_csv.get(start_row as u64)?;
-                Ok(start_pos)
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        // batches should not be bigger than chunks
-        self.batch_size = std::cmp::min(self.batch_size, chunk_size);
-
-        let mut dfs = positions
-            .into_iter()
-            .enumerate()
-            .map(|(idx, start_pos)| {
-                self.process_thread(start_pos, chunk_size, &projection)
-                    .map(|df| (idx, df))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        dfs.sort_by_key(|tpl| tpl.0);
-
-        accumulate_dataframes(dfs.into_iter().map(|(_, df)| df).collect())
-    }
-}
-
 /// CSV file reader
 pub struct SequentialReader<R: Read> {
     /// Explicit schema for the CSV file
@@ -468,56 +265,6 @@ pub struct SequentialReader<R: Read> {
     skip_rows: usize,
     n_rows: Option<usize>,
     capacity: usize,
-}
-
-impl<R: Read + Sync> IntoDF for SequentialReader<R> {
-    fn into_df(&mut self) -> Result<DataFrame> {
-        let mut total_capacity = self.capacity;
-        if self.skip_rows > 0 {
-            for _ in 0..self.skip_rows {
-                self.line_number += 1;
-                let _ = self.record_iter.next();
-            }
-            total_capacity += self.skip_rows;
-        }
-
-        // only take projections once
-        let projection = take_projection(&mut self.projection, &self.schema);
-        self.batch_size = std::cmp::min(self.batch_size, self.capacity);
-        if let Some(n) = self.n_rows {
-            self.batch_size = std::cmp::min(self.batch_size, n);
-        }
-
-        let mut builders = init_builders(&projection, self.capacity, &self.schema)?;
-        // we reuse this container to amortize allocations
-        let mut rows = Vec::with_capacity(self.batch_size);
-        let mut parsed_dfs = Vec::with_capacity(128);
-        loop {
-            rows.clear();
-            self.next_rows(&mut rows)?;
-            // stop when the whole file is processed
-            if rows.len() == 0 {
-                break;
-            }
-            if (self.line_number - self.header_offset) > total_capacity {
-                let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
-                std::mem::swap(&mut builders_tmp, &mut builders);
-                parsed_dfs.push(builders_to_df(builders_tmp));
-                total_capacity += self.capacity;
-            }
-
-            self.add_to_builders(&mut builders, &projection, &rows)?;
-
-            // stop after n_rows are processed
-            if let Some(n_rows) = self.n_rows {
-                if self.line_number >= n_rows {
-                    break;
-                }
-            }
-        }
-        parsed_dfs.push(builders_to_df(builders));
-        accumulate_dataframes(parsed_dfs)
-    }
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -668,6 +415,54 @@ impl<R: Read + Sync> SequentialReader<R> {
     ) -> Result<()> {
         impl_add_to_builders!(self, projection, rows, builders)
     }
+
+    pub fn into_df(&mut self) -> Result<DataFrame> {
+        let mut total_capacity = self.capacity;
+        if self.skip_rows > 0 {
+            for _ in 0..self.skip_rows {
+                self.line_number += 1;
+                let _ = self.record_iter.next();
+            }
+            total_capacity += self.skip_rows;
+        }
+
+        // only take projections once
+        let projection = take_projection(&mut self.projection, &self.schema);
+        self.batch_size = std::cmp::min(self.batch_size, self.capacity);
+        if let Some(n) = self.n_rows {
+            self.batch_size = std::cmp::min(self.batch_size, n);
+        }
+
+        let mut builders = init_builders(&projection, self.capacity, &self.schema)?;
+        // we reuse this container to amortize allocations
+        let mut rows = Vec::with_capacity(self.batch_size);
+        let mut parsed_dfs = Vec::with_capacity(128);
+        loop {
+            rows.clear();
+            self.next_rows(&mut rows)?;
+            // stop when the whole file is processed
+            if rows.len() == 0 {
+                break;
+            }
+            if (self.line_number - self.header_offset) > total_capacity {
+                let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
+                std::mem::swap(&mut builders_tmp, &mut builders);
+                parsed_dfs.push(builders_to_df(builders_tmp));
+                total_capacity += self.capacity;
+            }
+
+            self.add_to_builders(&mut builders, &projection, &rows)?;
+
+            // stop after n_rows are processed
+            if let Some(n_rows) = self.n_rows {
+                if self.line_number >= n_rows {
+                    break;
+                }
+            }
+        }
+        parsed_dfs.push(builders_to_df(builders));
+        accumulate_dataframes(parsed_dfs)
+    }
 }
 
 enum Builder {
@@ -741,9 +536,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync>(
     has_header: bool,
     ignore_parser_errors: bool,
     schema: Option<SchemaRef>,
-    mut file_name: Option<String>,
-    n_threads: Option<usize>,
-) -> Result<Box<dyn IntoDF>> {
+) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
     let schema = match schema {
@@ -756,43 +549,20 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync>(
         }
     };
 
-    // We opt for sequential path because parallel does first an expensive indexing.
-    // This may be the wrong choice.
-    if let Some(_) = n_rows {
-        file_name = None
-    }
-
-    match file_name {
-        Some(file_name) => Ok(Box::new(ParReader::from_reader(
-            reader,
-            schema,
-            has_header,
-            delimiter,
-            batch_size,
-            projection,
-            ignore_parser_errors,
-            n_rows,
-            skip_rows,
-            file_name,
-            n_threads.unwrap_or(4),
-        ))),
-        None => {
-            let capacity = match n_rows {
-                Some(n) => n,
-                None => 512 * 1024,
-            };
-            Ok(Box::new(SequentialReader::from_reader(
-                reader,
-                schema,
-                has_header,
-                delimiter,
-                batch_size,
-                projection,
-                ignore_parser_errors,
-                n_rows,
-                skip_rows,
-                capacity,
-            )))
-        }
-    }
+    let capacity = match n_rows {
+        Some(n) => n,
+        None => 512 * 1024,
+    };
+    Ok(SequentialReader::from_reader(
+        reader,
+        schema,
+        has_header,
+        delimiter,
+        batch_size,
+        projection,
+        ignore_parser_errors,
+        n_rows,
+        skip_rows,
+        capacity,
+    ))
 }
