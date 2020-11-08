@@ -6,7 +6,7 @@ use std::io::Write;
 use std::process::exit;
 use std::time::Instant;
 
-fn read_df(f: &File) -> DataFrame {
+fn read_df(f: File) -> DataFrame {
     let mut df = CsvReader::new(f)
         .infer_schema(Some(100))
         .has_header(true)
@@ -38,7 +38,7 @@ fn bench_groupby() {
 
     for p in &paths {
         let f = File::open(p).expect("a csv file");
-        let df = read_df(&f);
+        let df = read_df(f);
 
         let now = Instant::now();
         let sum = df.groupby("groups").expect("gb").select("values").sum();
@@ -60,9 +60,9 @@ fn bench_groupby() {
 
 fn bench_join() {
     let f = File::open("../data/join_left_80000.csv").expect("file");
-    let left = read_df(&f);
+    let left = read_df(f);
     let f = File::open("../data/join_right_80000.csv").expect("file");
-    let right = read_df(&f);
+    let right = read_df(f);
     let mut wrt_file = File::create("../data/rust_bench_join.txt").expect("file");
 
     let mut mean = 0.0;

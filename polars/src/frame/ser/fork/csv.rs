@@ -18,6 +18,10 @@
 use crate::prelude::*;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
+use crossbeam::{
+    channel::{bounded, TryRecvError},
+    thread,
+};
 use csv::{StringRecord, StringRecordsIntoIter};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
@@ -231,6 +235,34 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
     Ok(builder)
 }
 
+fn next_rows<R: Read>(
+    record_iter: &mut StringRecordsIntoIter<R>,
+    batch_size: usize,
+    line_number: &mut usize,
+    ignore_parser_errors: bool,
+) -> Result<Vec<StringRecord>> {
+    let mut rows = Vec::with_capacity(batch_size);
+    for i in 0..batch_size {
+        *line_number += 1;
+        match record_iter.next() {
+            Some(Ok(r)) => {
+                rows.push(r);
+            }
+            Some(Err(e)) => {
+                if ignore_parser_errors {
+                    continue;
+                } else {
+                    return Err(PolarsError::Other(
+                        format!("Error parsing line {}: {:?}", *line_number + i, e).into(),
+                    ));
+                }
+            }
+            None => break,
+        }
+    }
+    Ok(rows)
+}
+
 fn add_to_utf8_builder(
     rows: &[StringRecord],
     col_idx: usize,
@@ -255,7 +287,7 @@ pub struct SequentialReader<R: Read> {
     /// Optional projection for which columns to load (zero-based column indices)
     projection: Option<Vec<usize>>,
     /// File reader
-    record_iter: StringRecordsIntoIter<R>,
+    record_iter: Option<StringRecordsIntoIter<R>>,
     /// Batch size (number of records to load each time)
     batch_size: usize,
     /// Current line number, used in error reporting
@@ -281,7 +313,7 @@ where
     }
 }
 
-impl<R: Read + Sync> SequentialReader<R> {
+impl<R: Read + Sync + Send> SequentialReader<R> {
     /// Returns the schema of the reader, useful for getting the schema without reading
     /// record batches
     pub fn schema(&self) -> SchemaRef {
@@ -314,7 +346,7 @@ impl<R: Read + Sync> SequentialReader<R> {
         capacity: usize,
     ) -> Self {
         let csv_reader = init_csv_reader(reader, has_header, delimiter);
-        let record_iter = csv_reader.into_records();
+        let record_iter = Some(csv_reader.into_records());
 
         let header_offset = if has_header { 1 } else { 0 };
 
@@ -330,28 +362,6 @@ impl<R: Read + Sync> SequentialReader<R> {
             n_rows,
             capacity,
         }
-    }
-
-    fn next_rows(&mut self, rows: &mut Vec<StringRecord>) -> Result<()> {
-        for i in 0..self.batch_size {
-            self.line_number += 1;
-            match self.record_iter.next() {
-                Some(Ok(r)) => {
-                    rows.push(r);
-                }
-                Some(Err(e)) => {
-                    if self.ignore_parser_errors {
-                        continue;
-                    } else {
-                        return Err(PolarsError::Other(
-                            format!("Error parsing line {}: {:?}", self.line_number + i, e).into(),
-                        ));
-                    }
-                }
-                None => break,
-            }
-        }
-        Ok(())
     }
 
     fn add_to_primitive<T>(
@@ -418,10 +428,11 @@ impl<R: Read + Sync> SequentialReader<R> {
 
     pub fn into_df(&mut self) -> Result<DataFrame> {
         let mut total_capacity = self.capacity;
+        let mut record_iter = self.record_iter.take().unwrap();
         if self.skip_rows > 0 {
             for _ in 0..self.skip_rows {
                 self.line_number += 1;
-                let _ = self.record_iter.next();
+                let _ = record_iter.next();
             }
             total_capacity += self.skip_rows;
         }
@@ -435,31 +446,70 @@ impl<R: Read + Sync> SequentialReader<R> {
 
         let mut builders = init_builders(&projection, self.capacity, &self.schema)?;
         // we reuse this container to amortize allocations
-        let mut rows = Vec::with_capacity(self.batch_size);
         let mut parsed_dfs = Vec::with_capacity(128);
-        loop {
-            rows.clear();
-            self.next_rows(&mut rows)?;
-            // stop when the whole file is processed
-            if rows.len() == 0 {
-                break;
-            }
-            if (self.line_number - self.header_offset) > total_capacity {
-                let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
-                std::mem::swap(&mut builders_tmp, &mut builders);
-                parsed_dfs.push(builders_to_df(builders_tmp));
-                total_capacity += self.capacity;
-            }
 
-            self.add_to_builders(&mut builders, &projection, &rows)?;
+        let (tx, rx) = bounded(64);
+        // used to kill thread when finished
+        let (tx_end, rx_end) = bounded(1);
 
-            // stop after n_rows are processed
-            if let Some(n_rows) = self.n_rows {
-                if self.line_number >= n_rows {
-                    break;
+        let _: Result<_> = thread::scope(|s| {
+            let batch_size = self.batch_size;
+            let mut line_number = self.line_number;
+            let ignore_parser_errors = self.ignore_parser_errors;
+
+            let _ = s.spawn(move |_| {
+                loop {
+                    let rows = next_rows(
+                        &mut record_iter,
+                        batch_size,
+                        &mut line_number,
+                        ignore_parser_errors,
+                    );
+                    match &rows {
+                        Ok(rows) => {
+                            // stop when the whole file is processed
+                            if rows.len() == 0 {
+                                break;
+                            }
+                        }
+                        Err(_) => {
+                            break;
+                        }
+                    }
+                    tx.send(rows).expect("could not send message");
+                    match rx_end.try_recv() {
+                        Ok(_) | Err(TryRecvError::Disconnected) => {
+                            break;
+                        }
+                        // continue
+                        Err(TryRecvError::Empty) => {}
+                    }
+                }
+            });
+
+            while let Ok(res) = rx.recv() {
+                let rows = res?;
+                if (line_number - self.header_offset) > total_capacity {
+                    let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
+                    std::mem::swap(&mut builders_tmp, &mut builders);
+                    parsed_dfs.push(builders_to_df(builders_tmp));
+                    total_capacity += self.capacity;
+                }
+
+                self.add_to_builders(&mut builders, &projection, &rows)?;
+
+                // stop after n_rows are processed
+                if let Some(n_rows) = self.n_rows {
+                    if line_number >= n_rows {
+                        tx_end.send(true).expect("could not end csv parsing thread");
+                        break;
+                    }
                 }
             }
-        }
+            Ok(())
+        })
+        .expect("a thread has panicked");
+
         parsed_dfs.push(builders_to_df(builders));
         accumulate_dataframes(parsed_dfs)
     }
@@ -525,7 +575,7 @@ impl Builder {
     }
 }
 
-pub fn build_csv_reader<R: 'static + Read + Seek + Sync>(
+pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     mut reader: R,
     n_rows: Option<usize>,
     skip_rows: usize,

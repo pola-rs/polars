@@ -167,7 +167,7 @@ where
 
 impl<R> CsvReader<R>
 where
-    R: Read + Seek + Sync,
+    R: Read + Seek + Sync + Send,
 {
     /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
     /// sequentially.
@@ -228,7 +228,7 @@ where
 
 impl<R> SerReader<R> for CsvReader<R>
 where
-    R: 'static + Read + Seek + Sync,
+    R: 'static + Read + Seek + Sync + Send,
 {
     /// Create a new CsvReader from a file/ stream
     fn new(reader: R) -> Self {

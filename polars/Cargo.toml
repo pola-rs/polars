@@ -40,6 +40,7 @@ anyhow = "1.0"
 seahash = "4.0.1"
 csv = "1.1"
 lazy_static = "1.4"
+crossbeam = "0.8"
 
 [package.metadata.docs.rs]
 all-features = true

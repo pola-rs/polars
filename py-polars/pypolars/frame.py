@@ -113,7 +113,7 @@ class DataFrame:
 
             df = DataFrame.read_csv(
                 file=file,
-                infer_schema_length=infer_schema_length,
+                infer_schema_length=1,
                 batch_size=1,
                 has_headers=has_headers,
                 ignore_errors=ignore_errors,
