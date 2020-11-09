@@ -289,6 +289,7 @@ pub struct SequentialReader<R: Read> {
     n_rows: Option<usize>,
     capacity: usize,
     encoding: CsvEncoding,
+    one_thread: bool,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -337,6 +338,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         skip_rows: usize,
         capacity: usize,
         encoding: CsvEncoding,
+        one_thread: bool,
     ) -> Self {
         let csv_reader = init_csv_reader(reader, has_header, delimiter);
         let record_iter = Some(csv_reader.into_byte_records());
@@ -355,6 +357,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             n_rows,
             capacity,
             encoding,
+            one_thread,
         }
     }
 
@@ -445,28 +448,75 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         Ok(())
     }
 
-    pub fn into_df(&mut self) -> Result<DataFrame> {
-        let mut total_capacity = self.capacity;
-        let mut record_iter = self.record_iter.take().unwrap();
-        if self.skip_rows > 0 {
-            for _ in 0..self.skip_rows {
-                self.line_number += 1;
-                let _ = record_iter.next();
+    fn next_rows(
+        &mut self,
+        rows: &mut Vec<ByteRecord>,
+        record_iter: &mut ByteRecordsIntoIter<R>,
+    ) -> Result<()> {
+        for i in 0..self.batch_size {
+            self.line_number += 1;
+            match record_iter.next() {
+                Some(Ok(r)) => {
+                    rows.push(r);
+                }
+                Some(Err(e)) => {
+                    if self.ignore_parser_errors {
+                        continue;
+                    } else {
+                        return Err(PolarsError::Other(
+                            format!("Error parsing line {}: {:?}", self.line_number + i, e).into(),
+                        ));
+                    }
+                }
+                None => break,
             }
-            total_capacity += self.skip_rows;
         }
+        Ok(())
+    }
 
-        // only take projections once
-        let projection = take_projection(&mut self.projection, &self.schema);
-        self.batch_size = std::cmp::min(self.batch_size, self.capacity);
-        if let Some(n) = self.n_rows {
-            self.batch_size = std::cmp::min(self.batch_size, n);
+    fn one_thread(
+        &mut self,
+        builders: &mut Vec<Builder>,
+        mut total_capacity: usize,
+        projection: &[usize],
+        parsed_dfs: &mut Vec<DataFrame>,
+        mut record_iter: ByteRecordsIntoIter<R>,
+    ) -> Result<()> {
+        let mut rows = Vec::with_capacity(self.batch_size);
+        loop {
+            rows.clear();
+            self.next_rows(&mut rows, &mut record_iter)?;
+            // stop when the whole file is processed
+            if rows.len() == 0 {
+                break;
+            }
+            if (self.line_number - self.header_offset) > total_capacity {
+                let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
+                std::mem::swap(&mut builders_tmp, builders);
+                parsed_dfs.push(builders_to_df(builders_tmp));
+                total_capacity += self.capacity;
+            }
+
+            self.add_to_builders(builders, &projection, &rows)?;
+
+            // stop after n_rows are processed
+            if let Some(n_rows) = self.n_rows {
+                if self.line_number >= n_rows {
+                    break;
+                }
+            }
         }
+        Ok(())
+    }
 
-        let mut builders = init_builders(&projection, self.capacity, &self.schema)?;
-        // we reuse this container to amortize allocations
-        let mut parsed_dfs = Vec::with_capacity(128);
-
+    fn two_threads(
+        &mut self,
+        builders: &mut Vec<Builder>,
+        projection: &[usize],
+        mut total_capacity: usize,
+        mut record_iter: ByteRecordsIntoIter<R>,
+        parsed_dfs: &mut Vec<DataFrame>,
+    ) -> Result<()> {
         let (tx, rx) = bounded(64);
         // used to kill thread when finished
         let (tx_end, rx_end) = bounded(1);
@@ -510,12 +560,12 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 let rows = res?;
                 if (line_number - self.header_offset) > total_capacity {
                     let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
-                    std::mem::swap(&mut builders_tmp, &mut builders);
+                    std::mem::swap(&mut builders_tmp, builders);
                     parsed_dfs.push(builders_to_df(builders_tmp));
                     total_capacity += self.capacity;
                 }
 
-                self.add_to_builders(&mut builders, &projection, &rows)?;
+                self.add_to_builders(builders, &projection, &rows)?;
 
                 // stop after n_rows are processed
                 if let Some(n_rows) = self.n_rows {
@@ -528,6 +578,47 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             Ok(())
         })
         .expect("a thread has panicked");
+        Ok(())
+    }
+
+    pub fn into_df(&mut self) -> Result<DataFrame> {
+        let mut total_capacity = self.capacity;
+        let mut record_iter = self.record_iter.take().unwrap();
+        if self.skip_rows > 0 {
+            for _ in 0..self.skip_rows {
+                self.line_number += 1;
+                let _ = record_iter.next();
+            }
+            total_capacity += self.skip_rows;
+        }
+
+        // only take projections once
+        let projection = take_projection(&mut self.projection, &self.schema);
+        self.batch_size = std::cmp::min(self.batch_size, self.capacity);
+        if let Some(n) = self.n_rows {
+            self.batch_size = std::cmp::min(self.batch_size, n);
+        }
+
+        let mut builders = init_builders(&projection, self.capacity, &self.schema)?;
+        // we reuse this container to amortize allocations
+        let mut parsed_dfs = Vec::with_capacity(128);
+
+        match self.one_thread {
+            true => self.one_thread(
+                &mut builders,
+                total_capacity,
+                &projection,
+                &mut parsed_dfs,
+                record_iter,
+            )?,
+            false => self.two_threads(
+                &mut builders,
+                &projection,
+                total_capacity,
+                record_iter,
+                &mut parsed_dfs,
+            )?,
+        }
 
         parsed_dfs.push(builders_to_df(builders));
         accumulate_dataframes(parsed_dfs)
@@ -639,6 +730,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     schema: Option<SchemaRef>,
     columns: Option<Vec<String>>,
     encoding: CsvEncoding,
+    one_thread: bool,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -678,5 +770,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         skip_rows,
         capacity,
         encoding,
+        one_thread,
     ))
 }

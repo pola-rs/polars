@@ -173,6 +173,7 @@ where
     ignore_parser_errors: bool,
     schema: Option<Arc<Schema>>,
     encoding: CsvEncoding,
+    one_thread: bool,
 }
 
 impl<R> CsvReader<R>
@@ -245,6 +246,13 @@ where
         self.columns = columns;
         self
     }
+
+    /// Use slower single threaded CSV parsing.
+    /// This is internally used for Python file handlers
+    pub fn with_one_thread(mut self, one_thread: bool) -> Self {
+        self.one_thread = one_thread;
+        self
+    }
 }
 
 impl<R> SerReader<R> for CsvReader<R>
@@ -267,6 +275,7 @@ where
             schema: None,
             columns: None,
             encoding: CsvEncoding::Utf8,
+            one_thread: false,
         }
     }
 
@@ -291,6 +300,7 @@ where
             self.schema,
             self.columns,
             self.encoding,
+            self.one_thread,
         )?;
 
         let df = csv_reader.into_df()?;

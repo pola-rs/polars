@@ -2,6 +2,7 @@ use polars::prelude::*;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use crate::datatypes::DataType;
+use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::{
     error::PyPolarsEr,
@@ -61,8 +62,21 @@ impl PyDataFrame {
                 )
             }
         };
+        let one_thread;
 
-        let file = get_file_like(py_f, false)?;
+        let file = get_either_file(py_f, false)?;
+        // Python files cannot be send to another thread.
+        let file: Box<dyn FileLike> = match file {
+            EitherRustPythonFile::Py(f) => {
+                one_thread = true;
+                Box::new(f)
+            }
+            EitherRustPythonFile::Rust(f) => {
+                one_thread = false;
+                Box::new(f)
+            }
+        };
+
         let df = CsvReader::new(file)
             .infer_schema(Some(infer_schema_length))
             .has_header(has_header)
@@ -75,6 +89,7 @@ impl PyDataFrame {
             .with_batch_size(batch_size)
             .with_encoding(encoding)
             .with_columns(columns)
+            .with_one_thread(one_thread)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
