@@ -341,6 +341,16 @@ impl PyDataFrame {
         PyDataFrame::new(df)
     }
 
+    pub fn is_unique(&self) -> PyResult<PySeries> {
+        let mask = self.df.is_unique().map_err(PyPolarsEr::from)?;
+        Ok(mask.into_series().into())
+    }
+
+    pub fn is_duplicated(&self) -> PyResult<PySeries> {
+        let mask = self.df.is_unique().map_err(PyPolarsEr::from)?;
+        Ok(mask.into_series().into())
+    }
+
     pub fn frame_equal(&self, other: &PyDataFrame, null_equal: bool) -> bool {
         if null_equal {
             self.df.frame_equal_missing(&other.df)

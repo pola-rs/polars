@@ -355,7 +355,7 @@ pub struct GroupBy<'df, 'selection_str> {
     df: &'df DataFrame,
     selected_keys: Vec<Series>,
     // [first idx, [other idx]]
-    groups: Vec<(usize, Vec<usize>)>,
+    pub(crate) groups: Vec<(usize, Vec<usize>)>,
     // columns selected for aggregation
     selected_agg: Option<Vec<&'selection_str str>>,
 }

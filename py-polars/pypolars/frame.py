@@ -695,6 +695,18 @@ class DataFrame:
         """
         return wrap_df(self._df.shift(periods))
 
+    def is_duplicated(self) -> Series:
+        """
+        Get a mask of all duplicated rows in this DataFrame
+        """
+        return wrap_s(self._df.is_duplicated())
+
+    def is_unique(self) -> Series:
+        """
+        Get a mask of all unique rows in this DataFrame
+        """
+        return wrap_s(self._df.is_unique())
+
     def lazy(self) -> "LazyFrame":
         pass
 

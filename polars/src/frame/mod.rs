@@ -1,4 +1,5 @@
 //! DataFrame module.
+use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
@@ -1234,6 +1235,20 @@ impl DataFrame {
         let cap = Some(groups.size_hint().0);
         let df = unsafe { self.take_iter_unchecked(groups, cap) };
         Ok(df)
+    }
+
+    /// Get a mask of all the unique rows in the DataFrame.
+    pub fn is_unique(&self) -> Result<BooleanChunked> {
+        let mut gb = self.groupby(self.columns())?;
+        let groups = std::mem::take(&mut gb.groups);
+        is_unique_helper(groups.into_iter(), self.height(), true, false)
+    }
+
+    /// Get a mask of all the duplicated rows in the DataFrame.
+    pub fn is_duplicated(&self) -> Result<BooleanChunked> {
+        let mut gb = self.groupby(self.columns())?;
+        let groups = std::mem::take(&mut gb.groups);
+        is_unique_helper(groups.into_iter(), self.height(), false, true)
     }
 }
 

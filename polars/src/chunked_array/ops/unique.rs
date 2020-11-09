@@ -6,23 +6,18 @@ use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hash};
 
-fn is_unique_helper<T>(
-    ca: &ChunkedArray<T>,
+pub(crate) fn is_unique_helper(
+    groups: impl Iterator<Item = (usize, Vec<usize>)>,
+    len: usize,
     unique_val: bool,
     duplicated_val: bool,
-) -> Result<BooleanChunked>
-where
-    T: PolarsDataType,
-    ChunkedArray<T>: IntoGroupTuples,
-{
+) -> Result<BooleanChunked> {
     debug_assert_ne!(unique_val, duplicated_val);
-    let mut unique_idx_iter = ca
-        .group_tuples()
-        .into_iter()
+    let mut unique_idx_iter = groups
         .filter(|(_, groups)| groups.len() == 1)
         .map(|(first, _)| first);
     let mut next_unique_idx = unique_idx_iter.next();
-    let mask = (0..ca.len())
+    let mask = (0..len)
         .into_iter()
         .map(|idx| match next_unique_idx {
             Some(unique_idx) => {
@@ -44,7 +39,8 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
-    is_unique_helper(ca, true, false)
+    let groups = ca.group_tuples().into_iter();
+    is_unique_helper(groups, ca.len(), true, false)
 }
 
 fn is_duplicated<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
@@ -52,7 +48,8 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
-    is_unique_helper(ca, false, true)
+    let groups = ca.group_tuples().into_iter();
+    is_unique_helper(groups, ca.len(), false, true)
 }
 
 impl ChunkUnique<ListType> for ListChunked {
