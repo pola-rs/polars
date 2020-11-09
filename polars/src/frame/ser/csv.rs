@@ -127,6 +127,12 @@ where
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum CsvEncoding {
+    Utf8,
+    LossyUtf8,
+}
+
 /// Create a new DataFrame by reading a csv file.
 ///
 /// # Example
@@ -157,18 +163,27 @@ where
     // used by error ignore logic
     max_records: Option<usize>,
     skip_rows: usize,
+    /// Optional indexes of the columns to project
     projection: Option<Vec<usize>>,
+    /// Optional column names to project/ select.
+    columns: Option<Vec<String>>,
     batch_size: usize,
     delimiter: Option<u8>,
     has_header: bool,
     ignore_parser_errors: bool,
     schema: Option<Arc<Schema>>,
+    encoding: CsvEncoding,
 }
 
 impl<R> CsvReader<R>
 where
     R: Read + Seek + Sync + Send,
 {
+    pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
+        self.encoding = enc;
+        self
+    }
+
     /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
     /// sequentially.
     pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
@@ -224,6 +239,12 @@ where
         self.projection = projection;
         self
     }
+
+    /// Columns to select/ project
+    pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
+        self.columns = columns;
+        self
+    }
 }
 
 impl<R> SerReader<R> for CsvReader<R>
@@ -244,6 +265,8 @@ where
             has_header: true,
             ignore_parser_errors: false,
             schema: None,
+            columns: None,
+            encoding: CsvEncoding::Utf8,
         }
     }
 
@@ -266,6 +289,8 @@ where
             self.has_header,
             self.ignore_parser_errors,
             self.schema,
+            self.columns,
+            self.encoding,
         )?;
 
         let df = csv_reader.into_df()?;

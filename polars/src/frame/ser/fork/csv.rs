@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::frame::ser::csv::CsvEncoding;
 use crate::prelude::*;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
@@ -22,7 +23,7 @@ use crossbeam::{
     channel::{bounded, TryRecvError},
     thread,
 };
-use csv::{StringRecord, StringRecordsIntoIter};
+use csv::{ByteRecord, ByteRecordsIntoIter};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
 use regex::{Regex, RegexBuilder};
@@ -192,29 +193,6 @@ fn accumulate_dataframes(dfs: Vec<DataFrame>) -> Result<DataFrame> {
     Ok(acc_df)
 }
 
-macro_rules! impl_add_to_builders {
-    ($self:expr, $projection:expr, $rows:expr, $builders:expr) => {{
-        $projection
-            .par_iter()
-            .zip($builders)
-            .map(|(i, builder)| {
-                let field = $self.schema.field(*i);
-                match field.data_type() {
-                    ArrowDataType::Boolean => $self.add_to_primitive($rows, *i, builder.bool()),
-                    ArrowDataType::Int32 => $self.add_to_primitive($rows, *i, builder.i32()),
-                    ArrowDataType::Int64 => $self.add_to_primitive($rows, *i, builder.i64()),
-                    ArrowDataType::Float32 => $self.add_to_primitive($rows, *i, builder.f32()),
-                    ArrowDataType::Float64 => $self.add_to_primitive($rows, *i, builder.f64()),
-                    ArrowDataType::Utf8 => add_to_utf8_builder($rows, *i, builder.utf8()),
-                    _ => todo!(),
-                }
-            })
-            .collect::<Result<_>>()?;
-
-        Ok(())
-    }};
-}
-
 fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Builder> {
     let field = schema.field(i);
     let name = field.name();
@@ -236,11 +214,11 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
 }
 
 fn next_rows<R: Read>(
-    record_iter: &mut StringRecordsIntoIter<R>,
+    record_iter: &mut ByteRecordsIntoIter<R>,
     batch_size: usize,
     line_number: &mut usize,
     ignore_parser_errors: bool,
-) -> Result<Vec<StringRecord>> {
+) -> Result<Vec<ByteRecord>> {
     let mut rows = Vec::with_capacity(batch_size);
     for i in 0..batch_size {
         *line_number += 1;
@@ -264,13 +242,22 @@ fn next_rows<R: Read>(
 }
 
 fn add_to_utf8_builder(
-    rows: &[StringRecord],
+    rows: &[ByteRecord],
     col_idx: usize,
     builder: &mut Utf8ChunkedBuilder,
+    encoding: CsvEncoding,
 ) -> Result<()> {
-    for row in rows.iter() {
+    for row in rows.into_iter() {
         let v = row.get(col_idx);
-        builder.append_option(v);
+        match v {
+            None => builder.append_null(),
+            Some(bytes) => match encoding {
+                CsvEncoding::Utf8 => {
+                    builder.append_value(std::str::from_utf8(bytes).map_err(anyhow::Error::from)?)
+                }
+                CsvEncoding::LossyUtf8 => builder.append_value(String::from_utf8_lossy(bytes)),
+            },
+        }
     }
     Ok(())
 }
@@ -287,7 +274,7 @@ pub struct SequentialReader<R: Read> {
     /// Optional projection for which columns to load (zero-based column indices)
     projection: Option<Vec<usize>>,
     /// File reader
-    record_iter: Option<StringRecordsIntoIter<R>>,
+    record_iter: Option<ByteRecordsIntoIter<R>>,
     /// Batch size (number of records to load each time)
     batch_size: usize,
     /// Current line number, used in error reporting
@@ -297,6 +284,7 @@ pub struct SequentialReader<R: Read> {
     skip_rows: usize,
     n_rows: Option<usize>,
     capacity: usize,
+    encoding: CsvEncoding,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -344,9 +332,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         n_rows: Option<usize>,
         skip_rows: usize,
         capacity: usize,
+        encoding: CsvEncoding,
     ) -> Self {
         let csv_reader = init_csv_reader(reader, has_header, delimiter);
-        let record_iter = Some(csv_reader.into_records());
+        let record_iter = Some(csv_reader.into_byte_records());
 
         let header_offset = if has_header { 1 } else { 0 };
 
@@ -361,12 +350,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             skip_rows,
             n_rows,
             capacity,
+            encoding,
         }
     }
 
     fn add_to_primitive<T>(
         &self,
-        rows: &[StringRecord],
+        rows: &[ByteRecord],
         col_idx: usize,
         builder: &mut PrimitiveChunkedBuilder<T>,
     ) -> Result<()>
@@ -386,6 +376,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         builder.append_null();
                         continue;
                     }
+
+                    // If it is non valid utf8, parsing will fail? Or UB?
+                    let s = unsafe { std::str::from_utf8_unchecked(s) };
+
                     let parsed = if is_boolean_type {
                         s.to_lowercase().parse::<T::Native>()
                     } else {
@@ -421,9 +415,28 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         &self,
         builders: &mut [Builder],
         projection: &[usize],
-        rows: &[StringRecord],
+        rows: &[ByteRecord],
     ) -> Result<()> {
-        impl_add_to_builders!(self, projection, rows, builders)
+        projection
+            .par_iter()
+            .zip(builders)
+            .map(|(i, builder)| {
+                let field = self.schema.field(*i);
+                match field.data_type() {
+                    ArrowDataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
+                    ArrowDataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
+                    ArrowDataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
+                    ArrowDataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
+                    ArrowDataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
+                    ArrowDataType::Utf8 => {
+                        add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding)
+                    }
+                    _ => todo!(),
+                }
+            })
+            .collect::<Result<_>>()?;
+
+        Ok(())
     }
 
     pub fn into_df(&mut self) -> Result<DataFrame> {
@@ -579,13 +592,15 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     mut reader: R,
     n_rows: Option<usize>,
     skip_rows: usize,
-    projection: Option<Vec<usize>>,
+    mut projection: Option<Vec<usize>>,
     batch_size: usize,
     max_records: Option<usize>,
     delimiter: Option<u8>,
     has_header: bool,
     ignore_parser_errors: bool,
     schema: Option<SchemaRef>,
+    columns: Option<Vec<String>>,
+    encoding: CsvEncoding,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -603,6 +618,16 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         Some(n) => n,
         None => 512 * 1024,
     };
+
+    if let Some(cols) = columns {
+        let mut prj = Vec::with_capacity(cols.len());
+        for col in cols {
+            let i = schema.index_of(&col)?;
+            prj.push(i);
+        }
+        projection = Some(prj);
+    }
+
     Ok(SequentialReader::from_reader(
         reader,
         schema,
@@ -614,5 +639,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         n_rows,
         skip_rows,
         capacity,
+        encoding,
     ))
 }

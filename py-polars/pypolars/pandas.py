@@ -18,8 +18,9 @@ def read_csv(
     skip_rows: int = 0,
     projection: Optional[List[int]] = None,
     sep: str = ",",
-    cols: Optional[List[str]] = None,
+    columns: Optional[List[str]] = None,
     rechunk: bool = True,
+    encoding: str = "utf8",
 ) -> "DataFrame":
     return DataFrame.read_csv(
         file=file,
@@ -31,6 +32,7 @@ def read_csv(
         skip_rows=skip_rows,
         projection=projection,
         sep=sep,
-        cols=cols,
+        columns=columns,
         rechunk=rechunk,
+        encoding=encoding,
     )

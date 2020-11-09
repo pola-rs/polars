@@ -3,7 +3,6 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
-use itertools::Itertools;
 use rayon::prelude::*;
 use std::marker::Sized;
 use std::mem;
@@ -117,42 +116,34 @@ impl DataFrame {
 
     /// Ensure all the chunks in the DataFrame are aligned.
     fn rechunk(&mut self) -> Result<&mut Self> {
-        let mut chunk_lens = Vec::with_capacity(self.columns.len());
         let mut all_equal = true;
-        for series in &self.columns {
-            let current_len = series.len();
-            if chunk_lens.len() > 1 {
-                if current_len != chunk_lens[0] {
-                    all_equal = false
-                }
+
+        let mut it = self.columns.iter();
+        let first_s = it
+            .next()
+            .ok_or(PolarsError::NoData("no data to rechunk".into()))?;
+        let id = first_s.chunk_lengths();
+
+        while let Some(s) = it.next() {
+            let current_id = s.chunk_lengths();
+            if current_id != id {
+                all_equal = false;
+                break;
             }
-            chunk_lens.push(series.len())
         }
 
         // fast path
         if all_equal {
             Ok(self)
         } else {
-            let argmin = chunk_lens
+            self.columns = self
+                .columns
                 .iter()
-                .position_min()
-                .ok_or(PolarsError::NoData("No data in rechunk operation".into()))?;
-            let min_chunks = chunk_lens[argmin];
-
-            let to_rechunk = chunk_lens
-                .into_iter()
-                .enumerate()
-                .filter_map(|(idx, len)| if len > min_chunks { Some(idx) } else { None })
-                .collect::<Vec<_>>();
-
-            // clone shouldn't be too expensive as we expect the nr. of chunks to be close to 1.
-            let chunk_id = self.columns[argmin].chunk_lengths().clone();
-
-            for idx in to_rechunk {
-                let col = &self.columns[idx];
-                let new_col = col.rechunk(Some(&chunk_id))?;
-                self.columns[idx] = new_col;
-            }
+                .map(|s| {
+                    s.rechunk(Some(&[1]))
+                        .expect("can always aggregate to single chunk")
+                })
+                .collect();
             Ok(self)
         }
     }

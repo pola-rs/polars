@@ -8,6 +8,7 @@ use crate::{
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
+use polars::frame::ser::csv::CsvEncoding;
 
 #[pyclass]
 #[repr(transparent)]
@@ -48,7 +49,19 @@ impl PyDataFrame {
         projection: Option<Vec<usize>>,
         sep: &str,
         rechunk: bool,
+        columns: Option<Vec<String>>,
+        encoding: &str,
     ) -> PyResult<Self> {
+        let encoding = match encoding {
+            "utf8" => CsvEncoding::Utf8,
+            "utf8-lossy" => CsvEncoding::LossyUtf8,
+            e => {
+                return Err(
+                    PyPolarsEr::Other(format!("encoding not {} not implemented.", e)).into(),
+                )
+            }
+        };
+
         let file = get_file_like(py_f, false)?;
         let df = CsvReader::new(file)
             .infer_schema(Some(infer_schema_length))
@@ -60,6 +73,8 @@ impl PyDataFrame {
             .with_projection(projection)
             .with_rechunk(rechunk)
             .with_batch_size(batch_size)
+            .with_encoding(encoding)
+            .with_columns(columns)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())

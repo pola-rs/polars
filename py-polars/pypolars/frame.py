@@ -70,8 +70,9 @@ class DataFrame:
         skip_rows: int = 0,
         projection: Optional[List[int]] = None,
         sep: str = ",",
-        cols: Optional[List[str]] = None,
+        columns: Optional[List[str]] = None,
         rechunk: bool = True,
+        encoding: str = "utf8",
     ) -> DataFrame:
         """
         Read into a DataFrame from a csv file.
@@ -97,36 +98,18 @@ class DataFrame:
             Indexes of columns to select
         sep
             Delimiter/ value seperator
-        cols
+        columns
             Columns to project/ select
         rechunk
             Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
+        encoding
+            - "utf8"
+            _ "utf8-lossy"
 
         Returns
         -------
         DataFrame
         """
-        if cols is not None:
-            if projection is not None:
-                print(projection, cols)
-                raise ValueError("only one of cols or projection should be set")
-
-            df = DataFrame.read_csv(
-                file=file,
-                infer_schema_length=1,
-                batch_size=1,
-                has_headers=has_headers,
-                ignore_errors=ignore_errors,
-                stop_after_n_rows=1,  # stop_after_nrows
-                skip_rows=0,  # skip_rows
-                projection=None,  # projection,
-                sep=sep,
-                cols=None,
-                rechunk=False,
-            )
-            col = df.columns
-            projection = [col.index(p) for p in cols]
-
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_csv(
             file,
@@ -139,6 +122,8 @@ class DataFrame:
             projection,
             sep,
             rechunk,
+            columns,
+            encoding,
         )
         return self
 
