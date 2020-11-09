@@ -199,8 +199,12 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
 
     let builder = match field.data_type() {
         &ArrowDataType::Boolean => Builder::Boolean(PrimitiveChunkedBuilder::new(name, capacity)),
+        &ArrowDataType::Int16 => Builder::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
         &ArrowDataType::Int32 => Builder::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
         &ArrowDataType::Int64 => Builder::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+        &ArrowDataType::UInt16 => Builder::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
+        &ArrowDataType::UInt32 => Builder::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
+        &ArrowDataType::UInt64 => Builder::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
         &ArrowDataType::Float32 => Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
         &ArrowDataType::Float64 => Builder::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
         &ArrowDataType::Utf8 => Builder::Utf8(Utf8ChunkedBuilder::new(name, capacity)),
@@ -426,6 +430,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     ArrowDataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
                     ArrowDataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
                     ArrowDataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
+                    ArrowDataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
+                    ArrowDataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
                     ArrowDataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
                     ArrowDataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
                     ArrowDataType::Utf8 => {
@@ -530,8 +536,12 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
 enum Builder {
     Boolean(PrimitiveChunkedBuilder<BooleanType>),
+    Int16(PrimitiveChunkedBuilder<Int16Type>),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
+    UInt64(PrimitiveChunkedBuilder<UInt64Type>),
+    UInt32(PrimitiveChunkedBuilder<UInt32Type>),
+    UInt16(PrimitiveChunkedBuilder<UInt16Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
@@ -544,6 +554,12 @@ impl Builder {
             _ => panic!("implementation error"),
         }
     }
+    fn i16(&mut self) -> &mut PrimitiveChunkedBuilder<Int16Type> {
+        match self {
+            Builder::Int16(builder) => builder,
+            _ => panic!("implementation error"),
+        }
+    }
     fn i32(&mut self) -> &mut PrimitiveChunkedBuilder<Int32Type> {
         match self {
             Builder::Int32(builder) => builder,
@@ -553,6 +569,24 @@ impl Builder {
     fn i64(&mut self) -> &mut PrimitiveChunkedBuilder<Int64Type> {
         match self {
             Builder::Int64(builder) => builder,
+            _ => panic!("implementation error"),
+        }
+    }
+    fn u16(&mut self) -> &mut PrimitiveChunkedBuilder<UInt16Type> {
+        match self {
+            Builder::UInt16(builder) => builder,
+            _ => panic!("implementation error"),
+        }
+    }
+    fn u32(&mut self) -> &mut PrimitiveChunkedBuilder<UInt32Type> {
+        match self {
+            Builder::UInt32(builder) => builder,
+            _ => panic!("implementation error"),
+        }
+    }
+    fn u64(&mut self) -> &mut PrimitiveChunkedBuilder<UInt64Type> {
+        match self {
+            Builder::UInt64(builder) => builder,
             _ => panic!("implementation error"),
         }
     }
@@ -579,8 +613,12 @@ impl Builder {
         use Builder::*;
         match self {
             Utf8(b) => b.finish().into(),
+            Int16(b) => b.finish().into(),
             Int32(b) => b.finish().into(),
             Int64(b) => b.finish().into(),
+            UInt16(b) => b.finish().into(),
+            UInt32(b) => b.finish().into(),
+            UInt64(b) => b.finish().into(),
             Float32(b) => b.finish().into(),
             Float64(b) => b.finish().into(),
             Boolean(b) => b.finish().into(),
