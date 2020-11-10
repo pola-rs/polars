@@ -19,10 +19,7 @@ use crate::frame::ser::csv::CsvEncoding;
 use crate::prelude::*;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
-use crossbeam::{
-    channel::{bounded, TryRecvError},
-    thread,
-};
+use crossbeam::{channel::bounded, thread};
 use csv::{ByteRecord, ByteRecordsIntoIter};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
@@ -222,10 +219,19 @@ fn next_rows<R: Read>(
     batch_size: usize,
     line_number: &mut usize,
     ignore_parser_errors: bool,
+    n_rows: Option<usize>,
 ) -> Result<Vec<ByteRecord>> {
     let mut rows = Vec::with_capacity(batch_size);
+    // if it is None, we set it larger than batch size such that it always evaluates false in
+    // the conditional below
+    let n_rows = n_rows.unwrap_or(*line_number + batch_size * 2);
     for i in 0..batch_size {
         *line_number += 1;
+
+        if *line_number > n_rows {
+            break;
+        }
+
         match record_iter.next() {
             Some(Ok(r)) => {
                 rows.push(r);
@@ -501,7 +507,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
             // stop after n_rows are processed
             if let Some(n_rows) = self.n_rows {
-                if self.line_number >= n_rows {
+                if self.line_number > n_rows {
                     break;
                 }
             }
@@ -518,13 +524,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         parsed_dfs: &mut Vec<DataFrame>,
     ) -> Result<()> {
         let (tx, rx) = bounded(64);
-        // used to kill thread when finished
-        let (tx_end, rx_end) = bounded(1);
 
         let _: Result<_> = thread::scope(|s| {
             let batch_size = self.batch_size;
+            // note that line number gets copied ot the other thread.
             let mut line_number = self.line_number;
             let ignore_parser_errors = self.ignore_parser_errors;
+            let n_rows = self.n_rows;
 
             let _ = s.spawn(move |_| {
                 loop {
@@ -533,6 +539,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         batch_size,
                         &mut line_number,
                         ignore_parser_errors,
+                        n_rows,
                     );
                     match &rows {
                         Ok(rows) => {
@@ -545,18 +552,12 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             break;
                         }
                     }
-                    tx.send(rows).expect("could not send message");
-                    match rx_end.try_recv() {
-                        Ok(_) | Err(TryRecvError::Disconnected) => {
-                            break;
-                        }
-                        // continue
-                        Err(TryRecvError::Empty) => {}
-                    }
+                    tx.send((line_number, rows))
+                        .expect("could not send message");
                 }
             });
 
-            while let Ok(res) = rx.recv() {
+            while let Ok((line_number, res)) = rx.recv() {
                 let rows = res?;
                 if (line_number - self.header_offset) > total_capacity {
                     let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
@@ -566,14 +567,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 }
 
                 self.add_to_builders(builders, &projection, &rows)?;
-
-                // stop after n_rows are processed
-                if let Some(n_rows) = self.n_rows {
-                    if line_number >= n_rows {
-                        tx_end.send(true).expect("could not end csv parsing thread");
-                        break;
-                    }
-                }
             }
             Ok(())
         })
