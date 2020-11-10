@@ -28,7 +28,7 @@ num = "^0.2.1"
 fnv = "^1.0.7"
 itertools = "^0.9.0"
 unsafe_unwrap = "^0.1.0"
-rayon = "1.4"
+rayon = "1.5"
 prettytable-rs = { version="^0.8.0", features=["win_crlf"], optional = true, default_features = false}
 chrono = {version = "^0.4.13", optional = true}
 parquet = {version = "2", optional = true}

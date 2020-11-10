@@ -523,6 +523,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         let _: Result<_> = thread::scope(|s| {
             let batch_size = self.batch_size;
+            // note that line number gets copied ot the other thread.
             let mut line_number = self.line_number;
             let ignore_parser_errors = self.ignore_parser_errors;
 
@@ -545,7 +546,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             break;
                         }
                     }
-                    tx.send(rows).expect("could not send message");
+                    tx.send((line_number, rows))
+                        .expect("could not send message");
                     match rx_end.try_recv() {
                         Ok(_) | Err(TryRecvError::Disconnected) => {
                             break;
@@ -556,7 +558,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 }
             });
 
-            while let Ok(res) = rx.recv() {
+            while let Ok((line_number, res)) = rx.recv() {
                 let rows = res?;
                 if (line_number - self.header_offset) > total_capacity {
                     let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
