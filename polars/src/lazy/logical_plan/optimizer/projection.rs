@@ -300,9 +300,8 @@ impl ProjectionPushDown {
                 let (acc_projections, _) =
                     self.split_acc_projections(acc_projections, input.schema());
 
-                let builder =
-                    LogicalPlanBuilder::from(self.push_down(*input, acc_projections)?)
-                        .with_columns(exprs);
+                let builder = LogicalPlanBuilder::from(self.push_down(*input, acc_projections)?)
+                    .with_columns(exprs);
                 // locally re-project all columns plus the stacked columns to keep the order of the schema equal
                 self.finish_node(local_renamed_projections, builder)
             }
