@@ -370,12 +370,12 @@ impl Utf8Chunked {
 
     fn sniff_fmt_date64(&self) -> Result<&'static str> {
         let val = self.get_first_val()?;
-        let pat = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s*$";
+        let pat = r"^\d{4}-\d{1,2}-\d{1,2} \d{2}:\d{2}:\d{2}\s*$";
         let reg = Regex::new(pat).expect("wrong regex");
         if reg.is_match(val) {
             return Ok("%Y-%m-%d %H:%M:%S");
         }
-        let pat = r"^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}\s*$";
+        let pat = r"^\d{4}/\d{1,2}/\d{1,2} \d{2}:\d{2}:\d{2}\s*$";
         let reg = Regex::new(pat).expect("wrong regex");
         if reg.is_match(val) {
             return Ok("%Y/%m/%d %H:%M:%S");
@@ -387,12 +387,19 @@ impl Utf8Chunked {
 
     fn sniff_fmt_date32(&self) -> Result<&'static str> {
         let val = self.get_first_val()?;
-        let pat = r"^\d{4}-\d{2}-\d{2}\s*$";
+        let pat = r"^\d{4}-\d{1,2}-\d{1,2}\s*$";
         let reg = Regex::new(pat).expect("wrong regex");
         if reg.is_match(val) {
             return Ok("%Y-%m-%d");
         }
-        let pat = r"^\d{4}\/\d{2}\/\d{2}\s*$";
+
+        let pat = r"^\d{1,2}-\d{1,2}-\d{4}\s*$";
+        let reg = Regex::new(pat).expect("wrong regex");
+        if reg.is_match(val) {
+            return Ok("%d-%m-%Y");
+        }
+
+        let pat = r"^\d{4}/\d{1,2}/\d{1,2}\s*$";
         let reg = Regex::new(pat).expect("wrong regex");
         if reg.is_match(val) {
             return Ok("%Y/%m/%d %H:%M:%S");
