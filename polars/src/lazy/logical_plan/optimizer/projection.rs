@@ -5,9 +5,9 @@ use crate::lazy::utils::{
     projected_names,
 };
 use crate::prelude::*;
+use ahash::RandomState;
 use arrow::datatypes::Schema;
-use fnv::{FnvBuildHasher, FnvHashSet};
-
+use std::collections::HashSet;
 fn init_vec() -> Vec<Expr> {
     Vec::with_capacity(100)
 }
@@ -161,9 +161,9 @@ impl ProjectionPushDown {
                     // todo! remove aggregations that aren't selected?
                     let root_projections = expressions_to_root_column_exprs(&aggs)?;
 
-                    let mut names = FnvHashSet::with_capacity_and_hasher(
+                    let mut names = HashSet::with_capacity_and_hasher(
                         acc_projections.len(),
-                        FnvBuildHasher::default(),
+                        RandomState::new(),
                     );
                     for proj in &acc_projections {
                         let name = expr_to_root_column(proj)?;

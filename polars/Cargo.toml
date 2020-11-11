@@ -25,7 +25,6 @@ strings = []
 arrow = {version = "2", default_features = false}
 thiserror = "^1.0.16"
 num = "^0.2.1"
-fnv = "^1.0.7"
 itertools = "^0.9.0"
 unsafe_unwrap = "^0.1.0"
 rayon = "1.5"

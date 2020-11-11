@@ -2,16 +2,15 @@ use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{count_downtree_projections, expr_to_root_column, rename_expr_root_name};
 use crate::prelude::*;
-use fnv::{FnvBuildHasher, FnvHashMap};
+use ahash::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
-
 // arbitrary constant to reduce reallocation.
 // don't expect more than 100 predicates.
 const HASHMAP_SIZE: usize = 100;
 
-fn init_hashmap<K, V>() -> HashMap<K, V, FnvBuildHasher> {
-    FnvHashMap::with_capacity_and_hasher(HASHMAP_SIZE, FnvBuildHasher::default())
+fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
+    HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new())
 }
 
 pub struct PredicatePushDown {}
@@ -34,7 +33,7 @@ impl PredicatePushDown {
     fn finish_at_leaf(
         &self,
         lp: LogicalPlan,
-        acc_predicates: FnvHashMap<Arc<String>, Expr>,
+        acc_predicates: HashMap<Arc<String>, Expr, RandomState>,
     ) -> Result<LogicalPlan> {
         match acc_predicates.len() {
             // No filter in the logical plan
@@ -67,7 +66,7 @@ impl PredicatePushDown {
     fn push_down(
         &self,
         logical_plan: LogicalPlan,
-        mut acc_predicates: FnvHashMap<Arc<String>, Expr>,
+        mut acc_predicates: HashMap<Arc<String>, Expr, RandomState>,
     ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
 
@@ -86,10 +85,7 @@ impl PredicatePushDown {
                 if count_downtree_projections(&input, 0) == 0 {
                     let builder = LogicalPlanBuilder::from(self.push_down(
                         *input,
-                        FnvHashMap::with_capacity_and_hasher(
-                            HASHMAP_SIZE,
-                            FnvBuildHasher::default(),
-                        ),
+                        HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new()),
                     )?)
                     .project(expr);
                     // todo! write utility that takes hashmap values by value
@@ -213,9 +209,9 @@ impl PredicatePushDown {
     /// Check if a predicate can be pushed down or not. If it cannot remove it from the accumulated predicates.
     fn split_pushdown_and_local(
         &self,
-        mut acc_predicates: FnvHashMap<Arc<String>, Expr>,
+        mut acc_predicates: HashMap<Arc<String>, Expr, RandomState>,
         schema: &Schema,
-    ) -> (Vec<Expr>, FnvHashMap<Arc<String>, Expr>) {
+    ) -> (Vec<Expr>, HashMap<Arc<String>, Expr, RandomState>) {
         let mut local = Vec::with_capacity(acc_predicates.len());
         let mut local_keys = Vec::with_capacity(acc_predicates.len());
         for (key, predicate) in &acc_predicates {
@@ -234,7 +230,7 @@ impl Optimize for PredicatePushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
         self.push_down(
             logical_plan,
-            FnvHashMap::with_capacity_and_hasher(HASHMAP_SIZE, FnvBuildHasher::default()),
+            HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new()),
         )
     }
 }
