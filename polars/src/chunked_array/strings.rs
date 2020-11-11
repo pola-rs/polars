@@ -53,4 +53,16 @@ impl Utf8Chunked {
         let f = |s| reg.replace_all(s, val);
         Ok(apply_closure!(self, f))
     }
+
+    /// Modify the strings to their lowercase equivalent
+    pub fn to_lowercase(&self) -> Utf8Chunked {
+        self.apply(str::to_lowercase)
+    }
+
+    /// Modify the strings to their uppercase equivalent
+    pub fn to_uppercase(&self) -> Utf8Chunked {
+        self.apply(str::to_uppercase)
+    }
+
+
 }

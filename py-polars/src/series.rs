@@ -568,6 +568,18 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn str_to_uppercase(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.to_uppercase().into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_to_lowercase(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.to_lowercase().into_series();
+        Ok(s.into())
+    }
+
     pub fn str_parse_date32(&self, fmt: Option<&str>) -> PyResult<Self> {
         if let Series::Utf8(ca) = &self.series {
             let ca = ca.as_date32(fmt).map_err(PyPolarsEr::from)?;

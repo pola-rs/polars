@@ -886,6 +886,18 @@ class Series:
         """
         return wrap_s(self._s.str_replace_all(pattern, value))
 
+    def str_to_lowercase(self) -> Series:
+        """
+        Modify the strings to their lowercase equivalent
+        """
+        return wrap_s(self._s.str_to_lowercase())
+
+    def str_to_uppercase(self) -> Series:
+        """
+        Modify the strings to their uppercase equivalent
+        """
+        return wrap_s(self._s.str_to_uppercase())
+
     def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None):
         if datatype == Date32:
             return wrap_s(self._s.str_parse_date32(fmt))
