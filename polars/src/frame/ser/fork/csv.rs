@@ -17,6 +17,7 @@
 
 use crate::frame::ser::csv::CsvEncoding;
 use crate::prelude::*;
+use ahash::RandomState;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
 use crossbeam::{channel::bounded, thread};
@@ -24,10 +25,8 @@ use csv::{ByteRecord, ByteRecordsIntoIter};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
 use regex::{Regex, RegexBuilder};
-use seahash::SeaHasher;
 use std::collections::HashSet;
 use std::fmt;
-use std::hash::BuildHasherDefault;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
@@ -92,8 +91,8 @@ fn infer_file_schema<R: Read + Seek>(
 
     let header_length = headers.len();
     // keep track of inferred field types
-    let mut column_types: Vec<HashSet<ArrowDataType, BuildHasherDefault<SeaHasher>>> =
-        vec![HashSet::with_hasher(BuildHasherDefault::default()); header_length];
+    let mut column_types: Vec<HashSet<ArrowDataType, RandomState>> =
+        vec![HashSet::with_hasher(RandomState::new()); header_length];
     // keep track of columns with nulls
     let mut nulls: Vec<bool> = vec![false; header_length];
 

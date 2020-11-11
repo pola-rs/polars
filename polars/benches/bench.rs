@@ -1,6 +1,7 @@
 #![feature(test)]
 extern crate test;
 use polars::prelude::*;
+use std::iter;
 use test::Bencher;
 
 #[bench]
@@ -68,4 +69,17 @@ fn bench_join_2_frames(b: &mut Bencher) {
     });
 
     println!("{}", sum)
+}
+
+#[bench]
+fn bench_group_by(b: &mut Bencher) {
+    let s1: Series = Series::new("item", (0u32..10000).collect::<Vec<u32>>());
+    let s2: Series = Series::new("group", iter::repeat(0).take(10000).collect::<Vec<u32>>());
+
+
+    let df1 = DataFrame::new(vec![s1, s2]).unwrap();
+
+    b.iter(|| {
+        df1.groupby("group").unwrap().select("item").sum().unwrap();
+    });
 }
