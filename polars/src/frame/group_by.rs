@@ -1161,7 +1161,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             .groups
             .iter()
             .map(|(_first, idx)| {
-                let ca: Xob<UInt32Chunked> = idx.into_iter().map(|&v| v as u32).collect();
+                let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
                 ca.into_inner().into_series()
             })
             .collect();

@@ -115,7 +115,7 @@ where
 {
     fn unique(&self) -> Result<Self> {
         let set = match self.null_count() {
-            0 => fill_set(self.into_no_null_iter().map(|v| Some(v)), self.len()),
+            0 => fill_set(self.into_no_null_iter().map(Some), self.len()),
             _ => fill_set(self.into_iter(), self.len()),
         };
 
@@ -297,7 +297,7 @@ where
 {
     fn value_counts(&self) -> HashMap<Option<T::Native>, u32, RandomState> {
         match self.null_count() {
-            0 => fill_set_value_count(self.into_no_null_iter().map(|v| Some(v)), self.len()),
+            0 => fill_set_value_count(self.into_no_null_iter().map(Some), self.len()),
             _ => fill_set_value_count(self.into_iter(), self.len()),
         }
     }

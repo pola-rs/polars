@@ -439,7 +439,7 @@ impl AggPhysicalExpr for AggGroupsExpr {
         let mut column: ListChunked = groups
             .iter()
             .map(|(_first, idx)| {
-                let ca: Xob<UInt32Chunked> = idx.into_iter().map(|&v| v as u32).collect();
+                let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
                 ca.into_inner().into_series()
             })
             .collect();

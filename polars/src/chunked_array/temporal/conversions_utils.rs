@@ -99,7 +99,7 @@ pub(crate) fn naive_time_to_time32_milliseconds(v: &NaiveTime) -> i32 {
     v.hour() as i32 * 3600 * MILLISECONDS_IN_SECOND as i32
         + v.minute() as i32 * 60 * MILLISECONDS_IN_SECOND as i32
         + v.second() as i32 * MILLISECONDS_IN_SECOND as i32
-        + v.nanosecond() as i32 / 1000_000
+        + v.nanosecond() as i32 / 1_000_000
 }
 
 pub(crate) fn naive_time_to_time32_seconds(v: &NaiveTime) -> i32 {

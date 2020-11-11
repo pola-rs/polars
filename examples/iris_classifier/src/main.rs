@@ -121,7 +121,7 @@ fn enforce_schema(mut df: DataFrame) -> Result<DataFrame> {
                 df.may_apply(field.name(), |col| match dtype {
                     ArrowDataType::Float64 => col.cast::<Float64Type>(),
                     ArrowDataType::Utf8 => col.cast::<Utf8Type>(),
-                    _ => return Err(PolarsError::Other("unexpected type".into())),
+                    _ => Err(PolarsError::Other("unexpected type".into())),
                 })?;
             }
             Ok(())

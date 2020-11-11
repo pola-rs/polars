@@ -439,10 +439,7 @@ macro_rules! many_or_single {
         if chunks.len() == 1 {
             Box::new($StructSingle { arr: chunks[0] })
         } else {
-            Box::new($StructMany {
-                ca: $self,
-                chunks: chunks,
-            })
+            Box::new($StructMany { ca: $self, chunks })
         }
     }};
 }
@@ -498,10 +495,7 @@ where
                 if chunks.len() == 1 {
                     NumTakeRandomDispatch::Single(NumTakeRandomSingleChunk { arr: chunks[0] })
                 } else {
-                    NumTakeRandomDispatch::Many(NumTakeRandomChunked {
-                        ca: self,
-                        chunks: chunks,
-                    })
+                    NumTakeRandomDispatch::Many(NumTakeRandomChunked { ca: self, chunks })
                 }
             }
         }
@@ -538,10 +532,7 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
                 name: self.name(),
             })
         } else {
-            Box::new(ListTakeRandom {
-                ca: self,
-                chunks: chunks,
-            })
+            Box::new(ListTakeRandom { ca: self, chunks })
         }
     }
 }

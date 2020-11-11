@@ -289,7 +289,7 @@ impl Display for AnyType<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 0;
         match self {
-            AnyType::Null => write!(f, "{}", "null"),
+            AnyType::Null => write!(f, "null"),
             AnyType::UInt8(v) => write!(f, "{}", v),
             AnyType::UInt16(v) => write!(f, "{}", v),
             AnyType::UInt32(v) => write!(f, "{}", v),

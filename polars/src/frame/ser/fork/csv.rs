@@ -114,7 +114,7 @@ fn infer_file_schema<R: Read + Seek>(
 
         for i in 0..header_length {
             if let Some(string) = record.get(i) {
-                if string == "" {
+                if string.is_empty() {
                     nulls[i] = true;
                 } else {
                     column_types[i].insert(infer_field_schema(string));
@@ -259,7 +259,7 @@ fn add_to_utf8_builder(
     builder: &mut Utf8ChunkedBuilder,
     encoding: CsvEncoding,
 ) -> Result<()> {
-    for row in rows.into_iter() {
+    for row in rows.iter() {
         let v = row.get(col_idx);
         match v {
             None => builder.append_null(),
@@ -495,7 +495,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             rows.clear();
             self.next_rows(&mut rows, &mut record_iter)?;
             // stop when the whole file is processed
-            if rows.len() == 0 {
+            if rows.is_empty() {
                 break;
             }
             if (self.line_number - self.header_offset) > total_capacity {
@@ -548,7 +548,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     match &rows {
                         Ok(rows) => {
                             // stop when the whole file is processed
-                            if rows.len() == 0 {
+                            if rows.is_empty() {
                                 break;
                             }
                         }

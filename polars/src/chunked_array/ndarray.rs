@@ -41,7 +41,7 @@ impl ListChunked {
                 let mut row = ndarray.slice_mut(s![0, ..]);
                 row.assign(&a);
 
-                while let Some(series) = iter.next() {
+                for series in iter.next() {
                     if series.len() != width {
                         return Err(PolarsError::ShapeMisMatch(
                             "Could not create a 2D array. Series have different lengths".into(),
@@ -102,7 +102,7 @@ impl DataFrame {
             ca.into_no_null_iter()
                 .enumerate()
                 .for_each(|(row_idx, val)| {
-                    *&mut ndarr[[row_idx, col_idx]] = val;
+                    ndarr[[row_idx, col_idx]] = val;
                 })
         }
         Ok(ndarr)
