@@ -19,7 +19,10 @@ use crate::frame::ser::csv::CsvEncoding;
 use crate::prelude::*;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
-use crossbeam::{channel::bounded, thread};
+use crossbeam::{
+    channel::{bounded, TryRecvError},
+    thread,
+};
 use csv::{ByteRecord, ByteRecordsIntoIter};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
@@ -524,8 +527,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         parsed_dfs: &mut Vec<DataFrame>,
     ) -> Result<()> {
         let (tx, rx) = bounded(64);
+        // used to end rampant thread
+        let (tx_end, rx_end) = bounded(1);
 
-        let _: Result<_> = thread::scope(|s| {
+        let _ = thread::scope(|s| {
             let batch_size = self.batch_size;
             // note that line number gets copied ot the other thread.
             let mut line_number = self.line_number;
@@ -552,6 +557,14 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             break;
                         }
                     }
+                    match rx_end.try_recv() {
+                        Ok(_) | Err(TryRecvError::Disconnected) => {
+                            break;
+                        }
+                        // continue
+                        Err(TryRecvError::Empty) => {}
+                    }
+
                     tx.send((line_number, rows))
                         .expect("could not send message");
                 }
@@ -566,11 +579,18 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     total_capacity += self.capacity;
                 }
 
-                self.add_to_builders(builders, &projection, &rows)?;
+                match self.add_to_builders(builders, &projection, &rows) {
+                    Ok(_) => {}
+                    // kill parsing thread in case of an error.
+                    Err(e) => {
+                        tx_end.send(true).map_err(anyhow::Error::from)?;
+                        return Err(e);
+                    }
+                };
             }
             Ok(())
         })
-        .expect("a thread has panicked");
+        .expect("a thread has panicked")?;
         Ok(())
     }
 
