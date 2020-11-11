@@ -1,7 +1,6 @@
 [workspace]
 
 members = [
-    "bench",
     "polars",
     "pandas_cmp",
     "py-polars",
