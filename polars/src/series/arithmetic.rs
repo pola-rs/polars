@@ -205,7 +205,8 @@ where
         + ops::Div<Output = T::Native>,
 {
     fn subtract_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let rhs: T::Native =
+            NumCast::from(rhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v - rhs))
@@ -215,7 +216,8 @@ where
     }
 
     fn add_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let rhs: T::Native =
+            NumCast::from(rhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v + rhs))
@@ -224,7 +226,8 @@ where
         ca.into_series()
     }
     fn multiply_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let rhs: T::Native =
+            NumCast::from(rhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v * rhs))
@@ -233,7 +236,8 @@ where
         ca.into_series()
     }
     fn divide_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let rhs: T::Native =
+            NumCast::from(rhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v / rhs))
@@ -364,7 +368,8 @@ where
         + ops::Div<Output = T::Native>,
 {
     fn lhs_subtract_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let lhs: T::Native =
+            NumCast::from(lhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| lhs - v))
@@ -374,7 +379,8 @@ where
     }
 
     fn lhs_add_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let lhs: T::Native =
+            NumCast::from(lhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| lhs + v))
@@ -383,7 +389,8 @@ where
         ca.into_series()
     }
     fn lhs_multiply_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let lhs: T::Native =
+            NumCast::from(lhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| lhs * v))
@@ -392,7 +399,8 @@ where
         ca.into_series()
     }
     fn lhs_divide_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let lhs: T::Native =
+            NumCast::from(lhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| lhs / v))

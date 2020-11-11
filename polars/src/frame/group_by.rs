@@ -165,10 +165,7 @@ impl Series {
     fn as_groupable_iter<'a>(&'a self) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>> {
         macro_rules! as_groupable_iter {
             ($ca:expr, $variant:ident ) => {{
-                let bx = Box::new(
-                    $ca.into_iter()
-                        .map(|opt_b| opt_b.map(|b| Groupable::$variant(b))),
-                );
+                let bx = Box::new($ca.into_iter().map(|opt_b| opt_b.map(Groupable::$variant)));
                 Ok(bx)
             }};
         }
@@ -391,13 +388,12 @@ where
                     if let Ok(slice) = self.cont_slice() {
                         let mut sum = 0.;
                         for i in idx {
-                            sum = sum + slice[*i].to_f64().unwrap()
+                            sum += slice[*i].to_f64().unwrap()
                         }
                         Some(sum / idx.len() as f64)
                     } else {
-                        let take = unsafe {
-                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
-                        };
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
                         let opt_sum: Option<T::Native> = take.sum();
                         opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                     }
@@ -429,9 +425,8 @@ where
                         }
                         min
                     } else {
-                        let take = unsafe {
-                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
-                        };
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
                         take.min()
                     }
                 })
@@ -463,9 +458,8 @@ where
                         }
                         max
                     } else {
-                        let take = unsafe {
-                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
-                        };
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
                         take.max()
                     }
                 })
@@ -486,9 +480,8 @@ where
                         }
                         Some(sum)
                     } else {
-                        let take = unsafe {
-                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
-                        };
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
                         take.sum()
                     }
                 })
@@ -1218,11 +1211,9 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     {
         // create a mapping from columns to aggregations on that column
         let mut map = HashMap::with_capacity_and_hasher(column_to_agg.len(), RandomState::new());
-        column_to_agg
-            .into_iter()
-            .for_each(|(column, aggregations)| {
-                map.insert(column.as_ref(), aggregations.as_ref());
-            });
+        column_to_agg.iter().for_each(|(column, aggregations)| {
+            map.insert(column.as_ref(), aggregations.as_ref());
+        });
 
         macro_rules! finish_agg_opt {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
@@ -1246,7 +1237,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in &agg_cols {
             if let Some(&aggregations) = map.get(agg_col.name()) {
-                for aggregation_f in aggregations.as_ref() {
+                for aggregation_f in aggregations {
                     match aggregation_f.as_ref() {
                         "min" => finish_agg_opt!(self, "{}_min", agg_min, agg_col, cols),
                         "max" => finish_agg_opt!(self, "{}_max", agg_max, agg_col, cols),
@@ -1502,9 +1493,7 @@ fn create_column_values_map<'a, T>(
     let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, RandomState::new());
     for opt_column_name in pivot_vec {
         if let Some(column_name) = opt_column_name {
-            columns_agg_map
-                .entry(column_name)
-                .or_insert_with(|| Vec::new());
+            columns_agg_map.entry(column_name).or_insert_with(Vec::new);
         }
     }
 
@@ -1562,9 +1551,9 @@ where
 
                 if let Some(pivot_val) = opt_pivot_val {
                     let values_val = values_taker.get(i);
-                    columns_agg_map_group
-                        .get_mut(&pivot_val)
-                        .map(|v| v.push(values_val));
+                    if let Some(v) = columns_agg_map_group.get_mut(&pivot_val) {
+                        v.push(values_val)
+                    }
                 }
             }
 
@@ -1630,9 +1619,9 @@ fn pivot_count_impl<CA: TakeRandom>(
 
             if let Some(pivot_val) = opt_pivot_val {
                 let values_val = ca.get(i);
-                columns_agg_map_group
-                    .get_mut(&pivot_val)
-                    .map(|v| v.push(values_val));
+                if let Some(v) = columns_agg_map_group.get_mut(&pivot_val) {
+                    v.push(values_val)
+                }
             }
         }
 

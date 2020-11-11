@@ -875,7 +875,7 @@ pub(crate) mod test {
     fn arithmetic() {
         let s1 = get_chunked_array();
         println!("{:?}", s1.chunks);
-        let s2 = &s1.clone();
+        let s2 = &s1;
         let s1 = &s1;
         println!("{:?}", s1 + s2);
         println!("{:?}", s1 - s2);
@@ -1013,7 +1013,7 @@ pub(crate) mod test {
     #[test]
     fn test_null_sized_chunks() {
         let mut s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());
-        s.append(&Float64Chunked::new_from_slice("s2", &vec![1., 2., 3.]));
+        s.append(&Float64Chunked::new_from_slice("s2", &[1., 2., 3.]));
         dbg!(&s);
 
         let s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());

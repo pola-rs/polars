@@ -117,11 +117,7 @@ mod test {
 
     #[test]
     fn test_set_with() {
-        let mask = BooleanArray::from(
-            (0..86)
-                .map(|v| if v > 68 && v != 85 { true } else { false })
-                .collect::<Vec<bool>>(),
-        );
+        let mask = BooleanArray::from((0..86).map(|v| v > 68 && v != 85).collect::<Vec<bool>>());
         let val = UInt32Array::from((0..86).collect::<Vec<_>>());
         let a = set_with_value(&mask, &val, 100);
         let slice = a.value_slice(0, a.len());

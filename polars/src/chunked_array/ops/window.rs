@@ -90,7 +90,7 @@ where
     T: Mul<Output = T> + Copy,
 {
     window
-        .into_iter()
+        .iter()
         .zip(weight)
         .map(|(opt_a, &b)| opt_a.map(|a| a * b))
         .collect()
@@ -139,7 +139,7 @@ where
 /// Cast weights of f64 to T::Native
 fn weight_to_native<Native: NumCast>(weight: &[f64]) -> Vec<Native> {
     weight
-        .into_iter()
+        .iter()
         .map(|&v| NumCast::from(v).expect("all numeric types are castable"))
         .collect()
 }

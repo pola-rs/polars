@@ -347,7 +347,7 @@ impl DataFrame {
             .ok_or(PolarsError::NoData("No data to drop nulls from".into()))?;
         let mut mask = mask.is_not_null();
 
-        while let Some(s) = iter.next() {
+        for s in iter {
             mask = mask & s.is_not_null();
         }
         self.filter(&mask)
@@ -1254,7 +1254,7 @@ impl DataFrame {
     /// ```
     pub fn drop_duplicates(&self) -> Result<Self> {
         let gb = self.groupby(self.get_column_names())?;
-        let groups = gb.get_groups().into_iter().map(|v| v.0);
+        let groups = gb.get_groups().iter().map(|v| v.0);
         let cap = Some(groups.size_hint().0);
         let df = unsafe { self.take_iter_unchecked(groups, cap) };
         Ok(df)

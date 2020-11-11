@@ -385,7 +385,7 @@ pub trait AsTakeIndex {
 impl AsTakeIndex for &UInt32Chunked {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
         match self.cont_slice() {
-            Ok(slice) => Box::new(slice.into_iter().map(|&val| val as usize)),
+            Ok(slice) => Box::new(slice.iter().map(|&val| val as usize)),
             Err(_) => Box::new(
                 self.into_iter()
                     .filter_map(|opt_val| opt_val.map(|val| val as usize)),
@@ -605,7 +605,7 @@ where
     type Item = T;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
-        self.slice.get(index).map(|v| *v)
+        self.slice.get(index).copied()
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {

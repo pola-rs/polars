@@ -509,7 +509,7 @@ where
     T: ArrowPrimitiveType,
 {
     fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
-        Self::new_from_iter(name, v.into_iter().copied())
+        Self::new_from_iter(name, v.iter().copied())
     }
 
     fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
@@ -542,7 +542,7 @@ where
 {
     fn new_from_slice(name: &str, v: &[S]) -> Self {
         let mut builder = StringBuilder::new(v.len());
-        v.into_iter().for_each(|val| {
+        v.iter().for_each(|val| {
             builder
                 .append_value(val.as_ref())
                 .expect("Could not append value");

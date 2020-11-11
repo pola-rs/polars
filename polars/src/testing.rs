@@ -46,7 +46,7 @@ impl DataFrame {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     /// Check if all values in `DataFrames` are equal where `None == None` evaluates to `true`.
@@ -59,7 +59,7 @@ impl DataFrame {
                 return false;
             }
         }
-        return true;
+        true
     }
 }
 

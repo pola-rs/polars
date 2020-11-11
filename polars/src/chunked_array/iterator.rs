@@ -41,7 +41,7 @@ where
             1 => Box::new(
                 self.downcast_chunks()[0]
                     .value_slice(0, self.len())
-                    .into_iter()
+                    .iter()
                     .copied(),
             ),
             _ => Box::new(NumIterManyChunk::new(self)),

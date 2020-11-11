@@ -25,7 +25,7 @@ where
     let vals = arr.value_slice(arr.offset(), arr.len());
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     let av = vals
-        .into_iter()
+        .iter()
         .map(|v| num::cast::cast::<S::Native, T::Native>(*v).unwrap())
         .collect();
     Arc::new(aligned_vec_to_primitive_array::<T>(

@@ -186,7 +186,7 @@ fn init_builders(
 fn accumulate_dataframes(dfs: Vec<DataFrame>) -> Result<DataFrame> {
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
-    while let Some(df) = iter.next() {
+    for df in iter {
         acc_df.vstack(&df)?;
     }
     Ok(acc_df)

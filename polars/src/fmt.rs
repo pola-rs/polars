@@ -434,7 +434,7 @@ mod test {
             format!("{:?}", s.into_series())
         );
 
-        let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1000_000_000_000)]);
+        let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)]);
         assert_eq!(
             r#"Series: '' [date64(ms)]
 [

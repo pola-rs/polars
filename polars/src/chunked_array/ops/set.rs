@@ -336,11 +336,11 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
     where
         Self: Sized,
     {
-        let mut idx_iter = idx.as_take_iter();
+        let idx_iter = idx.as_take_iter();
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
 
-        while let Some(current_idx) = idx_iter.next() {
+        for current_idx in idx_iter {
             if current_idx > self.len() {
                 return Err(PolarsError::OutOfBounds(
                     format!(
@@ -361,7 +361,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
             }
         }
         // the last idx is probably not the last value so we finish the iterator
-        while let Some((_, opt_val_self)) = ca_iter.next() {
+        for (_, opt_val_self) in ca_iter {
             builder.append_option(opt_val_self);
         }
 

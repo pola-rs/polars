@@ -312,14 +312,11 @@ where
 }
 
 fn count_lines<R: Read + Seek>(reader: &mut R) -> anyhow::Result<usize> {
-    const LF: u8 = '\n' as u8;
+    const LF: u8 = b'\n';
     let mut reader = BufReader::new(reader);
     let mut count = 0;
     let mut line: Vec<u8> = Vec::new();
-    while match reader.read_until(LF, &mut line)? {
-        n if n > 0 => true,
-        _ => false,
-    } {
+    while matches!(reader.read_until(LF, &mut line)?, n if n > 0) {
         count += 1;
     }
     Ok(count)

@@ -508,7 +508,7 @@ mod test {
         let s1 = Series::new("", &[true, false, true]);
         let s2 = Series::new("", &[true, false, true]);
 
-        let ll: ListChunked = [&s1, &s2].iter().map(|&s| s).collect();
+        let ll: ListChunked = [&s1, &s2].iter().copied().collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 0);
         let ll: ListChunked = [None, Some(s2)].iter().collect();

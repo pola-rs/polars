@@ -292,14 +292,13 @@ impl Utf8Chunked {
         let mut ca: Date32Chunked = match self.null_count() {
             0 => self
                 .into_no_null_iter()
-                .map(|s| parse_naive_date_from_str(s, fmt).map(|dt| naive_date_to_date32(dt)))
+                .map(|s| parse_naive_date_from_str(s, fmt).map(naive_date_to_date32))
                 .collect(),
             _ => self
                 .into_iter()
                 .map(|opt_s| {
-                    let opt_nd = opt_s.map(|s| {
-                        parse_naive_date_from_str(s, fmt).map(|dt| naive_date_to_date32(dt))
-                    });
+                    let opt_nd =
+                        opt_s.map(|s| parse_naive_date_from_str(s, fmt).map(naive_date_to_date32));
                     match opt_nd {
                         None => None,
                         Some(None) => None,
