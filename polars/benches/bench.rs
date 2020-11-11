@@ -76,7 +76,6 @@ fn bench_group_by(b: &mut Bencher) {
     let s1: Series = Series::new("item", (0u32..10000).collect::<Vec<u32>>());
     let s2: Series = Series::new("group", iter::repeat(0).take(10000).collect::<Vec<u32>>());
 
-
     let df1 = DataFrame::new(vec![s1, s2]).unwrap();
 
     b.iter(|| {

@@ -1,10 +1,10 @@
 use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode_f64};
 use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
+use ahash::RandomState;
 use num::{NumCast, ToPrimitive};
-use ahash::{RandomState};
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash};
+use std::hash::Hash;
 
 pub(crate) fn is_unique_helper(
     groups: impl Iterator<Item = (usize, Vec<usize>)>,
@@ -66,10 +66,7 @@ impl ChunkUnique<ListType> for ListChunked {
     }
 }
 
-fn fill_set<A>(
-    a: impl Iterator<Item = A>,
-    capacity: usize,
-) -> HashSet<A, RandomState>
+fn fill_set<A>(a: impl Iterator<Item = A>, capacity: usize) -> HashSet<A, RandomState>
 where
     A: Hash + Eq,
 {
@@ -86,8 +83,7 @@ fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<usize>
 where
     T: Hash + Eq,
 {
-    let mut set =
-        HashSet::with_capacity_and_hasher(capacity, RandomState::new());
+    let mut set = HashSet::with_capacity_and_hasher(capacity, RandomState::new());
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {

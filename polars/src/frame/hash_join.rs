@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::utils::Xob;
-use ahash::{RandomState};
+use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use unsafe_unwrap::UnsafeUnwrap;
@@ -455,8 +455,7 @@ impl_zip_outer_join!(Utf8Chunked);
 impl DataFrame {
     /// Utility method to finish a join.
     fn finish_join(&self, mut df_left: DataFrame, mut df_right: DataFrame) -> Result<DataFrame> {
-        let mut left_names =
-            HashSet::with_capacity_and_hasher(df_left.width(), RandomState::new());
+        let mut left_names = HashSet::with_capacity_and_hasher(df_left.width(), RandomState::new());
 
         df_left.columns.iter().for_each(|series| {
             left_names.insert(series.name());
