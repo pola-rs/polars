@@ -544,6 +544,30 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
+    pub fn str_contains(&self, pat: &str) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.contains(pat).map_err(PyPolarsEr::from)?.into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_replace(&self, pat: &str, val: &str) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca
+            .replace(pat, val)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_replace_all(&self, pat: &str, val: &str) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca
+            .replace_all(pat, val)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
     pub fn str_parse_date32(&self, fmt: Option<&str>) -> PyResult<Self> {
         if let Series::Utf8(ca) = &self.series {
             let ca = ca.as_date32(fmt).map_err(PyPolarsEr::from)?;

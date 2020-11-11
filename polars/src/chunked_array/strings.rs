@@ -34,21 +34,21 @@ impl Utf8Chunked {
     }
 
     /// Check if strings contain a regex pattern
-    pub fn contains(&self, pat: &str) -> anyhow::Result<BooleanChunked> {
+    pub fn contains(&self, pat: &str) -> Result<BooleanChunked> {
         let reg = Regex::new(pat)?;
         let f = |s| reg.is_match(s);
         Ok(apply_closure_to_primitive!(self, f))
     }
 
     /// Replace the leftmost (sub)string by a regex pattern
-    pub fn replace(&self, pat: &str, val: &str) -> anyhow::Result<Utf8Chunked> {
+    pub fn replace(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
         let reg = Regex::new(pat)?;
         let f = |s| reg.replace(s, val);
         Ok(apply_closure!(self, f))
     }
 
     /// Replace all (sub)strings by a regex pattern
-    pub fn replace_all(&self, pat: &str, val: &str) -> anyhow::Result<Utf8Chunked> {
+    pub fn replace_all(&self, pat: &str, val: &str) -> Result<Utf8Chunked> {
         let reg = Regex::new(pat)?;
         let f = |s| reg.replace_all(s, val);
         Ok(apply_closure!(self, f))

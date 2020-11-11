@@ -41,6 +41,8 @@ pub enum PolarsError {
     Various(#[from] anyhow::Error),
     #[error(transparent)]
     IO(#[from] std::io::Error),
+    #[error(transparent)]
+    Regex(#[from] regex::Error),
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

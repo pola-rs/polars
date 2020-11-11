@@ -845,6 +845,47 @@ class Series:
         """
         return wrap_s(self._s.str_lengths())
 
+    def str_contains(self, pattern: str) -> Series:
+        """
+        Check if strings in Series contain regex pattern
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        Boolean mask
+        """
+        return wrap_s(self._s.str_contains(pattern))
+
+    def str_replace(self, pattern: str, value: str) -> Series:
+        """
+        Replace first regex math with a string value
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+        value
+            Substring to replace
+        """
+        return wrap_s(self._s.str_replace(pattern, value))
+
+    def str_replace_all(self, pattern: str, value: str) -> Series:
+        """
+        Replace all regex matches with a string value
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+        value
+            Substring to replace
+        """
+        return wrap_s(self._s.str_replace_all(pattern, value))
+
     def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None):
         if datatype == Date32:
             return wrap_s(self._s.str_parse_date32(fmt))
