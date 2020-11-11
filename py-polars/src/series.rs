@@ -598,6 +598,23 @@ impl PySeries {
         }
     }
 
+    pub fn as_duration(&self) -> PyResult<Self> {
+        match self.series.dtype() {
+            ArrowDataType::Date64(_) => {
+                let ca = self.series.date64().unwrap().as_duration();
+                Ok(ca.into_series().into())
+            }
+            ArrowDataType::Date32(_) => {
+                let ca = self.series.date32().unwrap().as_duration();
+                Ok(ca.into_series().into())
+            }
+            _ => Err(PyPolarsEr::Other(
+                "Only date32 and date64 can be transformed as duration".into(),
+            )
+            .into()),
+        }
+    }
+
     pub fn get_list(&self, index: usize) -> Option<Self> {
         if let Series::List(ca) = &self.series {
             let s = ca.get(index);

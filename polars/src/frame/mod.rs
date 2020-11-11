@@ -12,7 +12,6 @@ use std::sync::Arc;
 pub mod explode;
 pub mod group_by;
 pub mod hash_join;
-pub mod schema;
 pub mod select;
 pub mod ser;
 mod upstream_traits;

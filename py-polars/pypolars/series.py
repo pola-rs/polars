@@ -898,6 +898,12 @@ class Series:
         """
         return wrap_s(self._s.str_to_uppercase())
 
+    def as_duration(self) -> Series:
+        """
+        If Series is a date32 or a date64 it can be turned into a duration.
+        """
+        return wrap_s(self._s.as_duration())
+
     def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None):
         if datatype == Date32:
             return wrap_s(self._s.str_parse_date32(fmt))

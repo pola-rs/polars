@@ -76,6 +76,13 @@ where
     where
         F: Fn(&PrimitiveArray<T>) -> ArrayRef,
     {
+        self.apply_kernel_cast(f)
+    }
+    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(&PrimitiveArray<T>) -> ArrayRef,
+        S: PolarsDataType,
+    {
         let chunks = self.downcast_chunks().into_iter().map(f).collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
     }
@@ -85,6 +92,14 @@ impl ChunkApplyKernel<StringArray> for Utf8Chunked {
     fn apply_kernel<F>(&self, f: F) -> Self
     where
         F: Fn(&StringArray) -> ArrayRef,
+    {
+        self.apply_kernel_cast(f)
+    }
+
+    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(&StringArray) -> ArrayRef,
+        S: PolarsDataType,
     {
         let chunks = self.downcast_chunks().into_iter().map(f).collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
