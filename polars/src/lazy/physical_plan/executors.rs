@@ -1,6 +1,5 @@
 use super::*;
 use crate::lazy::logical_plan::DataFrameOperation;
-use rayon;
 use std::sync::Mutex;
 
 pub struct CsvExec {

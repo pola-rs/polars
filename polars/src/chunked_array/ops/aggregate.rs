@@ -127,12 +127,10 @@ fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
                 } else {
                     v
                 }
+            } else if acc > v {
+                acc
             } else {
-                if acc > v {
-                    acc
-                } else {
-                    v
-                }
+                v
             }
         }
         None => acc,

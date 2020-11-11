@@ -125,7 +125,7 @@ impl DataFrame {
             .ok_or(PolarsError::NoData("no data to rechunk".into()))?;
         let id = first_s.chunk_lengths();
 
-        while let Some(s) = it.next() {
+        for s in it {
             let current_id = s.chunk_lengths();
             if current_id != id {
                 all_equal = false;

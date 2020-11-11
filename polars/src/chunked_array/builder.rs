@@ -377,13 +377,13 @@ impl<T> Drop for AlignedVec<T> {
 
 impl<T> FromIterator<T> for AlignedVec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let mut iter = iter.into_iter();
+        let iter = iter.into_iter();
         let sh = iter.size_hint();
         let size = sh.1.unwrap_or(sh.0);
 
         let mut av = Self::with_capacity_aligned(size);
 
-        while let Some(v) = iter.next() {
+        for v in iter {
             av.push(v)
         }
 

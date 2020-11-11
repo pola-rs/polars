@@ -376,7 +376,7 @@ trait ZipOuterJoinColumn {
     fn zip_outer_join_column(
         &self,
         _right_column: &Series,
-        _opt_join_tuples: &Vec<(Option<usize>, Option<usize>)>,
+        _opt_join_tuples: &[(Option<usize>, Option<usize>)],
     ) -> Series {
         unimplemented!()
     }
@@ -389,7 +389,7 @@ where
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &Vec<(Option<usize>, Option<usize>)>,
+        opt_join_tuples: &[(Option<usize>, Option<usize>)],
     ) -> Series {
         let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -424,7 +424,7 @@ macro_rules! impl_zip_outer_join {
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &Vec<(Option<usize>, Option<usize>)>,
+                opt_join_tuples: &[(Option<usize>, Option<usize>)],
             ) -> Series {
                 let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 

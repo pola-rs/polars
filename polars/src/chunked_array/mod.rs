@@ -417,7 +417,7 @@ impl<T> ChunkedArray<T> {
 
         for chunk in &self.chunks {
             let chunk_len = chunk.len();
-            if chunk_len - 1 >= index_remainder {
+            if chunk_len > index_remainder {
                 break;
             } else {
                 index_remainder -= chunk_len;

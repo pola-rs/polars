@@ -175,7 +175,7 @@ where
     }
 
     fn set_current_iter_right(&mut self) {
-        if self.chunk_idx_left == self.chunk_idx_left {
+        if self.chunk_idx_left == self.chunk_idx_right {
             // from left and right we use the same iterator
             self.current_iter_right = None
         } else {
@@ -322,7 +322,7 @@ where
     fn set_current_iter_right(&mut self) {
         let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
         self.current_data_right = current_chunk.data();
-        if self.chunk_idx_left == self.chunk_idx_left {
+        if self.chunk_idx_left == self.chunk_idx_right {
             // from left and right we use the same iterator
             self.current_iter_right = None
         } else {
