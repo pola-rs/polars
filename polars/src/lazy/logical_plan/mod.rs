@@ -5,8 +5,9 @@ use crate::{
     lazy::{prelude::*, utils},
     prelude::*,
 };
+use ahash::RandomState;
 use arrow::datatypes::DataType;
-use fnv::FnvHashSet;
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::{fmt, sync::Arc};
 
@@ -477,7 +478,7 @@ impl LogicalPlanBuilder {
         let schema_right = other.schema();
 
         // column names of left table
-        let mut names = FnvHashSet::default();
+        let mut names: HashSet<&String, RandomState> = HashSet::default();
         // fields of new schema
         let mut fields = vec![];
 
