@@ -381,6 +381,10 @@ class DataFrame:
         """
         return self._df.columns()
 
+    @columns.setter
+    def columns(self, columns: List[str]):
+        self._df.set_column_names(columns)
+
     @property
     def dtypes(self) -> List[type]:
         """

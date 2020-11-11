@@ -192,7 +192,13 @@ impl PyDataFrame {
 
     /// Get column names
     pub fn columns(&self) -> Vec<&str> {
-        self.df.columns()
+        self.df.get_column_names()
+    }
+
+    /// set column names
+    pub fn set_column_names(&mut self, names: Vec<&str>) -> PyResult<()> {
+        self.df.set_column_names(&names).map_err(PyPolarsEr::from)?;
+        Ok(())
     }
 
     /// Get datatypes

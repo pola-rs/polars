@@ -12,6 +12,7 @@ use std::sync::Arc;
 pub mod explode;
 pub mod group_by;
 pub mod hash_join;
+pub mod schema;
 pub mod select;
 pub mod ser;
 mod upstream_traits;
@@ -162,8 +163,31 @@ impl DataFrame {
     }
 
     /// Get the column labels of the DataFrame.
+    #[deprecated(since = "0.9.0", note = "please use get_column_names")]
     pub fn columns(&self) -> Vec<&str> {
+        self.get_column_names()
+    }
+
+    pub fn get_column_names(&self) -> Vec<&str> {
         self.columns.iter().map(|s| s.name()).collect()
+    }
+
+    /// Set the column names.
+    pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> Result<()> {
+        if names.len() != self.columns.len() {
+            return Err(PolarsError::ShapeMisMatch("the provided slice with column names has not the same size as the DataFrame's width".into()));
+        }
+        let columns = mem::take(&mut self.columns);
+        self.columns = columns
+            .into_iter()
+            .zip(names)
+            .map(|(s, name)| {
+                let mut s = s;
+                s.rename(name.as_ref());
+                s
+            })
+            .collect();
+        Ok(())
     }
 
     /// Get the data types of the columns in the DataFrame.
@@ -1230,7 +1254,7 @@ impl DataFrame {
     /// +-----+-----+-----+
     /// ```
     pub fn drop_duplicates(&self) -> Result<Self> {
-        let gb = self.groupby(self.columns())?;
+        let gb = self.groupby(self.get_column_names())?;
         let groups = gb.get_groups().into_iter().map(|v| v.0);
         let cap = Some(groups.size_hint().0);
         let df = unsafe { self.take_iter_unchecked(groups, cap) };
@@ -1239,14 +1263,14 @@ impl DataFrame {
 
     /// Get a mask of all the unique rows in the DataFrame.
     pub fn is_unique(&self) -> Result<BooleanChunked> {
-        let mut gb = self.groupby(self.columns())?;
+        let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
         is_unique_helper(groups.into_iter(), self.height(), true, false)
     }
 
     /// Get a mask of all the duplicated rows in the DataFrame.
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
-        let mut gb = self.groupby(self.columns())?;
+        let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
         is_unique_helper(groups.into_iter(), self.height(), false, true)
     }

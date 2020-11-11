@@ -764,7 +764,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             None => {
                 let by: Vec<_> = self.selected_keys.iter().map(|s| s.name()).collect();
                 self.df
-                    .columns()
+                    .get_column_names()
                     .into_iter()
                     .filter(|a| !by.contains(a))
                     .collect()
