@@ -97,8 +97,7 @@ impl ops::Sub for Series {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let series = &self;
-        apply_method_all_series!(series, subtract, &rhs).expect("data types don't match")
+        (&self).sub(&rhs)
     }
 }
 
@@ -106,8 +105,7 @@ impl ops::Add for Series {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let series = &self;
-        apply_method_all_series!(series, add_to, &rhs).expect("data types don't match")
+        (&self).add(&rhs)
     }
 }
 
@@ -115,8 +113,7 @@ impl std::ops::Mul for Series {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let series = &self;
-        apply_method_all_series!(series, multiply, &rhs).expect("data types don't match")
+        (&self).mul(&rhs)
     }
 }
 
@@ -124,8 +121,15 @@ impl std::ops::Div for Series {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
-        let series = &self;
-        apply_method_all_series!(series, divide, &rhs).expect("data types don't match")
+        (&self).div(&rhs)
+    }
+}
+
+impl std::ops::Rem for Series {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        (&self).rem(&rhs)
     }
 }
 
@@ -170,6 +174,19 @@ impl std::ops::Div for &Series {
     /// ```
     fn div(self, rhs: Self) -> Self::Output {
         apply_method_all_series!(self, divide, &rhs).expect("data types don't match")
+    }
+}
+
+impl std::ops::Rem for &Series {
+    type Output = Series;
+
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s: Series = [1, 2, 3].iter().collect();
+    /// let out = &s / &s;
+    /// ```
+    fn rem(self, rhs: Self) -> Self::Output {
+        apply_method_all_series!(self, remainder, &rhs).expect("data types don't match")
     }
 }
 

@@ -75,12 +75,14 @@ def test_groupby():
         df.groupby("a")
         .select("b")
         .sum()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
     assert (
         df.groupby("a")
         .select("c")
         .sum()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
     )
     assert (
@@ -93,18 +95,21 @@ def test_groupby():
         df.groupby("a")
         .select("b")
         .max()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .mean()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .last()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     # check if it runs

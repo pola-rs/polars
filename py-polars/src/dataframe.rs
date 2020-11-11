@@ -139,6 +139,31 @@ impl PyDataFrame {
         Ok(())
     }
 
+    pub fn add(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df + &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn sub(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df - &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn div(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df / &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn mul(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df * &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn rem(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df % &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn rechunk(&mut self) -> Self {
         self.df.agg_chunks().into()
     }

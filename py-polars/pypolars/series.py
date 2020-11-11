@@ -17,6 +17,7 @@ from typing import Optional, List, Sequence, Union, Any, Callable
 from .ffi import _ptr_to_numpy
 from .datatypes import *
 from numbers import Number
+import pypolars
 
 
 class IdentityDict(dict):
@@ -374,6 +375,9 @@ class Series:
         if f is None:
             return NotImplemented
         return f()
+
+    def to_dummies(self) -> "DataFrame":
+        return pypolars.frame.wrap_df(self._s.to_dummies())
 
     @property
     def name(self):

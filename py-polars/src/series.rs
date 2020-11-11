@@ -1,3 +1,4 @@
+use crate::dataframe::PyDataFrame;
 use crate::datatypes::DataType;
 use crate::error::PyPolarsEr;
 use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
@@ -613,6 +614,11 @@ impl PySeries {
             )
             .into()),
         }
+    }
+
+    pub fn to_dummies(&self) -> PyResult<PyDataFrame> {
+        let df = self.series.to_dummies().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
     }
 
     pub fn get_list(&self, index: usize) -> Option<Self> {

@@ -225,6 +225,18 @@ class DataFrame:
         """
         return np.vstack([self[:, i].to_numpy() for i in range(self.width)]).T
 
+    def __mul__(self, other):
+        return wrap_df(self._df.mul(other._s))
+
+    def __truediv__(self, other):
+        return wrap_df(self._df.div(other._s))
+
+    def __add__(self, other):
+        return wrap_df(self._df.add(other._s))
+
+    def __sub__(self, other):
+        return wrap_df(self._df.sub(other._s))
+
     def __str__(self) -> str:
         return self._df.as_str()
 
