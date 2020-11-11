@@ -1,7 +1,8 @@
 use crate::prelude::*;
 use crate::utils::Xob;
+use hashbrown::HashMap;
 use seahash::SeaHasher;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::{BuildHasherDefault, Hash};
 use unsafe_unwrap::UnsafeUnwrap;
 
@@ -83,14 +84,11 @@ macro_rules! apply_hash_join_on_series {
     }};
 }
 
-pub(crate) fn prepare_hashed_relation<T>(
-    b: impl Iterator<Item = T>,
-) -> HashMap<T, Vec<usize>, SeaBuildHasher>
+pub(crate) fn prepare_hashed_relation<T>(b: impl Iterator<Item = T>) -> HashMap<T, Vec<usize>>
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl =
-        HashMap::with_capacity_and_hasher(b.size_hint().0 / 10, BuildHasherDefault::default());
+    let mut hash_tbl = HashMap::with_capacity(b.size_hint().0 / 10);
 
     b.enumerate()
         .for_each(|(idx, key)| hash_tbl.entry(key).or_insert_with(Vec::new).push(idx));

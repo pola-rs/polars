@@ -50,3 +50,17 @@ fn bench_num_2_chunks(b: &mut Bencher) {
     });
     println!("{}", sum)
 }
+
+#[bench]
+fn bench_join_2_frames(b: &mut Bencher) {
+    let s1: Series = Series::new("id", (0u32..10000).collect::<Vec<u32>>());
+    let s2: Series = Series::new("id", (0u32..10000).collect::<Vec<u32>>());
+
+    let df1 = DataFrame::new(vec![s1]).unwrap();
+
+    let df2 = DataFrame::new(vec![s2]).unwrap();
+
+    b.iter(|| {
+        df1.inner_join(&df2, "id", "id");
+    });
+}
