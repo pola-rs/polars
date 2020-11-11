@@ -1,11 +1,9 @@
 use crate::prelude::*;
 use crate::utils::Xob;
-use seahash::SeaHasher;
+use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasherDefault, Hash};
+use std::hash::Hash;
 use unsafe_unwrap::UnsafeUnwrap;
-
-type SeaBuildHasher = BuildHasherDefault<SeaHasher>;
 
 macro_rules! hash_join_inner {
     ($s_right:ident, $ca_left:ident, $type_:ident) => {{
@@ -85,12 +83,12 @@ macro_rules! apply_hash_join_on_series {
 
 pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = T>,
-) -> HashMap<T, Vec<usize>, SeaBuildHasher>
+) -> HashMap<T, Vec<usize>, RandomState>
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl =
-        HashMap::with_capacity_and_hasher(b.size_hint().0 / 10, BuildHasherDefault::default());
+    let mut hash_tbl: HashMap<T, Vec<usize>, ahash::RandomState> =
+        HashMap::with_capacity_and_hasher(b.size_hint().0 / 10, RandomState::new());
 
     b.enumerate()
         .for_each(|(idx, key)| hash_tbl.entry(key).or_insert_with(Vec::new).push(idx));
@@ -457,8 +455,7 @@ impl_zip_outer_join!(Utf8Chunked);
 impl DataFrame {
     /// Utility method to finish a join.
     fn finish_join(&self, mut df_left: DataFrame, mut df_right: DataFrame) -> Result<DataFrame> {
-        let mut left_names =
-            HashSet::with_capacity_and_hasher(df_left.width(), SeaBuildHasher::default());
+        let mut left_names = HashSet::with_capacity_and_hasher(df_left.width(), RandomState::new());
 
         df_left.columns.iter().for_each(|series| {
             left_names.insert(series.name());

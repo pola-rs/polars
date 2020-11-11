@@ -37,7 +37,7 @@ rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
 regex = {version = "1.4" }
 anyhow = "1.0"
-seahash = "4.0.1"
+ahash = "0.5"
 csv = "1.1"
 lazy_static = "1.4"
 crossbeam = "0.8"
