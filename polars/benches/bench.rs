@@ -60,7 +60,12 @@ fn bench_join_2_frames(b: &mut Bencher) {
 
     let df2 = DataFrame::new(vec![s2]).unwrap();
 
+    let mut sum = 0;
+
     b.iter(|| {
-        df1.inner_join(&df2, "id", "id");
+        let df3 = df1.inner_join(&df2, "id", "id").unwrap();
+        sum += df3.shape().1;
     });
+
+    println!("{}", sum)
 }
