@@ -1,6 +1,6 @@
 use crate::lazy::prelude::*;
-use crate::lazy::utils::get_supertype;
 use crate::prelude::*;
+use crate::utils::get_supertype;
 
 pub struct TypeCoercion {}
 

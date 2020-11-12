@@ -1,7 +1,6 @@
 use crate::prelude::*;
+use crate::utils::get_supertype;
 use rayon::prelude::*;
-
-use crate::lazy::utils::get_supertype;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 macro_rules! impl_arithmetic {
