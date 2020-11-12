@@ -29,11 +29,3 @@ jobs:
         run: |
           cd polars && cargo test --all-features
           cd ../py-polars && ./tasks.sh build-run-tests && cd ..
-      - name: deploy docs
-        run: |
-          cargo doc --no-deps --all-features --package polars \
-          && echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
-          pdoc --html py-polars/pypolars/ && \
-          mv html/pypolars target/doc/pypolars && \
-          ghp-import -n target/doc && \
-          git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages
