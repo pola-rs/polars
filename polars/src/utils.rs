@@ -337,6 +337,30 @@ fn _get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Option<ArrowDataType>
     use arrow::datatypes::DataType::*;
     // TODO! add list and temporal types
     match (l, r) {
+        (Duration(_), Int8) => Some(Int64),
+        (Duration(_), Int16) => Some(Int64),
+        (Duration(_), Int32) => Some(Int64),
+        (Duration(_), Int64) => Some(Int64),
+
+        (Duration(_), UInt8) => Some(Int64),
+        (Duration(_), UInt16) => Some(Int64),
+        (Duration(_), UInt32) => Some(Int64),
+
+        (Int8, Duration(_)) => Some(Int64),
+        (Int16, Duration(_)) => Some(Int64),
+        (Int32, Duration(_)) => Some(Int64),
+        (Int64, Duration(_)) => Some(Int64),
+
+        (UInt8, Duration(_)) => Some(Int64),
+        (UInt16, Duration(_)) => Some(Int64),
+        (UInt32, Duration(_)) => Some(Int64),
+
+        (Float32, Duration(_)) => Some(Float32),
+        (Float64, Duration(_)) => Some(Float64),
+
+        (Duration(_), Float32) => Some(Float32),
+        (Duration(_), Float64) => Some(Float64),
+
         (UInt8, Int8) => Some(Int8),
         (UInt8, Int16) => Some(Int16),
         (UInt8, Int32) => Some(Int32),
