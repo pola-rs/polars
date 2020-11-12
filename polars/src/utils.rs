@@ -458,3 +458,21 @@ fn _get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Option<ArrowDataType>
         _ => None,
     }
 }
+
+pub fn accumulate_dataframes_vertical(dfs: Vec<DataFrame>) -> Result<DataFrame> {
+    let mut iter = dfs.into_iter();
+    let mut acc_df = iter.next().unwrap();
+    for df in iter {
+        acc_df.vstack(&df)?;
+    }
+    Ok(acc_df)
+}
+
+pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame> {
+    let mut iter = dfs.into_iter();
+    let mut acc_df = iter.next().unwrap();
+    for df in iter {
+        acc_df.hstack_mut(df.get_columns())?;
+    }
+    Ok(acc_df)
+}

@@ -322,6 +322,9 @@ class Series:
         return wrap_s(f(other))
 
     def __getitem__(self, item):
+        if isinstance(item, int):
+            if item >= self.len():
+                raise IndexError
         # assume it is boolean mask
         if isinstance(item, Series):
             return Series._from_pyseries(self._s.filter(item._s))
@@ -642,6 +645,9 @@ class Series:
                 column.append(subseries.to_numpy())
             return column
         return self._s.to_list()
+
+    def __iter__(self):
+        return self.to_list().__iter__()
 
     def rechunk(self, in_place: bool = False) -> Optional[Series]:
         """

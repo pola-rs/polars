@@ -2,6 +2,7 @@
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
+use crate::utils::accumulate_dataframes_horizontal;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
@@ -1191,35 +1192,13 @@ impl DataFrame {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     pub fn to_dummies(&self) -> Result<Self> {
-        let mut df = self.clone();
-        let df_index_name = "--__CUSTOM_INDEX_FOR_TO_DUMMIES__--";
-        let s = UInt32Chunked::new_from_aligned_vec(
-            df_index_name,
-            (0u32..self.height() as u32).collect(),
-        );
-        df.add_column(s).unwrap();
+        let cols = self
+            .columns
+            .iter()
+            .map(|s| s.to_dummies())
+            .collect::<Result<Vec<_>>>()?;
 
-        let mut gb = df.groupby(df_index_name)?;
-
-        let mut columns = Vec::with_capacity(self.columns.len() * 256);
-        for col in &self.columns {
-            let pivot_col = col.name();
-            // value column is not important in count
-            let value_col = pivot_col;
-            let mut pivot_df = gb
-                .pivot(pivot_col, value_col)
-                .count()?
-                .sort(df_index_name, false)?;
-            pivot_df.drop_in_place(df_index_name).unwrap();
-
-            // rename columns
-            for i in 0..(pivot_df.width()) {
-                let s = pivot_df.select_at_idx_mut(i).unwrap();
-                s.rename(&format!("{}_{}", pivot_col, s.name()));
-                columns.push(s.clone())
-            }
-        }
-        Ok(DataFrame::new_no_checks(columns))
+        accumulate_dataframes_horizontal(cols)
     }
 
     /// Drop duplicate rows from a DataFrame.
@@ -1365,6 +1344,7 @@ mod test {
         }
         .unwrap();
         let dummies = df.to_dummies().unwrap();
+        dbg!(&dummies);
         assert_eq!(
             Vec::from(dummies.column("id_1").unwrap().u32().unwrap()),
             &[

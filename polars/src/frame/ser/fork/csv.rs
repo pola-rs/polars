@@ -17,6 +17,7 @@
 
 use crate::frame::ser::csv::CsvEncoding;
 use crate::prelude::*;
+use crate::utils;
 use ahash::RandomState;
 use arrow::datatypes::SchemaRef;
 use arrow::error::Result as ArrowResult;
@@ -181,15 +182,6 @@ fn init_builders(
         .iter()
         .map(|&i| field_to_builder(i, capacity, schema))
         .collect()
-}
-
-fn accumulate_dataframes(dfs: Vec<DataFrame>) -> Result<DataFrame> {
-    let mut iter = dfs.into_iter();
-    let mut acc_df = iter.next().unwrap();
-    for df in iter {
-        acc_df.vstack(&df)?;
-    }
-    Ok(acc_df)
 }
 
 fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Builder> {
@@ -633,7 +625,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         }
 
         parsed_dfs.push(builders_to_df(builders));
-        accumulate_dataframes(parsed_dfs)
+        utils::accumulate_dataframes_vertical(parsed_dfs)
     }
 }
 
