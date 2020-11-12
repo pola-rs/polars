@@ -335,6 +335,10 @@ impl PySeries {
         self.series.as_single_ptr()
     }
 
+    pub fn drop_nulls(&self) -> Self {
+        self.series.drop_nulls().into()
+    }
+
     pub fn fill_none(&self, strategy: &str) -> PyResult<Self> {
         let strat = match strategy {
             "backward" => FillNoneStrategy::Backward,

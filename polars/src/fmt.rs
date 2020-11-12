@@ -271,7 +271,7 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     let v: f64 = NumCast::from(v).unwrap();
     let v = (v * 1000.).round() / 1000.;
     if v == 0.0 {
-        write!(f, "{:>width$}", v, width = width)
+        write!(f, "{:>width$.1}", v, width = width)
     } else if v > 9999. || v < 0.0001 {
         write!(f, "{:>width$e}", v, width = width)
     } else {

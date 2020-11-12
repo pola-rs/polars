@@ -249,7 +249,7 @@ class Series:
         if not self.is_float():
             out_dtype = Float64
         else:
-            out_dtype = DTYPE_TO_FFINAME[self.dtype]
+            out_dtype = self.dtype
         return np.true_divide(self, other, dtype=out_dtype)
 
     def __floordiv__(self, other) -> Series:
@@ -352,6 +352,9 @@ class Series:
             s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
             self.__setitem__(s, value)
 
+    def drop_nulls(self) -> Series:
+        return wrap_s(self._s.drop_nulls())
+
     @property
     def dtype(self):
         """
@@ -398,6 +401,18 @@ class Series:
         if f is None:
             return NotImplemented
         return f()
+
+    def std(self) -> float:
+        """
+        Get standard deviation of this Series
+        """
+        return np.std(self.drop_nulls().view())
+
+    def var(self) -> float:
+        """
+        Get variance of this Series
+        """
+        return np.var(self.drop_nulls().view())
 
     def to_dummies(self) -> "DataFrame":
         return pypolars.frame.wrap_df(self._s.to_dummies())
