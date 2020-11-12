@@ -544,7 +544,7 @@ impl Series {
 
     /// Create dummy variables. See [DataFrame](DataFrame::to_dummies)
     pub fn to_dummies(&self) -> Result<DataFrame> {
-        DataFrame::new(vec![self.clone()])?.to_dummies()
+        apply_method_all_series!(self, to_dummies,)
     }
 
     /// Get the `ChunkedArray` for some `PolarsDataType`

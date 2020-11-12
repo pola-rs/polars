@@ -4,6 +4,7 @@ use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuple
 use ahash::RandomState;
 use num::{NumCast, ToPrimitive};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::hash::Hash;
 
 pub(crate) fn is_unique_helper(
@@ -162,6 +163,51 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
         is_duplicated(self)
     }
 }
+
+impl ToDummies<Utf8Type> for Utf8Chunked {
+    fn to_dummies(&self) -> Result<DataFrame> {
+        let unique = self.unique()?;
+        let col_name = self.name();
+
+        let mut columns = Vec::with_capacity(unique.len());
+        for unique_val in unique.into_iter() {
+            if let Some(val) = unique_val {
+                let mut ca = self.eq(val);
+                ca.rename(&format!("{}_{}", col_name, val));
+                let ca = ca.cast::<UInt32Type>()?;
+                columns.push(ca.into_series())
+            }
+        }
+        Ok(DataFrame::new_no_checks(columns))
+    }
+}
+impl<T> ToDummies<T> for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Hash + Eq + Display,
+    ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
+{
+    fn to_dummies(&self) -> Result<DataFrame> {
+        let unique = self.unique()?;
+        let col_name = self.name();
+
+        let mut columns = Vec::with_capacity(unique.len());
+        for unique_val in unique.into_iter() {
+            if let Some(val) = unique_val {
+                let mut ca = self.eq(val);
+                ca.rename(&format!("{}_{}", col_name, val));
+                let ca = ca.cast::<UInt32Type>()?;
+                columns.push(ca.into_series())
+            }
+        }
+        Ok(DataFrame::new_no_checks(columns))
+    }
+}
+
+impl ToDummies<ListType> for ListChunked {}
+impl ToDummies<Float32Type> for Float32Chunked {}
+impl ToDummies<Float64Type> for Float64Chunked {}
+impl ToDummies<BooleanType> for BooleanChunked {}
 
 impl ChunkUnique<BooleanType> for BooleanChunked {
     fn unique(&self) -> Result<Self> {

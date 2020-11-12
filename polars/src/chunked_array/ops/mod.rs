@@ -396,6 +396,14 @@ pub trait ChunkUnique<T> {
     }
 }
 
+pub trait ToDummies<T>: ChunkUnique<T> {
+    fn to_dummies(&self) -> Result<DataFrame> {
+        Err(PolarsError::InvalidOperation(
+            "is_duplicated is not implemented for this dtype".into(),
+        ))
+    }
+}
+
 /// Sort operations on `ChunkedArray`.
 pub trait ChunkSort<T> {
     /// Returned a sorted `ChunkedArray`.

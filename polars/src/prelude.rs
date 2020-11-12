@@ -13,7 +13,7 @@ pub use crate::{
             chunkops::ChunkOps,
             take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
             window::InitFold,
-            *,
+            ToDummies, *,
         },
         ChunkedArray, Downcast, NoNull,
     },
