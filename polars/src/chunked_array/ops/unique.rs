@@ -1,9 +1,10 @@
 use crate::prelude::*;
-use crate::utils::{floating_encode_f64, integer_decode_f64};
+use crate::utils::{floating_encode_f64, integer_decode_f64, Xob};
 use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
 use ahash::RandomState;
 use num::{NumCast, ToPrimitive};
-use std::collections::{HashMap, HashSet};
+use rayon::prelude::*;
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::Hash;
 
@@ -115,6 +116,23 @@ where
     }
 }
 
+macro_rules! impl_value_counts {
+    ($self:expr) => {{
+        let group_tuples = $self.group_tuples();
+        let mut values = unsafe {
+            $self.take_unchecked(group_tuples.iter().map(|t| t.0), Some(group_tuples.len()))
+        };
+        values.rename("counts");
+        let counts: Xob<UInt32Chunked> = group_tuples
+            .into_iter()
+            .map(|(_, groups)| groups.len() as u32)
+            .collect();
+        let cols = vec![values.into_series(), counts.into_inner().into_series()];
+        let df = DataFrame::new_no_checks(cols);
+        df.sort("counts", true)
+    }};
+}
+
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
@@ -141,6 +159,10 @@ where
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_duplicated(self)
     }
+
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
+    }
 }
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
@@ -162,44 +184,51 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_duplicated(self)
     }
+
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
+    }
 }
 
 impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let unique = self.unique()?;
+        let u = self.unique()?;
+        let unique = u.into_iter().collect::<Vec<_>>();
         let col_name = self.name();
 
-        let mut columns = Vec::with_capacity(unique.len());
-        for unique_val in unique.into_iter() {
-            if let Some(val) = unique_val {
-                let mut ca = self.eq(val);
-                ca.rename(&format!("{}_{}", col_name, val));
-                let ca = ca.cast::<UInt32Type>()?;
-                columns.push(ca.into_series())
-            }
-        }
+        let columns = unique
+            .par_iter()
+            .filter_map(|opt_val| {
+                opt_val.map(|val| {
+                    let mut ca = self.eq(val);
+                    ca.rename(&format!("{}_{}", col_name, val));
+                    ca.into_series()
+                })
+            })
+            .collect();
         Ok(DataFrame::new_no_checks(columns))
     }
 }
 impl<T> ToDummies<T> for ChunkedArray<T>
 where
-    T: PolarsIntegerType,
+    T: PolarsIntegerType + Sync,
     T::Native: Hash + Eq + Display,
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let unique = self.unique()?;
+        let unique = self.unique()?.into_iter().collect::<Vec<_>>();
         let col_name = self.name();
 
-        let mut columns = Vec::with_capacity(unique.len());
-        for unique_val in unique.into_iter() {
-            if let Some(val) = unique_val {
-                let mut ca = self.eq(val);
-                ca.rename(&format!("{}_{}", col_name, val));
-                let ca = ca.cast::<UInt32Type>()?;
-                columns.push(ca.into_series())
-            }
-        }
+        let columns = unique
+            .par_iter()
+            .filter_map(|opt_val| {
+                opt_val.map(|val| {
+                    let mut ca = self.eq(val);
+                    ca.rename(&format!("{}_{}", col_name, val));
+                    ca.into_series()
+                })
+            })
+            .collect();
         Ok(DataFrame::new_no_checks(columns))
     }
 }
@@ -299,6 +328,9 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_duplicated(self)
     }
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
+    }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
@@ -316,43 +348,8 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_duplicated(self)
     }
-}
-
-pub trait ValueCounts<T>
-where
-    T: ArrowPrimitiveType,
-{
-    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, RandomState>;
-}
-
-fn fill_set_value_count<K>(
-    a: impl Iterator<Item = K>,
-    capacity: usize,
-) -> HashMap<K, u32, RandomState>
-where
-    K: Hash + Eq,
-{
-    let mut kv_store = HashMap::with_capacity_and_hasher(capacity, RandomState::new());
-
-    for key in a {
-        let count = kv_store.entry(key).or_insert(0);
-        *count += 1;
-    }
-
-    kv_store
-}
-
-impl<T> ValueCounts<T> for ChunkedArray<T>
-where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq,
-    ChunkedArray<T>: ChunkOps,
-{
-    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, RandomState> {
-        match self.null_count() {
-            0 => fill_set_value_count(self.into_no_null_iter().map(Some), self.len()),
-            _ => fill_set_value_count(self.into_iter(), self.len()),
-        }
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
     }
 }
 

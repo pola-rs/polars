@@ -219,6 +219,11 @@ impl PySeries {
         Ok(unique.into())
     }
 
+    pub fn value_counts(&self) -> PyResult<PyDataFrame> {
+        let df = self.series.value_counts().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn arg_unique(&self) -> PyResult<Py<PyArray1<usize>>> {
         let gil = pyo3::Python::acquire_gil();
         let arg_unique = self.series.arg_unique().map_err(PyPolarsEr::from)?;

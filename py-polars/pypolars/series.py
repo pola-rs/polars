@@ -415,7 +415,16 @@ class Series:
         return np.var(self.drop_nulls().view())
 
     def to_dummies(self) -> "DataFrame":
+        """
+        Get dummy variables
+        """
         return pypolars.frame.wrap_df(self._s.to_dummies())
+
+    def value_counts(self) -> "DataFrame":
+        """
+        Count the unique values in a Series
+        """
+        return pypolars.frame.wrap_df(self._s.value_counts())
 
     @property
     def name(self):

@@ -558,7 +558,7 @@ mod test {
             .select(&[col("sepal.width").alias("petals"), col("sepal.width")])
             .collect()
             .unwrap();
-        assert_eq!(new.columns(), &["petals", "sepal.width"]);
+        assert_eq!(new.get_column_names(), &["petals", "sepal.width"]);
     }
 
     #[test]
