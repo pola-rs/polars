@@ -407,6 +407,13 @@ pub trait ChunkUnique<T> {
             "is_duplicated is not implemented for this dtype".into(),
         ))
     }
+
+    /// Count the unique values.
+    fn value_counts(&self) -> Result<DataFrame> {
+        Err(PolarsError::InvalidOperation(
+            "is_duplicated is not implemented for this dtype".into(),
+        ))
+    }
 }
 
 pub trait ToDummies<T>: ChunkUnique<T> {

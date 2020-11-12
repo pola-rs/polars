@@ -556,6 +556,10 @@ impl Series {
         apply_method_all_series!(self, to_dummies,)
     }
 
+    pub fn value_counts(&self) -> Result<DataFrame> {
+        apply_method_all_series!(self, value_counts,)
+    }
+
     /// Get the `ChunkedArray` for some `PolarsDataType`
     pub fn unpack<N>(&self) -> Result<&ChunkedArray<N>>
     where

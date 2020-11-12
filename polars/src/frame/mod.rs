@@ -1229,7 +1229,7 @@ impl DataFrame {
     ///                    "int" => [1, 1, 2, 2, 3, 3, ],
     ///                    "str" => ["a", "a", "b", "b", "c", "c"]
     ///                }?;
-    ///      df.drop_duplicates(true)?
+    ///      df.drop_duplicates(true)
     ///  }
     /// # }
     /// ```
@@ -1389,7 +1389,11 @@ mod test {
         }
         .unwrap();
         dbg!(&df);
-        let df = df.drop_duplicates().unwrap().sort("flt", false).unwrap();
+        let df = df
+            .drop_duplicates(true)
+            .unwrap()
+            .sort("flt", false)
+            .unwrap();
         let valid = df! {
             "flt" => [1., 2., 3.],
             "int" => [1, 2, 3],
