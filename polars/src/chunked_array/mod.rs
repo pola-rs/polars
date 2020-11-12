@@ -30,9 +30,6 @@ pub mod kernels;
 #[doc(cfg(feature = "ndarray"))]
 mod ndarray;
 pub mod object;
-#[cfg(feature = "parallel")]
-#[doc(cfg(feature = "parallel"))]
-pub mod par;
 #[cfg(feature = "random")]
 #[doc(cfg(feature = "random"))]
 mod random;
