@@ -1,5 +1,5 @@
 //! Implementations of the ChunkCast Trait.
-use crate::chunked_array::kernels::cast_numeric_from_dtype;
+use crate::chunked_array::kernels::{cast_numeric_from_dtype, transmute_array_from_dtype};
 use crate::prelude::*;
 use arrow::compute;
 use num::NumCast;
@@ -54,11 +54,17 @@ where
             // underlying type: i64
             ArrowDataType::Duration(_) => match N::get_data_type() {
                 ArrowDataType::UInt64 => {
-                    // todo! check if this is safe as underlying type is i64 and not u64
                     return cast_from_dtype!(self, cast_numeric_from_dtype, UInt64);
                 }
-                ArrowDataType::Int64 => {
-                    return cast_from_dtype!(self, cast_numeric_from_dtype, Int64)
+                // the underlying datatype is i64 so we transmute array
+                ArrowDataType::Int64 => unsafe {
+                    return cast_from_dtype!(self, transmute_array_from_dtype, Int64);
+                },
+                ArrowDataType::Float32 => {
+                    return cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
+                }
+                ArrowDataType::Float64 => {
+                    return cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
                 }
                 _ => (),
             },
