@@ -18,6 +18,7 @@ temporal = ["chrono"]
 random = ["rand", "rand_distr"]
 default = ["pretty", "docs", "temporal", "simd"]
 lazy = []
+parallel = []
 # extra utilities for Utf8Chunked
 strings = []
 
