@@ -226,7 +226,8 @@ class Series:
     def __add__(self, other) -> Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
-        f = get_ffi_func("add_<>", self.dtype, self._s)
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("add_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -234,12 +235,17 @@ class Series:
     def __sub__(self, other) -> Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.sub(other._s))
-        f = get_ffi_func("sub_<>", self.dtype, self._s)
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("sub_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __truediv__(self, other) -> Series:
+        primitive = dtype_to_primitive(self.dtype)
+        if self.dtype != primitive:
+            return self.__floordiv__(other)
+
         if not self.is_float():
             out_dtype = Float64
         else:
@@ -247,12 +253,17 @@ class Series:
         return np.true_divide(self, other, dtype=out_dtype)
 
     def __floordiv__(self, other) -> Series:
-        return np.floor_divide(self, other)
+        if isinstance(other, Series):
+            return Series._from_pyseries(self._s.div(other._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("div_<>", dtype, self._s)
+        return wrap_s(f(other))
 
     def __mul__(self, other) -> Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
-        f = get_ffi_func("mul_<>", self.dtype, self._s)
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -260,7 +271,8 @@ class Series:
     def __radd__(self, other):
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
-        f = get_ffi_func("add_<>_rhs", self.dtype, self._s)
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("add_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -268,7 +280,8 @@ class Series:
     def __rsub__(self, other):
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.sub(self._s))
-        f = get_ffi_func("sub_<>_rhs", self.dtype, self._s)
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("sub_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -279,6 +292,11 @@ class Series:
         return NotImplemented
 
     def __rtruediv__(self, other):
+
+        primitive = dtype_to_primitive(self.dtype)
+        if self.dtype != primitive:
+            self.__rfloordiv__(other)
+
         if not self.is_float():
             out_dtype = Float64
         else:
@@ -288,7 +306,8 @@ class Series:
     def __rfloordiv__(self, other):
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.div(self._s))
-        f = get_ffi_func("div_<>_rhs", self.dtype, self._s)
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("div_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -296,7 +315,8 @@ class Series:
     def __rmul__(self, other):
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
-        f = get_ffi_func("mul_<>", self.dtype, self._s)
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))

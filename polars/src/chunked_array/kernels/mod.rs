@@ -4,11 +4,11 @@ pub(crate) mod utils;
 pub mod zip_with;
 
 use crate::chunked_array::builder::{aligned_vec_to_primitive_array, get_bitmap};
-use crate::datatypes::ArrowDataType;
+use crate::datatypes::{ArrowDataType, Float64Type};
 use arrow::array::{Array, ArrayData, ArrayRef, PrimitiveArray};
 use arrow::datatypes::{
-    ArrowNumericType, ArrowPrimitiveType, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type,
-    UInt32Type, UInt64Type, UInt8Type,
+    ArrowNumericType, ArrowPrimitiveType, Float32Type, Int16Type, Int32Type, Int64Type, Int8Type,
+    UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
 use num::NumCast;
 use std::sync::Arc;
@@ -92,6 +92,8 @@ where
         Int32 => cast_numeric::<_, Int32Type>(arr),
         Int16 => cast_numeric::<_, Int16Type>(arr),
         Int8 => cast_numeric::<_, Int8Type>(arr),
+        Float32 => cast_numeric::<_, Float32Type>(arr),
+        Float64 => cast_numeric::<_, Float64Type>(arr),
         _ => todo!(),
     }
 }
