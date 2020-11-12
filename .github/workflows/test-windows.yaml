@@ -1,9 +1,6 @@
 name: Windows tests
 
-on:
-  push:
-    branches:
-      - master
+on: push
 jobs:
   test:
     runs-on: windows-latest
@@ -12,7 +9,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-10-09
+          toolchain: nightly-2020-11-12
           override: true
       - name: Run tests
         run: |
