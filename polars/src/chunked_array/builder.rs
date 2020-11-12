@@ -358,7 +358,7 @@ pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
 /// Can be useful in creating a new ChunkedArray or Arrow Primitive array without copying.
 #[derive(Debug)]
 pub struct AlignedVec<T> {
-    inner: Vec<T>,
+    pub(crate) inner: Vec<T>,
     // if into_inner is called, this will be true and we can use the default Vec's destructor
     taken: bool,
 }
