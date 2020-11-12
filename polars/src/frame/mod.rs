@@ -1194,7 +1194,7 @@ impl DataFrame {
     pub fn to_dummies(&self) -> Result<Self> {
         let cols = self
             .columns
-            .iter()
+            .par_iter()
             .map(|s| s.to_dummies())
             .collect::<Result<Vec<_>>>()?;
 
@@ -1218,8 +1218,7 @@ impl DataFrame {
     ///                    "int" => [1, 1, 2, 2, 3, 3, ],
     ///                    "str" => ["a", "a", "b", "b", "c", "c"]
     ///                }?;
-    ///      df.drop_duplicates()?
-    ///          .sort("flt", false)
+    ///      df.drop_duplicates(true)?
     ///  }
     /// # }
     /// ```
@@ -1238,11 +1237,21 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    pub fn drop_duplicates(&self) -> Result<Self> {
+    pub fn drop_duplicates(&self, maintain_order: bool) -> Result<Self> {
         let gb = self.groupby(self.get_column_names())?;
         let groups = gb.get_groups().iter().map(|v| v.0);
-        let cap = Some(groups.size_hint().0);
-        let df = unsafe { self.take_iter_unchecked(groups, cap) };
+
+        let df = if maintain_order {
+            let mut groups = groups.collect::<Vec<_>>();
+            groups.sort_unstable();
+            let cap = Some(groups.len());
+            unsafe { self.take_iter_unchecked(groups.into_iter(), cap)}
+
+        } else {
+            let cap = Some(groups.size_hint().0);
+            unsafe { self.take_iter_unchecked(groups, cap) }
+        };
+
         Ok(df)
     }
 

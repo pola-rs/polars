@@ -493,8 +493,11 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn drop_duplicates(&self) -> PyResult<Self> {
-        let df = self.df.drop_duplicates().map_err(PyPolarsEr::from)?;
+    pub fn drop_duplicates(&self, maintain_order: bool) -> PyResult<Self> {
+        let df = self
+            .df
+            .drop_duplicates(maintain_order)
+            .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
