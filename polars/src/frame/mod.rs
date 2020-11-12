@@ -1365,16 +1365,16 @@ mod test {
         let dummies = df.to_dummies().unwrap();
         dbg!(&dummies);
         assert_eq!(
-            Vec::from(dummies.column("id_1").unwrap().u32().unwrap()),
+            Vec::from(dummies.column("id_1").unwrap().bool().unwrap()),
             &[
-                Some(1),
-                Some(0),
-                Some(0),
-                Some(1),
-                Some(0),
-                Some(0),
-                Some(1),
-                Some(1)
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(true),
+                Some(true)
             ]
         );
         dbg!(dummies);
