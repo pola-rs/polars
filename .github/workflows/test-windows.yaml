@@ -1,6 +1,8 @@
 name: Windows tests
 
-on: push
+on:
+  - push
+  - pull_request
 jobs:
   test:
     runs-on: windows-latest
