@@ -451,6 +451,15 @@ impl Series {
         apply_method_all_series_and_return!(self, tail, [length],)
     }
 
+    /// Drop all null values and return a new Series.
+    pub fn drop_nulls(&self) -> Self {
+        if self.null_count() == 0 {
+            self.clone()
+        } else {
+            self.filter(&self.is_not_null()).unwrap()
+        }
+    }
+
     /// Create a new Series filled with values at that index.
     ///
     /// # Example
