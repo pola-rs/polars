@@ -1,12 +1,9 @@
-name: Build, test and docs
+name: Build and test
 
-on:
-  push:
-    branches:
-      - master
+on: push
 jobs:
   test:
-    name: Build, test and docs
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
