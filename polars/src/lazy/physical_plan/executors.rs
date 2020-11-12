@@ -255,7 +255,7 @@ impl Executor for StackExec {
                 })
             })
             .collect::<Result<Vec<Series>>>()?;
-        df.hstack(&added_columns)?;
+        df.hstack_mut(&added_columns)?;
         Ok(df)
     }
 }

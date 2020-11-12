@@ -335,7 +335,7 @@ class DataFrame:
                 self.drop_in_place(key)
             except:
                 pass
-            self.hstack([Series(key, value)])
+            self.hstack([Series(key, value)], in_place=True)
         # df[idx] = series
         elif isinstance(key, int):
             assert isinstance(value, Series)
@@ -574,16 +574,25 @@ class DataFrame:
             raise e
         return wrap_df(inner)
 
-    def hstack(self, columns: List[Series]):
+    def hstack(
+        self, columns: Union[List[Series], "DataFrame"], in_place=False
+    ) -> Optional[DataFrame]:
         """
-        Grow this DataFrame horizontally by stacking Series to it.
+        Return a new DataFrame grown horizontally by stacking Series to it.
 
         Parameters
         ----------
         columns
             Series to stack
+        in_place
+            Modify in place
         """
-        self._df.hstack([s.inner() for s in columns])
+        if not isinstance(columns, list):
+            columns = DataFrame.get_columns()
+        if in_place:
+            self._df.hstack_mut([s.inner() for s in columns])
+        else:
+            return wrap_df(self._df.hstack([s.inner() for s in columns]))
 
     def vstack(self, df: DataFrame):
         """
