@@ -1080,6 +1080,17 @@ impl DataFrame {
         DataFrame::new_no_checks(columns)
     }
 
+    /// Aggregate the columns to their standard deviation values.
+    pub fn std(&self) -> Self {
+        let columns = self.columns.par_iter().map(|s| s.std_as_series()).collect();
+        DataFrame::new_no_checks(columns)
+    }
+    /// Aggregate the columns to their variation values.
+    pub fn var(&self) -> Self {
+        let columns = self.columns.par_iter().map(|s| s.var_as_series()).collect();
+        DataFrame::new_no_checks(columns)
+    }
+
     /// Aggregate the columns to their minimum values.
     pub fn min(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.min_as_series()).collect();
@@ -1245,8 +1256,7 @@ impl DataFrame {
             let mut groups = groups.collect::<Vec<_>>();
             groups.sort_unstable();
             let cap = Some(groups.len());
-            unsafe { self.take_iter_unchecked(groups.into_iter(), cap)}
-
+            unsafe { self.take_iter_unchecked(groups.into_iter(), cap) }
         } else {
             let cap = Some(groups.size_hint().0);
             unsafe { self.take_iter_unchecked(groups, cap) }

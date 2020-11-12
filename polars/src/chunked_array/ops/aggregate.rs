@@ -117,6 +117,53 @@ where
     }
 }
 
+macro_rules! impl_var {
+    ($self:expr, $ty: ty) => {{
+        let mean = $self.mean()?;
+        let ca = $self - mean;
+        let squared = &ca * &ca;
+        let opt_v = squared.sum();
+        let div = ($self.len() - 1) as $ty;
+        opt_v.map(|v| v / div)
+    }};
+}
+
+impl<T> ChunkVar<f64> for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: PartialOrd + Num + NumCast,
+{
+    fn var(&self) -> Option<f64> {
+        let ca = self.cast::<Float64Type>().ok()?;
+        impl_var!(&ca, f64)
+    }
+    fn std(&self) -> Option<f64> {
+        self.var().map(|var| var.sqrt())
+    }
+}
+
+impl ChunkVar<f32> for Float32Chunked {
+    fn var(&self) -> Option<f32> {
+        impl_var!(self, f32)
+    }
+    fn std(&self) -> Option<f32> {
+        self.var().map(|var| var.sqrt())
+    }
+}
+
+impl ChunkVar<f64> for Float64Chunked {
+    fn var(&self) -> Option<f64> {
+        impl_var!(self, f64)
+    }
+    fn std(&self) -> Option<f64> {
+        self.var().map(|var| var.sqrt())
+    }
+}
+
+impl ChunkVar<String> for Utf8Chunked {}
+impl ChunkVar<Series> for ListChunked {}
+impl ChunkVar<bool> for BooleanChunked {}
+
 fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
     let min_max = ca.into_iter().fold(0, |acc: u32, x| match x {
         Some(v) => {
@@ -228,6 +275,53 @@ where
         Ok(ca.into())
     }
 }
+
+macro_rules! impl_as_series {
+    ($self:expr, $agg:ident, $ty: ty) => {{
+        let v = $self.$agg();
+        let mut ca: $ty = [v].iter().copied().collect();
+        ca.rename($self.name());
+        ca.into()
+    }};
+}
+
+impl<T> VarAggSeries for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: PartialOrd + Num + NumCast,
+{
+    fn var_as_series(&self) -> Series {
+        impl_as_series!(self, var, Float64Chunked)
+    }
+
+    fn std_as_series(&self) -> Series {
+        impl_as_series!(self, std, Float64Chunked)
+    }
+}
+
+impl VarAggSeries for Float32Chunked {
+    fn var_as_series(&self) -> Series {
+        impl_as_series!(self, var, Float32Chunked)
+    }
+
+    fn std_as_series(&self) -> Series {
+        impl_as_series!(self, std, Float32Chunked)
+    }
+}
+
+impl VarAggSeries for Float64Chunked {
+    fn var_as_series(&self) -> Series {
+        impl_as_series!(self, var, Float64Chunked)
+    }
+
+    fn std_as_series(&self) -> Series {
+        impl_as_series!(self, std, Float64Chunked)
+    }
+}
+
+impl VarAggSeries for BooleanChunked {}
+impl VarAggSeries for ListChunked {}
+impl VarAggSeries for Utf8Chunked {}
 
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {

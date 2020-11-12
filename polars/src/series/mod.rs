@@ -764,6 +764,14 @@ impl Series {
     pub fn median_as_series(&self) -> Series {
         apply_method_all_series!(self, median_as_series,)
     }
+    /// Get the variance of the Series as a new Series of length 1.
+    pub fn var_as_series(&self) -> Series {
+        apply_method_all_series!(self, var_as_series,)
+    }
+    /// Get the standard deviation of the Series as a new Series of length 1.
+    pub fn std_as_series(&self) -> Series {
+        apply_method_all_series!(self, std_as_series,)
+    }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
     pub fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
         apply_method_all_series!(self, quantile_as_series, quantile)
