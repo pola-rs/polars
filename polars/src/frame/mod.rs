@@ -278,10 +278,10 @@ impl DataFrame {
     /// ```
     /// use polars::prelude::*;
     /// fn stack(df: &mut DataFrame, columns: &[Series]) {
-    ///     df.hstack(columns);
+    ///     df.hstack_mut(columns);
     /// }
     /// ```
-    pub fn hstack(&mut self, columns: &[DfSeries]) -> Result<&mut Self> {
+    pub fn hstack_mut(&mut self, columns: &[DfSeries]) -> Result<&mut Self> {
         let height = self.height();
         for col in columns {
             if col.len() != height {
@@ -293,6 +293,12 @@ impl DataFrame {
         }
         self.register_mutation()?;
         Ok(self)
+    }
+
+    pub fn hstack(&self, columns: &[DfSeries]) -> Result<Self> {
+        let mut new_cols = self.columns.clone();
+        new_cols.extend_from_slice(columns);
+        DataFrame::new(new_cols)
     }
 
     /// Concatenate a DataFrame to this DataFrame

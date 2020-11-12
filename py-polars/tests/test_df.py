@@ -71,6 +71,7 @@ def test_groupby():
             "c": [6, 5, 4, 3, 2, 1],
         }
     )
+
     assert (
         df.groupby("a")
         .select("b")
@@ -89,6 +90,7 @@ def test_groupby():
         df.groupby("a")
         .select("b")
         .min()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
     )
     assert (
@@ -158,7 +160,7 @@ def test_join():
 
 def test_hstack():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df.hstack([Series("stacked", [-1, -1, -1])])
+    df.hstack([Series("stacked", [-1, -1, -1])], in_place=True)
     assert df.shape == (3, 3)
     assert df.columns == ["a", "b", "stacked"]
 

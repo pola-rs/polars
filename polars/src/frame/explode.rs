@@ -207,7 +207,7 @@ impl DataFrame {
             value_col.rename("value");
 
             let mut df_chunk = ids.clone();
-            df_chunk.hstack(&[variable_col, value_col])?;
+            df_chunk.hstack_mut(&[variable_col, value_col])?;
             dataframe_chunks.push_back(df_chunk)
         }
 

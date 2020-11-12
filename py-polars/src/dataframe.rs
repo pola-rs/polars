@@ -255,10 +255,16 @@ impl PyDataFrame {
         self.df.width()
     }
 
-    pub fn hstack(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
+    pub fn hstack_mut(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
         let columns = to_series_collection(columns);
-        self.df.hstack(&columns).map_err(PyPolarsEr::from)?;
+        self.df.hstack_mut(&columns).map_err(PyPolarsEr::from)?;
         Ok(())
+    }
+
+    pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {
+        let columns = to_series_collection(columns);
+        let df = self.df.hstack(&columns).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
     }
 
     pub fn vstack(&mut self, df: &PyDataFrame) -> PyResult<()> {

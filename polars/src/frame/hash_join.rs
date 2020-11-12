@@ -473,7 +473,7 @@ impl DataFrame {
             df_right.rename(&name, &format!("{}_right", name))?;
         }
 
-        df_left.hstack(&df_right.columns)?;
+        df_left.hstack_mut(&df_right.columns)?;
         Ok(df_left)
     }
 
@@ -609,7 +609,7 @@ impl DataFrame {
         let mut s =
             apply_method_all_series!(s_left, zip_outer_join_column, s_right, &opt_join_tuples);
         s.rename(s_left.name());
-        df_left.hstack(&[s])?;
+        df_left.hstack_mut(&[s])?;
         self.finish_join(df_left, df_right)
     }
 }
