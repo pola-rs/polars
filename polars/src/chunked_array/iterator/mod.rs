@@ -6,6 +6,11 @@ use arrow::array::{
 use std::iter::Copied;
 use std::slice::Iter;
 
+// If parallel feature is enable, then, activate the parallel module.
+#[cfg(feature = "parallel")]
+#[doc(cfg(feature = "parallel"))]
+pub mod par;
+
 // ExactSizeIterator trait implementations for all Iterator structs in this file
 impl<'a, T> ExactSizeIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
 impl<'a, T> ExactSizeIterator for NumIterSingleChunk<'a, T>

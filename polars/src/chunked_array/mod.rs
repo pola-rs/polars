@@ -29,9 +29,6 @@ pub mod kernels;
 #[cfg(feature = "ndarray")]
 #[doc(cfg(feature = "ndarray"))]
 mod ndarray;
-#[cfg(feature = "parallel")]
-#[doc(cfg(feature = "parallel"))]
-pub mod par;
 #[cfg(feature = "random")]
 #[doc(cfg(feature = "random"))]
 mod random;
