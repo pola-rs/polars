@@ -327,6 +327,19 @@ pub trait ChunkAgg<T> {
     fn quantile(&self, quantile: f64) -> Result<Option<T>>;
 }
 
+/// Variance and standard deviation aggregation.
+pub trait ChunkVar<T> {
+    /// Compute the variance of this ChunkedArray/Series.
+    fn var(&self) -> Option<T> {
+        None
+    }
+
+    /// Compute the standard deviation of this ChunkedArray/Series.
+    fn std(&self) -> Option<T> {
+        None
+    }
+}
+
 /// Compare [Series](series/series/enum.Series.html)
 /// and [ChunkedArray](series/chunked_array/struct.ChunkedArray.html)'s and get a `boolean` mask that
 /// can be used to filter rows.
@@ -942,6 +955,17 @@ pub trait ChunkAggSeries {
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
     fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+        unimplemented!()
+    }
+}
+
+pub trait VarAggSeries {
+    /// Get the variance of the ChunkedArray as a new Series of length 1.
+    fn var_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
+    fn std_as_series(&self) -> Series {
         unimplemented!()
     }
 }

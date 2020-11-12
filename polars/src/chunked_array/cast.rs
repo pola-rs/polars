@@ -9,6 +9,12 @@ where
     N: PolarsDataType,
     T: PolarsDataType,
 {
+    if N::get_data_type() == T::get_data_type() {
+        return unsafe {
+            let ca = std::mem::transmute(ca.clone());
+            Ok(ca)
+        };
+    };
     match N::get_data_type() {
         // only i32 can be cast to Date32
         ArrowDataType::Date32(DateUnit::Day) => {

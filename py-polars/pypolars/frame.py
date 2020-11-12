@@ -765,6 +765,18 @@ class DataFrame:
         """
         return wrap_df(self._df.mean())
 
+    def std(self) -> DataFrame:
+        """
+        Aggregate the columns of this DataFrame to their standard deviation value
+        """
+        return wrap_df(self._df.std())
+
+    def var(self) -> DataFrame:
+        """
+        Aggregate the columns of this DataFrame to their variance value
+        """
+        return wrap_df(self._df.var())
+
     def median(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their median value

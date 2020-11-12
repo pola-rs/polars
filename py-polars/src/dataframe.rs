@@ -520,6 +520,13 @@ impl PyDataFrame {
     pub fn mean(&self) -> Self {
         self.df.mean().into()
     }
+    pub fn std(&self) -> Self {
+        self.df.std().into()
+    }
+
+    pub fn var(&self) -> Self {
+        self.df.var().into()
+    }
 
     pub fn median(&self) -> Self {
         self.df.median().into()
