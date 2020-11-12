@@ -1269,14 +1269,14 @@ impl DataFrame {
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        is_unique_helper(groups.into_iter(), self.height(), true, false)
+        is_unique_helper(groups, self.height(), true, false)
     }
 
     /// Get a mask of all the duplicated rows in the DataFrame.
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        is_unique_helper(groups.into_iter(), self.height(), false, true)
+        is_unique_helper(groups, self.height(), false, true)
     }
 }
 

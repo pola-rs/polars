@@ -9,13 +9,13 @@ use std::fmt::Display;
 use std::hash::Hash;
 
 pub(crate) fn is_unique_helper(
-    groups: impl Iterator<Item = (usize, Vec<usize>)>,
+    mut groups: Vec<(usize, Vec<usize>)>,
     len: usize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> Result<BooleanChunked> {
     debug_assert_ne!(unique_val, duplicated_val);
-    let mut groups = groups.collect::<Vec<_>>();
+    // let mut groups = groups.collect::<Vec<_>>();
     groups.sort_unstable_by_key(|t| t.0);
 
     let mut unique_idx_iter = groups
@@ -46,9 +46,7 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
-    dbg!(ca.group_tuples());
-    let groups = ca.group_tuples().into_iter();
-
+    let groups = ca.group_tuples();
     is_unique_helper(groups, ca.len(), true, false)
 }
 
@@ -57,7 +55,7 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
-    let groups = ca.group_tuples().into_iter();
+    let groups = ca.group_tuples();
     is_unique_helper(groups, ca.len(), false, true)
 }
 
