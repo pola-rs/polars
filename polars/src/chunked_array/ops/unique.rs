@@ -188,22 +188,38 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 }
 
+fn dummies_helper(mut groups: Vec<usize>, len: usize, name: &str) -> UInt8Chunked {
+    groups.sort_unstable();
+
+    // let mut group_member_iter = groups.into_iter();
+    let mut av = AlignedVec::with_capacity_aligned(len);
+    for _ in 0..len {
+        av.push(0u8)
+    }
+
+    for idx in groups {
+        let elem = unsafe { av.inner.get_unchecked_mut(idx) };
+        *elem = 1;
+    }
+
+    ChunkedArray::new_from_aligned_vec(name, av)
+}
+
 impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let u = self.unique()?;
-        let unique = u.into_iter().collect::<Vec<_>>();
+        let groups = self.group_tuples();
         let col_name = self.name();
 
-        let columns = unique
-            .par_iter()
-            .filter_map(|opt_val| {
-                opt_val.map(|val| {
-                    let mut ca = self.eq(val);
-                    ca.rename(&format!("{}_{}", col_name, val));
-                    ca.into_series()
-                })
+        let columns = groups
+            .into_par_iter()
+            .map(|(first, groups)| {
+                let val = unsafe { self.get_unchecked(first) };
+                let name = format!("{}_{}", col_name, val);
+                let ca = dummies_helper(groups, self.len(), &name);
+                ca.into_series()
             })
             .collect();
+
         Ok(DataFrame::new_no_checks(columns))
     }
 }
@@ -214,19 +230,19 @@ where
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let unique = self.unique()?.into_iter().collect::<Vec<_>>();
+        let groups = self.group_tuples();
         let col_name = self.name();
 
-        let columns = unique
-            .par_iter()
-            .filter_map(|opt_val| {
-                opt_val.map(|val| {
-                    let mut ca = self.eq(val);
-                    ca.rename(&format!("{}_{}", col_name, val));
-                    ca.into_series()
-                })
+        let columns = groups
+            .into_par_iter()
+            .map(|(first, groups)| {
+                let val = unsafe { self.get_unchecked(first) };
+                let name = format!("{}_{}", col_name, val);
+                let ca = dummies_helper(groups, self.len(), &name);
+                ca.into_series()
             })
             .collect();
+
         Ok(DataFrame::new_no_checks(columns))
     }
 }
