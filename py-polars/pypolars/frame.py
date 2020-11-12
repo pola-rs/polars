@@ -763,7 +763,7 @@ class DataFrame:
         """
         Aggregate the columns of this DataFrame to their mean value
         """
-        return self._df.mean()
+        return wrap_df(self._df.mean())
 
     def median(self) -> DataFrame:
         """
@@ -783,12 +783,12 @@ class DataFrame:
         """
         return wrap_df(self._df.to_dummies())
 
-    def drop_duplicates(self) -> DataFrame:
+    def drop_duplicates(self, maintain_order=True) -> DataFrame:
         """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
-        return wrap_df(self._df.drop_duplicates())
+        return wrap_df(self._df.drop_duplicates(maintain_order))
 
     def _rechunk(self) -> DataFrame:
         return wrap_df(self._df.rechunk())
