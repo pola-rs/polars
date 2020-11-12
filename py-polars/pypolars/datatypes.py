@@ -184,6 +184,18 @@ DTYPE_TO_FFINAME = {
 }
 
 
+def dtype_to_primitive(dtype: "DataType") -> "DataType":
+    #  TODO: add more
+    if dtype == Date32:
+        return Int32
+    if dtype == Date64:
+        return Int64
+    ffi_name = DTYPE_TO_FFINAME[dtype]
+    if "duration" in ffi_name:
+        return Int64
+    return dtype
+
+
 def dtype_to_ctype(dtype: "DataType") -> "ctype":
     if dtype == UInt8:
         ptr_type = ctypes.c_uint8
