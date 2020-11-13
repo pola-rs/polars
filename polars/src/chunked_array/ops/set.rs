@@ -66,21 +66,19 @@ where
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
-        if T::get_data_type() != ArrowDataType::Boolean
-            && value.is_some()
-            && self.chunk_id() == mask.chunk_id()
-        {
-            let value = value.unwrap();
-            let chunks = self
-                .downcast_chunks()
-                .into_iter()
-                .zip(mask.downcast_chunks())
-                .map(|(arr, mask)| {
-                    let a = set_with_value(mask, arr, value);
-                    Arc::new(a) as ArrayRef
-                })
-                .collect();
-            return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        if let Some(value) = value {
+            if T::get_data_type() != ArrowDataType::Boolean && self.chunk_id() == mask.chunk_id() {
+                let chunks = self
+                    .downcast_chunks()
+                    .into_iter()
+                    .zip(mask.downcast_chunks())
+                    .map(|(arr, mask)| {
+                        let a = set_with_value(mask, arr, value);
+                        Arc::new(a) as ArrayRef
+                    })
+                    .collect();
+                return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+            }
         }
         // all the code does practically the same but has different fast paths. We do this
         // again because we don't need the return option in all cases. Otherwise we would have called

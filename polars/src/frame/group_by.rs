@@ -1409,12 +1409,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         // same as select method
         self.selected_agg = Some(vec![pivot_column, values_column]);
 
-        let pivot = Pivot {
+        Pivot {
             gb: self,
             pivot_column,
             values_column,
-        };
-        pivot
+        }
     }
 }
 
@@ -1465,7 +1464,7 @@ trait ChunkPivot {
         &self,
         _pivot_series: &Series,
         _keys: Vec<Series>,
-        _groups: &Vec<(usize, Vec<usize>)>,
+        _groups: &[(usize, Vec<usize>)],
         _agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
@@ -1477,7 +1476,7 @@ trait ChunkPivot {
         &self,
         _pivot_series: &Series,
         _keys: Vec<Series>,
-        _groups: &Vec<(usize, Vec<usize>)>,
+        _groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
             "Pivot count operation not implemented for this type".into(),
@@ -1530,7 +1529,7 @@ where
         &self,
         pivot_series: &Series,
         keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        groups: &[(usize, Vec<usize>)],
         agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         // TODO: save an allocation by creating a random access struct for the Groupable utility type.
@@ -1592,7 +1591,7 @@ where
         &self,
         pivot_series: &Series,
         keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(self, pivot_series, keys, groups)
     }
@@ -1602,7 +1601,7 @@ fn pivot_count_impl<CA: TakeRandom>(
     ca: &CA,
     pivot_series: &Series,
     keys: Vec<Series>,
-    groups: &Vec<(usize, Vec<usize>)>,
+    groups: &[(usize, Vec<usize>)],
 ) -> Result<DataFrame> {
     let pivot_vec: Vec<_> = pivot_series.as_groupable_iter()?.collect();
     // create a hash map that will be filled with the results of the aggregation.
@@ -1649,7 +1648,7 @@ impl ChunkPivot for BooleanChunked {
         &self,
         pivot_series: &Series,
         keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(self, pivot_series, keys, groups)
     }
@@ -1659,7 +1658,7 @@ impl ChunkPivot for Utf8Chunked {
         &self,
         pivot_series: &Series,
         keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(&self, pivot_series, keys, groups)
     }
@@ -1675,7 +1674,7 @@ enum PivotAgg {
     Median,
 }
 
-fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
 {
@@ -1691,7 +1690,7 @@ where
     builder.append_option(v[v.len() / 2]);
 }
 
-fn pivot_agg_sum<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_sum<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
     T::Native: Num + Zero,
@@ -1699,7 +1698,7 @@ where
     builder.append_option(v.iter().copied().fold_options(Zero::zero(), Add::add));
 }
 
-fn pivot_agg_mean<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_mean<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
     T::Native: Num + Zero + NumCast,
@@ -1712,7 +1711,7 @@ where
     );
 }
 
-fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
 {
@@ -1734,7 +1733,7 @@ where
     builder.append_option(min);
 }
 
-fn pivot_agg_max<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_max<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
 {

@@ -326,6 +326,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     ///
     /// This constructor allows you more flexibility in what records are processed by the
     /// csv reader.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_reader(
         reader: R,
         schema: SchemaRef,
@@ -585,7 +586,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         Ok(())
     }
 
-    pub fn into_df(&mut self) -> Result<DataFrame> {
+    pub fn as_df(&mut self) -> Result<DataFrame> {
         let mut total_capacity = self.capacity;
         let mut record_iter = self.record_iter.take().unwrap();
         if self.skip_rows > 0 {
@@ -721,6 +722,7 @@ impl Builder {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     mut reader: R,
     n_rows: Option<usize>,

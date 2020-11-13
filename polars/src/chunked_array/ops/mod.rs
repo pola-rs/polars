@@ -171,6 +171,9 @@ pub trait TakeRandom {
     fn get(&self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
+    ///
+    /// # Safety
+    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
 }
 // Utility trait because associated type needs a lifetime
@@ -181,6 +184,9 @@ pub trait TakeRandomUtf8 {
     fn get(self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
+    ///
+    /// # Safety
+    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
     unsafe fn get_unchecked(self, index: usize) -> Self::Item;
 }
 
@@ -191,7 +197,11 @@ pub trait ChunkTake {
     where
         Self: std::marker::Sized;
 
-    /// Take values from ChunkedArray by index without checking bounds.
+    /// Take values from ChunkedArray by index
+    ///
+    /// # Safety
+    ///
+    /// Runs without checking bounds or null validity.
     unsafe fn take_unchecked(
         &self,
         indices: impl Iterator<Item = usize>,
@@ -210,6 +220,10 @@ pub trait ChunkTake {
         Self: std::marker::Sized;
 
     /// Take values from ChunkedArray by Option<index>.
+    ///
+    /// # Safety
+    ///
+    /// Doesn't do any bound or null validity checking.
     unsafe fn take_opt_unchecked(
         &self,
         indices: impl Iterator<Item = Option<usize>>,

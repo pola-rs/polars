@@ -54,7 +54,7 @@ use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
-fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
+fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
     let mut chunk_id = Vec::with_capacity(chunks.len());
     for a in chunks {
         chunk_id.push(a.len())
@@ -206,6 +206,7 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Series to ChunkedArray<T>
+    #[allow(clippy::transmute_ptr_to_ptr)]
     pub fn unpack_series_matching_type(&self, series: &Series) -> Result<&ChunkedArray<T>> {
         macro_rules! unpack {
             ($variant:ident) => {{
@@ -255,6 +256,11 @@ impl<T> ChunkedArray<T> {
     /// Combined length of all the chunks.
     pub fn len(&self) -> usize {
         self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
+    }
+
+    /// Check if ChunkedArray is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Unique id representing the number of chunks
@@ -451,7 +457,7 @@ impl<T> ChunkedArray<T> {
         Self: std::marker::Sized,
     {
         // replace an empty array
-        if self.chunks.len() == 1 && self.len() == 0 {
+        if self.chunks.len() == 1 && self.is_empty() {
             self.chunks = other.chunks.clone();
         } else {
             self.chunks.extend(other.chunks.clone())
@@ -778,7 +784,7 @@ where
 }
 
 impl ListChunked {
-    pub(crate) fn get_inner_dtype(&self) -> &Box<ArrowDataType> {
+    pub(crate) fn get_inner_dtype(&self) -> &ArrowDataType {
         match self.dtype() {
             ArrowDataType::List(dt) => dt,
             _ => panic!("should not happen"),
