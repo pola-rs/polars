@@ -588,7 +588,7 @@ class DataFrame:
             Modify in place
         """
         if not isinstance(columns, list):
-            columns = DataFrame.get_columns()
+            columns = columns.get_columns()
         if in_place:
             self._df.hstack_mut([s.inner() for s in columns])
         else:

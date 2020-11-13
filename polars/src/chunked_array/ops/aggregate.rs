@@ -247,7 +247,8 @@ where
     }
     fn max_as_series(&self) -> Series {
         let v = self.max();
-        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn min_as_series(&self) -> Series {
@@ -326,32 +327,38 @@ impl VarAggSeries for Utf8Chunked {}
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {
         let v = self.sum().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn max_as_series(&self) -> Series {
         let v = self.max().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn min_as_series(&self) -> Series {
         let v = self.min().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn mean_as_series(&self) -> Series {
         let v = self.mean().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn median_as_series(&self) -> Series {
         let v = self.median().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
         let v = self.quantile(quantile)?.map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         Ok(ca.into())
     }
 }
