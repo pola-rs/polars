@@ -117,14 +117,14 @@ where
 macro_rules! impl_value_counts {
     ($self:expr) => {{
         let group_tuples = $self.group_tuples();
-        let mut values = unsafe {
+        let values = unsafe {
             $self.take_unchecked(group_tuples.iter().map(|t| t.0), Some(group_tuples.len()))
         };
-        values.rename("counts");
-        let counts: Xob<UInt32Chunked> = group_tuples
+        let mut counts: Xob<UInt32Chunked> = group_tuples
             .into_iter()
             .map(|(_, groups)| groups.len() as u32)
             .collect();
+        counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_inner().into_series()];
         let df = DataFrame::new_no_checks(cols);
         df.sort("counts", true)
