@@ -854,6 +854,8 @@ impl Series {
 
     #[cfg(feature = "temporal")]
     #[doc(cfg(feature = "temporal"))]
+    /// Extract hour from underlying NaiveDateTime representation.
+    /// Returns the hour number from 0 to 23.
     pub fn hour(&self) -> Result<Self> {
         if let Series::Date64(ca) = self {
             Ok(Series::UInt32(ca.hour()))
@@ -866,6 +868,8 @@ impl Series {
 
     #[cfg(feature = "temporal")]
     #[doc(cfg(feature = "temporal"))]
+    /// Extract minute from underlying NaiveDateTime representation.
+    /// Returns the minute number from 0 to 59.
     pub fn minute(&self) -> Result<Self> {
         if let Series::Date64(ca) = self {
             Ok(Series::UInt32(ca.minute()))
@@ -878,6 +882,8 @@ impl Series {
 
     #[cfg(feature = "temporal")]
     #[doc(cfg(feature = "temporal"))]
+    /// Extract second from underlying NaiveDateTime representation.
+    /// Returns the second number from 0 to 59.
     pub fn second(&self) -> Result<Self> {
         if let Series::Date64(ca) = self {
             Ok(Series::UInt32(ca.second()))
@@ -890,10 +896,74 @@ impl Series {
 
     #[cfg(feature = "temporal")]
     #[doc(cfg(feature = "temporal"))]
+    /// Extract second from underlying NaiveDateTime representation.
+    /// Returns the number of nanoseconds since the whole non-leap second.
+    /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
+    pub fn nanosecond(&self) -> Result<Self> {
+        if let Series::Date64(ca) = self {
+            Ok(Series::UInt32(ca.nanosecond()))
+        } else {
+            Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract day from underlying NaiveDateTime representation.
+    /// Returns the day of month starting from 1.
+    ///
+    /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     pub fn day(&self) -> Result<Self> {
         match self {
             Series::Date32(ca) => Ok(Series::UInt32(ca.day())),
             Series::Date64(ca) => Ok(Series::UInt32(ca.day())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Returns the day of year starting from 1.
+    ///
+    /// The return value ranges from 1 to 366. (The last day of year differs by years.)
+    pub fn ordinal_day(&self) -> Result<Self> {
+        match self {
+            Series::Date32(ca) => Ok(Series::UInt32(ca.ordinal())),
+            Series::Date64(ca) => Ok(Series::UInt32(ca.ordinal())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the month number starting from 1.
+    ///
+    /// The return value ranges from 1 to 12.
+    pub fn month(&self) -> Result<Self> {
+        match self {
+            Series::Date32(ca) => Ok(Series::UInt32(ca.month())),
+            Series::Date64(ca) => Ok(Series::UInt32(ca.month())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the year number in the calendar date.
+    pub fn year(&self) -> Result<Self> {
+        match self {
+            Series::Date32(ca) => Ok(Series::Int32(ca.year())),
+            Series::Date64(ca) => Ok(Series::Int32(ca.year())),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),

@@ -689,8 +689,23 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn year(&self) -> PyResult<Self> {
+        let s = self.series.year().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn month(&self) -> PyResult<Self> {
+        let s = self.series.month().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
     pub fn day(&self) -> PyResult<Self> {
         let s = self.series.day().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn ordinal_day(&self) -> PyResult<Self> {
+        let s = self.series.ordinal_day().map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
@@ -706,6 +721,11 @@ impl PySeries {
 
     pub fn second(&self) -> PyResult<Self> {
         let s = self.series.second().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn nanosecond(&self) -> PyResult<Self> {
+        let s = self.series.nanosecond().map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 }

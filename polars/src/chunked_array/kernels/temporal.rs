@@ -4,10 +4,8 @@ use crate::chunked_array::{
     },
     temporal::conversions_utils::*,
 };
+use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveArray};
-use arrow::datatypes::{
-    Date32Type, Date64Type, DurationMillisecondType, DurationSecondType, UInt32Type,
-};
 use chrono::{Datelike, Timelike};
 use std::sync::Arc;
 
@@ -32,87 +30,109 @@ pub fn date64_as_duration(arr: &PrimitiveArray<Date64Type>) -> ArrayRef {
     >(null_bit_buffer, null_count, vals))
 }
 
-pub fn date64_to_hour(arr: &PrimitiveArray<Date64Type>) -> ArrayRef {
-    let vals = arr.value_slice(arr.offset(), arr.len());
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals
-        .iter()
-        .map(|&v| {
-            let dt = date64_as_datetime(v);
-            dt.hour()
-        })
-        .collect();
-    Arc::new(aligned_vec_to_primitive_array::<UInt32Type>(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
+macro_rules! to_temporal_unit {
+    ($name: ident, $chrono_method:ident, $to_datetime_fn: expr, $dtype_in: ty, $dtype_out:ty) => {
+        pub fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
+            let vals = arr.value_slice(arr.offset(), arr.len());
+            let (null_count, null_bit_buffer) = get_bitmap(arr);
+            let av = vals
+                .iter()
+                .map(|&v| {
+                    let dt = $to_datetime_fn(v);
+                    dt.$chrono_method()
+                })
+                .collect();
+            Arc::new(aligned_vec_to_primitive_array::<$dtype_out>(
+                av,
+                null_bit_buffer,
+                Some(null_count),
+            ))
+        }
+    };
 }
 
-pub fn date64_to_day(arr: &PrimitiveArray<Date64Type>) -> ArrayRef {
-    let vals = arr.value_slice(arr.offset(), arr.len());
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals
-        .iter()
-        .map(|&v| {
-            let dt = date64_as_datetime(v);
-            dt.day()
-        })
-        .collect();
-    Arc::new(aligned_vec_to_primitive_array::<UInt32Type>(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
-}
+to_temporal_unit!(
+    date32_to_year,
+    year,
+    date32_as_datetime,
+    Date32Type,
+    Int32Type
+);
+to_temporal_unit!(
+    date32_to_month,
+    month,
+    date32_as_datetime,
+    Date32Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date32_to_day,
+    day,
+    date32_as_datetime,
+    Date32Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date32_to_ordinal,
+    ordinal,
+    date32_as_datetime,
+    Date32Type,
+    UInt32Type
+);
 
-pub fn date64_to_minute(arr: &PrimitiveArray<Date64Type>) -> ArrayRef {
-    let vals = arr.value_slice(arr.offset(), arr.len());
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals
-        .iter()
-        .map(|&v| {
-            let dt = date64_as_datetime(v);
-            dt.minute()
-        })
-        .collect();
-    Arc::new(aligned_vec_to_primitive_array::<UInt32Type>(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
-}
-
-pub fn date64_to_seconds(arr: &PrimitiveArray<Date64Type>) -> ArrayRef {
-    let vals = arr.value_slice(arr.offset(), arr.len());
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals
-        .iter()
-        .map(|&v| {
-            let dt = date64_as_datetime(v);
-            dt.second()
-        })
-        .collect();
-    Arc::new(aligned_vec_to_primitive_array::<UInt32Type>(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
-}
-
-pub fn date32_to_day(arr: &PrimitiveArray<Date32Type>) -> ArrayRef {
-    let vals = arr.value_slice(arr.offset(), arr.len());
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals
-        .iter()
-        .map(|&v| {
-            let dt = date32_as_datetime(v);
-            dt.day()
-        })
-        .collect();
-    Arc::new(aligned_vec_to_primitive_array::<UInt32Type>(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
-}
+to_temporal_unit!(
+    date64_to_year,
+    year,
+    date64_as_datetime,
+    Date64Type,
+    Int32Type
+);
+to_temporal_unit!(
+    date64_to_month,
+    month,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date64_to_day,
+    day,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date64_to_hour,
+    hour,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date64_to_minute,
+    minute,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date64_to_second,
+    second,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date64_to_nanosecond,
+    nanosecond,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date64_to_ordinal,
+    ordinal,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);

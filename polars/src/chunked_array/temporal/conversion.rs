@@ -1,7 +1,8 @@
 use super::*;
 use crate::chunked_array::kernels::temporal::{
-    date32_as_duration, date32_to_day, date64_as_duration, date64_to_day, date64_to_hour,
-    date64_to_minute, date64_to_seconds,
+    date32_as_duration, date32_to_day, date32_to_month, date32_to_ordinal, date32_to_year,
+    date64_as_duration, date64_to_day, date64_to_hour, date64_to_minute, date64_to_month,
+    date64_to_nanosecond, date64_to_ordinal, date64_to_second,
 };
 use crate::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
@@ -348,29 +349,87 @@ impl Utf8Chunked {
 }
 
 impl Date64Chunked {
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the year number in the calendar date.
+    pub fn year(&self) -> Int32Chunked {
+        self.apply_kernel_cast::<_, Int32Type>(date64_to_month)
+    }
+
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the month number starting from 1.
+    ///
+    /// The return value ranges from 1 to 12.
+    pub fn month(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_month)
+    }
+
     /// Extract day from underlying NaiveDateTime representation.
+    /// Returns the day of month starting from 1.
+    ///
+    /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     pub fn day(&self) -> UInt32Chunked {
         self.apply_kernel_cast::<_, UInt32Type>(date64_to_day)
     }
     /// Extract hour from underlying NaiveDateTime representation.
+    /// Returns the hour number from 0 to 23.
     pub fn hour(&self) -> UInt32Chunked {
         self.apply_kernel_cast::<_, UInt32Type>(date64_to_hour)
     }
 
     /// Extract minute from underlying NaiveDateTime representation.
+    /// Returns the minute number from 0 to 59.
     pub fn minute(&self) -> UInt32Chunked {
         self.apply_kernel_cast::<_, UInt32Type>(date64_to_minute)
     }
 
-    /// Extract seconds from underlying NaiveDateTime representation.
+    /// Extract second from underlying NaiveDateTime representation.
+    /// Returns the second number from 0 to 59.
     pub fn second(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(date64_to_seconds)
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_second)
+    }
+
+    /// Extract second from underlying NaiveDateTime representation.
+    /// Returns the number of nanoseconds since the whole non-leap second.
+    /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
+    pub fn nanosecond(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_nanosecond)
+    }
+
+    /// Returns the day of year starting from 1.
+    ///
+    /// The return value ranges from 1 to 366. (The last day of year differs by years.)
+    pub fn ordinal(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_ordinal)
     }
 }
 
 impl Date32Chunked {
-    /// Extract day from underlying NaiveDate representation.
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the year number in the calendar date.
+    pub fn year(&self) -> Int32Chunked {
+        self.apply_kernel_cast::<_, Int32Type>(date32_to_year)
+    }
+
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the month number starting from 1.
+    ///
+    /// The return value ranges from 1 to 12.
+    pub fn month(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date32_to_month)
+    }
+
+    /// Extract day from underlying NaiveDateTime representation.
+    /// Returns the day of month starting from 1.
+    ///
+    /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     pub fn day(&self) -> UInt32Chunked {
         self.apply_kernel_cast::<_, UInt32Type>(date32_to_day)
+    }
+
+    /// Returns the day of year starting from 1.
+    ///
+    /// The return value ranges from 1 to 366. (The last day of year differs by years.)
+    pub fn ordinal(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date32_to_ordinal)
     }
 }
