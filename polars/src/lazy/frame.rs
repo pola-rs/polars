@@ -767,7 +767,7 @@ mod test {
 
     #[test]
     fn test_simplify_expr() {
-        // An aggregation changes the schema names, check if simplification succeeds
+        // Test if expression containing literals is simplified
         let df = get_df();
         let plan = df
             .lazy()
