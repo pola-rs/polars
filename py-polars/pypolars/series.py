@@ -997,6 +997,50 @@ class Series:
     ):
         return wrap_s(self._s.rolling_sum(window_size, weight, ignore_null))
 
+    def day(self):
+        """
+        Extract day from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns
+        -------
+        Day as UInt32
+        """
+        return wrap_s(self._s.day())
+
+    def hour(self):
+        """
+        Extract day from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns
+        -------
+        Hour as UInt32
+        """
+        return wrap_s(self._s.hour())
+
+    def minute(self):
+        """
+        Extract minutes from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns
+        -------
+        Hour as UInt32
+        """
+        return wrap_s(self._s.minute())
+
+    def second(self):
+        """
+        Extract seconds from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns
+        -------
+        Hour as UInt32
+        """
+        return wrap_s(self._s.second())
+
     @staticmethod
     def parse_date(
         name: str, values: Sequence[str], dtype: "DataType", fmt: str

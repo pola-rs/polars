@@ -688,6 +688,26 @@ impl PySeries {
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
+
+    pub fn day(&self) -> PyResult<Self> {
+        let s = self.series.day().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn hour(&self) -> PyResult<Self> {
+        let s = self.series.hour().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn minute(&self) -> PyResult<Self> {
+        let s = self.series.minute().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn second(&self) -> PyResult<Self> {
+        let s = self.series.second().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
 }
 
 macro_rules! impl_ufuncs {
