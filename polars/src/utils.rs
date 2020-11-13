@@ -159,7 +159,7 @@ macro_rules! match_arrow_data_type_apply_macro {
 
 #[macro_export]
 macro_rules! apply_method_all_series {
-    ($self:ident, $method:ident, $($args:expr),*) => {
+    ($self:expr, $method:ident, $($args:expr),*) => {
         match $self {
             Series::Utf8(a) => a.$method($($args),*),
             Series::Bool(a) => a.$method($($args),*),
