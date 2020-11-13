@@ -1,5 +1,7 @@
 use crate::prelude::*;
+use crate::utils::get_supertype;
 use num::{Num, NumCast, ToPrimitive};
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops;
 
@@ -135,11 +137,31 @@ impl std::ops::Rem for Series {
 
 // Same only now for referenced data types
 
+fn coerce_lhs_rhs<'a>(
+    lhs: &'a Series,
+    rhs: &'a Series,
+) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
+    let dtype = get_supertype(lhs.dtype(), rhs.dtype())?;
+    let left = if lhs.dtype() == &dtype {
+        Cow::Borrowed(lhs)
+    } else {
+        Cow::Owned(lhs.cast_with_arrow_datatype(&dtype)?)
+    };
+    let right = if rhs.dtype() == &dtype {
+        Cow::Borrowed(rhs)
+    } else {
+        Cow::Owned(rhs.cast_with_arrow_datatype(&dtype)?)
+    };
+    Ok((left, right))
+}
+
 impl ops::Sub for &Series {
     type Output = Series;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, subtract, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), subtract, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
@@ -147,7 +169,9 @@ impl ops::Add for &Series {
     type Output = Series;
 
     fn add(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, add_to, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), add_to, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
@@ -160,7 +184,9 @@ impl std::ops::Mul for &Series {
     /// let out = &s * &s;
     /// ```
     fn mul(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, multiply, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), multiply, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
@@ -173,7 +199,9 @@ impl std::ops::Div for &Series {
     /// let out = &s / &s;
     /// ```
     fn div(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, divide, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), divide, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
@@ -186,7 +214,9 @@ impl std::ops::Rem for &Series {
     /// let out = &s / &s;
     /// ```
     fn rem(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, remainder, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), remainder, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
