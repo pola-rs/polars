@@ -143,6 +143,14 @@ where
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        if T::get_data_type() == ArrowDataType::Boolean {
+            self.builder.len() == 0
+        } else {
+            self.aligned_vec.is_empty()
+        }
+    }
+
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -231,8 +239,7 @@ where
     for opt in s {
         builder.append_option(*opt);
     }
-    let ca = builder.finish();
-    ca
+    builder.finish()
 }
 
 pub(crate) fn set_null_bits(
@@ -410,6 +417,10 @@ impl<T> AlignedVec<T> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     pub fn reserve(&mut self, additional: usize) {
         let mut me = ManuallyDrop::new(mem::take(&mut self.inner));
         let ptr = me.as_mut_ptr() as *mut u8;
@@ -426,6 +437,10 @@ impl<T> AlignedVec<T> {
         self.inner.len()
     }
 
+    /// Create a new aligned vec from a ptr.
+    ///
+    /// # Safety
+    /// The ptr should be 64 byte aligned and `len` and `capacity` should be correct otherwise it is UB.
     pub unsafe fn from_ptr(ptr: usize, len: usize, capacity: usize) -> Self {
         assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
         let ptr = ptr as *mut T;
@@ -441,8 +456,7 @@ impl<T> AlignedVec<T> {
     unsafe fn into_inner(mut self) -> Vec<T> {
         self.shrink_to_fit();
         self.taken = true;
-        let inner = mem::take(&mut self.inner);
-        inner
+        mem::take(&mut self.inner)
     }
 
     /// Push at the end of the Vec. This is unsafe because a push when the capacity of the
@@ -455,6 +469,12 @@ impl<T> AlignedVec<T> {
         self.inner.push(value)
     }
 
+    /// Set the length of the underlying `Vec`.
+    ///
+    /// # Safety
+    ///
+    /// - `new_len` must be less than or equal to `capacity`.
+    /// - The elements at `old_len..new_len` must be initialized.
     pub unsafe fn set_len(&mut self, new_len: usize) {
         self.inner.set_len(new_len);
     }

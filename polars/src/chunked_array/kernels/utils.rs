@@ -38,8 +38,7 @@ fn get_new_null_bit_buffer(left: &impl Array, right: &impl Array) -> Option<Buff
     // Compute final null values by bitor ops
     let bitmap =
         apply_bin_op_to_option_bitmap(mask_bitmap, array_bitmap, |a, b| a.bitor(b)).unwrap();
-    let null_bit_buffer = bitmap.map(|bitmap| bitmap.into_buffer());
-    null_bit_buffer
+    bitmap.map(|bitmap| bitmap.into_buffer())
 }
 
 #[inline]
@@ -52,8 +51,8 @@ fn get_new_null_bit_buffer(left: &impl Array, right: &impl Array) -> Option<Buff
 /// etc.
 pub(crate) fn get_bitmasks() -> [u64; 64] {
     let mut bitmasks = [0; 64];
-    for i in 0..64 {
-        bitmasks[i] = 1u64 << i
+    for (i, item) in bitmasks.iter_mut().enumerate() {
+        *item = 1u64 << i
     }
     bitmasks
 }

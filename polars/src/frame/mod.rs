@@ -124,7 +124,7 @@ impl DataFrame {
         let mut it = self.columns.iter();
         let first_s = it
             .next()
-            .ok_or(PolarsError::NoData("no data to rechunk".into()))?;
+            .ok_or_else(|| PolarsError::NoData("no data to rechunk".into()))?;
         let id = first_s.chunk_lengths();
 
         for s in it {
@@ -201,15 +201,15 @@ impl DataFrame {
         Ok(self
             .columns
             .get(0)
-            .ok_or(PolarsError::NoData(
-                "Can not determine number of chunks if there is no data".into(),
-            ))?
+            .ok_or_else(|| {
+                PolarsError::NoData("Can not determine number of chunks if there is no data".into())
+            })?
             .chunks()
             .len())
     }
 
     /// Get fields from the columns.
-    fn create_fields(columns: &DfColumns) -> Vec<Field> {
+    fn create_fields(columns: &[Series]) -> Vec<Field> {
         columns.iter().map(|s| s.field().clone()).collect()
     }
 
@@ -352,7 +352,7 @@ impl DataFrame {
         let mut iter = self.columns.iter();
         let mask = iter
             .next()
-            .ok_or(PolarsError::NoData("No data to drop nulls from".into()))?;
+            .ok_or_else(|| PolarsError::NoData("No data to drop nulls from".into()))?;
         let mut mask = mask.is_not_null();
 
         for s in iter {
@@ -469,7 +469,7 @@ impl DataFrame {
     pub fn column(&self, name: &str) -> Result<&Series> {
         let idx = self
             .find_idx_by_name(name)
-            .ok_or(PolarsError::NotFound(name.into()))?;
+            .ok_or_else(|| PolarsError::NotFound(name.into()))?;
         Ok(self.select_at_idx(idx).unwrap())
     }
 
@@ -570,6 +570,10 @@ impl DataFrame {
     ///     df.take_iter_unchecked(iterator, None)
     /// }
     /// ```
+    ///
+    /// # Safety
+    ///
+    /// This doesn't do any bound or null validity checking.
     pub unsafe fn take_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
@@ -623,6 +627,10 @@ impl DataFrame {
     ///     df.take_opt_iter_unchecked(iterator, None)
     /// }
     /// ```
+    ///
+    /// # Safety
+    ///
+    /// This doesn't do any bound or null validity checking.
     pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
@@ -673,7 +681,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> Result<&mut Self> {
         self.select_mut(column)
-            .ok_or(PolarsError::NotFound(name.to_string()))
+            .ok_or_else(|| PolarsError::NotFound(name.to_string()))
             .map(|s| s.rename(name))?;
         Ok(self)
     }
@@ -787,7 +795,7 @@ impl DataFrame {
     {
         let idx = self
             .find_idx_by_name(column)
-            .ok_or(PolarsError::NotFound(column.to_string()))?;
+            .ok_or_else(|| PolarsError::NotFound(column.to_string()))?;
         self.apply_at_idx(idx, f)
     }
 
@@ -826,13 +834,15 @@ impl DataFrame {
         S: IntoSeries,
     {
         let width = self.width();
-        let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds(
-            format!(
-                "Column index: {} outside of DataFrame with {} columns",
-                idx, width
+        let col = self.columns.get_mut(idx).ok_or_else(|| {
+            PolarsError::OutOfBounds(
+                format!(
+                    "Column index: {} outside of DataFrame with {} columns",
+                    idx, width
+                )
+                .into(),
             )
-            .into(),
-        ))?;
+        })?;
         let name = col.name().to_string();
         let _ = mem::replace(col, f(col).into_series());
 
@@ -890,13 +900,15 @@ impl DataFrame {
         S: IntoSeries,
     {
         let width = self.width();
-        let col = self.columns.get_mut(idx).ok_or(PolarsError::OutOfBounds(
-            format!(
-                "Column index: {} outside of DataFrame with {} columns",
-                idx, width
+        let col = self.columns.get_mut(idx).ok_or_else(|| {
+            PolarsError::OutOfBounds(
+                format!(
+                    "Column index: {} outside of DataFrame with {} columns",
+                    idx, width
+                )
+                .into(),
             )
-            .into(),
-        ))?;
+        })?;
         let name = col.name().to_string();
 
         let _ = mem::replace(col, f(col).map(|s| s.into_series())?);
@@ -958,7 +970,7 @@ impl DataFrame {
     {
         let idx = self
             .find_idx_by_name(column)
-            .ok_or(PolarsError::NotFound(column.to_string()))?;
+            .ok_or_else(|| PolarsError::NotFound(column.to_string()))?;
         self.may_apply_at_idx(idx, f)
     }
 

@@ -189,7 +189,7 @@ fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
 impl ChunkAgg<u32> for BooleanChunked {
     /// Returns `None` if the array is empty or only contains null values.
     fn sum(&self) -> Option<u32> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return None;
         }
         let sum = self.into_iter().fold(0, |acc: u32, x| match x {
@@ -200,14 +200,14 @@ impl ChunkAgg<u32> for BooleanChunked {
     }
 
     fn min(&self) -> Option<u32> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return None;
         }
         min_max_helper(self, true)
     }
 
     fn max(&self) -> Option<u32> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return None;
         }
         min_max_helper(self, false)

@@ -20,8 +20,8 @@ where
     T: ArrowPrimitiveType,
 {
     let data = arr.data();
-    let buf = data.buffers().iter().cloned().collect();
-    let child_data = data.child_data().iter().cloned().collect();
+    let buf = data.buffers().to_vec();
+    let child_data = data.child_data().to_vec();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     let new_data = ArrayData::new(
         T::get_data_type(),

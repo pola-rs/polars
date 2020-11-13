@@ -15,16 +15,14 @@ where
             Ok(ca)
         };
     };
-    match N::get_data_type() {
-        // only i32 can be cast to Date32
-        ArrowDataType::Date32(DateUnit::Day) => {
-            if T::get_data_type() != ArrowDataType::Int32 {
-                let casted_i32 = cast_ca::<Int32Type, _>(ca)?;
-                return cast_ca(&casted_i32);
-            }
+
+    // only i32 can be cast to Date32
+    if let ArrowDataType::Date32(DateUnit::Day) = N::get_data_type() {
+        if T::get_data_type() != ArrowDataType::Int32 {
+            let casted_i32 = cast_ca::<Int32Type, _>(ca)?;
+            return cast_ca(&casted_i32);
         }
-        _ => (),
-    };
+    }
     let chunks = ca
         .chunks
         .iter()
@@ -56,9 +54,9 @@ where
         N: PolarsDataType,
     {
         // Duration cast is not implemented in Arrow
-        match T::get_data_type() {
+        if let ArrowDataType::Duration(_) = T::get_data_type() {
             // underlying type: i64
-            ArrowDataType::Duration(_) => match N::get_data_type() {
+            match N::get_data_type() {
                 ArrowDataType::UInt64 => {
                     return cast_from_dtype!(self, cast_numeric_from_dtype, UInt64);
                 }
@@ -73,8 +71,7 @@ where
                     return cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
                 }
                 _ => (),
-            },
-            _ => {}
+            }
         }
 
         cast_ca(self)

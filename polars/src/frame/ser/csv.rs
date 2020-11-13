@@ -303,7 +303,7 @@ where
             self.one_thread,
         )?;
 
-        let df = csv_reader.into_df()?;
+        let df = csv_reader.as_df()?;
         match self.rechunk {
             true => Ok(df.agg_chunks()),
             false => Ok(df),

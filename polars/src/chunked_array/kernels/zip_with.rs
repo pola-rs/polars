@@ -22,8 +22,7 @@ fn get_new_null_bit_buffer(mask: &BooleanArray, a: &impl Array, b: &impl Array) 
     // Compute final null values by bitor ops
     let bitmap = apply_bin_op_to_option_bitmap(mask_bitmap, a_bitmap, |a, b| a.bitor(b)).unwrap();
     let bitmap = apply_bin_op_to_option_bitmap(&bitmap, b_bitmap, |a, b| a.bitor(b)).unwrap();
-    let null_bit_buffer = bitmap.map(|bitmap| bitmap.into_buffer());
-    null_bit_buffer
+    bitmap.map(|bitmap| bitmap.into_buffer())
 }
 
 /// Is very fast when large parts of the mask are false, or true. The mask should have no offset.

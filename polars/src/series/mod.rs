@@ -398,6 +398,10 @@ impl Series {
     }
 
     /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't check any bounds or null validity.
     pub unsafe fn take_iter_unchecked(
         &self,
         iter: impl Iterator<Item = usize>,
@@ -407,6 +411,10 @@ impl Series {
     }
 
     /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't check any bounds or null validity.
     pub unsafe fn take_opt_iter_unchecked(
         &self,
         iter: impl Iterator<Item = Option<usize>>,
@@ -434,6 +442,11 @@ impl Series {
     /// Get length of series.
     pub fn len(&self) -> usize {
         apply_method_all_series!(self, len,)
+    }
+
+    /// Check if Series is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
@@ -561,6 +574,7 @@ impl Series {
     }
 
     /// Get the `ChunkedArray` for some `PolarsDataType`
+    #[allow(clippy::transmute_ptr_to_ptr)]
     pub fn unpack<N>(&self) -> Result<&ChunkedArray<N>>
     where
         N: PolarsDataType,

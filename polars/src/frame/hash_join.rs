@@ -158,11 +158,7 @@ where
 
 /// Hash join outer. Both left and right can have no match so Options
 /// We accept a closure as we need to do two passes over the same iterators.
-fn hash_join_tuples_outer<'a, T, I, J>(
-    a: I,
-    b: J,
-    swap: bool,
-) -> Vec<(Option<usize>, Option<usize>)>
+fn hash_join_tuples_outer<T, I, J>(a: I, b: J, swap: bool) -> Vec<(Option<usize>, Option<usize>)>
 where
     I: Iterator<Item = T>,
     J: Iterator<Item = T>,
