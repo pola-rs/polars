@@ -851,6 +851,54 @@ impl Series {
     pub(crate) fn fmt_list(&self) -> String {
         apply_method_all_series!(self, fmt_list,)
     }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    pub fn hour(&self) -> Result<Self> {
+        if let Series::Date64(ca) = self {
+            Ok(Series::UInt32(ca.hour()))
+        } else {
+            Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    pub fn minute(&self) -> Result<Self> {
+        if let Series::Date64(ca) = self {
+            Ok(Series::UInt32(ca.minute()))
+        } else {
+            Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    pub fn second(&self) -> Result<Self> {
+        if let Series::Date64(ca) = self {
+            Ok(Series::UInt32(ca.second()))
+        } else {
+            Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    pub fn day(&self) -> Result<Self> {
+        match self {
+            Series::Date32(ca) => Ok(Series::UInt32(ca.day())),
+            Series::Date64(ca) => Ok(Series::UInt32(ca.day())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
+    }
 }
 
 fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {

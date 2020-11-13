@@ -1,4 +1,6 @@
 pub mod set;
+#[cfg(feature = "temporal")]
+#[doc(cfg(feature = "temporal"))]
 pub mod temporal;
 pub(crate) mod utils;
 pub mod zip_with;

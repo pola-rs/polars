@@ -1,5 +1,8 @@
 use super::*;
-use crate::chunked_array::kernels::temporal::{date32_as_duration, date64_as_duration};
+use crate::chunked_array::kernels::temporal::{
+    date32_as_duration, date32_to_day, date64_as_duration, date64_to_day, date64_to_hour,
+    date64_to_minute, date64_to_seconds,
+};
 use crate::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
 use regex::Regex;
@@ -341,5 +344,33 @@ impl Utf8Chunked {
         };
         ca.rename(self.name());
         Ok(ca)
+    }
+}
+
+impl Date64Chunked {
+    /// Extract day from underlying NaiveDateTime representation.
+    pub fn day(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_day)
+    }
+    /// Extract hour from underlying NaiveDateTime representation.
+    pub fn hour(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_hour)
+    }
+
+    /// Extract minute from underlying NaiveDateTime representation.
+    pub fn minute(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_minute)
+    }
+
+    /// Extract seconds from underlying NaiveDateTime representation.
+    pub fn second(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_seconds)
+    }
+}
+
+impl Date32Chunked {
+    /// Extract day from underlying NaiveDate representation.
+    pub fn day(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date32_to_day)
     }
 }

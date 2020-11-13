@@ -38,9 +38,7 @@ pub use crate::{
 pub use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
 
 #[cfg(feature = "temporal")]
-pub use crate::chunked_array::temporal::{
-    AsDuration, AsNaiveDateTime, AsNaiveTime, FromNaiveDate, FromNaiveDateTime, FromNaiveTime,
-};
+pub use crate::chunked_array::temporal::conversion::*;
 
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {
