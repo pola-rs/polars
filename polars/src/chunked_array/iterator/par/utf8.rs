@@ -1,6 +1,6 @@
 use crate::chunked_array::iterator::{
-    Utf8IterCont, Utf8IterContManyChunk, Utf8IterManyChunk, Utf8IterManyChunkNullCheck, Utf8IterSingleChunk,
-    Utf8IterSingleChunkNullCheck,
+    Utf8IterCont, Utf8IterContManyChunk, Utf8IterManyChunk, Utf8IterManyChunkNullCheck,
+    Utf8IterSingleChunk, Utf8IterSingleChunkNullCheck,
 };
 use crate::prelude::*;
 use arrow::array::Array;
