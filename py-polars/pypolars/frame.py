@@ -17,7 +17,7 @@ from typing import (
     Union,
     TextIO,
     BinaryIO,
-    Callable,
+    Callable, Any,
 )
 from .series import Series, wrap_s
 from .datatypes import *
@@ -26,6 +26,18 @@ import numpy as np
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
     return DataFrame._from_pydf(df)
+
+
+def prepare_other(other: Any) -> Series:
+    # if not a series create singleton series such that it will broadcast
+    if not isinstance(other, Series):
+        if isinstance(other, str):
+            pass
+        elif isinstance(other, Sequence):
+            raise ValueError("operation not supported")
+
+        other = Series("", [other])
+    return other
 
 
 class DataFrame:
@@ -226,15 +238,19 @@ class DataFrame:
         return np.vstack([self[:, i].to_numpy() for i in range(self.width)]).T
 
     def __mul__(self, other):
+        other = prepare_other(other)
         return wrap_df(self._df.mul(other._s))
 
     def __truediv__(self, other):
+        other = prepare_other(other)
         return wrap_df(self._df.div(other._s))
 
     def __add__(self, other):
+        other = prepare_other(other)
         return wrap_df(self._df.add(other._s))
 
     def __sub__(self, other):
+        other = prepare_other(other)
         return wrap_df(self._df.sub(other._s))
 
     def __str__(self) -> str:
@@ -251,6 +267,9 @@ class DataFrame:
             return wrap_s(self._df.column(item))
         except RuntimeError:
             raise AttributeError(f"{item} not found")
+
+    def __iter__(self):
+        return self.get_columns().__iter__()
 
     def __getitem__(self, item):
         # select rows and columns at once
