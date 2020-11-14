@@ -766,12 +766,8 @@ impl<'a> IntoNoNullIterator for &'a Utf8Chunked {
     fn into_no_null_iter(self) -> Self::IntoIter {
         let chunks = self.downcast_chunks();
         match chunks.len() {
-            1 => {
-                Utf8ContChunkIterDispatch::SingleChunk(Utf8IterCont::new(self))
-            }
-            _ => {
-                Utf8ContChunkIterDispatch::ManyChunk(Utf8IterContManyChunk::new(self))
-            }
+            1 => Utf8ContChunkIterDispatch::SingleChunk(Utf8IterCont::new(self)),
+            _ => Utf8ContChunkIterDispatch::ManyChunk(Utf8IterContManyChunk::new(self)),
         }
     }
 }
