@@ -3,11 +3,23 @@ use crate::utils::get_supertype;
 use rayon::prelude::*;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
+/// Get the supertype that is valid for all columns in the DataFrame.
+/// This reduces casting of the rhs in arithmetic.
+fn get_supertype_all(df: &DataFrame, rhs: &Series) -> Result<ArrowDataType> {
+    df.columns
+        .iter()
+        .fold(Ok(rhs.dtype().clone()), |dt, s| match dt {
+            Ok(dt) => get_supertype(s.dtype(), &dt),
+            e => e,
+        })
+}
+
 macro_rules! impl_arithmetic {
     ($self:expr, $rhs:expr, $operand: tt) => {{
+        let st = get_supertype_all($self, $rhs)?;
+        let rhs = $rhs.cast_with_arrow_datatype(&st)?;
         let cols = $self.columns.par_iter().map(|s| {
-            let st = get_supertype(s.dtype(), $rhs.dtype())?;
-            Ok(s.cast_with_arrow_datatype(&st)? $operand $rhs.cast_with_arrow_datatype(&st)?)
+            Ok(&s.cast_with_arrow_datatype(&st)? $operand &rhs)
         }).collect::<Result<_>>()?;
         Ok(DataFrame::new_no_checks(cols))
     }}
