@@ -107,6 +107,8 @@ class Series:
 
         # numpy path
         if isinstance(values, np.ndarray):
+            if not values.data.contiguous:
+                values = np.array(values)
             dtype = values.dtype
             if dtype == np.int64:
                 self._s = PySeries.new_i64(name, values)
@@ -836,6 +838,8 @@ class Series:
             function or lambda.
         dtype_out
             Output datatype. If none given the same datatype as this Series will be used.
+        sniff_dtype:
+            will try to infer return type
 
         Returns
         -------
