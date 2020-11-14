@@ -1,92 +1,116 @@
-use crate::prelude::*;
 use crate::chunked_array::iterator::{
-    Utf8IterSingleChunk,
+    Utf8IterManyChunk, Utf8IterManyChunkNullCheck, Utf8IterSingleChunk,
     Utf8IterSingleChunkNullCheck,
-    Utf8IterManyChunk,
-    Utf8IterManyChunkNullCheck,
 };
-use arrow::array::{
-    StringArray,
-    Array
-};
+use crate::prelude::*;
+use arrow::array::{Array, StringArray};
 use rayon::iter::plumbing::*;
 use rayon::iter::plumbing::{Consumer, ProducerCallback};
 use rayon::prelude::*;
 use std::{mem, ops::Range};
 
+/// Generate the code for Utf8Chunked parallel iterators.
+///
+/// # Input
+///
+/// parallel_iterator: The name of the structure used as parallel iterator. This structure
+///   MUST EXIST as it is not created by this macro. It must consist on a wrapper around
+///   a reference to a chunked array.
+///
+/// parallel_producer: The name used to create the parallel producer.
+///
+/// sequential_iterator: The sequential iterator used to traverse the iterator once the
+///   chunked array has been divided in different cells. This structure MUST EXIST as it
+///   is not created by this macro. This iterator MUST IMPLEMENT the trait From<parallel_producer>.
+macro_rules! impl_utf8_parallel_iterator {
+    ($parallel_iterator:ident, $parallel_producer:ident, $sequential_iterator:ident) => {
+        impl<'a> ParallelIterator for $parallel_iterator<'a> {
+            type Item = Option<&'a str>;
+
+            fn drive_unindexed<C>(self, consumer: C) -> C::Result
+            where
+                C: UnindexedConsumer<Self::Item>,
+            {
+                bridge(self, consumer)
+            }
+
+            fn opt_len(&self) -> Option<usize> {
+                Some(self.ca.len())
+            }
+        }
+
+        impl<'a> IndexedParallelIterator for $parallel_iterator<'a> {
+            fn len(&self) -> usize {
+                self.ca.len()
+            }
+
+            fn drive<C>(self, consumer: C) -> C::Result
+            where
+                C: Consumer<Self::Item>,
+            {
+                bridge(self, consumer)
+            }
+
+            fn with_producer<CB>(self, callback: CB) -> CB::Output
+            where
+                CB: ProducerCallback<Self::Item>,
+            {
+                callback.callback($parallel_producer {
+                    ca: &self.ca,
+                    offset: 0,
+                    len: self.ca.len(),
+                })
+            }
+        }
+
+        struct $parallel_producer<'a> {
+            ca: &'a Utf8Chunked,
+            offset: usize,
+            len: usize,
+        }
+
+        impl<'a> Producer for $parallel_producer<'a> {
+            type Item = Option<&'a str>;
+            type IntoIter = $sequential_iterator<'a>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.into()
+            }
+
+            fn split_at(self, index: usize) -> (Self, Self) {
+                (
+                    $parallel_producer {
+                        ca: self.ca,
+                        offset: self.offset,
+                        len: index,
+                    },
+                    $parallel_producer {
+                        ca: self.ca,
+                        offset: self.offset + index,
+                        len: self.len - index,
+                    },
+                )
+            }
+        }
+    };
+}
+
 /// Parallel Iterator for chunked arrays with just one chunk.
 /// It does NOT perform null check, then, it is appropriated
 /// for chunks whose contents are never null.
-/// 
+///
 /// It returns the result wrapped in an `Option`.
 #[derive(Debug, Clone)]
 pub struct Utf8ParIterSingleChunk<'a> {
     ca: &'a Utf8Chunked,
 }
 
-impl<'a> IntoParallelIterator for &'a Utf8Chunked {
-    type Iter = Utf8ParIterSingleChunk<'a>;
-    type Item = Option<&'a str>;
-
-    fn into_par_iter(self) -> Self::Iter {
-        Utf8ParIterSingleChunk { ca: self }
-    }
-}
-
-impl<'a> ParallelIterator for Utf8ParIterSingleChunk<'a> {
-    type Item = Option<&'a str>;
-
-    fn drive_unindexed<C>(self, consumer: C) -> C::Result
-    where
-        C: UnindexedConsumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        Some(self.ca.len())
-    }
-}
-
-impl<'a> IndexedParallelIterator for Utf8ParIterSingleChunk<'a> {
-    fn len(&self) -> usize {
-        self.ca.len()
-    }
-
-    fn drive<C>(self, consumer: C) -> C::Result
-    where
-        C: Consumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn with_producer<CB>(self, callback: CB) -> CB::Output
-    where
-        CB: ProducerCallback<Self::Item>,
-    {
-        callback.callback(Utf8ProducerSingleChunk {
-            ca: &self.ca,
-            offset: 0,
-            len: self.ca.len(),
-        })
-    }
-}
-
-struct Utf8ProducerSingleChunk<'a> {
-    ca: &'a Utf8Chunked,
-    offset: usize,
-    len: usize,
-}
-
-impl<'a> Producer for Utf8ProducerSingleChunk<'a> {
-    type Item = Option<&'a str>;
-    type IntoIter = Utf8IterSingleChunk<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let chunks = self.ca.downcast_chunks();
+impl<'a> From<Utf8ProducerSingleChunk<'a>> for Utf8IterSingleChunk<'a> {
+    fn from(prod: Utf8ProducerSingleChunk<'a>) -> Self {
+        let chunks = prod.ca.downcast_chunks();
         let current_array = chunks[0];
-        let idx_left = self.offset;
-        let idx_right = self.offset + self.len;
+        let idx_left = prod.offset;
+        let idx_right = prod.offset + prod.len;
 
         Utf8IterSingleChunk {
             current_array,
@@ -94,89 +118,31 @@ impl<'a> Producer for Utf8ProducerSingleChunk<'a> {
             idx_right,
         }
     }
-
-    fn split_at(self, index: usize) -> (Self, Self) {
-        (
-            Utf8ProducerSingleChunk {
-                ca: self.ca,
-                offset: self.offset,
-                len: index,
-            },
-            Utf8ProducerSingleChunk {
-                ca: self.ca,
-                offset: self.offset + index,
-                len: self.len - index,
-            },
-        )
-    }
 }
 
+impl_utf8_parallel_iterator!(
+    Utf8ParIterSingleChunk,
+    Utf8ProducerSingleChunk,
+    Utf8IterSingleChunk
+);
 
 /// Parallel Iterator for chunked arrays with just one chunk.
 /// It DOES perform null check, then, it is appropriated
 /// for chunks whose contents can be null.
-/// 
+///
 /// It returns the result wrapped in an `Option`.
 #[derive(Debug, Clone)]
 pub struct Utf8ParIterSingleChunkNullCheck<'a> {
     ca: &'a Utf8Chunked,
 }
 
-impl<'a> ParallelIterator for Utf8ParIterSingleChunkNullCheck<'a> {
-    type Item = Option<&'a str>;
-
-    fn drive_unindexed<C>(self, consumer: C) -> C::Result
-    where
-        C: UnindexedConsumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        Some(self.ca.len())
-    }
-}
-
-impl<'a> IndexedParallelIterator for Utf8ParIterSingleChunkNullCheck<'a> {
-    fn len(&self) -> usize {
-        self.ca.len()
-    }
-
-    fn drive<C>(self, consumer: C) -> C::Result
-    where
-        C: Consumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn with_producer<CB>(self, callback: CB) -> CB::Output
-    where
-        CB: ProducerCallback<Self::Item>,
-    {
-        callback.callback(Utf8ProducerSingleChunkNullCheck {
-            ca: &self.ca,
-            offset: 0,
-            len: self.ca.len(),
-        })
-    }
-}
-
-struct Utf8ProducerSingleChunkNullCheck<'a> {
-    ca: &'a Utf8Chunked,
-    offset: usize,
-    len: usize,
-}
-
-impl<'a> Producer for Utf8ProducerSingleChunkNullCheck<'a> {
-    type Item = Option<&'a str>;
-    type IntoIter = Utf8IterSingleChunkNullCheck<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let chunks = self.ca.downcast_chunks();
+impl<'a> From<Utf8ProducerSingleChunkNullCheck<'a>> for Utf8IterSingleChunkNullCheck<'a> {
+    fn from(prod: Utf8ProducerSingleChunkNullCheck<'a>) -> Self {
+        let chunks = prod.ca.downcast_chunks();
         let current_array = chunks[0];
         let current_data = current_array.data();
-        let idx_left = self.offset;
-        let idx_right = self.offset + self.len;
+        let idx_left = prod.offset;
+        let idx_right = prod.offset + prod.len;
 
         Utf8IterSingleChunkNullCheck {
             current_data,
@@ -185,89 +151,32 @@ impl<'a> Producer for Utf8ProducerSingleChunkNullCheck<'a> {
             idx_right,
         }
     }
-
-    fn split_at(self, index: usize) -> (Self, Self) {
-        (
-            Utf8ProducerSingleChunkNullCheck {
-                ca: self.ca,
-                offset: self.offset,
-                len: index,
-            },
-            Utf8ProducerSingleChunkNullCheck {
-                ca: self.ca,
-                offset: self.offset + index,
-                len: self.len - index,
-            },
-        )
-    }
 }
+
+impl_utf8_parallel_iterator!(
+    Utf8ParIterSingleChunkNullCheck,
+    Utf8ProducerSingleChunkNullCheck,
+    Utf8IterSingleChunkNullCheck
+);
 
 /// Parallel Iterator for chunked arrays with more than one chunk.
 /// It does NOT perform null check, then, it is appropriated
 /// for chunks whose contents are never null.
-/// 
+///
 /// It returns the result wrapped in an `Option`.
 #[derive(Debug, Clone)]
 pub struct Utf8ParIterManyChunk<'a> {
     ca: &'a Utf8Chunked,
 }
 
-impl<'a> ParallelIterator for Utf8ParIterManyChunk<'a> {
-    type Item = Option<&'a str>;
-
-    fn drive_unindexed<C>(self, consumer: C) -> C::Result
-    where
-        C: UnindexedConsumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        Some(self.ca.len())
-    }
-}
-
-impl<'a> IndexedParallelIterator for Utf8ParIterManyChunk<'a> {
-    fn len(&self) -> usize {
-        self.ca.len()
-    }
-
-    fn drive<C>(self, consumer: C) -> C::Result
-    where
-        C: Consumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn with_producer<CB>(self, callback: CB) -> CB::Output
-    where
-        CB: ProducerCallback<Self::Item>,
-    {
-        callback.callback(Utf8ProducerManyChunk {
-            ca: &self.ca,
-            offset: 0,
-            len: self.ca.len(),
-        })
-    }
-}
-
-struct Utf8ProducerManyChunk<'a> {
-    ca: &'a Utf8Chunked,
-    offset: usize,
-    len: usize,
-}
-
-impl<'a> Producer for Utf8ProducerManyChunk<'a> {
-    type Item = Option<&'a str>;
-    type IntoIter = Utf8IterManyChunk<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let ca = self.ca;
+impl<'a> From<Utf8ProducerManyChunk<'a>> for Utf8IterManyChunk<'a> {
+    fn from(prod: Utf8ProducerManyChunk<'a>) -> Self {
+        let ca = prod.ca;
         let chunks = ca.downcast_chunks();
-        let idx_left = self.offset;
+        let idx_left = prod.offset;
         let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
         let current_array_left = chunks[chunk_idx_left];
-        let idx_right = self.offset + self.len;
+        let idx_right = prod.offset + prod.len;
         let (chunk_idx_right, current_array_idx_right) = ca.index_to_chunked_index(idx_right);
         let current_array_right = chunks[chunk_idx_right];
         let current_array_left_len = current_array_left.len();
@@ -286,91 +195,33 @@ impl<'a> Producer for Utf8ProducerManyChunk<'a> {
             chunk_idx_right,
         }
     }
-
-    fn split_at(self, index: usize) -> (Self, Self) {
-        (
-            Utf8ProducerManyChunk {
-                ca: self.ca,
-                offset: self.offset,
-                len: index,
-            },
-            Utf8ProducerManyChunk {
-                ca: self.ca,
-                offset: self.offset + index,
-                len: self.len - index,
-            },
-        )
-    }
 }
 
+impl_utf8_parallel_iterator!(
+    Utf8ParIterManyChunk,
+    Utf8ProducerManyChunk,
+    Utf8IterManyChunk
+);
 
 /// Parallel Iterator for chunked arrays with more than one chunk.
 /// It DOES perform null check, then, it is appropriated
 /// for chunks whose contents can be null.
-/// 
+///
 /// It returns the result wrapped in an `Option`.
 #[derive(Debug, Clone)]
 pub struct Utf8ParIterManyChunkNullCheck<'a> {
     ca: &'a Utf8Chunked,
 }
 
-impl<'a> ParallelIterator for Utf8ParIterManyChunkNullCheck<'a> {
-    type Item = Option<&'a str>;
-
-    fn drive_unindexed<C>(self, consumer: C) -> C::Result
-    where
-        C: UnindexedConsumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        Some(self.ca.len())
-    }
-}
-
-impl<'a> IndexedParallelIterator for Utf8ParIterManyChunkNullCheck<'a> {
-    fn len(&self) -> usize {
-        self.ca.len()
-    }
-
-    fn drive<C>(self, consumer: C) -> C::Result
-    where
-        C: Consumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn with_producer<CB>(self, callback: CB) -> CB::Output
-    where
-        CB: ProducerCallback<Self::Item>,
-    {
-        callback.callback(Utf8ProducerManyChunkNullCheck {
-            ca: &self.ca,
-            offset: 0,
-            len: self.ca.len(),
-        })
-    }
-}
-
-struct Utf8ProducerManyChunkNullCheck<'a> {
-    ca: &'a Utf8Chunked,
-    offset: usize,
-    len: usize,
-}
-
-impl<'a> Producer for Utf8ProducerManyChunkNullCheck<'a> {
-    type Item = Option<&'a str>;
-    type IntoIter = Utf8IterManyChunkNullCheck<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let ca = self.ca;
+impl<'a> From<Utf8ProducerManyChunkNullCheck<'a>> for Utf8IterManyChunkNullCheck<'a> {
+    fn from(prod: Utf8ProducerManyChunkNullCheck<'a>) -> Self {
+        let ca = prod.ca;
         let chunks = ca.downcast_chunks();
-        let idx_left = self.offset;
+        let idx_left = prod.offset;
         let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
         let current_array_left = chunks[chunk_idx_left];
         let current_data_left = current_array_left.data();
-        let idx_right = self.offset + self.len;
+        let idx_right = prod.offset + prod.len;
         let (chunk_idx_right, current_array_idx_right) = ca.index_to_chunked_index(idx_right);
         let current_array_right = chunks[chunk_idx_right];
         let current_data_right = current_array_right.data();
@@ -392,20 +243,20 @@ impl<'a> Producer for Utf8ProducerManyChunkNullCheck<'a> {
             chunk_idx_right,
         }
     }
+}
 
-    fn split_at(self, index: usize) -> (Self, Self) {
-        (
-            Utf8ProducerManyChunkNullCheck {
-                ca: self.ca,
-                offset: self.offset,
-                len: index,
-            },
-            Utf8ProducerManyChunkNullCheck {
-                ca: self.ca,
-                offset: self.offset + index,
-                len: self.len - index,
-            },
-        )
+impl_utf8_parallel_iterator!(
+    Utf8ParIterManyChunkNullCheck,
+    Utf8ProducerManyChunkNullCheck,
+    Utf8IterManyChunkNullCheck
+);
+
+impl<'a> IntoParallelIterator for &'a Utf8Chunked {
+    type Iter = Utf8ParIterSingleChunk<'a>;
+    type Item = Option<&'a str>;
+
+    fn into_par_iter(self) -> Self::Iter {
+        Utf8ParIterSingleChunk { ca: self }
     }
 }
 
