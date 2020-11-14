@@ -1919,6 +1919,76 @@ mod test {
     }
 
     #[test]
+    fn test_iter_utf8itercont() {
+        let a = Utf8Chunked::new_from_slice("a", &["a", "b", "c"]);
+
+        // normal iterator
+        let mut it = a.into_no_null_iter();
+        assert_eq!(it.next(), Some("a"));
+        assert_eq!(it.next(), Some("b"));
+        assert_eq!(it.next(), Some("c"));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_no_null_iter();
+        assert_eq!(it.next_back(), Some("c"));
+        assert_eq!(it.next_back(), Some("b"));
+        assert_eq!(it.next_back(), Some("a"));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_no_null_iter();
+        assert_eq!(it.next_back(), Some("c"));
+        assert_eq!(it.next(), Some("a"));
+        assert_eq!(it.next(), Some("b"));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_no_null_iter();
+        assert_eq!(it.next(), Some("a"));
+        assert_eq!(it.next_back(), Some("c"));
+        assert_eq!(it.next_back(), Some("b"));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn test_iter_utf8itercontmanychunk() {
+        let mut a = Utf8Chunked::new_from_slice("a", &["a", "b"]);
+        let a_b = Utf8Chunked::new_from_slice("a_b", &["c"]);
+        a.append(&a_b);
+
+        // normal iterator
+        let mut it = a.into_no_null_iter();
+        assert_eq!(it.next(), Some("a"));
+        assert_eq!(it.next(), Some("b"));
+        assert_eq!(it.next(), Some("c"));
+        assert_eq!(it.next(), None);
+
+        // reverse iterator
+        let mut it = a.into_no_null_iter();
+        assert_eq!(it.next_back(), Some("c"));
+        assert_eq!(it.next_back(), Some("b"));
+        assert_eq!(it.next_back(), Some("a"));
+        assert_eq!(it.next_back(), None);
+
+        // iterators should not cross
+        let mut it = a.into_no_null_iter();
+        assert_eq!(it.next_back(), Some("c"));
+        assert_eq!(it.next(), Some("a"));
+        assert_eq!(it.next(), Some("b"));
+        // should stop here as we took this one from the back
+        assert_eq!(it.next(), None);
+
+        // do the same from the right side
+        let mut it = a.into_no_null_iter();
+        assert_eq!(it.next(), Some("a"));
+        assert_eq!(it.next_back(), Some("c"));
+        assert_eq!(it.next_back(), Some("b"));
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
     fn test_iter_utf8itersinglechunk() {
         let a = Utf8Chunked::new_from_slice("a", &["a", "b", "c"]);
 
