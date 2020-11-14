@@ -769,12 +769,15 @@ mod test {
     fn test_simplify_expr() {
         // Test if expression containing literals is simplified
         let df = get_df();
+        let optimizer = SimplifyExpr {};
         let plan = df
             .lazy()
             .select(&[lit(1.0f32) + lit(1.0f32) + col("sepal.width")])
-            .describe_optimized_plan()
-            .unwrap();
-        assert_eq!(plan, "SELECT [LIT Float32(2.0) Plus COLUMN sepal.width] \nFROM\nSELECT [COLUMN sepal.width] \nFROM\nTABLE: [\"sepal.length\", \"sepal.width\", \"petal.length\", \"petal.width\"]");
+            .logical_plan;
+        let plan = optimizer.optimize(plan).unwrap();
+        assert!(
+            matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(ScalarValue::Float32(2.0))))
+        );
     }
 
     #[test]
