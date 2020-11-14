@@ -15,5 +15,5 @@ jobs:
           override: true
       - name: Run tests
         run: |
-          cd polars && cargo test
+          cd polars && cargo test -- --test-threads=1
           cd ../py-polars && ./tasks.sh build-run-tests
