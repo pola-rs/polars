@@ -22,6 +22,7 @@ where
 impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
 impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
 impl<'a> ExactSizeIterator for Utf8IterCont<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterContManyChunk<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterSingleChunk<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterSingleChunkNullCheck<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterManyChunk<'a> {}
@@ -645,7 +646,7 @@ impl<'a> Utf8IterContManyChunk<'a> {
         let current_array_idx_right = current_array_right.len();
         let current_array_left_len = current_array_left.len();
 
-        Utf8IterManyChunk {
+        Utf8IterContManyChunk {
             ca,
             chunks,
             current_array_left,
