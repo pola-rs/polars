@@ -17,7 +17,8 @@ from typing import (
     Union,
     TextIO,
     BinaryIO,
-    Callable, Any,
+    Callable,
+    Any,
 )
 from .series import Series, wrap_s
 from .datatypes import *

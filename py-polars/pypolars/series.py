@@ -226,8 +226,10 @@ class Series:
         return wrap_s(f(other))
 
     def __add__(self, other) -> Series:
+        if isinstance(other, str):
+            other = Series("", [other])
         if isinstance(other, Series):
-            return Series._from_pyseries(self._s.add(other._s))
+            return wrap_s(self._s.add(other._s))
         dtype = dtype_to_primitive(self.dtype)
         f = get_ffi_func("add_<>", dtype, self._s)
         if f is None:
