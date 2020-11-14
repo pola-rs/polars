@@ -1,5 +1,5 @@
 use crate::chunked_array::iterator::{
-    Utf8IterCont, Utf8IterManyChunk, Utf8IterManyChunkNullCheck, Utf8IterSingleChunk,
+    Utf8IterCont, Utf8IterContManyChunk, Utf8IterManyChunk, Utf8IterManyChunkNullCheck, Utf8IterSingleChunk,
     Utf8IterSingleChunkNullCheck,
 };
 use crate::prelude::*;
@@ -392,13 +392,19 @@ impl<'a> IndexedParallelIterator for Utf8ParChunkIterDispatch<'a> {
 }
 
 /// Parallel Iterator for chunked arrays with just one chunk.
-/// The chunks cannot have null values so it does NOT perform null
-/// checks.
+/// The chunks cannot have null values so it does NOT perform null checks.
 ///
-/// The return tipe is `&'a str`.
+/// The return type is `&'a str`. So this structure cannot be handled by the `Utf8ChunkIterDispatch` but
+/// by `Utf8ContChunkIterDispatch` which is aimed for non-nullable chunked arrays.
 #[derive(Debug, Clone)]
 pub struct Utf8ParIterCont<'a> {
     ca: &'a Utf8Chunked,
+}
+
+impl<'a> Utf8ParIterCont<'a> {
+    fn new(ca: &'a Utf8Chunked) -> Self {
+        Utf8ParIterCont { ca }
+    }
 }
 
 impl<'a> From<Utf8ProducerCont<'a>> for Utf8IterCont<'a> {
@@ -418,11 +424,130 @@ impl<'a> From<Utf8ProducerCont<'a>> for Utf8IterCont<'a> {
 
 impl_utf8_parallel_iterator!(Utf8ParIterCont, Utf8ProducerCont, Utf8IterCont, &'a str);
 
+/// Parallel Iterator for chunked arrays with many chunk.
+/// The chunks cannot have null values so it does NOT perform null checks.
+///
+/// The return type is `&'a str`. So this structure cannot be handled by the `Utf8ChunkIterDispatch` but
+/// by `Utf8ContChunkIterDispatch` which is aimed for non-nullable chunked arrays.
+#[derive(Debug, Clone)]
+pub struct Utf8ParIterContManyChunk<'a> {
+    ca: &'a Utf8Chunked,
+}
+
+impl<'a> Utf8ParIterContManyChunk<'a> {
+    fn new(ca: &'a Utf8Chunked) -> Self {
+        Utf8ParIterContManyChunk { ca }
+    }
+}
+
+impl<'a> From<Utf8ProducerContManyChunk<'a>> for Utf8IterContManyChunk<'a> {
+    fn from(prod: Utf8ProducerContManyChunk<'a>) -> Self {
+        let ca = prod.ca;
+        let chunks = ca.downcast_chunks();
+        let idx_left = prod.offset;
+        let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
+        let current_array_left = chunks[chunk_idx_left];
+        let idx_right = prod.offset + prod.len;
+        let (chunk_idx_right, current_array_idx_right) = ca.index_to_chunked_index(idx_right);
+        let current_array_right = chunks[chunk_idx_right];
+        let current_array_left_len = current_array_left.len();
+
+        Utf8IterContManyChunk {
+            ca,
+            chunks,
+            current_array_left,
+            current_array_right,
+            current_array_idx_left,
+            current_array_idx_right,
+            current_array_left_len,
+            idx_left,
+            idx_right,
+            chunk_idx_left,
+            chunk_idx_right,
+        }
+    }
+}
+
+impl_utf8_parallel_iterator!(
+    Utf8ParIterContManyChunk,
+    Utf8ProducerContManyChunk,
+    Utf8IterContManyChunk,
+    &'a str
+);
+
+/// Static dispatching structure to allow static polymorphism of non-nullable chunked parallel iterators.
+///
+/// All the iterators of the dispatcher returns `&'a str`, as there are no nulls in the chunked array.
+pub enum Utf8ParContChunkIterDispatch<'a> {
+    SingleChunk(Utf8ParIterCont<'a>),
+    ManyChunk(Utf8ParIterContManyChunk<'a>),
+}
+
+/// Convert non-nullable `&'a Utf8Chunked` into a non-nullable `ParallelIterator` using the most
+/// efficient `ParallelIterator` for the given `&'a Utf8Chunked`.
+///
+/// - If `&'a Utf8Chunked` has only a chunk, it uses `Utf8ParIterCont`.
+/// - If `&'a Utf8Chunked` has many chunks, it uses `Utf8ParIterContManyChunk`.
 impl<'a> IntoParallelIterator for NoNull<&'a Utf8Chunked> {
-    type Iter = Utf8ParIterCont<'a>;
+    type Iter = Utf8ParContChunkIterDispatch<'a>;
     type Item = &'a str;
 
     fn into_par_iter(self) -> Self::Iter {
-        Utf8ParIterCont { ca: self.0 }
+        let ca = self.0;
+        let chunks = ca.downcast_chunks();
+        match chunks.len() {
+            1 => Utf8ParContChunkIterDispatch::SingleChunk(Utf8ParIterCont::new(ca)),
+            _ => Utf8ParContChunkIterDispatch::ManyChunk(Utf8ParIterContManyChunk::new(ca)),
+        }
+    }
+}
+
+impl<'a> ParallelIterator for Utf8ParContChunkIterDispatch<'a> {
+    type Item = &'a str;
+
+    fn drive_unindexed<C>(self, consumer: C) -> C::Result
+    where
+        C: UnindexedConsumer<Self::Item>,
+    {
+        match self {
+            Utf8ParContChunkIterDispatch::SingleChunk(a) => a.drive_unindexed(consumer),
+            Utf8ParContChunkIterDispatch::ManyChunk(a) => a.drive_unindexed(consumer),
+        }
+    }
+
+    fn opt_len(&self) -> Option<usize> {
+        match self {
+            Utf8ParContChunkIterDispatch::SingleChunk(a) => a.opt_len(),
+            Utf8ParContChunkIterDispatch::ManyChunk(a) => a.opt_len(),
+        }
+    }
+}
+
+impl<'a> IndexedParallelIterator for Utf8ParContChunkIterDispatch<'a> {
+    fn len(&self) -> usize {
+        match self {
+            Utf8ParContChunkIterDispatch::SingleChunk(a) => a.len(),
+            Utf8ParContChunkIterDispatch::ManyChunk(a) => a.len(),
+        }
+    }
+
+    fn drive<C>(self, consumer: C) -> C::Result
+    where
+        C: Consumer<Self::Item>,
+    {
+        match self {
+            Utf8ParContChunkIterDispatch::SingleChunk(a) => a.drive(consumer),
+            Utf8ParContChunkIterDispatch::ManyChunk(a) => a.drive(consumer),
+        }
+    }
+
+    fn with_producer<CB>(self, callback: CB) -> CB::Output
+    where
+        CB: ProducerCallback<Self::Item>,
+    {
+        match self {
+            Utf8ParContChunkIterDispatch::SingleChunk(a) => a.with_producer(callback),
+            Utf8ParContChunkIterDispatch::ManyChunk(a) => a.with_producer(callback),
+        }
     }
 }
