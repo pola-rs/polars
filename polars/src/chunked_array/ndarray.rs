@@ -20,9 +20,9 @@ impl ListChunked {
         N: PolarsNumericType,
     {
         if self.null_count() != 0 {
-            return Err(PolarsError::HasNullValues(
+            Err(PolarsError::HasNullValues(
                 "Creation of ndarray with null values is not supported.".into(),
-            ));
+            ))
         } else {
             let mut iter = self.into_no_null_iter();
 

@@ -173,7 +173,7 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
             match rename_expr_root_name(left, new_name.clone()) {
                 Err(_) => rename_expr_root_name(right, new_name).map(|right| Expr::BinaryExpr {
                     left: Box::new(*left.clone()),
-                    op: op.clone(),
+                    op: *op,
                     right: Box::new(right),
                 }),
                 Ok(expr_left) => match rename_expr_root_name(right, new_name) {
@@ -186,7 +186,7 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
                     )),
                     Err(_) => Ok(Expr::BinaryExpr {
                         left: Box::new(expr_left),
-                        op: op.clone(),
+                        op: *op,
                         right: Box::new(*right.clone()),
                     }),
                 },

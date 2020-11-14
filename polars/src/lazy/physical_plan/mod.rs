@@ -39,7 +39,7 @@ pub trait PhysicalExpr: Send + Sync {
     fn to_field(&self, input_schema: &Schema) -> Result<Field>;
 
     fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        Err(PolarsError::Other(format!("not an agg expression").into()))
+        Err(PolarsError::Other("not an agg expression".into()))
     }
 }
 

@@ -105,13 +105,7 @@ impl PartialEq for Expr {
             Expr::AggList(left) => impl_partial_eq!(AggList, left, other),
             Expr::Column(left) => impl_partial_eq!(Column, left, other),
             Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
-            Expr::Wildcard => {
-                if let Expr::Wildcard = other {
-                    true
-                } else {
-                    false
-                }
-            }
+            Expr::Wildcard => matches!(other, Expr::Wildcard),
             Expr::AggQuantile { expr, quantile } => {
                 let left = expr;
                 let left_q = quantile;
@@ -518,6 +512,7 @@ impl Expr {
     }
 
     /// Negate `Expr`
+    #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
         Expr::Not(Box::new(self))
     }
@@ -528,11 +523,13 @@ impl Expr {
     }
 
     /// Run is_null operation on `Expr`.
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_null(self) -> Self {
         Expr::IsNull(Box::new(self))
     }
 
     /// Run is_not_null operation on `Expr`.
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_not_null(self) -> Self {
         Expr::IsNotNull(Box::new(self))
     }

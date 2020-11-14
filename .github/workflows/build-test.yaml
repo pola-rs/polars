@@ -27,6 +27,9 @@ jobs:
         run: |
           cargo fmt -- --check
           black --check .
+      - name: Run linting checks
+        run : |
+          cd polars && cargo clippy -Z unstable-options --all-features
       - name: Run tests
         run: |
           cd polars && cargo test --all-features
