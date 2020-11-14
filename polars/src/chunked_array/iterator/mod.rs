@@ -21,6 +21,7 @@ where
 }
 impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
 impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
+impl<'a> ExactSizeIterator for Utf8IterCont<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterSingleChunk<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterSingleChunkNullCheck<'a> {}
 impl<'a> ExactSizeIterator for Utf8IterManyChunk<'a> {}
@@ -597,6 +598,17 @@ impl<'a> Iterator for Utf8IterCont<'a> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         let len = self.current_array.len();
         (len, Some(len))
+    }
+}
+
+impl<'a> DoubleEndedIterator for Utf8IterCont<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        // end of iterator or meet reversed iterator in the middle
+        if self.idx_left == self.idx_right {
+            return None;
+        }
+        self.idx_right -= 1;
+        Some(self.current_array.value(self.idx_right))
     }
 }
 

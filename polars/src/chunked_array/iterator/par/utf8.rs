@@ -1,13 +1,12 @@
 use crate::chunked_array::iterator::{
-    Utf8IterManyChunk, Utf8IterManyChunkNullCheck, Utf8IterSingleChunk,
+    Utf8IterCont, Utf8IterManyChunk, Utf8IterManyChunkNullCheck, Utf8IterSingleChunk,
     Utf8IterSingleChunkNullCheck,
 };
 use crate::prelude::*;
-use arrow::array::{Array, StringArray};
+use arrow::array::Array;
 use rayon::iter::plumbing::*;
 use rayon::iter::plumbing::{Consumer, ProducerCallback};
 use rayon::prelude::*;
-use std::{mem, ops::Range};
 
 /// Generate the code for Utf8Chunked parallel iterators.
 ///
@@ -17,15 +16,21 @@ use std::{mem, ops::Range};
 ///   MUST EXIST as it is not created by this macro. It must consist on a wrapper around
 ///   a reference to a chunked array.
 ///
-/// parallel_producer: The name used to create the parallel producer.
+/// parallel_producer: The name used to create the parallel producer. This structure is
+///   created in this macro and is compose of three parts:
+///   - ca: a reference to the iterator chunked array.
+///   - offset: the index in the chunked array where to start to process.
+///   - len: the number of items this producer is in charge of processing.
 ///
 /// sequential_iterator: The sequential iterator used to traverse the iterator once the
 ///   chunked array has been divided in different cells. This structure MUST EXIST as it
-///   is not created by this macro. This iterator MUST IMPLEMENT the trait From<parallel_producer>.
+///   is not created by this macro. This iterator MUST IMPLEMENT the trait `From<parallel_producer>`.
+///
+/// iter_item: The iterator `Item`, it represents the iterator return type.
 macro_rules! impl_utf8_parallel_iterator {
-    ($parallel_iterator:ident, $parallel_producer:ident, $sequential_iterator:ident) => {
+    ($parallel_iterator:ident, $parallel_producer:ident, $sequential_iterator:ident, $iter_item:ty) => {
         impl<'a> ParallelIterator for $parallel_iterator<'a> {
-            type Item = Option<&'a str>;
+            type Item = $iter_item;
 
             fn drive_unindexed<C>(self, consumer: C) -> C::Result
             where
@@ -70,7 +75,7 @@ macro_rules! impl_utf8_parallel_iterator {
         }
 
         impl<'a> Producer for $parallel_producer<'a> {
-            type Item = Option<&'a str>;
+            type Item = $iter_item;
             type IntoIter = $sequential_iterator<'a>;
 
             fn into_iter(self) -> Self::IntoIter {
@@ -123,7 +128,8 @@ impl<'a> From<Utf8ProducerSingleChunk<'a>> for Utf8IterSingleChunk<'a> {
 impl_utf8_parallel_iterator!(
     Utf8ParIterSingleChunk,
     Utf8ProducerSingleChunk,
-    Utf8IterSingleChunk
+    Utf8IterSingleChunk,
+    Option<&'a str>
 );
 
 /// Parallel Iterator for chunked arrays with just one chunk.
@@ -156,7 +162,8 @@ impl<'a> From<Utf8ProducerSingleChunkNullCheck<'a>> for Utf8IterSingleChunkNullC
 impl_utf8_parallel_iterator!(
     Utf8ParIterSingleChunkNullCheck,
     Utf8ProducerSingleChunkNullCheck,
-    Utf8IterSingleChunkNullCheck
+    Utf8IterSingleChunkNullCheck,
+    Option<&'a str>
 );
 
 /// Parallel Iterator for chunked arrays with more than one chunk.
@@ -200,7 +207,8 @@ impl<'a> From<Utf8ProducerManyChunk<'a>> for Utf8IterManyChunk<'a> {
 impl_utf8_parallel_iterator!(
     Utf8ParIterManyChunk,
     Utf8ProducerManyChunk,
-    Utf8IterManyChunk
+    Utf8IterManyChunk,
+    Option<&'a str>
 );
 
 /// Parallel Iterator for chunked arrays with more than one chunk.
@@ -248,7 +256,8 @@ impl<'a> From<Utf8ProducerManyChunkNullCheck<'a>> for Utf8IterManyChunkNullCheck
 impl_utf8_parallel_iterator!(
     Utf8ParIterManyChunkNullCheck,
     Utf8ProducerManyChunkNullCheck,
-    Utf8IterManyChunkNullCheck
+    Utf8IterManyChunkNullCheck,
+    Option<&'a str>
 );
 
 impl<'a> IntoParallelIterator for &'a Utf8Chunked {
@@ -260,120 +269,38 @@ impl<'a> IntoParallelIterator for &'a Utf8Chunked {
     }
 }
 
-/// No null Iterators
-
+/// Parallel Iterator for chunked arrays with more than one chunk.
+/// It DOES perform null check, then, it is appropriated
+/// for chunks whose contents can be null.
+///
+/// It returns the result wrapped in an `Option`.
 #[derive(Debug, Clone)]
-pub struct Utf8IntoIterCont<'a> {
+pub struct Utf8ParIterCont<'a> {
     ca: &'a Utf8Chunked,
 }
 
+impl<'a> From<Utf8ProducerCont<'a>> for Utf8IterCont<'a> {
+    fn from(prod: Utf8ProducerCont<'a>) -> Self {
+        let chunks = prod.ca.downcast_chunks();
+        let current_array = chunks[0];
+        let idx_left = prod.offset;
+        let idx_right = prod.offset + prod.len;
+
+        Utf8IterCont {
+            current_array,
+            idx_left,
+            idx_right,
+        }
+    }
+}
+
+impl_utf8_parallel_iterator!(Utf8ParIterCont, Utf8ProducerCont, Utf8IterCont, &'a str);
+
 impl<'a> IntoParallelIterator for NoNull<&'a Utf8Chunked> {
-    type Iter = Utf8IntoIterCont<'a>;
+    type Iter = Utf8ParIterCont<'a>;
     type Item = &'a str;
 
     fn into_par_iter(self) -> Self::Iter {
-        Utf8IntoIterCont { ca: self.0 }
+        Utf8ParIterCont { ca: self.0 }
     }
 }
-impl<'a> ParallelIterator for Utf8IntoIterCont<'a> {
-    type Item = &'a str;
-
-    fn drive_unindexed<C>(self, consumer: C) -> C::Result
-    where
-        C: UnindexedConsumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        Some(self.ca.len())
-    }
-}
-impl<'a> IndexedParallelIterator for Utf8IntoIterCont<'a> {
-    fn len(&self) -> usize {
-        self.ca.len()
-    }
-
-    fn drive<C>(self, consumer: C) -> C::Result
-    where
-        C: Consumer<Self::Item>,
-    {
-        bridge(self, consumer)
-    }
-
-    fn with_producer<CB>(self, callback: CB) -> CB::Output
-    where
-        CB: ProducerCallback<Self::Item>,
-    {
-        callback.callback(Utf8ProducerCont {
-            arr: self.ca.downcast_chunks()[0],
-            offset: 0,
-            len: self.ca.len(),
-        })
-    }
-}
-
-struct Utf8ProducerCont<'a> {
-    arr: &'a StringArray,
-    offset: usize,
-    len: usize,
-}
-
-impl<'a> Producer for Utf8ProducerCont<'a> {
-    type Item = &'a str;
-    type IntoIter = Utf8IterCont<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let iter = (0..self.len).into_iter();
-        Utf8IterCont {
-            arr: self.arr,
-            iter,
-            offset: self.offset,
-        }
-    }
-
-    fn split_at(self, index: usize) -> (Self, Self) {
-        (
-            Utf8ProducerCont {
-                arr: self.arr,
-                offset: self.offset,
-                len: index + 1,
-            },
-            Utf8ProducerCont {
-                arr: self.arr,
-                offset: self.offset + index,
-                len: self.len - index,
-            },
-        )
-    }
-}
-
-struct Utf8IterCont<'a> {
-    arr: &'a StringArray,
-    iter: Range<usize>,
-    offset: usize,
-}
-
-impl<'a> Iterator for Utf8IterCont<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|idx| unsafe {
-            mem::transmute::<&'_ str, &'a str>(self.arr.value(idx + self.offset))
-        })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.iter.size_hint()
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8IterCont<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(|idx| unsafe {
-            mem::transmute::<&'_ str, &'a str>(self.arr.value(idx + self.offset))
-        })
-    }
-}
-
-impl<'a> ExactSizeIterator for Utf8IterCont<'a> {}
