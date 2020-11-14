@@ -91,7 +91,13 @@ where
     }
 }
 
-impl NumOpsDispatch for Utf8Chunked {}
+impl NumOpsDispatch for Utf8Chunked {
+    fn add_to(&self, rhs: &Series) -> Result<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self + rhs;
+        Ok(out.into_series())
+    }
+}
 impl NumOpsDispatch for BooleanChunked {}
 impl NumOpsDispatch for ListChunked {}
 

@@ -358,6 +358,63 @@ where
     }
 }
 
+fn concat_strings(l: &str, r: &str) -> String {
+    // fastest way to concat strings according to https://github.com/hoodie/concatenation_benchmarks-rs
+    let mut s = String::with_capacity(l.len() + r.len());
+    s.push_str(l);
+    s.push_str(r);
+    s
+}
+
+impl Add for &Utf8Chunked {
+    type Output = Utf8Chunked;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        // broadcasting path
+        if rhs.len() == 1 {
+            let rhs = rhs.get(0);
+            return match rhs {
+                Some(rhs) => self.add(rhs),
+                None => Utf8Chunked::full_null(self.name(), self.len()),
+            };
+        }
+
+        // todo! add no_null variants. Need 4 paths.
+        self.into_iter()
+            .zip(rhs.into_iter())
+            .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                (Some(l), Some(r)) => Some(concat_strings(l, r)),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+impl Add for Utf8Chunked {
+    type Output = Utf8Chunked;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        (&self).add(&rhs)
+    }
+}
+
+impl Add<&str> for &Utf8Chunked {
+    type Output = Utf8Chunked;
+
+    fn add(self, rhs: &str) -> Self::Output {
+        match self.null_count() {
+            0 => self
+                .into_no_null_iter()
+                .map(|l| concat_strings(l, rhs))
+                .collect(),
+            _ => self
+                .into_iter()
+                .map(|opt_l| opt_l.map(|l| concat_strings(l, rhs)))
+                .collect(),
+        }
+    }
+}
+
 pub trait Pow {
     fn pow_f32(&self, exp: f32) -> Float32Chunked;
     fn pow_f64(&self, exp: f64) -> Float64Chunked;
