@@ -322,7 +322,7 @@ impl LogicalPlanBuilder {
         let schema = utils::expressions_to_schema(&exprs, self.0.schema());
 
         // if len == 0, no projection has to be done. This is a select all operation.
-        if exprs.len() > 0 {
+        if !exprs.is_empty() {
             LogicalPlan::Projection {
                 expr: exprs,
                 input: Box::new(self.0),

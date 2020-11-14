@@ -15,12 +15,12 @@ fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
 
 pub struct PredicatePushDown {}
 
-fn combine_predicates<'a, I>(mut iter: I) -> Expr
+fn combine_predicates<'a, I>(iter: I) -> Expr
 where
     I: Iterator<Item = &'a Expr>,
 {
     let mut single_pred = None;
-    while let Some(expr) = iter.next() {
+    for expr in iter {
         single_pred = match single_pred {
             None => Some(expr.clone()),
             Some(e) => Some(e.and(expr.clone())),
@@ -53,7 +53,7 @@ impl PredicatePushDown {
         local_predicates: Vec<Expr>,
         mut builder: LogicalPlanBuilder,
     ) -> Result<LogicalPlan> {
-        if local_predicates.len() > 0 {
+        if !local_predicates.is_empty() {
             let predicate = combine_predicates(local_predicates.iter());
             builder = builder.filter(predicate);
             Ok(builder.build())
@@ -197,7 +197,7 @@ impl PredicatePushDown {
                     LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
                         .with_columns(exprs);
 
-                if local.len() > 0 {
+                if !local.is_empty() {
                     let predicate = combine_predicates(local.iter());
                     lp_builder = lp_builder.filter(predicate);
                 }

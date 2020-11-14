@@ -595,7 +595,7 @@ impl PhysicalExpr for ApplyExpr {
         let input = self.input.evaluate(df)?;
         let in_name = input.name().to_string();
         let mut out = self.function.call_udf(input)?;
-        if &in_name != out.name() {
+        if in_name != out.name() {
             out.rename(&in_name);
         }
         Ok(out)

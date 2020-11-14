@@ -49,7 +49,7 @@ impl ProjectionPushDown {
         local_projections: Vec<Expr>,
         builder: LogicalPlanBuilder,
     ) -> Result<LogicalPlan> {
-        if local_projections.len() > 0 {
+        if !local_projections.is_empty() {
             Ok(builder.project(local_projections).build())
         } else {
             Ok(builder.build())
@@ -137,7 +137,7 @@ impl ProjectionPushDown {
                 })
             }
             Selection { predicate, input } => {
-                let local_projections = if acc_projections.len() > 0 {
+                let local_projections = if !acc_projections.is_empty() {
                     let local_projections = projected_names(&acc_projections)?;
                     acc_projections.push(expr_to_root_column_expr(&predicate)?.clone());
                     local_projections
@@ -152,7 +152,7 @@ impl ProjectionPushDown {
             Aggregate {
                 input, keys, aggs, ..
             } => {
-                let (acc_projections, local_projections) = if acc_projections.len() > 0 {
+                let (acc_projections, local_projections) = if !acc_projections.is_empty() {
                     // todo! remove unnecessary vec alloc.
                     let (mut acc_projections, _local_projections) =
                         self.split_acc_projections(acc_projections, input.schema());
@@ -211,7 +211,7 @@ impl ProjectionPushDown {
                 let mut local_projection = init_vec();
 
                 // if there are no projections we don't have to do anything
-                if acc_projections.len() > 0 {
+                if !acc_projections.is_empty() {
                     let schema_left = input_left.schema();
                     let schema_right = input_right.schema();
 
@@ -287,12 +287,10 @@ impl ProjectionPushDown {
                 let local_renamed_projections = projected_names(&acc_projections)?;
 
                 // Make sure that columns selected with_columns are available
-                if acc_projections.len() > 0 {
+                if !acc_projections.is_empty() {
                     for e in &exprs {
-                        match expr_to_root_column_expr(e) {
-                            Ok(e) => acc_projections.push(e.clone()),
-                            // literal value
-                            Err(_) => (),
+                        if let Ok(e) = expr_to_root_column_expr(e) {
+                            acc_projections.push(e.clone())
                         }
                     }
                 }
