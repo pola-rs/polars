@@ -1042,7 +1042,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// }
     /// ```
     pub fn quantile(&self, quantile: f64) -> Result<DataFrame> {
-        if quantile < 0.0 || quantile > 1.0 {
+        if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::Other(
                 "quantile should be within 0.0 and 1.0".into(),
             ));

@@ -106,7 +106,7 @@ where
     }
 
     fn quantile(&self, quantile: f64) -> Result<Option<T::Native>> {
-        if quantile < 0.0 || quantile > 1.0 {
+        if !(0.0..=1.0).contains(&quantile) {
             Err(PolarsError::ValueError(
                 "quantile should be between 0.0 and 1.0".into(),
             ))
@@ -223,7 +223,7 @@ impl ChunkAgg<u32> for BooleanChunked {
     }
 
     fn quantile(&self, quantile: f64) -> Result<Option<u32>> {
-        if quantile < 0.0 || quantile > 1.0 {
+        if !(0.0..=1.0).contains(&quantile) {
             Err(PolarsError::ValueError(
                 "quantile should be between 0.0 and 1.0".into(),
             ))
