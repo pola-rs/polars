@@ -1,16 +1,16 @@
 use crate::datatypes::{AnyType, ToStr};
 use crate::prelude::*;
 
-#[cfg(feature = "temporal")]
 use crate::chunked_array::temporal::{
     date32_as_datetime, date64_as_datetime, time32_millisecond_as_time, time32_second_as_time,
     time64_microsecond_as_time, time64_nanosecond_as_time, timestamp_microseconds_as_datetime,
     timestamp_milliseconds_as_datetime, timestamp_nanoseconds_as_datetime,
     timestamp_seconds_as_datetime,
 };
+use comfy_table::modifiers::UTF8_ROUND_CORNERS;
+use comfy_table::presets::UTF8_FULL;
+use comfy_table::*;
 use num::{Num, NumCast};
-#[cfg(feature = "pretty")]
-use prettytable::Table;
 use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
@@ -81,7 +81,7 @@ macro_rules! format_array {
 }
 
 macro_rules! format_utf8_array {
-    ($limit:ident, $f:ident, $a:ident, $name:expr, $array_type:expr) => {{
+    ($limit:expr, $f:expr, $a:ident, $name:expr, $array_type:expr) => {{
         write![$f, "{}: '{}' [str]\n[\n", $array_type, $name]?;
         $a.into_iter().take($limit).for_each(|opt_s| match opt_s {
             None => {
@@ -133,7 +133,7 @@ where
 
 impl Debug for Utf8Chunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        format_utf8_array!(LIMIT, f, self, self.name(), "ChunkedArray")
+        format_utf8_array!(80, f, self, self.name(), "ChunkedArray")
     }
 }
 
@@ -202,7 +202,7 @@ impl Debug for Series {
             Series::TimestampSecond(a) => {
                 format_array!(limit, f, a, "timestamp(s)", a.name(), "Series")
             }
-            Series::Utf8(a) => format_utf8_array!(LIMIT, f, a, a.name(), "Series"),
+            Series::Utf8(a) => format_utf8_array!(80, f, a, a.name(), "Series"),
             Series::List(a) => format_list_array!(limit, f, a, a.name(), "Series"),
         }
     }
@@ -220,41 +220,63 @@ impl Debug for DataFrame {
     }
 }
 
-#[cfg(feature = "pretty")]
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut table = Table::new();
-        let names = self
+        let max_n_cols = 8;
+        let insert_idx = max_n_cols / 2;
+        let reduce_columns = self.width() > max_n_cols;
+
+        let mut names: Vec<_> = self
             .schema()
             .fields()
             .iter()
+            .take(max_n_cols)
             .map(|f| format!("{}\n---\n{}", f.name(), f.data_type().to_str()))
             .collect();
-        table.set_titles(names);
+        if reduce_columns {
+            names.insert(insert_idx, "...".to_string())
+        }
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .apply_modifier(UTF8_ROUND_CORNERS)
+            .set_table_width(
+                std::env::var("POLARS_TABLE_WIDTH")
+                    .map(|s| {
+                        s.parse::<u16>()
+                            .expect("could not parse table width argument")
+                    })
+                    .unwrap_or(100),
+            )
+            .set_header(names);
+        let string_limit = 32;
         for i in 0..10 {
             let opt = self.get(i);
             if let Some(row) = opt {
                 let mut row_str = Vec::with_capacity(row.len());
-                for v in &row {
-                    row_str.push(format!("{}", v));
+                for v in row.iter().take(max_n_cols) {
+                    let str_val = if let AnyType::Utf8(s) = v {
+                        if s.len() > string_limit {
+                            format!("{}...", &s[..string_limit])
+                        } else {
+                            format!("{}", s)
+                        }
+                    } else {
+                        format!("{}", v)
+                    };
+                    row_str.push(str_val);
                 }
-                table.add_row(row.iter().map(|v| format!("{}", v)).collect());
+                if reduce_columns {
+                    row_str.insert(insert_idx, "...".to_string());
+                }
+                table.add_row(row_str);
             } else {
                 break;
             }
         }
-        write!(f, "{}", table)?;
+        write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         Ok(())
-    }
-}
-
-#[cfg(not(feature = "pretty"))]
-impl Display for DataFrame {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "DataFrame. NOTE: compile with the feature 'pretty' for pretty printing."
-        )
     }
 }
 
@@ -279,14 +301,6 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
-#[cfg(not(feature = "pretty"))]
-impl Display for AnyType<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[cfg(feature = "pretty")]
 impl Display for AnyType<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 0;
