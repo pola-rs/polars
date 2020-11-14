@@ -177,8 +177,6 @@
 //!
 //! Additional cargo features:
 //!
-//! * `pretty` (default)
-//!     - pretty printing of DataFrames
 //! * `temporal (default)`
 //!     - Conversions between Chrono and Polars for temporal data
 //! * `simd (default)`
