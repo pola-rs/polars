@@ -750,10 +750,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         }
     };
 
-    let capacity = match n_rows {
-        Some(n) => n,
-        None => 512 * 1024,
-    };
+    let capacity = n_rows.unwrap_or(512 * 1024);
 
     if let Some(cols) = columns {
         let mut prj = Vec::with_capacity(cols.len());

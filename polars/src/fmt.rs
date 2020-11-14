@@ -260,7 +260,7 @@ impl Display for DataFrame {
                         if s.len() > string_limit {
                             format!("{}...", &s[..string_limit])
                         } else {
-                            format!("{}", s)
+                            s.to_string()
                         }
                     } else {
                         format!("{}", v)
@@ -294,7 +294,7 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     let v = (v * 1000.).round() / 1000.;
     if v == 0.0 {
         write!(f, "{:>width$.1}", v, width = width)
-    } else if v > 9999. || v < 0.0001 {
+    } else if !(0.0001..=9999.).contains(&v) {
         write!(f, "{:>width$e}", v, width = width)
     } else {
         write!(f, "{:>width$}", v, width = width)
