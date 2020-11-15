@@ -23,7 +23,7 @@ from .datatypes import *
 import numpy as np
 
 
-def wrap_df(df: PyDataFrame) -> "DataFrame":
+def wrap_df(df: "PyDataFrame") -> "DataFrame":
     return DataFrame._from_pydf(df)
 
 
@@ -258,7 +258,7 @@ class DataFrame:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __getattr__(self, item) -> PySeries:
+    def __getattr__(self, item) -> "PySeries":
         """
         Access columns as attribute
         """
