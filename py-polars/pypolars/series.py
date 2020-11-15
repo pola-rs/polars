@@ -624,7 +624,7 @@ class Series:
         -------
         Boolean Series
         """
-        return wrap_s(self._s.is_unique())
+        return wrap_s(self._s.is_duplicated())
 
     def series_equal(self, other: "Series", null_equal: bool = False) -> bool:
         """
