@@ -34,6 +34,9 @@ use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
+/// Is multiplied with batch_size to determine capacity of builders
+const CAPACITY_MULTIPLIER: usize = 512;
+
 lazy_static! {
     static ref DECIMAL_RE: Regex = Regex::new(r"^-?(\d+\.\d+)$").unwrap();
     static ref INTEGER_RE: Regex = Regex::new(r"^-?(\d+)$").unwrap();
@@ -287,7 +290,6 @@ pub struct SequentialReader<R: Read> {
     header_offset: usize,
     skip_rows: usize,
     n_rows: Option<usize>,
-    capacity: usize,
     encoding: CsvEncoding,
     one_thread: bool,
 }
@@ -337,7 +339,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         ignore_parser_errors: bool,
         n_rows: Option<usize>,
         skip_rows: usize,
-        capacity: usize,
         encoding: CsvEncoding,
         one_thread: bool,
     ) -> Self {
@@ -356,7 +357,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             header_offset,
             skip_rows,
             n_rows,
-            capacity,
             encoding,
             one_thread,
         }
@@ -373,10 +373,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     {
         let is_boolean_type = *self.schema.field(col_idx).data_type() == ArrowDataType::Boolean;
 
-        if (rows.len() + builder.len()) > builder.capacity() {
-            builder.reserve(builder.capacity() * 2)
-        }
-
         for (row_index, row) in rows.iter().enumerate() {
             match row.get(col_idx) {
                 Some(s) => {
@@ -385,8 +381,24 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         continue;
                     }
 
-                    // If it is non valid utf8, parsing will fail? Or UB?
-                    let s = unsafe { std::str::from_utf8_unchecked(s) };
+                    let s = match std::str::from_utf8(s) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            if self.ignore_parser_errors {
+                                builder.append_null();
+                                continue;
+                            }
+                            return Err(PolarsError::Other(
+                                format!(
+                                    "Error while parsing value {} for column {} at line {}. Not valid UTF8",
+                                    e,
+                                    col_idx,
+                                    self.line_number + row_index
+                                )
+                                    .into(),
+                            ));
+                        }
+                    };
 
                     let parsed = if is_boolean_type {
                         s.to_lowercase().parse::<T::Native>()
@@ -478,24 +490,28 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     fn one_thread(
         &mut self,
         builders: &mut Vec<Builder>,
-        mut total_capacity: usize,
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
         mut record_iter: ByteRecordsIntoIter<R>,
     ) -> Result<()> {
         let mut rows = Vec::with_capacity(self.batch_size);
+        let mut count = 0;
         loop {
+            count += 1;
             rows.clear();
             self.next_rows(&mut rows, &mut record_iter)?;
             // stop when the whole file is processed
             if rows.is_empty() {
                 break;
             }
-            if (self.line_number - self.header_offset) > total_capacity {
-                let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
+            if count % CAPACITY_MULTIPLIER == 0 {
+                let mut builders_tmp = init_builders(
+                    &projection,
+                    self.batch_size * CAPACITY_MULTIPLIER,
+                    &self.schema,
+                )?;
                 std::mem::swap(&mut builders_tmp, builders);
                 parsed_dfs.push(builders_to_df(builders_tmp));
-                total_capacity += self.capacity;
             }
 
             self.add_to_builders(builders, &projection, &rows)?;
@@ -514,7 +530,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         &mut self,
         builders: &mut Vec<Builder>,
         projection: &[usize],
-        mut total_capacity: usize,
         mut record_iter: ByteRecordsIntoIter<R>,
         parsed_dfs: &mut Vec<DataFrame>,
     ) -> Result<()> {
@@ -524,7 +539,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         let _ = thread::scope(|s| {
             let batch_size = self.batch_size;
-            // note that line number gets copied ot the other thread.
+            // note that line number gets copied to the other thread.
             let mut line_number = self.line_number;
             let ignore_parser_errors = self.ignore_parser_errors;
             let n_rows = self.n_rows;
@@ -557,19 +572,23 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         Err(TryRecvError::Empty) => {}
                     }
 
-                    tx.send((line_number, rows))
-                        .expect("could not send message");
+                    tx.send(rows).expect("could not send message");
                 }
             });
 
-            while let Ok((line_number, res)) = rx.recv() {
-                let rows = res?;
-                if (line_number - self.header_offset) > total_capacity {
-                    let mut builders_tmp = init_builders(&projection, self.capacity, &self.schema)?;
+            let mut count = 0;
+            while let Ok(res) = rx.recv() {
+                count += 1;
+                if count % CAPACITY_MULTIPLIER == 0 {
+                    let mut builders_tmp = init_builders(
+                        &projection,
+                        self.batch_size * CAPACITY_MULTIPLIER,
+                        &self.schema,
+                    )?;
                     std::mem::swap(&mut builders_tmp, builders);
                     parsed_dfs.push(builders_to_df(builders_tmp));
-                    total_capacity += self.capacity;
                 }
+                let rows = res?;
 
                 match self.add_to_builders(builders, &projection, &rows) {
                     Ok(_) => {}
@@ -587,42 +606,29 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     }
 
     pub fn as_df(&mut self) -> Result<DataFrame> {
-        let mut total_capacity = self.capacity;
         let mut record_iter = self.record_iter.take().unwrap();
         if self.skip_rows > 0 {
             for _ in 0..self.skip_rows {
                 self.line_number += 1;
                 let _ = record_iter.next();
             }
-            total_capacity += self.skip_rows;
         }
 
         // only take projections once
         let projection = take_projection(&mut self.projection, &self.schema);
-        self.batch_size = std::cmp::min(self.batch_size, self.capacity);
+        let mut capacity = self.batch_size * CAPACITY_MULTIPLIER;
         if let Some(n) = self.n_rows {
             self.batch_size = std::cmp::min(self.batch_size, n);
+            capacity = std::cmp::min(n, capacity);
         }
 
-        let mut builders = init_builders(&projection, self.capacity, &self.schema)?;
+        let mut builders = init_builders(&projection, capacity, &self.schema)?;
         // we reuse this container to amortize allocations
         let mut parsed_dfs = Vec::with_capacity(128);
 
         match self.one_thread {
-            true => self.one_thread(
-                &mut builders,
-                total_capacity,
-                &projection,
-                &mut parsed_dfs,
-                record_iter,
-            )?,
-            false => self.two_threads(
-                &mut builders,
-                &projection,
-                total_capacity,
-                record_iter,
-                &mut parsed_dfs,
-            )?,
+            true => self.one_thread(&mut builders, &projection, &mut parsed_dfs, record_iter)?,
+            false => self.two_threads(&mut builders, &projection, record_iter, &mut parsed_dfs)?,
         }
 
         parsed_dfs.push(builders_to_df(builders));
@@ -750,8 +756,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         }
     };
 
-    let capacity = n_rows.unwrap_or(512 * 1024);
-
     if let Some(cols) = columns {
         let mut prj = Vec::with_capacity(cols.len());
         for col in cols {
@@ -771,7 +775,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         ignore_parser_errors,
         n_rows,
         skip_rows,
-        capacity,
         encoding,
         one_thread,
     ))
