@@ -71,7 +71,7 @@ impl DataFrame {
     }
 
     fn has_column(&self, name: &str) -> Result<()> {
-        if self.columns.iter().find(|s| s.name() == name).is_some() {
+        if self.columns.iter().any(|s| s.name() == name) {
             Err(PolarsError::Duplicate(
                 format!("column with name: '{}' already present in DataFrame", name).into(),
             ))

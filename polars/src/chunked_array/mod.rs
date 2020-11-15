@@ -504,7 +504,7 @@ where
     /// Get a single value. Beware this is slow. (only used for formatting)
     pub(crate) fn get_any(&self, index: usize) -> AnyType {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &self.chunks[chunk_idx];
+        let arr = &*self.chunks[chunk_idx];
 
         if arr.is_null(idx) {
             return AnyType::Null;
@@ -512,20 +512,14 @@ where
 
         macro_rules! downcast_and_pack {
             ($casttype:ident, $variant:ident) => {{
-                let arr = arr
-                    .as_any()
-                    .downcast_ref::<$casttype>()
-                    .expect("could not downcast one of the chunks");
+                let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
                 let v = arr.value(idx);
                 AnyType::$variant(v)
             }};
         }
         macro_rules! downcast {
             ($casttype:ident) => {{
-                let arr = arr
-                    .as_any()
-                    .downcast_ref::<$casttype>()
-                    .expect("could not downcast one of the chunks");
+                let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
                 arr.value(idx)
             }};
         }
