@@ -40,7 +40,7 @@ jobs:
     strategy:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        python-version: ["3.7", "3.8"]
+        python-version: ["3.6"]
     steps:
         - uses: actions/checkout@v2
         - name: Install latest Rust nightly
