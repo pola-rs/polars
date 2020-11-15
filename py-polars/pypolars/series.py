@@ -54,7 +54,7 @@ def get_ffi_func(
         return globals().get(fname, default)
 
 
-def wrap_s(s: PySeries) -> "Series":
+def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
 
 
