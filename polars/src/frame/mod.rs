@@ -3,9 +3,11 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::accumulate_dataframes_horizontal;
+use ahash::RandomState;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::marker::Sized;
 use std::mem;
 use std::sync::Arc;
@@ -68,6 +70,24 @@ impl DataFrame {
         }
     }
 
+    fn has_column(&self, name: &str) -> Result<()> {
+        if self.columns.iter().find(|s| s.name() == name).is_some() {
+            Err(PolarsError::Duplicate(
+                format!("column with name: '{}' already present in DataFrame", name).into(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn hash_names(&self) -> HashSet<String, RandomState> {
+        let mut set = HashSet::with_capacity_and_hasher(self.columns.len(), RandomState::default());
+        for s in &self.columns {
+            set.insert(s.name().to_string());
+        }
+        set
+    }
+
     /// Create a DataFrame from a Vector of Series.
     ///
     /// # Example
@@ -81,6 +101,7 @@ impl DataFrame {
     pub fn new<S: IntoSeries>(columns: Vec<S>) -> Result<Self> {
         let mut first_len = None;
         let mut series_cols = Vec::with_capacity(columns.len());
+        let mut names = HashSet::with_capacity_and_hasher(columns.len(), RandomState::default());
 
         // check for series length equality and convert into series in one pass
         for s in columns {
@@ -93,6 +114,15 @@ impl DataFrame {
                 }
                 None => first_len = Some(series.len()),
             }
+            let name = series.name().to_string();
+
+            if names.contains(&name) {
+                return Err(PolarsError::Duplicate(
+                    format!("Column with name: '{}' has more than one occurences", name).into(),
+                ));
+            }
+
+            names.insert(name);
             series_cols.push(series)
         }
         let mut df = DataFrame {
@@ -283,14 +313,27 @@ impl DataFrame {
     /// }
     /// ```
     pub fn hstack_mut(&mut self, columns: &[DfSeries]) -> Result<&mut Self> {
+        let mut names = self.hash_names();
         let height = self.height();
+        // first loop check validity. We don't do this in a single pass otherwise
+        // this DataFrame is already modified when an error occurs.
         for col in columns {
             if col.len() != height {
                 return Err(PolarsError::ShapeMisMatch(
                     format!("Could not horizontally stack Series. The Series length {} differs from the DataFrame height: {}", col.len(), height).into()));
-            } else {
-                self.columns.push(col.clone());
             }
+
+            let name = col.name();
+            if names.contains(name) {
+                return Err(PolarsError::Duplicate(
+                    format!("Column with name: {} already exists", name).into(),
+                ));
+            }
+            names.insert(name.to_string());
+        }
+
+        for col in columns {
+            self.columns.push(col.clone());
         }
         self.register_mutation()?;
         Ok(self)
@@ -377,9 +420,7 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_cols))
     }
 
-    /// Insert a new column at a given index
-    pub fn insert_at_idx<S: IntoSeries>(&mut self, index: usize, column: S) -> Result<&mut Self> {
-        let series = column.into_series();
+    fn insert_at_idx_no_name_check(&mut self, index: usize, series: Series) -> Result<&mut Self> {
         if series.len() == self.height() {
             self.columns.insert(index, series);
             Ok(self)
@@ -395,9 +436,17 @@ impl DataFrame {
         }
     }
 
+    /// Insert a new column at a given index
+    pub fn insert_at_idx<S: IntoSeries>(&mut self, index: usize, column: S) -> Result<&mut Self> {
+        let series = column.into_series();
+        self.has_column(series.name())?;
+        self.insert_at_idx_no_name_check(index, series)
+    }
+
     /// Add a new column to this `DataFrame`.
     pub fn add_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
         let series = column.into_series();
+        self.has_column(series.name())?;
         if series.len() == self.height() {
             self.columns.push(series);
             Ok(self)
@@ -728,6 +777,7 @@ impl DataFrame {
     /// ```
     pub fn replace_at_idx<S: IntoSeries>(&mut self, idx: usize, new_col: S) -> Result<&mut Self> {
         let mut new_column = new_col.into_series();
+        self.has_column(new_column.name())?;
         if new_column.len() != self.height() {
             return Err(PolarsError::ShapeMisMatch(
                 format!("Cannot replace Series at index {}. The shape of Series {} does not match that of the DataFrame {}",
@@ -1195,7 +1245,7 @@ impl DataFrame {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     ///  | id_1 | id_3 | id_2 | type_A | type_B | type_C | code_X1 | code_X2 | code_X3 |
     ///  | ---  | ---  | ---  | ---    | ---    | ---    | ---     | ---     | ---     |
-    ///  | u32  | u32  | u32  | u32    | u32    | u32    | u32     | u32     | u32     |
+    ///  | u8   | u8   | u8   | u8     | u8     | u8     | u8      | u8      | u8      |
     ///  +======+======+======+========+========+========+=========+=========+=========+
     ///  | 1    | 0    | 0    | 1      | 0      | 0      | 1       | 0       | 0       |
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
@@ -1390,6 +1440,16 @@ mod test {
             ]
         );
         dbg!(dummies);
+    }
+
+    #[test]
+    fn test_duplicate_column() {
+        let mut df = df! {
+            "foo" => &[1, 2, 3]
+        }
+        .unwrap();
+        assert!(df.add_column(Series::new("foo", &[1, 2, 3])).is_err());
+        assert!(df.add_column(Series::new("bar", &[1, 2, 3])).is_ok());
     }
 
     #[test]

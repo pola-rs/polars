@@ -43,6 +43,8 @@ pub enum PolarsError {
     IO(#[from] std::io::Error),
     #[error(transparent)]
     Regex(#[from] regex::Error),
+    #[error("DuplicateError: {0}")]
+    Duplicate(ErrString),
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
