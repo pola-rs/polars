@@ -3,6 +3,25 @@ use crate::prelude::*;
 
 pub struct SimplifyExpr {}
 
+fn eval_plus(left: Expr, right: Expr) -> Option<Expr> {
+    match (left, right) {
+        (Expr::Literal(ScalarValue::Float32(x)), Expr::Literal(ScalarValue::Float32(y))) => {
+            Some(Expr::Literal(ScalarValue::Float32(x + y)))
+        }
+        (Expr::Literal(ScalarValue::Float64(x)), Expr::Literal(ScalarValue::Float64(y))) => {
+            Some(Expr::Literal(ScalarValue::Float64(x + y)))
+        }
+        (Expr::Literal(ScalarValue::Int32(x)), Expr::Literal(ScalarValue::Int32(y))) => {
+            Some(Expr::Literal(ScalarValue::Int32(x + y)))
+        }
+        (Expr::Literal(ScalarValue::Int64(x)), Expr::Literal(ScalarValue::Int64(y))) => {
+            Some(Expr::Literal(ScalarValue::Int64(x + y)))
+        }
+
+        _ => None,
+    }
+}
+
 impl SimplifyExpr {
     /// Traverse the expressions from a level in the logical plan and maybe cast them.
     fn rewrite_expressions(&self, exprs: Vec<Expr>) -> Result<Vec<Expr>> {
@@ -17,10 +36,23 @@ impl SimplifyExpr {
         use Expr::*;
         match expr {
             Expr::BinaryExpr {
-                left: box Expr::Literal(ScalarValue::Float32(x)),
+                left,
                 op: Operator::Plus,
-                right: box Expr::Literal(ScalarValue::Float32(y)),
-            } => Ok(Literal(ScalarValue::Float32(x + y))),
+                right,
+            } => {
+                let l = self.rewrite_expr(*left)?;
+                let r = self.rewrite_expr(*right)?;
+
+                if let Some(x) = eval_plus(l, r) {
+                    Ok(x)
+                } else {
+                    Ok(BinaryExpr {
+                        left,
+                        op: Operator::Plus,
+                        right,
+                    })
+                }
+            }
             Expr::BinaryExpr { left, op, right } => {
                 let l = self.rewrite_expr(*left)?;
                 let r = self.rewrite_expr(*right)?;
