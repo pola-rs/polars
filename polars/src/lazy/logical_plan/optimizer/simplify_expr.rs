@@ -3,13 +3,22 @@ use crate::prelude::*;
 
 pub struct SimplifyExpr {}
 
-fn eval_plus(left: Expr, right: Expr) -> Option<Expr> {
+// Evaluates x + y if possible
+fn eval_plus(left: &Expr, right: &Expr) -> Option<Expr> {
     match (left, right) {
-        (Expr::Literal(ScalarValue::Float32(x)), Expr::Literal(ScalarValue::Float32(y))) => {
-            Some(Expr::Literal(ScalarValue::Float32(x + y)))
+        (
+            Expr::Literal(ScalarValue::Float32(x)),
+            Expr::Literal(ScalarValue::Float32(y)),
+        ) => Some(Expr::Literal(ScalarValue::Float32(x + y))),
+        (
+            Expr::Literal(ScalarValue::Float64(x)),
+            Expr::Literal(ScalarValue::Float64(y)),
+        ) => Some(Expr::Literal(ScalarValue::Float64(x + y))),
+        (Expr::Literal(ScalarValue::Int8(x)), Expr::Literal(ScalarValue::Int8(y))) => {
+            Some(Expr::Literal(ScalarValue::Int8(x + y)))
         }
-        (Expr::Literal(ScalarValue::Float64(x)), Expr::Literal(ScalarValue::Float64(y))) => {
-            Some(Expr::Literal(ScalarValue::Float64(x + y)))
+        (Expr::Literal(ScalarValue::Int16(x)), Expr::Literal(ScalarValue::Int16(y))) => {
+            Some(Expr::Literal(ScalarValue::Int16(x + y)))
         }
         (Expr::Literal(ScalarValue::Int32(x)), Expr::Literal(ScalarValue::Int32(y))) => {
             Some(Expr::Literal(ScalarValue::Int32(x + y)))
@@ -17,6 +26,21 @@ fn eval_plus(left: Expr, right: Expr) -> Option<Expr> {
         (Expr::Literal(ScalarValue::Int64(x)), Expr::Literal(ScalarValue::Int64(y))) => {
             Some(Expr::Literal(ScalarValue::Int64(x + y)))
         }
+        (Expr::Literal(ScalarValue::UInt8(x)), Expr::Literal(ScalarValue::UInt8(y))) => {
+            Some(Expr::Literal(ScalarValue::UInt8(x + y)))
+        }
+        (
+            Expr::Literal(ScalarValue::UInt16(x)),
+            Expr::Literal(ScalarValue::UInt16(y)),
+        ) => Some(Expr::Literal(ScalarValue::UInt16(x + y))),
+        (
+            Expr::Literal(ScalarValue::UInt32(x)),
+            Expr::Literal(ScalarValue::UInt32(y)),
+        ) => Some(Expr::Literal(ScalarValue::UInt32(x + y))),
+        (
+            Expr::Literal(ScalarValue::UInt64(x)),
+            Expr::Literal(ScalarValue::UInt64(y)),
+        ) => Some(Expr::Literal(ScalarValue::UInt64(x + y))),
 
         _ => None,
     }
@@ -43,13 +67,13 @@ impl SimplifyExpr {
                 let l = self.rewrite_expr(*left)?;
                 let r = self.rewrite_expr(*right)?;
 
-                if let Some(x) = eval_plus(l, r) {
+                if let Some(x) = eval_plus(&l, &r) {
                     Ok(x)
                 } else {
                     Ok(BinaryExpr {
-                        left,
+                        left: Box::new(l),
                         op: Operator::Plus,
-                        right,
+                        right: Box::new(r),
                     })
                 }
             }
@@ -62,7 +86,9 @@ impl SimplifyExpr {
                     right: Box::new(r),
                 })
             }
-            Alias(expr, name) => Ok(Expr::Alias(Box::new(self.rewrite_expr(*expr)?), name)),
+            Alias(expr, name) => {
+                Ok(Expr::Alias(Box::new(self.rewrite_expr(*expr)?), name))
+            }
             Not(expr) => {
                 let expr = self.rewrite_expr(*expr)?;
                 Ok(expr.not())
