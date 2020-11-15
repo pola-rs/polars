@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 try:
     from .pypolars import PySeries
 except:
@@ -26,7 +24,7 @@ class IdentityDict(dict):
 
 
 def get_ffi_func(
-    name: str, dtype: str, obj: Optional[Series] = None, default: Optional = None
+    name: str, dtype: str, obj: Optional["Series"] = None, default: Optional = None
 ):
     """
     Dynamically obtain the proper ffi function/ method.
@@ -56,11 +54,11 @@ def get_ffi_func(
         return globals().get(fname, default)
 
 
-def wrap_s(s: PySeries) -> Series:
+def wrap_s(s: PySeries) -> "Series":
     return Series._from_pyseries(s)
 
 
-def find_first_non_none(a: List[Optional[Any]]) -> Any:
+def find_first_non_none(a: "List[Optional[Any]]") -> Any:
     v = a[0]
     if v is None:
         return find_first_non_none(a[1:])
@@ -72,7 +70,7 @@ class Series:
     def __init__(
         self,
         name: str,
-        values: Union[np.array, List[Optional[Any]]],
+        values: "Union[np.array, List[Optional[Any]]]",
         nullable: bool = False,
     ):
         """
@@ -205,7 +203,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __ge__(self, other) -> Series:
+    def __ge__(self, other) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -215,7 +213,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __le__(self, other) -> Series:
+    def __le__(self, other) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -225,7 +223,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __add__(self, other) -> Series:
+    def __add__(self, other) -> "Series":
         if isinstance(other, str):
             other = Series("", [other])
         if isinstance(other, Series):
@@ -236,7 +234,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __sub__(self, other) -> Series:
+    def __sub__(self, other) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.sub(other._s))
         dtype = dtype_to_primitive(self.dtype)
@@ -245,7 +243,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __truediv__(self, other) -> Series:
+    def __truediv__(self, other) -> "Series":
         primitive = dtype_to_primitive(self.dtype)
         if self.dtype != primitive:
             return self.__floordiv__(other)
@@ -256,14 +254,14 @@ class Series:
             out_dtype = self.dtype
         return np.true_divide(self, other, dtype=out_dtype)
 
-    def __floordiv__(self, other) -> Series:
+    def __floordiv__(self, other) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.div(other._s))
         dtype = dtype_to_primitive(self.dtype)
         f = get_ffi_func("div_<>", dtype, self._s)
         return wrap_s(f(other))
 
-    def __mul__(self, other) -> Series:
+    def __mul__(self, other) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
         dtype = dtype_to_primitive(self.dtype)
@@ -356,7 +354,7 @@ class Series:
             s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
             self.__setitem__(s, value)
 
-    def drop_nulls(self) -> Series:
+    def drop_nulls(self) -> "Series":
         return wrap_s(self._s.drop_nulls())
 
     @property
@@ -448,7 +446,7 @@ class Series:
         """
         self._s.rename(name)
 
-    def chunk_lengths(self) -> List[int]:
+    def chunk_lengths(self) -> "List[int]":
         return self._s.chunk_lengths()
 
     def n_chunks(self) -> int:
@@ -457,7 +455,7 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def limit(self, num_elements: int) -> Series:
+    def limit(self, num_elements: int) -> "Series":
         """
         Take n elements from this Series.
 
@@ -468,7 +466,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.limit(num_elements))
 
-    def slice(self, offset: int, length: int) -> Series:
+    def slice(self, offset: int, length: int) -> "Series":
         """
         Get a slice of this Series
 
@@ -481,7 +479,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.slice(offset, length))
 
-    def append(self, other: Series):
+    def append(self, other: "Series"):
         """
         Append a Series to this one.
 
@@ -492,7 +490,7 @@ class Series:
         """
         self._s.append(other._s)
 
-    def filter(self, filter: Series) -> Series:
+    def filter(self, filter: "Series") -> "Series":
         """
         Filter elements by a boolean mask
 
@@ -503,7 +501,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.filter(filter._s))
 
-    def head(self, length: Optional[int] = None) -> Series:
+    def head(self, length: Optional[int] = None) -> "Series":
         """
         Get first N elements as Series
 
@@ -514,7 +512,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.head(length))
 
-    def tail(self, length: Optional[int] = None) -> Series:
+    def tail(self, length: Optional[int] = None) -> "Series":
         """
         Get last N elements as Series
 
@@ -525,7 +523,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.tail(length))
 
-    def sort(self, in_place: bool = False, reverse: bool = False) -> Optional[Series]:
+    def sort(self, in_place: bool = False, reverse: bool = False) -> Optional["Series"]:
         """
         Sort this Series.
 
@@ -552,7 +550,7 @@ class Series:
         """
         return self._s.argsort(reverse)
 
-    def arg_unique(self) -> List[int]:
+    def arg_unique(self) -> "List[int]":
         """
         Get unique arguments.
 
@@ -563,13 +561,13 @@ class Series:
         """
         return self._s.arg_unique()
 
-    def unique(self) -> Series:
+    def unique(self) -> "Series":
         """
         Get unique elements in series.
         """
         return wrap_s(self._s.unique())
 
-    def take(self, indices: Union[np.ndarray, List[int]]) -> Series:
+    def take(self, indices: "Union[np.ndarray, List[int]]") -> "Series":
         """
         Take values by index.
 
@@ -588,7 +586,7 @@ class Series:
         """
         return self._s.null_count()
 
-    def is_null(self) -> Series:
+    def is_null(self) -> "Series":
         """
         Get mask of null values
 
@@ -598,7 +596,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_null())
 
-    def is_not_null(self) -> Series:
+    def is_not_null(self) -> "Series":
         """
         Get mask of non null values
 
@@ -608,7 +606,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_not_null())
 
-    def is_unique(self) -> Series:
+    def is_unique(self) -> "Series":
         """
         Get mask of all unique values
 
@@ -618,7 +616,7 @@ class Series:
         """
         return wrap_s(self._s.is_unique())
 
-    def is_duplicated(self) -> Series:
+    def is_duplicated(self) -> "Series":
         """
         Get mask of all duplicated values
 
@@ -628,7 +626,7 @@ class Series:
         """
         return wrap_s(self._s.is_unique())
 
-    def series_equal(self, other: Series, null_equal: bool = False) -> bool:
+    def series_equal(self, other: "Series", null_equal: bool = False) -> bool:
         """
         Check if series equal with another Series.
 
@@ -662,7 +660,7 @@ class Series:
             return NotImplemented
         return wrap_s(f())
 
-    def to_list(self) -> List[Optional[Any]]:
+    def to_list(self) -> "List[Optional[Any]]":
         """
         Convert this Series to a Python List. This operation clones data.
         """
@@ -677,7 +675,7 @@ class Series:
     def __iter__(self):
         return self.to_list().__iter__()
 
-    def rechunk(self, in_place: bool = False) -> Optional[Series]:
+    def rechunk(self, in_place: bool = False) -> Optional["Series"]:
         """
         Create a single chunk of memory for this Series.
 
@@ -751,7 +749,7 @@ class Series:
             return np.array(a)
         return a
 
-    def set(self, filter: Series, value: Union[int, float]) -> Series:
+    def set(self, filter: "Series", value: Union[int, float]) -> "Series":
         """
         Set masked values.
 
@@ -768,8 +766,8 @@ class Series:
         return wrap_s(f(filter._s, value))
 
     def set_at_idx(
-        self, idx: Union[Series, np.ndarray], value: Union[int, float]
-    ) -> Series:
+        self, idx: Union["Series", np.ndarray], value: Union[int, float]
+    ) -> "Series":
         """
         Set values at the index locations.
 
@@ -802,13 +800,13 @@ class Series:
 
         return wrap_s(f(idx_array, value))
 
-    def clone(self) -> Series:
+    def clone(self) -> "Series":
         """
         Cheap deep clones
         """
         return wrap_s(self._s.clone())
 
-    def fill_none(self, strategy: str) -> Series:
+    def fill_none(self, strategy: str) -> "Series":
         """
         Fill null values with a fill strategy.
 
@@ -825,8 +823,8 @@ class Series:
 
     def apply(
         self,
-        func: Union[Callable[["T"], "T"], Callable[["T"], "S"]],
-        dtype_out: Optional["DataType"] = None,
+        func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
+        dtype_out: "Optional['DataType']" = None,
         sniff_dtype: bool = True,
     ):
         """
@@ -866,7 +864,7 @@ class Series:
             dt = dtype_to_int(dtype_out)
             return wrap_s(self._s.apply_lambda(func, dt))
 
-    def shift(self, periods: int) -> Series:
+    def shift(self, periods: int) -> "Series":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with `Nones`.
@@ -878,7 +876,7 @@ class Series:
         """
         return wrap_s(self._s.shift(periods))
 
-    def zip_with(self, mask: Series, other: Series) -> Series:
+    def zip_with(self, mask: "Series", other: "Series") -> "Series":
         """
         Where mask evaluates true take values from self. Where mask evaluates false, take values from other.
 
@@ -895,7 +893,7 @@ class Series:
         """
         return wrap_s(self._s.zip_with(mask._s, other._s))
 
-    def str_lengths(self) -> Series:
+    def str_lengths(self) -> "Series":
         """
         Get length of the string values in the Series.
 
@@ -905,7 +903,7 @@ class Series:
         """
         return wrap_s(self._s.str_lengths())
 
-    def str_contains(self, pattern: str) -> Series:
+    def str_contains(self, pattern: str) -> "Series":
         """
         Check if strings in Series contain regex pattern
 
@@ -920,7 +918,7 @@ class Series:
         """
         return wrap_s(self._s.str_contains(pattern))
 
-    def str_replace(self, pattern: str, value: str) -> Series:
+    def str_replace(self, pattern: str, value: str) -> "Series":
         """
         Replace first regex math with a string value
 
@@ -933,7 +931,7 @@ class Series:
         """
         return wrap_s(self._s.str_replace(pattern, value))
 
-    def str_replace_all(self, pattern: str, value: str) -> Series:
+    def str_replace_all(self, pattern: str, value: str) -> "Series":
         """
         Replace all regex matches with a string value
 
@@ -946,19 +944,19 @@ class Series:
         """
         return wrap_s(self._s.str_replace_all(pattern, value))
 
-    def str_to_lowercase(self) -> Series:
+    def str_to_lowercase(self) -> "Series":
         """
         Modify the strings to their lowercase equivalent
         """
         return wrap_s(self._s.str_to_lowercase())
 
-    def str_to_uppercase(self) -> Series:
+    def str_to_uppercase(self) -> "Series":
         """
         Modify the strings to their uppercase equivalent
         """
         return wrap_s(self._s.str_to_uppercase())
 
-    def as_duration(self) -> Series:
+    def as_duration(self) -> "Series":
         """
         If Series is a date32 or a date64 it can be turned into a duration.
         """
@@ -974,7 +972,7 @@ class Series:
     def rolling_min(
         self,
         window_size: int,
-        weight: Optional[List[float]] = None,
+        weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
     ):
         return wrap_s(self._s.rolling_min(window_size, weight, ignore_null))
@@ -982,7 +980,7 @@ class Series:
     def rolling_max(
         self,
         window_size: int,
-        weight: Optional[List[float]] = None,
+        weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
     ):
         return wrap_s(self._s.rolling_max(window_size, weight, ignore_null))
@@ -990,7 +988,7 @@ class Series:
     def rolling_mean(
         self,
         window_size: int,
-        weight: Optional[List[float]] = None,
+        weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
     ):
         return wrap_s(self._s.rolling_mean(window_size, weight, ignore_null))
@@ -998,7 +996,7 @@ class Series:
     def rolling_sum(
         self,
         window_size: int,
-        weight: Optional[List[float]] = None,
+        weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
     ):
         return wrap_s(self._s.rolling_sum(window_size, weight, ignore_null))
@@ -1114,7 +1112,7 @@ class Series:
     @staticmethod
     def parse_date(
         name: str, values: Sequence[str], dtype: "DataType", fmt: str
-    ) -> Series:
+    ) -> "Series":
         f = get_ffi_func("parse_<>_from_str_slice", dtype, PySeries)
         if f is None:
             return NotImplemented

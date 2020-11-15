@@ -1,4 +1,3 @@
-from __future__ import annotations
 from typing import Union, List, Callable, Optional
 
 from pypolars import Series
@@ -29,7 +28,7 @@ def lazy(self) -> "LazyFrame":
 DataFrame.lazy = lazy
 
 
-def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
+def wrap_ldf(ldf: PyLazyFrame) -> "LazyFrame":
     return LazyFrame.from_pyldf(ldf)
 
 
@@ -37,7 +36,7 @@ class LazyGroupBy:
     def __init__(self, lgb: PyLazyGroupBy):
         self.lgb = lgb
 
-    def agg(self, aggs: Union[List[Expr], Expr]) -> LazyFrame:
+    def agg(self, aggs: "Union[List[Expr], Expr]") -> "LazyFrame":
         if isinstance(aggs, Expr):
             aggs = [aggs._pyexpr]
         else:
@@ -76,7 +75,7 @@ class LazyFrame:
     def describe_optimized_plan(self) -> str:
         return self._ldf.describe_optimized_plan()
 
-    def sort(self, by_column: str) -> LazyFrame:
+    def sort(self, by_column: str) -> "LazyFrame":
         return wrap_ldf(self._ldf.sort(by_column))
 
     def collect(
@@ -90,10 +89,10 @@ class LazyFrame:
         )
         return wrap_df(ldf.collect())
 
-    def filter(self, predicate: Expr) -> LazyFrame:
+    def filter(self, predicate: "Expr") -> "LazyFrame":
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
-    def select(self, exprs: Expr) -> LazyFrame:
+    def select(self, exprs: "Expr") -> "LazyFrame":
         if not isinstance(exprs, list):
             exprs = [exprs._pyexpr]
         else:
@@ -116,11 +115,11 @@ class LazyFrame:
 
     def join(
         self,
-        ldf: LazyFrame,
-        left_on: Expr,
-        right_on: Expr,
+        ldf: "LazyFrame",
+        left_on: "Expr",
+        right_on: "Expr",
         how="inner",
-    ) -> LazyFrame:
+    ) -> "LazyFrame":
         left_on = left_on._pyexpr
         right_on = right_on._pyexpr
         if how == "inner":
@@ -133,14 +132,14 @@ class LazyFrame:
             return NotImplemented
         return wrap_ldf(inner)
 
-    def with_columns(self, exprs: List[Expr]) -> LazyFrame:
+    def with_columns(self, exprs: "List[Expr]") -> "LazyFrame":
         exprs = [e._pyexpr for e in exprs]
         return wrap_ldf(self._ldf.with_columns(exprs))
 
-    def with_column(self, expr: Expr) -> LazyFrame:
+    def with_column(self, expr: "Expr") -> "LazyFrame":
         return self.with_columns([expr])
 
-    def reverse(self) -> LazyFrame:
+    def reverse(self) -> "LazyFrame":
         """
         Reverse the DataFrame.
         """
@@ -158,47 +157,47 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.shift(periods))
 
-    def max(self) -> LazyFrame:
+    def max(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their maximum value
         """
         return wrap_ldf(self._ldf.max())
 
-    def min(self) -> LazyFrame:
+    def min(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their minimum value
         """
         return wrap_ldf(self._ldf.min())
 
-    def sum(self) -> LazyFrame:
+    def sum(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their sum value
         """
         return wrap_ldf(self._ldf.sum())
 
-    def mean(self) -> LazyFrame:
+    def mean(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their mean value
         """
         return wrap_ldf(self._ldf.mean())
 
-    def median(self) -> LazyFrame:
+    def median(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their median value
         """
         return wrap_ldf(self._ldf.median())
 
-    def quantile(self, quantile: float) -> LazyFrame:
+    def quantile(self, quantile: float) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their quantile value
         """
         return wrap_ldf(self._ldf.quantile(quantile))
 
-    def explode(self, column: str) -> LazyFrame:
+    def explode(self, column: str) -> "LazyFrame":
         return wrap_ldf(self._ldf.explode(column))
 
 
-def wrap_expr(pyexpr: PyExpr) -> Expr:
+def wrap_expr(pyexpr: PyExpr) -> "Expr":
     return Expr.from_pyexpr(pyexpr)
 
 
@@ -207,7 +206,7 @@ class Expr:
         self._pyexpr = None
 
     @staticmethod
-    def from_pyexpr(pyexpr: "PyExpr") -> Expr:
+    def from_pyexpr(pyexpr: "PyExpr") -> "Expr":
         self = Expr.__new__(Expr)
         self._pyexpr = pyexpr
         return self
@@ -242,79 +241,79 @@ class Expr:
     def __gt__(self, other):
         return self.gt(other)
 
-    def eq(self, other: Expr) -> Expr:
+    def eq(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr.eq(other._pyexpr))
 
-    def neq(self, other: Expr) -> Expr:
+    def neq(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr.neq(other._pyexpr))
 
-    def gt(self, other: Expr) -> Expr:
+    def gt(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr.gt(other._pyexpr))
 
-    def gt_eq(self, other: Expr) -> Expr:
+    def gt_eq(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr.gt_eq(other._pyexpr))
 
-    def lt_eq(self, other: Expr) -> Expr:
+    def lt_eq(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr.lt_eq(other._pyexpr))
 
-    def lt(self, other: Expr) -> Expr:
+    def lt(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr.lt(other._pyexpr))
 
-    def alias(self, name: str) -> Expr:
+    def alias(self, name: str) -> "Expr":
         return wrap_expr(self._pyexpr.alias(name))
 
-    def is_not(self) -> Expr:
+    def is_not(self) -> "Expr":
         return wrap_expr(self._pyexpr.is_not())
 
-    def is_null(self) -> Expr:
+    def is_null(self) -> "Expr":
         return wrap_expr(self._pyexpr.is_null())
 
-    def is_not_null(self) -> Expr:
+    def is_not_null(self) -> "Expr":
         return wrap_expr(self._pyexpr.is_not_null())
 
-    def agg_min(self) -> Expr:
+    def agg_min(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_min())
 
-    def agg_max(self) -> Expr:
+    def agg_max(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_max())
 
-    def agg_mean(self) -> Expr:
+    def agg_mean(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_mean())
 
-    def agg_median(self) -> Expr:
+    def agg_median(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_median())
 
-    def agg_sum(self) -> Expr:
+    def agg_sum(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_sum())
 
-    def agg_n_unique(self) -> Expr:
+    def agg_n_unique(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_n_unique())
 
-    def agg_first(self) -> Expr:
+    def agg_first(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_first())
 
-    def agg_last(self) -> Expr:
+    def agg_last(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_last())
 
-    def agg_list(self) -> Expr:
+    def agg_list(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_list())
 
-    def agg_quantile(self, quantile: float) -> Expr:
+    def agg_quantile(self, quantile: float) -> "Expr":
         return wrap_expr(self._pyexpr.agg_quantile(quantile))
 
-    def agg_groups(self) -> Expr:
+    def agg_groups(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_groups())
 
-    def cast(self, data_type: "DataType") -> Expr:
+    def cast(self, data_type: "DataType") -> "Expr":
         return wrap_expr(self._pyexpr.cast(data_type))
 
-    def sort(self, reverse: bool) -> Expr:
+    def sort(self, reverse: bool) -> "Expr":
         return wrap_expr(self._pyexpr.sort(reverse))
 
-    def shift(self, periods: int) -> Expr:
+    def shift(self, periods: int) -> "Expr":
         return wrap_expr(self._pyexpr.shift(periods))
 
-    def fill_none(self, strategy: str) -> Expr:
+    def fill_none(self, strategy: str) -> "Expr":
         """
         Fill null values with a fill strategy.
 
@@ -329,39 +328,39 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.fill_none(strategy))
 
-    def max(self) -> Expr:
+    def max(self) -> "Expr":
         return wrap_expr(self._pyexpr.max())
 
-    def min(self) -> Expr:
+    def min(self) -> "Expr":
         return wrap_expr(self._pyexpr.min())
 
-    def sum(self) -> Expr:
+    def sum(self) -> "Expr":
         return wrap_expr(self._pyexpr.sum())
 
-    def mean(self) -> Expr:
+    def mean(self) -> "Expr":
         return wrap_expr(self._pyexpr.mean())
 
-    def median(self) -> Expr:
+    def median(self) -> "Expr":
         return wrap_expr(self._pyexpr.mean())
 
-    def quantile(self, quantile: float) -> Expr:
+    def quantile(self, quantile: float) -> "Expr":
         return wrap_expr(self._pyexpr.quantile(quantile))
 
-    def str_lengths(self) -> Expr:
+    def str_lengths(self) -> "Expr":
         return wrap_expr(self._pyexpr.str_lengths())
 
-    def str_contains(self, pattern: str) -> Expr:
+    def str_contains(self, pattern: str) -> "Expr":
         return wrap_expr(self._pyexpr.str_contains(pattern))
 
-    def str_replace(self, pattern: str, value: str) -> Expr:
+    def str_replace(self, pattern: str, value: str) -> "Expr":
         return wrap_expr(self._pyexpr.str_replace(pattern, value))
 
-    def str_replace_all(self, pattern: str, value: str) -> Expr:
+    def str_replace_all(self, pattern: str, value: str) -> "Expr":
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
     def apply(
         self, f: Callable[[Series], Series], output_type: Optional["DataType"] = None
-    ) -> Expr:
+    ) -> "Expr":
         return wrap_expr(self._pyexpr.apply(f, output_type))
 
 
@@ -369,7 +368,7 @@ class WhenThen:
     def __init__(self, pywhenthen: "PyWhenThen"):
         self._pywhenthen = pywhenthen
 
-    def otherwise(self, expr: Expr) -> Expr:
+    def otherwise(self, expr: "Expr") -> "Expr":
         return wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
 
@@ -377,19 +376,19 @@ class When:
     def __init__(self, pywhen: "PyWhen"):
         self._pywhen = pywhen
 
-    def then(self, expr: Expr) -> WhenThen:
+    def then(self, expr: "Expr") -> WhenThen:
         whenthen = self._pywhen.then(expr._pyexpr)
         return WhenThen(whenthen)
 
 
-def when(expr: Expr) -> When:
+def when(expr: "Expr") -> When:
     pw = pywhen(expr._pyexpr)
     return When(pw)
 
 
-def col(name: str) -> Expr:
+def col(name: str) -> "Expr":
     return wrap_expr(pycol(name))
 
 
-def lit(value: Union[float, int]) -> Expr:
+def lit(value: Union[float, int]) -> "Expr":
     return wrap_expr(pylit(value))
