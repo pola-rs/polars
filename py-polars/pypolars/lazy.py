@@ -28,12 +28,12 @@ def lazy(self) -> "LazyFrame":
 DataFrame.lazy = lazy
 
 
-def wrap_ldf(ldf: PyLazyFrame) -> "LazyFrame":
+def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
     return LazyFrame.from_pyldf(ldf)
 
 
 class LazyGroupBy:
-    def __init__(self, lgb: PyLazyGroupBy):
+    def __init__(self, lgb: "PyLazyGroupBy"):
         self.lgb = lgb
 
     def agg(self, aggs: "Union[List[Expr], Expr]") -> "LazyFrame":
@@ -197,7 +197,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.explode(column))
 
 
-def wrap_expr(pyexpr: PyExpr) -> "Expr":
+def wrap_expr(pyexpr: "PyExpr") -> "Expr":
     return Expr.from_pyexpr(pyexpr)
 
 
