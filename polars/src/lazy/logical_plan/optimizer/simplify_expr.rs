@@ -84,12 +84,10 @@ impl SimplifyOptimizer {
 
                 match plan {
                     Selection { input, predicate } => {
-                        //let predicate = self.rewrite_expr(predicate)?;
                         plans.push(input);
                         exprs.push(predicate);
                     }
                     Projection { expr, input, .. } => {
-                        //let expr = self.rewrite_expressions(expr)?;
                         plans.push(input);
                         exprs.extend(expr);
                     }
@@ -97,7 +95,6 @@ impl SimplifyOptimizer {
                         plans.push(input);
                     }
                     Aggregate { input, aggs, .. } => {
-                        //let aggs = self.rewrite_expressions(aggs)?;
                         plans.push(input);
                         exprs.extend(aggs);
                     }
