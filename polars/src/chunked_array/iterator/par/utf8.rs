@@ -202,7 +202,7 @@ impl<'a> From<Utf8ProducerManyChunk<'a>> for Utf8IterManyChunk<'a> {
         let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
         let current_array_left = chunks[chunk_idx_left];
         let idx_right = prod.offset + prod.len;
-        let (chunk_idx_right, current_array_idx_right) = ca.index_to_chunked_index(idx_right);
+        let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
         let current_array_right = chunks[chunk_idx_right];
         let current_array_left_len = current_array_left.len();
 
@@ -249,15 +249,19 @@ impl<'a> From<Utf8ProducerManyChunkNullCheck<'a>> for Utf8IterManyChunkNullCheck
     fn from(prod: Utf8ProducerManyChunkNullCheck<'a>) -> Self {
         let ca = prod.ca;
         let chunks = ca.downcast_chunks();
+
+        // Compute left chunk indexes.
         let idx_left = prod.offset;
         let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
         let current_array_left = chunks[chunk_idx_left];
         let current_data_left = current_array_left.data();
+        let current_array_left_len = current_array_left.len();
+
+        // Compute right chunk indexes.
         let idx_right = prod.offset + prod.len;
-        let (chunk_idx_right, current_array_idx_right) = ca.index_to_chunked_index(idx_right);
+        let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
         let current_array_right = chunks[chunk_idx_right];
         let current_data_right = current_array_right.data();
-        let current_array_left_len = current_array_left.len();
 
         Utf8IterManyChunkNullCheck {
             ca,
@@ -448,7 +452,7 @@ impl<'a> From<Utf8ProducerContManyChunk<'a>> for Utf8IterContManyChunk<'a> {
         let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
         let current_array_left = chunks[chunk_idx_left];
         let idx_right = prod.offset + prod.len;
-        let (chunk_idx_right, current_array_idx_right) = ca.index_to_chunked_index(idx_right);
+        let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
         let current_array_right = chunks[chunk_idx_right];
         let current_array_left_len = current_array_left.len();
 
@@ -550,4 +554,336 @@ impl<'a> IndexedParallelIterator for Utf8ParContChunkIterDispatch<'a> {
             Utf8ParContChunkIterDispatch::ManyChunk(a) => a.with_producer(callback),
         }
     }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+    use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+
+    /// The size of the chunked array used in tests.
+    const UTF8_CHUNKED_ARRAY_SIZE: usize = 10_000;
+
+    /// Generates a `Vec` of `Strings`, where every position is the `String` representation of its index.
+    fn generate_utf8_vec(size: usize) -> Vec<String> {
+        (0..size).map(|n| n.to_string()).collect()
+    }
+
+    /// Generate a `Vec` of `Option<String`, where even indexes are `None` and odd indexes are `Some("{idx}")`.
+    fn generate_opt_utf8_vec(size: usize) -> Vec<Option<String>> {
+        (0..size)
+            .map(|n| {
+                if n % 2 == 0 {
+                    Some(n.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Implement a test which performs a map over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// Option<&str>.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_map_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel maping.
+                let par_result = a
+                    .into_par_iter()
+                    .map(|opt_s| opt_s.map(|s| s.replace("0", "a")))
+                    .collect::<Vec<_>>();
+
+                // Perform a sequetial maping.
+                let seq_result = a
+                    .into_iter()
+                    .map(|opt_s| opt_s.map(|s| s.replace("0", "a")))
+                    .collect::<Vec<_>>();
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// Option<&str>.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_filter_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel filter.
+                let par_result = a
+                    .into_par_iter()
+                    .filter(|opt_s| {
+                        let opt_s = opt_s.map(|s| s.contains("0"));
+
+                        opt_s.unwrap_or(false)
+                    })
+                    .collect::<Vec<_>>();
+
+                // Perform a sequetial filter.
+                let seq_result = a
+                    .into_iter()
+                    .filter(|opt_s| {
+                        let opt_s = opt_s.map(|s| s.contains("0"));
+
+                        opt_s.unwrap_or(false)
+                    })
+                    .collect::<Vec<_>>();
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// Option<&str>.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_fold_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel sum of length.
+                let par_result = a
+                    .into_par_iter()
+                    .fold(
+                        || 0u64,
+                        |acc, opt_s| {
+                            let opt_s = opt_s.map(|s| s.len() as u64);
+
+                            let len = opt_s.unwrap_or(0);
+                            acc + len
+                        },
+                    )
+                    .reduce(|| 0u64, |left, right| left + right);
+
+                // Perform a sequential sum of length.
+                let seq_result = a.into_iter().fold(0u64, |acc, opt_s| {
+                    let opt_s = opt_s.map(|s| s.len() as u64);
+
+                    let len = opt_s.unwrap_or(0);
+                    acc + len
+                });
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    // Single Chunk Parallel Iterator Tests.
+    impl_par_iter_map_test!(test_iter_utf8paritersinglechunk_map, {
+        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_filter_test!(test_iter_utf8paritersinglechunk_filter, {
+        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_fold_test!(test_iter_utf8paritersinglechunk_fold, {
+        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    // Single Chunk Null Check Parallel Iterator Tests.
+    impl_par_iter_map_test!(test_iter_utf8paritersinglechunknullcheck_map, {
+        Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_filter_test!(test_iter_utf8paritersinglechunknullcheck_filter, {
+        Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_fold_test!(test_iter_utf8paritersinglechunknullcheck_fold, {
+        Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    // Many Chunk Parallel Iterator Tests.
+    impl_par_iter_map_test!(test_iter_utf8paritermanychunk_map, {
+        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_filter_test!(test_iter_utf8paritermanychunk_filter, {
+        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_fold_test!(test_iter_utf8paritermanychunk_fold, {
+        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    // Many Chunk Null Check Parallel Iterator Tests.
+    impl_par_iter_map_test!(test_iter_utf8paritermanychunknullcheck_map, {
+        let mut a =
+            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_filter_test!(test_iter_utf8paritermanychunknullcheck_filter, {
+        let mut a =
+            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_fold_test!(test_iter_utf8paritermanychunknullcheck_fold, {
+        let mut a =
+            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    /// Implement a test which performs a map over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// &str.
+    macro_rules! impl_par_iter_cont_map_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel maping.
+                let par_result = NoNull(&a)
+                    .into_par_iter()
+                    .map(|s| s.replace("0", "a"))
+                    .collect::<Vec<_>>();
+
+                // Perform a sequetial maping.
+                let seq_result = a
+                    .into_no_null_iter()
+                    .map(|s| s.replace("0", "a"))
+                    .collect::<Vec<_>>();
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// &str.
+    macro_rules! impl_par_iter_cont_filter_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel filter.
+                let par_result = NoNull(&a)
+                    .into_par_iter()
+                    .filter(|s| s.contains("0"))
+                    .collect::<Vec<_>>();
+
+                // Perform a sequetial filter.
+                let seq_result = a
+                    .into_no_null_iter()
+                    .filter(|s| s.contains("0"))
+                    .collect::<Vec<_>>();
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// &str.
+    macro_rules! impl_par_iter_cont_fold_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel sum of length.
+                let par_result = NoNull(&a)
+                    .into_par_iter()
+                    .fold(|| 0u64, |acc, s| acc + s.len() as u64)
+                    .reduce(|| 0u64, |left, right| left + right);
+
+                // Perform a sequential sum of length.
+                let seq_result = a
+                    .into_no_null_iter()
+                    .fold(0u64, |acc, s| acc + s.len() as u64);
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    // Single Chunk Cont
+    impl_par_iter_cont_map_test!(test_iter_utf8paritercont_map, {
+        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_cont_filter_test!(test_iter_utf8paritercont_filter, {
+        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_cont_fold_test!(test_iter_utf8paritercont_fold, {
+        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    });
+
+    // Many Chunk Cont
+    impl_par_iter_cont_map_test!(test_iter_utf8paritercontmanychunk_map, {
+        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_cont_filter_test!(test_iter_utf8paritercontmanychunk_filter, {
+        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_cont_fold_test!(test_iter_utf8paritercontmanychunk_fold, {
+        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
 }
