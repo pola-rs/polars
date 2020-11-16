@@ -41,198 +41,176 @@ fn eval_plus(left: &Expr, right: &Expr) -> Option<Expr> {
     }
 }
 
-impl SimplifyExpr {
-    /// Traverse the expressions from a level in the logical plan and maybe cast them.
-    fn rewrite_expressions(&self, exprs: Vec<Expr>) -> Result<Vec<Expr>> {
-        exprs
-            .into_iter()
-            .map(|expr| self.rewrite_expr(expr))
-            .collect()
-    }
+pub struct SimplifyExprRule {}
 
-    fn rewrite_expr(&self, expr: Expr) -> Result<Expr> {
-        // the important expression is BinaryExpr. The rest just traverses the tree.
-        use Expr::*;
+impl SimplifyExprRule {
+    fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
+        None
+    }
+    fn optimize_expr(&self, expr: &Expr) -> Option<Expr> {
         match expr {
             Expr::BinaryExpr {
                 left,
                 op: Operator::Plus,
                 right,
-            } => {
-                let l = self.rewrite_expr(*left)?;
-                let r = self.rewrite_expr(*right)?;
-
-                if let Some(x) = eval_plus(&l, &r) {
-                    Ok(x)
-                } else {
-                    Ok(BinaryExpr {
-                        left: Box::new(l),
-                        op: Operator::Plus,
-                        right: Box::new(r),
-                    })
-                }
-            }
-            Expr::BinaryExpr { left, op, right } => {
-                let l = self.rewrite_expr(*left)?;
-                let r = self.rewrite_expr(*right)?;
-                Ok(Expr::BinaryExpr {
-                    left: Box::new(l),
-                    op,
-                    right: Box::new(r),
-                })
-            }
-            Alias(expr, name) => Ok(Expr::Alias(Box::new(self.rewrite_expr(*expr)?), name)),
-            Not(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.not())
-            }
-            IsNotNull(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.is_not_null())
-            }
-            IsNull(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.is_null())
-            }
-            Cast { expr, data_type } => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.cast(data_type))
-            }
-            Sort { expr, reverse } => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.sort(reverse))
-            }
-            AggMin(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_min())
-            }
-            AggMax(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_max())
-            }
-            AggMedian(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_median())
-            }
-            AggNUnique(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_n_unique())
-            }
-            AggFirst(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_first())
-            }
-            AggLast(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_last())
-            }
-            AggList(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_list())
-            }
-            AggMean(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_mean())
-            }
-            AggQuantile { expr, quantile } => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_quantile(quantile))
-            }
-            AggSum(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_sum())
-            }
-            AggGroups(expr) => {
-                let expr = self.rewrite_expr(*expr)?;
-                Ok(expr.agg_groups())
-            }
-            Shift { input, periods } => {
-                let input = self.rewrite_expr(*input)?;
-                Ok(Shift {
-                    input: Box::new(input),
-                    periods,
-                })
-            }
-            x => Ok(x),
+            } => eval_plus(&left, &right),
+            _ => None,
         }
     }
+}
 
-    fn simplify_expr(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
+pub struct SimplifyOptimizer {}
+
+impl SimplifyOptimizer {
+    fn optimize_loop(&self, logical_plan: &mut LogicalPlan) {
+        let rule = SimplifyExprRule {};
+        use Expr::*;
         use LogicalPlan::*;
-        match logical_plan {
-            Selection { input, predicate } => {
-                let predicate = self.rewrite_expr(predicate)?;
-                let input = Box::new(self.simplify_expr(*input)?);
-                Ok(Selection { input, predicate })
-            }
 
-            Projection {
-                expr,
-                input,
-                schema,
-            } => {
-                let expr = self.rewrite_expressions(expr)?;
-                let input = self.simplify_expr(*input)?;
+        let mut changed = true;
 
-                Ok(Projection {
-                    expr,
-                    input: Box::new(input),
-                    schema,
-                })
+        // run loop until reaching fixed point
+        while changed {
+            // recurse into sub plans and expressions and applies rule
+            let mut plans = vec![&mut *logical_plan];
+            let mut exprs = vec![];
+
+            while let Some(plan) = plans.pop() {
+                // apply rules
+                if let Some(x) = rule.optimize_plan(plan) {
+                    *plan = x;
+                    changed = true;
+                }
+
+                match plan {
+                    Selection { input, predicate } => {
+                        //let predicate = self.rewrite_expr(predicate)?;
+                        plans.push(input);
+                        exprs.push(predicate);
+                    }
+                    Projection { expr, input, .. } => {
+                        //let expr = self.rewrite_expressions(expr)?;
+                        plans.push(input);
+                        exprs.extend(expr);
+                    }
+                    DataFrameOp { input, .. } => {
+                        plans.push(input);
+                    }
+                    Aggregate { input, aggs, .. } => {
+                        //let aggs = self.rewrite_expressions(aggs)?;
+                        plans.push(input);
+                        exprs.extend(aggs);
+                    }
+                    Join {
+                        input_left,
+                        input_right,
+                        ..
+                    } => {
+                        plans.push(input_left);
+                        plans.push(input_right);
+                    }
+                    HStack {
+                        input, exprs: e2, ..
+                    } => {
+                        plans.push(input);
+                        exprs.extend(e2);
+                    }
+                    CsvScan { .. } => {}
+                    DataFrameScan { .. } => {}
+                }
+
+                while let Some(expr) = exprs.pop() {
+                    if let Some(x) = rule.optimize_expr(expr) {
+                        *expr = x;
+                        changed = true;
+                    }
+
+                    match expr {
+                        BinaryExpr { left, right, .. } => {
+                            exprs.push(&mut *left);
+                            exprs.push(&mut *right);
+                        }
+                        Alias(expr, ..) => {
+                            exprs.push(expr);
+                        }
+                        Not(expr) => {
+                            exprs.push(expr);
+                        }
+                        IsNotNull(expr) => {
+                            exprs.push(expr);
+                        }
+                        IsNull(expr) => {
+                            exprs.push(expr);
+                        }
+                        Cast { expr, .. } => {
+                            exprs.push(expr);
+                        }
+                        Sort { expr, .. } => {
+                            exprs.push(expr);
+                        }
+                        AggMin(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggMax(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggMedian(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggNUnique(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggFirst(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggLast(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggList(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggMean(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggQuantile { expr, .. } => {
+                            exprs.push(expr);
+                        }
+                        AggSum(expr) => {
+                            exprs.push(expr);
+                        }
+                        AggGroups(expr) => {
+                            exprs.push(expr);
+                        }
+                        Shift { input, .. } => {
+                            exprs.push(input);
+                        }
+                        Column { .. } => {}
+                        Ternary {
+                            predicate,
+                            truthy,
+                            falsy,
+                        } => {
+                            exprs.push(predicate);
+                            exprs.push(truthy);
+                            exprs.push(falsy);
+                        }
+                        Apply { input, .. } => {
+                            exprs.push(input);
+                        }
+                        Literal { .. } => {}
+                        Wildcard { .. } => {}
+                    }
+                }
             }
-            DataFrameOp { input, operation } => {
-                let input = self.simplify_expr(*input)?;
-                Ok(DataFrameOp {
-                    input: Box::new(input),
-                    operation,
-                })
-            }
-            Aggregate {
-                input,
-                keys,
-                aggs,
-                schema,
-            } => {
-                let input = Box::new(self.simplify_expr(*input)?);
-                let aggs = self.rewrite_expressions(aggs)?;
-                Ok(Aggregate {
-                    input,
-                    keys,
-                    aggs,
-                    schema,
-                })
-            }
-            Join {
-                input_left,
-                input_right,
-                schema,
-                how,
-                left_on,
-                right_on,
-            } => {
-                let input_left = Box::new(self.simplify_expr(*input_left)?);
-                let input_right = Box::new(self.simplify_expr(*input_right)?);
-                Ok(Join {
-                    input_left,
-                    input_right,
-                    schema,
-                    how,
-                    left_on,
-                    right_on,
-                })
-            }
-            HStack { input, exprs, .. } => {
-                let input = self.simplify_expr(*input)?;
-                let exprs = self.rewrite_expressions(exprs)?;
-                Ok(LogicalPlanBuilder::from(input).with_columns(exprs).build())
-            }
-            logical_plan => Ok(logical_plan),
         }
     }
 }
 
 impl Optimize for SimplifyExpr {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.simplify_expr(logical_plan)
+        let opt = SimplifyOptimizer {};
+        let mut plan = logical_plan.clone();
+        opt.optimize_loop(&mut plan);
+        Ok(plan)
     }
 }
