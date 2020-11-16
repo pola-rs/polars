@@ -1,6 +1,5 @@
 use super::*;
 use crate::lazy::logical_plan::DataFrameOperation;
-use itertools::Itertools;
 use std::sync::Mutex;
 
 pub struct CsvExec {
@@ -113,18 +112,6 @@ impl Executor for PipeExec {
                 })
             })
             .collect::<Result<Vec<Series>>>()?;
-
-        // TODO! this is quick fix for flawed projections. Currently projections are
-        //      duplicated during projection pushdown. We need to make sure that projections
-        //      are not duplicated during pushdown
-        let selected_columns = if self.operation == "projection" {
-            selected_columns
-                .into_iter()
-                .unique_by(|s| s.name().to_string())
-                .collect()
-        } else {
-            selected_columns
-        };
 
         Ok(DataFrame::new_no_checks(selected_columns))
     }
