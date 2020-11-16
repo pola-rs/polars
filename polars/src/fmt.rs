@@ -220,9 +220,42 @@ impl Debug for DataFrame {
     }
 }
 
+fn prepare_row(
+    row: Vec<AnyType>,
+    insert_idx: usize,
+    reduce_columns: bool,
+    max_n_cols: usize,
+) -> Vec<String> {
+    let string_limit = 32;
+    let mut row_str = Vec::with_capacity(row.len());
+    for v in row.iter().take(max_n_cols) {
+        let str_val = if let AnyType::Utf8(s) = v {
+            if s.len() > string_limit {
+                format!("{}...", &s[..string_limit])
+            } else {
+                s.to_string()
+            }
+        } else {
+            format!("{}", v)
+        };
+        row_str.push(str_val);
+    }
+    if reduce_columns {
+        row_str.insert(insert_idx, "...".to_string());
+    }
+    row_str
+}
+
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let max_n_cols = 8;
+        let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
+            .unwrap_or_else(|_| "8".to_string())
+            .parse()
+            .unwrap_or(8);
+        let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+            .unwrap_or_else(|_| "8".to_string())
+            .parse()
+            .unwrap_or(8);
         let insert_idx = max_n_cols / 2;
         let reduce_columns = self.width() > max_n_cols;
 
@@ -250,31 +283,32 @@ impl Display for DataFrame {
                     .unwrap_or(100),
             )
             .set_header(names);
-        let string_limit = 32;
-        for i in 0..10 {
-            let opt = self.get(i);
-            if let Some(row) = opt {
-                let mut row_str = Vec::with_capacity(row.len());
-                for v in row.iter().take(max_n_cols) {
-                    let str_val = if let AnyType::Utf8(s) = v {
-                        if s.len() > string_limit {
-                            format!("{}...", &s[..string_limit])
-                        } else {
-                            s.to_string()
-                        }
-                    } else {
-                        format!("{}", v)
-                    };
-                    row_str.push(str_val);
+        let mut rows = Vec::with_capacity(max_n_rows);
+        if self.height() > max_n_rows {
+            for i in 0..(max_n_rows / 2) {
+                let row = self.get(i).unwrap();
+                rows.push(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+            }
+            let dots = rows[0].iter().map(|_| "...".to_string()).collect();
+            rows.push(dots);
+            for i in (self.height() - max_n_cols / 2 - 1)..self.height() {
+                let row = self.get(i).unwrap();
+                rows.push(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+            }
+            for row in rows {
+                table.add_row(row);
+            }
+        } else {
+            for i in 0..10 {
+                let opt = self.get(i);
+                if let Some(row) = opt {
+                    table.add_row(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+                } else {
+                    break;
                 }
-                if reduce_columns {
-                    row_str.insert(insert_idx, "...".to_string());
-                }
-                table.add_row(row_str);
-            } else {
-                break;
             }
         }
+
         write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         Ok(())
     }
