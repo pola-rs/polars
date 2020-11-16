@@ -8,10 +8,12 @@ use crate::prelude::*;
 use ahash::RandomState;
 use arrow::datatypes::Schema;
 use std::collections::HashSet;
+use std::sync::Arc;
+
 fn init_vec() -> Vec<Expr> {
     Vec::with_capacity(100)
 }
-fn init_set() -> HashSet<Expr, RandomState> {
+fn init_set() -> HashSet<Arc<String>, RandomState> {
     HashSet::with_capacity_and_hasher(128, RandomState::default())
 }
 
@@ -28,22 +30,35 @@ impl ProjectionPushDown {
         }
     }
 
-    // split in a projection vec that can be pushed down and a projection vec that should be used
-    // in this node
+    /// split in a projection vec that can be pushed down and a projection vec that should be used
+    /// in this node
+    ///
+    /// # Returns
+    /// accumulated_projections, local_projections, accumulated_names
     fn split_acc_projections(
         &self,
         acc_projections: Vec<Expr>,
         down_schema: &Schema,
-    ) -> (Vec<Expr>, Vec<Expr>) {
+    ) -> (Vec<Expr>, Vec<Expr>, HashSet<Arc<String>, RandomState>) {
         // If node above has as many columns as the projection there is nothing to pushdown.
         if down_schema.fields().len() == acc_projections.len() {
             let local_projections = acc_projections;
-            (vec![], local_projections)
+
+            (
+                vec![],
+                local_projections,
+                HashSet::with_hasher(RandomState::default()),
+            )
         } else {
             let (acc_projections, local_projections) = acc_projections
                 .into_iter()
                 .partition(|expr| check_down_node(expr, down_schema));
-            (acc_projections, local_projections)
+            let mut names = init_set();
+            for proj in &acc_projections {
+                let name = expr_to_root_column(proj).unwrap();
+                names.insert(name);
+            }
+            (acc_projections, local_projections, names)
         }
     }
 
@@ -66,18 +81,26 @@ impl ProjectionPushDown {
         proj: &Expr,
         pushdown_left: &mut Vec<Expr>,
         pushdown_right: &mut Vec<Expr>,
-    ) -> bool {
+        names_left: &mut HashSet<Arc<String>, RandomState>,
+        names_right: &mut HashSet<Arc<String>, RandomState>,
+    ) -> Result<bool> {
         let mut pushed_at_least_one = false;
+        let name = expr_to_root_column(&proj)?;
+        let root_projection = expr_to_root_column_expr(proj)?;
 
-        if check_down_node(&proj, schema_left) {
-            pushdown_left.push(proj.clone());
-            pushed_at_least_one = true;
+        if check_down_node(&root_projection, schema_left) {
+            if names_left.insert(name.clone()) {
+                pushdown_left.push(proj.clone());
+                pushed_at_least_one = true;
+            }
         }
-        if check_down_node(&proj, schema_right) {
-            pushdown_right.push(proj.clone());
-            pushed_at_least_one = true;
+        if check_down_node(&root_projection, schema_right) {
+            if names_right.insert(name) {
+                pushdown_right.push(proj.clone());
+                pushed_at_least_one = true;
+            }
         }
-        pushed_at_least_one
+        Ok(pushed_at_least_one)
     }
 
     // We recurrently traverse the logical plan and every projection we encounter we add to the accumulated
@@ -89,6 +112,7 @@ impl ProjectionPushDown {
         &self,
         logical_plan: LogicalPlan,
         mut acc_projections: Vec<Expr>,
+        mut names: HashSet<Arc<String>, RandomState>,
     ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
         match logical_plan {
@@ -97,12 +121,15 @@ impl ProjectionPushDown {
                 // but also do them locally to keep the schema and the alias.
                 for e in &expr {
                     let expr = expr_to_root_column_expr(e)?;
-                    acc_projections.push(expr.clone());
+                    let name = expr_to_root_column(expr)?;
+                    if names.insert(name) {
+                        acc_projections.push(expr.clone());
+                    }
                 }
 
-                let (acc_projections, _local_projections) =
+                let (acc_projections, _local_projections, names) =
                     self.split_acc_projections(acc_projections, input.schema());
-                let lp = self.push_down(*input, acc_projections)?;
+                let lp = self.push_down(*input, acc_projections, names)?;
 
                 let mut local_projection = Vec::with_capacity(expr.len());
                 for expr in expr {
@@ -133,7 +160,7 @@ impl ProjectionPushDown {
                 self.finish_at_leaf(lp, acc_projections)
             }
             DataFrameOp { input, operation } => {
-                let input = self.push_down(*input, acc_projections)?;
+                let input = self.push_down(*input, acc_projections, names)?;
                 Ok(DataFrameOp {
                     input: Box::new(input),
                     operation,
@@ -142,14 +169,19 @@ impl ProjectionPushDown {
             Selection { predicate, input } => {
                 let local_projections = if !acc_projections.is_empty() {
                     let local_projections = projected_names(&acc_projections)?;
-                    acc_projections.push(expr_to_root_column_expr(&predicate)?.clone());
+                    let name = expr_to_root_column(&predicate)?;
+                    if names.insert(name) {
+                        acc_projections.push(expr_to_root_column_expr(&predicate)?.clone());
+                    }
+
                     local_projections
                 } else {
                     vec![]
                 };
 
-                let builder = LogicalPlanBuilder::from(self.push_down(*input, acc_projections)?)
-                    .filter(predicate);
+                let builder =
+                    LogicalPlanBuilder::from(self.push_down(*input, acc_projections, names)?)
+                        .filter(predicate);
                 self.finish_node(local_projections, builder)
             }
             Aggregate {
@@ -157,24 +189,16 @@ impl ProjectionPushDown {
             } => {
                 let (acc_projections, local_projections) = if !acc_projections.is_empty() {
                     // todo! remove unnecessary vec alloc.
-                    let (mut acc_projections, _local_projections) =
+                    let (mut acc_projections, _local_projections, mut names) =
                         self.split_acc_projections(acc_projections, input.schema());
 
                     // add the columns used in the aggregations to the projection
                     // todo! remove aggregations that aren't selected?
                     let root_projections = expressions_to_root_column_exprs(&aggs)?;
 
-                    let mut names = HashSet::with_capacity_and_hasher(
-                        acc_projections.len(),
-                        RandomState::new(),
-                    );
-                    for proj in &acc_projections {
-                        let name = expr_to_root_column(proj)?;
-                        names.insert(name);
-                    }
                     for proj in root_projections {
                         let name = expr_to_root_column(&proj)?;
-                        if !names.contains(&name) {
+                        if names.insert(name) {
                             acc_projections.push(proj)
                         }
                     }
@@ -186,6 +210,7 @@ impl ProjectionPushDown {
                     // make sure the keys are projected
                     for key in &*keys {
                         local_projections.push(col(key));
+
                         acc_projections.push(col(key))
                     }
                     for agg in &aggs {
@@ -197,7 +222,7 @@ impl ProjectionPushDown {
                     (vec![], vec![])
                 };
 
-                let lp = self.push_down(*input, acc_projections)?;
+                let lp = self.push_down(*input, acc_projections, names)?;
                 let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
                 self.finish_node(local_projections, builder)
             }
@@ -211,6 +236,8 @@ impl ProjectionPushDown {
             } => {
                 let mut pushdown_left = init_vec();
                 let mut pushdown_right = init_vec();
+                let mut names_left = init_set();
+                let mut names_right = init_set();
                 let mut local_projection = init_vec();
 
                 // if there are no projections we don't have to do anything
@@ -247,7 +274,9 @@ impl ProjectionPushDown {
                             &proj,
                             &mut pushdown_left,
                             &mut pushdown_right,
-                        ) {
+                            &mut names_left,
+                            &mut names_right,
+                        )? {
                             // Column name of the projection without any alias.
                             let root_column_name = expr_to_root_column(&proj).unwrap();
 
@@ -258,12 +287,15 @@ impl ProjectionPushDown {
                                 let (downwards_name, _) = root_column_name
                                     .split_at(root_column_name.len() - "_right".len());
 
-                                // project downwards and immediately alias to prevent wrong projections
+                                // project downwards and locally immediately alias to prevent wrong projections
+                                if names_right.insert(Arc::new(downwards_name.to_string())) {
+                                    let projection = col(downwards_name);
+                                    pushdown_right.push(projection);
+                                }
+                                // locally we project and alias
                                 let projection =
                                     col(downwards_name).alias(&format!("{}_right", downwards_name));
-                                pushdown_right.push(projection);
-                                // locally we project the aliased column
-                                local_projection.push(proj);
+                                local_projection.push(projection);
                             }
                         } else if add_local {
                             // always also do the projection locally, because the join columns may not be
@@ -279,8 +311,8 @@ impl ProjectionPushDown {
                         }
                     }
                 }
-                let lp_left = self.push_down(*input_left, pushdown_left)?;
-                let lp_right = self.push_down(*input_right, pushdown_right)?;
+                let lp_left = self.push_down(*input_left, pushdown_left, names_left)?;
+                let lp_right = self.push_down(*input_right, pushdown_right, names_right)?;
                 let builder =
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
                 self.finish_node(local_projection, builder)
@@ -298,11 +330,12 @@ impl ProjectionPushDown {
                     }
                 }
 
-                let (acc_projections, _) =
+                let (acc_projections, _, names) =
                     self.split_acc_projections(acc_projections, input.schema());
 
-                let builder = LogicalPlanBuilder::from(self.push_down(*input, acc_projections)?)
-                    .with_columns(exprs);
+                let builder =
+                    LogicalPlanBuilder::from(self.push_down(*input, acc_projections, names)?)
+                        .with_columns(exprs);
                 // locally re-project all columns plus the stacked columns to keep the order of the schema equal
                 self.finish_node(local_renamed_projections, builder)
             }
@@ -312,6 +345,6 @@ impl ProjectionPushDown {
 
 impl Optimize for ProjectionPushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.push_down(logical_plan, init_vec())
+        self.push_down(logical_plan, init_vec(), init_set())
     }
 }
