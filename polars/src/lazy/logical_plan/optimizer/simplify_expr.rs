@@ -112,8 +112,7 @@ impl SimplifyOptimizer {
                         plans.push(input);
                         exprs.extend(e2);
                     }
-                    CsvScan { .. } => {}
-                    DataFrameScan { .. } => {}
+                    CsvScan { .. } | DataFrameScan { .. } => {}
                 }
 
                 while let Some(expr) = exprs.pop() {
@@ -181,7 +180,6 @@ impl SimplifyOptimizer {
                         Shift { input, .. } => {
                             exprs.push(input);
                         }
-                        Column { .. } => {}
                         Ternary {
                             predicate,
                             truthy,
@@ -194,8 +192,7 @@ impl SimplifyOptimizer {
                         Apply { input, .. } => {
                             exprs.push(input);
                         }
-                        Literal { .. } => {}
-                        Wildcard { .. } => {}
+                        Literal { .. } | Column { .. } | Wildcard => {}
                     }
                 }
             }
