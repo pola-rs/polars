@@ -170,7 +170,9 @@ impl fmt::Debug for LogicalPlan {
                 DataFrameOperation::Quantile(_) => write!(f, "QUANTILE {:?}", input),
                 DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
             },
-            Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
+            Aggregate {
+                input, keys, aggs, ..
+            } => write!(f, "Aggregate\n\t{:?} BY {:?} FROM {:?}", aggs, keys, input),
             Join {
                 input_left,
                 input_right,

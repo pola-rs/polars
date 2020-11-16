@@ -11,6 +11,9 @@ use std::collections::HashSet;
 fn init_vec() -> Vec<Expr> {
     Vec::with_capacity(100)
 }
+fn init_set() -> HashSet<Expr, RandomState> {
+    HashSet::with_capacity_and_hasher(128, RandomState::default())
+}
 
 pub struct ProjectionPushDown {}
 

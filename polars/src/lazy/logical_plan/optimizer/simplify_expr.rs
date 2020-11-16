@@ -77,7 +77,7 @@ impl SimplifyExpr {
                 let r = self.rewrite_expr(*right)?;
                 Ok(Expr::BinaryExpr {
                     left: Box::new(l),
-                    op: op,
+                    op,
                     right: Box::new(r),
                 })
             }
@@ -153,7 +153,7 @@ impl SimplifyExpr {
                     periods,
                 })
             }
-            x => Ok(x.clone()),
+            x => Ok(x),
         }
     }
 

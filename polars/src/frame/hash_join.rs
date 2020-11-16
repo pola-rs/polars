@@ -469,7 +469,7 @@ impl DataFrame {
             df_right.rename(&name, &format!("{}_right", name))?;
         }
 
-        df_left.hstack_mut(&df_right.columns)?;
+        df_left.hstack_mut_no_checks(&df_right.columns)?;
         Ok(df_left)
     }
 
