@@ -301,6 +301,14 @@ impl DataFrame {
         self.shape().0
     }
 
+    pub(crate) fn hstack_mut_no_checks(&mut self, columns: &[Series]) -> Result<&mut Self> {
+        for col in columns {
+            self.columns.push(col.clone());
+        }
+        self.register_mutation()?;
+        Ok(self)
+    }
+
     /// Add multiple Series to a DataFrame
     /// This expects the Series to have the same length.
     ///
@@ -312,7 +320,7 @@ impl DataFrame {
     ///     df.hstack_mut(columns);
     /// }
     /// ```
-    pub fn hstack_mut(&mut self, columns: &[DfSeries]) -> Result<&mut Self> {
+    pub fn hstack_mut(&mut self, columns: &[Series]) -> Result<&mut Self> {
         let mut names = self.hash_names();
         let height = self.height();
         // first loop check validity. We don't do this in a single pass otherwise
@@ -326,17 +334,16 @@ impl DataFrame {
             let name = col.name();
             if names.contains(name) {
                 return Err(PolarsError::Duplicate(
-                    format!("Column with name: {} already exists", name).into(),
+                    format!(
+                        "Cannot do hstack operation. Column with name: {} already exists",
+                        name
+                    )
+                    .into(),
                 ));
             }
             names.insert(name.to_string());
         }
-
-        for col in columns {
-            self.columns.push(col.clone());
-        }
-        self.register_mutation()?;
-        Ok(self)
+        self.hstack_mut_no_checks(columns)
     }
 
     pub fn hstack(&self, columns: &[DfSeries]) -> Result<Self> {
