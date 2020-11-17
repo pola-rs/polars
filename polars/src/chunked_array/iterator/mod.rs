@@ -21,12 +21,12 @@ where
 }
 impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
 impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
-impl<'a> ExactSizeIterator for Utf8IterCont<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterContManyChunk<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterSingleChunk<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterSingleChunkNullCheck<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterManyChunk<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterManyChunkNullCheck<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterSingleChunkReturnUnwrapped<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterManyChunkReturnUnwrapped<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterSingleChunkReturnOption<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterSingleChunkNullCheckReturnOption<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterManyChunkReturnOption<'a> {}
+impl<'a> ExactSizeIterator for Utf8IterManyChunkNullCheckReturnOption<'a> {}
 
 /// Trait for ChunkedArrays that don't have null values.
 pub trait IntoNoNullIterator {
@@ -563,20 +563,20 @@ where
 /// The chunks cannot have null values so it does NOT perform null checks.
 ///
 /// The return type is `&'a str` instead of `Option<&'a str>`. So this struct is not return by the IntoIterator trait.
-pub struct Utf8IterCont<'a> {
+pub struct Utf8IterSingleChunkReturnUnwrapped<'a> {
     current_array: &'a StringArray,
     idx_left: usize,
     idx_right: usize,
 }
 
-impl<'a> Utf8IterCont<'a> {
+impl<'a> Utf8IterSingleChunkReturnUnwrapped<'a> {
     fn new(ca: &'a Utf8Chunked) -> Self {
         let chunks = ca.downcast_chunks();
         let current_array = chunks[0];
         let idx_left = 0;
         let idx_right = current_array.len();
 
-        Utf8IterCont {
+        Utf8IterSingleChunkReturnUnwrapped {
             current_array,
             idx_left,
             idx_right,
@@ -584,7 +584,7 @@ impl<'a> Utf8IterCont<'a> {
     }
 }
 
-impl<'a> Iterator for Utf8IterCont<'a> {
+impl<'a> Iterator for Utf8IterSingleChunkReturnUnwrapped<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -604,7 +604,7 @@ impl<'a> Iterator for Utf8IterCont<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8IterCont<'a> {
+impl<'a> DoubleEndedIterator for Utf8IterSingleChunkReturnUnwrapped<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         // end of iterator or meet reversed iterator in the middle
         if self.idx_left == self.idx_right {
@@ -619,7 +619,7 @@ impl<'a> DoubleEndedIterator for Utf8IterCont<'a> {
 /// The chunks cannot have null values so it does NOT perform null checks.
 ///
 /// The return type is `&'a str` instead of `Option<&'a str>`. So this struct is not return by the IntoIterator trait.
-pub struct Utf8IterContManyChunk<'a> {
+pub struct Utf8IterManyChunkReturnUnwrapped<'a> {
     ca: &'a Utf8Chunked,
     chunks: Vec<&'a StringArray>,
     current_array_left: &'a StringArray,
@@ -633,7 +633,7 @@ pub struct Utf8IterContManyChunk<'a> {
     chunk_idx_right: usize,
 }
 
-impl<'a> Utf8IterContManyChunk<'a> {
+impl<'a> Utf8IterManyChunkReturnUnwrapped<'a> {
     fn new(ca: &'a Utf8Chunked) -> Self {
         let chunks = ca.downcast_chunks();
         let current_array_left = chunks[0];
@@ -646,7 +646,7 @@ impl<'a> Utf8IterContManyChunk<'a> {
         let current_array_idx_right = current_array_right.len();
         let current_array_left_len = current_array_left.len();
 
-        Utf8IterContManyChunk {
+        Utf8IterManyChunkReturnUnwrapped {
             ca,
             chunks,
             current_array_left,
@@ -662,7 +662,7 @@ impl<'a> Utf8IterContManyChunk<'a> {
     }
 }
 
-impl<'a> Iterator for Utf8IterContManyChunk<'a> {
+impl<'a> Iterator for Utf8IterManyChunkReturnUnwrapped<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -700,7 +700,7 @@ impl<'a> Iterator for Utf8IterContManyChunk<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8IterContManyChunk<'a> {
+impl<'a> DoubleEndedIterator for Utf8IterManyChunkReturnUnwrapped<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         // end of iterator or meet reversed iterator in the middle
         if self.idx_left == self.idx_right {
@@ -726,68 +726,75 @@ impl<'a> DoubleEndedIterator for Utf8IterContManyChunk<'a> {
 /// Static dispatching structure to allow static polymorphism of non-nullables chunked iterators.
 ///
 /// All the iterators of the dispatcher returns `&'a str` instead of `Option<&'a str>`.
-pub enum Utf8ContChunkIterDispatch<'a> {
-    SingleChunk(Utf8IterCont<'a>),
-    ManyChunk(Utf8IterContManyChunk<'a>),
+pub enum Utf8ChunkIterReturnUnwrappedDispatch<'a> {
+    SingleChunk(Utf8IterSingleChunkReturnUnwrapped<'a>),
+    ManyChunk(Utf8IterManyChunkReturnUnwrapped<'a>),
 }
 
-impl<'a> Iterator for Utf8ContChunkIterDispatch<'a> {
+impl<'a> Iterator for Utf8ChunkIterReturnUnwrappedDispatch<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Utf8ContChunkIterDispatch::SingleChunk(a) => a.next(),
-            Utf8ContChunkIterDispatch::ManyChunk(a) => a.next(),
+            Utf8ChunkIterReturnUnwrappedDispatch::SingleChunk(a) => a.next(),
+            Utf8ChunkIterReturnUnwrappedDispatch::ManyChunk(a) => a.next(),
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self {
-            Utf8ContChunkIterDispatch::SingleChunk(a) => a.size_hint(),
-            Utf8ContChunkIterDispatch::ManyChunk(a) => a.size_hint(),
+            Utf8ChunkIterReturnUnwrappedDispatch::SingleChunk(a) => a.size_hint(),
+            Utf8ChunkIterReturnUnwrappedDispatch::ManyChunk(a) => a.size_hint(),
         }
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8ContChunkIterDispatch<'a> {
+impl<'a> DoubleEndedIterator for Utf8ChunkIterReturnUnwrappedDispatch<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self {
-            Utf8ContChunkIterDispatch::SingleChunk(a) => a.next_back(),
-            Utf8ContChunkIterDispatch::ManyChunk(a) => a.next_back(),
+            Utf8ChunkIterReturnUnwrappedDispatch::SingleChunk(a) => a.next_back(),
+            Utf8ChunkIterReturnUnwrappedDispatch::ManyChunk(a) => a.next_back(),
         }
     }
 }
 
-impl<'a> ExactSizeIterator for Utf8ContChunkIterDispatch<'a> {}
+impl<'a> ExactSizeIterator for Utf8ChunkIterReturnUnwrappedDispatch<'a> {}
 
 impl<'a> IntoNoNullIterator for &'a Utf8Chunked {
     type Item = &'a str;
-    type IntoIter = Utf8ContChunkIterDispatch<'a>;
+    type IntoIter = Utf8ChunkIterReturnUnwrappedDispatch<'a>;
 
     fn into_no_null_iter(self) -> Self::IntoIter {
         let chunks = self.downcast_chunks();
         match chunks.len() {
-            1 => Utf8ContChunkIterDispatch::SingleChunk(Utf8IterCont::new(self)),
-            _ => Utf8ContChunkIterDispatch::ManyChunk(Utf8IterContManyChunk::new(self)),
+            1 => Utf8ChunkIterReturnUnwrappedDispatch::SingleChunk(
+                Utf8IterSingleChunkReturnUnwrapped::new(self),
+            ),
+            _ => Utf8ChunkIterReturnUnwrappedDispatch::ManyChunk(
+                Utf8IterManyChunkReturnUnwrapped::new(self),
+            ),
         }
     }
 }
 
-/// No null checks
-pub struct Utf8IterSingleChunk<'a> {
+/// Iterator for chunked arrays with just one chunk.
+/// The chunk cannot have null values so it does NOT perform null checks.
+///
+/// The return type is `Option<&'a str>`. This struct is returned by `IntoIterator` trait.
+pub struct Utf8IterSingleChunkReturnOption<'a> {
     current_array: &'a StringArray,
     idx_left: usize,
     idx_right: usize,
 }
 
-impl<'a> Utf8IterSingleChunk<'a> {
+impl<'a> Utf8IterSingleChunkReturnOption<'a> {
     fn new(ca: &'a Utf8Chunked) -> Self {
         let chunks = ca.downcast_chunks();
         let current_array = chunks[0];
         let idx_left = 0;
         let idx_right = current_array.len();
 
-        Utf8IterSingleChunk {
+        Utf8IterSingleChunkReturnOption {
             current_array,
             idx_left,
             idx_right,
@@ -795,7 +802,7 @@ impl<'a> Utf8IterSingleChunk<'a> {
     }
 }
 
-impl<'a> Iterator for Utf8IterSingleChunk<'a> {
+impl<'a> Iterator for Utf8IterSingleChunkReturnOption<'a> {
     type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -815,7 +822,7 @@ impl<'a> Iterator for Utf8IterSingleChunk<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8IterSingleChunk<'a> {
+impl<'a> DoubleEndedIterator for Utf8IterSingleChunkReturnOption<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         // end of iterator or meet reversed iterator in the middle
         if self.idx_left == self.idx_right {
@@ -826,14 +833,18 @@ impl<'a> DoubleEndedIterator for Utf8IterSingleChunk<'a> {
     }
 }
 
-pub struct Utf8IterSingleChunkNullCheck<'a> {
+/// Iterator for chunked arrays with just one chunk.
+/// The chunk have null values so it DOES perform null checks.
+///
+/// The return type is `Option<&'a str>`. This struct is returned by `IntoIterator` trait.
+pub struct Utf8IterSingleChunkNullCheckReturnOption<'a> {
     current_data: ArrayDataRef,
     current_array: &'a StringArray,
     idx_left: usize,
     idx_right: usize,
 }
 
-impl<'a> Utf8IterSingleChunkNullCheck<'a> {
+impl<'a> Utf8IterSingleChunkNullCheckReturnOption<'a> {
     fn new(ca: &'a Utf8Chunked) -> Self {
         let chunks = ca.downcast_chunks();
         let current_array = chunks[0];
@@ -841,7 +852,7 @@ impl<'a> Utf8IterSingleChunkNullCheck<'a> {
         let idx_left = 0;
         let idx_right = current_array.len();
 
-        Utf8IterSingleChunkNullCheck {
+        Utf8IterSingleChunkNullCheckReturnOption {
             current_data,
             current_array,
             idx_left,
@@ -850,7 +861,7 @@ impl<'a> Utf8IterSingleChunkNullCheck<'a> {
     }
 }
 
-impl<'a> Iterator for Utf8IterSingleChunkNullCheck<'a> {
+impl<'a> Iterator for Utf8IterSingleChunkNullCheckReturnOption<'a> {
     type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -875,7 +886,7 @@ impl<'a> Iterator for Utf8IterSingleChunkNullCheck<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8IterSingleChunkNullCheck<'a> {
+impl<'a> DoubleEndedIterator for Utf8IterSingleChunkNullCheckReturnOption<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         // end of iterator or meet reversed iterator in the middle
         if self.idx_left == self.idx_right {
@@ -890,8 +901,11 @@ impl<'a> DoubleEndedIterator for Utf8IterSingleChunkNullCheck<'a> {
     }
 }
 
-/// Many chunks no nulls
-pub struct Utf8IterManyChunk<'a> {
+/// Iterator for chunked arrays with many chunks.
+/// The chunks cannot have null values so it does NOT perform null checks.
+///
+/// The return type is `Option<&'a str>`. This struct is returned by `IntoIterator` trait.
+pub struct Utf8IterManyChunkReturnOption<'a> {
     ca: &'a Utf8Chunked,
     chunks: Vec<&'a StringArray>,
     current_array_left: &'a StringArray,
@@ -905,7 +919,7 @@ pub struct Utf8IterManyChunk<'a> {
     chunk_idx_right: usize,
 }
 
-impl<'a> Utf8IterManyChunk<'a> {
+impl<'a> Utf8IterManyChunkReturnOption<'a> {
     fn new(ca: &'a Utf8Chunked) -> Self {
         let chunks = ca.downcast_chunks();
         let current_array_left = chunks[0];
@@ -918,7 +932,7 @@ impl<'a> Utf8IterManyChunk<'a> {
         let current_array_idx_right = current_array_right.len();
         let current_array_left_len = current_array_left.len();
 
-        Utf8IterManyChunk {
+        Utf8IterManyChunkReturnOption {
             ca,
             chunks,
             current_array_left,
@@ -934,7 +948,7 @@ impl<'a> Utf8IterManyChunk<'a> {
     }
 }
 
-impl<'a> Iterator for Utf8IterManyChunk<'a> {
+impl<'a> Iterator for Utf8IterManyChunkReturnOption<'a> {
     type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -972,7 +986,7 @@ impl<'a> Iterator for Utf8IterManyChunk<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8IterManyChunk<'a> {
+impl<'a> DoubleEndedIterator for Utf8IterManyChunkReturnOption<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         // end of iterator or meet reversed iterator in the middle
         if self.idx_left == self.idx_right {
@@ -995,8 +1009,11 @@ impl<'a> DoubleEndedIterator for Utf8IterManyChunk<'a> {
     }
 }
 
-/// Many chunks with nulls
-pub struct Utf8IterManyChunkNullCheck<'a> {
+/// Iterator for chunked arrays with many chunks.
+/// The chunks have null values so it DOES perform null checks.
+///
+/// The return type is `Option<&'a str>`. This struct is returned by `IntoIterator` trait.
+pub struct Utf8IterManyChunkNullCheckReturnOption<'a> {
     ca: &'a Utf8Chunked,
     chunks: Vec<&'a StringArray>,
     current_data_left: ArrayDataRef,
@@ -1012,7 +1029,7 @@ pub struct Utf8IterManyChunkNullCheck<'a> {
     chunk_idx_right: usize,
 }
 
-impl<'a> Utf8IterManyChunkNullCheck<'a> {
+impl<'a> Utf8IterManyChunkNullCheckReturnOption<'a> {
     fn new(ca: &'a Utf8Chunked) -> Self {
         let chunks = ca.downcast_chunks();
         let current_array_left = chunks[0];
@@ -1027,7 +1044,7 @@ impl<'a> Utf8IterManyChunkNullCheck<'a> {
         let current_array_idx_right = current_data_right.len();
         let current_array_left_len = current_array_left.len();
 
-        Utf8IterManyChunkNullCheck {
+        Utf8IterManyChunkNullCheckReturnOption {
             ca,
             chunks,
             current_data_left,
@@ -1045,7 +1062,7 @@ impl<'a> Utf8IterManyChunkNullCheck<'a> {
     }
 }
 
-impl<'a> Iterator for Utf8IterManyChunkNullCheck<'a> {
+impl<'a> Iterator for Utf8IterManyChunkNullCheckReturnOption<'a> {
     type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1089,7 +1106,7 @@ impl<'a> Iterator for Utf8IterManyChunkNullCheck<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8IterManyChunkNullCheck<'a> {
+impl<'a> DoubleEndedIterator for Utf8IterManyChunkNullCheckReturnOption<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         // end of iterator or meet reversed iterator in the middle
         if self.idx_left == self.idx_right {
@@ -1125,69 +1142,75 @@ impl<'a> DoubleEndedIterator for Utf8IterManyChunkNullCheck<'a> {
 /// Static dispatching structure to allow static polymorphism of chunked iterators.
 ///
 /// All the iterators of the dispatcher returns `Option<&'a str>`.
-pub enum Utf8ChunkIterDispatch<'a> {
-    SingleChunk(Utf8IterSingleChunk<'a>),
-    SingleChunkNullCheck(Utf8IterSingleChunkNullCheck<'a>),
-    ManyChunk(Utf8IterManyChunk<'a>),
-    ManyChunkNullCheck(Utf8IterManyChunkNullCheck<'a>),
+pub enum Utf8ChunkIterReturnOptionDispatch<'a> {
+    SingleChunk(Utf8IterSingleChunkReturnOption<'a>),
+    SingleChunkNullCheck(Utf8IterSingleChunkNullCheckReturnOption<'a>),
+    ManyChunk(Utf8IterManyChunkReturnOption<'a>),
+    ManyChunkNullCheck(Utf8IterManyChunkNullCheckReturnOption<'a>),
 }
 
-impl<'a> Iterator for Utf8ChunkIterDispatch<'a> {
+impl<'a> Iterator for Utf8ChunkIterReturnOptionDispatch<'a> {
     type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Utf8ChunkIterDispatch::SingleChunk(a) => a.next(),
-            Utf8ChunkIterDispatch::SingleChunkNullCheck(a) => a.next(),
-            Utf8ChunkIterDispatch::ManyChunk(a) => a.next(),
-            Utf8ChunkIterDispatch::ManyChunkNullCheck(a) => a.next(),
+            Utf8ChunkIterReturnOptionDispatch::SingleChunk(a) => a.next(),
+            Utf8ChunkIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.next(),
+            Utf8ChunkIterReturnOptionDispatch::ManyChunk(a) => a.next(),
+            Utf8ChunkIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.next(),
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self {
-            Utf8ChunkIterDispatch::SingleChunk(a) => a.size_hint(),
-            Utf8ChunkIterDispatch::SingleChunkNullCheck(a) => a.size_hint(),
-            Utf8ChunkIterDispatch::ManyChunk(a) => a.size_hint(),
-            Utf8ChunkIterDispatch::ManyChunkNullCheck(a) => a.size_hint(),
+            Utf8ChunkIterReturnOptionDispatch::SingleChunk(a) => a.size_hint(),
+            Utf8ChunkIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.size_hint(),
+            Utf8ChunkIterReturnOptionDispatch::ManyChunk(a) => a.size_hint(),
+            Utf8ChunkIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.size_hint(),
         }
     }
 }
 
-impl<'a> DoubleEndedIterator for Utf8ChunkIterDispatch<'a> {
+impl<'a> DoubleEndedIterator for Utf8ChunkIterReturnOptionDispatch<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self {
-            Utf8ChunkIterDispatch::SingleChunk(a) => a.next_back(),
-            Utf8ChunkIterDispatch::SingleChunkNullCheck(a) => a.next_back(),
-            Utf8ChunkIterDispatch::ManyChunk(a) => a.next_back(),
-            Utf8ChunkIterDispatch::ManyChunkNullCheck(a) => a.next_back(),
+            Utf8ChunkIterReturnOptionDispatch::SingleChunk(a) => a.next_back(),
+            Utf8ChunkIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.next_back(),
+            Utf8ChunkIterReturnOptionDispatch::ManyChunk(a) => a.next_back(),
+            Utf8ChunkIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.next_back(),
         }
     }
 }
 
-impl<'a> ExactSizeIterator for Utf8ChunkIterDispatch<'a> {}
+impl<'a> ExactSizeIterator for Utf8ChunkIterReturnOptionDispatch<'a> {}
 
 impl<'a> IntoIterator for &'a Utf8Chunked {
     type Item = Option<&'a str>;
-    type IntoIter = Utf8ChunkIterDispatch<'a>;
+    type IntoIter = Utf8ChunkIterReturnOptionDispatch<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         let chunks = self.downcast_chunks();
         match chunks.len() {
             1 => {
                 if self.null_count() == 0 {
-                    Utf8ChunkIterDispatch::SingleChunk(Utf8IterSingleChunk::new(self))
+                    Utf8ChunkIterReturnOptionDispatch::SingleChunk(
+                        Utf8IterSingleChunkReturnOption::new(self),
+                    )
                 } else {
-                    Utf8ChunkIterDispatch::SingleChunkNullCheck(Utf8IterSingleChunkNullCheck::new(
-                        self,
-                    ))
+                    Utf8ChunkIterReturnOptionDispatch::SingleChunkNullCheck(
+                        Utf8IterSingleChunkNullCheckReturnOption::new(self),
+                    )
                 }
             }
             _ => {
                 if self.null_count() == 0 {
-                    Utf8ChunkIterDispatch::ManyChunk(Utf8IterManyChunk::new(self))
+                    Utf8ChunkIterReturnOptionDispatch::ManyChunk(
+                        Utf8IterManyChunkReturnOption::new(self),
+                    )
                 } else {
-                    Utf8ChunkIterDispatch::ManyChunkNullCheck(Utf8IterManyChunkNullCheck::new(self))
+                    Utf8ChunkIterReturnOptionDispatch::ManyChunkNullCheck(
+                        Utf8IterManyChunkNullCheckReturnOption::new(self),
+                    )
                 }
             }
         }
