@@ -4,7 +4,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-pub trait PyArrowPrimitiveType: ArrowPrimitiveType {}
+pub trait PyArrowPrimitiveType: PolarsPrimitiveType {}
 
 impl PyArrowPrimitiveType for UInt8Type {}
 impl PyArrowPrimitiveType for UInt16Type {}
@@ -198,6 +198,8 @@ where
     builder.append_value(out.extract()?);
     Ok(())
 }
+
+impl<'a, 'b> ApplyLambda<'a, 'b> for ObjectChunked {}
 
 impl<'a, 'b> ApplyLambda<'a, 'b> for ListChunked {
     fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
