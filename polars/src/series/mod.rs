@@ -7,6 +7,10 @@ pub(crate) mod aggregate;
 pub(crate) mod arithmetic;
 mod comparison;
 pub(crate) mod iterator;
+#[allow(clippy::missing_safety_doc)]
+pub mod ops;
+
+use self::ops::SeriesOps;
 use crate::chunked_array::builder::get_list_builder;
 use crate::fmt::FmtList;
 use arrow::array::ArrayDataRef;
@@ -104,7 +108,6 @@ use arrow::array::ArrayDataRef;
 ///     .collect();
 ///
 /// ```
-#[derive(Clone)]
 pub enum Series {
     UInt8(ChunkedArray<UInt8Type>),
     UInt16(ChunkedArray<UInt16Type>),
@@ -135,7 +138,13 @@ pub enum Series {
     TimestampMillisecond(TimestampMillisecondChunked),
     TimestampSecond(TimestampSecondChunked),
     List(ListChunked),
-    Object(ObjectChunked),
+    Object(Box<dyn SeriesOps>),
+}
+
+impl Clone for Series {
+    fn clone(&self) -> Self {
+        apply_method_all_arrow_series_and_return!(self, clone, [],)
+    }
 }
 
 macro_rules! unpack_series {
@@ -159,7 +168,7 @@ macro_rules! unpack_series {
 impl Series {
     /// Get Arrow ArrayData
     pub fn array_data(&self) -> Vec<ArrayDataRef> {
-        apply_method_all_series!(self, array_data,)
+        apply_method_all_arrow_series!(self, array_data,)
     }
 
     pub fn from_chunked_array<T: PolarsDataType>(ca: ChunkedArray<T>) -> Self {
@@ -358,7 +367,7 @@ impl Series {
     }
 
     pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
-        apply_method_all_series!(self, append_array, other)?;
+        apply_method_all_arrow_series!(self, append_array, other)?;
         Ok(self)
     }
 
@@ -375,7 +384,8 @@ impl Series {
     /// Append a Series of the same type in place.
     pub fn append(&mut self, other: &Self) -> Result<&mut Self> {
         if self.dtype() == other.dtype() {
-            apply_method_all_series!(self, append, other.as_ref());
+            // todo! add object
+            apply_method_all_arrow_series!(self, append, other.as_ref());
             Ok(self)
         } else {
             Err(PolarsError::DataTypeMisMatch(
@@ -395,7 +405,8 @@ impl Series {
     ///
     /// Out of bounds access doesn't Error but will return a Null value
     pub fn take_iter(&self, iter: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
-        apply_method_all_series_and_return!(self, take, [iter, capacity],)
+        // todo! add object
+        apply_method_all_arrow_series_and_return!(self, take, [iter, capacity],)
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -408,7 +419,8 @@ impl Series {
         iter: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Self {
-        apply_method_all_series_and_return!(self, take_unchecked, [iter, capacity],)
+        // todo! add object
+        apply_method_all_arrow_series_and_return!(self, take_unchecked, [iter, capacity],)
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -421,7 +433,7 @@ impl Series {
         iter: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
-        apply_method_all_series_and_return!(self, take_opt_unchecked, [iter, capacity],)
+        apply_method_all_arrow_series_and_return!(self, take_opt_unchecked, [iter, capacity],)
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -434,7 +446,7 @@ impl Series {
         iter: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
-        apply_method_all_series_and_return!(self, take_opt, [iter, capacity],)
+        apply_method_all_arrow_series_and_return!(self, take_opt, [iter, capacity],)
     }
 
     /// Take by index. This operation is clone.
@@ -576,11 +588,11 @@ impl Series {
 
     /// Create dummy variables. See [DataFrame](DataFrame::to_dummies)
     pub fn to_dummies(&self) -> Result<DataFrame> {
-        apply_method_all_series!(self, to_dummies,)
+        apply_method_all_arrow_series!(self, to_dummies,)
     }
 
     pub fn value_counts(&self) -> Result<DataFrame> {
-        apply_method_all_series!(self, value_counts,)
+        apply_method_all_arrow_series!(self, value_counts,)
     }
 
     /// Get the `ChunkedArray` for some `PolarsDataType`
@@ -642,17 +654,17 @@ impl Series {
 
     /// Sort in place.
     pub fn sort_in_place(&mut self, reverse: bool) -> &mut Self {
-        apply_method_all_series!(self, sort_in_place, reverse);
+        apply_method_all_arrow_series!(self, sort_in_place, reverse);
         self
     }
 
     pub fn sort(&self, reverse: bool) -> Self {
-        apply_method_all_series_and_return!(self, sort, [reverse],)
+        apply_method_all_arrow_series_and_return!(self, sort, [reverse],)
     }
 
     /// Retrieve the indexes needed for a sort.
     pub fn argsort(&self, reverse: bool) -> Vec<usize> {
-        apply_method_all_series!(self, argsort, reverse)
+        apply_method_all_arrow_series!(self, argsort, reverse)
     }
 
     /// Count the null values.
@@ -662,12 +674,12 @@ impl Series {
 
     /// Get unique values in the Series.
     pub fn unique(&self) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, unique, [],?))
+        Ok(apply_method_all_arrow_series_and_return!(self, unique, [],?))
     }
 
     /// Get first indexes of unique values.
     pub fn arg_unique(&self) -> Result<Vec<usize>> {
-        apply_method_all_series!(self, arg_unique,)
+        apply_method_all_arrow_series!(self, arg_unique,)
     }
 
     /// Get a mask of the null values.
@@ -682,17 +694,17 @@ impl Series {
 
     /// Get a mask of all the unique values.
     pub fn is_unique(&self) -> Result<BooleanChunked> {
-        apply_method_all_series!(self, is_unique,)
+        apply_method_all_arrow_series!(self, is_unique,)
     }
 
     /// Get a mask of all the duplicated values.
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
-        apply_method_all_series!(self, is_duplicated,)
+        apply_method_all_arrow_series!(self, is_duplicated,)
     }
 
     /// Get the bits that represent the null values of the underlying ChunkedArray
     pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
-        apply_method_all_series!(self, null_bits,)
+        apply_method_all_arrow_series!(self, null_bits,)
     }
 
     /// return a Series in reversed order
@@ -784,35 +796,35 @@ impl Series {
 
     /// Get the sum of the Series as a new Series of length 1.
     pub fn sum_as_series(&self) -> Series {
-        apply_method_all_series!(self, sum_as_series,)
+        apply_method_all_arrow_series!(self, sum_as_series,)
     }
     /// Get the max of the Series as a new Series of length 1.
     pub fn max_as_series(&self) -> Series {
-        apply_method_all_series!(self, max_as_series,)
+        apply_method_all_arrow_series!(self, max_as_series,)
     }
     /// Get the min of the Series as a new Series of length 1.
     pub fn min_as_series(&self) -> Series {
-        apply_method_all_series!(self, min_as_series,)
+        apply_method_all_arrow_series!(self, min_as_series,)
     }
     /// Get the mean of the Series as a new Series of length 1.
     pub fn mean_as_series(&self) -> Series {
-        apply_method_all_series!(self, mean_as_series,)
+        apply_method_all_arrow_series!(self, mean_as_series,)
     }
     /// Get the median of the Series as a new Series of length 1.
     pub fn median_as_series(&self) -> Series {
-        apply_method_all_series!(self, median_as_series,)
+        apply_method_all_arrow_series!(self, median_as_series,)
     }
     /// Get the variance of the Series as a new Series of length 1.
     pub fn var_as_series(&self) -> Series {
-        apply_method_all_series!(self, var_as_series,)
+        apply_method_all_arrow_series!(self, var_as_series,)
     }
     /// Get the standard deviation of the Series as a new Series of length 1.
     pub fn std_as_series(&self) -> Series {
-        apply_method_all_series!(self, std_as_series,)
+        apply_method_all_arrow_series!(self, std_as_series,)
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
     pub fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-        apply_method_all_series!(self, quantile_as_series, quantile)
+        apply_method_all_arrow_series!(self, quantile_as_series, quantile)
     }
     /// Apply a rolling mean to a Series. See:
     /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
@@ -822,7 +834,7 @@ impl Series {
         weight: Option<&[f64]>,
         ignore_null: bool,
     ) -> Result<Self> {
-        let s = apply_method_all_series_and_return!(self, rolling_mean, [window_size, weight, ignore_null], ?);
+        let s = apply_method_all_arrow_series_and_return!(self, rolling_mean, [window_size, weight, ignore_null], ?);
         Ok(s)
     }
     /// Apply a rolling sum to a Series. See:
@@ -833,7 +845,7 @@ impl Series {
         weight: Option<&[f64]>,
         ignore_null: bool,
     ) -> Result<Self> {
-        let s = apply_method_all_series_and_return!(self, rolling_sum, [window_size, weight, ignore_null], ?);
+        let s = apply_method_all_arrow_series_and_return!(self, rolling_sum, [window_size, weight, ignore_null], ?);
         Ok(s)
     }
     /// Apply a rolling min to a Series. See:
@@ -844,7 +856,7 @@ impl Series {
         weight: Option<&[f64]>,
         ignore_null: bool,
     ) -> Result<Self> {
-        let s = apply_method_all_series_and_return!(self, rolling_min, [window_size, weight, ignore_null], ?);
+        let s = apply_method_all_arrow_series_and_return!(self, rolling_min, [window_size, weight, ignore_null], ?);
         Ok(s)
     }
     /// Apply a rolling max to a Series. See:
@@ -855,7 +867,7 @@ impl Series {
         weight: Option<&[f64]>,
         ignore_null: bool,
     ) -> Result<Self> {
-        let s = apply_method_all_series_and_return!(self, rolling_max, [window_size, weight, ignore_null], ?);
+        let s = apply_method_all_arrow_series_and_return!(self, rolling_max, [window_size, weight, ignore_null], ?);
         Ok(s)
     }
 
@@ -1042,7 +1054,6 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
                 Series::IntervalDayTime(mem::transmute(ca))
             }
             ArrowDataType::List(_) => Series::List(mem::transmute(ca)),
-            ArrowDataType::Binary => Series::Object(mem::transmute(ca)),
             _ => panic!("Not implemented: {:?}", N::get_data_type()),
         }
     }
@@ -1153,7 +1164,15 @@ impl_as_ref_ca!(TimestampSecondType, TimestampSecond);
 impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
 impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
 impl_as_ref_ca!(ListType, List);
-impl_as_ref_ca!(ObjectType, Object);
+
+impl AsRef<Box<dyn SeriesOps>> for Series {
+    fn as_ref(&self) -> &Box<dyn SeriesOps> {
+        match self {
+            Series::Object(a) => a,
+            _ => unimplemented!(),
+        }
+    }
+}
 
 macro_rules! impl_as_mut_ca {
     ($type:ident, $series_var:ident) => {

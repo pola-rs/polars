@@ -49,7 +49,7 @@ where
         }
     }
 
-    pub fn finish(mut self) -> ObjectChunked {
+    pub fn finish(mut self) -> ObjectChunked<T> {
         let null_bit_buffer = self.bitmask_builder.finish();
         let null_count = count_set_bits(null_bit_buffer.data());
         let null_bitmap = Bitmap::from(null_bit_buffer);
@@ -76,32 +76,72 @@ where
     }
 }
 
-pub trait AnyObjectBuilder {
-    fn append_null(&mut self);
-
-    fn append_value(&mut self, v: &dyn Any) -> Result<()>;
-
-    fn finish(self) -> ObjectChunked;
-}
-
-impl<T> AnyObjectBuilder for ObjectChunkedBuilder<T>
+impl<T> Default for ObjectChunkedBuilder<T>
 where
     T: Any + Debug + Clone + Send + Sync + Default,
 {
-    fn append_null(&mut self) {
-        ObjectChunkedBuilder::append_null(self)
-    }
-
-    fn append_value(&mut self, v: &dyn Any) -> Result<()> {
-        self.append_value_from_any(v)
-    }
-
-    fn finish(self) -> ObjectChunked {
-        ObjectChunkedBuilder::finish(self)
+    fn default() -> Self {
+        ObjectChunkedBuilder::new("", 0)
     }
 }
 
-impl<T> NewChunkedArray<ObjectType, T> for ObjectChunked
+// pub trait AnyObjectBuilder {
+//     fn append_null(&mut self);
+//
+//     fn append_value(&mut self, v: &dyn Any) -> Result<()>;
+//
+//     // trait object cannot take self by value
+//     fn finish(&mut self) -> ObjectChunked<T>;
+// }
+//
+// impl<T> AnyObjectBuilder for ObjectChunkedBuilder<T>
+// where
+//     T: Any + Debug + Clone + Send + Sync + Default,
+// {
+//     fn append_null(&mut self) {
+//         ObjectChunkedBuilder::append_null(self)
+//     }
+//
+//     fn append_value(&mut self, v: &dyn Any) -> Result<()> {
+//         self.append_value_from_any(v)
+//     }
+//
+//     fn finish(&mut self) -> ObjectChunked<T> {
+//         let builder = std::mem::take(self);
+//         ObjectChunkedBuilder::finish(builder)
+//     }
+// }
+
+impl<T>
+    NewChunkedArray<
+        ObjectType<T>, // pub trait AnyObjectBuilder {
+        //     fn append_null(&mut self);
+        //
+        //     fn append_value(&mut self, v: &dyn Any) -> Result<()>;
+        //
+        //     // trait object cannot take self by value
+        //     fn finish(&mut self) -> ObjectChunked<T>;
+        // }
+        //
+        // impl<T> AnyObjectBuilder for ObjectChunkedBuilder<T>
+        // where
+        //     T: Any + Debug + Clone + Send + Sync + Default,
+        // {
+        //     fn append_null(&mut self) {
+        //         ObjectChunkedBuilder::append_null(self)
+        //     }
+        //
+        //     fn append_value(&mut self, v: &dyn Any) -> Result<()> {
+        //         self.append_value_from_any(v)
+        //     }
+        //
+        //     fn finish(&mut self) -> ObjectChunked<T> {
+        //         let builder = std::mem::take(self);
+        //         ObjectChunkedBuilder::finish(builder)
+        //     }
+        // }
+        T,
+    > for ObjectChunked<T>
 where
     T: Any + Debug + Clone + Send + Sync + Default,
 {
@@ -118,14 +158,14 @@ where
         builder.finish()
     }
 
-    fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<T>>) -> ObjectChunked {
+    fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<T>>) -> ObjectChunked<T> {
         let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
         it.for_each(|opt| builder.append_option(opt));
         builder.finish()
     }
 
     /// Create a new ChunkedArray from an iterator.
-    fn new_from_iter(name: &str, it: impl Iterator<Item = T>) -> ObjectChunked {
+    fn new_from_iter(name: &str, it: impl Iterator<Item = T>) -> ObjectChunked<T> {
         let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
         it.for_each(|v| builder.append_value(v));
         builder.finish()

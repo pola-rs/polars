@@ -76,27 +76,37 @@ impl PhysicalExpr for BinaryExpr {
         let left = self.left.evaluate(df)?;
         let right = self.right.evaluate(df)?;
         match self.op {
-            Operator::Gt => Ok(apply_method_all_series!(left, gt_series, &right).into_series()),
+            Operator::Gt => {
+                Ok(apply_method_all_arrow_series!(left, gt_series, &right).into_series())
+            }
             Operator::GtEq => {
-                Ok(apply_method_all_series!(left, gt_eq_series, &right).into_series())
+                Ok(apply_method_all_arrow_series!(left, gt_eq_series, &right).into_series())
             }
-            Operator::Lt => Ok(apply_method_all_series!(left, lt_series, &right).into_series()),
+            Operator::Lt => {
+                Ok(apply_method_all_arrow_series!(left, lt_series, &right).into_series())
+            }
             Operator::LtEq => {
-                Ok(apply_method_all_series!(left, lt_eq_series, &right).into_series())
+                Ok(apply_method_all_arrow_series!(left, lt_eq_series, &right).into_series())
             }
-            Operator::Eq => Ok(apply_method_all_series!(left, eq_series, &right).into_series()),
-            Operator::NotEq => Ok(apply_method_all_series!(left, neq_series, &right).into_series()),
+            Operator::Eq => {
+                Ok(apply_method_all_arrow_series!(left, eq_series, &right).into_series())
+            }
+            Operator::NotEq => {
+                Ok(apply_method_all_arrow_series!(left, neq_series, &right).into_series())
+            }
             Operator::Plus => Ok(left + right),
             Operator::Minus => Ok(left - right),
             Operator::Multiply => Ok(left * right),
             Operator::Divide => Ok(left / right),
             Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
             Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
-            Operator::Not => Ok(apply_method_all_series!(left, eq_series, &right).into_series()),
+            Operator::Not => {
+                Ok(apply_method_all_arrow_series!(left, eq_series, &right).into_series())
+            }
             Operator::Like => todo!(),
             Operator::NotLike => todo!(),
             Operator::Modulus => {
-                apply_method_all_series!(left, remainder, &right).map(|ca| ca.into_series())
+                apply_method_all_arrow_series!(left, remainder, &right).map(|ca| ca.into_series())
             }
         }
     }
@@ -297,7 +307,7 @@ macro_rules! impl_aggregation {
             ) -> Result<Option<Series>> {
                 let series = self.expr.evaluate(df)?;
                 let new_name = fmt_groupby_column(series.name(), $groupby_method_variant);
-                let opt_agg = apply_method_all_series!(series, $agg_method, groups);
+                let opt_agg = apply_method_all_arrow_series!(series, $agg_method, groups);
                 $finish_evaluate!(opt_agg, new_name)
             }
         }
@@ -393,7 +403,7 @@ impl AggPhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
-        let opt_agg = apply_method_all_series!(series, agg_quantile, groups, self.quantile);
+        let opt_agg = apply_method_all_arrow_series!(series, agg_quantile, groups, self.quantile);
 
         let opt_agg = opt_agg.map(|mut agg| {
             agg.rename(&new_name);
@@ -477,7 +487,7 @@ impl AggPhysicalExpr for AggListExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::List);
-        let opt_agg = apply_method_all_series!(series, agg_list, groups);
+        let opt_agg = apply_method_all_arrow_series!(series, agg_list, groups);
 
         let opt_agg = opt_agg.map(|mut agg| {
             agg.rename(&new_name);
@@ -519,7 +529,7 @@ impl AggPhysicalExpr for AggNUniqueExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::NUnique);
-        let opt_agg = apply_method_all_series!(series, agg_n_unique, groups);
+        let opt_agg = apply_method_all_arrow_series!(series, agg_n_unique, groups);
 
         let opt_agg = opt_agg.map(|mut agg| {
             agg.rename(&new_name);

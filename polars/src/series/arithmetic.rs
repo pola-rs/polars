@@ -100,7 +100,6 @@ impl NumOpsDispatch for Utf8Chunked {
 }
 impl NumOpsDispatch for BooleanChunked {}
 impl NumOpsDispatch for ListChunked {}
-impl NumOpsDispatch for ObjectChunked {}
 
 impl ops::Sub for Series {
     type Output = Self;
@@ -167,7 +166,7 @@ impl ops::Sub for &Series {
 
     fn sub(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_series!(lhs.as_ref(), subtract, rhs.as_ref())
+        apply_method_all_arrow_series!(lhs.as_ref(), subtract, rhs.as_ref())
             .expect("data types don't match")
     }
 }
@@ -177,7 +176,7 @@ impl ops::Add for &Series {
 
     fn add(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_series!(lhs.as_ref(), add_to, rhs.as_ref())
+        apply_method_all_arrow_series!(lhs.as_ref(), add_to, rhs.as_ref())
             .expect("data types don't match")
     }
 }
@@ -192,7 +191,7 @@ impl std::ops::Mul for &Series {
     /// ```
     fn mul(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_series!(lhs.as_ref(), multiply, rhs.as_ref())
+        apply_method_all_arrow_series!(lhs.as_ref(), multiply, rhs.as_ref())
             .expect("data types don't match")
     }
 }
@@ -207,7 +206,7 @@ impl std::ops::Div for &Series {
     /// ```
     fn div(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_series!(lhs.as_ref(), divide, rhs.as_ref())
+        apply_method_all_arrow_series!(lhs.as_ref(), divide, rhs.as_ref())
             .expect("data types don't match")
     }
 }
@@ -222,7 +221,7 @@ impl std::ops::Rem for &Series {
     /// ```
     fn rem(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_series!(lhs.as_ref(), remainder, rhs.as_ref())
+        apply_method_all_arrow_series!(lhs.as_ref(), remainder, rhs.as_ref())
             .expect("data types don't match")
     }
 }
@@ -247,7 +246,7 @@ pub(super) trait NumOpsDispatchSeriesSingleNumber {
 impl NumOpsDispatchSeriesSingleNumber for BooleanChunked {}
 impl NumOpsDispatchSeriesSingleNumber for Utf8Chunked {}
 impl NumOpsDispatchSeriesSingleNumber for ListChunked {}
-impl NumOpsDispatchSeriesSingleNumber for ObjectChunked {}
+impl<T> NumOpsDispatchSeriesSingleNumber for ObjectChunked<T> {}
 
 impl<T> NumOpsDispatchSeriesSingleNumber for ChunkedArray<T>
 where
@@ -309,7 +308,7 @@ where
     type Output = Series;
 
     fn sub(self, rhs: T) -> Self::Output {
-        apply_method_all_series!(self, subtract_number, rhs)
+        apply_method_all_arrow_series!(self, subtract_number, rhs)
     }
 }
 
@@ -331,7 +330,7 @@ where
     type Output = Series;
 
     fn add(self, rhs: T) -> Self::Output {
-        apply_method_all_series!(self, add_number, rhs)
+        apply_method_all_arrow_series!(self, add_number, rhs)
     }
 }
 
@@ -353,7 +352,7 @@ where
     type Output = Series;
 
     fn div(self, rhs: T) -> Self::Output {
-        apply_method_all_series!(self, divide_number, rhs)
+        apply_method_all_arrow_series!(self, divide_number, rhs)
     }
 }
 
@@ -375,7 +374,7 @@ where
     type Output = Series;
 
     fn mul(self, rhs: T) -> Self::Output {
-        apply_method_all_series!(self, multiply_number, rhs)
+        apply_method_all_arrow_series!(self, multiply_number, rhs)
     }
 }
 
@@ -411,7 +410,7 @@ pub(super) trait LhsNumOpsDispatch {
 impl LhsNumOpsDispatch for BooleanChunked {}
 impl LhsNumOpsDispatch for Utf8Chunked {}
 impl LhsNumOpsDispatch for ListChunked {}
-impl LhsNumOpsDispatch for ObjectChunked {}
+impl<T> LhsNumOpsDispatch for ObjectChunked<T> {}
 
 impl<T> LhsNumOpsDispatch for ChunkedArray<T>
 where
@@ -482,16 +481,16 @@ where
     type Output = Series;
 
     fn add(self, rhs: &Series) -> Self::Output {
-        apply_method_all_series!(rhs, lhs_add_number, self)
+        apply_method_all_arrow_series!(rhs, lhs_add_number, self)
     }
     fn sub(self, rhs: &Series) -> Self::Output {
-        apply_method_all_series!(rhs, lhs_subtract_number, self)
+        apply_method_all_arrow_series!(rhs, lhs_subtract_number, self)
     }
     fn div(self, rhs: &Series) -> Self::Output {
-        apply_method_all_series!(rhs, lhs_divide_number, self)
+        apply_method_all_arrow_series!(rhs, lhs_divide_number, self)
     }
     fn mul(self, rhs: &Series) -> Self::Output {
-        apply_method_all_series!(rhs, lhs_multiply_number, self)
+        apply_method_all_arrow_series!(rhs, lhs_multiply_number, self)
     }
 }
 
