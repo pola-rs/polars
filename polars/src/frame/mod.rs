@@ -595,12 +595,16 @@ impl DataFrame {
     ///
     /// ```
     /// use polars::prelude::*;
-    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    /// fn example(df: &DataFrame) -> DataFrame {
     ///     let iterator = (0..9).into_iter();
     ///     df.take_iter(iterator, None)
     /// }
     /// ```
-    pub fn take_iter<I>(&self, iter: I, capacity: Option<usize>) -> Result<Self>
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    pub fn take_iter<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -611,11 +615,11 @@ impl DataFrame {
                 let mut i = iter.clone();
                 s.take_iter(&mut i, capacity)
             })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(DataFrame::new_no_checks(new_col))
+            .collect();
+        DataFrame::new_no_checks(new_col)
     }
 
-    /// Take DataFrame values by indexes from an iterator. This doesn't do any bound checking.
+    /// Take DataFrame values by indexes from an iterator.
     ///
     /// # Example
     ///
@@ -645,18 +649,46 @@ impl DataFrame {
         DataFrame::new_no_checks(new_col)
     }
 
+    /// Take DataFrame values by indexes from an iterator.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't do any bound or null validity checking.
+    pub unsafe fn take_iter_unchecked_bounds<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    where
+        I: Iterator<Item = usize> + Clone + Sync,
+    {
+        let new_col = self
+            .columns
+            .par_iter()
+            .map(|s| {
+                let mut i = iter.clone();
+                if s.null_count() == 0 {
+                    s.take_iter_unchecked(&mut i, capacity)
+                } else {
+                    s.take_iter(&mut i, capacity)
+                }
+            })
+            .collect::<Vec<_>>();
+        DataFrame::new_no_checks(new_col)
+    }
+
     /// Take DataFrame values by indexes from an iterator that may contain None values.
     ///
     /// # Example
     ///
     /// ```
     /// use polars::prelude::*;
-    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    /// fn example(df: &DataFrame) -> DataFrame {
     ///     let iterator = (0..9).into_iter().map(Some);
     ///     df.take_opt_iter(iterator, None)
     /// }
     /// ```
-    pub fn take_opt_iter<I>(&self, iter: I, capacity: Option<usize>) -> Result<Self>
+    /// # Safety
+    ///
+    /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
+    /// Null validity is checked
+    pub fn take_opt_iter<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
@@ -667,12 +699,36 @@ impl DataFrame {
                 let mut i = iter.clone();
                 s.take_opt_iter(&mut i, capacity)
             })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(DataFrame::new_no_checks(new_col))
+            .collect();
+        DataFrame::new_no_checks(new_col)
     }
 
     /// Take DataFrame values by indexes from an iterator that may contain None values.
-    /// This doesn't do any bound checking.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
+    /// Null validity is checked
+    pub unsafe fn take_opt_iter_unchecked_bounds<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    where
+        I: Iterator<Item = Option<usize>> + Clone + Sync,
+    {
+        let new_col = self
+            .columns
+            .par_iter()
+            .map(|s| {
+                let mut i = iter.clone();
+                if s.null_count() == 0 {
+                    s.take_opt_iter_unchecked(&mut i, capacity)
+                } else {
+                    s.take_opt_iter(&mut i, capacity)
+                }
+            })
+            .collect::<Vec<_>>();
+        DataFrame::new_no_checks(new_col)
+    }
+
+    /// Take DataFrame values by indexes from an iterator that may contain None values.
     ///
     /// # Example
     ///
@@ -708,19 +764,18 @@ impl DataFrame {
     ///
     /// ```
     /// use polars::prelude::*;
-    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    /// fn example(df: &DataFrame) -> DataFrame {
     ///     let idx = vec![0, 1, 9];
     ///     df.take(&idx)
     /// }
     /// ```
-    pub fn take<T: AsTakeIndex + Sync>(&self, indices: &T) -> Result<Self> {
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| s.take(indices))
-            .collect::<Result<Vec<_>>>()?;
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    pub fn take<T: AsTakeIndex + Sync>(&self, indices: &T) -> Self {
+        let new_col = self.columns.par_iter().map(|s| s.take(indices)).collect();
 
-        Ok(DataFrame::new_no_checks(new_col))
+        DataFrame::new_no_checks(new_col)
     }
 
     /// Rename a column in the DataFrame
@@ -748,11 +803,7 @@ impl DataFrame {
 
         let take = s.argsort(reverse);
 
-        self.columns = self
-            .columns
-            .par_iter()
-            .map(|s| s.take(&take))
-            .collect::<Result<Vec<_>>>()?;
+        self.columns = self.columns.par_iter().map(|s| s.take(&take)).collect();
         Ok(self)
     }
 
@@ -761,7 +812,7 @@ impl DataFrame {
         let s = self.column(by_column)?;
 
         let take = s.argsort(reverse);
-        self.take(&take)
+        Ok(self.take(&take))
     }
 
     /// Replace a column with a series.
@@ -1481,5 +1532,16 @@ mod test {
         .unwrap();
         dbg!(&df);
         assert!(df.frame_equal(&valid));
+    }
+
+    #[test]
+    fn test_take() {
+        let df = df! {
+            "foo" => &[1, 2, 3]
+        }
+        .unwrap();
+        let out = df.take_iter(0..4, None);
+        // out of bound access will be Null
+        assert_eq!(out.get(3).unwrap(), vec![AnyType::Null]);
     }
 }

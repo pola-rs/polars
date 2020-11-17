@@ -120,7 +120,7 @@ macro_rules! impl_take {
                 None => builder.append_null(),
             }
         }
-        Ok(builder.finish())
+        builder.finish()
     }};
 }
 
@@ -139,7 +139,7 @@ macro_rules! impl_take_opt {
                 None => builder.append_null(),
             };
         }
-        Ok(builder.finish())
+        builder.finish()
     }};
 }
 
@@ -180,7 +180,7 @@ impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
         impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
@@ -196,7 +196,7 @@ where
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self> {
+    ) -> Self {
         impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
@@ -210,7 +210,7 @@ where
 }
 
 impl ChunkTake for BooleanChunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
     where
         Self: std::marker::Sized,
     {
@@ -229,7 +229,7 @@ impl ChunkTake for BooleanChunked {
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self> {
+    ) -> Self {
         impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
@@ -243,7 +243,7 @@ impl ChunkTake for BooleanChunked {
 }
 
 impl ChunkTake for Utf8Chunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
     where
         Self: std::marker::Sized,
     {
@@ -262,7 +262,7 @@ impl ChunkTake for Utf8Chunked {
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self>
+    ) -> Self
     where
         Self: std::marker::Sized,
     {
@@ -279,7 +279,7 @@ impl ChunkTake for Utf8Chunked {
 }
 
 impl ChunkTake for ListChunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
@@ -290,7 +290,7 @@ impl ChunkTake for ListChunked {
                 for idx in indices {
                     builder.append_opt_series(&taker.get(idx));
                 }
-                Ok(builder.finish())
+                builder.finish()
             }
             _ => unimplemented!(),
         }
@@ -320,7 +320,7 @@ impl ChunkTake for ListChunked {
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self> {
+    ) -> Self {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
@@ -338,7 +338,7 @@ impl ChunkTake for ListChunked {
                         None => builder.append_opt_series(&None),
                     };
                 }
-                Ok(builder.finish())
+                builder.finish()
             }
             _ => unimplemented!(),
         }

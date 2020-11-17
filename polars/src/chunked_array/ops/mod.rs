@@ -168,11 +168,16 @@ pub trait TakeRandom {
     type Item;
 
     /// Get a nullable value by index.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
     fn get(&self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
     ///
     /// # Safety
+    ///
     /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
 }
@@ -181,6 +186,10 @@ pub trait TakeRandomUtf8 {
     type Item;
 
     /// Get a nullable value by index.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
     fn get(self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
@@ -193,7 +202,11 @@ pub trait TakeRandomUtf8 {
 /// Fast access by index.
 pub trait ChunkTake {
     /// Take values from ChunkedArray by index.
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
     where
         Self: std::marker::Sized;
 
@@ -211,11 +224,15 @@ pub trait ChunkTake {
         Self: std::marker::Sized;
 
     /// Take values from ChunkedArray by Option<index>.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
     fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self>
+    ) -> Self
     where
         Self: std::marker::Sized;
 
@@ -689,7 +706,6 @@ where
             ca
         } else {
             self.take((0..self.len()).rev(), None)
-                .expect("implementation error, should not fail")
         }
     }
 }
@@ -699,7 +715,6 @@ macro_rules! impl_reverse {
         impl ChunkReverse<$arrow_type> for $ca_type {
             fn reverse(&self) -> Self {
                 self.take((0..self.len()).rev(), None)
-                    .expect("implementation error, should not fail")
             }
         }
     };
