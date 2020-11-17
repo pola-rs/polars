@@ -51,7 +51,7 @@ use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
-fn create_chunk_id(chunks: &Vec<ArrayRef>) -> Vec<usize> {
+fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
     let mut chunk_id = Vec::with_capacity(chunks.len());
     for a in chunks {
         chunk_id.push(a.len())
@@ -203,6 +203,7 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Series to ChunkedArray<T>
+    #[allow(clippy::transmute_ptr_to_ptr)]
     pub fn unpack_series_matching_type(&self, series: &Series) -> Result<&ChunkedArray<T>> {
         macro_rules! unpack {
             ($variant:ident) => {{
@@ -252,6 +253,11 @@ impl<T> ChunkedArray<T> {
     /// Combined length of all the chunks.
     pub fn len(&self) -> usize {
         self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
+    }
+
+    /// Check if ChunkedArray is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Unique id representing the number of chunks
@@ -414,7 +420,7 @@ impl<T> ChunkedArray<T> {
 
         for chunk in &self.chunks {
             let chunk_len = chunk.len();
-            if chunk_len - 1 >= index_remainder {
+            if chunk_len > index_remainder {
                 break;
             } else {
                 index_remainder -= chunk_len;
@@ -448,7 +454,7 @@ impl<T> ChunkedArray<T> {
         Self: std::marker::Sized,
     {
         // replace an empty array
-        if self.chunks.len() == 1 && self.len() == 0 {
+        if self.chunks.len() == 1 && self.is_empty() {
             self.chunks = other.chunks.clone();
         } else {
             self.chunks.extend(other.chunks.clone())
@@ -495,7 +501,7 @@ where
     /// Get a single value. Beware this is slow. (only used for formatting)
     pub(crate) fn get_any(&self, index: usize) -> AnyType {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &self.chunks[chunk_idx];
+        let arr = &*self.chunks[chunk_idx];
 
         if arr.is_null(idx) {
             return AnyType::Null;
@@ -503,20 +509,14 @@ where
 
         macro_rules! downcast_and_pack {
             ($casttype:ident, $variant:ident) => {{
-                let arr = arr
-                    .as_any()
-                    .downcast_ref::<$casttype>()
-                    .expect("could not downcast one of the chunks");
+                let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
                 let v = arr.value(idx);
                 AnyType::$variant(v)
             }};
         }
         macro_rules! downcast {
             ($casttype:ident) => {{
-                let arr = arr
-                    .as_any()
-                    .downcast_ref::<$casttype>()
-                    .expect("could not downcast one of the chunks");
+                let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
                 arr.value(idx)
             }};
         }
@@ -775,7 +775,7 @@ where
 }
 
 impl ListChunked {
-    pub(crate) fn get_inner_dtype(&self) -> &Box<ArrowDataType> {
+    pub(crate) fn get_inner_dtype(&self) -> &ArrowDataType {
         match self.dtype() {
             ArrowDataType::List(dt) => dt,
             _ => panic!("should not happen"),
@@ -872,7 +872,7 @@ pub(crate) mod test {
     fn arithmetic() {
         let s1 = get_chunked_array();
         println!("{:?}", s1.chunks);
-        let s2 = &s1.clone();
+        let s2 = &s1;
         let s1 = &s1;
         println!("{:?}", s1 + s2);
         println!("{:?}", s1 - s2);
@@ -918,7 +918,7 @@ pub(crate) mod test {
     #[test]
     fn take() {
         let a = get_chunked_array();
-        let new = a.take([0u32, 1].as_ref().as_take_iter(), None).unwrap();
+        let new = a.take([0u32, 1].as_ref().as_take_iter(), None);
         assert_eq!(new.len(), 2)
     }
 
@@ -1010,7 +1010,7 @@ pub(crate) mod test {
     #[test]
     fn test_null_sized_chunks() {
         let mut s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());
-        s.append(&Float64Chunked::new_from_slice("s2", &vec![1., 2., 3.]));
+        s.append(&Float64Chunked::new_from_slice("s2", &[1., 2., 3.]));
         dbg!(&s);
 
         let s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());

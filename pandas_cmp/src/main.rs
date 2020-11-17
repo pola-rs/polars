@@ -50,10 +50,10 @@ fn bench_groupby() {
         println!("{:?}", (sum, sum_str));
         println!("{:?}", (p, duration));
         wrt_file
-            .write(&format!("{}\n", duration).as_bytes())
+            .write_all(&format!("{}\n", duration).as_bytes())
             .expect("write to file");
         wrt_file_str
-            .write(&format!("{}\n", duration_str).as_bytes())
+            .write_all(&format!("{}\n", duration_str).as_bytes())
             .expect("write to file");
     }
 }

@@ -439,7 +439,7 @@ impl AggPhysicalExpr for AggGroupsExpr {
         let mut column: ListChunked = groups
             .iter()
             .map(|(_first, idx)| {
-                let ca: Xob<UInt32Chunked> = idx.into_iter().map(|&v| v as u32).collect();
+                let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
                 ca.into_inner().into_series()
             })
             .collect();
@@ -595,7 +595,7 @@ impl PhysicalExpr for ApplyExpr {
         let input = self.input.evaluate(df)?;
         let in_name = input.name().to_string();
         let mut out = self.function.call_udf(input)?;
-        if &in_name != out.name() {
+        if in_name != out.name() {
             out.rename(&in_name);
         }
         Ok(out)

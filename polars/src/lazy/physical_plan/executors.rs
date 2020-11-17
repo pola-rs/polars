@@ -1,6 +1,5 @@
 use super::*;
 use crate::lazy::logical_plan::DataFrameOperation;
-use rayon;
 use std::sync::Mutex;
 
 pub struct CsvExec {
@@ -113,6 +112,7 @@ impl Executor for PipeExec {
                 })
             })
             .collect::<Result<Vec<Series>>>()?;
+
         Ok(DataFrame::new_no_checks(selected_columns))
     }
 }
@@ -256,7 +256,7 @@ impl Executor for StackExec {
                 })
             })
             .collect::<Result<Vec<Series>>>()?;
-        df.hstack(&added_columns)?;
+        df.hstack_mut(&added_columns)?;
         Ok(df)
     }
 }

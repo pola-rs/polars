@@ -389,15 +389,19 @@ impl Series {
     }
 
     /// Take by index from an iterator. This operation clones the data.
-    pub fn take_iter(
-        &self,
-        iter: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, take, [iter,  capacity], ?))
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    pub fn take_iter(&self, iter: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
+        apply_method_all_series_and_return!(self, take, [iter, capacity],)
     }
 
     /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't check any bounds or null validity.
     pub unsafe fn take_iter_unchecked(
         &self,
         iter: impl Iterator<Item = usize>,
@@ -407,6 +411,10 @@ impl Series {
     }
 
     /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't check any bounds or null validity.
     pub unsafe fn take_opt_iter_unchecked(
         &self,
         iter: impl Iterator<Item = Option<usize>>,
@@ -416,16 +424,24 @@ impl Series {
     }
 
     /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
     pub fn take_opt_iter(
         &self,
         iter: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, take_opt, [iter,  capacity], ?))
+    ) -> Self {
+        apply_method_all_series_and_return!(self, take_opt, [iter, capacity],)
     }
 
     /// Take by index. This operation is clone.
-    pub fn take<T: AsTakeIndex>(&self, indices: &T) -> Result<Self> {
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    pub fn take<T: AsTakeIndex>(&self, indices: &T) -> Self {
         let mut iter = indices.as_take_iter();
         let capacity = indices.take_index_len();
         self.take_iter(&mut iter, Some(capacity))
@@ -434,6 +450,11 @@ impl Series {
     /// Get length of series.
     pub fn len(&self) -> usize {
         apply_method_all_series!(self, len,)
+    }
+
+    /// Check if Series is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
@@ -449,6 +470,15 @@ impl Series {
     /// Get the tail of the Series.
     pub fn tail(&self, length: Option<usize>) -> Self {
         apply_method_all_series_and_return!(self, tail, [length],)
+    }
+
+    /// Drop all null values and return a new Series.
+    pub fn drop_nulls(&self) -> Self {
+        if self.null_count() == 0 {
+            self.clone()
+        } else {
+            self.filter(&self.is_not_null()).unwrap()
+        }
     }
 
     /// Create a new Series filled with values at that index.
@@ -542,7 +572,17 @@ impl Series {
         }
     }
 
+    /// Create dummy variables. See [DataFrame](DataFrame::to_dummies)
+    pub fn to_dummies(&self) -> Result<DataFrame> {
+        apply_method_all_series!(self, to_dummies,)
+    }
+
+    pub fn value_counts(&self) -> Result<DataFrame> {
+        apply_method_all_series!(self, value_counts,)
+    }
+
     /// Get the `ChunkedArray` for some `PolarsDataType`
+    #[allow(clippy::transmute_ptr_to_ptr)]
     pub fn unpack<N>(&self) -> Result<&ChunkedArray<N>>
     where
         N: PolarsDataType,
@@ -759,6 +799,14 @@ impl Series {
     pub fn median_as_series(&self) -> Series {
         apply_method_all_series!(self, median_as_series,)
     }
+    /// Get the variance of the Series as a new Series of length 1.
+    pub fn var_as_series(&self) -> Series {
+        apply_method_all_series!(self, var_as_series,)
+    }
+    /// Get the standard deviation of the Series as a new Series of length 1.
+    pub fn std_as_series(&self) -> Series {
+        apply_method_all_series!(self, std_as_series,)
+    }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
     pub fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
         apply_method_all_series!(self, quantile_as_series, quantile)
@@ -810,6 +858,124 @@ impl Series {
 
     pub(crate) fn fmt_list(&self) -> String {
         apply_method_all_series!(self, fmt_list,)
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract hour from underlying NaiveDateTime representation.
+    /// Returns the hour number from 0 to 23.
+    pub fn hour(&self) -> Result<Self> {
+        if let Series::Date64(ca) = self {
+            Ok(Series::UInt32(ca.hour()))
+        } else {
+            Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract minute from underlying NaiveDateTime representation.
+    /// Returns the minute number from 0 to 59.
+    pub fn minute(&self) -> Result<Self> {
+        if let Series::Date64(ca) = self {
+            Ok(Series::UInt32(ca.minute()))
+        } else {
+            Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract second from underlying NaiveDateTime representation.
+    /// Returns the second number from 0 to 59.
+    pub fn second(&self) -> Result<Self> {
+        if let Series::Date64(ca) = self {
+            Ok(Series::UInt32(ca.second()))
+        } else {
+            Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract second from underlying NaiveDateTime representation.
+    /// Returns the number of nanoseconds since the whole non-leap second.
+    /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
+    pub fn nanosecond(&self) -> Result<Self> {
+        if let Series::Date64(ca) = self {
+            Ok(Series::UInt32(ca.nanosecond()))
+        } else {
+            Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract day from underlying NaiveDateTime representation.
+    /// Returns the day of month starting from 1.
+    ///
+    /// The return value ranges from 1 to 31. (The last day of month differs by months.)
+    pub fn day(&self) -> Result<Self> {
+        match self {
+            Series::Date32(ca) => Ok(Series::UInt32(ca.day())),
+            Series::Date64(ca) => Ok(Series::UInt32(ca.day())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Returns the day of year starting from 1.
+    ///
+    /// The return value ranges from 1 to 366. (The last day of year differs by years.)
+    pub fn ordinal_day(&self) -> Result<Self> {
+        match self {
+            Series::Date32(ca) => Ok(Series::UInt32(ca.ordinal())),
+            Series::Date64(ca) => Ok(Series::UInt32(ca.ordinal())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the month number starting from 1.
+    ///
+    /// The return value ranges from 1 to 12.
+    pub fn month(&self) -> Result<Self> {
+        match self {
+            Series::Date32(ca) => Ok(Series::UInt32(ca.month())),
+            Series::Date64(ca) => Ok(Series::UInt32(ca.month())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the year number in the calendar date.
+    pub fn year(&self) -> Result<Self> {
+        match self {
+            Series::Date32(ca) => Ok(Series::Int32(ca.year())),
+            Series::Date64(ca) => Ok(Series::Int32(ca.year())),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
     }
 }
 

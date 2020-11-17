@@ -139,6 +139,31 @@ impl PyDataFrame {
         Ok(())
     }
 
+    pub fn add(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df + &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn sub(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df - &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn div(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df / &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn mul(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df * &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn rem(&self, s: &PySeries) -> PyResult<Self> {
+        let df = (&self.df % &s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn rechunk(&mut self) -> Self {
         self.df.agg_chunks().into()
     }
@@ -192,7 +217,13 @@ impl PyDataFrame {
 
     /// Get column names
     pub fn columns(&self) -> Vec<&str> {
-        self.df.columns()
+        self.df.get_column_names()
+    }
+
+    /// set column names
+    pub fn set_column_names(&mut self, names: Vec<&str>) -> PyResult<()> {
+        self.df.set_column_names(&names).map_err(PyPolarsEr::from)?;
+        Ok(())
     }
 
     /// Get datatypes
@@ -224,10 +255,16 @@ impl PyDataFrame {
         self.df.width()
     }
 
-    pub fn hstack(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
+    pub fn hstack_mut(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
         let columns = to_series_collection(columns);
-        self.df.hstack(&columns).map_err(PyPolarsEr::from)?;
+        self.df.hstack_mut(&columns).map_err(PyPolarsEr::from)?;
         Ok(())
+    }
+
+    pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {
+        let columns = to_series_collection(columns);
+        let df = self.df.hstack(&columns).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
     }
 
     pub fn vstack(&mut self, df: &PyDataFrame) -> PyResult<()> {
@@ -282,14 +319,14 @@ impl PyDataFrame {
         }
     }
 
-    pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
-        let df = self.df.take(&indices).map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
+    pub fn take(&self, indices: Vec<usize>) -> Self {
+        let df = self.df.take(&indices);
+        PyDataFrame::new(df)
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let df = self.df.take(&idx).map_err(PyPolarsEr::from)?;
+        let df = self.df.take(&idx);
         Ok(PyDataFrame::new(df))
     }
 
@@ -456,8 +493,11 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn drop_duplicates(&self) -> PyResult<Self> {
-        let df = self.df.drop_duplicates().map_err(PyPolarsEr::from)?;
+    pub fn drop_duplicates(&self, maintain_order: bool) -> PyResult<Self> {
+        let df = self
+            .df
+            .drop_duplicates(maintain_order)
+            .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
@@ -479,6 +519,13 @@ impl PyDataFrame {
 
     pub fn mean(&self) -> Self {
         self.df.mean().into()
+    }
+    pub fn std(&self) -> Self {
+        self.df.std().into()
+    }
+
+    pub fn var(&self) -> Self {
+        self.df.var().into()
     }
 
     pub fn median(&self) -> Self {

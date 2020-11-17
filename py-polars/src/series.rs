@@ -1,3 +1,4 @@
+use crate::dataframe::PyDataFrame;
 use crate::datatypes::DataType;
 use crate::error::PyPolarsEr;
 use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
@@ -218,6 +219,11 @@ impl PySeries {
         Ok(unique.into())
     }
 
+    pub fn value_counts(&self) -> PyResult<PyDataFrame> {
+        let df = self.series.value_counts().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn arg_unique(&self) -> PyResult<Py<PyArray1<usize>>> {
         let gil = pyo3::Python::acquire_gil();
         let arg_unique = self.series.arg_unique().map_err(PyPolarsEr::from)?;
@@ -225,14 +231,14 @@ impl PySeries {
         Ok(pyarray.to_owned())
     }
 
-    pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
-        let take = self.series.take(&indices).map_err(PyPolarsEr::from)?;
-        Ok(PySeries::new(take))
+    pub fn take(&self, indices: Vec<usize>) -> Self {
+        let take = self.series.take(&indices);
+        PySeries::new(take)
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let take = self.series.take(&idx).map_err(PyPolarsEr::from)?;
+        let take = self.series.take(&idx);
         Ok(PySeries::new(take))
     }
 
@@ -332,6 +338,10 @@ impl PySeries {
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> usize {
         self.series.as_single_ptr()
+    }
+
+    pub fn drop_nulls(&self) -> Self {
+        self.series.drop_nulls().into()
     }
 
     pub fn fill_none(&self, strategy: &str) -> PyResult<Self> {
@@ -544,6 +554,42 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
+    pub fn str_contains(&self, pat: &str) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.contains(pat).map_err(PyPolarsEr::from)?.into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_replace(&self, pat: &str, val: &str) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca
+            .replace(pat, val)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_replace_all(&self, pat: &str, val: &str) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca
+            .replace_all(pat, val)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_to_uppercase(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.to_uppercase().into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_to_lowercase(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.to_lowercase().into_series();
+        Ok(s.into())
+    }
+
     pub fn str_parse_date32(&self, fmt: Option<&str>) -> PyResult<Self> {
         if let Series::Utf8(ca) = &self.series {
             let ca = ca.as_date32(fmt).map_err(PyPolarsEr::from)?;
@@ -560,6 +606,28 @@ impl PySeries {
         } else {
             Err(PyPolarsEr::Other("cannot parse date64 expected utf8 type".into()).into())
         }
+    }
+
+    pub fn as_duration(&self) -> PyResult<Self> {
+        match self.series.dtype() {
+            ArrowDataType::Date64(_) => {
+                let ca = self.series.date64().unwrap().as_duration();
+                Ok(ca.into_series().into())
+            }
+            ArrowDataType::Date32(_) => {
+                let ca = self.series.date32().unwrap().as_duration();
+                Ok(ca.into_series().into())
+            }
+            _ => Err(PyPolarsEr::Other(
+                "Only date32 and date64 can be transformed as duration".into(),
+            )
+            .into()),
+        }
+    }
+
+    pub fn to_dummies(&self) -> PyResult<PyDataFrame> {
+        let df = self.series.to_dummies().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
     }
 
     pub fn get_list(&self, index: usize) -> Option<Self> {
@@ -618,6 +686,46 @@ impl PySeries {
             .series
             .rolling_min(window_size, weight.as_deref(), ignore_null)
             .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn year(&self) -> PyResult<Self> {
+        let s = self.series.year().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn month(&self) -> PyResult<Self> {
+        let s = self.series.month().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn day(&self) -> PyResult<Self> {
+        let s = self.series.day().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn ordinal_day(&self) -> PyResult<Self> {
+        let s = self.series.ordinal_day().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn hour(&self) -> PyResult<Self> {
+        let s = self.series.hour().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn minute(&self) -> PyResult<Self> {
+        let s = self.series.minute().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn second(&self) -> PyResult<Self> {
+        let s = self.series.second().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn nanosecond(&self) -> PyResult<Self> {
+        let s = self.series.nanosecond().map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 }

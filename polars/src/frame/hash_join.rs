@@ -1,11 +1,9 @@
 use crate::prelude::*;
 use crate::utils::Xob;
-use seahash::SeaHasher;
+use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasherDefault, Hash};
+use std::hash::Hash;
 use unsafe_unwrap::UnsafeUnwrap;
-
-type SeaBuildHasher = BuildHasherDefault<SeaHasher>;
 
 macro_rules! hash_join_inner {
     ($s_right:ident, $ca_left:ident, $type_:ident) => {{
@@ -85,12 +83,12 @@ macro_rules! apply_hash_join_on_series {
 
 pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = T>,
-) -> HashMap<T, Vec<usize>, SeaBuildHasher>
+) -> HashMap<T, Vec<usize>, RandomState>
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl =
-        HashMap::with_capacity_and_hasher(b.size_hint().0 / 10, BuildHasherDefault::default());
+    let mut hash_tbl: HashMap<T, Vec<usize>, ahash::RandomState> =
+        HashMap::with_capacity_and_hasher(b.size_hint().0 / 10, RandomState::new());
 
     b.enumerate()
         .for_each(|(idx, key)| hash_tbl.entry(key).or_insert_with(Vec::new).push(idx));
@@ -160,11 +158,7 @@ where
 
 /// Hash join outer. Both left and right can have no match so Options
 /// We accept a closure as we need to do two passes over the same iterators.
-fn hash_join_tuples_outer<'a, T, I, J>(
-    a: I,
-    b: J,
-    swap: bool,
-) -> Vec<(Option<usize>, Option<usize>)>
+fn hash_join_tuples_outer<T, I, J>(a: I, b: J, swap: bool) -> Vec<(Option<usize>, Option<usize>)>
 where
     I: Iterator<Item = T>,
     J: Iterator<Item = T>,
@@ -378,7 +372,7 @@ trait ZipOuterJoinColumn {
     fn zip_outer_join_column(
         &self,
         _right_column: &Series,
-        _opt_join_tuples: &Vec<(Option<usize>, Option<usize>)>,
+        _opt_join_tuples: &[(Option<usize>, Option<usize>)],
     ) -> Series {
         unimplemented!()
     }
@@ -391,7 +385,7 @@ where
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &Vec<(Option<usize>, Option<usize>)>,
+        opt_join_tuples: &[(Option<usize>, Option<usize>)],
     ) -> Series {
         let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -426,7 +420,7 @@ macro_rules! impl_zip_outer_join {
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &Vec<(Option<usize>, Option<usize>)>,
+                opt_join_tuples: &[(Option<usize>, Option<usize>)],
             ) -> Series {
                 let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -457,8 +451,7 @@ impl_zip_outer_join!(Utf8Chunked);
 impl DataFrame {
     /// Utility method to finish a join.
     fn finish_join(&self, mut df_left: DataFrame, mut df_right: DataFrame) -> Result<DataFrame> {
-        let mut left_names =
-            HashSet::with_capacity_and_hasher(df_left.width(), SeaBuildHasher::default());
+        let mut left_names = HashSet::with_capacity_and_hasher(df_left.width(), RandomState::new());
 
         df_left.columns.iter().for_each(|series| {
             left_names.insert(series.name());
@@ -476,13 +469,13 @@ impl DataFrame {
             df_right.rename(&name, &format!("{}_right", name))?;
         }
 
-        df_left.hstack(&df_right.columns)?;
+        df_left.hstack_mut(&df_right.columns)?;
         Ok(df_left)
     }
 
     fn create_left_df<B: Sync>(&self, join_tuples: &[(usize, B)]) -> DataFrame {
         unsafe {
-            self.take_iter_unchecked(
+            self.take_iter_unchecked_bounds(
                 join_tuples.iter().map(|(left, _right)| *left),
                 Some(join_tuples.len()),
             )
@@ -521,10 +514,13 @@ impl DataFrame {
         let (df_left, df_right) = rayon::join(
             || self.create_left_df(&join_tuples),
             || unsafe {
-                other.drop(s_right.name()).unwrap().take_iter_unchecked(
-                    join_tuples.iter().map(|(_left, right)| *right),
-                    Some(join_tuples.len()),
-                )
+                other
+                    .drop(s_right.name())
+                    .unwrap()
+                    .take_iter_unchecked_bounds(
+                        join_tuples.iter().map(|(_left, right)| *right),
+                        Some(join_tuples.len()),
+                    )
             },
         );
         self.finish_join(df_left, df_right)
@@ -556,10 +552,13 @@ impl DataFrame {
         let (df_left, df_right) = rayon::join(
             || self.create_left_df(&opt_join_tuples),
             || unsafe {
-                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
-                    opt_join_tuples.iter().map(|(_left, right)| *right),
-                    Some(opt_join_tuples.len()),
-                )
+                other
+                    .drop(s_right.name())
+                    .unwrap()
+                    .take_opt_iter_unchecked_bounds(
+                        opt_join_tuples.iter().map(|(_left, right)| *right),
+                        Some(opt_join_tuples.len()),
+                    )
             },
         );
         self.finish_join(df_left, df_right)
@@ -597,22 +596,27 @@ impl DataFrame {
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = rayon::join(
             || unsafe {
-                self.drop(s_left.name()).unwrap().take_opt_iter_unchecked(
-                    opt_join_tuples.iter().map(|(left, _right)| *left),
-                    Some(opt_join_tuples.len()),
-                )
+                self.drop(s_left.name())
+                    .unwrap()
+                    .take_opt_iter_unchecked_bounds(
+                        opt_join_tuples.iter().map(|(left, _right)| *left),
+                        Some(opt_join_tuples.len()),
+                    )
             },
             || unsafe {
-                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
-                    opt_join_tuples.iter().map(|(_left, right)| *right),
-                    Some(opt_join_tuples.len()),
-                )
+                other
+                    .drop(s_right.name())
+                    .unwrap()
+                    .take_opt_iter_unchecked_bounds(
+                        opt_join_tuples.iter().map(|(_left, right)| *right),
+                        Some(opt_join_tuples.len()),
+                    )
             },
         );
         let mut s =
             apply_method_all_series!(s_left, zip_outer_join_column, s_right, &opt_join_tuples);
         s.rename(s_left.name());
-        df_left.hstack(&[s])?;
+        df_left.hstack_mut(&[s])?;
         self.finish_join(df_left, df_right)
     }
 }
@@ -695,5 +699,30 @@ mod test {
         println!("{:?}", &joined);
         assert_eq!(joined.height(), 5);
         assert_eq!(joined.column("days").unwrap().sum::<i32>(), Some(7));
+    }
+
+    #[test]
+    fn test_join_with_nulls() {
+        let dts = &[20, 21, 22, 23, 24, 25, 27, 28];
+        let vals = &[1.2, 2.4, 4.67, 5.8, 4.4, 3.6, 7.6, 6.5];
+        let df = DataFrame::new(vec![Series::new("date", dts), Series::new("val", vals)]).unwrap();
+
+        let vals2 = &[Some(1.1), None, Some(3.3), None, None];
+        let df2 = DataFrame::new(vec![
+            Series::new("date", &dts[3..]),
+            Series::new("val2", vals2),
+        ])
+        .unwrap();
+
+        let joined = df.left_join(&df2, "date", "date").unwrap();
+        assert_eq!(
+            joined
+                .column("val2")
+                .unwrap()
+                .f64()
+                .unwrap()
+                .get(joined.height() - 1),
+            None
+        );
     }
 }

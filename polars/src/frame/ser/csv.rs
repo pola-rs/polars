@@ -265,7 +265,7 @@ where
             reader,
             rechunk: true,
             stop_after_n_rows: None,
-            max_records: None,
+            max_records: Some(100),
             skip_rows: 0,
             projection: None,
             batch_size: 1024,
@@ -303,7 +303,7 @@ where
             self.one_thread,
         )?;
 
-        let df = csv_reader.into_df()?;
+        let df = csv_reader.as_df()?;
         match self.rechunk {
             true => Ok(df.agg_chunks()),
             false => Ok(df),
@@ -312,14 +312,11 @@ where
 }
 
 fn count_lines<R: Read + Seek>(reader: &mut R) -> anyhow::Result<usize> {
-    const LF: u8 = '\n' as u8;
+    const LF: u8 = b'\n';
     let mut reader = BufReader::new(reader);
     let mut count = 0;
     let mut line: Vec<u8> = Vec::new();
-    while match reader.read_until(LF, &mut line)? {
-        n if n > 0 => true,
-        _ => false,
-    } {
+    while matches!(reader.read_until(LF, &mut line)?, n if n > 0) {
         count += 1;
     }
     Ok(count)

@@ -4,6 +4,7 @@ use crate::prelude::*;
 
 pub(crate) mod predicate;
 pub(crate) mod projection;
+pub(crate) mod simplify_expr;
 pub(crate) mod type_coercion;
 
 // check if a selection/projection can be done on the downwards schema

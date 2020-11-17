@@ -66,21 +66,19 @@ where
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
-        if T::get_data_type() != ArrowDataType::Boolean
-            && value.is_some()
-            && self.chunk_id() == mask.chunk_id()
-        {
-            let value = value.unwrap();
-            let chunks = self
-                .downcast_chunks()
-                .into_iter()
-                .zip(mask.downcast_chunks())
-                .map(|(arr, mask)| {
-                    let a = set_with_value(mask, arr, value);
-                    Arc::new(a) as ArrayRef
-                })
-                .collect();
-            return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        if let Some(value) = value {
+            if T::get_data_type() != ArrowDataType::Boolean && self.chunk_id() == mask.chunk_id() {
+                let chunks = self
+                    .downcast_chunks()
+                    .into_iter()
+                    .zip(mask.downcast_chunks())
+                    .map(|(arr, mask)| {
+                        let a = set_with_value(mask, arr, value);
+                        Arc::new(a) as ArrayRef
+                    })
+                    .collect();
+                return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+            }
         }
         // all the code does practically the same but has different fast paths. We do this
         // again because we don't need the return option in all cases. Otherwise we would have called
@@ -336,11 +334,11 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
     where
         Self: Sized,
     {
-        let mut idx_iter = idx.as_take_iter();
+        let idx_iter = idx.as_take_iter();
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
 
-        while let Some(current_idx) = idx_iter.next() {
+        for current_idx in idx_iter {
             if current_idx > self.len() {
                 return Err(PolarsError::OutOfBounds(
                     format!(
@@ -361,7 +359,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
             }
         }
         // the last idx is probably not the last value so we finish the iterator
-        while let Some((_, opt_val_self)) = ca_iter.next() {
+        for (_, opt_val_self) in ca_iter {
             builder.append_option(opt_val_self);
         }
 

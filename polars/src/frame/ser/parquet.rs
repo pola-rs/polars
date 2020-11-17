@@ -90,7 +90,7 @@ mod test {
             Ok(r) => {
                 let reader = ParquetReader::new(r);
                 let df = reader.finish().unwrap();
-                assert_eq!(df.columns(), ["a", "b"]);
+                assert_eq!(df.get_column_names(), ["a", "b"]);
                 assert_eq!(df.shape(), (3, 2));
             }
             // in ci: pass

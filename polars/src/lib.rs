@@ -177,8 +177,6 @@
 //!
 //! Additional cargo features:
 //!
-//! * `pretty` (default)
-//!     - pretty printing of DataFrames
 //! * `temporal (default)`
 //!     - Conversions between Chrono and Polars for temporal data
 //! * `simd (default)`
@@ -198,6 +196,7 @@
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]
+
 #[macro_use]
 pub(crate) mod utils;
 pub mod chunked_array;

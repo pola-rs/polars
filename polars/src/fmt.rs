@@ -1,16 +1,16 @@
 use crate::datatypes::{AnyType, ToStr};
 use crate::prelude::*;
 
-#[cfg(feature = "temporal")]
 use crate::chunked_array::temporal::{
     date32_as_datetime, date64_as_datetime, time32_millisecond_as_time, time32_second_as_time,
     time64_microsecond_as_time, time64_nanosecond_as_time, timestamp_microseconds_as_datetime,
     timestamp_milliseconds_as_datetime, timestamp_nanoseconds_as_datetime,
     timestamp_seconds_as_datetime,
 };
+use comfy_table::modifiers::UTF8_ROUND_CORNERS;
+use comfy_table::presets::UTF8_FULL;
+use comfy_table::*;
 use num::{Num, NumCast};
-#[cfg(feature = "pretty")]
-use prettytable::Table;
 use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
@@ -81,7 +81,7 @@ macro_rules! format_array {
 }
 
 macro_rules! format_utf8_array {
-    ($limit:ident, $f:ident, $a:ident, $name:expr, $array_type:expr) => {{
+    ($limit:expr, $f:expr, $a:ident, $name:expr, $array_type:expr) => {{
         write![$f, "{}: '{}' [str]\n[\n", $array_type, $name]?;
         $a.into_iter().take($limit).for_each(|opt_s| match opt_s {
             None => {
@@ -133,7 +133,7 @@ where
 
 impl Debug for Utf8Chunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        format_utf8_array!(LIMIT, f, self, self.name(), "ChunkedArray")
+        format_utf8_array!(80, f, self, self.name(), "ChunkedArray")
     }
 }
 
@@ -202,7 +202,7 @@ impl Debug for Series {
             Series::TimestampSecond(a) => {
                 format_array!(limit, f, a, "timestamp(s)", a.name(), "Series")
             }
-            Series::Utf8(a) => format_utf8_array!(LIMIT, f, a, a.name(), "Series"),
+            Series::Utf8(a) => format_utf8_array!(80, f, a, a.name(), "Series"),
             Series::List(a) => format_list_array!(limit, f, a, a.name(), "Series"),
         }
     }
@@ -220,41 +220,97 @@ impl Debug for DataFrame {
     }
 }
 
-#[cfg(feature = "pretty")]
+fn prepare_row(
+    row: Vec<AnyType>,
+    insert_idx: usize,
+    reduce_columns: bool,
+    max_n_cols: usize,
+) -> Vec<String> {
+    let string_limit = 32;
+    let mut row_str = Vec::with_capacity(row.len());
+    for v in row.iter().take(max_n_cols) {
+        let str_val = if let AnyType::Utf8(s) = v {
+            if s.len() > string_limit {
+                format!("{}...", &s[..string_limit])
+            } else {
+                s.to_string()
+            }
+        } else {
+            format!("{}", v)
+        };
+        row_str.push(str_val);
+    }
+    if reduce_columns {
+        row_str.insert(insert_idx, "...".to_string());
+    }
+    row_str
+}
+
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut table = Table::new();
-        let names = self
+        let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
+            .unwrap_or_else(|_| "8".to_string())
+            .parse()
+            .unwrap_or(8);
+        let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+            .unwrap_or_else(|_| "8".to_string())
+            .parse()
+            .unwrap_or(8);
+        let insert_idx = max_n_cols / 2;
+        let reduce_columns = self.width() > max_n_cols;
+
+        let mut names: Vec<_> = self
             .schema()
             .fields()
             .iter()
+            .take(max_n_cols)
             .map(|f| format!("{}\n---\n{}", f.name(), f.data_type().to_str()))
             .collect();
-        table.set_titles(names);
-        for i in 0..10 {
-            let opt = self.get(i);
-            if let Some(row) = opt {
-                let mut row_str = Vec::with_capacity(row.len());
-                for v in &row {
-                    row_str.push(format!("{}", v));
+        if reduce_columns {
+            names.insert(insert_idx, "...".to_string())
+        }
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .apply_modifier(UTF8_ROUND_CORNERS)
+            .set_table_width(
+                std::env::var("POLARS_TABLE_WIDTH")
+                    .map(|s| {
+                        s.parse::<u16>()
+                            .expect("could not parse table width argument")
+                    })
+                    .unwrap_or(100),
+            )
+            .set_header(names);
+        let mut rows = Vec::with_capacity(max_n_rows);
+        if self.height() > max_n_rows {
+            for i in 0..(max_n_rows / 2) {
+                let row = self.get(i).unwrap();
+                rows.push(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+            }
+            let dots = rows[0].iter().map(|_| "...".to_string()).collect();
+            rows.push(dots);
+            for i in (self.height() - max_n_cols / 2 - 1)..self.height() {
+                let row = self.get(i).unwrap();
+                rows.push(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+            }
+            for row in rows {
+                table.add_row(row);
+            }
+        } else {
+            for i in 0..10 {
+                let opt = self.get(i);
+                if let Some(row) = opt {
+                    table.add_row(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+                } else {
+                    break;
                 }
-                table.add_row(row.iter().map(|v| format!("{}", v)).collect());
-            } else {
-                break;
             }
         }
-        write!(f, "{}", table)?;
-        Ok(())
-    }
-}
 
-#[cfg(not(feature = "pretty"))]
-impl Display for DataFrame {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "DataFrame. NOTE: compile with the feature 'pretty' for pretty printing."
-        )
+        write!(f, "shape: {:?}\n{}", self.shape(), table)?;
+        Ok(())
     }
 }
 
@@ -270,26 +326,20 @@ fn fmt_integer<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> f
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
     let v = (v * 1000.).round() / 1000.;
-    if v > 9999. || v < 0.001 {
+    if v == 0.0 {
+        write!(f, "{:>width$.1}", v, width = width)
+    } else if !(0.0001..=9999.).contains(&v) {
         write!(f, "{:>width$e}", v, width = width)
     } else {
         write!(f, "{:>width$}", v, width = width)
     }
 }
 
-#[cfg(not(feature = "pretty"))]
-impl Display for AnyType<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[cfg(feature = "pretty")]
 impl Display for AnyType<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 0;
         match self {
-            AnyType::Null => write!(f, "{}", "null"),
+            AnyType::Null => write!(f, "null"),
             AnyType::UInt8(v) => write!(f, "{}", v),
             AnyType::UInt16(v) => write!(f, "{}", v),
             AnyType::UInt32(v) => write!(f, "{}", v),
@@ -434,7 +484,7 @@ mod test {
             format!("{:?}", s.into_series())
         );
 
-        let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1000_000_000_000)]);
+        let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)]);
         assert_eq!(
             r#"Series: '' [date64(ms)]
 [

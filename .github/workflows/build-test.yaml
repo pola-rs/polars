@@ -1,25 +1,24 @@
-name: Build, test and docs
+name: Build and test
 
 on:
-  push:
-    branches:
-      - master
+  - push
+  - pull_request
 jobs:
   test:
-    name: Build, test and docs
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-10-09
+          toolchain: nightly-2020-11-12
           override: true
           components: rustfmt, clippy
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: 3.7
+          python-version: 3.6
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -28,15 +27,10 @@ jobs:
         run: |
           cargo fmt -- --check
           black --check .
+      - name: Run linting checks
+        run : |
+          cd polars && cargo clippy -Z unstable-options --all-features -- -D warnings
       - name: Run tests
         run: |
           cd polars && cargo test --all-features
           cd ../py-polars && ./tasks.sh build-run-tests && cd ..
-      - name: deploy docs
-        run: |
-          cargo doc --no-deps --all-features --package polars \
-          && echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
-          pdoc --html py-polars/pypolars/ && \
-          mv html/pypolars target/doc/pypolars && \
-          ghp-import -n target/doc && \
-          git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages

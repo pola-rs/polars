@@ -2,9 +2,7 @@ use crate::{
     prelude::*,
     utils::{get_iter_capacity, Xob},
 };
-use arrow::array::{
-    ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, ListBuilder,
-};
+use arrow::array::{ArrayBuilder, ArrayDataBuilder, ArrayRef, ListBuilder};
 use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
 pub use arrow::memory;
 use arrow::{
@@ -39,12 +37,6 @@ where
     pub builder: PrimitiveBuilder<T>,
     capacity: usize,
     field: Field,
-    aligned_vec: AlignedVec<T::Native>,
-    bitmap_builder: BooleanBufferBuilder,
-    // points the to last null value added
-    null_pointer: usize,
-    // keep track of null such that we don't have to count them afterwards
-    null_count: usize,
 }
 
 impl<T> ChunkedBuilder<T::Native, T> for PrimitiveChunkedBuilder<T>
@@ -53,46 +45,16 @@ where
 {
     /// Appends a value of type `T` into the builder
     fn append_value(&mut self, v: T::Native) {
-        if T::get_data_type() == ArrowDataType::Boolean {
-            self.builder.append_value(v).expect("memory error");
-        } else {
-            self.aligned_vec.push(v)
-        }
+        self.builder.append_value(v).expect("memory error");
     }
 
     /// Appends a null slot into the builder
     fn append_null(&mut self) {
-        if T::get_data_type() == ArrowDataType::Boolean {
-            self.builder.append_null().expect("memory error");
-        } else {
-            self.update_null_bitmap();
-            self.null_pointer = self.aligned_vec.len() + 1;
-            self.bitmap_builder.append(false).expect("memory error");
-            self.null_count += 1;
-            unsafe {
-                let len = self.aligned_vec.len();
-                let new_len = len + 1;
-                self.aligned_vec.set_len(new_len);
-                let cap = self.aligned_vec.capacity();
-                if new_len >= cap {
-                    self.aligned_vec.reserve(1);
-                }
-            }
-        }
+        self.builder.append_null().expect("memory error");
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
-        let arr = if T::get_data_type() == ArrowDataType::Boolean {
-            Arc::new(self.builder.finish())
-        } else {
-            self.update_null_bitmap();
-            let null_bit_buffer = self.bitmap_builder.finish();
-            Arc::new(aligned_vec_to_primitive_array::<T>(
-                self.aligned_vec,
-                Some(null_bit_buffer),
-                Some(self.null_count),
-            ))
-        };
+        let arr = Arc::new(self.builder.finish());
 
         let len = arr.len();
         ChunkedArray {
@@ -113,34 +75,15 @@ where
             builder: PrimitiveBuilder::<T>::new(capacity),
             capacity,
             field: Field::new(name, T::get_data_type(), true),
-            aligned_vec: AlignedVec::with_capacity_aligned(capacity),
-            bitmap_builder: BooleanBufferBuilder::new(capacity),
-            null_pointer: 0,
-            null_count: 0,
         }
-    }
-
-    fn update_null_bitmap(&mut self) {
-        // first append valid values that were added
-        let n_valid = self.aligned_vec.len() - self.null_pointer;
-        self.bitmap_builder
-            .append_n(n_valid, true)
-            .expect("memory error")
-    }
-
-    pub fn reserve(&mut self, additional: usize) {
-        // todo! reserve the boolean builder
-        self.aligned_vec.reserve(additional);
-        self.bitmap_builder.reserve(additional).unwrap();
-        self.capacity += additional;
     }
 
     pub fn len(&self) -> usize {
-        if T::get_data_type() == ArrowDataType::Boolean {
-            self.builder.len()
-        } else {
-            self.aligned_vec.len()
-        }
+        self.builder.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.builder.len() == 0
     }
 
     pub fn capacity(&self) -> usize {
@@ -152,7 +95,7 @@ pub type BooleanChunkedBuilder = PrimitiveChunkedBuilder<BooleanType>;
 
 pub struct Utf8ChunkedBuilder {
     pub builder: StringBuilder,
-    capacity: usize,
+    pub capacity: usize,
     field: Field,
 }
 
@@ -231,8 +174,7 @@ where
     for opt in s {
         builder.append_option(*opt);
     }
-    let ca = builder.finish();
-    ca
+    builder.finish()
 }
 
 pub(crate) fn set_null_bits(
@@ -357,13 +299,13 @@ pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
 /// A `Vec` wrapper with a memory alignment equal to Arrow's primitive arrays.
 /// Can be useful in creating a new ChunkedArray or Arrow Primitive array without copying.
 #[derive(Debug)]
-pub struct AlignedVec<T> {
-    inner: Vec<T>,
+pub struct AlignedVec<T: Clone> {
+    pub(crate) inner: Vec<T>,
     // if into_inner is called, this will be true and we can use the default Vec's destructor
     taken: bool,
 }
 
-impl<T> Drop for AlignedVec<T> {
+impl<T: Clone> Drop for AlignedVec<T> {
     fn drop(&mut self) {
         if !self.taken {
             let inner = mem::take(&mut self.inner);
@@ -375,15 +317,15 @@ impl<T> Drop for AlignedVec<T> {
     }
 }
 
-impl<T> FromIterator<T> for AlignedVec<T> {
+impl<T: Clone> FromIterator<T> for AlignedVec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let mut iter = iter.into_iter();
+        let iter = iter.into_iter();
         let sh = iter.size_hint();
         let size = sh.1.unwrap_or(sh.0);
 
         let mut av = Self::with_capacity_aligned(size);
 
-        while let Some(v) = iter.next() {
+        for v in iter {
             av.push(v)
         }
 
@@ -393,7 +335,7 @@ impl<T> FromIterator<T> for AlignedVec<T> {
     }
 }
 
-impl<T> AlignedVec<T> {
+impl<T: Clone> AlignedVec<T> {
     /// Create a new Vec where first bytes memory address has an alignment of 64 bytes, as described
     /// by arrow spec.
     /// Read more:
@@ -408,6 +350,10 @@ impl<T> AlignedVec<T> {
             inner: v,
             taken: false,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 
     pub fn reserve(&mut self, additional: usize) {
@@ -426,6 +372,10 @@ impl<T> AlignedVec<T> {
         self.inner.len()
     }
 
+    /// Create a new aligned vec from a ptr.
+    ///
+    /// # Safety
+    /// The ptr should be 64 byte aligned and `len` and `capacity` should be correct otherwise it is UB.
     pub unsafe fn from_ptr(ptr: usize, len: usize, capacity: usize) -> Self {
         assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
         let ptr = ptr as *mut T;
@@ -441,8 +391,7 @@ impl<T> AlignedVec<T> {
     unsafe fn into_inner(mut self) -> Vec<T> {
         self.shrink_to_fit();
         self.taken = true;
-        let inner = mem::take(&mut self.inner);
-        inner
+        mem::take(&mut self.inner)
     }
 
     /// Push at the end of the Vec. This is unsafe because a push when the capacity of the
@@ -455,8 +404,18 @@ impl<T> AlignedVec<T> {
         self.inner.push(value)
     }
 
+    /// Set the length of the underlying `Vec`.
+    ///
+    /// # Safety
+    ///
+    /// - `new_len` must be less than or equal to `capacity`.
+    /// - The elements at `old_len..new_len` must be initialized.
     pub unsafe fn set_len(&mut self, new_len: usize) {
         self.inner.set_len(new_len);
+    }
+
+    pub fn resize(&mut self, new_len: usize, value: T) {
+        self.inner.resize(new_len, value)
     }
 
     pub fn as_ptr(&self) -> *const T {
@@ -509,7 +468,7 @@ where
     T: ArrowPrimitiveType,
 {
     fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
-        Self::new_from_iter(name, v.into_iter().copied())
+        Self::new_from_iter(name, v.iter().copied())
     }
 
     fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
@@ -542,7 +501,7 @@ where
 {
     fn new_from_slice(name: &str, v: &[S]) -> Self {
         let mut builder = StringBuilder::new(v.len());
-        v.into_iter().for_each(|val| {
+        v.iter().for_each(|val| {
             builder
                 .append_value(val.as_ref())
                 .expect("Could not append value");
@@ -769,7 +728,7 @@ mod test {
 
     #[test]
     fn test_primitive_builder() {
-        let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new("foo", 3);
+        let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new("foo", 6);
         let values = &[Some(1), None, Some(2), Some(3), None, Some(4)];
         for val in values {
             builder.append_option(*val);

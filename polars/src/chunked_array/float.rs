@@ -63,8 +63,9 @@ where
                 process_float(v, &mut u64_builder, &mut i16_builder, &mut i8_builder)
             }),
             _ => self.into_iter().for_each(|opt_v| {
-                opt_v
-                    .map(|v| process_float(v, &mut u64_builder, &mut i16_builder, &mut i8_builder));
+                if let Some(v) = opt_v {
+                    process_float(v, &mut u64_builder, &mut i16_builder, &mut i8_builder)
+                }
             }),
         }
         (

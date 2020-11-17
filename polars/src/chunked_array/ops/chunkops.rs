@@ -20,7 +20,7 @@ macro_rules! optional_rechunk {
     ($self:tt, $rhs:tt) => {
         if $self.chunk_id != $rhs.chunk_id {
             // we can rechunk ourselves to match
-            $self.rechunk(Some(&$rhs.chunk_id)).map(|v| Some(v))
+            $self.rechunk(Some(&$rhs.chunk_id)).map(Some)
         } else {
             Ok(None)
         }

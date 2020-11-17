@@ -51,12 +51,7 @@ impl ListChunked {
             }};
         }
 
-        match_arrow_data_type_apply_macro!(
-            **self.get_inner_dtype(),
-            impl_primitive,
-            impl_utf8,
-            self
-        )
+        match_arrow_data_type_apply_macro!(*self.get_inner_dtype(), impl_primitive, impl_utf8, self)
     }
 }
 
@@ -207,13 +202,13 @@ impl DataFrame {
             value_col.rename("value");
 
             let mut df_chunk = ids.clone();
-            df_chunk.hstack(&[variable_col, value_col])?;
+            df_chunk.hstack_mut(&[variable_col, value_col])?;
             dataframe_chunks.push_back(df_chunk)
         }
 
         let mut main_df = dataframe_chunks
             .pop_front()
-            .ok_or(PolarsError::NoData("No data in melt operation".into()))?;
+            .ok_or_else(|| PolarsError::NoData("No data in melt operation".into()))?;
 
         while let Some(df) = dataframe_chunks.pop_front() {
             main_df.vstack(&df)?;

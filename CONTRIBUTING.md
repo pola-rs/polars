@@ -41,5 +41,8 @@ We test the code formatting in the CI pipelines. If you don't want these to fail
 * **Rust** code with `$ cargo fmt`
 * **Python** code with [black (version 20.8b1)](https://github.com/psf/black), running `$ black .`
 
+## Linting
+We use [clippy](https://github.com/rust-lang/rust-clippy) as linter. This will also be checked in CI.
+
 ## License
 By contributing, you agree that your contributions will be licensed under its MIT License.

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 try:
     from .pypolars import PyDataFrame, PySeries, PyLazyFrame
 except:
@@ -18,14 +16,27 @@ from typing import (
     TextIO,
     BinaryIO,
     Callable,
+    Any,
 )
 from .series import Series, wrap_s
 from .datatypes import *
 import numpy as np
 
 
-def wrap_df(df: PyDataFrame) -> DataFrame:
+def wrap_df(df: "PyDataFrame") -> "DataFrame":
     return DataFrame._from_pydf(df)
+
+
+def prepare_other(other: Any) -> Series:
+    # if not a series create singleton series such that it will broadcast
+    if not isinstance(other, Series):
+        if isinstance(other, str):
+            pass
+        elif isinstance(other, Sequence):
+            raise ValueError("operation not supported")
+
+        other = Series("", [other])
+    return other
 
 
 class DataFrame:
@@ -68,12 +79,12 @@ class DataFrame:
         ignore_errors: bool = False,
         stop_after_n_rows: Optional[int] = None,
         skip_rows: int = 0,
-        projection: Optional[List[int]] = None,
+        projection: "Optional[List[int]]" = None,
         sep: str = ",",
-        columns: Optional[List[str]] = None,
+        columns: "Optional[List[str]]" = None,
         rechunk: bool = True,
         encoding: str = "utf8",
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """
         Read into a DataFrame from a csv file.
 
@@ -130,7 +141,7 @@ class DataFrame:
     @staticmethod
     def read_parquet(
         file: Union[str, BinaryIO],
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
 
@@ -148,7 +159,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_ipc(file: Union[str, BinaryIO]) -> DataFrame:
+    def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -225,13 +236,29 @@ class DataFrame:
         """
         return np.vstack([self[:, i].to_numpy() for i in range(self.width)]).T
 
+    def __mul__(self, other):
+        other = prepare_other(other)
+        return wrap_df(self._df.mul(other._s))
+
+    def __truediv__(self, other):
+        other = prepare_other(other)
+        return wrap_df(self._df.div(other._s))
+
+    def __add__(self, other):
+        other = prepare_other(other)
+        return wrap_df(self._df.add(other._s))
+
+    def __sub__(self, other):
+        other = prepare_other(other)
+        return wrap_df(self._df.sub(other._s))
+
     def __str__(self) -> str:
         return self._df.as_str()
 
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __getattr__(self, item) -> PySeries:
+    def __getattr__(self, item) -> "PySeries":
         """
         Access columns as attribute
         """
@@ -239,6 +266,9 @@ class DataFrame:
             return wrap_s(self._df.column(item))
         except RuntimeError:
             raise AttributeError(f"{item} not found")
+
+    def __iter__(self):
+        return self.get_columns().__iter__()
 
     def __getitem__(self, item):
         # select rows and columns at once
@@ -323,7 +353,7 @@ class DataFrame:
                 self.drop_in_place(key)
             except:
                 pass
-            self.hstack([Series(key, value)])
+            self.hstack([Series(key, value)], in_place=True)
         # df[idx] = series
         elif isinstance(key, int):
             assert isinstance(value, Series)
@@ -375,14 +405,18 @@ class DataFrame:
         return self._df.width()
 
     @property
-    def columns(self) -> List[str]:
+    def columns(self) -> "List[str]":
         """
         get column names
         """
         return self._df.columns()
 
+    @columns.setter
+    def columns(self, columns: "List[str]"):
+        self._df.set_column_names(columns)
+
     @property
-    def dtypes(self) -> List[type]:
+    def dtypes(self) -> "List[type]":
         """
         get dtypes
         """
@@ -403,7 +437,7 @@ class DataFrame:
 
     def sort(
         self, by_column: str, in_place: bool = False, reverse: bool = False
-    ) -> Optional[DataFrame]:
+    ) -> Optional["DataFrame"]:
         """
         Sort the DataFrame by column
 
@@ -421,7 +455,7 @@ class DataFrame:
         else:
             return wrap_df(self._df.sort(by_column, reverse))
 
-    def frame_equal(self, other: DataFrame, null_equal: bool = False) -> bool:
+    def frame_equal(self, other: "DataFrame", null_equal: bool = False) -> bool:
         """
         Check if DataFrame is equal to other.
 
@@ -447,7 +481,7 @@ class DataFrame:
         """
         self._df.replace(column, new_col.inner())
 
-    def slice(self, offset: int, length: int) -> DataFrame:
+    def slice(self, offset: int, length: int) -> "DataFrame":
         """
         Slice this DataFrame over the rows direction.
 
@@ -460,7 +494,7 @@ class DataFrame:
         """
         return wrap_df(self._df.slice(offset, length))
 
-    def head(self, length: int = 5) -> DataFrame:
+    def head(self, length: int = 5) -> "DataFrame":
         """
         Get first N rows as DataFrame
 
@@ -471,7 +505,7 @@ class DataFrame:
         """
         return wrap_df(self._df.head(length))
 
-    def tail(self, length: int = 5) -> DataFrame:
+    def tail(self, length: int = 5) -> "DataFrame":
         """
         Get last N rows as DataFrame
 
@@ -503,7 +537,7 @@ class DataFrame:
         """
         return func(self, *args, **kwargs)
 
-    def groupby(self, by: Union[str, List[str]]) -> GroupBy:
+    def groupby(self, by: "Union[str, List[str]]") -> "GroupBy":
         """
         Start a groupby operation
 
@@ -518,11 +552,11 @@ class DataFrame:
 
     def join(
         self,
-        df: DataFrame,
+        df: "DataFrame",
         left_on: str,
         right_on: str,
         how="inner",
-    ) -> DataFrame:
+    ) -> "DataFrame":
         """
         SQL like joins
 
@@ -558,18 +592,27 @@ class DataFrame:
             raise e
         return wrap_df(inner)
 
-    def hstack(self, columns: List[Series]):
+    def hstack(
+        self, columns: "Union[List[Series], DataFrame]", in_place=False
+    ) -> Optional["DataFrame"]:
         """
-        Grow this DataFrame horizontally by stacking Series to it.
+        Return a new DataFrame grown horizontally by stacking Series to it.
 
         Parameters
         ----------
         columns
             Series to stack
+        in_place
+            Modify in place
         """
-        self._df.hstack([s.inner() for s in columns])
+        if not isinstance(columns, list):
+            columns = columns.get_columns()
+        if in_place:
+            self._df.hstack_mut([s.inner() for s in columns])
+        else:
+            return wrap_df(self._df.hstack([s.inner() for s in columns]))
 
-    def vstack(self, df: DataFrame):
+    def vstack(self, df: "DataFrame"):
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
@@ -580,7 +623,7 @@ class DataFrame:
         """
         self._df.vstack(df._df)
 
-    def drop(self, name: str) -> DataFrame:
+    def drop(self, name: str) -> "DataFrame":
         """
         Remove column from DataFrame and return as new.
 
@@ -613,19 +656,19 @@ class DataFrame:
         """
         return wrap_s(self._df.select_at_idx(idx))
 
-    def clone(self) -> DataFrame:
+    def clone(self) -> "DataFrame":
         """
         Very cheap deep clone
         """
         return wrap_df(self._df.clone())
 
-    def get_columns(self) -> List[Series]:
+    def get_columns(self) -> "List[Series]":
         """
         Get the DataFrame as a List of Series
         """
         return list(map(lambda s: wrap_s(s), self._df.get_columns()))
 
-    def fill_none(self, strategy: str) -> DataFrame:
+    def fill_none(self, strategy: str) -> "DataFrame":
         """
         Fill None values by a filling strategy.
 
@@ -644,7 +687,7 @@ class DataFrame:
         """
         return wrap_df(self._df.fill_none(strategy))
 
-    def explode(self, column: str) -> DataFrame:
+    def explode(self, column: str) -> "DataFrame":
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
 
@@ -660,8 +703,8 @@ class DataFrame:
         return wrap_df(self._df.explode(column))
 
     def melt(
-        self, id_vars: Union[List[str], str], value_vars: Union[List[str], str]
-    ) -> DataFrame:
+        self, id_vars: "Union[List[str], str]", value_vars: "Union[List[str], str]"
+    ) -> "DataFrame":
         """
         Unpivot DataFrame to long format.
 
@@ -683,7 +726,7 @@ class DataFrame:
             id_vars = [id_vars]
         return wrap_df(self._df.melt(id_vars, value_vars))
 
-    def shift(self, periods: int) -> DataFrame:
+    def shift(self, periods: int) -> "DataFrame":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with `Nones`.
@@ -716,66 +759,78 @@ class DataFrame:
         """
         return self._df.n_chunks()
 
-    def max(self) -> DataFrame:
+    def max(self) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their maximum value
         """
         return wrap_df(self._df.max())
 
-    def min(self) -> DataFrame:
+    def min(self) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their minimum value
         """
         return wrap_df(self._df.min())
 
-    def sum(self) -> DataFrame:
+    def sum(self) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their sum value
         """
         return wrap_df(self._df.sum())
 
-    def mean(self) -> DataFrame:
+    def mean(self) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their mean value
         """
-        return self._df.mean()
+        return wrap_df(self._df.mean())
 
-    def median(self) -> DataFrame:
+    def std(self) -> "DataFrame":
+        """
+        Aggregate the columns of this DataFrame to their standard deviation value
+        """
+        return wrap_df(self._df.std())
+
+    def var(self) -> "DataFrame":
+        """
+        Aggregate the columns of this DataFrame to their variance value
+        """
+        return wrap_df(self._df.var())
+
+    def median(self) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their median value
         """
         return wrap_df(self._df.median())
 
-    def quantile(self, quantile: float) -> DataFrame:
+    def quantile(self, quantile: float) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their quantile value
         """
         return wrap_df(self._df.quantile(quantile))
 
-    def to_dummies(self) -> DataFrame:
+    def to_dummies(self) -> "DataFrame":
         """
         Get one hot encoded dummy variables.
         """
         return wrap_df(self._df.to_dummies())
 
-    def drop_duplicates(self) -> DataFrame:
+    def drop_duplicates(self, maintain_order=True) -> "DataFrame":
         """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
-        return wrap_df(self._df.drop_duplicates())
+        return wrap_df(self._df.drop_duplicates(maintain_order))
 
-    def _rechunk(self) -> DataFrame:
+    def _rechunk(self) -> "DataFrame":
         return wrap_df(self._df.rechunk())
 
 
 class GroupBy:
-    def __init__(self, df: DataFrame, by: List[str]):
+    def __init__(self, df: DataFrame, by: "List[str]"):
         self._df = df
         self.by = by
 
     def agg(
-        self, column_to_agg: Union[List[Tuple[str, List[str]]], Dict[str, List[str]]]
+        self, column_to_agg: "Union[List[Tuple[str, List[str]]], Dict[str, List[str]]]"
     ) -> DataFrame:
         """
         Use multiple aggregations on columns
@@ -809,7 +864,7 @@ class GroupBy:
 
         return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
 
-    def select(self, columns: Union[str, List[str]]) -> GBSelection:
+    def select(self, columns: "Union[str, List[str]]") -> "GBSelection":
         """
         Select the columns that will be aggregated.
 
@@ -828,7 +883,7 @@ class GroupBy:
         """
         return GBSelection(self._df, self.by, None)
 
-    def pivot(self, pivot_column: str, values_column: str) -> PivotOps:
+    def pivot(self, pivot_column: str, values_column: str) -> "PivotOps":
         """
         Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
 
@@ -910,7 +965,7 @@ class GroupBy:
 
 class PivotOps:
     def __init__(
-        self, df: DataFrame, by: List[str], pivot_column: str, values_column: str
+        self, df: DataFrame, by: "List[str]", pivot_column: str, values_column: str
     ):
         self._df = df
         self.by = by
@@ -975,7 +1030,9 @@ class PivotOps:
 
 
 class GBSelection:
-    def __init__(self, df: DataFrame, by: List[str], selection: Optional[List[str]]):
+    def __init__(
+        self, df: DataFrame, by: "List[str]", selection: "Optional[List[str]]"
+    ):
         self._df = df
         self.by = by
         self.selection = selection

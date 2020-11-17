@@ -98,7 +98,7 @@ impl PyLazyFrame {
         right_on: PyExpr,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let other = other.ldf.clone();
+        let other = other.ldf;
         ldf.inner_join(other, left_on.inner, right_on.inner).into()
     }
 
@@ -109,7 +109,7 @@ impl PyLazyFrame {
         right_on: PyExpr,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let other = other.ldf.clone();
+        let other = other.ldf;
         ldf.outer_join(other, left_on.inner, right_on.inner).into()
     }
 
@@ -120,7 +120,7 @@ impl PyLazyFrame {
         right_on: PyExpr,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let other = other.ldf.clone();
+        let other = other.ldf;
         ldf.left_join(other, left_on.inner, right_on.inner).into()
     }
 

@@ -120,7 +120,7 @@ macro_rules! impl_take {
                 None => builder.append_null(),
             }
         }
-        Ok(builder.finish())
+        builder.finish()
     }};
 }
 
@@ -139,7 +139,7 @@ macro_rules! impl_take_opt {
                 None => builder.append_null(),
             };
         }
-        Ok(builder.finish())
+        builder.finish()
     }};
 }
 
@@ -180,7 +180,7 @@ impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
         impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
@@ -196,7 +196,7 @@ where
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self> {
+    ) -> Self {
         impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
@@ -210,7 +210,7 @@ where
 }
 
 impl ChunkTake for BooleanChunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
     where
         Self: std::marker::Sized,
     {
@@ -229,7 +229,7 @@ impl ChunkTake for BooleanChunked {
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self> {
+    ) -> Self {
         impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
@@ -243,7 +243,7 @@ impl ChunkTake for BooleanChunked {
 }
 
 impl ChunkTake for Utf8Chunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
     where
         Self: std::marker::Sized,
     {
@@ -262,7 +262,7 @@ impl ChunkTake for Utf8Chunked {
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self>
+    ) -> Self
     where
         Self: std::marker::Sized,
     {
@@ -279,7 +279,7 @@ impl ChunkTake for Utf8Chunked {
 }
 
 impl ChunkTake for ListChunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self> {
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
@@ -290,7 +290,7 @@ impl ChunkTake for ListChunked {
                 for idx in indices {
                     builder.append_opt_series(&taker.get(idx));
                 }
-                Ok(builder.finish())
+                builder.finish()
             }
             _ => unimplemented!(),
         }
@@ -320,7 +320,7 @@ impl ChunkTake for ListChunked {
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self> {
+    ) -> Self {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
@@ -338,7 +338,7 @@ impl ChunkTake for ListChunked {
                         None => builder.append_opt_series(&None),
                     };
                 }
-                Ok(builder.finish())
+                builder.finish()
             }
             _ => unimplemented!(),
         }
@@ -385,7 +385,7 @@ pub trait AsTakeIndex {
 impl AsTakeIndex for &UInt32Chunked {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
         match self.cont_slice() {
-            Ok(slice) => Box::new(slice.into_iter().map(|&val| val as usize)),
+            Ok(slice) => Box::new(slice.iter().map(|&val| val as usize)),
             Err(_) => Box::new(
                 self.into_iter()
                     .filter_map(|opt_val| opt_val.map(|val| val as usize)),
@@ -439,10 +439,7 @@ macro_rules! many_or_single {
         if chunks.len() == 1 {
             Box::new($StructSingle { arr: chunks[0] })
         } else {
-            Box::new($StructMany {
-                ca: $self,
-                chunks: chunks,
-            })
+            Box::new($StructMany { ca: $self, chunks })
         }
     }};
 }
@@ -498,10 +495,7 @@ where
                 if chunks.len() == 1 {
                     NumTakeRandomDispatch::Single(NumTakeRandomSingleChunk { arr: chunks[0] })
                 } else {
-                    NumTakeRandomDispatch::Many(NumTakeRandomChunked {
-                        ca: self,
-                        chunks: chunks,
-                    })
+                    NumTakeRandomDispatch::Many(NumTakeRandomChunked { ca: self, chunks })
                 }
             }
         }
@@ -538,10 +532,7 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
                 name: self.name(),
             })
         } else {
-            Box::new(ListTakeRandom {
-                ca: self,
-                chunks: chunks,
-            })
+            Box::new(ListTakeRandom { ca: self, chunks })
         }
     }
 }
@@ -614,7 +605,7 @@ where
     type Item = T;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
-        self.slice.get(index).map(|v| *v)
+        self.slice.get(index).copied()
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {

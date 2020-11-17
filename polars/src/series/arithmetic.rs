@@ -1,5 +1,7 @@
 use crate::prelude::*;
+use crate::utils::get_supertype;
 use num::{Num, NumCast, ToPrimitive};
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops;
 
@@ -89,7 +91,13 @@ where
     }
 }
 
-impl NumOpsDispatch for Utf8Chunked {}
+impl NumOpsDispatch for Utf8Chunked {
+    fn add_to(&self, rhs: &Series) -> Result<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self + rhs;
+        Ok(out.into_series())
+    }
+}
 impl NumOpsDispatch for BooleanChunked {}
 impl NumOpsDispatch for ListChunked {}
 
@@ -97,8 +105,7 @@ impl ops::Sub for Series {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let series = &self;
-        apply_method_all_series!(series, subtract, &rhs).expect("data types don't match")
+        (&self).sub(&rhs)
     }
 }
 
@@ -106,8 +113,7 @@ impl ops::Add for Series {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let series = &self;
-        apply_method_all_series!(series, add_to, &rhs).expect("data types don't match")
+        (&self).add(&rhs)
     }
 }
 
@@ -115,8 +121,7 @@ impl std::ops::Mul for Series {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let series = &self;
-        apply_method_all_series!(series, multiply, &rhs).expect("data types don't match")
+        (&self).mul(&rhs)
     }
 }
 
@@ -124,18 +129,45 @@ impl std::ops::Div for Series {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
-        let series = &self;
-        apply_method_all_series!(series, divide, &rhs).expect("data types don't match")
+        (&self).div(&rhs)
+    }
+}
+
+impl std::ops::Rem for Series {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        (&self).rem(&rhs)
     }
 }
 
 // Same only now for referenced data types
 
+fn coerce_lhs_rhs<'a>(
+    lhs: &'a Series,
+    rhs: &'a Series,
+) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
+    let dtype = get_supertype(lhs.dtype(), rhs.dtype())?;
+    let left = if lhs.dtype() == &dtype {
+        Cow::Borrowed(lhs)
+    } else {
+        Cow::Owned(lhs.cast_with_arrow_datatype(&dtype)?)
+    };
+    let right = if rhs.dtype() == &dtype {
+        Cow::Borrowed(rhs)
+    } else {
+        Cow::Owned(rhs.cast_with_arrow_datatype(&dtype)?)
+    };
+    Ok((left, right))
+}
+
 impl ops::Sub for &Series {
     type Output = Series;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, subtract, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), subtract, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
@@ -143,7 +175,9 @@ impl ops::Add for &Series {
     type Output = Series;
 
     fn add(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, add_to, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), add_to, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
@@ -156,7 +190,9 @@ impl std::ops::Mul for &Series {
     /// let out = &s * &s;
     /// ```
     fn mul(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, multiply, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), multiply, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
@@ -169,7 +205,24 @@ impl std::ops::Div for &Series {
     /// let out = &s / &s;
     /// ```
     fn div(self, rhs: Self) -> Self::Output {
-        apply_method_all_series!(self, divide, &rhs).expect("data types don't match")
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), divide, rhs.as_ref())
+            .expect("data types don't match")
+    }
+}
+
+impl std::ops::Rem for &Series {
+    type Output = Series;
+
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s: Series = [1, 2, 3].iter().collect();
+    /// let out = &s / &s;
+    /// ```
+    fn rem(self, rhs: Self) -> Self::Output {
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        apply_method_all_series!(lhs.as_ref(), remainder, rhs.as_ref())
+            .expect("data types don't match")
     }
 }
 
@@ -205,7 +258,8 @@ where
         + ops::Div<Output = T::Native>,
 {
     fn subtract_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let rhs: T::Native =
+            NumCast::from(rhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v - rhs))
@@ -215,7 +269,8 @@ where
     }
 
     fn add_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let rhs: T::Native =
+            NumCast::from(rhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v + rhs))
@@ -224,7 +279,8 @@ where
         ca.into_series()
     }
     fn multiply_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let rhs: T::Native =
+            NumCast::from(rhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v * rhs))
@@ -233,7 +289,8 @@ where
         ca.into_series()
     }
     fn divide_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect(&format!("could not cast"));
+        let rhs: T::Native =
+            NumCast::from(rhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| v / rhs))
@@ -364,7 +421,8 @@ where
         + ops::Div<Output = T::Native>,
 {
     fn lhs_subtract_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let lhs: T::Native =
+            NumCast::from(lhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| lhs - v))
@@ -374,7 +432,8 @@ where
     }
 
     fn lhs_add_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let lhs: T::Native =
+            NumCast::from(lhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| lhs + v))
@@ -383,7 +442,8 @@ where
         ca.into_series()
     }
     fn lhs_multiply_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let lhs: T::Native =
+            NumCast::from(lhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| lhs * v))
@@ -392,7 +452,8 @@ where
         ca.into_series()
     }
     fn lhs_divide_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect(&format!("could not cast"));
+        let lhs: T::Native =
+            NumCast::from(lhs).unwrap_or_else(|| panic!("could not cast".to_string()));
         let mut ca: ChunkedArray<T> = self
             .into_iter()
             .map(|opt_v| opt_v.map(|v| lhs / v))

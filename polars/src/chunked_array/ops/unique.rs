@@ -1,21 +1,28 @@
 use crate::prelude::*;
-use crate::utils::{floating_encode_f64, integer_decode_f64};
+use crate::utils::{floating_encode_f64, integer_decode_f64, Xob};
 use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
+use ahash::RandomState;
 use num::{NumCast, ToPrimitive};
-use seahash::SeaHasher;
-use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasherDefault, Hash};
+use rayon::prelude::*;
+use std::collections::HashSet;
+use std::fmt::Display;
+use std::hash::Hash;
 
 pub(crate) fn is_unique_helper(
-    groups: impl Iterator<Item = (usize, Vec<usize>)>,
+    mut groups: Vec<(usize, Vec<usize>)>,
     len: usize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> Result<BooleanChunked> {
     debug_assert_ne!(unique_val, duplicated_val);
+    // let mut groups = groups.collect::<Vec<_>>();
+    groups.sort_unstable_by_key(|t| t.0);
+
     let mut unique_idx_iter = groups
-        .filter(|(_, groups)| groups.len() == 1)
+        .into_iter()
+        .filter(|(_, g)| g.len() == 1)
         .map(|(first, _)| first);
+
     let mut next_unique_idx = unique_idx_iter.next();
     let mask = (0..len)
         .into_iter()
@@ -39,7 +46,7 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
-    let groups = ca.group_tuples().into_iter();
+    let groups = ca.group_tuples();
     is_unique_helper(groups, ca.len(), true, false)
 }
 
@@ -48,7 +55,7 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
-    let groups = ca.group_tuples().into_iter();
+    let groups = ca.group_tuples();
     is_unique_helper(groups, ca.len(), false, true)
 }
 
@@ -66,14 +73,11 @@ impl ChunkUnique<ListType> for ListChunked {
     }
 }
 
-fn fill_set<A>(
-    a: impl Iterator<Item = A>,
-    capacity: usize,
-) -> HashSet<A, BuildHasherDefault<SeaHasher>>
+fn fill_set<A>(a: impl Iterator<Item = A>, capacity: usize) -> HashSet<A, RandomState>
 where
     A: Hash + Eq,
 {
-    let mut set = HashSet::with_capacity_and_hasher(capacity, BuildHasherDefault::default());
+    let mut set = HashSet::with_capacity_and_hasher(capacity, RandomState::new());
 
     for val in a {
         set.insert(val);
@@ -86,8 +90,7 @@ fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<usize>
 where
     T: Hash + Eq,
 {
-    let mut set =
-        HashSet::with_capacity_and_hasher(capacity, BuildHasherDefault::<SeaHasher>::default());
+    let mut set = HashSet::with_capacity_and_hasher(capacity, RandomState::new());
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
@@ -111,6 +114,23 @@ where
     }
 }
 
+macro_rules! impl_value_counts {
+    ($self:expr) => {{
+        let group_tuples = $self.group_tuples();
+        let values = unsafe {
+            $self.take_unchecked(group_tuples.iter().map(|t| t.0), Some(group_tuples.len()))
+        };
+        let mut counts: Xob<UInt32Chunked> = group_tuples
+            .into_iter()
+            .map(|(_, groups)| groups.len() as u32)
+            .collect();
+        counts.rename("counts");
+        let cols = vec![values.into_series(), counts.into_inner().into_series()];
+        let df = DataFrame::new_no_checks(cols);
+        df.sort("counts", true)
+    }};
+}
+
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
@@ -119,7 +139,7 @@ where
 {
     fn unique(&self) -> Result<Self> {
         let set = match self.null_count() {
-            0 => fill_set(self.into_no_null_iter().map(|v| Some(v)), self.len()),
+            0 => fill_set(self.into_no_null_iter().map(Some), self.len()),
             _ => fill_set(self.into_iter(), self.len()),
         };
 
@@ -136,6 +156,10 @@ where
 
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_duplicated(self)
+    }
+
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
     }
 }
 
@@ -158,7 +182,75 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_duplicated(self)
     }
+
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
+    }
 }
+
+fn dummies_helper(mut groups: Vec<usize>, len: usize, name: &str) -> UInt8Chunked {
+    groups.sort_unstable();
+
+    // let mut group_member_iter = groups.into_iter();
+    let mut av = AlignedVec::with_capacity_aligned(len);
+    for _ in 0..len {
+        av.push(0u8)
+    }
+
+    for idx in groups {
+        let elem = unsafe { av.inner.get_unchecked_mut(idx) };
+        *elem = 1;
+    }
+
+    ChunkedArray::new_from_aligned_vec(name, av)
+}
+
+impl ToDummies<Utf8Type> for Utf8Chunked {
+    fn to_dummies(&self) -> Result<DataFrame> {
+        let groups = self.group_tuples();
+        let col_name = self.name();
+
+        let columns = groups
+            .into_par_iter()
+            .map(|(first, groups)| {
+                let val = unsafe { self.get_unchecked(first) };
+                let name = format!("{}_{}", col_name, val);
+                let ca = dummies_helper(groups, self.len(), &name);
+                ca.into_series()
+            })
+            .collect();
+
+        Ok(DataFrame::new_no_checks(columns))
+    }
+}
+impl<T> ToDummies<T> for ChunkedArray<T>
+where
+    T: PolarsIntegerType + Sync,
+    T::Native: Hash + Eq + Display,
+    ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
+{
+    fn to_dummies(&self) -> Result<DataFrame> {
+        let groups = self.group_tuples();
+        let col_name = self.name();
+
+        let columns = groups
+            .into_par_iter()
+            .map(|(first, groups)| {
+                let val = unsafe { self.get_unchecked(first) };
+                let name = format!("{}_{}", col_name, val);
+                let ca = dummies_helper(groups, self.len(), &name);
+                ca.into_series()
+            })
+            .collect();
+
+        Ok(DataFrame::new_no_checks(columns))
+    }
+}
+
+impl ToDummies<ListType> for ListChunked {}
+impl ToDummies<Float32Type> for Float32Chunked {}
+impl ToDummies<Float64Type> for Float64Chunked {}
+impl ToDummies<BooleanType> for BooleanChunked {}
 
 impl ChunkUnique<BooleanType> for BooleanChunked {
     fn unique(&self) -> Result<Self> {
@@ -250,6 +342,9 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_duplicated(self)
     }
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
+    }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
@@ -267,43 +362,8 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_duplicated(self)
     }
-}
-
-pub trait ValueCounts<T>
-where
-    T: ArrowPrimitiveType,
-{
-    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, BuildHasherDefault<SeaHasher>>;
-}
-
-fn fill_set_value_count<K>(
-    a: impl Iterator<Item = K>,
-    capacity: usize,
-) -> HashMap<K, u32, BuildHasherDefault<SeaHasher>>
-where
-    K: Hash + Eq,
-{
-    let mut kv_store = HashMap::with_capacity_and_hasher(capacity, BuildHasherDefault::default());
-
-    for key in a {
-        let count = kv_store.entry(key).or_insert(0);
-        *count += 1;
-    }
-
-    kv_store
-}
-
-impl<T> ValueCounts<T> for ChunkedArray<T>
-where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq,
-    ChunkedArray<T>: ChunkOps,
-{
-    fn value_counts(&self) -> HashMap<Option<T::Native>, u32, BuildHasherDefault<SeaHasher>> {
-        match self.null_count() {
-            0 => fill_set_value_count(self.into_no_null_iter().map(|v| Some(v)), self.len()),
-            _ => fill_set_value_count(self.into_iter(), self.len()),
-        }
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
     }
 }
 

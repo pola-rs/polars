@@ -71,40 +71,47 @@ def test_groupby():
             "c": [6, 5, 4, 3, 2, 1],
         }
     )
+
     assert (
         df.groupby("a")
         .select("b")
         .sum()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
     assert (
         df.groupby("a")
         .select("c")
         .sum()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .min()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .max()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .mean()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .last()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     # check if it runs
@@ -153,7 +160,7 @@ def test_join():
 
 def test_hstack():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df.hstack([Series("stacked", [-1, -1, -1])])
+    df.hstack([Series("stacked", [-1, -1, -1])], in_place=True)
     assert df.shape == (3, 3)
     assert df.columns == ["a", "b", "stacked"]
 

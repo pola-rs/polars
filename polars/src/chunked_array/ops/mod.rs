@@ -168,9 +168,17 @@ pub trait TakeRandom {
     type Item;
 
     /// Get a nullable value by index.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
     fn get(&self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
 }
 // Utility trait because associated type needs a lifetime
@@ -178,20 +186,35 @@ pub trait TakeRandomUtf8 {
     type Item;
 
     /// Get a nullable value by index.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
     fn get(self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
+    ///
+    /// # Safety
+    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
     unsafe fn get_unchecked(self, index: usize) -> Self::Item;
 }
 
 /// Fast access by index.
 pub trait ChunkTake {
     /// Take values from ChunkedArray by index.
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Result<Self>
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
     where
         Self: std::marker::Sized;
 
-    /// Take values from ChunkedArray by index without checking bounds.
+    /// Take values from ChunkedArray by index
+    ///
+    /// # Safety
+    ///
+    /// Runs without checking bounds or null validity.
     unsafe fn take_unchecked(
         &self,
         indices: impl Iterator<Item = usize>,
@@ -201,15 +224,23 @@ pub trait ChunkTake {
         Self: std::marker::Sized;
 
     /// Take values from ChunkedArray by Option<index>.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
     fn take_opt(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self>
+    ) -> Self
     where
         Self: std::marker::Sized;
 
     /// Take values from ChunkedArray by Option<index>.
+    ///
+    /// # Safety
+    ///
+    /// Doesn't do any bound or null validity checking.
     unsafe fn take_opt_unchecked(
         &self,
         indices: impl Iterator<Item = Option<usize>>,
@@ -327,6 +358,19 @@ pub trait ChunkAgg<T> {
     fn quantile(&self, quantile: f64) -> Result<Option<T>>;
 }
 
+/// Variance and standard deviation aggregation.
+pub trait ChunkVar<T> {
+    /// Compute the variance of this ChunkedArray/Series.
+    fn var(&self) -> Option<T> {
+        None
+    }
+
+    /// Compute the standard deviation of this ChunkedArray/Series.
+    fn std(&self) -> Option<T> {
+        None
+    }
+}
+
 /// Compare [Series](series/series/enum.Series.html)
 /// and [ChunkedArray](series/chunked_array/struct.ChunkedArray.html)'s and get a `boolean` mask that
 /// can be used to filter rows.
@@ -390,6 +434,21 @@ pub trait ChunkUnique<T> {
 
     /// Get a mask of all the duplicated values.
     fn is_duplicated(&self) -> Result<BooleanChunked> {
+        Err(PolarsError::InvalidOperation(
+            "is_duplicated is not implemented for this dtype".into(),
+        ))
+    }
+
+    /// Count the unique values.
+    fn value_counts(&self) -> Result<DataFrame> {
+        Err(PolarsError::InvalidOperation(
+            "is_duplicated is not implemented for this dtype".into(),
+        ))
+    }
+}
+
+pub trait ToDummies<T>: ChunkUnique<T> {
+    fn to_dummies(&self) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
             "is_duplicated is not implemented for this dtype".into(),
         ))
@@ -647,7 +706,6 @@ where
             ca
         } else {
             self.take((0..self.len()).rev(), None)
-                .expect("implementation error, should not fail")
         }
     }
 }
@@ -657,7 +715,6 @@ macro_rules! impl_reverse {
         impl ChunkReverse<$arrow_type> for $ca_type {
             fn reverse(&self) -> Self {
                 self.take((0..self.len()).rev(), None)
-                    .expect("implementation error, should not fail")
             }
         }
     };
@@ -938,12 +995,27 @@ pub trait ChunkAggSeries {
     }
 }
 
+pub trait VarAggSeries {
+    /// Get the variance of the ChunkedArray as a new Series of length 1.
+    fn var_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
+    fn std_as_series(&self) -> Series {
+        unimplemented!()
+    }
+}
+
 /// Apply kernels on the arrow array chunks in a ChunkedArray.
 pub trait ChunkApplyKernel<A> {
     /// Apply kernel and return result as a new ChunkedArray.
     fn apply_kernel<F>(&self, f: F) -> Self
     where
         F: Fn(&A) -> ArrayRef;
+    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(&A) -> ArrayRef,
+        S: PolarsDataType;
 }
 
 #[cfg(test)]

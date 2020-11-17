@@ -5,8 +5,9 @@ use crate::{
     lazy::{prelude::*, utils},
     prelude::*,
 };
+use ahash::RandomState;
 use arrow::datatypes::DataType;
-use fnv::FnvHashSet;
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::{fmt, sync::Arc};
 
@@ -169,7 +170,9 @@ impl fmt::Debug for LogicalPlan {
                 DataFrameOperation::Quantile(_) => write!(f, "QUANTILE {:?}", input),
                 DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
             },
-            Aggregate { keys, aggs, .. } => write!(f, "Aggregate\n\t{:?} BY {:?}", aggs, keys),
+            Aggregate {
+                input, keys, aggs, ..
+            } => write!(f, "Aggregate\n\t{:?} BY {:?} FROM {:?}", aggs, keys, input),
             Join {
                 input_left,
                 input_right,
@@ -321,7 +324,7 @@ impl LogicalPlanBuilder {
         let schema = utils::expressions_to_schema(&exprs, self.0.schema());
 
         // if len == 0, no projection has to be done. This is a select all operation.
-        if exprs.len() > 0 {
+        if !exprs.is_empty() {
             LogicalPlan::Projection {
                 expr: exprs,
                 input: Box::new(self.0),
@@ -477,7 +480,7 @@ impl LogicalPlanBuilder {
         let schema_right = other.schema();
 
         // column names of left table
-        let mut names = FnvHashSet::default();
+        let mut names: HashSet<&String, RandomState> = HashSet::default();
         // fields of new schema
         let mut fields = vec![];
 

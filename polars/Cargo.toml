@@ -11,12 +11,11 @@ readme = "../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-pretty = ["prettytable-rs"]
 simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono"]
 random = ["rand", "rand_distr"]
-default = ["pretty", "docs", "temporal", "simd"]
+default = ["docs", "temporal", "simd"]
 lazy = []
 parallel = []
 # extra utilities for Utf8Chunked
@@ -25,12 +24,11 @@ strings = []
 [dependencies]
 arrow = {version = "2", default_features = false}
 thiserror = "^1.0.16"
-num = "^0.2.1"
-fnv = "^1.0.7"
+num = "^0.3.1"
 itertools = "^0.9.0"
 unsafe_unwrap = "^0.1.0"
-rayon = "1.4"
-prettytable-rs = { version="^0.8.0", features=["win_crlf"], optional = true, default_features = false}
+rayon = "1.5"
+comfy-table = { version="1"}
 chrono = {version = "^0.4.13", optional = true}
 parquet = {version = "2", optional = true}
 rand = {version = "0.7", optional = true}
@@ -38,7 +36,7 @@ rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
 regex = {version = "1.4" }
 anyhow = "1.0"
-seahash = "4.0.1"
+ahash = "0.5"
 csv = "1.1"
 lazy_static = "1.4"
 crossbeam = "0.8"

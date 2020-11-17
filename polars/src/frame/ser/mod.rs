@@ -153,7 +153,7 @@ pub fn finish_reader<R: ArrowReader>(
         n_rows += batch.num_rows();
         batch
             .columns()
-            .into_iter()
+            .iter()
             .zip(&mut columns)
             .map(|(arr, ser)| ser.append_array(arr.clone()))
             .collect::<Result<Vec<_>>>()?;

@@ -1,10 +1,11 @@
+use crate::prelude::*;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
 /// https://stackoverflow.com/questions/39638363/how-can-i-use-a-hashmap-with-f64-as-key-in-rust
 pub(crate) fn integer_decode_f64(val: f64) -> (u64, i16, i8) {
-    let bits: u64 = unsafe { mem::transmute(val) };
+    let bits: u64 = val.to_bits();
     let sign: i8 = if bits >> 63 == 0 { 1 } else { -1 };
     let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
     let mantissa = if exponent == 0 {
@@ -20,7 +21,7 @@ pub(crate) fn integer_decode_f64(val: f64) -> (u64, i16, i8) {
 /// Returns the mantissa, exponent and sign as integers.
 /// https://github.com/rust-lang/rust/blob/5c674a11471ec0569f616854d715941757a48a0a/src/libcore/num/f32.rs#L203-L216
 pub(crate) fn integer_decode_f32(val: f32) -> (u64, i16, i8) {
-    let bits: u32 = unsafe { mem::transmute(val) };
+    let bits: u32 = val.to_bits();
     let sign: i8 = if bits >> 31 == 0 { 1 } else { -1 };
     let mut exponent: i16 = ((bits >> 23) & 0xff) as i16;
     let mantissa = if exponent == 0 {
@@ -107,14 +108,14 @@ pub trait IntoDynamicZip<I>
 where
     I: Iterator,
 {
-    fn into_dynamic_zip(self: Self) -> DynamicZip<I>;
+    fn into_dynamic_zip(self) -> DynamicZip<I>;
 }
 
 impl<I> IntoDynamicZip<I> for Vec<I>
 where
     I: Iterator,
 {
-    fn into_dynamic_zip(self: Self) -> DynamicZip<I> {
+    fn into_dynamic_zip(self) -> DynamicZip<I> {
         DynamicZip { iterators: self }
     }
 }
@@ -158,7 +159,7 @@ macro_rules! match_arrow_data_type_apply_macro {
 
 #[macro_export]
 macro_rules! apply_method_all_series {
-    ($self:ident, $method:ident, $($args:expr),*) => {
+    ($self:expr, $method:ident, $($args:expr),*) => {
         match $self {
             Series::Utf8(a) => a.$method($($args),*),
             Series::Bool(a) => a.$method($($args),*),
@@ -317,4 +318,161 @@ macro_rules! df {
 /// Clone if upstream hasn't implemented clone
 pub(crate) fn clone<T>(t: &T) -> T {
     unsafe { mem::transmute_copy(t) }
+}
+
+/// Given two datatypes, determine the supertype that both types can safely be cast to
+pub(crate) fn get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Result<ArrowDataType> {
+    match _get_supertype(l, r) {
+        Some(dt) => Ok(dt),
+        None => _get_supertype(r, l).ok_or_else(|| {
+            PolarsError::Other(
+                format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
+            )
+        }),
+    }
+}
+
+/// Given two datatypes, determine the supertype that both types can safely be cast to
+fn _get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Option<ArrowDataType> {
+    use arrow::datatypes::DataType::*;
+    // TODO! add list and temporal types
+    match (l, r) {
+        (Duration(_), Int8) => Some(Int64),
+        (Duration(_), Int16) => Some(Int64),
+        (Duration(_), Int32) => Some(Int64),
+        (Duration(_), Int64) => Some(Int64),
+
+        (Duration(_), UInt8) => Some(Int64),
+        (Duration(_), UInt16) => Some(Int64),
+        (Duration(_), UInt32) => Some(Int64),
+
+        (Int8, Duration(_)) => Some(Int64),
+        (Int16, Duration(_)) => Some(Int64),
+        (Int32, Duration(_)) => Some(Int64),
+        (Int64, Duration(_)) => Some(Int64),
+
+        (UInt8, Duration(_)) => Some(Int64),
+        (UInt16, Duration(_)) => Some(Int64),
+        (UInt32, Duration(_)) => Some(Int64),
+
+        (Float32, Duration(_)) => Some(Float32),
+        (Float64, Duration(_)) => Some(Float64),
+
+        (Duration(_), Float32) => Some(Float32),
+        (Duration(_), Float64) => Some(Float64),
+
+        (UInt8, Int8) => Some(Int8),
+        (UInt8, Int16) => Some(Int16),
+        (UInt8, Int32) => Some(Int32),
+        (UInt8, Int64) => Some(Int64),
+
+        (UInt16, Int16) => Some(Int16),
+        (UInt16, Int32) => Some(Int32),
+        (UInt16, Int64) => Some(Int64),
+
+        (UInt32, Int32) => Some(Int32),
+        (UInt32, Int64) => Some(Int64),
+
+        (UInt64, Int64) => Some(Int64),
+
+        (Int8, UInt8) => Some(Int8),
+
+        (Int16, UInt8) => Some(Int16),
+        (Int16, UInt16) => Some(Int16),
+
+        (Int32, UInt8) => Some(Int32),
+        (Int32, UInt16) => Some(Int32),
+        (Int32, UInt32) => Some(Int32),
+
+        (Int64, UInt8) => Some(Int64),
+        (Int64, UInt16) => Some(Int64),
+        (Int64, UInt32) => Some(Int64),
+        (Int64, UInt64) => Some(Int64),
+
+        (UInt8, UInt8) => Some(UInt8),
+        (UInt8, UInt16) => Some(UInt16),
+        (UInt8, UInt32) => Some(UInt32),
+        (UInt8, UInt64) => Some(UInt64),
+        (UInt8, Float32) => Some(Float32),
+        (UInt8, Float64) => Some(Float64),
+
+        (UInt16, UInt8) => Some(UInt16),
+        (UInt16, UInt16) => Some(UInt16),
+        (UInt16, UInt32) => Some(UInt32),
+        (UInt16, UInt64) => Some(UInt64),
+        (UInt16, Float32) => Some(Float32),
+        (UInt16, Float64) => Some(Float64),
+
+        (UInt32, UInt8) => Some(UInt32),
+        (UInt32, UInt16) => Some(UInt32),
+        (UInt32, UInt32) => Some(UInt32),
+        (UInt32, UInt64) => Some(UInt64),
+        (UInt32, Float32) => Some(Float32),
+        (UInt32, Float64) => Some(Float64),
+
+        (UInt64, UInt8) => Some(UInt64),
+        (UInt64, UInt16) => Some(UInt64),
+        (UInt64, UInt32) => Some(UInt64),
+        (UInt64, UInt64) => Some(UInt64),
+        (UInt64, Float32) => Some(Float32),
+        (UInt64, Float64) => Some(Float64),
+
+        (Int8, Int8) => Some(Int8),
+        (Int8, Int16) => Some(Int16),
+        (Int8, Int32) => Some(Int32),
+        (Int8, Int64) => Some(Int64),
+        (Int8, Float32) => Some(Float32),
+        (Int8, Float64) => Some(Float64),
+
+        (Int16, Int8) => Some(Int16),
+        (Int16, Int16) => Some(Int16),
+        (Int16, Int32) => Some(Int32),
+        (Int16, Int64) => Some(Int64),
+        (Int16, Float32) => Some(Float32),
+        (Int16, Float64) => Some(Float64),
+
+        (Int32, Int8) => Some(Int32),
+        (Int32, Int16) => Some(Int32),
+        (Int32, Int32) => Some(Int32),
+        (Int32, Int64) => Some(Int64),
+        (Int32, Float32) => Some(Float32),
+        (Int32, Float64) => Some(Float64),
+
+        (Int64, Int8) => Some(Int64),
+        (Int64, Int16) => Some(Int64),
+        (Int64, Int32) => Some(Int64),
+        (Int64, Int64) => Some(Int64),
+        (Int64, Float32) => Some(Float32),
+        (Int64, Float64) => Some(Float64),
+
+        (Float32, Float32) => Some(Float32),
+        (Float32, Float64) => Some(Float64),
+        (Float64, Float32) => Some(Float64),
+        (Float64, Float64) => Some(Float64),
+
+        (Utf8, _) => Some(Utf8),
+        (_, Utf8) => Some(Utf8),
+
+        (Boolean, Boolean) => Some(Boolean),
+
+        _ => None,
+    }
+}
+
+pub fn accumulate_dataframes_vertical(dfs: Vec<DataFrame>) -> Result<DataFrame> {
+    let mut iter = dfs.into_iter();
+    let mut acc_df = iter.next().unwrap();
+    for df in iter {
+        acc_df.vstack(&df)?;
+    }
+    Ok(acc_df)
+}
+
+pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame> {
+    let mut iter = dfs.into_iter();
+    let mut acc_df = iter.next().unwrap();
+    for df in iter {
+        acc_df.hstack_mut(df.get_columns())?;
+    }
+    Ok(acc_df)
 }

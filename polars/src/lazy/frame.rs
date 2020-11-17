@@ -2,7 +2,6 @@
 use crate::frame::select::Selection;
 use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
-
 impl DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
     pub fn lazy(self) -> LazyFrame {
@@ -19,6 +18,7 @@ pub struct LazyFrame {
     projection_pushdown: bool,
     predicate_pushdown: bool,
     type_coercion: bool,
+    simplify_expr: bool,
 }
 
 impl Default for LazyFrame {
@@ -28,6 +28,7 @@ impl Default for LazyFrame {
             projection_pushdown: false,
             predicate_pushdown: false,
             type_coercion: false,
+            simplify_expr: false,
         }
     }
 }
@@ -39,6 +40,7 @@ impl From<LogicalPlan> for LazyFrame {
             projection_pushdown: true,
             predicate_pushdown: true,
             type_coercion: true,
+            simplify_expr: true,
         }
     }
 }
@@ -47,6 +49,7 @@ struct OptState {
     projection_pushdown: bool,
     predicate_pushdown: bool,
     type_coercion: bool,
+    simplify_expr: bool,
 }
 
 impl LazyFrame {
@@ -59,6 +62,7 @@ impl LazyFrame {
             projection_pushdown: self.projection_pushdown,
             predicate_pushdown: self.predicate_pushdown,
             type_coercion: self.type_coercion,
+            simplify_expr: self.simplify_expr,
         }
     }
 
@@ -68,6 +72,7 @@ impl LazyFrame {
             projection_pushdown: opt_state.projection_pushdown,
             predicate_pushdown: opt_state.predicate_pushdown,
             type_coercion: opt_state.type_coercion,
+            simplify_expr: opt_state.simplify_expr,
         }
     }
 
@@ -89,6 +94,12 @@ impl LazyFrame {
         self
     }
 
+    /// Toggle expression simplification optimization on or off
+    pub fn with_simplify_expr_optimization(mut self, toggle: bool) -> Self {
+        self.simplify_expr = toggle;
+        self
+    }
+
     /// Describe the logical plan.
     pub fn describe_plan(&self) -> String {
         self.logical_plan.describe()
@@ -99,8 +110,10 @@ impl LazyFrame {
         let logical_plan = self.clone().get_plan_builder().build();
         let predicate_pushdown_opt = PredicatePushDown {};
         let projection_pushdown_opt = ProjectionPushDown {};
+        let simplify_expr_opt = SimplifyExpr {};
         let logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
         let logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
+        let logical_plan = simplify_expr_opt.optimize(logical_plan)?;
         Ok(logical_plan.describe())
     }
 
@@ -175,11 +188,13 @@ impl LazyFrame {
         let predicate_pushdown = self.predicate_pushdown;
         let projection_pushdown = self.projection_pushdown;
         let type_coercion = self.type_coercion;
+        let simplify_expr = self.simplify_expr;
         let mut logical_plan = self.get_plan_builder().build();
 
         let predicate_pushdown_opt = PredicatePushDown {};
         let projection_pushdown_opt = ProjectionPushDown {};
         let type_coercion_opt = TypeCoercion {};
+        let simplify_expr_opt = SimplifyExpr {};
 
         if cfg!(debug_assertions) {
             // check that the optimization don't interfere with the schema result.
@@ -207,6 +222,9 @@ impl LazyFrame {
 
         if type_coercion {
             logical_plan = type_coercion_opt.optimize(logical_plan)?;
+        }
+        if simplify_expr {
+            logical_plan = simplify_expr_opt.optimize(logical_plan)?;
         }
 
         let planner = DefaultPlanner::default();
@@ -558,7 +576,7 @@ mod test {
             .select(&[col("sepal.width").alias("petals"), col("sepal.width")])
             .collect()
             .unwrap();
-        assert_eq!(new.columns(), &["petals", "sepal.width"]);
+        assert_eq!(new.get_column_names(), &["petals", "sepal.width"]);
     }
 
     #[test]
@@ -745,6 +763,21 @@ mod test {
 
         let new = ldf.collect().unwrap();
         assert_eq!(new.shape(), (1, 2));
+    }
+
+    #[test]
+    fn test_simplify_expr() {
+        // Test if expression containing literals is simplified
+        let df = get_df();
+        let optimizer = SimplifyExpr {};
+        let plan = df
+            .lazy()
+            .select(&[lit(1.0f32) + lit(1.0f32) + col("sepal.width")])
+            .logical_plan;
+        let plan = optimizer.optimize(plan).unwrap();
+        assert!(
+            matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(ScalarValue::Float32(2.0))))
+        );
     }
 
     #[test]

@@ -3,15 +3,13 @@ use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecod
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{IntoDynamicZip, Xob};
+use ahash::RandomState;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
-use seahash::SeaHasher;
 use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasherDefault, Hash};
-
-type SeaBuildHasher = BuildHasherDefault<SeaHasher>;
+use std::hash::Hash;
 
 use std::{
     fmt::{Debug, Formatter},
@@ -167,10 +165,7 @@ impl Series {
     fn as_groupable_iter<'a>(&'a self) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>> {
         macro_rules! as_groupable_iter {
             ($ca:expr, $variant:ident ) => {{
-                let bx = Box::new(
-                    $ca.into_iter()
-                        .map(|opt_b| opt_b.map(|b| Groupable::$variant(b))),
-                );
+                let bx = Box::new($ca.into_iter().map(|opt_b| opt_b.map(Groupable::$variant)));
                 Ok(bx)
             }};
         }
@@ -393,13 +388,12 @@ where
                     if let Ok(slice) = self.cont_slice() {
                         let mut sum = 0.;
                         for i in idx {
-                            sum = sum + slice[*i].to_f64().unwrap()
+                            sum += slice[*i].to_f64().unwrap()
                         }
                         Some(sum / idx.len() as f64)
                     } else {
-                        let take = unsafe {
-                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
-                        };
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
                         let opt_sum: Option<T::Native> = take.sum();
                         opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                     }
@@ -431,9 +425,8 @@ where
                         }
                         min
                     } else {
-                        let take = unsafe {
-                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
-                        };
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
                         take.min()
                     }
                 })
@@ -465,9 +458,8 @@ where
                         }
                         max
                     } else {
-                        let take = unsafe {
-                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
-                        };
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
                         take.max()
                     }
                 })
@@ -488,9 +480,8 @@ where
                         }
                         Some(sum)
                     } else {
-                        let take = unsafe {
-                            self.take_unchecked(idx.into_iter().copied(), Some(self.len()))
-                        };
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
                         take.sum()
                     }
                 })
@@ -582,14 +573,14 @@ macro_rules! impl_agg_n_unique {
             .into_par_iter()
             .map(|(_first, idx)| {
                 if $self.null_count() == 0 {
-                    let mut set = HashSet::with_hasher(SeaBuildHasher::default());
+                    let mut set = HashSet::with_hasher(RandomState::new());
                     for i in idx {
                         let v = unsafe { $self.get_unchecked(*i) };
                         set.insert(v);
                     }
                     set.len() as u32
                 } else {
-                    let mut set = HashSet::with_hasher(SeaBuildHasher::default());
+                    let mut set = HashSet::with_hasher(RandomState::new());
                     for i in idx {
                         let opt_v = $self.get(*i);
                         set.insert(opt_v);
@@ -764,7 +755,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             None => {
                 let by: Vec<_> = self.selected_keys.iter().map(|s| s.name()).collect();
                 self.df
-                    .columns()
+                    .get_column_names()
                     .into_iter()
                     .filter(|a| !by.contains(a))
                     .collect()
@@ -1051,7 +1042,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// }
     /// ```
     pub fn quantile(&self, quantile: f64) -> Result<DataFrame> {
-        if quantile < 0.0 || quantile > 1.0 {
+        if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::Other(
                 "quantile should be within 0.0 and 1.0".into(),
             ));
@@ -1163,7 +1154,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             .groups
             .iter()
             .map(|(_first, idx)| {
-                let ca: Xob<UInt32Chunked> = idx.into_iter().map(|&v| v as u32).collect();
+                let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
                 ca.into_inner().into_series()
             })
             .collect();
@@ -1219,13 +1210,10 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         Column: AsRef<str>,
     {
         // create a mapping from columns to aggregations on that column
-        let mut map =
-            HashMap::with_capacity_and_hasher(column_to_agg.len(), SeaBuildHasher::default());
-        column_to_agg
-            .into_iter()
-            .for_each(|(column, aggregations)| {
-                map.insert(column.as_ref(), aggregations.as_ref());
-            });
+        let mut map = HashMap::with_capacity_and_hasher(column_to_agg.len(), RandomState::new());
+        column_to_agg.iter().for_each(|(column, aggregations)| {
+            map.insert(column.as_ref(), aggregations.as_ref());
+        });
 
         macro_rules! finish_agg_opt {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
@@ -1249,7 +1237,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in &agg_cols {
             if let Some(&aggregations) = map.get(agg_col.name()) {
-                for aggregation_f in aggregations.as_ref() {
+                for aggregation_f in aggregations {
                     match aggregation_f.as_ref() {
                         "min" => finish_agg_opt!(self, "{}_min", agg_min, agg_col, cols),
                         "max" => finish_agg_opt!(self, "{}_max", agg_max, agg_col, cols),
@@ -1421,12 +1409,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         // same as select method
         self.selected_agg = Some(vec![pivot_column, values_column]);
 
-        let pivot = Pivot {
+        Pivot {
             gb: self,
             pivot_column,
             values_column,
-        };
-        pivot
+        }
     }
 }
 
@@ -1477,7 +1464,7 @@ trait ChunkPivot {
         &self,
         _pivot_series: &Series,
         _keys: Vec<Series>,
-        _groups: &Vec<(usize, Vec<usize>)>,
+        _groups: &[(usize, Vec<usize>)],
         _agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
@@ -1489,7 +1476,7 @@ trait ChunkPivot {
         &self,
         _pivot_series: &Series,
         _keys: Vec<Series>,
-        _groups: &Vec<(usize, Vec<usize>)>,
+        _groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
             "Pivot count operation not implemented for this type".into(),
@@ -1501,13 +1488,11 @@ trait ChunkPivot {
 fn create_column_values_map<'a, T>(
     pivot_vec: &'a [Option<Groupable>],
     size: usize,
-) -> HashMap<&'a Groupable<'a>, Vec<Option<T>>, SeaBuildHasher> {
-    let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, SeaBuildHasher::default());
+) -> HashMap<&'a Groupable<'a>, Vec<Option<T>>, RandomState> {
+    let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, RandomState::new());
     for opt_column_name in pivot_vec {
         if let Some(column_name) = opt_column_name {
-            columns_agg_map
-                .entry(column_name)
-                .or_insert_with(|| Vec::new());
+            columns_agg_map.entry(column_name).or_insert_with(Vec::new);
         }
     }
 
@@ -1518,13 +1503,13 @@ fn create_column_values_map<'a, T>(
 fn create_new_column_builder_map<'a, T>(
     pivot_vec: &'a [Option<Groupable>],
     groups: &[(usize, Vec<usize>)],
-) -> HashMap<&'a Groupable<'a>, PrimitiveChunkedBuilder<T>, SeaBuildHasher>
+) -> HashMap<&'a Groupable<'a>, PrimitiveChunkedBuilder<T>, RandomState>
 where
     T: PolarsNumericType,
 {
     // create a hash map that will be filled with the results of the aggregation.
     let mut columns_agg_map_main =
-        HashMap::with_capacity_and_hasher(pivot_vec.len(), SeaBuildHasher::default());
+        HashMap::with_capacity_and_hasher(pivot_vec.len(), RandomState::new());
     for opt_column_name in pivot_vec {
         if let Some(column_name) = opt_column_name {
             columns_agg_map_main.entry(column_name).or_insert_with(|| {
@@ -1544,7 +1529,7 @@ where
         &self,
         pivot_series: &Series,
         keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        groups: &[(usize, Vec<usize>)],
         agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         // TODO: save an allocation by creating a random access struct for the Groupable utility type.
@@ -1565,9 +1550,9 @@ where
 
                 if let Some(pivot_val) = opt_pivot_val {
                     let values_val = values_taker.get(i);
-                    columns_agg_map_group
-                        .get_mut(&pivot_val)
-                        .map(|v| v.push(values_val));
+                    if let Some(v) = columns_agg_map_group.get_mut(&pivot_val) {
+                        v.push(values_val)
+                    }
                 }
             }
 
@@ -1606,7 +1591,7 @@ where
         &self,
         pivot_series: &Series,
         keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(self, pivot_series, keys, groups)
     }
@@ -1616,7 +1601,7 @@ fn pivot_count_impl<CA: TakeRandom>(
     ca: &CA,
     pivot_series: &Series,
     keys: Vec<Series>,
-    groups: &Vec<(usize, Vec<usize>)>,
+    groups: &[(usize, Vec<usize>)],
 ) -> Result<DataFrame> {
     let pivot_vec: Vec<_> = pivot_series.as_groupable_iter()?.collect();
     // create a hash map that will be filled with the results of the aggregation.
@@ -1633,9 +1618,9 @@ fn pivot_count_impl<CA: TakeRandom>(
 
             if let Some(pivot_val) = opt_pivot_val {
                 let values_val = ca.get(i);
-                columns_agg_map_group
-                    .get_mut(&pivot_val)
-                    .map(|v| v.push(values_val));
+                if let Some(v) = columns_agg_map_group.get_mut(&pivot_val) {
+                    v.push(values_val)
+                }
             }
         }
 
@@ -1663,7 +1648,7 @@ impl ChunkPivot for BooleanChunked {
         &self,
         pivot_series: &Series,
         keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(self, pivot_series, keys, groups)
     }
@@ -1673,7 +1658,7 @@ impl ChunkPivot for Utf8Chunked {
         &self,
         pivot_series: &Series,
         keys: Vec<Series>,
-        groups: &Vec<(usize, Vec<usize>)>,
+        groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(&self, pivot_series, keys, groups)
     }
@@ -1689,7 +1674,7 @@ enum PivotAgg {
     Median,
 }
 
-fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
 {
@@ -1705,7 +1690,7 @@ where
     builder.append_option(v[v.len() / 2]);
 }
 
-fn pivot_agg_sum<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_sum<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
     T::Native: Num + Zero,
@@ -1713,7 +1698,7 @@ where
     builder.append_option(v.iter().copied().fold_options(Zero::zero(), Add::add));
 }
 
-fn pivot_agg_mean<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_mean<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
     T::Native: Num + Zero + NumCast,
@@ -1726,7 +1711,7 @@ where
     );
 }
 
-fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
 {
@@ -1748,7 +1733,7 @@ where
     builder.append_option(min);
 }
 
-fn pivot_agg_max<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &Vec<Option<T::Native>>)
+fn pivot_agg_max<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
 {

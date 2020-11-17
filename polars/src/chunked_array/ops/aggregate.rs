@@ -106,7 +106,7 @@ where
     }
 
     fn quantile(&self, quantile: f64) -> Result<Option<T::Native>> {
-        if quantile < 0.0 || quantile > 1.0 {
+        if !(0.0..=1.0).contains(&quantile) {
             Err(PolarsError::ValueError(
                 "quantile should be between 0.0 and 1.0".into(),
             ))
@@ -116,6 +116,53 @@ where
         }
     }
 }
+
+macro_rules! impl_var {
+    ($self:expr, $ty: ty) => {{
+        let mean = $self.mean()?;
+        let ca = $self - mean;
+        let squared = &ca * &ca;
+        let opt_v = squared.sum();
+        let div = ($self.len() - 1) as $ty;
+        opt_v.map(|v| v / div)
+    }};
+}
+
+impl<T> ChunkVar<f64> for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: PartialOrd + Num + NumCast,
+{
+    fn var(&self) -> Option<f64> {
+        let ca = self.cast::<Float64Type>().ok()?;
+        impl_var!(&ca, f64)
+    }
+    fn std(&self) -> Option<f64> {
+        self.var().map(|var| var.sqrt())
+    }
+}
+
+impl ChunkVar<f32> for Float32Chunked {
+    fn var(&self) -> Option<f32> {
+        impl_var!(self, f32)
+    }
+    fn std(&self) -> Option<f32> {
+        self.var().map(|var| var.sqrt())
+    }
+}
+
+impl ChunkVar<f64> for Float64Chunked {
+    fn var(&self) -> Option<f64> {
+        impl_var!(self, f64)
+    }
+    fn std(&self) -> Option<f64> {
+        self.var().map(|var| var.sqrt())
+    }
+}
+
+impl ChunkVar<String> for Utf8Chunked {}
+impl ChunkVar<Series> for ListChunked {}
+impl ChunkVar<bool> for BooleanChunked {}
 
 fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
     let min_max = ca.into_iter().fold(0, |acc: u32, x| match x {
@@ -127,12 +174,10 @@ fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
                 } else {
                     v
                 }
+            } else if acc > v {
+                acc
             } else {
-                if acc > v {
-                    acc
-                } else {
-                    v
-                }
+                v
             }
         }
         None => acc,
@@ -144,7 +189,7 @@ fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
 impl ChunkAgg<u32> for BooleanChunked {
     /// Returns `None` if the array is empty or only contains null values.
     fn sum(&self) -> Option<u32> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return None;
         }
         let sum = self.into_iter().fold(0, |acc: u32, x| match x {
@@ -155,14 +200,14 @@ impl ChunkAgg<u32> for BooleanChunked {
     }
 
     fn min(&self) -> Option<u32> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return None;
         }
         min_max_helper(self, true)
     }
 
     fn max(&self) -> Option<u32> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return None;
         }
         min_max_helper(self, false)
@@ -178,7 +223,7 @@ impl ChunkAgg<u32> for BooleanChunked {
     }
 
     fn quantile(&self, quantile: f64) -> Result<Option<u32>> {
-        if quantile < 0.0 || quantile > 1.0 {
+        if !(0.0..=1.0).contains(&quantile) {
             Err(PolarsError::ValueError(
                 "quantile should be between 0.0 and 1.0".into(),
             ))
@@ -202,7 +247,8 @@ where
     }
     fn max_as_series(&self) -> Series {
         let v = self.max();
-        let ca: ChunkedArray<T> = [v].iter().copied().collect();
+        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn min_as_series(&self) -> Series {
@@ -231,35 +277,88 @@ where
     }
 }
 
+macro_rules! impl_as_series {
+    ($self:expr, $agg:ident, $ty: ty) => {{
+        let v = $self.$agg();
+        let mut ca: $ty = [v].iter().copied().collect();
+        ca.rename($self.name());
+        ca.into()
+    }};
+}
+
+impl<T> VarAggSeries for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: PartialOrd + Num + NumCast,
+{
+    fn var_as_series(&self) -> Series {
+        impl_as_series!(self, var, Float64Chunked)
+    }
+
+    fn std_as_series(&self) -> Series {
+        impl_as_series!(self, std, Float64Chunked)
+    }
+}
+
+impl VarAggSeries for Float32Chunked {
+    fn var_as_series(&self) -> Series {
+        impl_as_series!(self, var, Float32Chunked)
+    }
+
+    fn std_as_series(&self) -> Series {
+        impl_as_series!(self, std, Float32Chunked)
+    }
+}
+
+impl VarAggSeries for Float64Chunked {
+    fn var_as_series(&self) -> Series {
+        impl_as_series!(self, var, Float64Chunked)
+    }
+
+    fn std_as_series(&self) -> Series {
+        impl_as_series!(self, std, Float64Chunked)
+    }
+}
+
+impl VarAggSeries for BooleanChunked {}
+impl VarAggSeries for ListChunked {}
+impl VarAggSeries for Utf8Chunked {}
+
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {
         let v = self.sum().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn max_as_series(&self) -> Series {
         let v = self.max().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn min_as_series(&self) -> Series {
         let v = self.min().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn mean_as_series(&self) -> Series {
         let v = self.mean().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn median_as_series(&self) -> Series {
         let v = self.median().map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         ca.into()
     }
     fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
         let v = self.quantile(quantile)?.map(|v| v != 0);
-        let ca: BooleanChunked = [v].iter().copied().collect();
+        let mut ca: BooleanChunked = [v].iter().copied().collect();
+        ca.rename(self.name());
         Ok(ca.into())
     }
 }
