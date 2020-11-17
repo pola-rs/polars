@@ -1908,7 +1908,7 @@ mod test {
     }
 
     #[test]
-    fn test_iter_utf8itersinglechunknullcheck() {
+    fn test_iter_utf8_iter_single_chunk_null_check_return_option() {
         let a = Utf8Chunked::new_from_opt_slice("a", &[Some("a"), None, Some("c")]);
 
         // normal iterator
@@ -1942,7 +1942,7 @@ mod test {
     }
 
     #[test]
-    fn test_iter_utf8itercont() {
+    fn test_iter_utf8_iter_single_chunk_return_unwrapped() {
         let a = Utf8Chunked::new_from_slice("a", &["a", "b", "c"]);
 
         // normal iterator
@@ -1976,7 +1976,7 @@ mod test {
     }
 
     #[test]
-    fn test_iter_utf8itercontmanychunk() {
+    fn test_iter_utf8_iter_many_chunk_return_unwrapped() {
         let mut a = Utf8Chunked::new_from_slice("a", &["a", "b"]);
         let a_b = Utf8Chunked::new_from_slice("a_b", &["c"]);
         a.append(&a_b);
@@ -2012,7 +2012,7 @@ mod test {
     }
 
     #[test]
-    fn test_iter_utf8itersinglechunk() {
+    fn test_iter_utf8_iter_single_chunk_return_option() {
         let a = Utf8Chunked::new_from_slice("a", &["a", "b", "c"]);
 
         // normal iterator
@@ -2046,7 +2046,7 @@ mod test {
     }
 
     #[test]
-    fn test_iter_utf8itermanychunk() {
+    fn test_iter_utf8_iter_many_chunk_return_option() {
         let mut a = Utf8Chunked::new_from_slice("a", &["a", "b"]);
         let a_b = Utf8Chunked::new_from_slice("", &["c"]);
         a.append(&a_b);
@@ -2082,7 +2082,7 @@ mod test {
     }
 
     #[test]
-    fn test_iter_utf8itermanychunknullcheck() {
+    fn test_iter_utf8_iter_many_chunk_null_check_return_option() {
         let mut a = Utf8Chunked::new_from_opt_slice("a", &[Some("a"), None]);
         let a_b = Utf8Chunked::new_from_opt_slice("", &[Some("c")]);
         a.append(&a_b);

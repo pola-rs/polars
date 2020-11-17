@@ -618,7 +618,7 @@ mod test {
     ///
     /// test_name: The name of the test to implement, it is a function name so it shall be unique.
     /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
-    macro_rules! impl_par_iter_map_test {
+    macro_rules! impl_par_iter_return_option_map_test {
         ($test_name:ident, $ca_init_block:block) => {
             #[test]
             fn $test_name() {
@@ -650,7 +650,7 @@ mod test {
     ///
     /// test_name: The name of the test to implement, it is a function name so it shall be unique.
     /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
-    macro_rules! impl_par_iter_filter_test {
+    macro_rules! impl_par_iter_return_option_filter_test {
         ($test_name:ident, $ca_init_block:block) => {
             #[test]
             fn $test_name() {
@@ -690,7 +690,7 @@ mod test {
     ///
     /// test_name: The name of the test to implement, it is a function name so it shall be unique.
     /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
-    macro_rules! impl_par_iter_fold_test {
+    macro_rules! impl_par_iter_return_option_fold_test {
         ($test_name:ident, $ca_init_block:block) => {
             #[test]
             fn $test_name() {
@@ -725,47 +725,50 @@ mod test {
     }
 
     // Single Chunk Parallel Iterator Tests.
-    impl_par_iter_map_test!(test_iter_utf8paritersinglechunk_map, {
+    impl_par_iter_return_option_map_test!(utf8_par_iter_single_chunk_return_option_map, {
         Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
     });
 
-    impl_par_iter_filter_test!(test_iter_utf8paritersinglechunk_filter, {
+    impl_par_iter_return_option_filter_test!(utf8_par_iter_single_chunk_return_option_filter, {
         Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
     });
 
-    impl_par_iter_fold_test!(test_iter_utf8paritersinglechunk_fold, {
+    impl_par_iter_return_option_fold_test!(utf8_par_iter_single_chunk_return_option_fold, {
         Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
     });
 
     // Single Chunk Null Check Parallel Iterator Tests.
-    impl_par_iter_map_test!(test_iter_utf8paritersinglechunknullcheck_map, {
-        Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
-    });
+    impl_par_iter_return_option_map_test!(
+        utf8_par_iter_single_chunk_null_check_return_option_map,
+        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+    );
 
-    impl_par_iter_filter_test!(test_iter_utf8paritersinglechunknullcheck_filter, {
-        Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
-    });
+    impl_par_iter_return_option_filter_test!(
+        utf8_par_iter_single_chunk_null_check_return_option_filter,
+        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+    );
 
-    impl_par_iter_fold_test!(test_iter_utf8paritersinglechunknullcheck_fold, {
-        Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
-    });
+    impl_par_iter_return_option_fold_test!(
+        utf8_par_iter_single_chunk_null_check_return_option_fold,
+        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+    );
 
     // Many Chunk Parallel Iterator Tests.
-    impl_par_iter_map_test!(test_iter_utf8paritermanychunk_map, {
+    impl_par_iter_return_option_map_test!(utf8_par_iter_many_chunk_return_option_map, {
         let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
-    impl_par_iter_filter_test!(test_iter_utf8paritermanychunk_filter, {
+    impl_par_iter_return_option_filter_test!(utf8_par_iter_many_chunk_return_option_filter, {
         let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
-    impl_par_iter_fold_test!(test_iter_utf8paritermanychunk_fold, {
+    impl_par_iter_return_option_fold_test!(utf8_par_iter_many_chunk_return_option_fold, {
         let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
@@ -773,7 +776,7 @@ mod test {
     });
 
     // Many Chunk Null Check Parallel Iterator Tests.
-    impl_par_iter_map_test!(test_iter_utf8paritermanychunknullcheck_map, {
+    impl_par_iter_return_option_map_test!(utf8_par_iter_many_chunk_null_check_return_option_map, {
         let mut a =
             Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         let a_b =
@@ -782,23 +785,37 @@ mod test {
         a
     });
 
-    impl_par_iter_filter_test!(test_iter_utf8paritermanychunknullcheck_filter, {
-        let mut a =
-            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        a.append(&a_b);
-        a
-    });
+    impl_par_iter_return_option_filter_test!(
+        utf8_par_iter_many_chunk_null_check_return_option_filter,
+        {
+            let mut a = Utf8Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = Utf8Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
+            );
+            a.append(&a_b);
+            a
+        }
+    );
 
-    impl_par_iter_fold_test!(test_iter_utf8paritermanychunknullcheck_fold, {
-        let mut a =
-            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        a.append(&a_b);
-        a
-    });
+    impl_par_iter_return_option_fold_test!(
+        utf8_par_iter_many_chunk_null_check_return_option_fold,
+        {
+            let mut a = Utf8Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = Utf8Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
+            );
+            a.append(&a_b);
+            a
+        }
+    );
 
     /// Implement a test which performs a map over a `ParallelIterator` and over its correspondant `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
@@ -808,7 +825,7 @@ mod test {
     ///
     /// test_name: The name of the test to implement, it is a function name so it shall be unique.
     /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
-    macro_rules! impl_par_iter_cont_map_test {
+    macro_rules! impl_par_iter_return_unwrapped_map_test {
         ($test_name:ident, $ca_init_block:block) => {
             #[test]
             fn $test_name() {
@@ -840,7 +857,7 @@ mod test {
     ///
     /// test_name: The name of the test to implement, it is a function name so it shall be unique.
     /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
-    macro_rules! impl_par_iter_cont_filter_test {
+    macro_rules! impl_par_iter_return_unwrapped_filter_test {
         ($test_name:ident, $ca_init_block:block) => {
             #[test]
             fn $test_name() {
@@ -872,7 +889,7 @@ mod test {
     ///
     /// test_name: The name of the test to implement, it is a function name so it shall be unique.
     /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
-    macro_rules! impl_par_iter_cont_fold_test {
+    macro_rules! impl_par_iter_return_unwrapped_fold_test {
         ($test_name:ident, $ca_init_block:block) => {
             #[test]
             fn $test_name() {
@@ -895,35 +912,40 @@ mod test {
         };
     }
 
-    // Single Chunk Cont
-    impl_par_iter_cont_map_test!(test_iter_utf8paritercont_map, {
+    // Single Chunk Return Unwrapped
+    impl_par_iter_return_unwrapped_map_test!(utf8_par_iter_single_chunk_return_unwrapped_map, {
         Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
     });
 
-    impl_par_iter_cont_filter_test!(test_iter_utf8paritercont_filter, {
+    impl_par_iter_return_unwrapped_filter_test!(
+        utf8_par_iter_single_chunk_return_unwrapped_filter,
+        { Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+    );
+
+    impl_par_iter_return_unwrapped_fold_test!(utf8_par_iter_single_chunk_return_unwrapped_fold, {
         Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
     });
 
-    impl_par_iter_cont_fold_test!(test_iter_utf8paritercont_fold, {
-        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
-    });
-
-    // Many Chunk Cont
-    impl_par_iter_cont_map_test!(test_iter_utf8paritercontmanychunk_map, {
+    // Many Chunk Return Unwrapped
+    impl_par_iter_return_unwrapped_map_test!(utf8_par_iter_many_chunk_return_unwrapped_map, {
         let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
-    impl_par_iter_cont_filter_test!(test_iter_utf8paritercontmanychunk_filter, {
-        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        a.append(&a_b);
-        a
-    });
+    impl_par_iter_return_unwrapped_filter_test!(
+        utf8_par_iter_many_chunk_return_unwrapped_filter,
+        {
+            let mut a =
+                Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+            let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+            a.append(&a_b);
+            a
+        }
+    );
 
-    impl_par_iter_cont_fold_test!(test_iter_utf8paritercontmanychunk_fold, {
+    impl_par_iter_return_unwrapped_fold_test!(utf8_par_iter_many_chunk_return_unwrapped_fold, {
         let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
