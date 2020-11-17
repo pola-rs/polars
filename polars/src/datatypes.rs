@@ -6,6 +6,7 @@
 //! [See the AnyType variants](enum.AnyType.html#variants) for the data types that
 //! are currently supported.
 //!
+use crate::chunked_array::object::Object;
 use crate::chunked_array::ChunkedArray;
 use crate::series::Series;
 pub use arrow::datatypes::DataType as ArrowDataType;
@@ -18,6 +19,7 @@ pub use arrow::datatypes::{
     TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt16Type, UInt32Type,
     UInt64Type, UInt8Type,
 };
+use std::sync::Arc;
 
 pub struct Utf8Type {}
 
@@ -29,7 +31,7 @@ pub trait PolarsDataType {
 
 impl<T> PolarsDataType for T
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn get_data_type() -> ArrowDataType {
         T::get_data_type()
@@ -46,6 +48,16 @@ impl PolarsDataType for ListType {
     fn get_data_type() -> ArrowDataType {
         // null as we cannot no anything without self.
         ArrowDataType::List(Box::new(ArrowDataType::Null))
+    }
+}
+
+pub type ObjectType = Arc<dyn Object>;
+pub type ObjectChunked = ChunkedArray<ObjectType>;
+
+impl PolarsDataType for ObjectType {
+    fn get_data_type() -> ArrowDataType {
+        // the best fit?
+        ArrowDataType::Binary
     }
 }
 
@@ -88,7 +100,36 @@ pub type TimestampMicrosecondChunked = ChunkedArray<TimestampMicrosecondType>;
 pub type TimestampMillisecondChunked = ChunkedArray<TimestampMillisecondType>;
 pub type TimestampSecondChunked = ChunkedArray<TimestampSecondType>;
 
-pub trait PolarsNumericType: ArrowNumericType {}
+pub trait PolarsPrimitiveType: ArrowPrimitiveType {}
+impl PolarsPrimitiveType for BooleanType {}
+impl PolarsPrimitiveType for UInt8Type {}
+impl PolarsPrimitiveType for UInt16Type {}
+impl PolarsPrimitiveType for UInt32Type {}
+impl PolarsPrimitiveType for UInt64Type {}
+impl PolarsPrimitiveType for Int8Type {}
+impl PolarsPrimitiveType for Int16Type {}
+impl PolarsPrimitiveType for Int32Type {}
+impl PolarsPrimitiveType for Int64Type {}
+impl PolarsPrimitiveType for Float32Type {}
+impl PolarsPrimitiveType for Float64Type {}
+impl PolarsPrimitiveType for Date32Type {}
+impl PolarsPrimitiveType for Date64Type {}
+impl PolarsPrimitiveType for Time64NanosecondType {}
+impl PolarsPrimitiveType for Time64MicrosecondType {}
+impl PolarsPrimitiveType for Time32MillisecondType {}
+impl PolarsPrimitiveType for Time32SecondType {}
+impl PolarsPrimitiveType for DurationNanosecondType {}
+impl PolarsPrimitiveType for DurationMicrosecondType {}
+impl PolarsPrimitiveType for DurationMillisecondType {}
+impl PolarsPrimitiveType for DurationSecondType {}
+impl PolarsPrimitiveType for IntervalYearMonthType {}
+impl PolarsPrimitiveType for IntervalDayTimeType {}
+impl PolarsPrimitiveType for TimestampNanosecondType {}
+impl PolarsPrimitiveType for TimestampMicrosecondType {}
+impl PolarsPrimitiveType for TimestampMillisecondType {}
+impl PolarsPrimitiveType for TimestampSecondType {}
+
+pub trait PolarsNumericType: PolarsPrimitiveType + ArrowNumericType {}
 impl PolarsNumericType for UInt8Type {}
 impl PolarsNumericType for UInt16Type {}
 impl PolarsNumericType for UInt32Type {}

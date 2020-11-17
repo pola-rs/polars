@@ -10,7 +10,6 @@ use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-
 use std::{
     fmt::{Debug, Formatter},
     ops::Add,
@@ -98,6 +97,7 @@ impl IntoGroupTuples for Float32Chunked {
     }
 }
 impl IntoGroupTuples for ListChunked {}
+impl IntoGroupTuples for ObjectChunked {}
 
 /// Utility enum used for grouping on multiple columns
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
@@ -373,6 +373,7 @@ pub(crate) trait NumericAggSync {
 impl NumericAggSync for BooleanChunked {}
 impl NumericAggSync for Utf8Chunked {}
 impl NumericAggSync for ListChunked {}
+impl NumericAggSync for ObjectChunked {}
 
 impl<T> NumericAggSync for ChunkedArray<T>
 where
@@ -507,7 +508,7 @@ macro_rules! impl_agg_first {
 
 impl<T> AggFirst for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType + Send,
+    T: PolarsPrimitiveType + Send,
 {
     fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, ChunkedArray<T>)
@@ -523,6 +524,12 @@ impl AggFirst for Utf8Chunked {
 impl AggFirst for ListChunked {
     fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, ListChunked)
+    }
+}
+
+impl AggFirst for ObjectChunked {
+    fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+        todo!()
     }
 }
 
@@ -542,7 +549,7 @@ macro_rules! impl_agg_last {
 
 impl<T> AggLast for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType + Send,
+    T: PolarsPrimitiveType + Send,
 {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, ChunkedArray<T>)
@@ -558,6 +565,12 @@ impl AggLast for Utf8Chunked {
 impl AggLast for ListChunked {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, ListChunked)
+    }
+}
+
+impl AggLast for ObjectChunked {
+    fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+        todo!()
     }
 }
 
@@ -603,9 +616,11 @@ where
     }
 }
 
+// todo! could use mantissa method here
 impl AggNUnique for Float32Chunked {}
 impl AggNUnique for Float64Chunked {}
 impl AggNUnique for ListChunked {}
+impl AggNUnique for ObjectChunked {}
 
 // TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
@@ -705,6 +720,7 @@ where
 impl AggQuantile for Utf8Chunked {}
 impl AggQuantile for BooleanChunked {}
 impl AggQuantile for ListChunked {}
+impl AggQuantile for ObjectChunked {}
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Select the column(s) that should be aggregated.
@@ -1664,6 +1680,7 @@ impl ChunkPivot for Utf8Chunked {
     }
 }
 impl ChunkPivot for ListChunked {}
+impl ChunkPivot for ObjectChunked {}
 
 enum PivotAgg {
     First,

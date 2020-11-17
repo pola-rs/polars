@@ -276,6 +276,7 @@ where
 impl ChunkWindow<u8> for ListChunked {}
 impl ChunkWindow<u8> for Utf8Chunked {}
 impl ChunkWindow<u8> for BooleanChunked {}
+impl ChunkWindow<u8> for ObjectChunked {}
 
 #[cfg(test)]
 mod test {

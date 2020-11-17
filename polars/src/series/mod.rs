@@ -135,6 +135,7 @@ pub enum Series {
     TimestampMillisecond(TimestampMillisecondChunked),
     TimestampSecond(TimestampSecondChunked),
     List(ListChunked),
+    Object(ObjectChunked),
 }
 
 macro_rules! unpack_series {
@@ -530,6 +531,7 @@ impl Series {
             Series::IntervalDayTime(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::IntervalYearMonth(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::List(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            Series::Object(_) => return Err(PolarsError::Other("cannot cast object".into())),
         };
         Ok(s)
     }
@@ -628,6 +630,7 @@ impl Series {
             Series::IntervalDayTime(arr) => unpack_if_match!(arr),
             Series::IntervalYearMonth(arr) => unpack_if_match!(arr),
             Series::List(arr) => unpack_if_match!(arr),
+            Series::Object(arr) => unpack_if_match!(arr),
         }
     }
 
@@ -1149,6 +1152,7 @@ impl_as_ref_ca!(TimestampSecondType, TimestampSecond);
 impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
 impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
 impl_as_ref_ca!(ListType, List);
+impl_as_ref_ca!(ObjectType, Object);
 
 macro_rules! impl_as_mut_ca {
     ($type:ident, $series_var:ident) => {

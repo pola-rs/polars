@@ -100,6 +100,7 @@ impl NumOpsDispatch for Utf8Chunked {
 }
 impl NumOpsDispatch for BooleanChunked {}
 impl NumOpsDispatch for ListChunked {}
+impl NumOpsDispatch for ObjectChunked {}
 
 impl ops::Sub for Series {
     type Output = Self;
@@ -246,6 +247,7 @@ pub(super) trait NumOpsDispatchSeriesSingleNumber {
 impl NumOpsDispatchSeriesSingleNumber for BooleanChunked {}
 impl NumOpsDispatchSeriesSingleNumber for Utf8Chunked {}
 impl NumOpsDispatchSeriesSingleNumber for ListChunked {}
+impl NumOpsDispatchSeriesSingleNumber for ObjectChunked {}
 
 impl<T> NumOpsDispatchSeriesSingleNumber for ChunkedArray<T>
 where
@@ -409,6 +411,7 @@ pub(super) trait LhsNumOpsDispatch {
 impl LhsNumOpsDispatch for BooleanChunked {}
 impl LhsNumOpsDispatch for Utf8Chunked {}
 impl LhsNumOpsDispatch for ListChunked {}
+impl LhsNumOpsDispatch for ObjectChunked {}
 
 impl<T> LhsNumOpsDispatch for ChunkedArray<T>
 where

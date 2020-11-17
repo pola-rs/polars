@@ -1,8 +1,9 @@
 use crate::chunked_array::builder::set_null_bits;
 use crate::chunked_array::kernels::utils::{get_bitmasks, BitMaskU64Prep};
+use crate::datatypes::PolarsNumericType;
 use arrow::array::{Array, ArrayData, BooleanArray, PrimitiveArray};
 use arrow::buffer::MutableBuffer;
-use arrow::datatypes::{ArrowNumericType, ToByteSlice};
+use arrow::datatypes::ToByteSlice;
 use arrow::util::bit_util::count_set_bits_offset;
 use std::mem;
 
@@ -14,7 +15,7 @@ pub fn set_with_value<T>(
     value: T::Native,
 ) -> PrimitiveArray<T>
 where
-    T: ArrowNumericType,
+    T: PolarsNumericType,
 {
     let value_size = mem::size_of::<T::Native>();
     // Create a slice of 64 elements of T::Native.

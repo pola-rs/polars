@@ -369,7 +369,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         builder: &mut PrimitiveChunkedBuilder<T>,
     ) -> Result<()>
     where
-        T: ArrowPrimitiveType,
+        T: PolarsPrimitiveType,
     {
         let is_boolean_type = *self.schema.field(col_idx).data_type() == ArrowDataType::Boolean;
 
