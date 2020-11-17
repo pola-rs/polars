@@ -6,7 +6,7 @@
 //! [See the AnyType variants](enum.AnyType.html#variants) for the data types that
 //! are currently supported.
 //!
-use crate::chunked_array::object::Object;
+use crate::chunked_array::object::ObjectArray;
 use crate::chunked_array::ChunkedArray;
 use crate::series::Series;
 pub use arrow::datatypes::DataType as ArrowDataType;
@@ -19,6 +19,7 @@ pub use arrow::datatypes::{
     TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt16Type, UInt32Type,
     UInt64Type, UInt8Type,
 };
+use std::any::Any;
 use std::sync::Arc;
 
 pub struct Utf8Type {}
@@ -51,7 +52,7 @@ impl PolarsDataType for ListType {
     }
 }
 
-pub type ObjectType = Arc<dyn Object>;
+pub type ObjectType = Arc<dyn ObjectArray>;
 pub type ObjectChunked = ChunkedArray<ObjectType>;
 
 impl PolarsDataType for ObjectType {
@@ -234,6 +235,7 @@ pub enum AnyType<'a> {
     IntervalDayTime(i64),
     IntervalYearMonth(i32),
     List(Series),
+    Object(&'a dyn Any),
 }
 
 pub trait ToStr {
@@ -275,6 +277,7 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Interval(IntervalUnit::DayTime) => "interval(daytime)",
             ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
             ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
+            ArrowDataType::Binary => "object",
             _ => panic!(format!("{:?} not implemented", self)),
         };
         s.into()

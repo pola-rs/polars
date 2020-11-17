@@ -1,5 +1,6 @@
 use super::*;
 use crate::prelude::*;
+use crate::utils::get_iter_capacity;
 use arrow::bitmap::Bitmap;
 use arrow::util::bit_util::count_set_bits;
 use std::marker::PhantomData;
@@ -47,7 +48,7 @@ where
 
         let len = self.values.len();
 
-        let arr = Arc::new(ObjectArray {
+        let arr = Arc::new(ObjectArrayTyped {
             values: Arc::new(self.values),
             null_bitmap: Arc::new(null_bitmap),
             null_count,
@@ -60,5 +61,36 @@ where
             chunk_id: vec![len],
             phantom: PhantomData,
         }
+    }
+}
+
+impl<T> NewChunkedArray<ObjectType, T> for ObjectChunked
+where
+    T: Any + Debug + Clone + Send + Sync + Default,
+{
+    fn new_from_slice(name: &str, v: &[T]) -> Self {
+        Self::new_from_iter(name, v.iter().cloned())
+    }
+
+    fn new_from_opt_slice(name: &str, opt_v: &[Option<T>]) -> Self {
+        let mut builder = ObjectChunkedBuilder::<T>::new(name, opt_v.len());
+        opt_v
+            .iter()
+            .cloned()
+            .for_each(|opt| builder.append_option(opt));
+        builder.finish()
+    }
+
+    fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<T>>) -> ObjectChunked {
+        let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|opt| builder.append_option(opt));
+        builder.finish()
+    }
+
+    /// Create a new ChunkedArray from an iterator.
+    fn new_from_iter(name: &str, it: impl Iterator<Item = T>) -> ObjectChunked {
+        let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|v| builder.append_value(v));
+        builder.finish()
     }
 }

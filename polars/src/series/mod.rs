@@ -1042,6 +1042,7 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
                 Series::IntervalDayTime(mem::transmute(ca))
             }
             ArrowDataType::List(_) => Series::List(mem::transmute(ca)),
+            ArrowDataType::Binary => Series::Object(mem::transmute(ca)),
             _ => panic!("Not implemented: {:?}", N::get_data_type()),
         }
     }
