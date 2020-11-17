@@ -73,8 +73,8 @@ impl ChunkUnique<ListType> for ListChunked {
         ))
     }
 }
-impl ChunkUnique<ObjectType> for ObjectChunked {
-    fn unique(&self) -> Result<ChunkedArray<ObjectType>> {
+impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
+    fn unique(&self) -> Result<ChunkedArray<ObjectType<T>>> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for object".into(),
         ))
@@ -262,7 +262,7 @@ where
 }
 
 impl ToDummies<ListType> for ListChunked {}
-impl ToDummies<ObjectType> for ObjectChunked {}
+impl<T> ToDummies<ObjectType<T>> for ObjectChunked<T> {}
 impl ToDummies<Float32Type> for Float32Chunked {}
 impl ToDummies<Float64Type> for Float64Chunked {}
 impl ToDummies<BooleanType> for BooleanChunked {}

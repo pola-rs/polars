@@ -372,7 +372,7 @@ impl ChunkTake for ListChunked {
     }
 }
 
-impl ChunkTake for ObjectChunked {
+impl<T> ChunkTake for ObjectChunked<T> {
     fn take(&self, _indices: impl Iterator<Item = usize>, _capacity: Option<usize>) -> Self
     where
         Self: std::marker::Sized,

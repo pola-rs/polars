@@ -162,7 +162,7 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
-impl ChunkVar<Series> for ObjectChunked {}
+impl<T> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}
 
 fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
@@ -323,7 +323,7 @@ impl VarAggSeries for Float64Chunked {
 
 impl VarAggSeries for BooleanChunked {}
 impl VarAggSeries for ListChunked {}
-impl VarAggSeries for ObjectChunked {}
+impl<T> VarAggSeries for ObjectChunked<T> {}
 impl VarAggSeries for Utf8Chunked {}
 
 impl ChunkAggSeries for BooleanChunked {
@@ -423,7 +423,7 @@ impl ChunkAggSeries for ListChunked {
     }
 }
 
-impl ChunkAggSeries for ObjectChunked {}
+impl<T> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {

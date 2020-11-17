@@ -194,12 +194,12 @@ impl ChunkZip<ListType> for ListChunked {
     }
 }
 
-impl ChunkZip<ObjectType> for ObjectChunked {
+impl<T> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
     fn zip_with(
         &self,
         _mask: &BooleanChunked,
-        _other: &ChunkedArray<ObjectType>,
-    ) -> Result<ChunkedArray<ObjectType>> {
+        _other: &ChunkedArray<ObjectType<T>>,
+    ) -> Result<ChunkedArray<ObjectType<T>>> {
         Err(PolarsError::InvalidOperation(
             "zip_with method not supported for ChunkedArray of type Object".into(),
         ))
@@ -209,7 +209,7 @@ impl ChunkZip<ObjectType> for ObjectChunked {
         &self,
         _mask: &BooleanChunked,
         _other: &Series,
-    ) -> Result<ChunkedArray<ObjectType>> {
+    ) -> Result<ChunkedArray<ObjectType<T>>> {
         Err(PolarsError::InvalidOperation(
             "zip_with_series method not supported for ChunkedArray of type Object".into(),
         ))

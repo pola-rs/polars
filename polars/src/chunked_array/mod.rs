@@ -10,7 +10,7 @@ use arrow::{
         Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
-    datatypes::{ArrowPrimitiveType, DateUnit, Field, TimeUnit},
+    datatypes::{DateUnit, Field, TimeUnit},
 };
 use itertools::Itertools;
 use std::iter::{Copied, Map};
@@ -807,14 +807,14 @@ impl<T> Clone for ChunkedArray<T> {
 }
 
 pub trait Downcast<T> {
-    fn downcast_chunks(&self) -> Vec<&T>;
+    fn downcast_chunks(self) -> Vec<T>;
 }
 
-impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
+impl<'a, T> Downcast<&'a PrimitiveArray<T>> for &ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
-    fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
+    fn downcast_chunks(self) -> Vec<&'a PrimitiveArray<T>> {
         self.chunks
             .iter()
             .map(|arr| {
@@ -825,8 +825,8 @@ where
     }
 }
 
-impl Downcast<StringArray> for Utf8Chunked {
-    fn downcast_chunks(&self) -> Vec<&StringArray> {
+impl<'a> Downcast<&'a StringArray> for &'a Utf8Chunked {
+    fn downcast_chunks(self) -> Vec<&'a StringArray> {
         self.chunks
             .iter()
             .map(|arr| {
@@ -837,8 +837,8 @@ impl Downcast<StringArray> for Utf8Chunked {
     }
 }
 
-impl Downcast<ListArray> for ListChunked {
-    fn downcast_chunks(&self) -> Vec<&ListArray> {
+impl<'a> Downcast<&'a ListArray> for &ListChunked {
+    fn downcast_chunks(self) -> Vec<&'a ListArray> {
         self.chunks
             .iter()
             .map(|arr| {

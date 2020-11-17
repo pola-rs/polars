@@ -6,7 +6,6 @@
 //! [See the AnyType variants](enum.AnyType.html#variants) for the data types that
 //! are currently supported.
 //!
-use crate::chunked_array::object::ObjectArray;
 use crate::chunked_array::ChunkedArray;
 use crate::series::Series;
 pub use arrow::datatypes::DataType as ArrowDataType;
@@ -20,7 +19,6 @@ pub use arrow::datatypes::{
     UInt64Type, UInt8Type,
 };
 use std::any::Any;
-use std::sync::Arc;
 
 pub struct Utf8Type {}
 
@@ -52,10 +50,10 @@ impl PolarsDataType for ListType {
     }
 }
 
-pub type ObjectType = Arc<dyn ObjectArray>;
-pub type ObjectChunked = ChunkedArray<ObjectType>;
+pub struct ObjectType<T>(T);
+pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
-impl PolarsDataType for ObjectType {
+impl<T> PolarsDataType for ObjectType<T> {
     fn get_data_type() -> ArrowDataType {
         // the best fit?
         ArrowDataType::Binary

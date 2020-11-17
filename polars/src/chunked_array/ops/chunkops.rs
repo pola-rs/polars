@@ -189,7 +189,7 @@ impl ChunkOps for ListChunked {
     }
 }
 
-impl ChunkOps for ObjectChunked {
+impl<T> ChunkOps for ObjectChunked<T> {
     fn rechunk(&self, _chunk_lengths: Option<&[usize]>) -> Result<Self>
     where
         Self: std::marker::Sized,

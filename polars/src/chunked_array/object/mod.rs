@@ -1,6 +1,4 @@
 pub mod builder;
-
-use crate::chunked_array::object::builder::AnyObjectBuilder;
 pub use crate::prelude::*;
 use arrow::array::{
     Array, ArrayDataRef, ArrayEqual, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, JsonEqual,
@@ -146,7 +144,7 @@ pub trait ObjectArray: Array {
 
     fn value(&self, index: usize) -> &dyn Any;
 
-    fn get_builder(&self, name: &str, capacity: usize) -> Box<dyn AnyObjectBuilder>;
+    // fn get_builder(&self, name: &str, capacity: usize) -> Box<dyn AnyObjectBuilder>;
 }
 
 impl<T> ObjectArray for ObjectArrayTyped<T>
@@ -168,9 +166,9 @@ where
     fn value(&self, index: usize) -> &dyn Any {
         &self.values[self.offset + index]
     }
-    fn get_builder(&self, name: &str, capacity: usize) -> Box<dyn AnyObjectBuilder> {
-        Box::new(ObjectChunkedBuilder::<T>::new(name, capacity))
-    }
+    // fn get_builder(&self, name: &str, capacity: usize) -> Box<dyn AnyObjectBuilder> {
+    //     Box::new(ObjectChunkedBuilder::<T>::new(name, capacity))
+    // }
 }
 
 #[cfg(test)]
