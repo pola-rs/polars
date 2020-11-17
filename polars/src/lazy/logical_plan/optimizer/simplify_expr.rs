@@ -126,7 +126,7 @@ impl SimplifyOptimizer {
         // run loop until reaching fixed point
         while changed {
             // recurse into sub plans and expressions and apply rules
-
+            changed = false;
             let mut plans = vec![&mut *logical_plan];
             let mut exprs = vec![];
 
