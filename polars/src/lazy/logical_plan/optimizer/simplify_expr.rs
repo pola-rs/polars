@@ -41,9 +41,18 @@ fn eval_plus(left: &Expr, right: &Expr) -> Option<Expr> {
     }
 }
 
+pub trait Rule {
+    fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
+        None
+    }
+    fn optimize_expr(&self, _expr: &Expr) -> Option<Expr> {
+        None
+    }
+}
+
 pub struct SimplifyExprRule {}
 
-impl SimplifyExprRule {
+impl Rule for SimplifyExprRule {
     fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
         None
     }
@@ -59,11 +68,56 @@ impl SimplifyExprRule {
     }
 }
 
+pub struct SimplifyBooleanRule {}
+
+impl Rule for SimplifyBooleanRule {
+    fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
+        None
+    }
+    fn optimize_expr(&self, expr: &Expr) -> Option<Expr> {
+        match expr {
+            Expr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right,
+            } if matches!(**left, Expr::Literal(ScalarValue::Boolean(true))) => {
+                Some(*right.clone())
+            }
+            Expr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right,
+            } if matches!(**right, Expr::Literal(ScalarValue::Boolean(true))) => {
+                Some(*left.clone())
+            }
+            Expr::BinaryExpr {
+                left,
+                op: Operator::Or,
+                right,
+            } if matches!(**left, Expr::Literal(ScalarValue::Boolean(false))) => {
+                Some(*right.clone())
+            }
+            Expr::BinaryExpr {
+                left,
+                op: Operator::Or,
+                right,
+            } if matches!(**right, Expr::Literal(ScalarValue::Boolean(false))) => {
+                Some(*left.clone())
+            }
+
+            _ => None,
+        }
+    }
+}
+
 pub struct SimplifyOptimizer {}
 
 impl SimplifyOptimizer {
     fn optimize_loop(&self, logical_plan: &mut LogicalPlan) {
-        let rule = SimplifyExprRule {};
+        let rules: &[Box<dyn Rule>] = &[
+            Box::new(SimplifyExprRule {}),
+            Box::new(SimplifyBooleanRule {}),
+        ];
         use Expr::*;
         use LogicalPlan::*;
 
@@ -72,15 +126,17 @@ impl SimplifyOptimizer {
         // run loop until reaching fixed point
         while changed {
             // recurse into sub plans and expressions and apply rules
-
+            changed = false;
             let mut plans = vec![&mut *logical_plan];
             let mut exprs = vec![];
 
             while let Some(plan) = plans.pop() {
                 // apply rules
-                if let Some(x) = rule.optimize_plan(plan) {
-                    *plan = x;
-                    changed = true;
+                for rule in rules.iter() {
+                    if let Some(x) = rule.optimize_plan(plan) {
+                        *plan = x;
+                        changed = true;
+                    }
                 }
 
                 match plan {
@@ -117,9 +173,11 @@ impl SimplifyOptimizer {
                 }
 
                 while let Some(expr) = exprs.pop() {
-                    if let Some(x) = rule.optimize_expr(expr) {
-                        *expr = x;
-                        changed = true;
+                    for rule in rules.iter() {
+                        if let Some(x) = rule.optimize_expr(expr) {
+                            *expr = x;
+                            changed = true;
+                        }
                     }
 
                     match expr {
@@ -204,7 +262,7 @@ impl SimplifyOptimizer {
 impl Optimize for SimplifyExpr {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
         let opt = SimplifyOptimizer {};
-        let mut plan = logical_plan.clone();
+        let mut plan = logical_plan;
         opt.optimize_loop(&mut plan);
         Ok(plan)
     }
