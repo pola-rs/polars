@@ -88,17 +88,13 @@ impl ProjectionPushDown {
         let name = expr_to_root_column(&proj)?;
         let root_projection = expr_to_root_column_expr(proj)?;
 
-        if check_down_node(&root_projection, schema_left) {
-            if names_left.insert(name.clone()) {
-                pushdown_left.push(proj.clone());
-                pushed_at_least_one = true;
-            }
+        if check_down_node(&root_projection, schema_left) && names_left.insert(name.clone()) {
+            pushdown_left.push(proj.clone());
+            pushed_at_least_one = true;
         }
-        if check_down_node(&root_projection, schema_right) {
-            if names_right.insert(name) {
-                pushdown_right.push(proj.clone());
-                pushed_at_least_one = true;
-            }
+        if check_down_node(&root_projection, schema_right) && names_right.insert(name) {
+            pushdown_right.push(proj.clone());
+            pushed_at_least_one = true;
         }
         Ok(pushed_at_least_one)
     }
