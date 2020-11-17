@@ -44,6 +44,7 @@ pub mod strings;
 pub mod temporal;
 pub mod upstream_traits;
 
+use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
     DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
@@ -597,6 +598,11 @@ where
             ArrowDataType::List(_) => {
                 let v = downcast!(ListArray);
                 AnyType::List(("", v).into())
+            }
+            ArrowDataType::Binary => {
+                let arr = unsafe { mem::transmute::<&dyn Array, &dyn ObjectArray>(arr) };
+                let v = arr.value(idx);
+                AnyType::Object(v)
             }
             _ => unimplemented!(),
         }

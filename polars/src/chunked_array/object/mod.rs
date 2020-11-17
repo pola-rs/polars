@@ -12,7 +12,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub struct ObjectArray<T>
+pub struct ObjectArrayTyped<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -29,7 +29,7 @@ pub struct ObjectChunkedBuilder<T> {
     values: Vec<T>,
 }
 
-impl<T> ArrayEqual for ObjectArray<T>
+impl<T> ArrayEqual for ObjectArrayTyped<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -48,7 +48,7 @@ where
     }
 }
 
-impl<T> JsonEqual for ObjectArray<T>
+impl<T> JsonEqual for ObjectArrayTyped<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -57,7 +57,7 @@ where
     }
 }
 
-impl<T> Array for ObjectArray<T>
+impl<T> Array for ObjectArrayTyped<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -95,11 +95,11 @@ where
     }
 
     fn len(&self) -> usize {
-        unimplemented!()
+        self.len
     }
 
     fn is_empty(&self) -> bool {
-        unimplemented!()
+        self.len == 0
     }
 
     fn offset(&self) -> usize {
@@ -133,16 +133,18 @@ where
     }
 }
 
-pub trait Object: Array {
+pub trait ObjectArray: Array {
     /// For downcasting at runtime.
     fn as_any(&self) -> &dyn Any;
 
     fn type_name(&self) -> &'static str;
 
     fn type_id(&self) -> TypeId;
+
+    fn value(&self, index: usize) -> &dyn Any;
 }
 
-impl<T> Object for ObjectArray<T>
+impl<T> ObjectArray for ObjectArrayTyped<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -155,6 +157,24 @@ where
     }
 
     fn type_id(&self) -> TypeId {
-        Object::as_any(self).type_id()
+        ObjectArray::as_any(self).type_id()
+    }
+
+    fn value(&self, index: usize) -> &dyn Any {
+        &self.values[self.offset + index]
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn object_series() {
+        let s = ObjectChunked::new_from_opt_slice("foo", &[Some(1), None, Some(3)]);
+        assert_eq!(
+            Vec::from(s.is_null()),
+            &[Some(false), Some(true), Some(false)]
+        )
     }
 }
