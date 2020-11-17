@@ -1,5 +1,6 @@
 pub mod builder;
 
+use crate::chunked_array::object::builder::AnyObjectBuilder;
 pub use crate::prelude::*;
 use arrow::array::{
     Array, ArrayDataRef, ArrayEqual, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, JsonEqual,
@@ -74,6 +75,8 @@ where
     }
 
     fn data_type(&self) -> &ArrowDataType {
+        // todo! we hijack the binary type for this. If we actually implement binary we need to find
+        // another solution
         &ArrowDataType::Binary
     }
 
@@ -142,11 +145,13 @@ pub trait ObjectArray: Array {
     fn type_id(&self) -> TypeId;
 
     fn value(&self, index: usize) -> &dyn Any;
+
+    fn get_builder(&self, name: &str, capacity: usize) -> Box<dyn AnyObjectBuilder>;
 }
 
 impl<T> ObjectArray for ObjectArrayTyped<T>
 where
-    T: Any + Debug + Clone + Send + Sync,
+    T: Any + Debug + Clone + Send + Sync + Default,
 {
     fn as_any(&self) -> &dyn Any {
         self
@@ -162,6 +167,9 @@ where
 
     fn value(&self, index: usize) -> &dyn Any {
         &self.values[self.offset + index]
+    }
+    fn get_builder(&self, name: &str, capacity: usize) -> Box<dyn AnyObjectBuilder> {
+        Box::new(ObjectChunkedBuilder::<T>::new(name, capacity))
     }
 }
 
