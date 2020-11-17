@@ -30,6 +30,18 @@ where
         self.bitmask_builder.append(false).unwrap();
     }
 
+    pub fn append_value_from_any(&mut self, v: &dyn Any) -> Result<()> {
+        match v.downcast_ref::<T>() {
+            None => Err(PolarsError::DataTypeMisMatch(
+                "cannot downcast any in ObjectBuilder".into(),
+            )),
+            Some(v) => {
+                self.append_value(v.clone());
+                Ok(())
+            }
+        }
+    }
+
     pub fn append_option(&mut self, opt: Option<T>) {
         match opt {
             Some(s) => self.append_value(s),
@@ -61,6 +73,31 @@ where
             chunk_id: vec![len],
             phantom: PhantomData,
         }
+    }
+}
+
+pub trait AnyObjectBuilder {
+    fn append_null(&mut self);
+
+    fn append_value(&mut self, v: &dyn Any) -> Result<()>;
+
+    fn finish(self) -> ObjectChunked;
+}
+
+impl<T> AnyObjectBuilder for ObjectChunkedBuilder<T>
+where
+    T: Any + Debug + Clone + Send + Sync + Default,
+{
+    fn append_null(&mut self) {
+        ObjectChunkedBuilder::append_null(self)
+    }
+
+    fn append_value(&mut self, v: &dyn Any) -> Result<()> {
+        self.append_value_from_any(v)
+    }
+
+    fn finish(self) -> ObjectChunked {
+        ObjectChunkedBuilder::finish(self)
     }
 }
 
