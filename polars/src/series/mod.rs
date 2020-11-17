@@ -389,12 +389,12 @@ impl Series {
     }
 
     /// Take by index from an iterator. This operation clones the data.
-    pub fn take_iter(
-        &self,
-        iter: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, take, [iter,  capacity], ?))
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    pub fn take_iter(&self, iter: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
+        apply_method_all_series_and_return!(self, take, [iter, capacity],)
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -424,16 +424,24 @@ impl Series {
     }
 
     /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
     pub fn take_opt_iter(
         &self,
         iter: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
-    ) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, take_opt, [iter,  capacity], ?))
+    ) -> Self {
+        apply_method_all_series_and_return!(self, take_opt, [iter, capacity],)
     }
 
     /// Take by index. This operation is clone.
-    pub fn take<T: AsTakeIndex>(&self, indices: &T) -> Result<Self> {
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    pub fn take<T: AsTakeIndex>(&self, indices: &T) -> Self {
         let mut iter = indices.as_take_iter();
         let capacity = indices.take_index_len();
         self.take_iter(&mut iter, Some(capacity))
