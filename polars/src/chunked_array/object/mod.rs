@@ -1,18 +1,32 @@
+pub mod builder;
+
 pub use crate::prelude::*;
-use arrow::array::{Array, ArrayDataRef, ArrayEqual, ArrayRef, JsonEqual};
+use arrow::array::{
+    Array, ArrayDataRef, ArrayEqual, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, JsonEqual,
+};
+use arrow::bitmap::Bitmap;
+use arrow::util::bit_util::count_set_bits_offset;
 use serde_json::Value;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct ObjectArray<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
-    inner: Vec<Option<T>>,
+    values: Arc<Vec<T>>,
+    null_bitmap: Arc<Option<Bitmap>>,
     null_count: usize,
     offset: usize,
     len: usize,
+}
+
+pub struct ObjectChunkedBuilder<T> {
+    field: Field,
+    bitmask_builder: BooleanBufferBuilder,
+    values: Vec<T>,
 }
 
 impl<T> ArrayEqual for ObjectArray<T>
@@ -63,8 +77,21 @@ where
         &ArrowDataType::Binary
     }
 
-    fn slice(&self, _offset: usize, _length: usize) -> ArrayRef {
-        unimplemented!()
+    fn slice(&self, offset: usize, length: usize) -> ArrayRef {
+        let mut new = self.clone();
+        let len = std::cmp::min(new.len - offset, length);
+
+        new.len = length;
+        new.offset = offset;
+        new.null_count = if let Some(bitmap) = &*new.null_bitmap {
+            let valid_bits = bitmap.buffer_ref().data();
+            len.checked_sub(count_set_bits_offset(valid_bits, offset, length))
+                .unwrap();
+            0
+        } else {
+            0
+        };
+        Arc::new(new)
     }
 
     fn len(&self) -> usize {
@@ -80,18 +107,16 @@ where
     }
 
     fn is_null(&self, index: usize) -> bool {
-        if index > self.len {
-            true
-        } else {
-            self.inner[index + self.offset].is_none()
+        match &*self.null_bitmap {
+            Some(b) => !b.is_set(index),
+            None => true,
         }
     }
 
     fn is_valid(&self, index: usize) -> bool {
-        if index > self.len() {
-            true
-        } else {
-            self.inner[index + self.offset].is_some()
+        match &*self.null_bitmap {
+            Some(b) => b.is_set(index),
+            None => true,
         }
     }
 
