@@ -73,7 +73,7 @@ impl ProjectionPushDown {
             Ok(builder.build())
         }
     }
-
+    #[allow(clippy::too_many_arguments)]
     fn join_push_down(
         &self,
         schema_left: &Schema,

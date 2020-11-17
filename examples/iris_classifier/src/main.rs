@@ -61,7 +61,6 @@
 //! +--------------+-------------+-------------+--------------+---------------+-------------+
 //!
 use polars::prelude::*;
-use reqwest;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
