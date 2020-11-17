@@ -1,5 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use crate::chunked_array::builder::get_list_builder;
+use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::{array::ArrayRef, compute::kernels::filter::filter_primitive_array};
@@ -555,6 +556,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
+// TODO! return errors
 impl ChunkSort<ListType> for ListChunked {
     fn sort(&self, _reverse: bool) -> Self {
         println!("A ListChunked cannot be sorted. Doing nothing");
@@ -567,6 +569,22 @@ impl ChunkSort<ListType> for ListChunked {
 
     fn argsort(&self, _reverse: bool) -> Vec<usize> {
         println!("A ListChunked cannot be sorted. Doing nothing");
+        (0..self.len()).collect()
+    }
+}
+
+impl ChunkSort<ObjectType> for ObjectChunked {
+    fn sort(&self, _reverse: bool) -> Self {
+        println!("An object cannot be sorted. Doing nothing");
+        self.clone()
+    }
+
+    fn sort_in_place(&mut self, _reverse: bool) {
+        println!("An object cannot be sorted. Doing nothing");
+    }
+
+    fn argsort(&self, _reverse: bool) -> Vec<usize> {
+        println!("An object cannot be sorted. Doing nothing");
         (0..self.len()).collect()
     }
 }
@@ -631,7 +649,7 @@ pub trait ChunkFull<T> {
 
 impl<T> ChunkFull<T::Native> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn full(name: &str, value: T::Native, length: usize) -> Self
     where
@@ -723,6 +741,7 @@ macro_rules! impl_reverse {
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
 impl_reverse!(ListType, ListChunked);
+impl_reverse!(ObjectType, ObjectChunked);
 
 /// Filter values by a boolean mask.
 pub trait ChunkFilter<T> {
@@ -911,6 +930,15 @@ impl ChunkFilter<ListType> for ListChunked {
     }
 }
 
+impl ChunkFilter<ObjectType> for ObjectChunked {
+    fn filter(&self, _filter: &BooleanChunked) -> Result<ChunkedArray<ObjectType>>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+}
+
 /// Create a new ChunkedArray filled with values at that index.
 pub trait ChunkExpandAtIndex<T> {
     /// Create a new ChunkedArray filled with values at that index.
@@ -930,7 +958,7 @@ macro_rules! impl_chunk_expand {
 impl<T> ChunkExpandAtIndex<T> for ChunkedArray<T>
 where
     ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn expand_at_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
         impl_chunk_expand!(self, length, index)
@@ -946,6 +974,12 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
 impl ChunkExpandAtIndex<ListType> for ListChunked {
     fn expand_at_index(&self, index: usize, length: usize) -> ListChunked {
         impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<ObjectType> for ObjectChunked {
+    fn expand_at_index(&self, _index: usize, _length: usize) -> ObjectChunked {
+        todo!()
     }
 }
 

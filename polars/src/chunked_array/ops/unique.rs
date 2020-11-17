@@ -1,3 +1,4 @@
+use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode_f64, Xob};
 use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
@@ -62,13 +63,26 @@ where
 impl ChunkUnique<ListType> for ListChunked {
     fn unique(&self) -> Result<ChunkedArray<ListType>> {
         Err(PolarsError::InvalidOperation(
-            "unique not support for large list".into(),
+            "unique not supported for list".into(),
         ))
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
         Err(PolarsError::InvalidOperation(
-            "unique not support for large list".into(),
+            "unique not supported for list".into(),
+        ))
+    }
+}
+impl ChunkUnique<ObjectType> for ObjectChunked {
+    fn unique(&self) -> Result<ChunkedArray<ObjectType>> {
+        Err(PolarsError::InvalidOperation(
+            "unique not supported for object".into(),
+        ))
+    }
+
+    fn arg_unique(&self) -> Result<Vec<usize>> {
+        Err(PolarsError::InvalidOperation(
+            "unique not supported for object".into(),
         ))
     }
 }
@@ -248,6 +262,7 @@ where
 }
 
 impl ToDummies<ListType> for ListChunked {}
+impl ToDummies<ObjectType> for ObjectChunked {}
 impl ToDummies<Float32Type> for Float32Chunked {}
 impl ToDummies<Float64Type> for Float64Chunked {}
 impl ToDummies<BooleanType> for BooleanChunked {}

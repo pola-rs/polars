@@ -29,6 +29,7 @@ pub mod kernels;
 #[cfg(feature = "ndarray")]
 #[doc(cfg(feature = "ndarray"))]
 mod ndarray;
+pub mod object;
 #[cfg(feature = "parallel")]
 #[doc(cfg(feature = "parallel"))]
 pub mod par;
@@ -604,7 +605,7 @@ where
 
 impl<T> ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     /// Create a new ChunkedArray by taking ownership of the AlignedVec. This operation is zero copy.
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {

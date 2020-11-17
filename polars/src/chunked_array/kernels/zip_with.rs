@@ -131,7 +131,7 @@ pub fn zip<T>(
     b: &PrimitiveArray<T>,
 ) -> Result<PrimitiveArray<T>>
 where
-    T: ArrowNumericType,
+    T: PolarsNumericType,
 {
     if mask.offset() == 0 {
         return Ok(zip_impl(mask, a, b));

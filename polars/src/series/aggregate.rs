@@ -87,8 +87,9 @@ macro_rules! apply_agg_fn {
             Series::IntervalYearMonth(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast IntervalYearMonth to T")),
-            Series::Utf8(_a) => unimplemented!(),
-            Series::List(_a) => unimplemented!(),
+            Series::Utf8(_a) => None,
+            Series::List(_a) => None,
+            Series::Object(_a) => None,
         }
     };
 }

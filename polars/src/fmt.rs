@@ -114,6 +114,18 @@ macro_rules! format_list_array {
     }};
 }
 
+macro_rules! format_object_array {
+    ($limit:ident, $f:ident, $a:ident, $name:expr, $array_type:expr) => {{
+        write![$f, "{}: '{}' [object]\n[\n", $array_type, $name]?;
+
+        for _i in 0..$limit {
+            write!($f, "\tobject\n")?;
+        }
+
+        write![$f, "]"]
+    }};
+}
+
 macro_rules! set_limit {
     ($self:ident) => {
         std::cmp::min($self.len(), LIMIT)
@@ -122,7 +134,7 @@ macro_rules! set_limit {
 
 impl<T> Debug for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
@@ -141,6 +153,13 @@ impl Debug for ListChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
         format_list_array!(limit, f, self, self.name(), "ChunkedArray")
+    }
+}
+
+impl Debug for ObjectChunked {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+        format_object_array!(limit, f, self, self.name(), "ChunkedArray")
     }
 }
 
@@ -204,6 +223,7 @@ impl Debug for Series {
             }
             Series::Utf8(a) => format_utf8_array!(80, f, a, a.name(), "Series"),
             Series::List(a) => format_list_array!(limit, f, a, a.name(), "Series"),
+            Series::Object(a) => format_object_array!(limit, f, a, a.name(), "Series"),
         }
     }
 }
@@ -428,7 +448,7 @@ pub(crate) trait FmtList {
 
 impl<T> FmtList for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
@@ -444,6 +464,12 @@ impl FmtList for Utf8Chunked {
 impl FmtList for ListChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
+    }
+}
+
+impl FmtList for ObjectChunked {
+    fn fmt_list(&self) -> String {
+        todo!()
     }
 }
 

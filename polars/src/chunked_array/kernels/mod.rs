@@ -6,11 +6,11 @@ pub(crate) mod utils;
 pub mod zip_with;
 
 use crate::chunked_array::builder::{aligned_vec_to_primitive_array, get_bitmap};
-use crate::datatypes::{ArrowDataType, Float64Type};
+use crate::datatypes::{ArrowDataType, Float64Type, PolarsNumericType, PolarsPrimitiveType};
 use arrow::array::{Array, ArrayData, ArrayRef, PrimitiveArray};
 use arrow::datatypes::{
-    ArrowNumericType, ArrowPrimitiveType, Float32Type, Int16Type, Int32Type, Int64Type, Int8Type,
-    UInt16Type, UInt32Type, UInt64Type, UInt8Type,
+    Float32Type, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type, UInt32Type, UInt64Type,
+    UInt8Type,
 };
 use num::NumCast;
 use std::sync::Arc;
@@ -18,8 +18,8 @@ pub use zip_with::*;
 
 pub(crate) unsafe fn transmute_array<S, T>(arr: &PrimitiveArray<S>) -> ArrayRef
 where
-    S: ArrowPrimitiveType,
-    T: ArrowPrimitiveType,
+    S: PolarsPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     let data = arr.data();
     let buf = data.buffers().to_vec();
@@ -42,7 +42,7 @@ pub(crate) unsafe fn transmute_array_from_dtype<S>(
     dtype: ArrowDataType,
 ) -> ArrayRef
 where
-    S: ArrowPrimitiveType,
+    S: PolarsPrimitiveType,
 {
     use ArrowDataType::*;
     match dtype {
@@ -61,8 +61,8 @@ where
 /// This function will panic if the conversion overflows. Don't use it to cast to a smaller size.
 pub(crate) fn cast_numeric<S, T>(arr: &PrimitiveArray<S>) -> ArrayRef
 where
-    S: ArrowNumericType,
-    T: ArrowNumericType,
+    S: PolarsNumericType,
+    T: PolarsNumericType,
     T::Native: num::NumCast,
     S::Native: num::NumCast,
 {
@@ -81,7 +81,7 @@ where
 
 pub(crate) fn cast_numeric_from_dtype<S>(arr: &PrimitiveArray<S>, dtype: ArrowDataType) -> ArrayRef
 where
-    S: ArrowNumericType,
+    S: PolarsNumericType,
     S::Native: NumCast,
 {
     use ArrowDataType::*;

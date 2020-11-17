@@ -70,7 +70,7 @@ impl<'a> ChunkApply<'a, &'a str, String> for Utf8Chunked {
 
 impl<T> ChunkApplyKernel<PrimitiveArray<T>> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn apply_kernel<F>(&self, f: F) -> Self
     where

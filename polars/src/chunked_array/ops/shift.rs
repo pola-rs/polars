@@ -140,3 +140,13 @@ impl ChunkShift<ListType, Series> for ListChunked {
         )
     }
 }
+
+impl ChunkShift<ObjectType, ObjectType> for ObjectChunked {
+    fn shift(
+        &self,
+        _periods: i32,
+        _fill_value: &Option<ObjectType>,
+    ) -> Result<ChunkedArray<ObjectType>> {
+        todo!()
+    }
+}

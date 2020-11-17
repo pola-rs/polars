@@ -190,6 +190,7 @@ macro_rules! apply_method_all_series {
             Series::IntervalDayTime(a) => a.$method($($args),*),
             Series::IntervalYearMonth(a) => a.$method($($args),*),
             Series::List(a) => a.$method($($args),*),
+            Series::Object(a) => a.$method($($args),*),
         }
     }
 }
@@ -297,6 +298,7 @@ macro_rules! apply_method_all_series_and_return {
             Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
             Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
             Series::List(a) => Series::List(a.$method($($args),*)$($opt_question_mark)*),
+            Series::Object(a) => Series::Object(a.$method($($args),*)$($opt_question_mark)*),
         }
     }
 }
