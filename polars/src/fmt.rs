@@ -126,8 +126,8 @@ fn format_object_array(
     for i in 0..limit {
         let v = ca.get_any(i);
         match v {
-            AnyType::Null => write!(f, "\tnull\n")?,
-            _ => write!(f, "\tobject\n")?,
+            AnyType::Null => writeln!(f, "\tnull")?,
+            _ => writeln!(f, "\tobject")?,
         }
     }
 

@@ -600,6 +600,8 @@ where
                 AnyType::List(("", v).into())
             }
             ArrowDataType::Binary => {
+                // somehow pointer cast doesn't work.
+                #[allow(clippy::transmute_ptr_to_ptr)]
                 let arr = unsafe { mem::transmute::<&dyn Array, &dyn ObjectArray>(arr) };
                 let v = arr.value(idx);
                 AnyType::Object(v)
