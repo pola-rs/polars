@@ -195,21 +195,19 @@ fn lp_to_aexpr(
     _arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Node {
-    let v= match lp {
+    let v = match lp {
         //LogicalPlan::Selection { input, predicate } => {}
         CsvScan {
             path,
             schema,
             has_header,
             delimiter,
-        } => {
-            ALogicalPlan::CsvScan {
-                path: path.clone(),
-                schema: schema.clone(),
-                has_header: *has_header,
-                delimiter: *delimiter,
-            }
-        }
+        } => ALogicalPlan::CsvScan {
+            path: path.clone(),
+            schema: schema.clone(),
+            has_header: *has_header,
+            delimiter: *delimiter,
+        },
         // LogicalPlan::DataFrameScan { df, schema } => {}
         // LogicalPlan::Projection {
         //     expr,
@@ -237,9 +235,8 @@ fn lp_to_aexpr(
         //     schema,
         // } => {}
         _ => unimplemented!("TODO"),
-    }
+    };
     lp_arena.add(v)
-
 }
 
 // Evaluates x + y if possible
