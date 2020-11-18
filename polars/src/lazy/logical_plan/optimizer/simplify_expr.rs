@@ -381,8 +381,8 @@ impl SimplifyOptimizer {
         let mut lp_arena = Arena::new();
         let lp_top = lp_to_aexpr(logical_plan, &mut expr_arena, &mut lp_arena);
 
-        let mut plans = vec![];
-        let mut exprs = vec![];
+        let mut plans = Vec::with_capacity(lp_arena.items.len());
+        let mut exprs = Vec::with_capacity(expr_arena.items.len());
 
         // run loop until reaching fixed point
         while changed {
