@@ -10,7 +10,7 @@ use arrow::{
         Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
-    datatypes::{ArrowPrimitiveType, DateUnit, Field, TimeUnit},
+    datatypes::{DateUnit, Field, TimeUnit},
 };
 use itertools::Itertools;
 use std::iter::{Copied, Map};
@@ -40,6 +40,7 @@ pub mod strings;
 pub mod temporal;
 pub mod upstream_traits;
 
+use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
     DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
@@ -48,6 +49,7 @@ use arrow::array::{
     TimestampSecondArray,
 };
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
+use std::fmt::Debug;
 use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
@@ -594,6 +596,7 @@ where
                 let v = downcast!(ListArray);
                 AnyType::List(("", v).into())
             }
+            ArrowDataType::Binary => AnyType::Object(&"object"),
             _ => unimplemented!(),
         }
     }
@@ -601,7 +604,7 @@ where
 
 impl<T> ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     /// Create a new ChunkedArray by taking ownership of the AlignedVec. This operation is zero copy.
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
@@ -800,7 +803,7 @@ pub trait Downcast<T> {
 
 impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
         self.chunks
@@ -832,6 +835,21 @@ impl Downcast<ListArray> for ListChunked {
             .map(|arr| {
                 let arr = &**arr;
                 unsafe { &*(arr as *const dyn Array as *const ListArray) }
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
+impl<T> Downcast<ObjectArray<T>> for ObjectChunked<T>
+where
+    T: 'static + Debug + Clone + Send + Sync + Default,
+{
+    fn downcast_chunks(&self) -> Vec<&ObjectArray<T>> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                let arr = &**arr;
+                unsafe { &*(arr as *const dyn Array as *const ObjectArray<T>) }
             })
             .collect::<Vec<_>>()
     }

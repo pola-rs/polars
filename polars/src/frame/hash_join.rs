@@ -368,7 +368,7 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     }
 }
 
-trait ZipOuterJoinColumn {
+pub trait ZipOuterJoinColumn {
     fn zip_outer_join_column(
         &self,
         _right_column: &Series,
@@ -413,6 +413,7 @@ where
 impl ZipOuterJoinColumn for Float32Chunked {}
 impl ZipOuterJoinColumn for Float64Chunked {}
 impl ZipOuterJoinColumn for ListChunked {}
+impl<T> ZipOuterJoinColumn for ObjectChunked<T> {}
 
 macro_rules! impl_zip_outer_join {
     ($chunkedtype:ident) => {

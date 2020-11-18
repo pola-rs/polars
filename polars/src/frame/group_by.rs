@@ -10,7 +10,6 @@ use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-
 use std::{
     fmt::{Debug, Formatter},
     ops::Add,
@@ -98,6 +97,7 @@ impl IntoGroupTuples for Float32Chunked {
     }
 }
 impl IntoGroupTuples for ListChunked {}
+impl<T> IntoGroupTuples for ObjectChunked<T> {}
 
 /// Utility enum used for grouping on multiple columns
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
@@ -263,7 +263,7 @@ impl DataFrame {
         let groups = match selected_keys.len() {
             1 => {
                 let series = &selected_keys[0];
-                apply_method_all_series!(series, group_tuples,)
+                apply_method_all_arrow_series!(series, group_tuples,)
             }
             2 => groupby(static_zip!(selected_keys, 1)),
             3 => groupby(static_zip!(selected_keys, 2)),
@@ -373,6 +373,7 @@ pub(crate) trait NumericAggSync {
 impl NumericAggSync for BooleanChunked {}
 impl NumericAggSync for Utf8Chunked {}
 impl NumericAggSync for ListChunked {}
+impl<T> NumericAggSync for ObjectChunked<T> {}
 
 impl<T> NumericAggSync for ChunkedArray<T>
 where
@@ -507,7 +508,7 @@ macro_rules! impl_agg_first {
 
 impl<T> AggFirst for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType + Send,
+    T: PolarsPrimitiveType + Send,
 {
     fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, ChunkedArray<T>)
@@ -523,6 +524,12 @@ impl AggFirst for Utf8Chunked {
 impl AggFirst for ListChunked {
     fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, ListChunked)
+    }
+}
+
+impl<T> AggFirst for ObjectChunked<T> {
+    fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+        todo!()
     }
 }
 
@@ -542,7 +549,7 @@ macro_rules! impl_agg_last {
 
 impl<T> AggLast for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType + Send,
+    T: PolarsPrimitiveType + Send,
 {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, ChunkedArray<T>)
@@ -558,6 +565,12 @@ impl AggLast for Utf8Chunked {
 impl AggLast for ListChunked {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, ListChunked)
+    }
+}
+
+impl<T> AggLast for ObjectChunked<T> {
+    fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+        todo!()
     }
 }
 
@@ -603,9 +616,11 @@ where
     }
 }
 
+// todo! could use mantissa method here
 impl AggNUnique for Float32Chunked {}
 impl AggNUnique for Float64Chunked {}
 impl AggNUnique for ListChunked {}
+impl<T> AggNUnique for ObjectChunked<T> {}
 
 // TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
@@ -705,6 +720,7 @@ where
 impl AggQuantile for Utf8Chunked {}
 impl AggQuantile for BooleanChunked {}
 impl AggQuantile for ListChunked {}
+impl<T> AggQuantile for ObjectChunked<T> {}
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Select the column(s) that should be aggregated.
@@ -797,7 +813,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Mean);
-            let opt_agg = apply_method_all_series!(agg_col, agg_mean, &self.groups);
+            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_mean, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -836,7 +852,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Sum);
-            let opt_agg = apply_method_all_series!(agg_col, agg_sum, &self.groups);
+            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_sum, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -874,7 +890,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Min);
-            let opt_agg = apply_method_all_series!(agg_col, agg_min, &self.groups);
+            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_min, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -912,7 +928,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Max);
-            let opt_agg = apply_method_all_series!(agg_col, agg_max, &self.groups);
+            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_max, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -986,7 +1002,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Last);
-            let mut agg = apply_method_all_series!(agg_col, agg_last, &self.groups);
+            let mut agg = apply_method_all_arrow_series!(agg_col, agg_last, &self.groups);
             agg.rename(&new_name);
             cols.push(agg);
         }
@@ -1050,7 +1066,8 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile));
-            let opt_agg = apply_method_all_series!(agg_col, agg_quantile, &self.groups, quantile);
+            let opt_agg =
+                apply_method_all_arrow_series!(agg_col, agg_quantile, &self.groups, quantile);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -1073,7 +1090,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Median);
-            let opt_agg = apply_method_all_series!(agg_col, agg_median, &self.groups);
+            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_median, &self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -1218,7 +1235,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         macro_rules! finish_agg_opt {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
                 let new_name = format![$name_fmt, $agg_col.name()];
-                let opt_agg = apply_method_all_series!($agg_col, $agg_fn, &$self.groups);
+                let opt_agg = apply_method_all_arrow_series!($agg_col, $agg_fn, &$self.groups);
                 if let Some(mut agg) = opt_agg {
                     agg.rename(&new_name);
                     $cols.push(agg.into_series());
@@ -1228,7 +1245,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         macro_rules! finish_agg {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
                 let new_name = format![$name_fmt, $agg_col.name()];
-                let mut agg = apply_method_all_series!($agg_col, $agg_fn, &$self.groups);
+                let mut agg = apply_method_all_arrow_series!($agg_col, $agg_fn, &$self.groups);
                 agg.rename(&new_name);
                 $cols.push(agg.into_series());
             }};
@@ -1664,6 +1681,7 @@ impl ChunkPivot for Utf8Chunked {
     }
 }
 impl ChunkPivot for ListChunked {}
+impl<T> ChunkPivot for ObjectChunked<T> {}
 
 enum PivotAgg {
     First,
@@ -1760,7 +1778,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn count(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_series!(
+        apply_method_all_arrow_series!(
             values_series,
             pivot_count,
             pivot_series,
@@ -1773,7 +1791,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn first(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_series!(
+        apply_method_all_arrow_series!(
             values_series,
             pivot,
             pivot_series,
@@ -1787,7 +1805,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn sum(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_series!(
+        apply_method_all_arrow_series!(
             values_series,
             pivot,
             pivot_series,
@@ -1801,7 +1819,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn min(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_series!(
+        apply_method_all_arrow_series!(
             values_series,
             pivot,
             pivot_series,
@@ -1815,7 +1833,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn max(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_series!(
+        apply_method_all_arrow_series!(
             values_series,
             pivot,
             pivot_series,
@@ -1829,7 +1847,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn mean(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_series!(
+        apply_method_all_arrow_series!(
             values_series,
             pivot,
             pivot_series,
@@ -1842,7 +1860,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn median(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_series!(
+        apply_method_all_arrow_series!(
             values_series,
             pivot,
             pivot_series,

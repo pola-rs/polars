@@ -72,7 +72,7 @@ impl From<&ArrowDataType> for DataType {
     }
 }
 
-pub trait PyPolarsPrimitiveType: ArrowPrimitiveType {}
+pub trait PyPolarsPrimitiveType: PolarsPrimitiveType {}
 impl PyPolarsPrimitiveType for UInt8Type {}
 impl PyPolarsPrimitiveType for UInt16Type {}
 impl PyPolarsPrimitiveType for UInt32Type {}

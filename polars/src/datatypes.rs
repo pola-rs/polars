@@ -18,6 +18,7 @@ pub use arrow::datatypes::{
     TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt16Type, UInt32Type,
     UInt64Type, UInt8Type,
 };
+use std::any::Any;
 
 pub struct Utf8Type {}
 
@@ -29,7 +30,7 @@ pub trait PolarsDataType {
 
 impl<T> PolarsDataType for T
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn get_data_type() -> ArrowDataType {
         T::get_data_type()
@@ -46,6 +47,16 @@ impl PolarsDataType for ListType {
     fn get_data_type() -> ArrowDataType {
         // null as we cannot no anything without self.
         ArrowDataType::List(Box::new(ArrowDataType::Null))
+    }
+}
+
+pub struct ObjectType<T>(T);
+pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
+
+impl<T> PolarsDataType for ObjectType<T> {
+    fn get_data_type() -> ArrowDataType {
+        // the best fit?
+        ArrowDataType::Binary
     }
 }
 
@@ -88,7 +99,36 @@ pub type TimestampMicrosecondChunked = ChunkedArray<TimestampMicrosecondType>;
 pub type TimestampMillisecondChunked = ChunkedArray<TimestampMillisecondType>;
 pub type TimestampSecondChunked = ChunkedArray<TimestampSecondType>;
 
-pub trait PolarsNumericType: ArrowNumericType {}
+pub trait PolarsPrimitiveType: ArrowPrimitiveType {}
+impl PolarsPrimitiveType for BooleanType {}
+impl PolarsPrimitiveType for UInt8Type {}
+impl PolarsPrimitiveType for UInt16Type {}
+impl PolarsPrimitiveType for UInt32Type {}
+impl PolarsPrimitiveType for UInt64Type {}
+impl PolarsPrimitiveType for Int8Type {}
+impl PolarsPrimitiveType for Int16Type {}
+impl PolarsPrimitiveType for Int32Type {}
+impl PolarsPrimitiveType for Int64Type {}
+impl PolarsPrimitiveType for Float32Type {}
+impl PolarsPrimitiveType for Float64Type {}
+impl PolarsPrimitiveType for Date32Type {}
+impl PolarsPrimitiveType for Date64Type {}
+impl PolarsPrimitiveType for Time64NanosecondType {}
+impl PolarsPrimitiveType for Time64MicrosecondType {}
+impl PolarsPrimitiveType for Time32MillisecondType {}
+impl PolarsPrimitiveType for Time32SecondType {}
+impl PolarsPrimitiveType for DurationNanosecondType {}
+impl PolarsPrimitiveType for DurationMicrosecondType {}
+impl PolarsPrimitiveType for DurationMillisecondType {}
+impl PolarsPrimitiveType for DurationSecondType {}
+impl PolarsPrimitiveType for IntervalYearMonthType {}
+impl PolarsPrimitiveType for IntervalDayTimeType {}
+impl PolarsPrimitiveType for TimestampNanosecondType {}
+impl PolarsPrimitiveType for TimestampMicrosecondType {}
+impl PolarsPrimitiveType for TimestampMillisecondType {}
+impl PolarsPrimitiveType for TimestampSecondType {}
+
+pub trait PolarsNumericType: PolarsPrimitiveType + ArrowNumericType {}
 impl PolarsNumericType for UInt8Type {}
 impl PolarsNumericType for UInt16Type {}
 impl PolarsNumericType for UInt32Type {}
@@ -193,6 +233,7 @@ pub enum AnyType<'a> {
     IntervalDayTime(i64),
     IntervalYearMonth(i32),
     List(Series),
+    Object(&'a dyn Any),
 }
 
 pub trait ToStr {
@@ -234,6 +275,7 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Interval(IntervalUnit::DayTime) => "interval(daytime)",
             ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
             ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
+            ArrowDataType::Binary => "object",
             _ => panic!(format!("{:?} not implemented", self)),
         };
         s.into()

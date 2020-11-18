@@ -178,3 +178,15 @@ impl ChunkFillNone<&Series> for ListChunked {
         ))
     }
 }
+impl<T> ChunkFillNone<ObjectType<T>> for ObjectChunked<T> {
+    fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Self> {
+        Err(PolarsError::InvalidOperation(
+            "fill_none not supported for Object type".into(),
+        ))
+    }
+    fn fill_none_with_value(&self, _value: ObjectType<T>) -> Result<Self> {
+        Err(PolarsError::InvalidOperation(
+            "fill_none_with_value not supported for Object type".into(),
+        ))
+    }
+}

@@ -372,6 +372,48 @@ impl ChunkTake for ListChunked {
     }
 }
 
+impl<T> ChunkTake for ObjectChunked<T> {
+    fn take(&self, _indices: impl Iterator<Item = usize>, _capacity: Option<usize>) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        todo!()
+    }
+
+    unsafe fn take_unchecked(
+        &self,
+        _indices: impl Iterator<Item = usize>,
+        _capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        todo!()
+    }
+
+    fn take_opt(
+        &self,
+        _indices: impl Iterator<Item = Option<usize>>,
+        _capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        todo!()
+    }
+
+    unsafe fn take_opt_unchecked(
+        &self,
+        _indices: impl Iterator<Item = Option<usize>>,
+        _capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        todo!()
+    }
+}
+
 pub trait AsTakeIndex {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a>;
 

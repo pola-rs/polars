@@ -3,7 +3,7 @@ use crate::{
     utils::{get_iter_capacity, Xob},
 };
 use arrow::array::{ArrayBuilder, ArrayDataBuilder, ArrayRef, ListBuilder};
-use arrow::datatypes::{ArrowPrimitiveType, Field, ToByteSlice};
+use arrow::datatypes::{Field, ToByteSlice};
 pub use arrow::memory;
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
@@ -32,7 +32,7 @@ pub trait ChunkedBuilder<N, T> {
 
 pub struct PrimitiveChunkedBuilder<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     pub builder: PrimitiveBuilder<T>,
     capacity: usize,
@@ -41,7 +41,7 @@ where
 
 impl<T> ChunkedBuilder<T::Native, T> for PrimitiveChunkedBuilder<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     /// Appends a value of type `T` into the builder
     fn append_value(&mut self, v: T::Native) {
@@ -68,7 +68,7 @@ where
 
 impl<T> PrimitiveChunkedBuilder<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     pub fn new(name: &str, capacity: usize) -> Self {
         PrimitiveChunkedBuilder {
@@ -167,7 +167,7 @@ impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
 
 pub fn build_primitive_ca_with_opt<T>(s: &[Option<T::Native>], name: &str) -> ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
     T::Native: Copy,
 {
     let mut builder = PrimitiveChunkedBuilder::new(name, s.len());
@@ -211,7 +211,7 @@ pub fn build_with_existing_null_bitmap_and_slice<T>(
     values: &[T::Native],
 ) -> PrimitiveArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     let len = values.len();
     // See:
@@ -270,7 +270,7 @@ fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
 
 /// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
 /// Can also take a null bit buffer into account.
-pub fn aligned_vec_to_primitive_array<T: ArrowPrimitiveType>(
+pub fn aligned_vec_to_primitive_array<T: PolarsPrimitiveType>(
     values: AlignedVec<T::Native>,
     null_bit_buffer: Option<Buffer>,
     null_count: Option<usize>,
@@ -465,7 +465,7 @@ pub trait NewChunkedArray<T, N> {
 
 impl<T> NewChunkedArray<T, T::Native> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
         Self::new_from_iter(name, v.iter().copied())
@@ -549,7 +549,7 @@ pub trait ListBuilderTrait {
 
 pub struct ListPrimitiveChunkedBuilder<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     pub builder: ListBuilder<PrimitiveBuilder<T>>,
     field: Field,
@@ -601,7 +601,7 @@ macro_rules! finish_list_builder {
 
 impl<T> ListPrimitiveChunkedBuilder<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
         let builder = ListBuilder::with_capacity(values_builder, capacity);
@@ -652,7 +652,7 @@ where
 
 impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn append_opt_series(&mut self, opt_s: &Option<Series>) {
         append_opt_series!(self, opt_s)

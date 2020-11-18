@@ -60,6 +60,7 @@ macro_rules! impl_compare {
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, $rhs, $method),
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, $rhs, $method),
             Series::List(a) => compare!(Series::List, a, $rhs, $method),
+            Series::Object(_) => fill_bool(false, $self.len()),
         }
     }};
 }

@@ -26,7 +26,7 @@ impl<T> Default for ChunkedArray<T> {
 
 impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let iter = iter.into_iter();
@@ -42,7 +42,7 @@ where
 // Xob is only a wrapper needed for specialization
 impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
@@ -324,7 +324,7 @@ fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
 
 impl<T> FromParallelIterator<T::Native> for Xob<ChunkedArray<T>>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = T::Native>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads
@@ -345,7 +345,7 @@ where
 
 impl<T> FromParallelIterator<Option<T::Native>> for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads

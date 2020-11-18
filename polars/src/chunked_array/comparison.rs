@@ -820,6 +820,7 @@ impl CompToSeries for Utf8Chunked {
     }
 }
 impl CompToSeries for ListChunked {}
+impl<T> CompToSeries for ObjectChunked<T> {}
 
 impl BooleanChunked {
     pub fn all_true(&self) -> bool {
