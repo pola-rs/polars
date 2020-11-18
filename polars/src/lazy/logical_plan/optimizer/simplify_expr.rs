@@ -145,7 +145,7 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             arena.add(v)
         }
         Expr::Column(s) => {
-            let v = AExpr::Column(s.clone());
+            let v = AExpr::Column(s);
             arena.add(v)
         }
         Expr::BinaryExpr { left, op, right } => {
@@ -153,7 +153,7 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             let r = to_aexpr(*right, arena);
             let v = AExpr::BinaryExpr {
                 left: l,
-                op: op,
+                op,
                 right: r,
             };
 
@@ -177,13 +177,11 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
 }
 
 fn lp_to_aexpr(
-    lp: &LogicalPlan,
-    arena: &mut Arena<AExpr>,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    _lp: &LogicalPlan,
+    _arena: &mut Arena<AExpr>,
+    _lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Node {
-    match lp {
-        _ => unimplemented!("TODO"),
-    }
+    unimplemented!("TODO")
 }
 
 // Evaluates x + y if possible
@@ -228,12 +226,12 @@ pub struct SimplifyExpr {}
 trait Rule {
     fn optimize_plan(
         &self,
-        arena: &Arena<ALogicalPlan>,
+        _arena: &Arena<ALogicalPlan>,
         _logical_plan: &ALogicalPlan,
     ) -> Option<ALogicalPlan> {
         None
     }
-    fn optimize_expr(&self, arena: &Arena<AExpr>, _expr: &AExpr) -> Option<AExpr> {
+    fn optimize_expr(&self, _arena: &Arena<AExpr>, _expr: &AExpr) -> Option<AExpr> {
         None
     }
 }
