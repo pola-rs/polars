@@ -1,4 +1,8 @@
 use crate::{prelude::*, utils::Xob};
+use arrow::compute::{
+    eq_scalar, eq_utf8_scalar, gt_eq_scalar, gt_eq_utf8_scalar, gt_scalar, gt_utf8_scalar,
+    lt_eq_scalar, lt_eq_utf8_scalar, lt_scalar, lt_utf8_scalar, neq_scalar, neq_utf8_scalar,
+};
 use arrow::{
     array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray},
     compute,
@@ -441,17 +445,6 @@ where
     ca.into_no_null_iter().map(cmp_fn).collect()
 }
 
-macro_rules! kernel_cmp {
-    ($self:ident, $kernel:ident, $rhs:expr) => {{
-        let chunks = $self
-            .downcast_chunks()
-            .into_iter()
-            .map(|arr| Arc::new(comparison::$kernel(arr, $rhs).unwrap()) as ArrayRef)
-            .collect();
-        BooleanChunked::new_from_chunks($self.name(), chunks)
-    }};
-}
-
 pub trait NumComp: Num + NumCast + PartialOrd {}
 
 impl NumComp for f32 {}
@@ -477,32 +470,32 @@ where
 
     fn eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        kernel_cmp!(self, eq_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(eq_scalar(arr, rhs).unwrap()))
     }
 
     fn neq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        kernel_cmp!(self, neq_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(neq_scalar(arr, rhs).unwrap()))
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        kernel_cmp!(self, gt_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(gt_scalar(arr, rhs).unwrap()))
     }
 
     fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        kernel_cmp!(self, gt_eq_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(gt_eq_scalar(arr, rhs).unwrap()))
     }
 
     fn lt(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        kernel_cmp!(self, lt_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(lt_scalar(arr, rhs).unwrap()))
     }
 
     fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        kernel_cmp!(self, lt_eq_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(lt_eq_scalar(arr, rhs).unwrap()))
     }
 }
 
@@ -512,26 +505,26 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 
     fn eq(&self, rhs: &str) -> BooleanChunked {
-        kernel_cmp!(self, eq_utf8_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(eq_utf8_scalar(arr, rhs).unwrap()))
     }
     fn neq(&self, rhs: &str) -> BooleanChunked {
-        kernel_cmp!(self, neq_utf8_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(neq_utf8_scalar(arr, rhs).unwrap()))
     }
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
-        kernel_cmp!(self, gt_utf8_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(gt_utf8_scalar(arr, rhs).unwrap()))
     }
 
     fn gt_eq(&self, rhs: &str) -> BooleanChunked {
-        kernel_cmp!(self, gt_eq_utf8_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(gt_eq_utf8_scalar(arr, rhs).unwrap()))
     }
 
     fn lt(&self, rhs: &str) -> BooleanChunked {
-        kernel_cmp!(self, lt_utf8_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(lt_utf8_scalar(arr, rhs).unwrap()))
     }
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
-        kernel_cmp!(self, lt_eq_utf8_scalar, rhs)
+        self.apply_kernel_cast(|arr| Arc::new(lt_eq_utf8_scalar(arr, rhs).unwrap()))
     }
 }
 
@@ -726,99 +719,35 @@ pub trait CompToSeries {
     }
 }
 
-macro_rules! impl_comp_to_series {
-    ($SELF:ident, $METHOD_NAME:ident, $OPERATION:ident, $RHS:ident, $NAME:expr, $TYPE:ty) => {{
-        match $SELF.unpack_series_matching_type($RHS) {
-            Ok(ca) => $SELF.$OPERATION(ca),
-            Err(_) => match $RHS.cast::<$TYPE>() {
-                Ok(s) => $SELF.$METHOD_NAME(&s),
-                Err(_) => BooleanChunked::full($NAME, false, $SELF.len()),
-            },
-        }
-    }};
-}
-
 impl<T> CompToSeries for ChunkedArray<T>
 where
-    T: PolarsNumericType,
-    // extra trait bound is required to call match the trait bounds of
-    // impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
-    T::Native: NumCast + NumComp + ToPrimitive,
+    T: PolarsSingleType,
 {
     fn lt_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, lt_series, lt, rhs, "lt", T)
+        ChunkCompare::<&Series>::lt(&self.clone().into_series(), rhs)
     }
 
     fn gt_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, gt_series, gt, rhs, "gt", T)
+        ChunkCompare::<&Series>::gt(&self.clone().into_series(), rhs)
     }
 
     fn gt_eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, gt_eq_series, gt_eq, rhs, "gt_eq", T)
+        ChunkCompare::<&Series>::gt_eq(&self.clone().into_series(), rhs)
     }
 
     fn lt_eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, lt_eq_series, lt_eq, rhs, "lt_eq", T)
+        ChunkCompare::<&Series>::lt_eq(&self.clone().into_series(), rhs)
     }
 
     fn eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, eq_series, eq, rhs, "eq", T)
+        ChunkCompare::<&Series>::eq(&self.clone().into_series(), rhs)
     }
 
     fn neq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, neq_series, neq, rhs, "neq", T)
+        ChunkCompare::<&Series>::neq(&self.clone().into_series(), rhs)
     }
 }
 
-impl CompToSeries for BooleanChunked {
-    fn lt_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, lt_series, lt, rhs, "lt", BooleanType)
-    }
-
-    fn gt_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, gt_series, gt, rhs, "gt", BooleanType)
-    }
-
-    fn gt_eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, gt_eq_series, gt_eq, rhs, "gt_eq", BooleanType)
-    }
-
-    fn lt_eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, lt_eq_series, lt_eq, rhs, "lt_eq", BooleanType)
-    }
-
-    fn eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, eq_series, eq, rhs, "eq", BooleanType)
-    }
-
-    fn neq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, neq_series, neq, rhs, "neq", BooleanType)
-    }
-}
-impl CompToSeries for Utf8Chunked {
-    fn lt_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, lt_series, lt, rhs, "lt", Utf8Type)
-    }
-
-    fn gt_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, gt_series, gt, rhs, "gt", Utf8Type)
-    }
-    fn gt_eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, gt_eq_series, gt_eq, rhs, "gt_eq", Utf8Type)
-    }
-
-    fn lt_eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, lt_eq_series, lt_eq, rhs, "lt_eq", Utf8Type)
-    }
-
-    fn eq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, eq_series, eq, rhs, "eq", Utf8Type)
-    }
-
-    fn neq_series(&self, rhs: &Series) -> BooleanChunked {
-        impl_comp_to_series!(self, neq_series, neq, rhs, "neq", Utf8Type)
-    }
-}
 impl CompToSeries for ListChunked {}
 impl<T> CompToSeries for ObjectChunked<T> {}
 

@@ -76,33 +76,19 @@ impl PhysicalExpr for BinaryExpr {
         let left = self.left.evaluate(df)?;
         let right = self.right.evaluate(df)?;
         match self.op {
-            Operator::Gt => {
-                Ok(apply_method_all_arrow_series!(left, gt_series, &right).into_series())
-            }
-            Operator::GtEq => {
-                Ok(apply_method_all_arrow_series!(left, gt_eq_series, &right).into_series())
-            }
-            Operator::Lt => {
-                Ok(apply_method_all_arrow_series!(left, lt_series, &right).into_series())
-            }
-            Operator::LtEq => {
-                Ok(apply_method_all_arrow_series!(left, lt_eq_series, &right).into_series())
-            }
-            Operator::Eq => {
-                Ok(apply_method_all_arrow_series!(left, eq_series, &right).into_series())
-            }
-            Operator::NotEq => {
-                Ok(apply_method_all_arrow_series!(left, neq_series, &right).into_series())
-            }
+            Operator::Gt => Ok(ChunkCompare::<&Series>::gt(&left, &right).into()),
+            Operator::GtEq => Ok(ChunkCompare::<&Series>::gt_eq(&left, &right).into()),
+            Operator::Lt => Ok(ChunkCompare::<&Series>::lt(&left, &right).into()),
+            Operator::LtEq => Ok(ChunkCompare::<&Series>::lt_eq(&left, &right).into()),
+            Operator::Eq => Ok(ChunkCompare::<&Series>::eq(&left, &right).into()),
+            Operator::NotEq => Ok(ChunkCompare::<&Series>::neq(&left, &right).into()),
             Operator::Plus => Ok(left + right),
             Operator::Minus => Ok(left - right),
             Operator::Multiply => Ok(left * right),
             Operator::Divide => Ok(left / right),
             Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
             Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
-            Operator::Not => {
-                Ok(apply_method_all_arrow_series!(left, eq_series, &right).into_series())
-            }
+            Operator::Not => Ok(ChunkCompare::<&Series>::eq(&left, &right).into()),
             Operator::Like => todo!(),
             Operator::NotLike => todo!(),
             Operator::Modulus => {
