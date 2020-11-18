@@ -50,7 +50,9 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
     if lower == "true" || lower == "false" {
         return ArrowDataType::Boolean;
     }
-    let mut parts = string.split('.');
+    let skip_minus = if string.starts_with('-') { 1 } else { 0 };
+
+    let mut parts = string[skip_minus..].split('.');
     let (left, right) = (parts.next(), parts.next());
     let left_is_number = left.map_or(false, all_digit);
     if left_is_number && right.map_or(false, all_digit) {
