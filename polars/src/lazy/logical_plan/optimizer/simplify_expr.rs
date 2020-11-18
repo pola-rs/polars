@@ -339,7 +339,7 @@ impl SimplifyOptimizer {
             while let Some(node) = plans.pop() {
                 // apply rules
                 for rule in rules.iter() {
-                    if let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node).clone()) {
+                    if let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node)) {
                         lp_arena.assign(node, x);
                         changed = true;
                     }
@@ -382,9 +382,7 @@ impl SimplifyOptimizer {
 
                 while let Some(node) = exprs.pop() {
                     for rule in rules.iter() {
-                        if let Some(x) =
-                            rule.optimize_expr(&expr_arena, &expr_arena.get(node).clone())
-                        {
+                        if let Some(x) = rule.optimize_expr(&expr_arena, &expr_arena.get(node)) {
                             expr_arena.assign(node, x);
                             changed = true;
                         }
