@@ -1,3 +1,4 @@
+use crate::lazy::logical_plan::*;
 use crate::lazy::prelude::*;
 use crate::prelude::*;
 use std::sync::Arc;
@@ -86,6 +87,53 @@ enum AExpr {
     },
     Wildcard,
 }
+
+enum ALogicalPlan {
+    // filter on a boolean mask
+    Selection {
+        input: Node,
+        predicate: AExpr,
+    },
+    CsvScan {
+        path: String,
+        schema: Schema,
+        has_header: bool,
+        delimiter: Option<u8>,
+    },
+    DataFrameScan {
+        df: Arc<Mutex<DataFrame>>,
+        schema: Schema,
+    },
+    // vertical selection
+    Projection {
+        expr: Vec<AExpr>,
+        input: Node,
+        schema: Schema,
+    },
+    DataFrameOp {
+        input: Node,
+        operation: DataFrameOperation,
+    },
+    Aggregate {
+        input: Node,
+        keys: Arc<Vec<String>>,
+        aggs: Vec<AExpr>,
+        schema: Schema,
+    },
+    Join {
+        input_left: Node,
+        input_right: Node,
+        schema: Schema,
+        how: JoinType,
+        left_on: AExpr,
+        right_on: AExpr,
+    },
+    HStack {
+        input: Node,
+        exprs: Vec<AExpr>,
+        schema: Schema,
+    },
+}
 // converts expression to AExpr, which uses an arena (Vec) for allocation
 fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     match expr {
@@ -97,6 +145,44 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             let v = AExpr::Literal(value);
             arena.add(v)
         }
+        Expr::Column(s) => {
+            let v = AExpr::Column(s.clone());
+            arena.add(v)
+        }
+        Expr::BinaryExpr { left, op, right } => {
+            let l = to_aexpr(*left, arena);
+            let r = to_aexpr(*right, arena);
+            let v = AExpr::BinaryExpr {
+                left: l,
+                op: op,
+                right: r,
+            };
+
+            arena.add(v)
+        }
+        Expr::Not(e) => {
+            let v = AExpr::Not(to_aexpr(*e, arena));
+            arena.add(v)
+        }
+        Expr::IsNotNull(e) => {
+            let v = AExpr::IsNotNull(to_aexpr(*e, arena));
+            arena.add(v)
+        }
+        Expr::IsNull(e) => {
+            let v = AExpr::IsNull(to_aexpr(*e, arena));
+            arena.add(v)
+        }
+
+        _ => unimplemented!("TODO"),
+    }
+}
+
+fn lp_to_aexpr(
+    lp: &LogicalPlan,
+    arena: &mut Arena<AExpr>,
+    lp_arena: &mut Arena<ALogicalPlan>,
+) -> Node {
+    match lp {
         _ => unimplemented!("TODO"),
     }
 }
@@ -237,6 +323,11 @@ impl SimplifyOptimizer {
         use LogicalPlan::*;
 
         let mut changed = true;
+
+        // initialize arena
+        let mut expr_arena = Arena::new();
+        let mut lp_arena = Arena::new();
+        let lp_top = lp_to_aexpr(logical_plan, &mut expr_arena, &mut lp_arena);
 
         // run loop until reaching fixed point
         while changed {
