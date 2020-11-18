@@ -2,7 +2,6 @@ use crate::lazy::logical_plan::*;
 use crate::lazy::prelude::*;
 use crate::prelude::*;
 use std::sync::Arc;
-pub struct SimplifyExpr {}
 
 struct Arena<T> {
     items: Vec<T>,
@@ -18,19 +17,19 @@ impl<T> Arena<T> {
         Node(idx)
     }
 
-    pub fn new() -> Self {
+    fn new() -> Self {
         Arena { items: vec![] }
     }
 
-    pub fn get(&mut self, idx: Node) -> &T {
+    fn get(&self, idx: Node) -> &T {
         unsafe { self.items.get_unchecked(idx.0) }
     }
 
-    pub fn get_mut(&mut self, idx: Node) -> &mut T {
+    fn get_mut(&mut self, idx: Node) -> &mut T {
         unsafe { self.items.get_unchecked_mut(idx.0) }
     }
 
-    pub fn assign(&mut self, idx: Node, val: T) {
+    fn assign(&mut self, idx: Node, val: T) {
         let x = self.get_mut(idx);
         *x = val;
     }
@@ -92,7 +91,7 @@ enum ALogicalPlan {
     // filter on a boolean mask
     Selection {
         input: Node,
-        predicate: AExpr,
+        predicate: Node,
     },
     CsvScan {
         path: String,
@@ -106,7 +105,7 @@ enum ALogicalPlan {
     },
     // vertical selection
     Projection {
-        expr: Vec<AExpr>,
+        expr: Vec<Node>,
         input: Node,
         schema: Schema,
     },
@@ -117,7 +116,7 @@ enum ALogicalPlan {
     Aggregate {
         input: Node,
         keys: Arc<Vec<String>>,
-        aggs: Vec<AExpr>,
+        aggs: Vec<Node>,
         schema: Schema,
     },
     Join {
@@ -125,12 +124,12 @@ enum ALogicalPlan {
         input_right: Node,
         schema: Schema,
         how: JoinType,
-        left_on: AExpr,
-        right_on: AExpr,
+        left_on: Node,
+        right_on: Node,
     },
     HStack {
         input: Node,
-        exprs: Vec<AExpr>,
+        exprs: Vec<Node>,
         schema: Schema,
     },
 }
@@ -187,23 +186,6 @@ fn lp_to_aexpr(
     }
 }
 
-pub struct ExampleBooleanRule {}
-
-impl ExampleBooleanRule {
-    fn optimize_expr(&self, arena: &mut Arena<AExpr>, expr: AExpr) -> Option<AExpr> {
-        match expr {
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(arena.get(left), AExpr::Literal(ScalarValue::Boolean(true))) => {
-                Some(arena.get(right).clone())
-            }
-            _ => None,
-        }
-    }
-}
-
 // Evaluates x + y if possible
 fn eval_plus(left: &Expr, right: &Expr) -> Option<Expr> {
     match (left, right) {
@@ -241,86 +223,103 @@ fn eval_plus(left: &Expr, right: &Expr) -> Option<Expr> {
         _ => None,
     }
 }
+pub struct SimplifyExpr {}
 
-pub trait Rule {
-    fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
+trait Rule {
+    fn optimize_plan(
+        &self,
+        arena: &Arena<ALogicalPlan>,
+        _logical_plan: &ALogicalPlan,
+    ) -> Option<ALogicalPlan> {
         None
     }
-    fn optimize_expr(&self, _expr: &Expr) -> Option<Expr> {
+    fn optimize_expr(&self, arena: &Arena<AExpr>, _expr: &AExpr) -> Option<AExpr> {
         None
     }
 }
 
-pub struct SimplifyExprRule {}
-
-impl Rule for SimplifyExprRule {
-    fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
-        None
-    }
-    fn optimize_expr(&self, expr: &Expr) -> Option<Expr> {
-        match expr {
-            Expr::BinaryExpr {
-                left,
-                op: Operator::Plus,
-                right,
-            } => eval_plus(&left, &right),
-            _ => None,
-        }
-    }
-}
-
-pub struct SimplifyBooleanRule {}
+struct SimplifyBooleanRule {}
 
 impl Rule for SimplifyBooleanRule {
-    fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
-        None
-    }
-    fn optimize_expr(&self, expr: &Expr) -> Option<Expr> {
+    fn optimize_expr(&self, arena: &Arena<AExpr>, expr: &AExpr) -> Option<AExpr> {
         match expr {
-            Expr::BinaryExpr {
+            AExpr::BinaryExpr {
                 left,
                 op: Operator::And,
                 right,
-            } if matches!(**left, Expr::Literal(ScalarValue::Boolean(true))) => {
-                Some(*right.clone())
+            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
+                Some(arena.get(*right).clone())
             }
-            Expr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right,
-            } if matches!(**right, Expr::Literal(ScalarValue::Boolean(true))) => {
-                Some(*left.clone())
-            }
-            Expr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(**left, Expr::Literal(ScalarValue::Boolean(false))) => {
-                Some(*right.clone())
-            }
-            Expr::BinaryExpr {
-                left,
-                op: Operator::Or,
-                right,
-            } if matches!(**right, Expr::Literal(ScalarValue::Boolean(false))) => {
-                Some(*left.clone())
-            }
-
             _ => None,
         }
     }
 }
+
+// pub struct SimplifyExprRule {}
+
+// impl Rule for SimplifyExprRule {
+//     fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
+//         None
+//     }
+//     fn optimize_expr(&self, expr: &Expr) -> Option<Expr> {
+//         match expr {
+//             Expr::BinaryExpr {
+//                 left,
+//                 op: Operator::Plus,
+//                 right,
+//             } => eval_plus(&left, &right),
+//             _ => None,
+//         }
+//     }
+// }
+
+// pub struct SimplifyBooleanRule {}
+
+// impl Rule for SimplifyBooleanRule {
+//     fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
+//         None
+//     }
+//     fn optimize_expr(&self, expr: &Expr) -> Option<Expr> {
+//         match expr {
+//             Expr::BinaryExpr {
+//                 left,
+//                 op: Operator::And,
+//                 right,
+//             } if matches!(**left, Expr::Literal(ScalarValue::Boolean(true))) => {
+//                 Some(*right.clone())
+//             }
+//             Expr::BinaryExpr {
+//                 left,
+//                 op: Operator::And,
+//                 right,
+//             } if matches!(**right, Expr::Literal(ScalarValue::Boolean(true))) => {
+//                 Some(*left.clone())
+//             }
+//             Expr::BinaryExpr {
+//                 left,
+//                 op: Operator::Or,
+//                 right,
+//             } if matches!(**left, Expr::Literal(ScalarValue::Boolean(false))) => {
+//                 Some(*right.clone())
+//             }
+//             Expr::BinaryExpr {
+//                 left,
+//                 op: Operator::Or,
+//                 right,
+//             } if matches!(**right, Expr::Literal(ScalarValue::Boolean(false))) => {
+//                 Some(*left.clone())
+//             }
+
+//             _ => None,
+//         }
+//     }
+// }
 
 pub struct SimplifyOptimizer {}
 
 impl SimplifyOptimizer {
     fn optimize_loop(&self, logical_plan: &mut LogicalPlan) {
-        let rules: &[Box<dyn Rule>] = &[
-            Box::new(SimplifyExprRule {}),
-            Box::new(SimplifyBooleanRule {}),
-        ];
-        use Expr::*;
-        use LogicalPlan::*;
+        let rules: &[Box<dyn Rule>] = &[Box::new(SimplifyBooleanRule {})];
 
         let mut changed = true;
 
@@ -329,135 +328,141 @@ impl SimplifyOptimizer {
         let mut lp_arena = Arena::new();
         let lp_top = lp_to_aexpr(logical_plan, &mut expr_arena, &mut lp_arena);
 
+        let mut plans = vec![];
+        let mut exprs = vec![];
+
         // run loop until reaching fixed point
         while changed {
             // recurse into sub plans and expressions and apply rules
             changed = false;
-            let mut plans = vec![&mut *logical_plan];
-            let mut exprs = vec![];
-
-            while let Some(plan) = plans.pop() {
+            plans.push(lp_top);
+            while let Some(node) = plans.pop() {
                 // apply rules
                 for rule in rules.iter() {
-                    if let Some(x) = rule.optimize_plan(plan) {
-                        *plan = x;
+                    if let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node).clone()) {
+                        lp_arena.assign(node, x);
                         changed = true;
                     }
                 }
 
+                let plan = lp_arena.get(node);
+
                 match plan {
-                    Selection { input, predicate } => {
-                        plans.push(input);
-                        exprs.push(predicate);
+                    ALogicalPlan::Selection { input, predicate } => {
+                        plans.push(*input);
+                        exprs.push(*predicate);
                     }
-                    Projection { expr, input, .. } => {
-                        plans.push(input);
+                    ALogicalPlan::Projection { expr, input, .. } => {
+                        plans.push(*input);
                         exprs.extend(expr);
                     }
-                    DataFrameOp { input, .. } => {
-                        plans.push(input);
+                    ALogicalPlan::DataFrameOp { input, .. } => {
+                        plans.push(*input);
                     }
-                    Aggregate { input, aggs, .. } => {
-                        plans.push(input);
+                    ALogicalPlan::Aggregate { input, aggs, .. } => {
+                        plans.push(*input);
                         exprs.extend(aggs);
                     }
-                    Join {
+                    ALogicalPlan::Join {
                         input_left,
                         input_right,
                         ..
                     } => {
-                        plans.push(input_left);
-                        plans.push(input_right);
+                        plans.push(*input_left);
+                        plans.push(*input_right);
                     }
-                    HStack {
+                    ALogicalPlan::HStack {
                         input, exprs: e2, ..
                     } => {
-                        plans.push(input);
+                        plans.push(*input);
                         exprs.extend(e2);
                     }
-                    CsvScan { .. } | DataFrameScan { .. } => {}
+                    ALogicalPlan::CsvScan { .. } | ALogicalPlan::DataFrameScan { .. } => {}
                 }
 
-                while let Some(expr) = exprs.pop() {
+                while let Some(node) = exprs.pop() {
                     for rule in rules.iter() {
-                        if let Some(x) = rule.optimize_expr(expr) {
-                            *expr = x;
+                        if let Some(x) =
+                            rule.optimize_expr(&expr_arena, &expr_arena.get(node).clone())
+                        {
+                            expr_arena.assign(node, x);
                             changed = true;
                         }
                     }
+                    let expr = expr_arena.get(node);
 
                     match expr {
-                        BinaryExpr { left, right, .. } => {
-                            exprs.push(&mut *left);
-                            exprs.push(&mut *right);
+                        AExpr::BinaryExpr { left, right, .. } => {
+                            exprs.push(*left);
+                            exprs.push(*right);
                         }
-                        Alias(expr, ..) => {
-                            exprs.push(expr);
+                        AExpr::Alias(expr, ..) => {
+                            exprs.push(*expr);
                         }
-                        Not(expr) => {
-                            exprs.push(expr);
+                        AExpr::Not(expr) => {
+                            exprs.push(*expr);
                         }
-                        IsNotNull(expr) => {
-                            exprs.push(expr);
+                        AExpr::IsNotNull(expr) => {
+                            exprs.push(*expr);
                         }
-                        IsNull(expr) => {
-                            exprs.push(expr);
+                        AExpr::IsNull(expr) => {
+                            exprs.push(*expr);
                         }
-                        Cast { expr, .. } => {
-                            exprs.push(expr);
+                        AExpr::Cast { expr, .. } => {
+                            exprs.push(*expr);
                         }
-                        Sort { expr, .. } => {
-                            exprs.push(expr);
+                        AExpr::Sort { expr, .. } => {
+                            exprs.push(*expr);
                         }
-                        AggMin(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggMin(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggMax(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggMax(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggMedian(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggMedian(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggNUnique(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggNUnique(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggFirst(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggFirst(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggLast(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggLast(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggList(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggList(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggMean(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggMean(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggQuantile { expr, .. } => {
-                            exprs.push(expr);
+                        AExpr::AggQuantile { expr, .. } => {
+                            exprs.push(*expr);
                         }
-                        AggSum(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggSum(expr) => {
+                            exprs.push(*expr);
                         }
-                        AggGroups(expr) => {
-                            exprs.push(expr);
+                        AExpr::AggGroups(expr) => {
+                            exprs.push(*expr);
                         }
-                        Shift { input, .. } => {
-                            exprs.push(input);
+                        AExpr::Shift { input, .. } => {
+                            exprs.push(*input);
                         }
-                        Ternary {
+                        AExpr::Ternary {
                             predicate,
                             truthy,
                             falsy,
                         } => {
-                            exprs.push(predicate);
-                            exprs.push(truthy);
-                            exprs.push(falsy);
+                            exprs.push(*predicate);
+                            exprs.push(*truthy);
+                            exprs.push(*falsy);
                         }
-                        Apply { input, .. } => {
-                            exprs.push(input);
+                        AExpr::Apply { input, .. } => {
+                            exprs.push(*input);
                         }
-                        Literal { .. } | Column { .. } | Wildcard => {}
+                        AExpr::Literal { .. } | AExpr::Column { .. } | AExpr::Wildcard => {}
                     }
                 }
             }
