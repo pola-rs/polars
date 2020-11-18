@@ -404,9 +404,16 @@ impl Series {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_iter(&self, iter: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
-        // todo! add object
-        apply_method_all_arrow_series_and_return!(self, take, [iter, capacity],)
+    pub fn take_iter(
+        &self,
+        mut iter: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self {
+        if let Series::Object(so) = self {
+            so.take(&mut iter, capacity).into()
+        } else {
+            apply_method_all_arrow_series_and_return!(self, take, [iter, capacity],)
+        }
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -416,11 +423,14 @@ impl Series {
     /// This doesn't check any bounds or null validity.
     pub unsafe fn take_iter_unchecked(
         &self,
-        iter: impl Iterator<Item = usize>,
+        mut iter: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Self {
-        // todo! add object
-        apply_method_all_arrow_series_and_return!(self, take_unchecked, [iter, capacity],)
+        if let Series::Object(so) = self {
+            so.take_unchecked(&mut iter, capacity).into()
+        } else {
+            apply_method_all_arrow_series_and_return!(self, take_unchecked, [iter, capacity],)
+        }
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -430,10 +440,14 @@ impl Series {
     /// This doesn't check any bounds or null validity.
     pub unsafe fn take_opt_iter_unchecked(
         &self,
-        iter: impl Iterator<Item = Option<usize>>,
+        mut iter: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
-        apply_method_all_arrow_series_and_return!(self, take_opt_unchecked, [iter, capacity],)
+        if let Series::Object(so) = self {
+            so.take_opt_unchecked(&mut iter, capacity).into()
+        } else {
+            apply_method_all_arrow_series_and_return!(self, take_opt_unchecked, [iter, capacity],)
+        }
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -443,10 +457,14 @@ impl Series {
     /// Out of bounds access doesn't Error but will return a Null value
     pub fn take_opt_iter(
         &self,
-        iter: impl Iterator<Item = Option<usize>>,
+        mut iter: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
-        apply_method_all_arrow_series_and_return!(self, take_opt, [iter, capacity],)
+        if let Series::Object(so) = self {
+            so.take_opt(&mut iter, capacity).into()
+        } else {
+            apply_method_all_arrow_series_and_return!(self, take_opt, [iter, capacity],)
+        }
     }
 
     /// Take by index. This operation is clone.
@@ -1343,6 +1361,12 @@ where
 {
     fn from(ca: ChunkedArray<T>) -> Self {
         Series::from_chunked_array(ca)
+    }
+}
+
+impl From<Box<dyn SeriesOps>> for Series {
+    fn from(ca: Box<dyn SeriesOps>) -> Self {
+        Series::Object(ca)
     }
 }
 
