@@ -53,8 +53,7 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
     let mut parts = string.split('.');
     let (left, right) = (parts.next(), parts.next());
     let left_is_number = left.map_or(false, all_numeric);
-    let right_is_number = right.map_or(false, all_numeric);
-    if left_is_number && right_is_number {
+    if left_is_number && right.map_or(false, all_numeric) {
         return ArrowDataType::Float64;
     } else if left_is_number {
         return ArrowDataType::Int64;
