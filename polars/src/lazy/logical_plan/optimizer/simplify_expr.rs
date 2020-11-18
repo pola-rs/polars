@@ -1,7 +1,122 @@
 use crate::lazy::prelude::*;
 use crate::prelude::*;
-
+use std::sync::Arc;
 pub struct SimplifyExpr {}
+
+struct Arena<T> {
+    items: Vec<T>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Node(usize);
+
+impl<T> Arena<T> {
+    fn add(&mut self, val: T) -> Node {
+        let idx = self.items.len();
+        self.items.push(val);
+        Node(idx)
+    }
+
+    pub fn new() -> Self {
+        Arena { items: vec![] }
+    }
+
+    pub fn get(&mut self, idx: Node) -> &T {
+        unsafe { self.items.get_unchecked(idx.0) }
+    }
+
+    pub fn get_mut(&mut self, idx: Node) -> &mut T {
+        unsafe { self.items.get_unchecked_mut(idx.0) }
+    }
+
+    pub fn assign(&mut self, idx: Node, val: T) {
+        let x = self.get_mut(idx);
+        *x = val;
+    }
+}
+// Store pointers to values in an arena
+#[derive(Clone)]
+enum AExpr {
+    Alias(Node, Arc<String>),
+    Column(Arc<String>),
+    Literal(ScalarValue),
+    BinaryExpr {
+        left: Node,
+        op: Operator,
+        right: Node,
+    },
+    Not(Node),
+    IsNotNull(Node),
+    IsNull(Node),
+    Cast {
+        expr: Node,
+        data_type: ArrowDataType,
+    },
+    Sort {
+        expr: Node,
+        reverse: bool,
+    },
+    AggMin(Node),
+    AggMax(Node),
+    AggMedian(Node),
+    AggNUnique(Node),
+    AggFirst(Node),
+    AggLast(Node),
+    AggMean(Node),
+    AggList(Node),
+    AggQuantile {
+        expr: Node,
+        quantile: f64,
+    },
+    AggSum(Node),
+    AggGroups(Node),
+    Ternary {
+        predicate: Node,
+        truthy: Node,
+        falsy: Node,
+    },
+    Apply {
+        input: Node,
+        function: Arc<dyn Udf>,
+        output_type: Option<ArrowDataType>,
+    },
+    Shift {
+        input: Node,
+        periods: Node,
+    },
+    Wildcard,
+}
+// converts expression to AExpr, which uses an arena (Vec) for allocation
+fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
+    match expr {
+        Expr::Alias(e, name) => {
+            let v = AExpr::Alias(to_aexpr(*e, arena), name);
+            arena.add(v)
+        }
+        Expr::Literal(value) => {
+            let v = AExpr::Literal(value);
+            arena.add(v)
+        }
+        _ => unimplemented!("TODO"),
+    }
+}
+
+pub struct ExampleBooleanRule {}
+
+impl ExampleBooleanRule {
+    fn optimize_expr(&self, arena: &mut Arena<AExpr>, expr: AExpr) -> Option<AExpr> {
+        match expr {
+            AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right,
+            } if matches!(arena.get(left), AExpr::Literal(ScalarValue::Boolean(true))) => {
+                Some(arena.get(right).clone())
+            }
+            _ => None,
+        }
+    }
+}
 
 // Evaluates x + y if possible
 fn eval_plus(left: &Expr, right: &Expr) -> Option<Expr> {
@@ -266,4 +381,16 @@ impl Optimize for SimplifyExpr {
         opt.optimize_loop(&mut plan);
         Ok(plan)
     }
+}
+
+#[test]
+fn test_expr_to_aexp() {
+    let expr = Expr::Literal(ScalarValue::Int8(0));
+    let mut arena = Arena::new();
+    let aexpr = to_aexpr(expr, &mut arena);
+    assert_eq!(aexpr, Node(0));
+    assert!(matches!(
+        arena.get(aexpr),
+        AExpr::Literal(ScalarValue::Int8(0))
+    ))
 }
