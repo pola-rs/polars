@@ -167,7 +167,7 @@ impl Debug for ListChunked {
 
 impl<T> Debug for ObjectChunked<T>
 where
-    T: 'static + Debug + Clone + Send + Sync,
+    T: 'static + Debug + Clone + Send + Sync + Default,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);

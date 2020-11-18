@@ -1,8 +1,11 @@
 use crate::chunked_array::builder::get_list_builder;
+use crate::chunked_array::object::ObjectChunkedBuilder;
 use crate::prelude::*;
 use crate::utils::Xob;
+use arrow::array::Array;
 use arrow::array::ArrayRef;
 use arrow::compute::filter_primitive_array;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 macro_rules! impl_filter_with_nulls_in_both {
@@ -175,8 +178,11 @@ impl ChunkFilter<ListType> for ListChunked {
     }
 }
 
-impl<T> ChunkFilter<ObjectType<T>> for ObjectChunked<T> {
-    fn filter(&self, _filter: &BooleanChunked) -> Result<ChunkedArray<ObjectType<T>>>
+impl<T> ChunkFilter<ObjectType<T>> for ObjectChunked<T>
+where
+    T: 'static + Debug + Clone + Send + Sync + Default,
+{
+    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<ObjectType<T>>>
     where
         Self: Sized,
     {
@@ -185,26 +191,24 @@ impl<T> ChunkFilter<ObjectType<T>> for ObjectChunked<T> {
                 "cannot filter empty object array".into(),
             ));
         }
-        todo!()
-        // self.chunks[0].as_any().downcast_ref()
-        // let arr = chunks[0];
-        // let mut builder = arr.get_builder(self.name(), self.len());
-        // for (idx, mask) in filter.into_iter().enumerate() {
-        //     if mask.unwrap_or(false) {
-        //         let (chunk_idx, idx) = self.index_to_chunked_index(idx);
-        //         unsafe {
-        //             let arr = chunks.get_unchecked(chunk_idx);
-        //             match arr.is_null(idx) {
-        //                 true => builder.append_null(),
-        //                 false => {
-        //                     let v = arr.value(idx);
-        //                     builder.append_value(v)?
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        // Ok(builder.finish())
+        let chunks = self.downcast_chunks();
+        let mut builder = ObjectChunkedBuilder::<T>::new(self.name(), self.len());
+        for (idx, mask) in filter.into_iter().enumerate() {
+            if mask.unwrap_or(false) {
+                let (chunk_idx, idx) = self.index_to_chunked_index(idx);
+                unsafe {
+                    let arr = chunks.get_unchecked(chunk_idx);
+                    match arr.is_null(idx) {
+                        true => builder.append_null(),
+                        false => {
+                            let v = arr.value(idx);
+                            builder.append_value(v.clone())
+                        }
+                    }
+                }
+            }
+        }
+        Ok(builder.finish())
     }
 }
 
@@ -216,11 +220,7 @@ mod test {
     fn object_filter() {
         let ca = ObjectChunked::new_from_opt_slice("foo", &[Some(1), None, Some(3), None]);
         let mask = BooleanChunked::new_from_slice("", &[true, false, false, true]);
-        let new = ca.filter(&mask);
-        dbg!(new);
-        // assert_eq!(
-        //     Vec::from(s.is_null()),
-        //     &[Some(false), Some(true), Some(false)]
-        // )
+        let new = ca.filter(&mask).unwrap();
+        assert_eq!(Vec::from(new.is_null()), &[Some(false), Some(true)])
     }
 }

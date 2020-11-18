@@ -53,6 +53,7 @@ use arrow::array::{
     TimestampSecondArray,
 };
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
+use std::fmt::Debug;
 use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
@@ -599,13 +600,7 @@ where
                 let v = downcast!(ListArray);
                 AnyType::List(("", v).into())
             }
-            ArrowDataType::Binary => {
-                // somehow pointer cast doesn't work.
-                #[allow(clippy::transmute_ptr_to_ptr)]
-                let arr = unsafe { mem::transmute::<&dyn Array, &dyn ObjectArray>(arr) };
-                let v = arr.value(idx);
-                AnyType::Object(v)
-            }
+            ArrowDataType::Binary => AnyType::Object(&"object"),
             _ => unimplemented!(),
         }
     }
@@ -807,14 +802,14 @@ impl<T> Clone for ChunkedArray<T> {
 }
 
 pub trait Downcast<T> {
-    fn downcast_chunks(self) -> Vec<T>;
+    fn downcast_chunks(&self) -> Vec<&T>;
 }
 
-impl<'a, T> Downcast<&'a PrimitiveArray<T>> for &ChunkedArray<T>
+impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
 where
     T: PolarsPrimitiveType,
 {
-    fn downcast_chunks(self) -> Vec<&'a PrimitiveArray<T>> {
+    fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
         self.chunks
             .iter()
             .map(|arr| {
@@ -825,8 +820,8 @@ where
     }
 }
 
-impl<'a> Downcast<&'a StringArray> for &'a Utf8Chunked {
-    fn downcast_chunks(self) -> Vec<&'a StringArray> {
+impl Downcast<StringArray> for Utf8Chunked {
+    fn downcast_chunks(&self) -> Vec<&StringArray> {
         self.chunks
             .iter()
             .map(|arr| {
@@ -837,13 +832,28 @@ impl<'a> Downcast<&'a StringArray> for &'a Utf8Chunked {
     }
 }
 
-impl<'a> Downcast<&'a ListArray> for &ListChunked {
-    fn downcast_chunks(self) -> Vec<&'a ListArray> {
+impl Downcast<ListArray> for ListChunked {
+    fn downcast_chunks(&self) -> Vec<&ListArray> {
         self.chunks
             .iter()
             .map(|arr| {
                 let arr = &**arr;
                 unsafe { &*(arr as *const dyn Array as *const ListArray) }
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
+impl<T> Downcast<ObjectArray<T>> for ObjectChunked<T>
+where
+    T: 'static + Debug + Clone + Send + Sync + Default,
+{
+    fn downcast_chunks(&self) -> Vec<&ObjectArray<T>> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                let arr = &**arr;
+                unsafe { &*(arr as *const dyn Array as *const ObjectArray<T>) }
             })
             .collect::<Vec<_>>()
     }
