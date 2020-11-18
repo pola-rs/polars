@@ -58,7 +58,7 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
     } else if left_is_number {
         return ArrowDataType::Int64;
     }
-    return ArrowDataType::Utf8;
+    ArrowDataType::Utf8
 }
 
 /// Infer the schema of a CSV file by reading through the first n records of the file,
