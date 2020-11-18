@@ -103,7 +103,6 @@ enum ALogicalPlan {
         df: Arc<Mutex<DataFrame>>,
         schema: Schema,
     },
-    // vertical selection
     Projection {
         expr: Vec<Node>,
         input: Node,
@@ -135,53 +134,112 @@ enum ALogicalPlan {
 }
 // converts expression to AExpr, which uses an arena (Vec) for allocation
 fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
-    match expr {
-        Expr::Alias(e, name) => {
-            let v = AExpr::Alias(to_aexpr(*e, arena), name);
-            arena.add(v)
-        }
-        Expr::Literal(value) => {
-            let v = AExpr::Literal(value);
-            arena.add(v)
-        }
-        Expr::Column(s) => {
-            let v = AExpr::Column(s);
-            arena.add(v)
-        }
+    let v = match expr {
+        Expr::Alias(e, name) => AExpr::Alias(to_aexpr(*e, arena), name),
+        Expr::Literal(value) => AExpr::Literal(value),
+        Expr::Column(s) => AExpr::Column(s),
         Expr::BinaryExpr { left, op, right } => {
             let l = to_aexpr(*left, arena);
             let r = to_aexpr(*right, arena);
-            let v = AExpr::BinaryExpr {
+            AExpr::BinaryExpr {
                 left: l,
                 op,
                 right: r,
-            };
+            }
+        }
+        Expr::Not(e) => AExpr::Not(to_aexpr(*e, arena)),
+        Expr::IsNotNull(e) => AExpr::IsNotNull(to_aexpr(*e, arena)),
+        Expr::IsNull(e) => AExpr::IsNull(to_aexpr(*e, arena)),
 
-            arena.add(v)
-        }
-        Expr::Not(e) => {
-            let v = AExpr::Not(to_aexpr(*e, arena));
-            arena.add(v)
-        }
-        Expr::IsNotNull(e) => {
-            let v = AExpr::IsNotNull(to_aexpr(*e, arena));
-            arena.add(v)
-        }
-        Expr::IsNull(e) => {
-            let v = AExpr::IsNull(to_aexpr(*e, arena));
-            arena.add(v)
-        }
-
+        Expr::Cast { expr, data_type } => AExpr::Cast {
+            expr: to_aexpr(*expr, arena),
+            data_type,
+        },
+        Expr::Sort { expr, reverse } => AExpr::Sort {
+            expr: to_aexpr(*expr, arena),
+            reverse,
+        },
+        Expr::AggMin(expr) => AExpr::AggMin(to_aexpr(*expr, arena)),
+        Expr::AggMax(expr) => AExpr::AggMax(to_aexpr(*expr, arena)),
+        Expr::AggMedian(expr) => AExpr::AggMedian(to_aexpr(*expr, arena)),
+        Expr::AggNUnique(expr) => AExpr::AggNUnique(to_aexpr(*expr, arena)),
+        Expr::AggFirst(expr) => AExpr::AggFirst(to_aexpr(*expr, arena)),
+        Expr::AggLast(expr) => AExpr::AggLast(to_aexpr(*expr, arena)),
+        Expr::AggMean(expr) => AExpr::AggMean(to_aexpr(*expr, arena)),
+        Expr::AggList(expr) => AExpr::AggList(to_aexpr(*expr, arena)),
+        Expr::AggQuantile { expr, quantile } => AExpr::AggQuantile {
+            expr: to_aexpr(*expr, arena),
+            quantile,
+        },
+        // Expr::AggSum(expr) => {}
+        // Expr::AggGroups(expr) => {}
+        // Expr::Ternary {
+        //     predicate,
+        //     truthy,
+        //     falsy,
+        // } => {}
+        // Expr::Apply {
+        //     input,
+        //     function,
+        //     output_type,
+        // } => {}
+        // Expr::Shift { input, periods } => {}
+        Expr::Wildcard => AExpr::Wildcard,
         _ => unimplemented!("TODO"),
-    }
+    };
+    arena.add(v)
 }
 
 fn lp_to_aexpr(
-    _lp: &LogicalPlan,
+    lp: &LogicalPlan,
     _arena: &mut Arena<AExpr>,
-    _lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Node {
-    unimplemented!("TODO")
+    let v= match lp {
+        //LogicalPlan::Selection { input, predicate } => {}
+        CsvScan {
+            path,
+            schema,
+            has_header,
+            delimiter,
+        } => {
+            ALogicalPlan::CsvScan {
+                path: path.clone(),
+                schema: schema.clone(),
+                has_header: *has_header,
+                delimiter: *delimiter,
+            }
+        }
+        // LogicalPlan::DataFrameScan { df, schema } => {}
+        // LogicalPlan::Projection {
+        //     expr,
+        //     input,
+        //     schema,
+        // } => {}
+        // LogicalPlan::DataFrameOp { input, operation } => {}
+        // LogicalPlan::Aggregate {
+        //     input,
+        //     keys,
+        //     aggs,
+        //     schema,
+        // } => {}
+        // LogicalPlan::Join {
+        //     input_left,
+        //     input_right,
+        //     schema,
+        //     how,
+        //     left_on,
+        //     right_on,
+        // } => {}
+        // LogicalPlan::HStack {
+        //     input,
+        //     exprs,
+        //     schema,
+        // } => {}
+        _ => unimplemented!("TODO"),
+    }
+    lp_arena.add(v)
+
 }
 
 // Evaluates x + y if possible
