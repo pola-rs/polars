@@ -46,7 +46,7 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
         return ArrowDataType::Utf8;
     }
     // match regex in a particular order
-    let lower = string.to_lowercase();
+    let lower = string.to_ascii_lowercase();
     if lower == "true" || lower == "false" {
         return ArrowDataType::Boolean;
     }
