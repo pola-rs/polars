@@ -26,9 +26,7 @@ use crossbeam::{
     thread,
 };
 use csv::{ByteRecord, ByteRecordsIntoIter};
-use lazy_static::lazy_static;
 use rayon::prelude::*;
-use regex::{Regex, RegexBuilder};
 use std::collections::HashSet;
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
@@ -37,15 +35,9 @@ use std::sync::Arc;
 /// Is multiplied with batch_size to determine capacity of builders
 const CAPACITY_MULTIPLIER: usize = 512;
 
-lazy_static! {
-    static ref DECIMAL_RE: Regex = Regex::new(r"^-?(\d+\.\d+)$").unwrap();
-    static ref INTEGER_RE: Regex = Regex::new(r"^-?(\d+)$").unwrap();
-    static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^(true)$|^(false)$")
-        .case_insensitive(true)
-        .build()
-        .unwrap();
+fn all_numeric(string: &str) -> bool {
+    string.chars().all(char::is_numeric)
 }
-
 /// Infer the data type of a record
 fn infer_field_schema(string: &str) -> ArrowDataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
@@ -54,15 +46,20 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
         return ArrowDataType::Utf8;
     }
     // match regex in a particular order
-    if BOOLEAN_RE.is_match(string) {
-        ArrowDataType::Boolean
-    } else if DECIMAL_RE.is_match(string) {
-        ArrowDataType::Float64
-    } else if INTEGER_RE.is_match(string) {
-        ArrowDataType::Int64
-    } else {
-        ArrowDataType::Utf8
+    let lower = string.to_lowercase();
+    if lower == "true" || lower == "false" {
+        return ArrowDataType::Boolean;
     }
+    let mut d = string.split('.');
+    let (x, y) = (d.next(), d.next());
+    let left_is_number = x.map_or(false, all_numeric);
+    let right_is_number = y.map_or(false, all_numeric);
+    if left_is_number && right_is_number {
+        return ArrowDataType::Float64;
+    } else if left_is_number {
+        return ArrowDataType::Int64;
+    }
+    return ArrowDataType::Utf8;
 }
 
 /// Infer the schema of a CSV file by reading through the first n records of the file,

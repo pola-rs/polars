@@ -38,7 +38,6 @@ regex = {version = "1.4" }
 anyhow = "1.0"
 ahash = "0.5"
 csv = "1.1"
-lazy_static = "1.4"
 crossbeam = "0.8"
 serde_json = "1.0"
 
