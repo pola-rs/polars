@@ -119,6 +119,10 @@ class TimestampSecond:
     pass
 
 
+class Object:
+    pass
+
+
 # Don't change the order of these!
 dtypes = [
     Int8,
@@ -150,6 +154,7 @@ dtypes = [
     TimestampMicrosecond,
     TimestampMillisecond,
     TimestampSecond,
+    Object,
 ]
 DTYPE_TO_FFINAME = {
     Int8: "i8",
@@ -181,6 +186,7 @@ DTYPE_TO_FFINAME = {
     TimestampMicrosecond: "timestamp_microsecond",
     TimestampMillisecond: "timestamp_millisecond",
     TimestampSecond: "timestamp_second",
+    Object: "object",
 }
 
 

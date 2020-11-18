@@ -143,7 +143,11 @@ pub enum Series {
 
 impl Clone for Series {
     fn clone(&self) -> Self {
-        apply_method_all_arrow_series_and_return!(self, clone, [],)
+        if let Series::Object(ca) = self {
+            Series::Object((*ca).clone())
+        } else {
+            apply_method_all_arrow_series_and_return!(self, clone, [],)
+        }
     }
 }
 
