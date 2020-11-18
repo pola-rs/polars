@@ -32,6 +32,7 @@ pub enum DataType {
     TimestampMicrosecond,
     TimestampMillisecond,
     TimestampSecond,
+    Object,
 }
 
 impl From<&ArrowDataType> for DataType {
@@ -67,6 +68,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => TimestampMicrosecond,
             ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => TimestampMillisecond,
             ArrowDataType::Timestamp(TimeUnit::Second, _) => TimestampSecond,
+            ArrowDataType::Binary => Object,
             dt => panic!(format!("datatype: {:?} not supported", dt)),
         }
     }

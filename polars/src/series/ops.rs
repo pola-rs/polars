@@ -20,6 +20,7 @@ pub trait SeriesOps: Send + Sync + Debug + ZipOuterJoinColumn {
     fn shift(&self, periods: i32, fill_value: &Option<u8>) -> Result<Box<dyn SeriesOps>>;
     fn name(&self) -> &str;
     fn get_any(&self, index: usize) -> AnyType;
+    fn get_as_any(&self, index: usize) -> &dyn Any;
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Box<dyn SeriesOps>>;
     fn reverse(&self) -> Box<dyn SeriesOps>;
     fn null_count(&self) -> usize;
@@ -143,6 +144,10 @@ where
 
     fn get_any(&self, index: usize) -> AnyType<'_> {
         ObjectChunked::get_any(self, index)
+    }
+
+    fn get_as_any(&self, index: usize) -> &dyn Any {
+        ObjectChunked::get_as_any(self, index)
     }
 
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Box<dyn SeriesOps>> {

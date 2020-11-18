@@ -7,6 +7,37 @@ use polars::chunked_array::builder::get_bitmap;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
+#[derive(Clone, Debug)]
+pub struct Object {
+    inner: PyObject,
+}
+
+impl<'a> FromPyObject<'a> for Object {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        Ok(Object {
+            inner: ob.to_object(python),
+        })
+    }
+}
+
+impl ToPyObject for Object {
+    fn to_object(&self, _py: Python) -> PyObject {
+        self.inner.clone()
+    }
+}
+
+impl Default for Object {
+    fn default() -> Self {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        Object {
+            inner: python.None(),
+        }
+    }
+}
+
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
@@ -113,6 +144,22 @@ impl PySeries {
         let mut s = val.0.into_series();
         s.rename(name);
         PySeries::new(s)
+    }
+
+    #[staticmethod]
+    pub fn new_object(name: &str, val: Vec<Object>) -> Self {
+        let s = Series::Object(Box::new(ObjectChunked::<Object>::new_from_vec(name, val)));
+        s.into()
+    }
+
+    pub fn get_object(&self, index: usize) -> Option<PyObject> {
+        if let Series::Object(ca) = &self.series {
+            ca.get_as_any(index)
+                .downcast_ref::<Object>()
+                .map(|obj| obj.inner.clone())
+        } else {
+            None
+        }
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
@@ -326,9 +373,12 @@ impl PySeries {
             Series::Date32(ca) => PyList::new(python, ca),
             Series::Date64(ca) => PyList::new(python, ca),
             Series::Time64Nanosecond(ca) => PyList::new(python, ca),
-            Series::DurationNanosecond(ca) => PyList::new(python, ca),
             Series::Bool(ca) => PyList::new(python, ca),
             Series::Utf8(ca) => PyList::new(python, ca),
+            Series::DurationNanosecond(ca) => PyList::new(python, ca),
+            Series::DurationMicrosecond(ca) => PyList::new(python, ca),
+            Series::DurationMillisecond(ca) => PyList::new(python, ca),
+            Series::DurationSecond(ca) => PyList::new(python, ca),
             _ => todo!(),
         };
         pylist.to_object(python)

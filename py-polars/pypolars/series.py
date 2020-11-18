@@ -107,6 +107,9 @@ class Series:
         if isinstance(values, np.ndarray):
             if not values.data.contiguous:
                 values = np.array(values)
+            if len(values.shape) > 1:
+                self._s = PySeries.new_object(name, values)
+                return
             dtype = values.dtype
             if dtype == np.int64:
                 self._s = PySeries.new_i64(name, values)
@@ -133,7 +136,7 @@ class Series:
             elif dtype == np.uint64:
                 self._s = PySeries.new_u64(name, values)
             else:
-                raise ValueError(f"dtype: {dtype} not known")
+                self._s = PySeries.new_object(name, values)
         # list path
         else:
             dtype = find_first_non_none(values)
@@ -146,7 +149,7 @@ class Series:
             elif isinstance(dtype, bool):
                 self._s = PySeries.new_opt_bool(name, values)
             else:
-                raise ValueError(f"dtype: {dtype} not known")
+                self._s = PySeries.new_object(name, values)
 
     @staticmethod
     def _from_pyseries(s: "PySeries") -> "Series":
