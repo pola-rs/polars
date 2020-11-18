@@ -34,22 +34,22 @@ pub trait SeriesOps: Send + Sync + Debug + ZipOuterJoinColumn {
     fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series;
     fn take(
         &self,
-        indices: &dyn Iterator<Item = usize>,
+        indices: &mut dyn Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Box<dyn SeriesOps>;
     unsafe fn take_unchecked(
         &self,
-        indices: &dyn Iterator<Item = usize>,
+        indices: &mut dyn Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Box<dyn SeriesOps>;
     fn take_opt(
         &self,
-        indices: &dyn Iterator<Item = Option<usize>>,
+        indices: &mut dyn Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Box<dyn SeriesOps>;
     unsafe fn take_opt_unchecked(
         &self,
-        indices: &dyn Iterator<Item = Option<usize>>,
+        indices: &mut dyn Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Box<dyn SeriesOps>;
     fn expand_at_index(&self, index: usize, length: usize) -> Box<dyn SeriesOps>;
@@ -74,6 +74,15 @@ where
 {
     fn as_series_ops(self) -> Box<dyn SeriesOps> {
         Box::new(self)
+    }
+}
+
+impl<T> From<ObjectChunked<T>> for Box<dyn SeriesOps>
+where
+    T: Any + Debug + Clone + Send + Sync + Default,
+{
+    fn from(ca: ObjectChunked<T>) -> Self {
+        Box::new(ca)
     }
 }
 
@@ -176,34 +185,34 @@ where
 
     fn take(
         &self,
-        _indices: &dyn Iterator<Item = usize>,
-        _capacity: Option<usize>,
+        indices: &mut dyn Iterator<Item = usize>,
+        capacity: Option<usize>,
     ) -> Box<dyn SeriesOps> {
-        unimplemented!()
+        ChunkTake::take(self, indices, capacity).into()
     }
 
     unsafe fn take_unchecked(
         &self,
-        _indices: &dyn Iterator<Item = usize>,
-        _capacity: Option<usize>,
+        indices: &mut dyn Iterator<Item = usize>,
+        capacity: Option<usize>,
     ) -> Box<dyn SeriesOps> {
-        unimplemented!()
+        ChunkTake::take_unchecked(self, indices, capacity).into()
     }
 
     fn take_opt(
         &self,
-        _indices: &dyn Iterator<Item = Option<usize>>,
-        _capacity: Option<usize>,
+        indices: &mut dyn Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
     ) -> Box<dyn SeriesOps> {
-        unimplemented!()
+        ChunkTake::take_opt(self, indices, capacity).into()
     }
 
     unsafe fn take_opt_unchecked(
         &self,
-        _indices: &dyn Iterator<Item = Option<usize>>,
-        _capacity: Option<usize>,
+        indices: &mut dyn Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
     ) -> Box<dyn SeriesOps> {
-        unimplemented!()
+        ChunkTake::take_opt_unchecked(self, indices, capacity).into()
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Box<dyn SeriesOps> {
