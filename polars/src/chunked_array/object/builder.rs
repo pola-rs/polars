@@ -60,7 +60,7 @@ where
 
         let len = self.values.len();
 
-        let arr = Arc::new(ObjectArrayTyped {
+        let arr = Arc::new(ObjectArray {
             values: Arc::new(self.values),
             null_bitmap: Arc::new(null_bitmap),
             null_count,
@@ -85,63 +85,7 @@ where
     }
 }
 
-// pub trait AnyObjectBuilder {
-//     fn append_null(&mut self);
-//
-//     fn append_value(&mut self, v: &dyn Any) -> Result<()>;
-//
-//     // trait object cannot take self by value
-//     fn finish(&mut self) -> ObjectChunked<T>;
-// }
-//
-// impl<T> AnyObjectBuilder for ObjectChunkedBuilder<T>
-// where
-//     T: Any + Debug + Clone + Send + Sync + Default,
-// {
-//     fn append_null(&mut self) {
-//         ObjectChunkedBuilder::append_null(self)
-//     }
-//
-//     fn append_value(&mut self, v: &dyn Any) -> Result<()> {
-//         self.append_value_from_any(v)
-//     }
-//
-//     fn finish(&mut self) -> ObjectChunked<T> {
-//         let builder = std::mem::take(self);
-//         ObjectChunkedBuilder::finish(builder)
-//     }
-// }
-
-impl<T>
-    NewChunkedArray<
-        ObjectType<T>, // pub trait AnyObjectBuilder {
-        //     fn append_null(&mut self);
-        //
-        //     fn append_value(&mut self, v: &dyn Any) -> Result<()>;
-        //
-        //     // trait object cannot take self by value
-        //     fn finish(&mut self) -> ObjectChunked<T>;
-        // }
-        //
-        // impl<T> AnyObjectBuilder for ObjectChunkedBuilder<T>
-        // where
-        //     T: Any + Debug + Clone + Send + Sync + Default,
-        // {
-        //     fn append_null(&mut self) {
-        //         ObjectChunkedBuilder::append_null(self)
-        //     }
-        //
-        //     fn append_value(&mut self, v: &dyn Any) -> Result<()> {
-        //         self.append_value_from_any(v)
-        //     }
-        //
-        //     fn finish(&mut self) -> ObjectChunked<T> {
-        //         let builder = std::mem::take(self);
-        //         ObjectChunkedBuilder::finish(builder)
-        //     }
-        // }
-        T,
-    > for ObjectChunked<T>
+impl<T> NewChunkedArray<ObjectType<T>, T> for ObjectChunked<T>
 where
     T: Any + Debug + Clone + Send + Sync + Default,
 {

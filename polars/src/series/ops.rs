@@ -70,7 +70,7 @@ where
 
 impl<T> ObjectChunked<T>
 where
-    T: Any + Debug + Clone + Send + Sync,
+    T: Any + Debug + Clone + Send + Sync + Default,
 {
     fn as_series_ops(self) -> Box<dyn SeriesOps> {
         Box::new(self)
@@ -79,7 +79,7 @@ where
 
 impl<T> SeriesOps for ObjectChunked<T>
 where
-    T: Any + Debug + Clone + Send + Sync,
+    T: 'static + Debug + Clone + Send + Sync + Default,
 {
     fn ref_field(&self) -> &Field {
         ObjectChunked::ref_field(self)

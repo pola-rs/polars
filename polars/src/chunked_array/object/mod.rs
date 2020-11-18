@@ -6,12 +6,12 @@ use arrow::array::{
 use arrow::bitmap::Bitmap;
 use arrow::util::bit_util::count_set_bits_offset;
 use serde_json::Value;
-use std::any::{Any, TypeId};
+use std::any::Any;
 use std::fmt::Debug;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub struct ObjectArrayTyped<T>
+pub struct ObjectArray<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -28,7 +28,16 @@ pub struct ObjectChunkedBuilder<T> {
     values: Vec<T>,
 }
 
-impl<T> ArrayEqual for ObjectArrayTyped<T>
+impl<T> ObjectArray<T>
+where
+    T: Any + Debug + Clone + Send + Sync,
+{
+    pub fn value(&self, index: usize) -> &T {
+        &self.values[self.offset + index]
+    }
+}
+
+impl<T> ArrayEqual for ObjectArray<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -47,7 +56,7 @@ where
     }
 }
 
-impl<T> JsonEqual for ObjectArrayTyped<T>
+impl<T> JsonEqual for ObjectArray<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -56,7 +65,7 @@ where
     }
 }
 
-impl<T> Array for ObjectArrayTyped<T>
+impl<T> Array for ObjectArray<T>
 where
     T: Any + Debug + Clone + Send + Sync,
 {
@@ -132,43 +141,6 @@ where
     fn get_array_memory_size(&self) -> usize {
         unimplemented!()
     }
-}
-
-pub trait ObjectArray: Array {
-    /// For downcasting at runtime.
-    fn as_any(&self) -> &dyn Any;
-
-    fn type_name(&self) -> &'static str;
-
-    fn type_id(&self) -> TypeId;
-
-    fn value(&self, index: usize) -> &dyn Any;
-
-    // fn get_builder(&self, name: &str, capacity: usize) -> Box<dyn AnyObjectBuilder>;
-}
-
-impl<T> ObjectArray for ObjectArrayTyped<T>
-where
-    T: Any + Debug + Clone + Send + Sync + Default,
-{
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn type_name(&self) -> &'static str {
-        std::any::type_name::<T>()
-    }
-
-    fn type_id(&self) -> TypeId {
-        ObjectArray::as_any(self).type_id()
-    }
-
-    fn value(&self, index: usize) -> &dyn Any {
-        &self.values[self.offset + index]
-    }
-    // fn get_builder(&self, name: &str, capacity: usize) -> Box<dyn AnyObjectBuilder> {
-    //     Box::new(ObjectChunkedBuilder::<T>::new(name, capacity))
-    // }
 }
 
 #[cfg(test)]
