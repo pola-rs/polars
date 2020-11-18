@@ -199,8 +199,6 @@ where
     Ok(())
 }
 
-impl<'a, 'b> ApplyLambda<'a, 'b> for ObjectChunked {}
-
 impl<'a, 'b> ApplyLambda<'a, 'b> for ListChunked {
     fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
         // get the pypolars module
