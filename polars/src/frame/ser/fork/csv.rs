@@ -35,8 +35,8 @@ use std::sync::Arc;
 /// Is multiplied with batch_size to determine capacity of builders
 const CAPACITY_MULTIPLIER: usize = 512;
 
-fn all_numeric(string: &str) -> bool {
-    string.chars().all(char::is_numeric)
+fn all_digit(string: &str) -> bool {
+    string.chars().all(|c| c.is_ascii_digit())
 }
 /// Infer the data type of a record
 fn infer_field_schema(string: &str) -> ArrowDataType {
@@ -52,8 +52,8 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
     }
     let mut parts = string.split('.');
     let (left, right) = (parts.next(), parts.next());
-    let left_is_number = left.map_or(false, all_numeric);
-    if left_is_number && right.map_or(false, all_numeric) {
+    let left_is_number = left.map_or(false, all_digit);
+    if left_is_number && right.map_or(false, all_digit) {
         return ArrowDataType::Float64;
     } else if left_is_number {
         return ArrowDataType::Int64;
