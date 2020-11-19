@@ -46,7 +46,7 @@ class DataFrame:
         if isinstance(data, dict):
             for k, v in data.items():
                 columns.append(Series(k, v, nullable=nullable).inner())
-        if isinstance(data, list):
+        elif isinstance(data, list):
             for s in data:
                 if not isinstance(s, Series):
                     raise ValueError("a list should contain Series")

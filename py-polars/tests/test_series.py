@@ -209,3 +209,8 @@ def test_rolling():
     assert a.rolling_min(2) == [None, 1, 2, 2, 1]
     assert a.rolling_max(2) == [None, 2, 3, 3, 2]
     assert a.rolling_sum(2) == [None, 3, 5, 5, 3]
+
+
+def test_object():
+    a = Series("a", [[12], "foo", 9])
+    assert a.dtype == Object
