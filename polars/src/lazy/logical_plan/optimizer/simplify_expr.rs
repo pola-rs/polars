@@ -292,20 +292,44 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
     let expr = _arena.get(node);
 
     match expr {
-        // AExpr::Alias(_, _) => {}
-        // AExpr::Column(_) => {}
-        // AExpr::Literal(_) => {}
-        // AExpr::BinaryExpr { left, op, right } => {}
+        AExpr::Alias(expr, name) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::Alias(Box::new(exp), name.clone())
+        }
+        AExpr::Column(a) => Expr::Column(a.clone()),
+        AExpr::Literal(s) => Expr::Literal(s.clone()),
+        AExpr::BinaryExpr { left, op, right } => {
+            let l = node_to_exp(*left, _arena);
+            let r = node_to_exp(*right, _arena);
+            Expr::BinaryExpr {
+                left: Box::new(l),
+                op: *op,
+                right: Box::new(r),
+            }
+        }
         // AExpr::Not(_) => {}
         // AExpr::IsNotNull(_) => {}
         // AExpr::IsNull(_) => {}
         // AExpr::Cast { expr, data_type } => {}
-        // AExpr::Sort { expr, reverse } => {}
-        // AExpr::AggMin(_) => {}
-        // AExpr::AggMax(_) => {}
+        AExpr::Sort { expr, reverse } => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::Sort {
+                expr: Box::new(exp),
+                reverse: *reverse,
+            }
+        }
+        AExpr::AggMin(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggMin(Box::new(exp))
+        }
+        AExpr::AggMax(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggMax(Box::new(exp))
+        }
+
         AExpr::AggMedian(expr) => {
-            let exp = _node_to_exp(expr, _arena);
-            Expr::AggMedian(Box::new(exp));
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggMedian(Box::new(exp))
         }
         // AExpr::AggNUnique(_) => {}
         // AExpr::AggFirst(_) => {}
