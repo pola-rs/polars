@@ -303,7 +303,10 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
         // AExpr::Sort { expr, reverse } => {}
         // AExpr::AggMin(_) => {}
         // AExpr::AggMax(_) => {}
-        // AExpr::AggMedian(_) => {}
+        AExpr::AggMedian(expr) => {
+            let exp = _node_to_exp(expr, _arena);
+            Expr::AggMedian(Box::new(exp));
+        }
         // AExpr::AggNUnique(_) => {}
         // AExpr::AggFirst(_) => {}
         // AExpr::AggLast(_) => {}
