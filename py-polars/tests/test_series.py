@@ -212,5 +212,8 @@ def test_rolling():
 
 
 def test_object():
-    a = Series("a", [[12], "foo", 9])
+    vals = [[12], "foo", 9]
+    a = Series("a", vals)
     assert a.dtype == Object
+    assert a.to_list() == vals
+    assert a[1] == "foo"

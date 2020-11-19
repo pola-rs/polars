@@ -6,33 +6,43 @@ use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
+use std::any::Any;
 
 #[derive(Clone, Debug)]
-pub struct Object {
+pub struct ObjectValue {
     inner: PyObject,
 }
 
-impl<'a> FromPyObject<'a> for Object {
+impl<'a> FromPyObject<'a> for ObjectValue {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         let gil = Python::acquire_gil();
         let python = gil.python();
-        Ok(Object {
+        Ok(ObjectValue {
             inner: ob.to_object(python),
         })
     }
 }
 
-impl ToPyObject for Object {
+/// # Safety
+///
+/// The caller is responsible for checking that val is Object otherwise UB
+impl From<&dyn Any> for &ObjectValue {
+    fn from(val: &dyn Any) -> Self {
+        unsafe { &*(val as *const dyn Any as *const ObjectValue) }
+    }
+}
+
+impl ToPyObject for ObjectValue {
     fn to_object(&self, _py: Python) -> PyObject {
         self.inner.clone()
     }
 }
 
-impl Default for Object {
+impl Default for ObjectValue {
     fn default() -> Self {
         let gil = Python::acquire_gil();
         let python = gil.python();
-        Object {
+        ObjectValue {
             inner: python.None(),
         }
     }
@@ -147,18 +157,25 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_object(name: &str, val: Vec<Object>) -> Self {
-        let s = Series::Object(Box::new(ObjectChunked::<Object>::new_from_vec(name, val)));
+    pub fn new_object(name: &str, val: Vec<ObjectValue>) -> Self {
+        let s = Series::Object(Box::new(ObjectChunked::<ObjectValue>::new_from_vec(
+            name, val,
+        )));
         s.into()
     }
 
-    pub fn get_object(&self, index: usize) -> Option<PyObject> {
+    pub fn get_object(&self, index: usize) -> PyObject {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
         if let Series::Object(ca) = &self.series {
-            ca.get_as_any(index)
-                .downcast_ref::<Object>()
-                .map(|obj| obj.inner.clone())
+            // we don't use the null bitmap in this context as T::default is pyobject None
+            let any = ca.get_as_any(index);
+            let obj: &ObjectValue = any.into();
+            let gil = Python::acquire_gil();
+            let python = gil.python();
+            obj.to_object(python)
         } else {
-            None
+            python.None()
         }
     }
 
@@ -380,12 +397,11 @@ impl PySeries {
             Series::DurationMillisecond(ca) => PyList::new(python, ca),
             Series::DurationSecond(ca) => PyList::new(python, ca),
             Series::Object(ca) => {
-                let ca = ca.rechunk(Some(&[1])).unwrap();
                 let v = PyList::empty(python);
                 for i in 0..ca.len() {
                     let val = ca
                         .get_as_any(i)
-                        .downcast_ref::<Object>()
+                        .downcast_ref::<ObjectValue>()
                         .map(|obj| obj.inner.clone())
                         .unwrap_or(python.None());
 
