@@ -139,11 +139,19 @@ impl DataFrame {
 
     /// Aggregate all chunks to contiguous memory.
     pub fn agg_chunks(&self) -> Self {
-        let cols = self
-            .columns
-            .par_iter()
-            .map(|s| s.rechunk(Some(&[1])).expect("can always rechunk to single"))
-            .collect();
+        let f = |s: &Series| s.rechunk(Some(&[1])).expect("can always rechunk to single");
+        // breakpoint for parallel aggregation
+        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
+            .unwrap_or_else(|_| "".to_string())
+            .parse()
+            .unwrap_or(15);
+
+        let cols = if self.columns.len() > bp {
+            self.columns.par_iter().map(f).collect()
+        } else {
+            self.columns.iter().map(f).collect()
+        };
+
         DataFrame::new_no_checks(cols)
     }
 

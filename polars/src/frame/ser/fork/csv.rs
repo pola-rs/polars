@@ -437,26 +437,35 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         rows: &[ByteRecord],
     ) -> Result<()> {
-        projection
-            .par_iter()
-            .zip(builders)
-            .map(|(i, builder)| {
-                let field = self.schema.field(*i);
-                match field.data_type() {
-                    ArrowDataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
-                    ArrowDataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
-                    ArrowDataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
-                    ArrowDataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
-                    ArrowDataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
-                    ArrowDataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
-                    ArrowDataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
-                    ArrowDataType::Utf8 => {
-                        add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding)
-                    }
-                    _ => todo!(),
-                }
-            })
-            .collect::<Result<_>>()?;
+        let dispatch = |(i, builder): (&usize, &mut Builder)| {
+            let field = self.schema.field(*i);
+            match field.data_type() {
+                ArrowDataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
+                ArrowDataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
+                ArrowDataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
+                ArrowDataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
+                ArrowDataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
+                ArrowDataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
+                ArrowDataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
+                ArrowDataType::Utf8 => add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding),
+                _ => todo!(),
+            }
+        };
+
+        // TODO! benchmark this
+        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
+            .unwrap_or_else(|_| "".to_string())
+            .parse()
+            .unwrap_or(15);
+        if projection.len() > bp {
+            projection
+                .par_iter()
+                .zip(builders)
+                .map(dispatch)
+                .collect::<Result<_>>()?;
+        } else {
+            projection.iter().zip(builders).try_for_each(dispatch)?;
+        }
 
         Ok(())
     }
@@ -533,7 +542,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         mut record_iter: ByteRecordsIntoIter<R>,
         parsed_dfs: &mut Vec<DataFrame>,
     ) -> Result<()> {
-        let (tx, rx) = bounded(64);
+        let (tx, rx) = bounded(256);
         // used to end rampant thread
         let (tx_end, rx_end) = bounded(1);
 
