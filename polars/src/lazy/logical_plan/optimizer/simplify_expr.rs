@@ -82,7 +82,7 @@ enum AExpr {
     },
     Shift {
         input: Node,
-        periods: Node,
+        periods: i32,
     },
     Wildcard,
 }
@@ -171,32 +171,54 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             expr: to_aexpr(*expr, arena),
             quantile,
         },
-        // Expr::AggSum(expr) => {}
-        // Expr::AggGroups(expr) => {}
-        // Expr::Ternary {
-        //     predicate,
-        //     truthy,
-        //     falsy,
-        // } => {}
-        // Expr::Apply {
-        //     input,
-        //     function,
-        //     output_type,
-        // } => {}
-        // Expr::Shift { input, periods } => {}
+        Expr::AggSum(expr) => AExpr::AggSum(to_aexpr(*expr, arena)),
+        Expr::AggGroups(expr) => AExpr::AggGroups(to_aexpr(*expr, arena)),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            let p = to_aexpr(*predicate, arena);
+            let t = to_aexpr(*truthy, arena);
+            let f = to_aexpr(*falsy, arena);
+            AExpr::Ternary {
+                predicate: p,
+                truthy: t,
+                falsy: f,
+            }
+        }
+        Expr::Apply {
+            input,
+            function,
+            output_type,
+        } => AExpr::Apply {
+            input: to_aexpr(*input, arena),
+            function,
+            output_type,
+        },
+        Expr::Shift { input, periods } => AExpr::Shift {
+            input: to_aexpr(*input, arena),
+            periods,
+        },
         Expr::Wildcard => AExpr::Wildcard,
-        _ => unimplemented!("TODO"),
     };
     arena.add(v)
 }
 
 fn lp_to_aexpr(
-    lp: &LogicalPlan,
+    lp: LogicalPlan,
     _arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Node {
     let v = match lp {
-        //LogicalPlan::Selection { input, predicate } => {}
+        LogicalPlan::Selection { input, predicate } => {
+            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            let p = to_aexpr(predicate, _arena);
+            ALogicalPlan::Selection {
+                input: i,
+                predicate: p,
+            }
+        }
         CsvScan {
             path,
             schema,
@@ -205,22 +227,49 @@ fn lp_to_aexpr(
         } => ALogicalPlan::CsvScan {
             path: path.clone(),
             schema: schema.clone(),
-            has_header: *has_header,
-            delimiter: *delimiter,
+            has_header: has_header,
+            delimiter: delimiter,
         },
-        // LogicalPlan::DataFrameScan { df, schema } => {}
-        // LogicalPlan::Projection {
-        //     expr,
-        //     input,
-        //     schema,
-        // } => {}
-        // LogicalPlan::DataFrameOp { input, operation } => {}
-        // LogicalPlan::Aggregate {
-        //     input,
-        //     keys,
-        //     aggs,
-        //     schema,
-        // } => {}
+        LogicalPlan::DataFrameScan { df, schema } => ALogicalPlan::DataFrameScan {
+            df: df.clone(),
+            schema: schema.clone(),
+        },
+        LogicalPlan::Projection {
+            expr,
+            input,
+            schema,
+        } => {
+            let exp = expr.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
+            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            ALogicalPlan::Projection {
+                expr: exp,
+                input: i,
+                schema: schema.clone(),
+            }
+        }
+        LogicalPlan::DataFrameOp { input, operation } => {
+            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            ALogicalPlan::DataFrameOp {
+                input: i,
+                operation: operation,
+            }
+        }
+        LogicalPlan::Aggregate {
+            input,
+            keys,
+            aggs,
+            schema,
+        } => {
+            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            let aggs_new = aggs.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
+
+            ALogicalPlan::Aggregate {
+                input: i,
+                keys: keys.clone(),
+                aggs: aggs_new,
+                schema: schema.clone(),
+            }
+        }
         // LogicalPlan::Join {
         //     input_left,
         //     input_right,
@@ -237,6 +286,106 @@ fn lp_to_aexpr(
         _ => unimplemented!("TODO"),
     };
     lp_arena.add(v)
+}
+
+fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
+    let expr = _arena.get(node);
+
+    match expr {
+        // AExpr::Alias(_, _) => {}
+        // AExpr::Column(_) => {}
+        // AExpr::Literal(_) => {}
+        // AExpr::BinaryExpr { left, op, right } => {}
+        // AExpr::Not(_) => {}
+        // AExpr::IsNotNull(_) => {}
+        // AExpr::IsNull(_) => {}
+        // AExpr::Cast { expr, data_type } => {}
+        // AExpr::Sort { expr, reverse } => {}
+        // AExpr::AggMin(_) => {}
+        // AExpr::AggMax(_) => {}
+        // AExpr::AggMedian(_) => {}
+        // AExpr::AggNUnique(_) => {}
+        // AExpr::AggFirst(_) => {}
+        // AExpr::AggLast(_) => {}
+        // AExpr::AggMean(_) => {}
+        // AExpr::AggList(_) => {}
+        // AExpr::AggQuantile { expr, quantile } => {}
+        // AExpr::AggSum(_) => {}
+        // AExpr::AggGroups(_) => {}
+        // AExpr::Ternary {
+        //     predicate,
+        //     truthy,
+        //     falsy,
+        // } => {}
+        // AExpr::Apply {
+        //     input,
+        //     function,
+        //     output_type,
+        // } => {}
+        // AExpr::Shift { input, periods } => {}
+        AExpr::Wildcard => Expr::Wildcard,
+        _ => unimplemented!(""),
+    }
+}
+
+fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>) -> LogicalPlan {
+    let lp = lp_arena.get(node);
+
+    match lp {
+        ALogicalPlan::Selection { input, predicate } => {
+            let lp = node_to_lp(*input, _arena, lp_arena);
+            let p = node_to_exp(*predicate, _arena);
+            LogicalPlan::Selection {
+                input: Box::new(lp),
+                predicate: p,
+            }
+        }
+        // ALogicalPlan::CsvScan {
+        //     path,
+        //     schema,
+        //     has_header,
+        //     delimiter,
+        // } => {}
+        ALogicalPlan::DataFrameScan { df, schema } => LogicalPlan::DataFrameScan {
+            df: df.clone(),
+            schema: schema.clone(),
+        },
+        ALogicalPlan::Projection {
+            expr,
+            input,
+            schema,
+        } => {
+            let exprs = expr.iter().map(|x| node_to_exp(*x, _arena)).collect();
+            let i = node_to_lp(*input, _arena, lp_arena);
+
+            LogicalPlan::Projection {
+                expr: exprs,
+                input: Box::new(i),
+                schema: schema.clone(),
+            }
+        }
+        // ALogicalPlan::DataFrameOp { input, operation } => {}
+        // ALogicalPlan::Aggregate {
+        //     input,
+        //     keys,
+        //     aggs,
+        //     schema,
+        // } => {}
+        // ALogicalPlan::Join {
+        //     input_left,
+        //     input_right,
+        //     schema,
+        //     how,
+        //     left_on,
+        //     right_on,
+        // } => {}
+        // ALogicalPlan::HStack {
+        //     input,
+        //     exprs,
+        //     schema,
+        // } => {}
+        _ => unimplemented!(""),
+    }
 }
 
 // Evaluates x + y if possible
@@ -371,7 +520,7 @@ impl Rule for SimplifyBooleanRule {
 pub struct SimplifyOptimizer {}
 
 impl SimplifyOptimizer {
-    fn optimize_loop(&self, logical_plan: &mut LogicalPlan) {
+    fn optimize_loop(&self, logical_plan: LogicalPlan) -> LogicalPlan {
         let rules: &[Box<dyn Rule>] = &[Box::new(SimplifyBooleanRule {})];
 
         let mut changed = true;
@@ -518,15 +667,15 @@ impl SimplifyOptimizer {
                 }
             }
         }
+
+        node_to_lp(lp_top, &expr_arena, &lp_arena)
     }
 }
 
 impl Optimize for SimplifyExpr {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
         let opt = SimplifyOptimizer {};
-        let mut plan = logical_plan;
-        opt.optimize_loop(&mut plan);
-        Ok(plan)
+        Ok(opt.optimize_loop(logical_plan))
     }
 }
 
