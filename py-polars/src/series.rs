@@ -379,6 +379,20 @@ impl PySeries {
             Series::DurationMicrosecond(ca) => PyList::new(python, ca),
             Series::DurationMillisecond(ca) => PyList::new(python, ca),
             Series::DurationSecond(ca) => PyList::new(python, ca),
+            Series::Object(ca) => {
+                let ca = ca.rechunk(Some(&[1])).unwrap();
+                let v = PyList::empty(python);
+                for i in 0..ca.len() {
+                    let val = ca
+                        .get_as_any(i)
+                        .downcast_ref::<Object>()
+                        .map(|obj| obj.inner.clone())
+                        .unwrap_or(python.None());
+
+                    v.append(val).unwrap();
+                }
+                v
+            }
             _ => todo!(),
         };
         pylist.to_object(python)
@@ -463,6 +477,7 @@ impl PySeries {
             }
             Series::Utf8(_) => self.to_list(),
             Series::List(_) => self.to_list(),
+            Series::Object(_) => self.to_list(),
             _ => todo!(),
         }
     }
