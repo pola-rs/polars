@@ -3,6 +3,30 @@ use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::array::{ArrayRef, PrimitiveArray, StringArray};
 
+macro_rules! apply {
+    ($self:expr, $f:expr) => {{
+        if $self.null_count() == 0 {
+            $self.into_no_null_iter().map($f).collect()
+        } else {
+            $self.into_iter().map(|opt_v| opt_v.map($f)).collect()
+        }
+    }};
+}
+
+macro_rules! apply_enumerate {
+    ($self:expr, $f:expr) => {{
+        if $self.null_count() == 0 {
+            $self.into_no_null_iter().enumerate().map($f).collect()
+        } else {
+            $self
+                .into_iter()
+                .enumerate()
+                .map(|(idx, opt_v)| opt_v.map(|v| $f((idx, v))))
+                .collect()
+        }
+    }};
+}
+
 impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -40,6 +64,28 @@ where
             ca
         }
     }
+
+    fn apply_with_idx<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, T::Native)) -> T::Native + Copy,
+    {
+        if self.null_count() == 0 {
+            let ca: Xob<_> = self.into_no_null_iter().enumerate().map(f).collect();
+            ca.into_inner()
+        } else {
+            self.into_iter()
+                .enumerate()
+                .map(|(idx, opt_v)| opt_v.map(|v| f((idx, v))))
+                .collect()
+        }
+    }
+
+    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, Option<T::Native>)) -> Option<T::Native> + Copy,
+    {
+        self.into_iter().enumerate().map(f).collect()
+    }
 }
 
 impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
@@ -47,24 +93,42 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     where
         F: Fn(bool) -> bool + Copy,
     {
-        if self.null_count() == 0 {
-            self.into_no_null_iter().map(f).collect()
-        } else {
-            self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
-        }
+        apply!(self, f)
+    }
+    fn apply_with_idx<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, bool)) -> bool + Copy,
+    {
+        apply_enumerate!(self, f)
+    }
+
+    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, Option<bool>)) -> Option<bool> + Copy,
+    {
+        self.into_iter().enumerate().map(f).collect()
     }
 }
 
 impl<'a> ChunkApply<'a, &'a str, String> for Utf8Chunked {
     fn apply<F>(&'a self, f: F) -> Self
     where
-        F: Fn(&'a str) -> String,
+        F: Fn(&'a str) -> String + Copy,
     {
-        if self.null_count() == 0 {
-            self.into_no_null_iter().map(f).collect()
-        } else {
-            self.into_iter().map(|opt_v| opt_v.map(|v| f(v))).collect()
-        }
+        apply!(self, f)
+    }
+    fn apply_with_idx<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, &'a str)) -> String + Copy,
+    {
+        apply_enumerate!(self, f)
+    }
+
+    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, Option<&'a str>)) -> Option<String> + Copy,
+    {
+        self.into_iter().enumerate().map(f).collect()
     }
 }
 
