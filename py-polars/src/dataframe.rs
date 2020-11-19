@@ -52,6 +52,7 @@ impl PyDataFrame {
         rechunk: bool,
         columns: Option<Vec<String>>,
         encoding: &str,
+        one_thread_opt: Option<bool>,
     ) -> PyResult<Self> {
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
@@ -76,6 +77,7 @@ impl PyDataFrame {
                 Box::new(f)
             }
         };
+        let one_thread = one_thread_opt.unwrap_or(one_thread);
 
         let df = CsvReader::new(file)
             .infer_schema(Some(infer_schema_length))

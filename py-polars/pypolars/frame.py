@@ -89,6 +89,7 @@ class DataFrame:
         columns: "Optional[List[str]]" = None,
         rechunk: bool = True,
         encoding: str = "utf8",
+        one_thread: bool = True,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a csv file.
@@ -121,6 +122,8 @@ class DataFrame:
         encoding
             - "utf8"
             _ "utf8-lossy"
+        one_thread
+            Use a single thread for the csv parsing.
 
         Returns
         -------
@@ -140,6 +143,7 @@ class DataFrame:
             rechunk,
             columns,
             encoding,
+            one_thread,
         )
         return self
 

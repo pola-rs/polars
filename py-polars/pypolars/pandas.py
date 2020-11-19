@@ -21,6 +21,7 @@ def read_csv(
     columns: Optional[List[str]] = None,
     rechunk: bool = True,
     encoding: str = "utf8",
+    one_thread: bool = True,
 ) -> "DataFrame":
     return DataFrame.read_csv(
         file=file,
@@ -35,4 +36,5 @@ def read_csv(
         columns=columns,
         rechunk=rechunk,
         encoding=encoding,
+        one_thread=one_thread,
     )

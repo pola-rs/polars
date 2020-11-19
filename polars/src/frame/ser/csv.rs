@@ -275,7 +275,7 @@ where
             schema: None,
             columns: None,
             encoding: CsvEncoding::Utf8,
-            one_thread: false,
+            one_thread: true,
         }
     }
 
