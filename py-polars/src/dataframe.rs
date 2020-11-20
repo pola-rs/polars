@@ -502,7 +502,7 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let df = self
             .df
-            .drop_duplicates(maintain_order, subset.as_ref())
+            .drop_duplicates(maintain_order, subset)
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }

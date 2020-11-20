@@ -13,6 +13,16 @@ fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
     HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new())
 }
 
+/// Don't overwrite predicates but combine them.
+fn insert_and_combine_predicate(
+    predicates_map: &mut HashMap<Arc<String>, Expr, RandomState>,
+    name: Arc<String>,
+    predicate: Expr,
+) {
+    let existing_predicate = predicates_map.entry(name).or_insert_with(|| lit(true));
+    *existing_predicate = existing_predicate.clone().and(predicate)
+}
+
 pub struct PredicatePushDown {}
 
 fn combine_predicates<'a, I>(iter: I) -> Expr
@@ -73,10 +83,17 @@ impl PredicatePushDown {
         match logical_plan {
             Selection { predicate, input } => {
                 match expr_to_root_column(&predicate) {
-                    Ok(name) => {
-                        acc_predicates.insert(name, predicate);
+                    Ok(name) => insert_and_combine_predicate(&mut acc_predicates, name, predicate),
+                    Err(_) => {
+                        if let Expr::BinaryExpr { left, right, .. } = &predicate {
+                            let left_name = expr_to_root_column(&*left)?;
+                            let right_name = expr_to_root_column(&*right)?;
+                            let name = Arc::new(format!("{}-binary-{}", left_name, right_name));
+                            insert_and_combine_predicate(&mut acc_predicates, name, predicate);
+                        } else {
+                            unimplemented!()
+                        }
                     }
-                    Err(_) => panic!("implement logic for binary expr with 2 root columns"),
                 }
                 self.push_down(*input, acc_predicates)
             }
@@ -101,7 +118,11 @@ impl PredicatePushDown {
                                 let new_name = expr_to_root_column(e).unwrap();
                                 let new_predicate =
                                     rename_expr_root_name(&predicate, new_name.clone()).unwrap();
-                                acc_predicates.insert(new_name, new_predicate);
+                                insert_and_combine_predicate(
+                                    &mut acc_predicates,
+                                    new_name,
+                                    new_predicate,
+                                );
                             }
                         }
                     }
@@ -172,12 +193,12 @@ impl PredicatePushDown {
                     if check_down_node(&predicate, schema_left) {
                         let name =
                             Arc::new(predicate.to_field(schema_left).unwrap().name().clone());
-                        pushdown_left.insert(name, predicate.clone());
+                        insert_and_combine_predicate(&mut pushdown_left, name, predicate.clone());
                     }
                     if check_down_node(&predicate, schema_right) {
                         let name =
                             Arc::new(predicate.to_field(schema_right).unwrap().name().clone());
-                        pushdown_right.insert(name, predicate.clone());
+                        insert_and_combine_predicate(&mut pushdown_right, name, predicate.clone());
                     } else {
                         local_predicates.push(predicate.clone())
                     }

@@ -312,7 +312,7 @@ class DataFrame:
                 else:
                     return wrap_df(self._df.take(item))
             dtype = item.dtype
-            if dtype == Bool:
+            if dtype == Boolean:
                 return wrap_df(self._df.filter(item.inner()))
             if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))

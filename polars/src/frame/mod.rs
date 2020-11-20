@@ -1376,12 +1376,13 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    pub fn drop_duplicates<'a, S, J>(&self, maintain_order: bool, subset: Option<S>) -> Result<Self>
-    where
-        S: Selection<'a, J>,
-    {
-        let names = match subset {
-            Some(s) => s.to_selection_vec(),
+    pub fn drop_duplicates(
+        &self,
+        maintain_order: bool,
+        subset: Option<Vec<String>>,
+    ) -> Result<Self> {
+        let names = match &subset {
+            Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
         };
         let gb = self.groupby(names)?;
@@ -1535,7 +1536,7 @@ mod test {
         .unwrap();
         dbg!(&df);
         let df = df
-            .drop_duplicates(true)
+            .drop_duplicates(true, None)
             .unwrap()
             .sort("flt", false)
             .unwrap();

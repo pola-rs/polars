@@ -43,7 +43,7 @@ class Float64:
     pass
 
 
-class Bool:
+class Boolean:
     pass
 
 
@@ -135,7 +135,7 @@ dtypes = [
     UInt64,
     Float32,
     Float64,
-    Bool,
+    Boolean,
     Utf8,
     List,
     Date32,
@@ -167,7 +167,7 @@ DTYPE_TO_FFINAME = {
     UInt64: "u64",
     Float32: "f32",
     Float64: "f64",
-    Bool: "bool",
+    Boolean: "bool",
     Utf8: "str",
     List: "list",
     Date32: "date32",
