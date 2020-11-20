@@ -10,6 +10,8 @@ struct Arena<T> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Node(usize);
 
+// Simple Arena
+// Allocates memory and stores item in a Vec. Only deallocates when being dropped itself.
 impl<T> Arena<T> {
     fn add(&mut self, val: T) -> Node {
         let idx = self.items.len();
@@ -294,12 +296,19 @@ fn lp_to_aexpr(
                 right_on: r_on,
             }
         }
-        // LogicalPlan::HStack {
-        //     input,
-        //     exprs,
-        //     schema,
-        // } => {}
-        _ => unimplemented!("TODO"),
+        LogicalPlan::HStack {
+            input,
+            exprs,
+            schema,
+        } => {
+            let exp = exprs.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
+            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            ALogicalPlan::HStack {
+                input: i,
+                exprs: exp,
+                schema: schema.clone(),
+            }
+        }
     };
     lp_arena.add(v)
 }
@@ -382,7 +391,6 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
             let exp = node_to_exp(*expr, _arena);
             Expr::AggList(Box::new(exp))
         }
-
         AExpr::AggQuantile { expr, quantile } => {
             let exp = node_to_exp(*expr, _arena);
             Expr::AggQuantile {
@@ -420,14 +428,20 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
                 falsy: Box::new(f),
             }
         }
-        // AExpr::Apply {
-        //     input,
-        //     function,
-        //     output_type,
-        // } => {}
-        //
+        AExpr::Apply {
+            input,
+            function,
+            output_type,
+        } => {
+            let i = node_to_exp(*input, _arena);
+            Expr::Apply {
+                input: Box::new(i),
+                function: function.clone(),
+                output_type: output_type.clone(),
+            }
+        }
+
         AExpr::Wildcard => Expr::Wildcard,
-        _ => unimplemented!(""),
     }
 }
 
@@ -514,11 +528,20 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
                 right_on: r_on,
             }
         }
-        // ALogicalPlan::HStack {
-        //     input,
-        //     exprs,
-        //     schema,
-        // } => {}
+        ALogicalPlan::HStack {
+            input,
+            exprs,
+            schema,
+        } => {
+            let i = node_to_lp(*input, _arena, lp_arena);
+            let e = exprs.iter().map(|x| node_to_exp(*x, _arena)).collect();
+
+            LogicalPlan::HStack {
+                input: Box::new(i),
+                exprs: e,
+                schema: schema.clone(),
+            }
+        }
         _ => unimplemented!(""),
     }
 }
