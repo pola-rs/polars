@@ -182,9 +182,6 @@ def test_apply():
     b = a.apply(lambda x: len(x))
     assert b == [3, 3, None]
 
-    with pytest.raises(TypeError):
-        a.apply(lambda x: len(x), sniff_dtype=False)
-
 
 def test_shift():
     a = Series("a", [1, 2, 3])

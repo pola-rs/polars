@@ -64,7 +64,7 @@ macro_rules! impl_lambda_with_primitive_type {
 
                 match out.extract() {
                     Ok(v) => builder.append_value(v),
-                    Err(_) => builder.append_null()
+                    Err(_) => builder.append_null(),
                 }
             }
             builder.finish()
@@ -78,7 +78,7 @@ macro_rules! impl_lambda_with_primitive_type {
 
                     match out.extract() {
                         Ok(v) => builder.append_value(v),
-                        Err(_) => builder.append_null()
+                        Err(_) => builder.append_null(),
                     }
                 } else {
                     builder.append_null()
@@ -127,7 +127,7 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
 
                 match out.extract::<&str>() {
                     Ok(s) => builder.append_value(s),
-                    Err(_) => builder.append_null()
+                    Err(_) => builder.append_null(),
                 }
             }
             builder.finish()
@@ -141,7 +141,7 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
 
                     match out.extract::<&str>() {
                         Ok(s) => builder.append_value(s),
-                        Err(_) => builder.append_null()
+                        Err(_) => builder.append_null(),
                     }
                 } else {
                     builder.append_null()

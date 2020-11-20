@@ -236,6 +236,9 @@ impl SimplifyOptimizer {
                         AggGroups(expr) => {
                             exprs.push(expr);
                         }
+                        AggCount(expr) => {
+                            exprs.push(expr);
+                        }
                         Shift { input, .. } => {
                             exprs.push(input);
                         }

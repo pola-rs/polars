@@ -1,3 +1,4 @@
+use crate::frame::group_by::GroupByMethod;
 use crate::lazy::physical_plan::executors::{JoinExec, StackExec};
 use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
@@ -117,39 +118,39 @@ impl DefaultPlanner {
             }
             Expr::AggMin(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggMinExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Min)))
             }
             Expr::AggMax(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggMaxExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Max)))
             }
             Expr::AggSum(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggSumExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Sum)))
             }
             Expr::AggMean(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggMeanExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Mean)))
             }
             Expr::AggMedian(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggMedianExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Median)))
             }
             Expr::AggFirst(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggFirstExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::First)))
             }
             Expr::AggLast(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggLastExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Last)))
             }
             Expr::AggList(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggListExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::List)))
             }
             Expr::AggNUnique(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggNUniqueExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::NUnique)))
             }
             Expr::AggQuantile { expr, quantile } => {
                 let phys_expr = self.create_physical_expr(*expr)?;
@@ -157,7 +158,11 @@ impl DefaultPlanner {
             }
             Expr::AggGroups(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggGroupsExpr::new(phys_expr)))
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Groups)))
+            }
+            Expr::AggCount(expr) => {
+                let phys_expr = self.create_physical_expr(*expr)?;
+                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Count)))
             }
             Expr::Cast { expr, data_type } => {
                 let phys_expr = self.create_physical_expr(*expr)?;
