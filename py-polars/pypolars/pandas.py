@@ -23,6 +23,44 @@ def read_csv(
     encoding: str = "utf8",
     one_thread: bool = True,
 ) -> "DataFrame":
+    """
+    Read into a DataFrame from a csv file.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file like object.
+    infer_schema_length
+        Maximum number of lines to read to infer schema.
+    batch_size
+        Number of lines to read into the buffer at once. Modify this to change performance.
+    has_headers
+        If the CSV file has headers or not.
+    ignore_errors
+        Try to keep reading lines if some lines yield errors.
+    stop_after_n_rows
+        After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
+        on the batch size.
+    skip_rows
+        Start reading after `skip_rows`.
+    projection
+        Indexes of columns to select
+    sep
+        Delimiter/ value seperator
+    columns
+        Columns to project/ select
+    rechunk
+        Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
+    encoding
+        - "utf8"
+        _ "utf8-lossy"
+    one_thread
+        Use a single thread for the csv parsing. Set this to False to try multi-threaded parsing.
+
+    Returns
+    -------
+    DataFrame
+    """
     return DataFrame.read_csv(
         file=file,
         infer_schema_length=infer_schema_length,
