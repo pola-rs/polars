@@ -194,7 +194,21 @@ class LazyFrame:
         return wrap_ldf(self._ldf.quantile(quantile))
 
     def explode(self, column: str) -> "LazyFrame":
+        """
+        Explode lists to long format
+        """
         return wrap_ldf(self._ldf.explode(column))
+
+    def drop_duplicates(
+        self, maintain_order: bool, subset: "Optional[List[str]]" = None
+    ) -> "LazyFrame":
+        """
+        Drop duplicate rows from this DataFrame.
+        Note that this fails if there is a column of type `List` in the DataFrame.
+        """
+        if subset is not None and not isinstance(subset, list):
+            subset = [subset]
+        return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
 
 
 def wrap_expr(pyexpr: "PyExpr") -> "Expr":
@@ -342,6 +356,12 @@ class Expr:
 
     def median(self) -> "Expr":
         return wrap_expr(self._pyexpr.mean())
+
+    def is_unique(self) -> "Expr":
+        return wrap_expr(self._pyexpr.is_unique())
+
+    def is_duplicated(self) -> "Expr":
+        return wrap_expr(self._pyexpr.is_duplicated())
 
     def quantile(self, quantile: float) -> "Expr":
         return wrap_expr(self._pyexpr.quantile(quantile))

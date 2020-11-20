@@ -142,6 +142,10 @@ impl Executor for DataFrameOpsExec {
             DataFrameOperation::Median => Ok(df.median()),
             DataFrameOperation::Quantile(quantile) => df.quantile(*quantile),
             DataFrameOperation::Explode(column) => df.explode(column),
+            DataFrameOperation::DropDuplicates {
+                maintain_order,
+                subset,
+            } => df.drop_duplicates(*maintain_order, subset.as_ref()),
         }
     }
 }

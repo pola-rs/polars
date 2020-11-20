@@ -172,6 +172,12 @@ impl PyExpr {
     pub fn median(&self) -> PyExpr {
         self.clone().inner.median().into()
     }
+    pub fn is_unique(&self) -> PyExpr {
+        self.clone().inner.is_unique().into()
+    }
+    pub fn is_duplicated(&self) -> PyExpr {
+        self.clone().inner.is_duplicated().into()
+    }
     pub fn quantile(&self, quantile: f64) -> PyExpr {
         self.clone().inner.quantile(quantile).into()
     }

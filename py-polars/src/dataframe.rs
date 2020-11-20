@@ -495,10 +495,14 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn drop_duplicates(&self, maintain_order: bool) -> PyResult<Self> {
+    pub fn drop_duplicates(
+        &self,
+        maintain_order: bool,
+        subset: Option<Vec<String>>,
+    ) -> PyResult<Self> {
         let df = self
             .df
-            .drop_duplicates(maintain_order)
+            .drop_duplicates(maintain_order, subset.as_ref())
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }

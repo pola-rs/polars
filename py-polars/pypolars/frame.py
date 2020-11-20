@@ -784,12 +784,16 @@ class DataFrame:
         """
         return wrap_df(self._df.to_dummies())
 
-    def drop_duplicates(self, maintain_order=True) -> "DataFrame":
+    def drop_duplicates(
+        self, maintain_order=True, subset: "Optional[List[str]]" = None
+    ) -> "DataFrame":
         """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
-        return wrap_df(self._df.drop_duplicates(maintain_order))
+        if subset is not None and not isinstance(subset, list):
+            subset = [subset]
+        return wrap_df(self._df.drop_duplicates(maintain_order, subset))
 
     def _rechunk(self) -> "DataFrame":
         return wrap_df(self._df.rechunk())
