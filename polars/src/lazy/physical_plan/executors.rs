@@ -145,7 +145,7 @@ impl Executor for DataFrameOpsExec {
             DataFrameOperation::DropDuplicates {
                 maintain_order,
                 subset,
-            } => df.drop_duplicates(*maintain_order, subset.as_ref()),
+            } => df.drop_duplicates(*maintain_order, subset.clone()),
         }
     }
 }
