@@ -307,10 +307,25 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
                 right: Box::new(r),
             }
         }
-        // AExpr::Not(_) => {}
-        // AExpr::IsNotNull(_) => {}
-        // AExpr::IsNull(_) => {}
-        // AExpr::Cast { expr, data_type } => {}
+        AExpr::Not(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::Not(Box::new(exp))
+        }
+        AExpr::IsNotNull(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::IsNotNull(Box::new(exp))
+        }
+        AExpr::IsNull(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::IsNull(Box::new(exp))
+        }
+        AExpr::Cast { expr, data_type } => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::Cast {
+                expr: Box::new(exp),
+                data_type: data_type.clone(),
+            }
+        }
         AExpr::Sort { expr, reverse } => {
             let exp = node_to_exp(*expr, _arena);
             Expr::Sort {
@@ -331,25 +346,70 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
             let exp = node_to_exp(*expr, _arena);
             Expr::AggMedian(Box::new(exp))
         }
-        // AExpr::AggNUnique(_) => {}
-        // AExpr::AggFirst(_) => {}
-        // AExpr::AggLast(_) => {}
-        // AExpr::AggMean(_) => {}
-        // AExpr::AggList(_) => {}
-        // AExpr::AggQuantile { expr, quantile } => {}
-        // AExpr::AggSum(_) => {}
-        // AExpr::AggGroups(_) => {}
-        // AExpr::Ternary {
-        //     predicate,
-        //     truthy,
-        //     falsy,
-        // } => {}
+        AExpr::AggNUnique(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggNUnique(Box::new(exp))
+        }
+        AExpr::AggFirst(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggFirst(Box::new(exp))
+        }
+        AExpr::AggLast(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggLast(Box::new(exp))
+        }
+        AExpr::AggMean(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggMean(Box::new(exp))
+        }
+        AExpr::AggList(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggList(Box::new(exp))
+        }
+
+        AExpr::AggQuantile { expr, quantile } => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggQuantile {
+                expr: Box::new(exp),
+                quantile: *quantile,
+            }
+        }
+        AExpr::AggSum(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggSum(Box::new(exp))
+        }
+        AExpr::AggGroups(expr) => {
+            let exp = node_to_exp(*expr, _arena);
+            Expr::AggGroups(Box::new(exp))
+        }
+        AExpr::Shift { input, periods } => {
+            let e = node_to_exp(*input, _arena);
+            Expr::Shift {
+                input: Box::new(e),
+                periods: *periods,
+            }
+        }
+        AExpr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            let p = node_to_exp(*predicate, _arena);
+            let t = node_to_exp(*truthy, _arena);
+            let f = node_to_exp(*falsy, _arena);
+
+            Expr::Ternary {
+                predicate: Box::new(p),
+                truthy: Box::new(t),
+                falsy: Box::new(f),
+            }
+        }
         // AExpr::Apply {
         //     input,
         //     function,
         //     output_type,
         // } => {}
-        // AExpr::Shift { input, periods } => {}
+        //
         AExpr::Wildcard => Expr::Wildcard,
         _ => unimplemented!(""),
     }
@@ -391,21 +451,43 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
                 schema: schema.clone(),
             }
         }
-        // ALogicalPlan::DataFrameOp { input, operation } => {}
+        ALogicalPlan::DataFrameOp { input, operation } => {
+            let lp = node_to_lp(*input, _arena, lp_arena);
+
+            LogicalPlan::DataFrameOp {
+                input: Box::new(lp),
+                operation: operation.clone(),
+            }
+        }
         // ALogicalPlan::Aggregate {
         //     input,
         //     keys,
         //     aggs,
         //     schema,
         // } => {}
-        // ALogicalPlan::Join {
-        //     input_left,
-        //     input_right,
-        //     schema,
-        //     how,
-        //     left_on,
-        //     right_on,
-        // } => {}
+        ALogicalPlan::Join {
+            input_left,
+            input_right,
+            schema,
+            how,
+            left_on,
+            right_on,
+        } => {
+            let i_l = node_to_lp(*input_left, _arena, lp_arena);
+            let i_r = node_to_lp(*input_right, _arena, lp_arena);
+
+            let l_on = node_to_exp(*left_on, _arena);
+            let r_on = node_to_exp(*right_on, _arena);
+
+            LogicalPlan::Join {
+                input_left: Box::new(i_l),
+                input_right: Box::new(i_r),
+                schema: schema.clone(),
+                how: how.clone(),
+                left_on: l_on,
+                right_on: r_on,
+            }
+        }
         // ALogicalPlan::HStack {
         //     input,
         //     exprs,
@@ -416,37 +498,37 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
 }
 
 // Evaluates x + y if possible
-fn eval_plus(left: &Expr, right: &Expr) -> Option<Expr> {
+fn eval_plus(left: &AExpr, right: &AExpr) -> Option<AExpr> {
     match (left, right) {
-        (Expr::Literal(ScalarValue::Float32(x)), Expr::Literal(ScalarValue::Float32(y))) => {
-            Some(Expr::Literal(ScalarValue::Float32(x + y)))
+        (AExpr::Literal(ScalarValue::Float32(x)), AExpr::Literal(ScalarValue::Float32(y))) => {
+            Some(AExpr::Literal(ScalarValue::Float32(x + y)))
         }
-        (Expr::Literal(ScalarValue::Float64(x)), Expr::Literal(ScalarValue::Float64(y))) => {
-            Some(Expr::Literal(ScalarValue::Float64(x + y)))
+        (AExpr::Literal(ScalarValue::Float64(x)), AExpr::Literal(ScalarValue::Float64(y))) => {
+            Some(AExpr::Literal(ScalarValue::Float64(x + y)))
         }
-        (Expr::Literal(ScalarValue::Int8(x)), Expr::Literal(ScalarValue::Int8(y))) => {
-            Some(Expr::Literal(ScalarValue::Int8(x + y)))
+        (AExpr::Literal(ScalarValue::Int8(x)), AExpr::Literal(ScalarValue::Int8(y))) => {
+            Some(AExpr::Literal(ScalarValue::Int8(x + y)))
         }
-        (Expr::Literal(ScalarValue::Int16(x)), Expr::Literal(ScalarValue::Int16(y))) => {
-            Some(Expr::Literal(ScalarValue::Int16(x + y)))
+        (AExpr::Literal(ScalarValue::Int16(x)), AExpr::Literal(ScalarValue::Int16(y))) => {
+            Some(AExpr::Literal(ScalarValue::Int16(x + y)))
         }
-        (Expr::Literal(ScalarValue::Int32(x)), Expr::Literal(ScalarValue::Int32(y))) => {
-            Some(Expr::Literal(ScalarValue::Int32(x + y)))
+        (AExpr::Literal(ScalarValue::Int32(x)), AExpr::Literal(ScalarValue::Int32(y))) => {
+            Some(AExpr::Literal(ScalarValue::Int32(x + y)))
         }
-        (Expr::Literal(ScalarValue::Int64(x)), Expr::Literal(ScalarValue::Int64(y))) => {
-            Some(Expr::Literal(ScalarValue::Int64(x + y)))
+        (AExpr::Literal(ScalarValue::Int64(x)), AExpr::Literal(ScalarValue::Int64(y))) => {
+            Some(AExpr::Literal(ScalarValue::Int64(x + y)))
         }
-        (Expr::Literal(ScalarValue::UInt8(x)), Expr::Literal(ScalarValue::UInt8(y))) => {
-            Some(Expr::Literal(ScalarValue::UInt8(x + y)))
+        (AExpr::Literal(ScalarValue::UInt8(x)), AExpr::Literal(ScalarValue::UInt8(y))) => {
+            Some(AExpr::Literal(ScalarValue::UInt8(x + y)))
         }
-        (Expr::Literal(ScalarValue::UInt16(x)), Expr::Literal(ScalarValue::UInt16(y))) => {
-            Some(Expr::Literal(ScalarValue::UInt16(x + y)))
+        (AExpr::Literal(ScalarValue::UInt16(x)), AExpr::Literal(ScalarValue::UInt16(y))) => {
+            Some(AExpr::Literal(ScalarValue::UInt16(x + y)))
         }
-        (Expr::Literal(ScalarValue::UInt32(x)), Expr::Literal(ScalarValue::UInt32(y))) => {
-            Some(Expr::Literal(ScalarValue::UInt32(x + y)))
+        (AExpr::Literal(ScalarValue::UInt32(x)), AExpr::Literal(ScalarValue::UInt32(y))) => {
+            Some(AExpr::Literal(ScalarValue::UInt32(x + y)))
         }
-        (Expr::Literal(ScalarValue::UInt64(x)), Expr::Literal(ScalarValue::UInt64(y))) => {
-            Some(Expr::Literal(ScalarValue::UInt64(x + y)))
+        (AExpr::Literal(ScalarValue::UInt64(x)), AExpr::Literal(ScalarValue::UInt64(y))) => {
+            Some(AExpr::Literal(ScalarValue::UInt64(x + y)))
         }
 
         _ => None,
@@ -484,23 +566,25 @@ impl Rule for SimplifyBooleanRule {
     }
 }
 
-// pub struct SimplifyExprRule {}
+pub struct SimplifyExprRule {}
 
-// impl Rule for SimplifyExprRule {
-//     fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
-//         None
-//     }
-//     fn optimize_expr(&self, expr: &Expr) -> Option<Expr> {
-//         match expr {
-//             Expr::BinaryExpr {
-//                 left,
-//                 op: Operator::Plus,
-//                 right,
-//             } => eval_plus(&left, &right),
-//             _ => None,
-//         }
-//     }
-// }
+impl Rule for SimplifyExprRule {
+    fn optimize_expr(&self, arena: &Arena<AExpr>, expr: &AExpr) -> Option<AExpr> {
+        match expr {
+            AExpr::BinaryExpr {
+                left,
+                op: Operator::Plus,
+                right,
+            } => {
+                let left = arena.get(*left);
+                let right = arena.get(*right);
+
+                eval_plus(left, right)
+            }
+            _ => None,
+        }
+    }
+}
 
 // pub struct SimplifyBooleanRule {}
 
@@ -548,7 +632,10 @@ pub struct SimplifyOptimizer {}
 
 impl SimplifyOptimizer {
     fn optimize_loop(&self, logical_plan: LogicalPlan) -> LogicalPlan {
-        let rules: &[Box<dyn Rule>] = &[Box::new(SimplifyBooleanRule {})];
+        let rules: &[Box<dyn Rule>] = &[
+            Box::new(SimplifyBooleanRule {}),
+            Box::new(SimplifyExprRule {}),
+        ];
 
         let mut changed = true;
 
@@ -557,8 +644,8 @@ impl SimplifyOptimizer {
         let mut lp_arena = Arena::new();
         let lp_top = lp_to_aexpr(logical_plan, &mut expr_arena, &mut lp_arena);
 
-        let mut plans = Vec::with_capacity(lp_arena.items.len());
-        let mut exprs = Vec::with_capacity(expr_arena.items.len());
+        let mut plans = Vec::new();
+        let mut exprs = Vec::new();
 
         // run loop until reaching fixed point
         while changed {
@@ -568,7 +655,8 @@ impl SimplifyOptimizer {
             while let Some(node) = plans.pop() {
                 // apply rules
                 for rule in rules.iter() {
-                    if let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node)) {
+                    // keep iterating over same rule
+                    while let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node)) {
                         lp_arena.assign(node, x);
                         changed = true;
                     }
@@ -611,11 +699,13 @@ impl SimplifyOptimizer {
 
                 while let Some(node) = exprs.pop() {
                     for rule in rules.iter() {
-                        if let Some(x) = rule.optimize_expr(&expr_arena, &expr_arena.get(node)) {
+                        // keep iterating over same rule
+                        while let Some(x) = rule.optimize_expr(&expr_arena, &expr_arena.get(node)) {
                             expr_arena.assign(node, x);
                             changed = true;
                         }
                     }
+
                     let expr = expr_arena.get(node);
 
                     match expr {
