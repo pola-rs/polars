@@ -270,14 +270,30 @@ fn lp_to_aexpr(
                 schema: schema.clone(),
             }
         }
-        // LogicalPlan::Join {
-        //     input_left,
-        //     input_right,
-        //     schema,
-        //     how,
-        //     left_on,
-        //     right_on,
-        // } => {}
+        LogicalPlan::Join {
+            input_left,
+            input_right,
+            schema,
+            how,
+            left_on,
+            right_on,
+        } => {
+            let i_l = lp_to_aexpr(*input_left, _arena, lp_arena);
+            let i_r = lp_to_aexpr(*input_right, _arena, lp_arena);
+
+            let l_on = to_aexpr(left_on, _arena);
+
+            let r_on = to_aexpr(right_on, _arena);
+
+            ALogicalPlan::Join {
+                input_left: i_l,
+                input_right: i_r,
+                schema: schema.clone(),
+                left_on: l_on,
+                how,
+                right_on: r_on,
+            }
+        }
         // LogicalPlan::HStack {
         //     input,
         //     exprs,
@@ -459,12 +475,22 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
                 operation: operation.clone(),
             }
         }
-        // ALogicalPlan::Aggregate {
-        //     input,
-        //     keys,
-        //     aggs,
-        //     schema,
-        // } => {}
+        ALogicalPlan::Aggregate {
+            input,
+            keys,
+            aggs,
+            schema,
+        } => {
+            let i = node_to_lp(*input, _arena, lp_arena);
+            let a = aggs.iter().map(|x| node_to_exp(*x, _arena)).collect();
+
+            LogicalPlan::Aggregate {
+                input: Box::new(i),
+                keys: keys.clone(),
+                aggs: a,
+                schema: schema.clone(),
+            }
+        }
         ALogicalPlan::Join {
             input_left,
             input_right,
