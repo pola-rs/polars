@@ -573,11 +573,11 @@ fn eval_plus(left: &AExpr, right: &AExpr) -> Option<AExpr> {
             (ScalarValue::UInt32(x), ScalarValue::UInt32(y)) => {
                 Some(AExpr::Literal(ScalarValue::UInt32(x + y)))
             }
-            (ScalarValue::UInt64(x),ScalarValue::UInt64(y)) => {
+            (ScalarValue::UInt64(x), ScalarValue::UInt64(y)) => {
                 Some(AExpr::Literal(ScalarValue::UInt64(x + y)))
             }
-            _ => None
-        }
+            _ => None,
+        };
     }
     None
 }
@@ -715,6 +715,17 @@ pub struct SimplifyExprRule {}
 impl Rule for SimplifyExprRule {
     fn optimize_expr(&self, arena: &Arena<AExpr>, expr: &AExpr) -> Option<AExpr> {
         match expr {
+            // Null propagation
+            AExpr::BinaryExpr {
+                left,
+                op: Operator::Plus,
+                right,
+            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Null))
+                || matches!(arena.get(*right), AExpr::Literal(ScalarValue::Null)) =>
+            {
+                Some(AExpr::Literal(ScalarValue::Null))
+            }
+
             AExpr::BinaryExpr {
                 left,
                 op: Operator::Plus,
