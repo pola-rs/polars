@@ -279,8 +279,11 @@ impl PyDataFrame {
         Ok(PySeries { series: s })
     }
 
-    pub fn drop_nulls(&self) -> PyResult<Self> {
-        let df = self.df.drop_nulls().map_err(PyPolarsEr::from)?;
+    pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> PyResult<Self> {
+        let df = self
+            .df
+            .drop_nulls(subset.as_ref().map(|s| s.as_ref()))
+            .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
@@ -502,7 +505,7 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let df = self
             .df
-            .drop_duplicates(maintain_order, subset)
+            .drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }

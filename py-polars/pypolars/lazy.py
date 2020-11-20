@@ -210,6 +210,14 @@ class LazyFrame:
             subset = [subset]
         return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
 
+    def drop_nulls(self, subset: "Optional[List[str]]" = None) -> "LazyFrame":
+        """
+        Drop rows with null values from this DataFrame.
+        """
+        if subset is not None and not isinstance(subset, list):
+            subset = [subset]
+        return wrap_ldf(self._ldf.drop_nulls(subset))
+
 
 def wrap_expr(pyexpr: "PyExpr") -> "Expr":
     return Expr.from_pyexpr(pyexpr)
@@ -379,8 +387,13 @@ class Expr:
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
     def apply(
-        self, f: Callable[[Series], Series], output_type: Optional["DataType"] = None
+        self,
+        f: "Union[UDF, Callable[[Series], Series]]",
+        output_type: Optional["DataType"] = None,
     ) -> "Expr":
+        if isinstance(f, UDF):
+            output_type = f.output_type
+            f = f.f
         return wrap_expr(self._pyexpr.apply(f, output_type))
 
 
@@ -412,3 +425,13 @@ def col(name: str) -> "Expr":
 
 def lit(value: Union[float, int]) -> "Expr":
     return wrap_expr(pylit(value))
+
+
+class UDF:
+    def __init__(self, f: Callable[[Series], Series], output_type: "DataType"):
+        self.f = f
+        self.output_type = output_type
+
+
+def udf(f: Callable[[Series], Series], output_type: "DataType"):
+    return UDF(f, output_type)
