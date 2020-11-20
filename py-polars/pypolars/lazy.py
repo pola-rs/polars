@@ -335,6 +335,9 @@ class Expr:
     def agg_groups(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_groups())
 
+    def agg_count(self) -> "Expr":
+        return wrap_expr(self._pyexpr.agg_count())
+
     def cast(self, data_type: "DataType") -> "Expr":
         return wrap_expr(self._pyexpr.cast(data_type))
 

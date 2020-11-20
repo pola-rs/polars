@@ -125,11 +125,12 @@ impl PyExpr {
     pub fn agg_quantile(&self, quantile: f64) -> PyExpr {
         self.clone().inner.agg_quantile(quantile).into()
     }
-    #[text_signature = "($self)"]
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
     }
-
+    pub fn agg_count(&self) -> PyExpr {
+        self.clone().inner.agg_count().into()
+    }
     #[text_signature = "($self, data_type)"]
     pub fn cast(&self, data_type: &PyAny) -> PyExpr {
         // TODO! accept the DataType objects.

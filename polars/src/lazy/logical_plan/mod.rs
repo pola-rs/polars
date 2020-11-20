@@ -251,6 +251,9 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
         Expr::AggMax(e) => Expr::AggMax(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::AggMin(e) => Expr::AggMin(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::AggSum(e) => Expr::AggSum(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::AggCount(e) => {
+            Expr::AggCount(Box::new(replace_wildcard_with_column(*e, column_name)))
+        }
         Expr::AggLast(e) => Expr::AggLast(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::AggFirst(e) => {
             Expr::AggFirst(Box::new(replace_wildcard_with_column(*e, column_name)))

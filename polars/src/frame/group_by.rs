@@ -1434,6 +1434,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     }
 }
 
+#[derive(Copy, Clone)]
 pub(crate) enum GroupByMethod {
     Min,
     Max,
