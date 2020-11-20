@@ -475,6 +475,13 @@ impl LazyFrame {
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
+
+    /// Drop null rows. [See eager](crate::prelude::DataFrame::drop_nulls).
+    pub fn drop_nulls(self, subset: Option<Vec<String>>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_nulls(subset).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
 }
 
 /// Utility struct for lazy groupby operation.

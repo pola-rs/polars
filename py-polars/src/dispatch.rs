@@ -61,7 +61,11 @@ macro_rules! impl_lambda_with_primitive_type {
             while let Some(v) = it.next() {
                 let arg = PyTuple::new($py, &[v]);
                 let out = $lambda.call1(arg)?;
-                builder.append_value(out.extract()?)
+
+                match out.extract() {
+                    Ok(v) => builder.append_value(v),
+                    Err(_) => builder.append_null()
+                }
             }
             builder.finish()
         } else {
@@ -71,7 +75,11 @@ macro_rules! impl_lambda_with_primitive_type {
                 if let Some(v) = opt_v {
                     let arg = PyTuple::new($py, &[v]);
                     let out = $lambda.call1(arg)?;
-                    builder.append_value(out.extract()?)
+
+                    match out.extract() {
+                        Ok(v) => builder.append_value(v),
+                        Err(_) => builder.append_null()
+                    }
                 } else {
                     builder.append_null()
                 }
@@ -116,8 +124,11 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
             while let Some(v) = it.next() {
                 let arg = PyTuple::new(py, &[v]);
                 let out = lambda.call1(arg)?;
-                let s: &str = out.extract()?;
-                builder.append_value(s)
+
+                match out.extract::<&str>() {
+                    Ok(s) => builder.append_value(s),
+                    Err(_) => builder.append_null()
+                }
             }
             builder.finish()
         } else {
@@ -127,8 +138,11 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
                 if let Some(v) = opt_v {
                     let arg = PyTuple::new(py, &[v]);
                     let out = lambda.call1(arg)?;
-                    let s: &str = out.extract()?;
-                    builder.append_value(s)
+
+                    match out.extract::<&str>() {
+                        Ok(s) => builder.append_value(s),
+                        Err(_) => builder.append_null()
+                    }
                 } else {
                     builder.append_null()
                 }

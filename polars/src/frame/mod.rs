@@ -406,8 +406,17 @@ impl DataFrame {
     }
 
     /// Return a new DataFrame where all null values are dropped
-    pub fn drop_nulls(&self) -> Result<Self> {
-        let mut iter = self.columns.iter();
+    pub fn drop_nulls(&self, subset: Option<&[String]>) -> Result<Self> {
+        let selected_series;
+
+        let mut iter = match subset {
+            Some(cols) => {
+                selected_series = self.select_series(&cols)?;
+                selected_series.iter()
+            }
+            None => self.columns.iter(),
+        };
+
         let mask = iter
             .next()
             .ok_or_else(|| PolarsError::NoData("No data to drop nulls from".into()))?;
@@ -1376,11 +1385,7 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    pub fn drop_duplicates(
-        &self,
-        maintain_order: bool,
-        subset: Option<Vec<String>>,
-    ) -> Result<Self> {
+    pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<&[String]>) -> Result<Self> {
         let names = match &subset {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),

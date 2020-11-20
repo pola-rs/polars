@@ -28,6 +28,21 @@ def lazy(self) -> "LazyFrame":
 DataFrame.lazy = lazy
 
 
+def _selection_to_pyexpr_list(exprs) -> "List[PyExpr]":
+    if not isinstance(exprs, list):
+        if isinstance(exprs, str):
+            exprs = col(exprs)
+        exprs = [exprs._pyexpr]
+    else:
+        new = []
+        for expr in exprs:
+            if isinstance(expr, str):
+                expr = col(expr)
+            new.append(expr._pyexpr)
+        exprs = new
+    return exprs
+
+
 def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
     return LazyFrame.from_pyldf(ldf)
 
@@ -37,10 +52,7 @@ class LazyGroupBy:
         self.lgb = lgb
 
     def agg(self, aggs: "Union[List[Expr], Expr]") -> "LazyFrame":
-        if isinstance(aggs, Expr):
-            aggs = [aggs._pyexpr]
-        else:
-            aggs = [e._pyexpr for e in aggs]
+        aggs = _selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
 
 
@@ -93,10 +105,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(self, exprs: "Expr") -> "LazyFrame":
-        if not isinstance(exprs, list):
-            exprs = [exprs._pyexpr]
-        else:
-            exprs = [e._pyexpr for e in exprs]
+        exprs = _selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 
     def groupby(self, by: Union[str, List[str]]) -> LazyGroupBy:

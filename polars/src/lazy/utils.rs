@@ -95,6 +95,7 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::AggMax(expr) => expr_to_root_column(expr),
         Expr::AggMedian(expr) => expr_to_root_column(expr),
         Expr::AggMean(expr) => expr_to_root_column(expr),
+        Expr::Apply { input, .. } => expr_to_root_column(input),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),
         )),
