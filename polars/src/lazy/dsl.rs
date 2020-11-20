@@ -672,6 +672,20 @@ impl Expr {
         self.apply(function, None)
     }
 
+    /// Get a mask of duplicated values
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_duplicated(self) -> Self {
+        let function = move |s: Series| s.is_duplicated().map(|ca| ca.into());
+        self.apply(function, Some(ArrowDataType::Boolean))
+    }
+
+    /// Get a mask of unique values
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_unique(self) -> Self {
+        let function = move |s: Series| s.is_unique().map(|ca| ca.into());
+        self.apply(function, Some(ArrowDataType::Boolean))
+    }
+
     /// and operation
     pub fn and(self, expr: Expr) -> Self {
         binary_expr(self, Operator::And, expr)

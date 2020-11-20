@@ -63,9 +63,14 @@ impl ScalarValue {
 
 #[derive(Clone)]
 pub enum DataFrameOperation {
-    Sort { by_column: String, reverse: bool },
+    Sort {
+        by_column: String,
+        reverse: bool,
+    },
     Reverse,
-    Shift { periods: i32 },
+    Shift {
+        periods: i32,
+    },
     Max,
     Min,
     Sum,
@@ -73,6 +78,10 @@ pub enum DataFrameOperation {
     Median,
     Quantile(f64),
     Explode(String),
+    DropDuplicates {
+        maintain_order: bool,
+        subset: Option<Vec<String>>,
+    },
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -169,6 +178,9 @@ impl fmt::Debug for LogicalPlan {
                 DataFrameOperation::Median => write!(f, "MEDIAN {:?}", input),
                 DataFrameOperation::Quantile(_) => write!(f, "QUANTILE {:?}", input),
                 DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
+                DataFrameOperation::DropDuplicates { .. } => {
+                    write!(f, "DROP DUPLICATES {:?}", input)
+                }
             },
             Aggregate {
                 input, keys, aggs, ..
@@ -423,6 +435,17 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameOp {
             input: Box::new(self.0),
             operation: DataFrameOperation::Explode(column.to_owned()),
+        }
+        .into()
+    }
+
+    pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::DropDuplicates {
+                maintain_order,
+                subset,
+            },
         }
         .into()
     }

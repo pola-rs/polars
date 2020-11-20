@@ -1357,7 +1357,7 @@ impl DataFrame {
     ///                    "int" => [1, 1, 2, 2, 3, 3, ],
     ///                    "str" => ["a", "a", "b", "b", "c", "c"]
     ///                }?;
-    ///      df.drop_duplicates(true)
+    ///      df.drop_duplicates(true, None)
     ///  }
     /// # }
     /// ```
@@ -1376,8 +1376,15 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    pub fn drop_duplicates(&self, maintain_order: bool) -> Result<Self> {
-        let gb = self.groupby(self.get_column_names())?;
+    pub fn drop_duplicates<'a, S, J>(&self, maintain_order: bool, subset: Option<S>) -> Result<Self>
+    where
+        S: Selection<'a, J>,
+    {
+        let names = match subset {
+            Some(s) => s.to_selection_vec(),
+            None => self.get_column_names(),
+        };
+        let gb = self.groupby(names)?;
         let groups = gb.get_groups().iter().map(|v| v.0);
 
         let df = if maintain_order {
