@@ -36,7 +36,7 @@ impl<T> Arena<T> {
         *x = val;
     }
 }
-// Store pointers to values in an arena
+// AExpr representation of Nodes which are allocated in an Arena
 #[derive(Clone)]
 enum AExpr {
     Alias(Node, Arc<String>),
@@ -89,8 +89,8 @@ enum AExpr {
     Wildcard,
 }
 
+// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 enum ALogicalPlan {
-    // filter on a boolean mask
     Selection {
         input: Node,
         predicate: Node,
@@ -207,14 +207,10 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     arena.add(v)
 }
 
-fn lp_to_aexpr(
-    lp: LogicalPlan,
-    _arena: &mut Arena<AExpr>,
-    lp_arena: &mut Arena<ALogicalPlan>,
-) -> Node {
+fn to_alp(lp: LogicalPlan, _arena: &mut Arena<AExpr>, lp_arena: &mut Arena<ALogicalPlan>) -> Node {
     let v = match lp {
         LogicalPlan::Selection { input, predicate } => {
-            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            let i = to_alp(*input, _arena, lp_arena);
             let p = to_aexpr(predicate, _arena);
             ALogicalPlan::Selection {
                 input: i,
@@ -242,7 +238,7 @@ fn lp_to_aexpr(
             schema,
         } => {
             let exp = expr.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
-            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            let i = to_alp(*input, _arena, lp_arena);
             ALogicalPlan::Projection {
                 expr: exp,
                 input: i,
@@ -250,7 +246,7 @@ fn lp_to_aexpr(
             }
         }
         LogicalPlan::DataFrameOp { input, operation } => {
-            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            let i = to_alp(*input, _arena, lp_arena);
             ALogicalPlan::DataFrameOp {
                 input: i,
                 operation: operation,
@@ -262,7 +258,7 @@ fn lp_to_aexpr(
             aggs,
             schema,
         } => {
-            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            let i = to_alp(*input, _arena, lp_arena);
             let aggs_new = aggs.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
 
             ALogicalPlan::Aggregate {
@@ -280,8 +276,8 @@ fn lp_to_aexpr(
             left_on,
             right_on,
         } => {
-            let i_l = lp_to_aexpr(*input_left, _arena, lp_arena);
-            let i_r = lp_to_aexpr(*input_right, _arena, lp_arena);
+            let i_l = to_alp(*input_left, _arena, lp_arena);
+            let i_r = to_alp(*input_right, _arena, lp_arena);
 
             let l_on = to_aexpr(left_on, _arena);
 
@@ -302,7 +298,7 @@ fn lp_to_aexpr(
             schema,
         } => {
             let exp = exprs.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
-            let i = lp_to_aexpr(*input, _arena, lp_arena);
+            let i = to_alp(*input, _arena, lp_arena);
             ALogicalPlan::HStack {
                 input: i,
                 exprs: exp,
@@ -548,40 +544,42 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
 
 // Evaluates x + y if possible
 fn eval_plus(left: &AExpr, right: &AExpr) -> Option<AExpr> {
-    match (left, right) {
-        (AExpr::Literal(ScalarValue::Float32(x)), AExpr::Literal(ScalarValue::Float32(y))) => {
-            Some(AExpr::Literal(ScalarValue::Float32(x + y)))
+    if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right) {
+        return match (lit_left, lit_right) {
+            (ScalarValue::Float32(x), ScalarValue::Float32(y)) => {
+                Some(AExpr::Literal(ScalarValue::Float32(x + y)))
+            }
+            (ScalarValue::Float64(x), ScalarValue::Float64(y)) => {
+                Some(AExpr::Literal(ScalarValue::Float64(x + y)))
+            }
+            (ScalarValue::Int8(x), ScalarValue::Int8(y)) => {
+                Some(AExpr::Literal(ScalarValue::Int8(x + y)))
+            }
+            (ScalarValue::Int16(x), ScalarValue::Int16(y)) => {
+                Some(AExpr::Literal(ScalarValue::Int16(x + y)))
+            }
+            (ScalarValue::Int32(x), ScalarValue::Int32(y)) => {
+                Some(AExpr::Literal(ScalarValue::Int32(x + y)))
+            }
+            (ScalarValue::Int64(x), ScalarValue::Int64(y)) => {
+                Some(AExpr::Literal(ScalarValue::Int64(x + y)))
+            }
+            (ScalarValue::UInt8(x), ScalarValue::UInt8(y)) => {
+                Some(AExpr::Literal(ScalarValue::UInt8(x + y)))
+            }
+            (ScalarValue::UInt16(x), ScalarValue::UInt16(y)) => {
+                Some(AExpr::Literal(ScalarValue::UInt16(x + y)))
+            }
+            (ScalarValue::UInt32(x), ScalarValue::UInt32(y)) => {
+                Some(AExpr::Literal(ScalarValue::UInt32(x + y)))
+            }
+            (ScalarValue::UInt64(x),ScalarValue::UInt64(y)) => {
+                Some(AExpr::Literal(ScalarValue::UInt64(x + y)))
+            }
+            _ => None
         }
-        (AExpr::Literal(ScalarValue::Float64(x)), AExpr::Literal(ScalarValue::Float64(y))) => {
-            Some(AExpr::Literal(ScalarValue::Float64(x + y)))
-        }
-        (AExpr::Literal(ScalarValue::Int8(x)), AExpr::Literal(ScalarValue::Int8(y))) => {
-            Some(AExpr::Literal(ScalarValue::Int8(x + y)))
-        }
-        (AExpr::Literal(ScalarValue::Int16(x)), AExpr::Literal(ScalarValue::Int16(y))) => {
-            Some(AExpr::Literal(ScalarValue::Int16(x + y)))
-        }
-        (AExpr::Literal(ScalarValue::Int32(x)), AExpr::Literal(ScalarValue::Int32(y))) => {
-            Some(AExpr::Literal(ScalarValue::Int32(x + y)))
-        }
-        (AExpr::Literal(ScalarValue::Int64(x)), AExpr::Literal(ScalarValue::Int64(y))) => {
-            Some(AExpr::Literal(ScalarValue::Int64(x + y)))
-        }
-        (AExpr::Literal(ScalarValue::UInt8(x)), AExpr::Literal(ScalarValue::UInt8(y))) => {
-            Some(AExpr::Literal(ScalarValue::UInt8(x + y)))
-        }
-        (AExpr::Literal(ScalarValue::UInt16(x)), AExpr::Literal(ScalarValue::UInt16(y))) => {
-            Some(AExpr::Literal(ScalarValue::UInt16(x + y)))
-        }
-        (AExpr::Literal(ScalarValue::UInt32(x)), AExpr::Literal(ScalarValue::UInt32(y))) => {
-            Some(AExpr::Literal(ScalarValue::UInt32(x + y)))
-        }
-        (AExpr::Literal(ScalarValue::UInt64(x)), AExpr::Literal(ScalarValue::UInt64(y))) => {
-            Some(AExpr::Literal(ScalarValue::UInt64(x + y)))
-        }
-
-        _ => None,
     }
+    None
 }
 pub struct SimplifyExpr {}
 
@@ -603,6 +601,7 @@ struct SimplifyBooleanRule {}
 impl Rule for SimplifyBooleanRule {
     fn optimize_expr(&self, arena: &Arena<AExpr>, expr: &AExpr) -> Option<AExpr> {
         match expr {
+            // true AND x => x
             AExpr::BinaryExpr {
                 left,
                 op: Operator::And,
@@ -610,6 +609,102 @@ impl Rule for SimplifyBooleanRule {
             } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
                 Some(arena.get(*right).clone())
             }
+            // x AND true => x
+            AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right,
+            } if matches!(
+                arena.get(*right),
+                AExpr::Literal(ScalarValue::Boolean(true))
+            ) =>
+            {
+                Some(arena.get(*left).clone())
+            }
+            // x AND false -> false
+            AExpr::BinaryExpr {
+                op: Operator::And,
+                right,
+                ..
+            } if matches!(
+                arena.get(*right),
+                AExpr::Literal(ScalarValue::Boolean(false))
+            ) =>
+            {
+                Some(AExpr::Literal(ScalarValue::Boolean(false)))
+            }
+            // false AND x -> false
+            AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                ..
+            } if matches!(
+                arena.get(*left),
+                AExpr::Literal(ScalarValue::Boolean(false))
+            ) =>
+            {
+                Some(AExpr::Literal(ScalarValue::Boolean(false)))
+            }
+            // false or x => x
+            AExpr::BinaryExpr {
+                left,
+                op: Operator::Or,
+                right,
+            } if matches!(
+                arena.get(*left),
+                AExpr::Literal(ScalarValue::Boolean(false))
+            ) =>
+            {
+                Some(arena.get(*right).clone())
+            }
+            // x or false => x
+            AExpr::BinaryExpr {
+                op: Operator::Or,
+                right,
+                ..
+            } if matches!(
+                arena.get(*right),
+                AExpr::Literal(ScalarValue::Boolean(false))
+            ) =>
+            {
+                Some(arena.get(*right).clone())
+            }
+
+            // false OR x => x
+            AExpr::BinaryExpr {
+                left,
+                op: Operator::Or,
+                right,
+            } if matches!(
+                arena.get(*left),
+                AExpr::Literal(ScalarValue::Boolean(false))
+            ) =>
+            {
+                Some(arena.get(*right).clone())
+            }
+
+            // true OR x => true
+            AExpr::BinaryExpr {
+                op: Operator::Or,
+                right,
+                ..
+            } if matches!(
+                arena.get(*right),
+                AExpr::Literal(ScalarValue::Boolean(true))
+            ) =>
+            {
+                Some(AExpr::Literal(ScalarValue::Boolean(false)))
+            }
+
+            // x OR true => true
+            AExpr::BinaryExpr {
+                op: Operator::Or,
+                left,
+                ..
+            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
+                Some(AExpr::Literal(ScalarValue::Boolean(false)))
+            }
+
             _ => None,
         }
     }
@@ -635,48 +730,6 @@ impl Rule for SimplifyExprRule {
     }
 }
 
-// pub struct SimplifyBooleanRule {}
-
-// impl Rule for SimplifyBooleanRule {
-//     fn optimize_plan(&self, _logical_plan: &LogicalPlan) -> Option<LogicalPlan> {
-//         None
-//     }
-//     fn optimize_expr(&self, expr: &Expr) -> Option<Expr> {
-//         match expr {
-//             Expr::BinaryExpr {
-//                 left,
-//                 op: Operator::And,
-//                 right,
-//             } if matches!(**left, Expr::Literal(ScalarValue::Boolean(true))) => {
-//                 Some(*right.clone())
-//             }
-//             Expr::BinaryExpr {
-//                 left,
-//                 op: Operator::And,
-//                 right,
-//             } if matches!(**right, Expr::Literal(ScalarValue::Boolean(true))) => {
-//                 Some(*left.clone())
-//             }
-//             Expr::BinaryExpr {
-//                 left,
-//                 op: Operator::Or,
-//                 right,
-//             } if matches!(**left, Expr::Literal(ScalarValue::Boolean(false))) => {
-//                 Some(*right.clone())
-//             }
-//             Expr::BinaryExpr {
-//                 left,
-//                 op: Operator::Or,
-//                 right,
-//             } if matches!(**right, Expr::Literal(ScalarValue::Boolean(false))) => {
-//                 Some(*left.clone())
-//             }
-
-//             _ => None,
-//         }
-//     }
-// }
-
 pub struct SimplifyOptimizer {}
 
 impl SimplifyOptimizer {
@@ -691,7 +744,7 @@ impl SimplifyOptimizer {
         // initialize arena
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
-        let lp_top = lp_to_aexpr(logical_plan, &mut expr_arena, &mut lp_arena);
+        let lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
 
         let mut plans = Vec::new();
         let mut exprs = Vec::new();
