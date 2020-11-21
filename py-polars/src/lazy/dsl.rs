@@ -133,8 +133,6 @@ impl PyExpr {
     }
     #[text_signature = "($self, data_type)"]
     pub fn cast(&self, data_type: &PyAny) -> PyExpr {
-        // TODO! accept the DataType objects.
-
         let str_repr = data_type.str().unwrap().to_str().unwrap();
         let dt = str_to_arrow_type(str_repr);
         let expr = self.inner.clone().cast(dt);
