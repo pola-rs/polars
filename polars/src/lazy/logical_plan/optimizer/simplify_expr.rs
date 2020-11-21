@@ -699,6 +699,19 @@ impl Rule for SimplifyBooleanRule {
                 Some(AExpr::Literal(ScalarValue::Boolean(false)))
             }
 
+            AExpr::Not(x) => {
+                let y = arena.get(*x);
+
+                match y {
+                    // not(not x) => x
+                    AExpr::Not(expr) => Some(arena.get(*expr).clone()),
+                    // not(lit x) => !x
+                    AExpr::Literal(ScalarValue::Boolean(b)) => {
+                        Some(AExpr::Literal(ScalarValue::Boolean(!b)))
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
