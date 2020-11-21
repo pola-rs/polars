@@ -2,6 +2,7 @@ from typing import Union, List, Callable, Optional
 
 from pypolars import Series
 from pypolars.frame import DataFrame, wrap_df
+from pypolars import datatypes
 
 try:
     from ..pypolars import (
@@ -97,10 +98,60 @@ class LazyFrame:
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
     ) -> DataFrame:
+        """
+        Collect into a DataFrame
+
+        Parameters
+        ----------
+        type_coercion
+            do type coercion optimization
+        predicate_pushdown
+            do predicate pushdown optimization
+        projection_pushdown
+            do projection pushdown optimization
+        simplify_expression
+            run simplify expressions optimization
+
+        Returns
+        -------
+        DataFrame
+        """
+
         ldf = self._ldf.optimization_toggle(
             type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
         )
         return wrap_df(ldf.collect())
+
+    def cache(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+    ) -> "LazyFrame":
+        """
+        Run query up to this point and cache the result.
+
+        Parameters
+        ----------
+        type_coercion
+            do type coercion optimization
+        predicate_pushdown
+            do predicate pushdown optimization
+        projection_pushdown
+            do projection pushdown optimization
+        simplify_expression
+            run simplify expressions optimization
+
+        Returns
+        -------
+        LazyFrame
+
+        """
+        ldf = self._ldf.optimization_toggle(
+            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
+        )
+        return wrap_df(ldf.collect()).lazy()
 
     def filter(self, predicate: "Expr") -> "LazyFrame":
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
@@ -126,14 +177,20 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: "Expr",
-        right_on: "Expr",
+        left_on: "Optional[Expr]" = None,
+        right_on: "Optional[Expr]" = None,
+        on: "Optional[Expr]" = None,
         how="inner",
     ) -> "LazyFrame":
         if isinstance(left_on, str):
             left_on = col(left_on)
         if isinstance(right_on, str):
             right_on = col(right_on)
+        if isinstance(on, str):
+            left_on = col(on)
+            right_on = col(on)
+        if left_on is None or right_on is None:
+            raise ValueError("you should pass the column to join on as an argument")
         left_on = left_on._pyexpr
         right_on = right_on._pyexpr
         if how == "inner":
@@ -355,8 +412,16 @@ class Expr:
     def agg_count(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_count())
 
-    def cast(self, data_type: "DataType") -> "Expr":
-        return wrap_expr(self._pyexpr.cast(data_type))
+    def cast(self, dtype: "DataType") -> "Expr":
+        if dtype == str:
+            dtype = datatypes.Utf8
+        elif dtype == bool:
+            dtype = datatypes.Boolean
+        elif dtype == float:
+            dtype = datatypes.Float64
+        elif dtype == int:
+            dtype = datatypes.Int64
+        return wrap_expr(self._pyexpr.cast(dtype))
 
     def sort(self, reverse: bool) -> "Expr":
         return wrap_expr(self._pyexpr.sort(reverse))

@@ -364,7 +364,7 @@ impl fmt::Debug for Expr {
             Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
             Column(name) => write!(f, "COLUMN {}", name),
             Literal(v) => write!(f, "LIT {:?}", v),
-            BinaryExpr { left, op, right } => write!(f, "{:?} {:?} {:?}", left, op, right),
+            BinaryExpr { left, op, right } => write!(f, "[({:?}) {:?} ({:?})]", left, op, right),
             Not(expr) => write!(f, "NOT {:?}", expr),
             IsNull(expr) => write!(f, "{:?} IS NULL", expr),
             IsNotNull(expr) => write!(f, "{:?} IS NOT NULL", expr),

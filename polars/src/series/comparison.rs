@@ -3,13 +3,14 @@
 use super::Series;
 use crate::apply_method_numeric_series;
 use crate::prelude::*;
+use crate::series::arithmetic::coerce_lhs_rhs;
 
 fn fill_bool(val: bool, len: usize) -> BooleanChunked {
     std::iter::repeat(val).take(len).collect()
 }
 
 macro_rules! compare {
-    ($variant:path, $lhs:ident, $rhs:ident, $cmp_method:ident) => {{
+    ($variant:path, $lhs:expr, $rhs:expr, $cmp_method:ident) => {{
         if let $variant(rhs_) = $rhs {
             $lhs.$cmp_method(rhs_)
         } else {
@@ -19,7 +20,7 @@ macro_rules! compare {
 }
 
 macro_rules! impl_compare {
-    ($self:ident, $rhs:ident, $method:ident) => {{
+    ($self:expr, $rhs:expr, $method:ident) => {{
         match $self {
             Series::Bool(a) => compare!(Series::Bool, a, $rhs, $method),
             Series::UInt8(a) => compare!(Series::UInt8, a, $rhs, $method),
@@ -67,37 +68,44 @@ macro_rules! impl_compare {
 
 impl ChunkCompare<&Series> for Series {
     fn eq_missing(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, eq_missing)
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        impl_compare!(lhs.as_ref(), rhs.as_ref(), eq_missing)
     }
 
     /// Create a boolean mask by checking for equality.
     fn eq(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, eq)
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        impl_compare!(lhs.as_ref(), rhs.as_ref(), eq)
     }
 
     /// Create a boolean mask by checking for inequality.
     fn neq(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, neq)
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        impl_compare!(lhs.as_ref(), rhs.as_ref(), neq)
     }
 
     /// Create a boolean mask by checking if lhs > rhs.
     fn gt(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, gt)
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        impl_compare!(lhs.as_ref(), rhs.as_ref(), gt)
     }
 
     /// Create a boolean mask by checking if lhs >= rhs.
     fn gt_eq(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, gt_eq)
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        impl_compare!(lhs.as_ref(), rhs.as_ref(), gt_eq)
     }
 
     /// Create a boolean mask by checking if lhs < rhs.
     fn lt(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, lt)
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        impl_compare!(lhs.as_ref(), rhs.as_ref(), lt)
     }
 
     /// Create a boolean mask by checking if lhs <= rhs.
     fn lt_eq(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, lt_eq)
+        let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+        impl_compare!(lhs.as_ref(), rhs.as_ref(), lt_eq)
     }
 }
 

@@ -2,7 +2,7 @@ use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
     expr_to_root_column, expr_to_root_column_expr, expressions_to_root_column_exprs,
-    projected_names,
+    projected_names, unpack_binary_exprs,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -318,10 +318,27 @@ impl ProjectionPushDown {
                 let local_renamed_projections = projected_names(&acc_projections)?;
 
                 // Make sure that columns selected with_columns are available
+                // only if not empty. If empty we already select everything.
                 if !acc_projections.is_empty() {
-                    for e in &exprs {
-                        if let Ok(e) = expr_to_root_column_expr(e) {
-                            acc_projections.push(e.clone())
+                    for expression in &exprs {
+                        // todo! maybe we should loop or recurse to find all binary expressions?
+                        match expr_to_root_column_expr(expression) {
+                            Ok(e) => acc_projections.push(e.clone()),
+                            Err(_) => {
+                                // could be:
+                                //   * alias(lit)
+                                //   * lit
+                                //   * binary expr
+                                // may fail, for literal cases
+                                if let Ok((left, right)) = unpack_binary_exprs(expression) {
+                                    expr_to_root_column_expr(left)
+                                        .map(|p| acc_projections.push(p.clone()))
+                                        .ok();
+                                    expr_to_root_column_expr(right)
+                                        .map(|p| acc_projections.push(p.clone()))
+                                        .ok();
+                                }
+                            }
                         }
                     }
                 }

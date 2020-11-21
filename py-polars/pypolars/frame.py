@@ -526,8 +526,9 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: str,
-        right_on: str,
+        left_on: "Optional[str]" = None,
+        right_on: "Optional[str]" = None,
+        on: "Optional[str]" = None,
         how="inner",
     ) -> "DataFrame":
         """
@@ -541,6 +542,8 @@ class DataFrame:
             Name of the left join column
         right_on
             Name of the right join column
+        on
+            Name of the join columns in both DataFrames
         how
             Join strategy
                 - "inner"
@@ -551,6 +554,13 @@ class DataFrame:
         -------
             Joined DataFrame
         """
+
+        if isinstance(on, str):
+            left_on = on
+            right_on = on
+        if left_on is None or right_on is None:
+            raise ValueError("you should pass the column to join on as an argument")
+
         try:
             if how == "inner":
                 inner = self._df.inner_join(df._df, left_on, right_on)
