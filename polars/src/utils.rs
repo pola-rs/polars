@@ -79,6 +79,40 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Node(pub usize);
+
+pub struct Arena<T> {
+    items: Vec<T>,
+}
+
+/// Simple Arena implementation
+/// Allocates memory and stores item in a Vec. Only deallocates when being dropped itself.
+impl<T> Arena<T> {
+    pub fn add(&mut self, val: T) -> Node {
+        let idx = self.items.len();
+        self.items.push(val);
+        Node(idx)
+    }
+
+    pub fn new() -> Self {
+        Arena { items: vec![] }
+    }
+
+    pub fn get(&self, idx: Node) -> &T {
+        unsafe { self.items.get_unchecked(idx.0) }
+    }
+
+    pub fn get_mut(&mut self, idx: Node) -> &mut T {
+        unsafe { self.items.get_unchecked_mut(idx.0) }
+    }
+
+    pub fn assign(&mut self, idx: Node, val: T) {
+        let x = self.get_mut(idx);
+        *x = val;
+    }
+}
+
 /// An iterator that iterates an unknown at compile time number
 /// of iterators simultaneously.
 ///
