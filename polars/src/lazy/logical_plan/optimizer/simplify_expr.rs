@@ -1,41 +1,8 @@
 use crate::lazy::logical_plan::*;
 use crate::lazy::prelude::*;
 use crate::prelude::*;
+use crate::utils::{Arena, Node};
 use std::sync::Arc;
-
-struct Arena<T> {
-    items: Vec<T>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Node(usize);
-
-// Simple Arena
-// Allocates memory and stores item in a Vec. Only deallocates when being dropped itself.
-impl<T> Arena<T> {
-    fn add(&mut self, val: T) -> Node {
-        let idx = self.items.len();
-        self.items.push(val);
-        Node(idx)
-    }
-
-    fn new() -> Self {
-        Arena { items: vec![] }
-    }
-
-    fn get(&self, idx: Node) -> &T {
-        unsafe { self.items.get_unchecked(idx.0) }
-    }
-
-    fn get_mut(&mut self, idx: Node) -> &mut T {
-        unsafe { self.items.get_unchecked_mut(idx.0) }
-    }
-
-    fn assign(&mut self, idx: Node, val: T) {
-        let x = self.get_mut(idx);
-        *x = val;
-    }
-}
 // AExpr representation of Nodes which are allocated in an Arena
 #[derive(Clone)]
 enum AExpr {
@@ -207,11 +174,15 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     arena.add(v)
 }
 
-fn to_alp(lp: LogicalPlan, _arena: &mut Arena<AExpr>, lp_arena: &mut Arena<ALogicalPlan>) -> Node {
+fn to_alp(
+    lp: LogicalPlan,
+    expr_arena: &mut Arena<AExpr>,
+    lp_arena: &mut Arena<ALogicalPlan>,
+) -> Node {
     let v = match lp {
         LogicalPlan::Selection { input, predicate } => {
-            let i = to_alp(*input, _arena, lp_arena);
-            let p = to_aexpr(predicate, _arena);
+            let i = to_alp(*input, expr_arena, lp_arena);
+            let p = to_aexpr(predicate, expr_arena);
             ALogicalPlan::Selection {
                 input: i,
                 predicate: p,
@@ -237,8 +208,11 @@ fn to_alp(lp: LogicalPlan, _arena: &mut Arena<AExpr>, lp_arena: &mut Arena<ALogi
             input,
             schema,
         } => {
-            let exp = expr.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
-            let i = to_alp(*input, _arena, lp_arena);
+            let exp = expr
+                .iter()
+                .map(|x| to_aexpr(x.clone(), expr_arena))
+                .collect();
+            let i = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::Projection {
                 expr: exp,
                 input: i,
@@ -246,7 +220,7 @@ fn to_alp(lp: LogicalPlan, _arena: &mut Arena<AExpr>, lp_arena: &mut Arena<ALogi
             }
         }
         LogicalPlan::DataFrameOp { input, operation } => {
-            let i = to_alp(*input, _arena, lp_arena);
+            let i = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::DataFrameOp {
                 input: i,
                 operation: operation,
@@ -258,8 +232,11 @@ fn to_alp(lp: LogicalPlan, _arena: &mut Arena<AExpr>, lp_arena: &mut Arena<ALogi
             aggs,
             schema,
         } => {
-            let i = to_alp(*input, _arena, lp_arena);
-            let aggs_new = aggs.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
+            let i = to_alp(*input, expr_arena, lp_arena);
+            let aggs_new = aggs
+                .iter()
+                .map(|x| to_aexpr(x.clone(), expr_arena))
+                .collect();
 
             ALogicalPlan::Aggregate {
                 input: i,
@@ -276,12 +253,12 @@ fn to_alp(lp: LogicalPlan, _arena: &mut Arena<AExpr>, lp_arena: &mut Arena<ALogi
             left_on,
             right_on,
         } => {
-            let i_l = to_alp(*input_left, _arena, lp_arena);
-            let i_r = to_alp(*input_right, _arena, lp_arena);
+            let i_l = to_alp(*input_left, expr_arena, lp_arena);
+            let i_r = to_alp(*input_right, expr_arena, lp_arena);
 
-            let l_on = to_aexpr(left_on, _arena);
+            let l_on = to_aexpr(left_on, expr_arena);
 
-            let r_on = to_aexpr(right_on, _arena);
+            let r_on = to_aexpr(right_on, expr_arena);
 
             ALogicalPlan::Join {
                 input_left: i_l,
@@ -297,8 +274,11 @@ fn to_alp(lp: LogicalPlan, _arena: &mut Arena<AExpr>, lp_arena: &mut Arena<ALogi
             exprs,
             schema,
         } => {
-            let exp = exprs.iter().map(|x| to_aexpr(x.clone(), _arena)).collect();
-            let i = to_alp(*input, _arena, lp_arena);
+            let exp = exprs
+                .iter()
+                .map(|x| to_aexpr(x.clone(), expr_arena))
+                .collect();
+            let i = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::HStack {
                 input: i,
                 exprs: exp,
@@ -309,19 +289,19 @@ fn to_alp(lp: LogicalPlan, _arena: &mut Arena<AExpr>, lp_arena: &mut Arena<ALogi
     lp_arena.add(v)
 }
 
-fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
-    let expr = _arena.get(node);
+fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
+    let expr = expr_arena.get(node);
 
     match expr {
         AExpr::Alias(expr, name) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::Alias(Box::new(exp), name.clone())
         }
         AExpr::Column(a) => Expr::Column(a.clone()),
         AExpr::Literal(s) => Expr::Literal(s.clone()),
         AExpr::BinaryExpr { left, op, right } => {
-            let l = node_to_exp(*left, _arena);
-            let r = node_to_exp(*right, _arena);
+            let l = node_to_exp(*left, expr_arena);
+            let r = node_to_exp(*right, expr_arena);
             Expr::BinaryExpr {
                 left: Box::new(l),
                 op: *op,
@@ -329,81 +309,81 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
             }
         }
         AExpr::Not(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::Not(Box::new(exp))
         }
         AExpr::IsNotNull(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::IsNotNull(Box::new(exp))
         }
         AExpr::IsNull(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::IsNull(Box::new(exp))
         }
         AExpr::Cast { expr, data_type } => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::Cast {
                 expr: Box::new(exp),
                 data_type: data_type.clone(),
             }
         }
         AExpr::Sort { expr, reverse } => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::Sort {
                 expr: Box::new(exp),
                 reverse: *reverse,
             }
         }
         AExpr::AggMin(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggMin(Box::new(exp))
         }
         AExpr::AggMax(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggMax(Box::new(exp))
         }
 
         AExpr::AggMedian(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggMedian(Box::new(exp))
         }
         AExpr::AggNUnique(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggNUnique(Box::new(exp))
         }
         AExpr::AggFirst(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggFirst(Box::new(exp))
         }
         AExpr::AggLast(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggLast(Box::new(exp))
         }
         AExpr::AggMean(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggMean(Box::new(exp))
         }
         AExpr::AggList(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggList(Box::new(exp))
         }
         AExpr::AggQuantile { expr, quantile } => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggQuantile {
                 expr: Box::new(exp),
                 quantile: *quantile,
             }
         }
         AExpr::AggSum(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggSum(Box::new(exp))
         }
         AExpr::AggGroups(expr) => {
-            let exp = node_to_exp(*expr, _arena);
+            let exp = node_to_exp(*expr, expr_arena);
             Expr::AggGroups(Box::new(exp))
         }
         AExpr::Shift { input, periods } => {
-            let e = node_to_exp(*input, _arena);
+            let e = node_to_exp(*input, expr_arena);
             Expr::Shift {
                 input: Box::new(e),
                 periods: *periods,
@@ -414,9 +394,9 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
             truthy,
             falsy,
         } => {
-            let p = node_to_exp(*predicate, _arena);
-            let t = node_to_exp(*truthy, _arena);
-            let f = node_to_exp(*falsy, _arena);
+            let p = node_to_exp(*predicate, expr_arena);
+            let t = node_to_exp(*truthy, expr_arena);
+            let f = node_to_exp(*falsy, expr_arena);
 
             Expr::Ternary {
                 predicate: Box::new(p),
@@ -429,7 +409,7 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
             function,
             output_type,
         } => {
-            let i = node_to_exp(*input, _arena);
+            let i = node_to_exp(*input, expr_arena);
             Expr::Apply {
                 input: Box::new(i),
                 function: function.clone(),
@@ -441,24 +421,33 @@ fn node_to_exp(node: Node, _arena: &Arena<AExpr>) -> Expr {
     }
 }
 
-fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>) -> LogicalPlan {
+fn node_to_lp(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    lp_arena: &Arena<ALogicalPlan>,
+) -> LogicalPlan {
     let lp = lp_arena.get(node);
 
     match lp {
         ALogicalPlan::Selection { input, predicate } => {
-            let lp = node_to_lp(*input, _arena, lp_arena);
-            let p = node_to_exp(*predicate, _arena);
+            let lp = node_to_lp(*input, expr_arena, lp_arena);
+            let p = node_to_exp(*predicate, expr_arena);
             LogicalPlan::Selection {
                 input: Box::new(lp),
                 predicate: p,
             }
         }
-        // ALogicalPlan::CsvScan {
-        //     path,
-        //     schema,
-        //     has_header,
-        //     delimiter,
-        // } => {}
+        ALogicalPlan::CsvScan {
+            path,
+            schema,
+            has_header,
+            delimiter,
+        } => LogicalPlan::CsvScan {
+            path: path.clone(),
+            schema: schema.clone(),
+            has_header: *has_header,
+            delimiter: *delimiter,
+        },
         ALogicalPlan::DataFrameScan { df, schema } => LogicalPlan::DataFrameScan {
             df: df.clone(),
             schema: schema.clone(),
@@ -468,8 +457,8 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
             input,
             schema,
         } => {
-            let exprs = expr.iter().map(|x| node_to_exp(*x, _arena)).collect();
-            let i = node_to_lp(*input, _arena, lp_arena);
+            let exprs = expr.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
+            let i = node_to_lp(*input, expr_arena, lp_arena);
 
             LogicalPlan::Projection {
                 expr: exprs,
@@ -478,7 +467,7 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
             }
         }
         ALogicalPlan::DataFrameOp { input, operation } => {
-            let lp = node_to_lp(*input, _arena, lp_arena);
+            let lp = node_to_lp(*input, expr_arena, lp_arena);
 
             LogicalPlan::DataFrameOp {
                 input: Box::new(lp),
@@ -491,8 +480,8 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
             aggs,
             schema,
         } => {
-            let i = node_to_lp(*input, _arena, lp_arena);
-            let a = aggs.iter().map(|x| node_to_exp(*x, _arena)).collect();
+            let i = node_to_lp(*input, expr_arena, lp_arena);
+            let a = aggs.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
 
             LogicalPlan::Aggregate {
                 input: Box::new(i),
@@ -509,11 +498,11 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
             left_on,
             right_on,
         } => {
-            let i_l = node_to_lp(*input_left, _arena, lp_arena);
-            let i_r = node_to_lp(*input_right, _arena, lp_arena);
+            let i_l = node_to_lp(*input_left, expr_arena, lp_arena);
+            let i_r = node_to_lp(*input_right, expr_arena, lp_arena);
 
-            let l_on = node_to_exp(*left_on, _arena);
-            let r_on = node_to_exp(*right_on, _arena);
+            let l_on = node_to_exp(*left_on, expr_arena);
+            let r_on = node_to_exp(*right_on, expr_arena);
 
             LogicalPlan::Join {
                 input_left: Box::new(i_l),
@@ -529,8 +518,8 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
             exprs,
             schema,
         } => {
-            let i = node_to_lp(*input, _arena, lp_arena);
-            let e = exprs.iter().map(|x| node_to_exp(*x, _arena)).collect();
+            let i = node_to_lp(*input, expr_arena, lp_arena);
+            let e = exprs.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
 
             LogicalPlan::HStack {
                 input: Box::new(i),
@@ -538,7 +527,6 @@ fn node_to_lp(node: Node, _arena: &Arena<AExpr>, lp_arena: &Arena<ALogicalPlan>)
                 schema: schema.clone(),
             }
         }
-        _ => unimplemented!(""),
     }
 }
 
@@ -606,7 +594,11 @@ impl Rule for SimplifyBooleanRule {
                 left,
                 op: Operator::And,
                 right,
-            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
+            } if matches!(
+                arena.get(*left),
+                AExpr::Literal(ScalarValue::Boolean(true))
+            ) =>
+            {
                 Some(arena.get(*right).clone())
             }
             // x AND true => x
@@ -701,7 +693,11 @@ impl Rule for SimplifyBooleanRule {
                 op: Operator::Or,
                 left,
                 ..
-            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
+            } if matches!(
+                arena.get(*left),
+                AExpr::Literal(ScalarValue::Boolean(true))
+            ) =>
+            {
                 Some(AExpr::Literal(ScalarValue::Boolean(false)))
             }
 
@@ -716,12 +712,9 @@ impl Rule for SimplifyExprRule {
     fn optimize_expr(&self, arena: &Arena<AExpr>, expr: &AExpr) -> Option<AExpr> {
         match expr {
             // Null propagation
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Plus,
-                right,
-            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Null))
-                || matches!(arena.get(*right), AExpr::Literal(ScalarValue::Null)) =>
+            AExpr::BinaryExpr { left, right, .. }
+                if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Null))
+                    || matches!(arena.get(*right), AExpr::Literal(ScalarValue::Null)) =>
             {
                 Some(AExpr::Literal(ScalarValue::Null))
             }
@@ -769,7 +762,8 @@ impl SimplifyOptimizer {
                 // apply rules
                 for rule in rules.iter() {
                     // keep iterating over same rule
-                    while let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node)) {
+                    while let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node))
+                    {
                         lp_arena.assign(node, x);
                         changed = true;
                     }
@@ -807,13 +801,16 @@ impl SimplifyOptimizer {
                         plans.push(*input);
                         exprs.extend(e2);
                     }
-                    ALogicalPlan::CsvScan { .. } | ALogicalPlan::DataFrameScan { .. } => {}
+                    ALogicalPlan::CsvScan { .. } | ALogicalPlan::DataFrameScan { .. } => {
+                    }
                 }
 
                 while let Some(node) = exprs.pop() {
                     for rule in rules.iter() {
                         // keep iterating over same rule
-                        while let Some(x) = rule.optimize_expr(&expr_arena, &expr_arena.get(node)) {
+                        while let Some(x) =
+                            rule.optimize_expr(&expr_arena, &expr_arena.get(node))
+                        {
                             expr_arena.assign(node, x);
                             changed = true;
                         }
@@ -892,7 +889,9 @@ impl SimplifyOptimizer {
                         AExpr::Apply { input, .. } => {
                             exprs.push(*input);
                         }
-                        AExpr::Literal { .. } | AExpr::Column { .. } | AExpr::Wildcard => {}
+                        AExpr::Literal { .. }
+                        | AExpr::Column { .. }
+                        | AExpr::Wildcard => {}
                     }
                 }
             }
