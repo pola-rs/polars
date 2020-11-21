@@ -198,8 +198,8 @@ fn to_alp(
         } => ALogicalPlan::CsvScan {
             path: path.clone(),
             schema: schema.clone(),
-            has_header: has_header,
-            delimiter: delimiter,
+            has_header,
+            delimiter,
         },
         LogicalPlan::DataFrameScan { df, schema } => ALogicalPlan::DataFrameScan {
             df: df.clone(),
@@ -225,7 +225,7 @@ fn to_alp(
             let i = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::DataFrameOp {
                 input: i,
-                operation: operation,
+                operation,
             }
         }
         LogicalPlan::Aggregate {
