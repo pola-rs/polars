@@ -432,10 +432,7 @@ pub(crate) fn clone<T>(t: &T) -> T {
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
-pub(crate) fn get_supertype(
-    l: &ArrowDataType,
-    r: &ArrowDataType,
-) -> Result<ArrowDataType> {
+pub(crate) fn get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Result<ArrowDataType> {
     match _get_supertype(l, r) {
         Some(dt) => Ok(dt),
         None => _get_supertype(r, l).ok_or_else(|| {
