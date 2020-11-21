@@ -217,8 +217,10 @@ impl JoinExec {
 
 impl Executor for JoinExec {
     fn execute(&self) -> Result<DataFrame> {
-        let (df_left, df_right) =
-            rayon::join(|| self.input_left.execute(), || self.input_right.execute());
+        // rayon::join was dropped because that resulted in a deadlock when there were dependencies
+        // between the DataFrames. Like joining a specific computation of a DF back to itself.
+        let df_left = self.input_left.execute();
+        let df_right = self.input_right.execute();
         let df_left = df_left?;
         let df_right = df_right?;
 
