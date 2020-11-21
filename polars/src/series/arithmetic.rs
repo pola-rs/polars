@@ -143,7 +143,7 @@ impl std::ops::Rem for Series {
 
 // Same only now for referenced data types
 
-fn coerce_lhs_rhs<'a>(
+pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {

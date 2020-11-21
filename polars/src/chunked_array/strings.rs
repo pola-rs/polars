@@ -63,4 +63,9 @@ impl Utf8Chunked {
     pub fn to_uppercase(&self) -> Utf8Chunked {
         self.apply(str::to_uppercase)
     }
+
+    /// Concat with the values from a second Utf8Chunked
+    pub fn concat(&self, other: &Utf8Chunked) -> Self {
+        self + other
+    }
 }

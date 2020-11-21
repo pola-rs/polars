@@ -167,6 +167,12 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Caches the result into a new LazyFrame. This should be used to prevent computations
+    /// running multiple times
+    pub fn cache(self) -> Result<LazyFrame> {
+        self.collect().map(|df| df.lazy())
+    }
+
     /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).
     /// Before execution the query is being optimized.
     ///

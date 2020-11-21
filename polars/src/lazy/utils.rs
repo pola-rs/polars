@@ -96,6 +96,7 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::AggMedian(expr) => expr_to_root_column(expr),
         Expr::AggMean(expr) => expr_to_root_column(expr),
         Expr::AggCount(expr) => expr_to_root_column(expr),
+        Expr::Cast { expr, .. } => expr_to_root_column(expr),
         Expr::Apply { input, .. } => expr_to_root_column(input),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),
@@ -114,6 +115,35 @@ pub(crate) fn expressions_to_root_column_exprs(exprs: &[Expr]) -> Result<Vec<Exp
             Err(e) => Err(e),
         })
         .collect()
+}
+
+// Find the first binary expressions somewhere in the tree.
+pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
+    match expr {
+        Expr::Alias(expr, _) => unpack_binary_exprs(expr),
+        Expr::Not(expr) => unpack_binary_exprs(expr),
+        Expr::IsNull(expr) => unpack_binary_exprs(expr),
+        Expr::IsNotNull(expr) => unpack_binary_exprs(expr),
+        Expr::AggFirst(expr) => unpack_binary_exprs(expr),
+        Expr::AggLast(expr) => unpack_binary_exprs(expr),
+        Expr::AggGroups(expr) => unpack_binary_exprs(expr),
+        Expr::AggNUnique(expr) => unpack_binary_exprs(expr),
+        Expr::AggQuantile { expr, .. } => unpack_binary_exprs(expr),
+        Expr::AggSum(expr) => unpack_binary_exprs(expr),
+        Expr::AggMin(expr) => unpack_binary_exprs(expr),
+        Expr::AggMax(expr) => unpack_binary_exprs(expr),
+        Expr::AggMedian(expr) => unpack_binary_exprs(expr),
+        Expr::AggMean(expr) => unpack_binary_exprs(expr),
+        Expr::AggCount(expr) => unpack_binary_exprs(expr),
+        Expr::BinaryExpr { left, right, .. } => Ok((&**left, &**right)),
+        Expr::Sort { expr, .. } => unpack_binary_exprs(expr),
+        Expr::Shift { input, .. } => unpack_binary_exprs(input),
+        Expr::Apply { input, .. } => unpack_binary_exprs(input),
+        Expr::Cast { expr, .. } => unpack_binary_exprs(expr),
+        a => Err(PolarsError::Other(
+            format!("No binary expression could be found for {:?}", a).into(),
+        )),
+    }
 }
 
 // unpack alias(col) to name of the root column name
@@ -151,6 +181,7 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
         Expr::Sort { expr, .. } => expr_to_root_column_expr(expr),
         Expr::Shift { input, .. } => expr_to_root_column_expr(input),
         Expr::Apply { input, .. } => expr_to_root_column_expr(input),
+        Expr::Cast { expr, .. } => expr_to_root_column_expr(expr),
         Expr::Wildcard => Ok(expr),
         a => Err(PolarsError::Other(
             format!("No root column expr could be found for {:?}", a).into(),
@@ -201,6 +232,7 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
                 reverse: *reverse,
             })
         }
+        Expr::Cast { expr, .. } => rename_expr_root_name(expr, new_name),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),
         )),
