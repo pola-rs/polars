@@ -53,11 +53,13 @@ impl PyLazyFrame {
         type_coercion: bool,
         predicate_pushdown: bool,
         projection_pushdown: bool,
+        simplify_expr: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
             .with_type_coercion_optimization(type_coercion)
             .with_predicate_pushdown_optimization(predicate_pushdown)
+            .with_simplify_expr_optimization(simplify_expr)
             .with_projection_pushdown_optimization(projection_pushdown);
         ldf.into()
     }

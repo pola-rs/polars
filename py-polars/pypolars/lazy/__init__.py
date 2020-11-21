@@ -4,7 +4,7 @@ from pypolars import Series
 from pypolars.frame import DataFrame, wrap_df
 
 try:
-    from .pypolars import (
+    from ..pypolars import (
         PyLazyFrame,
         col as pycol,
         lit as pylit,
@@ -95,9 +95,10 @@ class LazyFrame:
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
+        simplify_expression: bool = True,
     ) -> DataFrame:
         ldf = self._ldf.optimization_toggle(
-            type_coercion, predicate_pushdown, projection_pushdown
+            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
         )
         return wrap_df(ldf.collect())
 
@@ -129,6 +130,10 @@ class LazyFrame:
         right_on: "Expr",
         how="inner",
     ) -> "LazyFrame":
+        if isinstance(left_on, str):
+            left_on = col(left_on)
+        if isinstance(right_on, str):
+            right_on = col(right_on)
         left_on = left_on._pyexpr
         right_on = right_on._pyexpr
         if how == "inner":
@@ -242,35 +247,47 @@ class Expr:
         self._pyexpr = pyexpr
         return self
 
+    def __to_pyexpr(self, other):
+        if isinstance(other, PyExpr):
+            return other
+        if isinstance(other, Expr):
+            return other._pyexpr
+        return lit(other)._pyexpr
+
+    def __to_expr(self, other):
+        if isinstance(other, Expr):
+            return other
+        return lit(other)
+
     def __add__(self, other):
-        return wrap_expr(self._pyexpr + other._pyexpr)
+        return wrap_expr(self._pyexpr + self.__to_pyexpr(other))
 
     def __sub__(self, other):
-        return wrap_expr(self._pyexpr - other._pyexpr)
+        return wrap_expr(self._pyexpr - self.__to_pyexpr(other))
 
     def __mul__(self, other):
-        return wrap_expr(self._pyexpr * other._pyexpr)
+        return wrap_expr(self._pyexpr * self.__to_pyexpr(other))
 
     def __truediv__(self, other):
-        return wrap_expr(self._pyexpr / other._pyexpr)
+        return wrap_expr(self._pyexpr / self.__to_pyexpr(other))
 
     def __ge__(self, other):
-        return self.gt_eq(other)
+        return self.gt_eq(self.__to_expr(other))
 
     def __le__(self, other):
-        return self.lt_eq(other)
+        return self.lt_eq(self.__to_expr(other))
 
     def __eq__(self, other):
-        return self.eq(other)
+        return self.eq(self.__to_expr(other))
 
     def __ne__(self, other):
-        return self.neq(other)
+        return self.neq(self.__to_expr(other))
 
     def __lt__(self, other):
-        return self.lt(other)
+        return self.lt(self.__to_expr(other))
 
     def __gt__(self, other):
-        return self.gt(other)
+        return self.gt(self.__to_expr(other))
 
     def eq(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr.eq(other._pyexpr))
