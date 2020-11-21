@@ -179,6 +179,16 @@ impl PyLazyFrame {
         ldf.explode(column).into()
     }
 
+    pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.drop_duplicates(maintain_order, subset).into()
+    }
+
+    pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.drop_nulls(subset).into()
+    }
+
     pub fn clone(&self) -> PyLazyFrame {
         self.ldf.clone().into()
     }

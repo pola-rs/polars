@@ -53,6 +53,7 @@ pub enum Expr {
     AggLast(Box<Expr>),
     AggMean(Box<Expr>),
     AggList(Box<Expr>),
+    AggCount(Box<Expr>),
     AggQuantile {
         expr: Box<Expr>,
         quantile: f64,
@@ -103,6 +104,7 @@ impl PartialEq for Expr {
             Expr::AggMax(left) => impl_partial_eq!(AggMax, left, other),
             Expr::AggSum(left) => impl_partial_eq!(AggSum, left, other),
             Expr::AggList(left) => impl_partial_eq!(AggList, left, other),
+            Expr::AggCount(left) => impl_partial_eq!(AggCount, left, other),
             Expr::Column(left) => impl_partial_eq!(Column, left, other),
             Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
             Expr::Wildcard => matches!(other, Expr::Wildcard),
@@ -220,10 +222,11 @@ impl Expr {
             AggSum(expr) => expr.get_type(schema),
             AggFirst(expr) => expr.get_type(schema),
             AggLast(expr) => expr.get_type(schema),
-            AggList(expr) => expr.get_type(schema),
+            AggCount(expr) => expr.get_type(schema),
+            AggList(expr) => Ok(ArrowDataType::List(Box::new(expr.get_type(schema)?))),
             AggMean(expr) => expr.get_type(schema),
             AggMedian(expr) => expr.get_type(schema),
-            AggGroups(_) => Ok(ArrowDataType::UInt32),
+            AggGroups(_) => Ok(ArrowDataType::List(Box::new(ArrowDataType::UInt32))),
             AggNUnique(_) => Ok(ArrowDataType::UInt32),
             AggQuantile { expr, .. } => expr.get_type(schema),
             Cast { data_type, .. } => Ok(data_type.clone()),
@@ -308,6 +311,16 @@ impl Expr {
             AggGroups(expr) => {
                 let field = expr.to_field(schema)?;
                 let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
+                let new_field = Field::new(
+                    &new_name,
+                    ArrowDataType::List(Box::new(ArrowDataType::UInt32)),
+                    field.is_nullable(),
+                );
+                Ok(new_field)
+            }
+            AggCount(expr) => {
+                let field = expr.to_field(schema)?;
+                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Count);
                 let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
                 Ok(new_field)
             }
@@ -369,6 +382,7 @@ impl fmt::Debug for Expr {
             AggNUnique(expr) => write!(f, "AGGREGATE N UNIQUE {:?}", expr),
             AggSum(expr) => write!(f, "AGGREGATE SUM {:?}", expr),
             AggGroups(expr) => write!(f, "AGGREGATE GROUPS {:?}", expr),
+            AggCount(expr) => write!(f, "AGGREGATE COUNT {:?}", expr),
             AggQuantile { expr, .. } => write!(f, "AGGREGATE QUANTILE {:?}", expr),
             Cast { expr, data_type } => write!(f, "CAST {:?} TO {:?}", expr, data_type),
             Ternary {
@@ -592,6 +606,11 @@ impl Expr {
         Expr::AggGroups(Box::new(self))
     }
 
+    /// Get counts of the group by operation.
+    pub fn agg_count(self) -> Self {
+        Expr::AggCount(Box::new(self))
+    }
+
     /// Cast expression to another data type.
     pub fn cast(self, data_type: ArrowDataType) -> Self {
         Expr::Cast {
@@ -670,6 +689,20 @@ impl Expr {
     pub fn quantile(self, quantile: f64) -> Self {
         let function = move |s: Series| s.quantile_as_series(quantile);
         self.apply(function, None)
+    }
+
+    /// Get a mask of duplicated values
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_duplicated(self) -> Self {
+        let function = move |s: Series| s.is_duplicated().map(|ca| ca.into());
+        self.apply(function, Some(ArrowDataType::Boolean))
+    }
+
+    /// Get a mask of unique values
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_unique(self) -> Self {
+        let function = move |s: Series| s.is_unique().map(|ca| ca.into());
+        self.apply(function, Some(ArrowDataType::Boolean))
     }
 
     /// and operation

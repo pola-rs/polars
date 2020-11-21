@@ -6,6 +6,47 @@ use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
+use std::any::Any;
+
+#[derive(Clone, Debug)]
+pub struct ObjectValue {
+    inner: PyObject,
+}
+
+impl<'a> FromPyObject<'a> for ObjectValue {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        Ok(ObjectValue {
+            inner: ob.to_object(python),
+        })
+    }
+}
+
+/// # Safety
+///
+/// The caller is responsible for checking that val is Object otherwise UB
+impl From<&dyn Any> for &ObjectValue {
+    fn from(val: &dyn Any) -> Self {
+        unsafe { &*(val as *const dyn Any as *const ObjectValue) }
+    }
+}
+
+impl ToPyObject for ObjectValue {
+    fn to_object(&self, _py: Python) -> PyObject {
+        self.inner.clone()
+    }
+}
+
+impl Default for ObjectValue {
+    fn default() -> Self {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        ObjectValue {
+            inner: python.None(),
+        }
+    }
+}
 
 #[pyclass]
 #[repr(transparent)]
@@ -113,6 +154,29 @@ impl PySeries {
         let mut s = val.0.into_series();
         s.rename(name);
         PySeries::new(s)
+    }
+
+    #[staticmethod]
+    pub fn new_object(name: &str, val: Vec<ObjectValue>) -> Self {
+        let s = Series::Object(Box::new(ObjectChunked::<ObjectValue>::new_from_vec(
+            name, val,
+        )));
+        s.into()
+    }
+
+    pub fn get_object(&self, index: usize) -> PyObject {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        if let Series::Object(ca) = &self.series {
+            // we don't use the null bitmap in this context as T::default is pyobject None
+            let any = ca.get_as_any(index);
+            let obj: &ObjectValue = any.into();
+            let gil = Python::acquire_gil();
+            let python = gil.python();
+            obj.to_object(python)
+        } else {
+            python.None()
+        }
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
@@ -326,9 +390,25 @@ impl PySeries {
             Series::Date32(ca) => PyList::new(python, ca),
             Series::Date64(ca) => PyList::new(python, ca),
             Series::Time64Nanosecond(ca) => PyList::new(python, ca),
-            Series::DurationNanosecond(ca) => PyList::new(python, ca),
             Series::Bool(ca) => PyList::new(python, ca),
             Series::Utf8(ca) => PyList::new(python, ca),
+            Series::DurationNanosecond(ca) => PyList::new(python, ca),
+            Series::DurationMicrosecond(ca) => PyList::new(python, ca),
+            Series::DurationMillisecond(ca) => PyList::new(python, ca),
+            Series::DurationSecond(ca) => PyList::new(python, ca),
+            Series::Object(ca) => {
+                let v = PyList::empty(python);
+                for i in 0..ca.len() {
+                    let val = ca
+                        .get_as_any(i)
+                        .downcast_ref::<ObjectValue>()
+                        .map(|obj| obj.inner.clone())
+                        .unwrap_or(python.None());
+
+                    v.append(val).unwrap();
+                }
+                v
+            }
             _ => todo!(),
         };
         pylist.to_object(python)
@@ -413,6 +493,7 @@ impl PySeries {
             }
             Series::Utf8(_) => self.to_list(),
             Series::List(_) => self.to_list(),
+            Series::Object(_) => self.to_list(),
             _ => todo!(),
         }
     }

@@ -259,106 +259,114 @@ macro_rules! impl_to_field_for_agg {
     }};
 }
 
-macro_rules! impl_aggregation {
-    ($expr_struct:ident, $agg_method:ident, $groupby_method_variant:expr, $finish_evaluate:ident) => {
-        pub struct $expr_struct {
-            expr: Arc<dyn PhysicalExpr>,
-        }
-
-        impl $expr_struct {
-            pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-                Self { expr }
-            }
-        }
-
-        impl PhysicalExpr for $expr_struct {
-            fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-                unimplemented!()
-            }
-
-            fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-                impl_to_field_for_agg!(self, input_schema, $groupby_method_variant)
-            }
-
-            fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-                Ok(self)
-            }
-        }
-
-        impl AggPhysicalExpr for $expr_struct {
-            fn evaluate(
-                &self,
-                df: &DataFrame,
-                groups: &[(usize, Vec<usize>)],
-            ) -> Result<Option<Series>> {
-                let series = self.expr.evaluate(df)?;
-                let new_name = fmt_groupby_column(series.name(), $groupby_method_variant);
-                let opt_agg = apply_method_all_arrow_series!(series, $agg_method, groups);
-                $finish_evaluate!(opt_agg, new_name)
-            }
-        }
-    };
+pub(crate) struct AggExpr {
+    expr: Arc<dyn PhysicalExpr>,
+    agg_type: GroupByMethod,
 }
 
-macro_rules! rename_and_cast_to_series {
-    ($opt_agg:expr, $new_name:expr) => {{
-        let opt_agg = $opt_agg.map(|mut agg| {
-            agg.rename(&$new_name);
-            agg.into_series()
-        });
-        Ok(opt_agg)
-    }};
-}
-macro_rules! rename_and_cast_to_option {
-    ($agg:expr, $new_name:expr) => {{
-        let mut agg = $agg;
-        agg.rename(&$new_name);
-        Ok(Some(agg))
-    }};
+impl AggExpr {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod) -> Self {
+        Self { expr, agg_type }
+    }
 }
 
-impl_aggregation!(
-    AggMinExpr,
-    agg_min,
-    GroupByMethod::Min,
-    rename_and_cast_to_series
-);
-impl_aggregation!(
-    AggMaxExpr,
-    agg_max,
-    GroupByMethod::Max,
-    rename_and_cast_to_series
-);
-impl_aggregation!(
-    AggFirstExpr,
-    agg_first,
-    GroupByMethod::First,
-    rename_and_cast_to_option
-);
-impl_aggregation!(
-    AggLastExpr,
-    agg_last,
-    GroupByMethod::Last,
-    rename_and_cast_to_option
-);
-impl_aggregation!(
-    AggMedianExpr,
-    agg_median,
-    GroupByMethod::Median,
-    rename_and_cast_to_series
-);
-impl_aggregation!(
-    AggMeanExpr,
-    agg_mean,
-    GroupByMethod::Mean,
-    rename_and_cast_to_series
-);
-impl_aggregation!(
-    AggSumExpr,
-    agg_sum,
-    GroupByMethod::Sum,
-    rename_and_cast_to_series
-);
+impl PhysicalExpr for AggExpr {
+    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        let field = self.expr.to_field(input_schema)?;
+        let new_name = fmt_groupby_column(field.name(), self.agg_type);
+        Ok(Field::new(
+            &new_name,
+            field.data_type().clone(),
+            field.is_nullable(),
+        ))
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+fn rename_option_series(opt: Option<Series>, name: &str) -> Option<Series> {
+    opt.map(|mut s| {
+        s.rename(name);
+        s
+    })
+}
+
+impl AggPhysicalExpr for AggExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
+        let series = self.expr.evaluate(df)?;
+        let new_name = fmt_groupby_column(series.name(), self.agg_type);
+
+        match self.agg_type {
+            GroupByMethod::Min => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_min, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Max => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_max, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Median => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_median, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Mean => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_mean, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Sum => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_sum, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Count => {
+                let mut ca: Xob<UInt32Chunked> =
+                    groups.iter().map(|(_, g)| g.len() as u32).collect();
+                ca.rename(&new_name);
+                Ok(Some(ca.into_inner().into()))
+            }
+            GroupByMethod::First => {
+                let mut agg_s = apply_method_all_arrow_series!(series, agg_first, groups);
+                agg_s.rename(&new_name);
+                Ok(Some(agg_s))
+            }
+            GroupByMethod::Last => {
+                let mut agg_s = apply_method_all_arrow_series!(series, agg_last, groups);
+                agg_s.rename(&new_name);
+                Ok(Some(agg_s))
+            }
+            GroupByMethod::NUnique => {
+                let opt_agg = apply_method_all_arrow_series!(series, agg_n_unique, groups);
+                let opt_agg = opt_agg.map(|mut agg| {
+                    agg.rename(&new_name);
+                    agg.into_series()
+                });
+                Ok(opt_agg)
+            }
+            GroupByMethod::List => {
+                let opt_agg = apply_method_all_arrow_series!(series, agg_list, groups);
+                Ok(rename_option_series(opt_agg, &new_name))
+            }
+            GroupByMethod::Groups => {
+                let mut column: ListChunked = groups
+                    .iter()
+                    .map(|(_first, idx)| {
+                        let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
+                        ca.into_inner().into_series()
+                    })
+                    .collect();
+
+                column.rename(&new_name);
+                Ok(Some(column.into_series()))
+            }
+            _ => unimplemented!(),
+        }
+    }
+}
 
 pub struct AggQuantileExpr {
     expr: Arc<dyn PhysicalExpr>,
@@ -390,132 +398,6 @@ impl AggPhysicalExpr for AggQuantileExpr {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
         let opt_agg = apply_method_all_arrow_series!(series, agg_quantile, groups, self.quantile);
-
-        let opt_agg = opt_agg.map(|mut agg| {
-            agg.rename(&new_name);
-            agg.into_series()
-        });
-
-        Ok(opt_agg)
-    }
-}
-
-pub struct AggGroupsExpr {
-    expr: Arc<dyn PhysicalExpr>,
-}
-
-impl AggGroupsExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
-    }
-}
-
-impl PhysicalExpr for AggGroupsExpr {
-    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-        let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
-        Ok(new_field)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        Ok(self)
-    }
-}
-
-impl AggPhysicalExpr for AggGroupsExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df)?;
-        let new_name = fmt_groupby_column(series.name(), GroupByMethod::Groups);
-
-        let mut column: ListChunked = groups
-            .iter()
-            .map(|(_first, idx)| {
-                let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
-                ca.into_inner().into_series()
-            })
-            .collect();
-
-        column.rename(&new_name);
-        Ok(Some(column.into_series()))
-    }
-}
-
-pub struct AggNUniqueExpr {
-    expr: Arc<dyn PhysicalExpr>,
-}
-
-impl AggNUniqueExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
-    }
-}
-
-impl PhysicalExpr for AggNUniqueExpr {
-    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        impl_to_field_for_agg!(self, input_schema, GroupByMethod::List)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        Ok(self)
-    }
-}
-
-impl AggPhysicalExpr for AggListExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df)?;
-        let new_name = fmt_groupby_column(series.name(), GroupByMethod::List);
-        let opt_agg = apply_method_all_arrow_series!(series, agg_list, groups);
-
-        let opt_agg = opt_agg.map(|mut agg| {
-            agg.rename(&new_name);
-            agg.into_series()
-        });
-
-        Ok(opt_agg)
-    }
-}
-
-pub struct AggListExpr {
-    expr: Arc<dyn PhysicalExpr>,
-}
-
-impl AggListExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
-    }
-}
-
-impl PhysicalExpr for AggListExpr {
-    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), GroupByMethod::List);
-        let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
-        Ok(new_field)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        Ok(self)
-    }
-}
-
-impl AggPhysicalExpr for AggNUniqueExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df)?;
-        let new_name = fmt_groupby_column(series.name(), GroupByMethod::NUnique);
-        let opt_agg = apply_method_all_arrow_series!(series, agg_n_unique, groups);
 
         let opt_agg = opt_agg.map(|mut agg| {
             agg.rename(&new_name);

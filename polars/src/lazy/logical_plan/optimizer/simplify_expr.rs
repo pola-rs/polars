@@ -38,6 +38,7 @@ enum AExpr {
         quantile: f64,
     },
     AggSum(Node),
+    AggCount(Node),
     AggGroups(Node),
     Ternary {
         predicate: Node,
@@ -136,6 +137,7 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::AggLast(expr) => AExpr::AggLast(to_aexpr(*expr, arena)),
         Expr::AggMean(expr) => AExpr::AggMean(to_aexpr(*expr, arena)),
         Expr::AggList(expr) => AExpr::AggList(to_aexpr(*expr, arena)),
+        Expr::AggCount(expr) => AExpr::AggCount(to_aexpr(*expr, arena)),
         Expr::AggQuantile { expr, quantile } => AExpr::AggQuantile {
             expr: to_aexpr(*expr, arena),
             quantile,
@@ -415,6 +417,10 @@ fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 function: function.clone(),
                 output_type: output_type.clone(),
             }
+        }
+        AExpr::AggCount(expr) => {
+            let exp = node_to_exp(*expr, expr_arena);
+            Expr::AggCount(Box::new(exp))
         }
 
         AExpr::Wildcard => Expr::Wildcard,
@@ -876,6 +882,9 @@ impl SimplifyOptimizer {
                         }
                         AExpr::Shift { input, .. } => {
                             exprs.push(*input);
+                        }
+                        AExpr::AggCount(expr) => {
+                            exprs.push(*expr);
                         }
                         AExpr::Ternary {
                             predicate,

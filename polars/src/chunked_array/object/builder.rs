@@ -6,6 +6,12 @@ use arrow::util::bit_util::count_set_bits;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+pub struct ObjectChunkedBuilder<T> {
+    field: Field,
+    bitmask_builder: BooleanBufferBuilder,
+    values: Vec<T>,
+}
+
 impl<T> ObjectChunkedBuilder<T>
 where
     T: Any + Debug + Clone + Send + Sync + Default,
@@ -55,14 +61,14 @@ where
         let null_bitmap = Bitmap::from(null_bit_buffer);
         let null_bitmap = match null_count {
             0 => None,
-            _ => Some(null_bitmap),
+            _ => Some(Arc::new(null_bitmap)),
         };
 
         let len = self.values.len();
 
         let arr = Arc::new(ObjectArray {
             values: Arc::new(self.values),
-            null_bitmap: Arc::new(null_bitmap),
+            null_bitmap,
             null_count,
             offset: 0,
             len,
@@ -113,5 +119,30 @@ where
         let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
         it.for_each(|v| builder.append_value(v));
         builder.finish()
+    }
+}
+
+impl<T> ObjectChunked<T>
+where
+    T: Any + Debug + Clone + Send + Sync + Default,
+{
+    pub fn new_from_vec(name: &str, v: Vec<T>) -> Self {
+        let field = Arc::new(Field::new(name, ArrowDataType::Binary, false));
+        let len = v.len();
+
+        let arr = Arc::new(ObjectArray {
+            values: Arc::new(v),
+            null_bitmap: None,
+            null_count: 0,
+            offset: 0,
+            len,
+        });
+
+        ObjectChunked {
+            field,
+            chunks: vec![arr],
+            chunk_id: vec![len],
+            phantom: PhantomData,
+        }
     }
 }

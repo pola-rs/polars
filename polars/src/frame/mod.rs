@@ -139,11 +139,19 @@ impl DataFrame {
 
     /// Aggregate all chunks to contiguous memory.
     pub fn agg_chunks(&self) -> Self {
-        let cols = self
-            .columns
-            .par_iter()
-            .map(|s| s.rechunk(Some(&[1])).expect("can always rechunk to single"))
-            .collect();
+        let f = |s: &Series| s.rechunk(Some(&[1])).expect("can always rechunk to single");
+        // breakpoint for parallel aggregation
+        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
+            .unwrap_or_else(|_| "".to_string())
+            .parse()
+            .unwrap_or(15);
+
+        let cols = if self.columns.len() > bp {
+            self.columns.par_iter().map(f).collect()
+        } else {
+            self.columns.iter().map(f).collect()
+        };
+
         DataFrame::new_no_checks(cols)
     }
 
@@ -398,8 +406,17 @@ impl DataFrame {
     }
 
     /// Return a new DataFrame where all null values are dropped
-    pub fn drop_nulls(&self) -> Result<Self> {
-        let mut iter = self.columns.iter();
+    pub fn drop_nulls(&self, subset: Option<&[String]>) -> Result<Self> {
+        let selected_series;
+
+        let mut iter = match subset {
+            Some(cols) => {
+                selected_series = self.select_series(&cols)?;
+                selected_series.iter()
+            }
+            None => self.columns.iter(),
+        };
+
         let mask = iter
             .next()
             .ok_or_else(|| PolarsError::NoData("No data to drop nulls from".into()))?;
@@ -1349,7 +1366,7 @@ impl DataFrame {
     ///                    "int" => [1, 1, 2, 2, 3, 3, ],
     ///                    "str" => ["a", "a", "b", "b", "c", "c"]
     ///                }?;
-    ///      df.drop_duplicates(true)
+    ///      df.drop_duplicates(true, None)
     ///  }
     /// # }
     /// ```
@@ -1368,8 +1385,12 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    pub fn drop_duplicates(&self, maintain_order: bool) -> Result<Self> {
-        let gb = self.groupby(self.get_column_names())?;
+    pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<&[String]>) -> Result<Self> {
+        let names = match &subset {
+            Some(s) => s.iter().map(|s| &**s).collect(),
+            None => self.get_column_names(),
+        };
+        let gb = self.groupby(names)?;
         let groups = gb.get_groups().iter().map(|v| v.0);
 
         let df = if maintain_order {
@@ -1520,7 +1541,7 @@ mod test {
         .unwrap();
         dbg!(&df);
         let df = df
-            .drop_duplicates(true)
+            .drop_duplicates(true, None)
             .unwrap()
             .sort("flt", false)
             .unwrap();

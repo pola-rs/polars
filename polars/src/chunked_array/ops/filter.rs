@@ -1,5 +1,5 @@
 use crate::chunked_array::builder::get_list_builder;
-use crate::chunked_array::object::ObjectChunkedBuilder;
+use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::array::Array;

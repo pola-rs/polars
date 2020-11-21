@@ -100,6 +100,10 @@ impl TypeCoercion {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.agg_groups())
             }
+            AggCount(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.agg_count())
+            }
             Ternary {
                 predicate,
                 truthy,

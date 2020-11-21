@@ -18,7 +18,6 @@ pub use arrow::datatypes::{
     TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt16Type, UInt32Type,
     UInt64Type, UInt8Type,
 };
-use std::any::Any;
 
 pub struct Utf8Type {}
 
@@ -233,7 +232,8 @@ pub enum AnyType<'a> {
     IntervalDayTime(i64),
     IntervalYearMonth(i32),
     List(Series),
-    Object(&'a dyn Any),
+    /// Use as_any to get a dyn Any
+    Object(&'a str),
 }
 
 pub trait ToStr {

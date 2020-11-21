@@ -147,6 +147,7 @@ pub enum CsvEncoding {
 ///     CsvReader::new(file)
 ///             .infer_schema(None)
 ///             .has_header(true)
+///             .with_one_thread(true) // set this to false to try multi-threaded parsing
 ///             .finish()
 /// }
 /// ```
@@ -247,7 +248,10 @@ where
         self
     }
 
-    /// Use slower single threaded CSV parsing.
+    /// Use single threaded CSV parsing (this is default).
+    /// This is recommended when there are not many columns in the csv file.
+    ///
+    /// If multi-threaded is faster depends on your specific use case.
     /// This is internally used for Python file handlers
     pub fn with_one_thread(mut self, one_thread: bool) -> Self {
         self.one_thread = one_thread;
@@ -275,7 +279,7 @@ where
             schema: None,
             columns: None,
             encoding: CsvEncoding::Utf8,
-            one_thread: false,
+            one_thread: true,
         }
     }
 

@@ -182,9 +182,6 @@ def test_apply():
     b = a.apply(lambda x: len(x))
     assert b == [3, 3, None]
 
-    with pytest.raises(TypeError):
-        a.apply(lambda x: len(x), sniff_dtype=False)
-
 
 def test_shift():
     a = Series("a", [1, 2, 3])
@@ -209,3 +206,11 @@ def test_rolling():
     assert a.rolling_min(2) == [None, 1, 2, 2, 1]
     assert a.rolling_max(2) == [None, 2, 3, 3, 2]
     assert a.rolling_sum(2) == [None, 3, 5, 5, 3]
+
+
+def test_object():
+    vals = [[12], "foo", 9]
+    a = Series("a", vals)
+    assert a.dtype == Object
+    assert a.to_list() == vals
+    assert a[1] == "foo"

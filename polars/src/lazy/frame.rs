@@ -465,6 +465,23 @@ impl LazyFrame {
         let lp = self.get_plan_builder().explode(column).build();
         Self::from_logical_plan(lp, opt_state)
     }
+
+    /// Drop duplicate rows. [See eager](crate::prelude::DataFrame::drop_duplicates).
+    pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .drop_duplicates(maintain_order, subset)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Drop null rows. [See eager](crate::prelude::DataFrame::drop_nulls).
+    pub fn drop_nulls(self, subset: Option<Vec<String>>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_nulls(subset).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
 }
 
 /// Utility struct for lazy groupby operation.

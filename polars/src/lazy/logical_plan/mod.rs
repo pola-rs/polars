@@ -63,9 +63,14 @@ impl ScalarValue {
 
 #[derive(Clone)]
 pub enum DataFrameOperation {
-    Sort { by_column: String, reverse: bool },
+    Sort {
+        by_column: String,
+        reverse: bool,
+    },
     Reverse,
-    Shift { periods: i32 },
+    Shift {
+        periods: i32,
+    },
     Max,
     Min,
     Sum,
@@ -73,6 +78,13 @@ pub enum DataFrameOperation {
     Median,
     Quantile(f64),
     Explode(String),
+    DropDuplicates {
+        maintain_order: bool,
+        subset: Option<Vec<String>>,
+    },
+    DropNulls {
+        subset: Option<Vec<String>>,
+    },
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -169,6 +181,12 @@ impl fmt::Debug for LogicalPlan {
                 DataFrameOperation::Median => write!(f, "MEDIAN {:?}", input),
                 DataFrameOperation::Quantile(_) => write!(f, "QUANTILE {:?}", input),
                 DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
+                DataFrameOperation::DropDuplicates { .. } => {
+                    write!(f, "DROP DUPLICATES {:?}", input)
+                }
+                DataFrameOperation::DropNulls { .. } => {
+                    write!(f, "DROP NULLS {:?}", input)
+                }
             },
             Aggregate {
                 input, keys, aggs, ..
@@ -233,6 +251,9 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
         Expr::AggMax(e) => Expr::AggMax(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::AggMin(e) => Expr::AggMin(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::AggSum(e) => Expr::AggSum(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::AggCount(e) => {
+            Expr::AggCount(Box::new(replace_wildcard_with_column(*e, column_name)))
+        }
         Expr::AggLast(e) => Expr::AggLast(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::AggFirst(e) => {
             Expr::AggFirst(Box::new(replace_wildcard_with_column(*e, column_name)))
@@ -423,6 +444,25 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameOp {
             input: Box::new(self.0),
             operation: DataFrameOperation::Explode(column.to_owned()),
+        }
+        .into()
+    }
+
+    pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::DropDuplicates {
+                maintain_order,
+                subset,
+            },
+        }
+        .into()
+    }
+
+    pub fn drop_nulls(self, subset: Option<Vec<String>>) -> Self {
+        LogicalPlan::DataFrameOp {
+            input: Box::new(self.0),
+            operation: DataFrameOperation::DropNulls { subset },
         }
         .into()
     }

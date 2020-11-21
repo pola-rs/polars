@@ -28,6 +28,21 @@ def lazy(self) -> "LazyFrame":
 DataFrame.lazy = lazy
 
 
+def _selection_to_pyexpr_list(exprs) -> "List[PyExpr]":
+    if not isinstance(exprs, list):
+        if isinstance(exprs, str):
+            exprs = col(exprs)
+        exprs = [exprs._pyexpr]
+    else:
+        new = []
+        for expr in exprs:
+            if isinstance(expr, str):
+                expr = col(expr)
+            new.append(expr._pyexpr)
+        exprs = new
+    return exprs
+
+
 def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
     return LazyFrame.from_pyldf(ldf)
 
@@ -37,10 +52,7 @@ class LazyGroupBy:
         self.lgb = lgb
 
     def agg(self, aggs: "Union[List[Expr], Expr]") -> "LazyFrame":
-        if isinstance(aggs, Expr):
-            aggs = [aggs._pyexpr]
-        else:
-            aggs = [e._pyexpr for e in aggs]
+        aggs = _selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
 
 
@@ -93,10 +105,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(self, exprs: "Expr") -> "LazyFrame":
-        if not isinstance(exprs, list):
-            exprs = [exprs._pyexpr]
-        else:
-            exprs = [e._pyexpr for e in exprs]
+        exprs = _selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 
     def groupby(self, by: Union[str, List[str]]) -> LazyGroupBy:
@@ -194,7 +203,29 @@ class LazyFrame:
         return wrap_ldf(self._ldf.quantile(quantile))
 
     def explode(self, column: str) -> "LazyFrame":
+        """
+        Explode lists to long format
+        """
         return wrap_ldf(self._ldf.explode(column))
+
+    def drop_duplicates(
+        self, maintain_order: bool, subset: "Optional[List[str]]" = None
+    ) -> "LazyFrame":
+        """
+        Drop duplicate rows from this DataFrame.
+        Note that this fails if there is a column of type `List` in the DataFrame.
+        """
+        if subset is not None and not isinstance(subset, list):
+            subset = [subset]
+        return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
+
+    def drop_nulls(self, subset: "Optional[List[str]]" = None) -> "LazyFrame":
+        """
+        Drop rows with null values from this DataFrame.
+        """
+        if subset is not None and not isinstance(subset, list):
+            subset = [subset]
+        return wrap_ldf(self._ldf.drop_nulls(subset))
 
 
 def wrap_expr(pyexpr: "PyExpr") -> "Expr":
@@ -304,6 +335,9 @@ class Expr:
     def agg_groups(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_groups())
 
+    def agg_count(self) -> "Expr":
+        return wrap_expr(self._pyexpr.agg_count())
+
     def cast(self, data_type: "DataType") -> "Expr":
         return wrap_expr(self._pyexpr.cast(data_type))
 
@@ -343,6 +377,12 @@ class Expr:
     def median(self) -> "Expr":
         return wrap_expr(self._pyexpr.mean())
 
+    def is_unique(self) -> "Expr":
+        return wrap_expr(self._pyexpr.is_unique())
+
+    def is_duplicated(self) -> "Expr":
+        return wrap_expr(self._pyexpr.is_duplicated())
+
     def quantile(self, quantile: float) -> "Expr":
         return wrap_expr(self._pyexpr.quantile(quantile))
 
@@ -359,8 +399,13 @@ class Expr:
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
     def apply(
-        self, f: Callable[[Series], Series], output_type: Optional["DataType"] = None
+        self,
+        f: "Union[UDF, Callable[[Series], Series]]",
+        output_type: Optional["DataType"] = None,
     ) -> "Expr":
+        if isinstance(f, UDF):
+            output_type = f.output_type
+            f = f.f
         return wrap_expr(self._pyexpr.apply(f, output_type))
 
 
@@ -392,3 +437,13 @@ def col(name: str) -> "Expr":
 
 def lit(value: Union[float, int]) -> "Expr":
     return wrap_expr(pylit(value))
+
+
+class UDF:
+    def __init__(self, f: Callable[[Series], Series], output_type: "DataType"):
+        self.f = f
+        self.output_type = output_type
+
+
+def udf(f: Callable[[Series], Series], output_type: "DataType"):
+    return UDF(f, output_type)

@@ -107,6 +107,9 @@ class Series:
         if isinstance(values, np.ndarray):
             if not values.data.contiguous:
                 values = np.array(values)
+            if len(values.shape) > 1:
+                self._s = PySeries.new_object(name, values)
+                return
             dtype = values.dtype
             if dtype == np.int64:
                 self._s = PySeries.new_i64(name, values)
@@ -133,7 +136,7 @@ class Series:
             elif dtype == np.uint64:
                 self._s = PySeries.new_u64(name, values)
             else:
-                raise ValueError(f"dtype: {dtype} not known")
+                self._s = PySeries.new_object(name, values)
         # list path
         else:
             dtype = find_first_non_none(values)
@@ -146,7 +149,7 @@ class Series:
             elif isinstance(dtype, bool):
                 self._s = PySeries.new_opt_bool(name, values)
             else:
-                raise ValueError(f"dtype: {dtype} not known")
+                self._s = PySeries.new_object(name, values)
 
     @staticmethod
     def _from_pyseries(s: "PySeries") -> "Series":
@@ -289,7 +292,7 @@ class Series:
         return wrap_s(f(other))
 
     def __invert__(self):
-        if self.dtype == Bool:
+        if self.dtype == Boolean:
             return wrap_s(self._s._not())
         return NotImplemented
 
@@ -343,7 +346,7 @@ class Series:
 
     def __setitem__(self, key, value):
         if isinstance(key, Series):
-            if key.dtype == Bool:
+            if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
             elif key.dtype == UInt64:
                 self._s = self.set_at_idx(key, value)._s
@@ -368,7 +371,7 @@ class Series:
         """
         Reduce this Series to the sum value.
         """
-        if self.dtype == Bool:
+        if self.dtype == Boolean:
             return self._s.sum_u32()
         f = get_ffi_func("sum_<>", self.dtype, self._s)
         if f is None:
@@ -386,7 +389,7 @@ class Series:
         """
         Get the minimal value in this Series
         """
-        if self.dtype == Bool:
+        if self.dtype == Boolean:
             return self._s.min_u32()
         f = get_ffi_func("min_<>", self.dtype, self._s)
         if f is None:
@@ -397,7 +400,7 @@ class Series:
         """
         Get the maximum value in this Series
         """
-        if self.dtype == Bool:
+        if self.dtype == Boolean:
             return self._s.max_u32()
         f = get_ffi_func("max_<>", self.dtype, self._s)
         if f is None:
@@ -692,7 +695,7 @@ class Series:
         """
         Check if this Series datatype is numeric.
         """
-        return self.dtype not in (Utf8, Bool, List)
+        return self.dtype not in (Utf8, Boolean, List)
 
     def is_float(self) -> bool:
         """
@@ -848,7 +851,7 @@ class Series:
         if sniff_dtype and dtype_out is None:
             if self.is_numeric():
                 dtype_out = out_to_dtype(func(1))
-            elif self.dtype == Bool:
+            elif self.dtype == Boolean:
                 dtype_out = out_to_dtype(func(True))
             elif self.dtype == List:
                 dtype_out = out_to_dtype(func(Series("", [1, 2])))
@@ -1127,7 +1130,7 @@ def out_to_dtype(out: Any) -> "Datatype":
     if isinstance(out, str):
         return Utf8
     if isinstance(out, bool):
-        return Bool
+        return Boolean
     if isinstance(out, Series):
         return List
     return NotImplemented
