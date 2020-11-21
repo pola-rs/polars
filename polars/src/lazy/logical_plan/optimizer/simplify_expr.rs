@@ -201,10 +201,7 @@ fn to_alp(
             has_header,
             delimiter,
         },
-        LogicalPlan::DataFrameScan { df, schema } => ALogicalPlan::DataFrameScan {
-            df,
-            schema,
-        },
+        LogicalPlan::DataFrameScan { df, schema } => ALogicalPlan::DataFrameScan { df, schema },
         LogicalPlan::Projection {
             expr,
             input,
@@ -600,11 +597,7 @@ impl Rule for SimplifyBooleanRule {
                 left,
                 op: Operator::And,
                 right,
-            } if matches!(
-                arena.get(*left),
-                AExpr::Literal(ScalarValue::Boolean(true))
-            ) =>
-            {
+            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
                 Some(arena.get(*right).clone())
             }
             // x AND true => x
@@ -699,11 +692,7 @@ impl Rule for SimplifyBooleanRule {
                 op: Operator::Or,
                 left,
                 ..
-            } if matches!(
-                arena.get(*left),
-                AExpr::Literal(ScalarValue::Boolean(true))
-            ) =>
-            {
+            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
                 Some(AExpr::Literal(ScalarValue::Boolean(false)))
             }
 
@@ -781,8 +770,7 @@ impl SimplifyOptimizer {
                 // apply rules
                 for rule in rules.iter() {
                     // keep iterating over same rule
-                    while let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node))
-                    {
+                    while let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node)) {
                         lp_arena.assign(node, x);
                         changed = true;
                     }
@@ -820,16 +808,13 @@ impl SimplifyOptimizer {
                         plans.push(*input);
                         exprs.extend(e2);
                     }
-                    ALogicalPlan::CsvScan { .. } | ALogicalPlan::DataFrameScan { .. } => {
-                    }
+                    ALogicalPlan::CsvScan { .. } | ALogicalPlan::DataFrameScan { .. } => {}
                 }
 
                 while let Some(node) = exprs.pop() {
                     for rule in rules.iter() {
                         // keep iterating over same rule
-                        while let Some(x) =
-                            rule.optimize_expr(&expr_arena, &expr_arena.get(node))
-                        {
+                        while let Some(x) = rule.optimize_expr(&expr_arena, &expr_arena.get(node)) {
                             expr_arena.assign(node, x);
                             changed = true;
                         }
@@ -911,9 +896,7 @@ impl SimplifyOptimizer {
                         AExpr::Apply { input, .. } => {
                             exprs.push(*input);
                         }
-                        AExpr::Literal { .. }
-                        | AExpr::Column { .. }
-                        | AExpr::Wildcard => {}
+                        AExpr::Literal { .. } | AExpr::Column { .. } | AExpr::Wildcard => {}
                     }
                 }
             }
