@@ -175,6 +175,13 @@ impl LazyFrame {
         self.select(&[col("*").shift(periods)])
     }
 
+    /// Fill none values in the DataFrame
+    pub fn fill_none(self, fill_value: Expr) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().fill_none(fill_value).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Caches the result into a new LazyFrame. This should be used to prevent computations
     /// running multiple times
     pub fn cache(self) -> Result<LazyFrame> {
@@ -911,5 +918,21 @@ mod test {
     fn test_lazy_update_column() {
         let df = load_df();
         df.lazy().with_column(col("a") / lit(10)).collect().unwrap();
+    }
+
+    #[test]
+    fn test_lazy_fill_none() {
+        let df = df! {
+            "a" => &[None, Some(2)],
+            "b" => &[Some(1), None]
+        }
+        .unwrap();
+        let out = df.lazy().fill_none(lit(10.0)).collect().unwrap();
+        let correct = df! {
+            "a" => &[Some(10.0), Some(2.0)],
+            "b" => &[Some(1.0), Some(10.0)]
+        }
+        .unwrap();
+        assert!(out.frame_equal(&correct));
     }
 }
