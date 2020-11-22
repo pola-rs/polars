@@ -237,8 +237,22 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
             })
         }
         Expr::Cast { expr, .. } => rename_expr_root_name(expr, new_name),
+        Expr::Apply {
+            input,
+            function,
+            output_type,
+        } => Ok(Expr::Apply {
+            input: Box::new(rename_expr_root_name(input, new_name)?),
+            function: function.clone(),
+            output_type: output_type.clone(),
+        }),
+        Expr::Shift { input, .. } => rename_expr_root_name(input, new_name),
         a => Err(PolarsError::Other(
-            format!("No root column name could be found for {:?}", a).into(),
+            format!(
+                "No root column name could be found for {:?} when trying to rename",
+                a
+            )
+            .into(),
         )),
     }
 }

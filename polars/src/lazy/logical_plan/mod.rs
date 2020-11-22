@@ -385,6 +385,24 @@ impl LogicalPlanBuilder {
         .into()
     }
 
+    pub fn with_column_renamed(self, existing: &str, new: &str) -> Self {
+        let projection = self
+            .0
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| {
+                let name = f.name();
+                if f.name() == existing {
+                    col(name).alias(new)
+                } else {
+                    col(name)
+                }
+            })
+            .collect::<Vec<_>>();
+        self.project(projection)
+    }
+
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_wildcard(&predicate) {
