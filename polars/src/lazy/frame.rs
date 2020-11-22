@@ -1,7 +1,9 @@
 //! Lazy variant of a [DataFrame](crate::prelude::DataFrame).
 use crate::frame::select::Selection;
+use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
+
 impl DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
     pub fn lazy(self) -> LazyFrame {
@@ -482,11 +484,18 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Drop null rows. [See eager](crate::prelude::DataFrame::drop_nulls).
-    pub fn drop_nulls(self, subset: Option<Vec<String>>) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop_nulls(subset).build();
-        Self::from_logical_plan(lp, opt_state)
+    /// Drop null rows.
+    ///
+    /// Equal to `LazyFrame::filter(col("*").is_not_null())`
+    pub fn drop_nulls(self, subset: Option<&[String]>) -> LazyFrame {
+        match subset {
+            None => self.filter(col("*").is_not_null()),
+            Some(subset) => {
+                let it = subset.iter().map(|name| col(name).is_not_null());
+                let predicate = combine_predicates(it);
+                self.filter(predicate)
+            }
+        }
     }
 }
 
@@ -600,6 +609,23 @@ mod test {
             .collect()
             .unwrap();
         assert_eq!(new.get_column_names(), &["petals", "sepal.width"]);
+    }
+
+    #[test]
+    fn test_lazy_drop_nulls() {
+        let df = df! {
+            "foo" => &[Some(1), None, Some(3)],
+            "bar" => &[Some(1), Some(2), None]
+        }
+        .unwrap();
+
+        let new = df.lazy().drop_nulls(None).collect().unwrap();
+        let out = df! {
+            "foo" => &[Some(1)],
+            "bar" => &[Some(1)]
+        }
+        .unwrap();
+        assert!(new.frame_equal(&out));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 pub(crate) mod optimizer;
+use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
 use crate::lazy::utils::expr_to_root_column_expr;
 use crate::{
@@ -308,6 +309,41 @@ fn remove_wildcard_from_exprs(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     result
 }
 
+/// Check if Expression has a wildcard somewhere in the tree.
+fn has_wildcard(expr: &Expr) -> bool {
+    match expr {
+        Expr::Wildcard => true,
+        Expr::Column(_) => false,
+        Expr::Alias(expr, _) => has_wildcard(expr),
+        Expr::Not(expr) => has_wildcard(expr),
+        Expr::IsNull(expr) => has_wildcard(expr),
+        Expr::IsNotNull(expr) => has_wildcard(expr),
+        Expr::BinaryExpr { left, right, .. } => has_wildcard(left) | has_wildcard(right),
+        Expr::Sort { expr, .. } => has_wildcard(expr),
+        Expr::AggFirst(expr) => has_wildcard(expr),
+        Expr::AggLast(expr) => has_wildcard(expr),
+        Expr::AggGroups(expr) => has_wildcard(expr),
+        Expr::AggNUnique(expr) => has_wildcard(expr),
+        Expr::AggQuantile { expr, .. } => has_wildcard(expr),
+        Expr::AggSum(expr) => has_wildcard(expr),
+        Expr::AggMin(expr) => has_wildcard(expr),
+        Expr::AggMax(expr) => has_wildcard(expr),
+        Expr::AggMedian(expr) => has_wildcard(expr),
+        Expr::AggMean(expr) => has_wildcard(expr),
+        Expr::AggCount(expr) => has_wildcard(expr),
+        Expr::Cast { expr, .. } => has_wildcard(expr),
+        Expr::Apply { input, .. } => has_wildcard(input),
+        Expr::Literal(_) => false,
+        Expr::AggList(expr) => has_wildcard(expr),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => has_wildcard(predicate) | has_wildcard(truthy) | has_wildcard(falsy),
+        Expr::Shift { input, .. } => has_wildcard(input),
+    }
+}
+
 pub struct LogicalPlanBuilder(LogicalPlan);
 
 impl LogicalPlan {
@@ -373,6 +409,14 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
+        let predicate = if has_wildcard(&predicate) {
+            let it = self.0.schema().fields().iter().map(|field| {
+                replace_wildcard_with_column(predicate.clone(), Arc::new(field.name().clone()))
+            });
+            combine_predicates(it)
+        } else {
+            predicate
+        };
         LogicalPlan::Selection {
             predicate,
             input: Box::new(self.0),
