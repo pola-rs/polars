@@ -164,9 +164,7 @@ impl LazyFrame {
     ///
     /// See the method on [Series](Series::shift) for more info on the `shift` operation.
     pub fn shift(self, periods: i32) -> Self {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().shift(periods).build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select(&[col("*").shift(periods)])
     }
 
     /// Caches the result into a new LazyFrame. This should be used to prevent computations
