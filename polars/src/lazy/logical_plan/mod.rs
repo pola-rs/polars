@@ -69,9 +69,6 @@ pub enum DataFrameOperation {
         reverse: bool,
     },
     Reverse,
-    Shift {
-        periods: i32,
-    },
     Max,
     Min,
     Sum,
@@ -169,9 +166,6 @@ impl fmt::Debug for LogicalPlan {
             } => match operation {
                 DataFrameOperation::Sort { .. } => write!(f, "SORT {:?}", input),
                 DataFrameOperation::Reverse => write!(f, "REVERSE {:?}", input),
-                DataFrameOperation::Shift { periods } => {
-                    write!(f, "SHIFT {:?} BY {}", input, periods)
-                }
                 DataFrameOperation::Max => write!(f, "MAX {:?}", input),
                 DataFrameOperation::Min => write!(f, "MIN {:?}", input),
                 DataFrameOperation::Sum => write!(f, "SUM {:?}", input),
@@ -466,14 +460,6 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameOp {
             input: Box::new(self.0),
             operation: DataFrameOperation::Reverse,
-        }
-        .into()
-    }
-
-    pub fn shift(self, periods: i32) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Shift { periods },
         }
         .into()
     }
