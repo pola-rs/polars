@@ -149,7 +149,7 @@ class LazyFrame:
     def filter(self, predicate: "Expr") -> "LazyFrame":
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
-    def select(self, exprs: "Expr") -> "LazyFrame":
+    def select(self, exprs: "Union[str, Expr, List[str], List[Expr]]") -> "LazyFrame":
         exprs = _selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 

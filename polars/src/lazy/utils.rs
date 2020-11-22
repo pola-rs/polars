@@ -25,6 +25,19 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
         Expr::Alias(_, name) => Ok(name.clone()),
         Expr::Sort { expr, .. } => output_name(expr),
         Expr::Cast { expr, .. } => output_name(expr),
+        Expr::BinaryExpr { left, right, .. } => {
+            let left = output_name(left);
+            let right = output_name(right);
+
+            match (left, right) {
+                (Ok(_), Ok(_)) => Err(PolarsError::Other(
+                    "could not determine output name between two root columns".into(),
+                )),
+                (Ok(left), _) => Ok(left),
+                (_, Ok(right)) => Ok(right),
+                _ => panic!("no output name found for any expression?"),
+            }
+        }
         a => Err(PolarsError::Other(
             format!(
                 "No root column name could be found for expr {:?} in output name utillity",
@@ -72,19 +85,22 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::Not(expr) => expr_to_root_column(expr),
         Expr::IsNull(expr) => expr_to_root_column(expr),
         Expr::IsNotNull(expr) => expr_to_root_column(expr),
-        Expr::BinaryExpr { left, right, .. } => match expr_to_root_column(left) {
-            Err(_) => expr_to_root_column(right),
-            Ok(name) => match expr_to_root_column(right) {
-                Ok(_) => Err(PolarsError::Other(
+        Expr::BinaryExpr { left, right, .. } => {
+            let mut left = expr_to_root_column(left);
+            let mut right = expr_to_root_column(right);
+
+            match (&mut left, &mut right) {
+                (Ok(left), Err(_)) => Ok(std::mem::take(left)),
+                (Err(_), Ok(right)) => Ok(std::mem::take(right)),
+                _ => Err(PolarsError::Other(
                     format!(
                         "cannot find root column for binary expression {:?}, {:?}",
                         left, right
                     )
                     .into(),
                 )),
-                Err(_) => Ok(name),
-            },
-        },
+            }
+        }
         Expr::Sort { expr, .. } => expr_to_root_column(expr),
         Expr::AggFirst(expr) => expr_to_root_column(expr),
         Expr::AggLast(expr) => expr_to_root_column(expr),

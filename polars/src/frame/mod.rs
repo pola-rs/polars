@@ -837,6 +837,15 @@ impl DataFrame {
         self.apply(column, |_| new_col.into_series())
     }
 
+    /// Replace or update a column.
+    pub fn replace_or_add<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
+        let new_col = new_col.into_series();
+        match self.replace(column, new_col.clone()) {
+            Err(_) => self.add_column(new_col),
+            Ok(_) => Ok(self),
+        }
+    }
+
     /// Replace column at index `idx` with a series.
     ///
     /// # Example
