@@ -733,8 +733,10 @@ class DataFrame:
         """
         return wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "LazyFrame":
-        pass
+    def lazy(self) -> "pypolars.lazy.LazyFrame":
+        from pypolars.lazy import wrap_ldf
+
+        return wrap_ldf(self._df.lazy())
 
     def n_chunks(self) -> int:
         """

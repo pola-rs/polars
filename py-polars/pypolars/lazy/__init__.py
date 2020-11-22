@@ -22,13 +22,6 @@ except:
     __pdoc__ = {"wrap_ldf": False, "wrap_expr": False}
 
 
-def lazy(self) -> "LazyFrame":
-    return wrap_ldf(self._df.lazy())
-
-
-DataFrame.lazy = lazy
-
-
 def _selection_to_pyexpr_list(exprs) -> "List[PyExpr]":
     if not isinstance(exprs, list):
         if isinstance(exprs, str):
