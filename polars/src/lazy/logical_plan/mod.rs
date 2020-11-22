@@ -83,9 +83,6 @@ pub enum DataFrameOperation {
         maintain_order: bool,
         subset: Option<Vec<String>>,
     },
-    DropNulls {
-        subset: Option<Vec<String>>,
-    },
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -184,9 +181,6 @@ impl fmt::Debug for LogicalPlan {
                 DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
                 DataFrameOperation::DropDuplicates { .. } => {
                     write!(f, "DROP DUPLICATES {:?}", input)
-                }
-                DataFrameOperation::DropNulls { .. } => {
-                    write!(f, "DROP NULLS {:?}", input)
                 }
             },
             Aggregate {
@@ -499,14 +493,6 @@ impl LogicalPlanBuilder {
                 maintain_order,
                 subset,
             },
-        }
-        .into()
-    }
-
-    pub fn drop_nulls(self, subset: Option<Vec<String>>) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::DropNulls { subset },
         }
         .into()
     }

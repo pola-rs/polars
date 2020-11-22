@@ -1,5 +1,6 @@
 use super::*;
 use crate::lazy::logical_plan::DataFrameOperation;
+use rayon::prelude::*;
 use std::sync::Mutex;
 
 pub struct CsvExec {
@@ -71,15 +72,16 @@ impl Executor for DataFrameExec {
     }
 }
 
-/// Take an input Executor and a multiple expressions
-pub struct PipeExec {
+/// Take an input Executor (creates the input DataFrame)
+/// and a multiple PhysicalExpressions (create the output Series)
+pub struct StandardExec {
     /// i.e. sort, projection
     operation: &'static str,
     input: Arc<dyn Executor>,
     expr: Vec<Arc<dyn PhysicalExpr>>,
 }
 
-impl PipeExec {
+impl StandardExec {
     pub(crate) fn new(
         operation: &'static str,
         input: Arc<dyn Executor>,
@@ -93,14 +95,14 @@ impl PipeExec {
     }
 }
 
-impl Executor for PipeExec {
+impl Executor for StandardExec {
     fn execute(&self) -> Result<DataFrame> {
         let df = self.input.execute()?;
         let height = df.height();
 
         let selected_columns = self
             .expr
-            .iter()
+            .par_iter()
             .map(|expr| {
                 expr.evaluate(&df).map(|series| {
                     // literal series. Should be whole column size
@@ -146,9 +148,6 @@ impl Executor for DataFrameOpsExec {
                 maintain_order,
                 subset,
             } => df.drop_duplicates(*maintain_order, subset.as_ref().map(|v| v.as_ref())),
-            DataFrameOperation::DropNulls { subset } => {
-                df.drop_nulls(subset.as_ref().map(|v| v.as_ref()))
-            }
         }
     }
 }
