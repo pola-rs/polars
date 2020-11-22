@@ -159,6 +159,9 @@ impl PyExpr {
     pub fn reverse(&self) -> PyExpr {
         self.clone().inner.reverse().into()
     }
+    pub fn count(&self) -> PyExpr {
+        self.clone().inner.count().into()
+    }
     pub fn max(&self) -> PyExpr {
         self.clone().inner.max().into()
     }

@@ -697,6 +697,12 @@ impl Expr {
         self.apply(function, None)
     }
 
+    /// Count the values of the Series
+    pub fn count(self) -> Self {
+        let function = move |s: Series| Ok(Series::new(s.name(), &[s.len() as u32]));
+        self.apply(function, Some(ArrowDataType::UInt32))
+    }
+
     /// Get a mask of duplicated values
     #[allow(clippy::wrong_self_convention)]
     pub fn is_duplicated(self) -> Self {
@@ -723,6 +729,10 @@ pub fn col(name: &str) -> Expr {
         "*" => Expr::Wildcard,
         _ => Expr::Column(Arc::new(name.to_owned())),
     }
+}
+
+pub fn count(name: &str) -> Expr {
+    col(name).count()
 }
 
 pub trait Literal {

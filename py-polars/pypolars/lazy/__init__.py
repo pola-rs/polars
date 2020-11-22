@@ -170,9 +170,9 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: "Optional[Expr]" = None,
-        right_on: "Optional[Expr]" = None,
-        on: "Optional[Expr]" = None,
+        left_on: "Union[Optional[Expr], str]" = None,
+        right_on: "Union[Optional[Expr], str]" = None,
+        on: "Union[Optional[Expr], str]" = None,
         how="inner",
     ) -> "LazyFrame":
         if isinstance(left_on, str):
@@ -449,6 +449,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reverse())
 
+    def count(self) -> "Expr":
+        """
+        Count the number of values of this column.
+        """
+        return wrap_expr(self._pyexpr.count())
+
     def max(self) -> "Expr":
         return wrap_expr(self._pyexpr.max())
 
@@ -519,7 +525,17 @@ def when(expr: "Expr") -> When:
 
 
 def col(name: str) -> "Expr":
+    """
+    A column in a DataFrame
+    """
     return wrap_expr(pycol(name))
+
+
+def count(name: str) -> "Expr":
+    """
+    Count the number of values in this column
+    """
+    return col(name).count()
 
 
 def lit(value: Union[float, int]) -> "Expr":
