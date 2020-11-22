@@ -425,48 +425,37 @@ impl LazyFrame {
 
     /// Aggregate all the columns as their maximum values.
     pub fn max(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().max().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select(&[col("*").max()])
     }
 
     /// Aggregate all the columns as their minimum values.
     pub fn min(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().min().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select(&[col("*").min()])
     }
 
     /// Aggregate all the columns as their sum values.
     pub fn sum(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().sum().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select(&[col("*").sum()])
     }
 
     /// Aggregate all the columns as their mean values.
     pub fn mean(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().sum().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select(&[col("*").mean()])
     }
 
     /// Aggregate all the columns as their median values.
     pub fn median(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().median().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select(&[col("*").median()])
     }
 
     /// Aggregate all the columns as their quantile values.
     pub fn quantile(self, quantile: f64) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().quantile(quantile).build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select(&[col("*").quantile(quantile)])
     }
 
-    /// Apply explode operation. [See eager explode](crate::prelude::DataFrame::melt).
+    /// Apply explode operation. [See eager explode](crate::prelude::DataFrame::explode).
     pub fn explode(self, column: &str) -> LazyFrame {
+        // Note: this operation affects multiple columns. Therefore it isn't implemented as expression.
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(column).build();
         Self::from_logical_plan(lp, opt_state)
@@ -840,5 +829,32 @@ mod test {
             .collect()
             .unwrap();
         assert_eq!(new.shape(), (3, 6));
+    }
+
+    #[test]
+    fn test_lazy_df_aggregations() {
+        let df = load_df();
+
+        assert!(df
+            .clone()
+            .lazy()
+            .min()
+            .collect()
+            .unwrap()
+            .frame_equal_missing(&df.min()));
+        assert!(df
+            .clone()
+            .lazy()
+            .median()
+            .collect()
+            .unwrap()
+            .frame_equal_missing(&df.median()));
+        assert!(df
+            .clone()
+            .lazy()
+            .quantile(0.5)
+            .collect()
+            .unwrap()
+            .frame_equal_missing(&df.quantile(0.5).unwrap()));
     }
 }

@@ -69,12 +69,6 @@ pub enum DataFrameOperation {
         reverse: bool,
     },
     Reverse,
-    Max,
-    Min,
-    Sum,
-    Mean,
-    Median,
-    Quantile(f64),
     Explode(String),
     DropDuplicates {
         maintain_order: bool,
@@ -166,12 +160,6 @@ impl fmt::Debug for LogicalPlan {
             } => match operation {
                 DataFrameOperation::Sort { .. } => write!(f, "SORT {:?}", input),
                 DataFrameOperation::Reverse => write!(f, "REVERSE {:?}", input),
-                DataFrameOperation::Max => write!(f, "MAX {:?}", input),
-                DataFrameOperation::Min => write!(f, "MIN {:?}", input),
-                DataFrameOperation::Sum => write!(f, "SUM {:?}", input),
-                DataFrameOperation::Mean => write!(f, "MEAN {:?}", input),
-                DataFrameOperation::Median => write!(f, "MEDIAN {:?}", input),
-                DataFrameOperation::Quantile(_) => write!(f, "QUANTILE {:?}", input),
                 DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
                 DataFrameOperation::DropDuplicates { .. } => {
                     write!(f, "DROP DUPLICATES {:?}", input)
@@ -479,54 +467,6 @@ impl LogicalPlanBuilder {
                 maintain_order,
                 subset,
             },
-        }
-        .into()
-    }
-
-    pub fn min(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Min,
-        }
-        .into()
-    }
-
-    pub fn max(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Max,
-        }
-        .into()
-    }
-
-    pub fn sum(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Sum,
-        }
-        .into()
-    }
-
-    pub fn mean(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Mean,
-        }
-        .into()
-    }
-
-    pub fn median(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Median,
-        }
-        .into()
-    }
-
-    pub fn quantile(self, quantile: f64) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Quantile(quantile),
         }
         .into()
     }
