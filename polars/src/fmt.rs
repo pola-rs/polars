@@ -346,13 +346,12 @@ impl Display for DataFrame {
     }
 }
 
-fn fmt_integer<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
-    let v: i64 = NumCast::from(v).unwrap();
-    if v > u32::MAX as i64 {
-        write!(f, "{:>width$e}", v, width = width)
-    } else {
-        write!(f, "{:>width$}", v, width = width)
-    }
+fn fmt_integer<T: Num + NumCast + Display>(
+    f: &mut Formatter<'_>,
+    width: usize,
+    v: T,
+) -> fmt::Result {
+    write!(f, "{:>width$}", v, width = width)
 }
 
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {

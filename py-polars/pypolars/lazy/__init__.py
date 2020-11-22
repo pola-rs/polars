@@ -203,6 +203,12 @@ class LazyFrame:
     def with_column(self, expr: "Expr") -> "LazyFrame":
         return self.with_columns([expr])
 
+    def with_column_renamed(self, existing_name: str, new_name: str) -> "LazyFrame":
+        """
+        Rename a column in the DataFrame
+        """
+        return wrap_ldf(self._ldf.with_column_renamed(existing_name, new_name))
+
     def reverse(self) -> "LazyFrame":
         """
         Reverse the DataFrame.

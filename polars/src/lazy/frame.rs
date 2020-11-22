@@ -157,6 +157,16 @@ impl LazyFrame {
         self.select(&[col("*").reverse()])
     }
 
+    /// Rename a column in the DataFrame
+    pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .with_column_renamed(existing_name, new_name)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `Nones`.
     ///
@@ -839,6 +849,25 @@ mod test {
             .collect()
             .unwrap()
             .frame_equal_missing(&df.reverse()))
+    }
+
+    #[test]
+    fn test_lazy_filter_and_rename() {
+        let df = load_df();
+        let lf = df
+            .lazy()
+            .with_column_renamed("a", "x")
+            .filter(col("x").apply(
+                |s: Series| Ok(s.gt(3).into_series()),
+                Some(ArrowDataType::Boolean),
+            ))
+            .select(&[col("x")]);
+
+        let correct = df! {
+            "x" => &[4, 5]
+        }
+        .unwrap();
+        assert!(lf.collect().unwrap().frame_equal(&correct));
     }
 
     #[test]
