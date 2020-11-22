@@ -188,7 +188,7 @@ impl PyLazyFrame {
 
     pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_nulls(subset).into()
+        ldf.drop_nulls(subset.as_ref().map(|v| v.as_ref())).into()
     }
 
     pub fn clone(&self) -> PyLazyFrame {

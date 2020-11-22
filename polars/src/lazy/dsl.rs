@@ -73,11 +73,8 @@ pub enum Expr {
     Shift {
         input: Box<Expr>,
         periods: i32,
-    }, // ScalarFunction {
-    //     name: String,
-    //     args: Vec<Expr>,
-    //     return_type: ArrowDataType,
-    // },
+    },
+    Reverse(Box<Expr>),
     Wildcard,
 }
 
@@ -94,6 +91,7 @@ macro_rules! impl_partial_eq {
 impl PartialEq for Expr {
     fn eq(&self, other: &Self) -> bool {
         match self {
+            Expr::Reverse(left) => impl_partial_eq!(Reverse, left, other),
             Expr::AggMean(left) => impl_partial_eq!(AggMean, left, other),
             Expr::AggMedian(left) => impl_partial_eq!(AggMedian, left, other),
             Expr::AggFirst(left) => impl_partial_eq!(AggFirst, left, other),
@@ -192,6 +190,7 @@ impl Expr {
     pub fn get_type(&self, schema: &Schema) -> Result<ArrowDataType> {
         use Expr::*;
         match self {
+            Reverse(expr) => expr.get_type(schema),
             Alias(expr, ..) => expr.get_type(schema),
             Column(name) => Ok(schema.field_with_name(name)?.data_type().clone()),
             Literal(sv) => Ok(sv.get_datatype()),
@@ -246,6 +245,7 @@ impl Expr {
     pub(crate) fn to_field(&self, schema: &Schema) -> Result<Field> {
         use Expr::*;
         match self {
+            Reverse(expr) => expr.to_field(&schema),
             Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema)?, true)),
             Column(name) => {
                 let field = schema.field_with_name(name).map(|f| f.clone())?;
@@ -361,6 +361,7 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
+            Reverse(expr) => write!(f, "REVERSE {:?}", expr),
             Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
             Column(name) => write!(f, "COLUMN {}", name),
             Literal(v) => write!(f, "LIT {:?}", v),
@@ -625,6 +626,11 @@ impl Expr {
             expr: Box::new(self),
             reverse,
         }
+    }
+
+    /// Reverse column
+    pub fn reverse(self) -> Self {
+        Expr::Reverse(Box::new(self))
     }
 
     /// Apply a function/closure once the logical plan get executed.

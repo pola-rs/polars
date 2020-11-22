@@ -156,6 +156,9 @@ impl PyExpr {
         };
         Ok(self.clone().inner.fill_none(strat).into())
     }
+    pub fn reverse(&self) -> PyExpr {
+        self.clone().inner.reverse().into()
+    }
     pub fn max(&self) -> PyExpr {
         self.clone().inner.max().into()
     }

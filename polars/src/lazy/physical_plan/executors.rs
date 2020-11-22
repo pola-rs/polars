@@ -144,7 +144,6 @@ impl Executor for DataFrameOpsExec {
         let df = self.input.execute()?;
         match &self.operation {
             DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
-            DataFrameOperation::Reverse => Ok(df.reverse()),
             DataFrameOperation::Explode(column) => df.explode(column),
             DataFrameOperation::DropDuplicates {
                 maintain_order,

@@ -444,6 +444,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.fill_none(strategy))
 
+    def reverse(self) -> "Expr":
+        """
+        Reverse the selection
+        """
+        return wrap_expr(self._pyexpr.reverse())
+
     def max(self) -> "Expr":
         return wrap_expr(self._pyexpr.max())
 

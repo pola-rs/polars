@@ -66,6 +66,7 @@ pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
 // TODO! reuse expr_to_root_column_expr
 pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
     match expr {
+        Expr::Reverse(expr) => expr_to_root_column(expr),
         Expr::Column(name) => Ok(name.clone()),
         Expr::Alias(expr, _) => expr_to_root_column(expr),
         Expr::Not(expr) => expr_to_root_column(expr),
@@ -120,6 +121,7 @@ pub(crate) fn expressions_to_root_column_exprs(exprs: &[Expr]) -> Result<Vec<Exp
 // Find the first binary expressions somewhere in the tree.
 pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
     match expr {
+        Expr::Reverse(expr) => unpack_binary_exprs(expr),
         Expr::Alias(expr, _) => unpack_binary_exprs(expr),
         Expr::Not(expr) => unpack_binary_exprs(expr),
         Expr::IsNull(expr) => unpack_binary_exprs(expr),
@@ -150,6 +152,7 @@ pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
 pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
     match expr {
         Expr::Column(_) => Ok(expr),
+        Expr::Reverse(expr) => expr_to_root_column_expr(expr),
         Expr::Alias(expr, _) => expr_to_root_column_expr(expr),
         Expr::Not(expr) => expr_to_root_column_expr(expr),
         Expr::IsNull(expr) => expr_to_root_column_expr(expr),
@@ -192,6 +195,7 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
 pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Result<Expr> {
     match expr {
         Expr::Column(_) => Ok(Expr::Column(new_name)),
+        Expr::Reverse(expr) => rename_expr_root_name(expr, new_name),
         Expr::Alias(expr, alias) => rename_expr_root_name(expr, new_name)
             .map(|expr| Expr::Alias(Box::new(expr), alias.clone())),
         Expr::Not(expr) => {
