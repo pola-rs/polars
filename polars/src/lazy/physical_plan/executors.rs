@@ -251,21 +251,21 @@ impl Executor for StackExec {
         let mut df = self.input.execute()?;
         let height = df.height();
 
-        let added_columns = self
-            .expr
-            .iter()
-            .map(|expr| {
-                expr.evaluate(&df).map(|series| {
-                    // literal series. Should be whole column size
-                    if series.len() == 1 && height > 1 {
-                        series.expand_at_index(0, height)
-                    } else {
-                        series
-                    }
-                })
-            })
-            .collect::<Result<Vec<Series>>>()?;
-        df.hstack_mut(&added_columns)?;
+        let res: Result<_> = self.expr.iter().try_for_each(|expr| {
+            let s = expr.evaluate(&df).map(|series| {
+                // literal series. Should be whole column size
+                if series.len() == 1 && height > 1 {
+                    series.expand_at_index(0, height)
+                } else {
+                    series
+                }
+            })?;
+
+            let name = s.name().to_string();
+            df.replace_or_add(&name, s)?;
+            Ok(())
+        });
+        let _ = res?;
         Ok(df)
     }
 }

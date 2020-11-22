@@ -374,6 +374,7 @@ impl LogicalPlanBuilder {
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
         let schema = self.0.schema();
+
         let added_schema = utils::expressions_to_schema(&exprs, schema);
         let new_schema = Schema::try_merge(&[schema.clone(), added_schema]).unwrap();
 

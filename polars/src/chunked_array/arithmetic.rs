@@ -81,7 +81,7 @@ where
 
     fn add(self, rhs: Self) -> Self::Output {
         // arrow simd path
-        if self.chunk_id == rhs.chunk_id {
+        let mut ca = if self.chunk_id == rhs.chunk_id {
             let expect_str = "Could not add, check data types and length";
             operand_on_primitive_arr![self, rhs, compute::add, expect_str]
         // broadcasting and fast path
@@ -94,7 +94,9 @@ where
         // slow path
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, +)
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 
@@ -112,7 +114,7 @@ where
 
     fn div(self, rhs: Self) -> Self::Output {
         // arrow simd path
-        if self.chunk_id == rhs.chunk_id {
+        let mut ca = if self.chunk_id == rhs.chunk_id {
             let expect_str = "Could not divide, check data types and length";
             operand_on_primitive_arr!(self, rhs, compute::divide, expect_str)
         // broadcasting and fast path
@@ -125,7 +127,9 @@ where
         // slow path
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, /)
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 
@@ -141,7 +145,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        if self.chunk_id == rhs.chunk_id {
+        let mut ca = if self.chunk_id == rhs.chunk_id {
             let expect_str = "Could not multiply, check data types and length";
             operand_on_primitive_arr!(self, rhs, compute::multiply, expect_str)
         // broadcasting and fast path
@@ -153,7 +157,9 @@ where
             }
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, *)
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 
@@ -165,7 +171,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn rem(self, rhs: Self) -> Self::Output {
-        if rhs.len() == 1 {
+        let mut ca = if rhs.len() == 1 {
             let opt_rhs = rhs.get(0);
             match opt_rhs {
                 None => ChunkedArray::full_null(self.name(), self.len()),
@@ -173,7 +179,9 @@ where
             }
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, %)
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 
@@ -189,7 +197,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        if self.chunk_id == rhs.chunk_id {
+        let mut ca = if self.chunk_id == rhs.chunk_id {
             let expect_str = "Could not subtract, check data types and length";
             operand_on_primitive_arr![self, rhs, compute::subtract, expect_str]
         } else if rhs.len() == 1 {
@@ -200,7 +208,9 @@ where
             }
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, -)
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 
