@@ -154,9 +154,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn reverse(self) -> Self {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().reverse().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select(&[col("*").reverse()])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -829,6 +827,18 @@ mod test {
             .collect()
             .unwrap();
         assert_eq!(new.shape(), (3, 6));
+    }
+
+    #[test]
+    fn test_lazy_reverse() {
+        let df = load_df();
+        assert!(df
+            .clone()
+            .lazy()
+            .reverse()
+            .collect()
+            .unwrap()
+            .frame_equal_missing(&df.reverse()))
     }
 
     #[test]

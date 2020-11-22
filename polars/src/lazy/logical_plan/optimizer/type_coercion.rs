@@ -17,6 +17,10 @@ impl TypeCoercion {
         // the important expression is BinaryExpr. The rest just traverses the tree.
         use Expr::*;
         match expr {
+            Reverse(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.reverse())
+            }
             Alias(expr, name) => Ok(Expr::Alias(
                 Box::new(self.rewrite_expr(*expr, input_schema)?),
                 name,

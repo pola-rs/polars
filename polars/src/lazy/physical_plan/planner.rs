@@ -199,6 +199,11 @@ impl DefaultPlanner {
                 let function = Arc::new(move |s: Series| s.shift(periods));
                 Ok(Arc::new(ApplyExpr::new(input, function, None)))
             }
+            Expr::Reverse(expr) => {
+                let input = self.create_physical_expr(*expr)?;
+                let function = Arc::new(move |s: Series| Ok(s.reverse()));
+                Ok(Arc::new(ApplyExpr::new(input, function, None)))
+            }
             Expr::Wildcard => panic!("should be no wildcard at this point"),
         }
     }

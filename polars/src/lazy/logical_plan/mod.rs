@@ -68,7 +68,6 @@ pub enum DataFrameOperation {
         by_column: String,
         reverse: bool,
     },
-    Reverse,
     Explode(String),
     DropDuplicates {
         maintain_order: bool,
@@ -159,7 +158,6 @@ impl fmt::Debug for LogicalPlan {
                 input, operation, ..
             } => match operation {
                 DataFrameOperation::Sort { .. } => write!(f, "SORT {:?}", input),
-                DataFrameOperation::Reverse => write!(f, "REVERSE {:?}", input),
                 DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
                 DataFrameOperation::DropDuplicates { .. } => {
                     write!(f, "DROP DUPLICATES {:?}", input)
@@ -188,6 +186,9 @@ impl fmt::Debug for LogicalPlan {
 
 fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
     match expr {
+        Expr::Reverse(expr) => {
+            Expr::Reverse(Box::new(replace_wildcard_with_column(*expr, column_name)))
+        }
         Expr::Ternary {
             predicate,
             truthy,
@@ -290,6 +291,7 @@ fn has_wildcard(expr: &Expr) -> bool {
     match expr {
         Expr::Wildcard => true,
         Expr::Column(_) => false,
+        Expr::Reverse(expr) => has_wildcard(expr),
         Expr::Alias(expr, _) => has_wildcard(expr),
         Expr::Not(expr) => has_wildcard(expr),
         Expr::IsNull(expr) => has_wildcard(expr),
@@ -440,14 +442,6 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameOp {
             input: Box::new(self.0),
             operation: DataFrameOperation::Sort { by_column, reverse },
-        }
-        .into()
-    }
-
-    pub fn reverse(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Reverse,
         }
         .into()
     }
