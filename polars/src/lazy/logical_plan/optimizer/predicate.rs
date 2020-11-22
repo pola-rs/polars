@@ -25,15 +25,15 @@ fn insert_and_combine_predicate(
 
 pub struct PredicatePushDown {}
 
-fn combine_predicates<'a, I>(iter: I) -> Expr
+pub(crate) fn combine_predicates<I>(iter: I) -> Expr
 where
-    I: Iterator<Item = &'a Expr>,
+    I: Iterator<Item = Expr>,
 {
     let mut single_pred = None;
     for expr in iter {
         single_pred = match single_pred {
-            None => Some(expr.clone()),
-            Some(e) => Some(e.and(expr.clone())),
+            None => Some(expr),
+            Some(e) => Some(e.and(expr)),
         };
     }
     single_pred.unwrap()
@@ -51,7 +51,7 @@ impl PredicatePushDown {
             _ => {
                 let mut builder = LogicalPlanBuilder::from(lp);
 
-                let predicate = combine_predicates(acc_predicates.values());
+                let predicate = combine_predicates(acc_predicates.values().cloned());
                 builder = builder.filter(predicate);
                 Ok(builder.build())
             }
@@ -64,7 +64,7 @@ impl PredicatePushDown {
         mut builder: LogicalPlanBuilder,
     ) -> Result<LogicalPlan> {
         if !local_predicates.is_empty() {
-            let predicate = combine_predicates(local_predicates.iter());
+            let predicate = combine_predicates(local_predicates.into_iter());
             builder = builder.filter(predicate);
             Ok(builder.build())
         } else {
@@ -219,7 +219,7 @@ impl PredicatePushDown {
                         .with_columns(exprs);
 
                 if !local.is_empty() {
-                    let predicate = combine_predicates(local.iter());
+                    let predicate = combine_predicates(local.into_iter());
                     lp_builder = lp_builder.filter(predicate);
                 }
                 Ok(lp_builder.build())
