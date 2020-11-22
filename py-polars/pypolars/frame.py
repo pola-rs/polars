@@ -561,18 +561,14 @@ class DataFrame:
         if left_on is None or right_on is None:
             raise ValueError("you should pass the column to join on as an argument")
 
-        try:
-            if how == "inner":
-                inner = self._df.inner_join(df._df, left_on, right_on)
-            elif how == "left":
-                inner = self._df.left_join(df._df, left_on, right_on)
-            elif how == "outer":
-                inner = self._df.outer_join(df._df, left_on, right_on)
-            else:
-                return NotImplemented
-        except Exception as e:
-            self._df.with_parallel(False)
-            raise e
+        if how == "inner":
+            inner = self._df.inner_join(df._df, left_on, right_on)
+        elif how == "left":
+            inner = self._df.left_join(df._df, left_on, right_on)
+        elif how == "outer":
+            inner = self._df.outer_join(df._df, left_on, right_on)
+        else:
+            return NotImplemented
         return wrap_df(inner)
 
     def hstack(
