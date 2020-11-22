@@ -1,5 +1,6 @@
 use super::*;
 use crate::lazy::logical_plan::DataFrameOperation;
+use itertools::Itertools;
 use rayon::prelude::*;
 use std::sync::Mutex;
 
@@ -100,20 +101,28 @@ impl Executor for StandardExec {
         let df = self.input.execute()?;
         let height = df.height();
 
-        let selected_columns = self
+        let mut selected_columns = self
             .expr
             .par_iter()
-            .map(|expr| {
-                expr.evaluate(&df).map(|series| {
-                    // literal series. Should be whole column size
-                    if series.len() == 1 && height > 1 {
-                        series.expand_at_index(0, height)
-                    } else {
-                        series
-                    }
-                })
-            })
+            .map(|expr| expr.evaluate(&df))
             .collect::<Result<Vec<Series>>>()?;
+
+        // If all series are the same length it is ok. If not we can broadcast Series of length one.
+        if selected_columns.len() > 1 {
+            let all_equal_len = selected_columns.iter().map(|s| s.len()).all_equal();
+            if !all_equal_len {
+                selected_columns = selected_columns
+                    .into_iter()
+                    .map(|series| {
+                        if series.len() == 1 && height > 1 {
+                            series.expand_at_index(0, height)
+                        } else {
+                            series
+                        }
+                    })
+                    .collect()
+            }
+        }
 
         Ok(DataFrame::new_no_checks(selected_columns))
     }
@@ -136,12 +145,6 @@ impl Executor for DataFrameOpsExec {
         match &self.operation {
             DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
             DataFrameOperation::Reverse => Ok(df.reverse()),
-            DataFrameOperation::Max => Ok(df.max()),
-            DataFrameOperation::Min => Ok(df.min()),
-            DataFrameOperation::Sum => Ok(df.sum()),
-            DataFrameOperation::Mean => Ok(df.mean()),
-            DataFrameOperation::Median => Ok(df.median()),
-            DataFrameOperation::Quantile(quantile) => df.quantile(*quantile),
             DataFrameOperation::Explode(column) => df.explode(column),
             DataFrameOperation::DropDuplicates {
                 maintain_order,
