@@ -38,6 +38,7 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
                 _ => panic!("no output name found for any expression?"),
             }
         }
+        Expr::Ternary { predicate, .. } => output_name(predicate),
         a => Err(PolarsError::Other(
             format!(
                 "No root column name could be found for expr {:?} in output name utillity",
@@ -115,6 +116,7 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::AggCount(expr) => expr_to_root_column(expr),
         Expr::Cast { expr, .. } => expr_to_root_column(expr),
         Expr::Apply { input, .. } => expr_to_root_column(input),
+        Expr::Ternary { predicate, .. } => expr_to_root_column(predicate),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),
         )),
@@ -201,6 +203,7 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
         Expr::Shift { input, .. } => expr_to_root_column_expr(input),
         Expr::Apply { input, .. } => expr_to_root_column_expr(input),
         Expr::Cast { expr, .. } => expr_to_root_column_expr(expr),
+        Expr::Ternary { predicate, .. } => expr_to_root_column_expr(predicate),
         Expr::Wildcard => Ok(expr),
         a => Err(PolarsError::Other(
             format!("No root column expr could be found for {:?}", a).into(),
@@ -263,6 +266,7 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
             output_type: output_type.clone(),
         }),
         Expr::Shift { input, .. } => rename_expr_root_name(input, new_name),
+        Expr::Ternary { predicate, .. } => rename_expr_root_name(predicate, new_name),
         a => Err(PolarsError::Other(
             format!(
                 "No root column name could be found for {:?} when trying to rename",

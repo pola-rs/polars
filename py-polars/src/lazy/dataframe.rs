@@ -151,6 +151,11 @@ impl PyLazyFrame {
         ldf.shift(periods).into()
     }
 
+    pub fn fill_none(&self, fill_value: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.fill_none(fill_value.inner).into()
+    }
+
     pub fn min(&self) -> Self {
         let ldf = self.ldf.clone();
         ldf.min().into()

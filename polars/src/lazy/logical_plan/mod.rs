@@ -371,6 +371,21 @@ impl LogicalPlanBuilder {
         }
     }
 
+    pub fn fill_none(self, fill_value: Expr) -> Self {
+        let schema = self.0.schema();
+        let exprs = schema
+            .fields()
+            .iter()
+            .map(|field| {
+                let name = field.name();
+                when(col(name).is_null())
+                    .then(fill_value.clone())
+                    .otherwise(col(name))
+            })
+            .collect();
+        self.project(exprs)
+    }
+
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
         let schema = self.0.schema();

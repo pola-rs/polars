@@ -227,6 +227,11 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.shift(periods))
 
+    def fill_none(self, fill_value: "Union[int, str, Expr]"):
+        if not isinstance(fill_value, Expr):
+            fill_value = lit(fill_value)
+        return wrap_ldf(self._ldf.fill_none(fill_value._pyexpr))
+
     def max(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their maximum value
