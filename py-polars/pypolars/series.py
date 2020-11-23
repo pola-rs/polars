@@ -848,7 +848,15 @@ class Series:
         -------
         Series
         """
-        if sniff_dtype and dtype_out is None:
+        if dtype_out == str:
+            dtype_out = Utf8
+        elif dtype_out == int:
+            dtype_out = Int64
+        elif dtype_out == float:
+            dtype_out = Float64
+        elif dtype_out == bool:
+            dtype_out = Boolean
+        elif sniff_dtype and dtype_out is None:
             if self.is_numeric():
                 dtype_out = out_to_dtype(func(1))
             elif self.dtype == Boolean:

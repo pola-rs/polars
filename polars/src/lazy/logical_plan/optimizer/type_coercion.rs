@@ -169,6 +169,7 @@ impl TypeCoercion {
                 input,
                 schema,
             } => {
+                let input = Box::new(self.coerce(*input)?);
                 let expr = self.rewrite_expressions(expr, input.schema())?;
                 Ok(Projection {
                     expr,
@@ -181,6 +182,7 @@ impl TypeCoercion {
                 input,
                 schema,
             } => {
+                let input = Box::new(self.coerce(*input)?);
                 let expr = self.rewrite_expressions(expr, input.schema())?;
                 Ok(LocalProjection {
                     expr,
