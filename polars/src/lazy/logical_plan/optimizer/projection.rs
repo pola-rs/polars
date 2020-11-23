@@ -180,12 +180,18 @@ impl ProjectionPushDown {
                 schema,
                 has_header,
                 delimiter,
+                ignore_errors,
+                skip_rows,
+                stop_after_n_rows,
             } => {
                 let lp = CsvScan {
                     path,
                     schema,
                     has_header,
                     delimiter,
+                    ignore_errors,
+                    skip_rows,
+                    stop_after_n_rows,
                 };
                 self.finish_at_leaf(lp, acc_projections)
             }

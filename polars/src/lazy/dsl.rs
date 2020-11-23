@@ -671,7 +671,7 @@ impl Expr {
     pub fn fill_none(self, fill_value: Expr) -> Self {
         let name = output_name(&self).unwrap();
         when(self.is_null())
-            .then(fill_value.clone())
+            .then(fill_value)
             .otherwise(col(&*name))
             .alias(&*name)
     }
