@@ -93,6 +93,13 @@ pub enum LogicalPlan {
         df: Arc<Mutex<DataFrame>>,
         schema: Schema,
     },
+    // a projection that doesn't have to be optimized
+    // or may drop projected columns if they aren't in current schema (after optimization)
+    LocalProjection {
+        expr: Vec<Expr>,
+        input: Box<LogicalPlan>,
+        schema: Schema,
+    },
     // vertical selection
     Projection {
         expr: Vec<Expr>,
@@ -154,6 +161,9 @@ impl fmt::Debug for LogicalPlan {
                     .collect::<Vec<_>>()
             ),
             Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
+            LocalProjection { expr, input, .. } => {
+                write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input)
+            }
             DataFrameOp {
                 input, operation, ..
             } => match operation {
@@ -332,6 +342,7 @@ impl LogicalPlan {
             Selection { input, .. } => input.schema(),
             CsvScan { schema, .. } => schema,
             Projection { schema, .. } => schema,
+            LocalProjection { schema, .. } => schema,
             DataFrameOp { input, .. } => input.schema(),
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
@@ -349,18 +360,37 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
     }
 }
 
+fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
+    let exprs = remove_wildcard_from_exprs(exprs, schema);
+    let schema = utils::expressions_to_schema(&exprs, schema);
+    (exprs, schema)
+}
+
 impl LogicalPlanBuilder {
     pub fn scan_csv() -> Self {
         todo!()
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
-        let exprs = remove_wildcard_from_exprs(exprs, &self.0.schema());
-        let schema = utils::expressions_to_schema(&exprs, self.0.schema());
+        let (exprs, schema) = prepare_projection(exprs, &self.0.schema());
 
         // if len == 0, no projection has to be done. This is a select all operation.
         if !exprs.is_empty() {
             LogicalPlan::Projection {
+                expr: exprs,
+                input: Box::new(self.0),
+                schema,
+            }
+            .into()
+        } else {
+            self
+        }
+    }
+
+    pub fn project_local(self, exprs: Vec<Expr>) -> Self {
+        let (exprs, schema) = prepare_projection(exprs, &self.0.schema());
+        if !exprs.is_empty() {
+            LogicalPlan::LocalProjection {
                 expr: exprs,
                 input: Box::new(self.0),
                 schema,
@@ -383,7 +413,7 @@ impl LogicalPlanBuilder {
                     .otherwise(col(name))
             })
             .collect();
-        self.project(exprs)
+        self.project_local(exprs)
     }
 
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {

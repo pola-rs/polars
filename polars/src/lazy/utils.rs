@@ -65,6 +65,7 @@ pub(crate) fn count_downtree_projections(lp: &LogicalPlan, n: usize) -> usize {
         } => count_downtree_projections(input_left, n) + count_downtree_projections(input_right, n),
         HStack { input, .. } => count_downtree_projections(input, n),
         Projection { input, .. } => count_downtree_projections(input, n + 1),
+        LocalProjection { input, .. } => count_downtree_projections(input, n + 1),
     }
 }
 

@@ -154,7 +154,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn reverse(self) -> Self {
-        self.select(&[col("*").reverse()])
+        self.select_local(vec![col("*").reverse()])
     }
 
     /// Rename a column in the DataFrame
@@ -172,7 +172,7 @@ impl LazyFrame {
     ///
     /// See the method on [Series](Series::shift) for more info on the `shift` operation.
     pub fn shift(self, periods: i32) -> Self {
-        self.select(&[col("*").shift(periods)])
+        self.select_local(vec![col("*").shift(periods)])
     }
 
     /// Fill none values in the DataFrame
@@ -296,6 +296,14 @@ impl LazyFrame {
             .get_plan_builder()
             .project(exprs.as_ref().to_vec())
             .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// A projection that doesn't get optimized and may drop projections if they are not in
+    /// schema after optimization
+    fn select_local(self, exprs: Vec<Expr>) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().project_local(exprs).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -440,32 +448,42 @@ impl LazyFrame {
 
     /// Aggregate all the columns as their maximum values.
     pub fn max(self) -> LazyFrame {
-        self.select(&[col("*").max()])
+        self.select_local(vec![col("*").max()])
     }
 
     /// Aggregate all the columns as their minimum values.
     pub fn min(self) -> LazyFrame {
-        self.select(&[col("*").min()])
+        self.select_local(vec![col("*").min()])
     }
 
     /// Aggregate all the columns as their sum values.
     pub fn sum(self) -> LazyFrame {
-        self.select(&[col("*").sum()])
+        self.select_local(vec![col("*").sum()])
     }
 
     /// Aggregate all the columns as their mean values.
     pub fn mean(self) -> LazyFrame {
-        self.select(&[col("*").mean()])
+        self.select_local(vec![col("*").mean()])
     }
 
     /// Aggregate all the columns as their median values.
     pub fn median(self) -> LazyFrame {
-        self.select(&[col("*").median()])
+        self.select_local(vec![col("*").median()])
     }
 
     /// Aggregate all the columns as their quantile values.
     pub fn quantile(self, quantile: f64) -> LazyFrame {
-        self.select(&[col("*").quantile(quantile)])
+        self.select_local(vec![col("*").quantile(quantile)])
+    }
+
+    /// Aggregate all the columns as their standard deviation values.
+    pub fn std(self) -> LazyFrame {
+        self.select_local(vec![col("*").std()])
+    }
+
+    /// Aggregate all the columns as their variance values.
+    pub fn var(self) -> LazyFrame {
+        self.select_local(vec![col("*").var()])
     }
 
     /// Apply explode operation. [See eager explode](crate::prelude::DataFrame::explode).

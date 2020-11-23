@@ -44,6 +44,11 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expressions(expr)?;
                 Ok(Arc::new(StandardExec::new("projection", input, phys_expr)))
             }
+            LogicalPlan::LocalProjection { expr, input, .. } => {
+                let input = self.create_initial_physical_plan(*input)?;
+                let phys_expr = self.create_physical_expressions(expr)?;
+                Ok(Arc::new(StandardExec::new("projection", input, phys_expr)))
+            }
             LogicalPlan::DataFrameScan { df, .. } => Ok(Arc::new(DataFrameExec::new(df))),
             LogicalPlan::DataFrameOp { input, operation } => {
                 // this isn't a sort

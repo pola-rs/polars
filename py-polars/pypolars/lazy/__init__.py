@@ -232,6 +232,18 @@ class LazyFrame:
             fill_value = lit(fill_value)
         return wrap_ldf(self._ldf.fill_none(fill_value._pyexpr))
 
+    def std(self) -> "LazyFrame":
+        """
+        Aggregate the columns in the DataFrame to their standard deviation value
+        """
+        return wrap_ldf(self._ldf.std())
+
+    def var(self) -> "LazyFrame":
+        """
+        Aggregate the columns in the DataFrame to their variance value
+        """
+        return wrap_ldf(self._ldf.var())
+
     def max(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their maximum value
@@ -460,28 +472,64 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.count())
 
+    def std(self) -> "Expr":
+        """
+        Get standard deviation
+        """
+        return wrap_expr(self._pyexpr.std())
+
+    def var(self) -> "Expr":
+        """
+        Get variance
+        """
+        return wrap_expr(self._pyexpr.var())
+
     def max(self) -> "Expr":
+        """
+        Get maximum value
+        """
         return wrap_expr(self._pyexpr.max())
 
     def min(self) -> "Expr":
+        """
+        Get minimum value
+        """
         return wrap_expr(self._pyexpr.min())
 
     def sum(self) -> "Expr":
+        """
+        Get sum value
+        """
         return wrap_expr(self._pyexpr.sum())
 
     def mean(self) -> "Expr":
+        """
+        Get mean value
+        """
         return wrap_expr(self._pyexpr.mean())
 
     def median(self) -> "Expr":
+        """
+        Get median value
+        """
         return wrap_expr(self._pyexpr.mean())
 
     def is_unique(self) -> "Expr":
+        """
+        Get mask of unique values
+        """
         return wrap_expr(self._pyexpr.is_unique())
 
     def is_duplicated(self) -> "Expr":
+        """
+        Get mask of duplicated values
+        """
         return wrap_expr(self._pyexpr.is_duplicated())
 
     def quantile(self, quantile: float) -> "Expr":
+        """
+        Get quantile value
+        """
         return wrap_expr(self._pyexpr.quantile(quantile))
 
     def str_lengths(self) -> "Expr":
