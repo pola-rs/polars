@@ -79,7 +79,7 @@ fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> Result<Cow<
 /// If `max_read_records` is not set, the whole file is read to infer its schema.
 ///
 /// Return infered schema and number of records used for inference.
-fn infer_file_schema<R: Read + Seek>(
+pub(crate) fn infer_file_schema<R: Read + Seek>(
     reader: &mut R,
     delimiter: u8,
     max_read_records: Option<usize>,

@@ -60,6 +60,22 @@ class LazyFrame:
         self._ldf = ldf
         return self
 
+    @staticmethod
+    def scan_csv(
+        file: str,
+        has_headers: bool = True,
+        ignore_errors: bool = False,
+        sep: str = ",",
+        skip_rows: int = 0,
+        stop_after_n_rows: "Optional[int]" = None,
+    ):
+
+        self = LazyFrame.__new__(LazyFrame)
+        self._ldf = PyLazyFrame.new_from_csv(
+            file, sep, has_headers, ignore_errors, skip_rows, stop_after_n_rows
+        )
+        return self
+
     def pipe(self, func: Callable, *args, **kwargs):
         """
         Apply a function on Self

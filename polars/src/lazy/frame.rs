@@ -55,6 +55,27 @@ struct OptState {
 }
 
 impl LazyFrame {
+    /// Create a LazyFrame directly from a csv scan.
+    pub fn new_from_csv(
+        path: String,
+        delimiter: u8,
+        has_header: bool,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+    ) -> Self {
+        LogicalPlanBuilder::scan_csv(
+            path,
+            delimiter,
+            has_header,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+        )
+        .build()
+        .into()
+    }
+
     fn get_plan_builder(self) -> LogicalPlanBuilder {
         LogicalPlanBuilder::from(self.logical_plan)
     }

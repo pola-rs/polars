@@ -1,4 +1,5 @@
 pub(crate) mod optimizer;
+use crate::frame::ser::fork::csv::infer_file_schema;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
 use crate::lazy::utils::expr_to_root_column_expr;
@@ -87,7 +88,10 @@ pub enum LogicalPlan {
         path: String,
         schema: Schema,
         has_header: bool,
-        delimiter: Option<u8>,
+        delimiter: u8,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
     },
     DataFrameScan {
         df: Arc<Mutex<DataFrame>>,
@@ -137,7 +141,10 @@ impl Default for LogicalPlan {
             path: "".to_string(),
             schema: Schema::new(vec![Field::new("", ArrowDataType::Null, true)]),
             has_header: false,
-            delimiter: None,
+            delimiter: b',',
+            ignore_errors: false,
+            skip_rows: 0,
+            stop_after_n_rows: None,
         }
     }
 }
@@ -367,8 +374,27 @@ fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) 
 }
 
 impl LogicalPlanBuilder {
-    pub fn scan_csv() -> Self {
-        todo!()
+    pub fn scan_csv(
+        path: String,
+        delimiter: u8,
+        has_header: bool,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+    ) -> Self {
+        let mut file = std::fs::File::open(&path).expect("could not open file");
+        let (schema, _) = infer_file_schema(&mut file, delimiter, Some(100), has_header)
+            .expect("could not read schema");
+        LogicalPlan::CsvScan {
+            path,
+            schema,
+            has_header,
+            delimiter,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+        }
+        .into()
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {

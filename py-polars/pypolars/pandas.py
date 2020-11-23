@@ -2,6 +2,7 @@
 from typing import Union, TextIO, Optional, List
 
 from .frame import DataFrame
+from .lazy import LazyFrame
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
@@ -61,6 +62,7 @@ def read_csv(
     -------
     DataFrame
     """
+
     return DataFrame.read_csv(
         file=file,
         infer_schema_length=infer_schema_length,
@@ -75,4 +77,41 @@ def read_csv(
         rechunk=rechunk,
         encoding=encoding,
         one_thread=one_thread,
+    )
+
+
+def scan_csv(
+    file: str,
+    has_headers: bool = True,
+    ignore_errors: bool = False,
+    sep: str = ",",
+    skip_rows: int = 0,
+    stop_after_n_rows: "Optional[int]" = None,
+) -> "LazyFrame":
+    """
+    Read into a DataFrame from a csv file.
+
+    Parameters
+    ----------
+    file
+        Path to a file
+    has_headers
+        If the CSV file has headers or not.
+    ignore_errors
+        Try to keep reading lines if some lines yield errors.
+    sep
+        Delimiter/ value seperator
+    skip_rows
+        Start reading after `skip_rows`.
+    stop_after_n_rows
+        After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
+        on the batch size.
+    """
+    return LazyFrame.scan_csv(
+        file=file,
+        has_headers=has_headers,
+        sep=sep,
+        ignore_errors=ignore_errors,
+        skip_rows=skip_rows,
+        stop_after_n_rows=stop_after_n_rows,
     )

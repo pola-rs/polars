@@ -38,7 +38,18 @@ impl DefaultPlanner {
                 schema,
                 has_header,
                 delimiter,
-            } => Ok(Arc::new(CsvExec::new(path, schema, has_header, delimiter))),
+                ignore_errors,
+                skip_rows,
+                stop_after_n_rows,
+            } => Ok(Arc::new(CsvExec::new(
+                path,
+                schema,
+                has_header,
+                delimiter,
+                ignore_errors,
+                skip_rows,
+                stop_after_n_rows,
+            ))),
             LogicalPlan::Projection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let phys_expr = self.create_physical_expressions(expr)?;

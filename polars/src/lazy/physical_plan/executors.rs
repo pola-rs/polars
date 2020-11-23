@@ -1,4 +1,5 @@
 use super::*;
+use crate::frame::ser::csv::CsvEncoding;
 use crate::lazy::logical_plan::DataFrameOperation;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -8,16 +9,30 @@ pub struct CsvExec {
     path: String,
     schema: Schema,
     has_header: bool,
-    delimiter: Option<u8>,
+    delimiter: u8,
+    ignore_errors: bool,
+    skip_rows: usize,
+    stop_after_n_rows: Option<usize>,
 }
 
 impl CsvExec {
-    pub fn new(path: String, schema: Schema, has_header: bool, delimiter: Option<u8>) -> Self {
+    pub fn new(
+        path: String,
+        schema: Schema,
+        has_header: bool,
+        delimiter: u8,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+    ) -> Self {
         CsvExec {
             path,
             schema,
             has_header,
             delimiter,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
         }
     }
 }
@@ -25,10 +40,23 @@ impl CsvExec {
 impl Executor for CsvExec {
     fn execute(&self) -> Result<DataFrame> {
         let file = std::fs::File::open(&self.path).unwrap();
+        let columns = Some(
+            self.schema
+                .fields()
+                .iter()
+                .map(|f| f.name().to_string())
+                .collect(),
+        );
 
         let df = CsvReader::new(file)
             .has_header(self.has_header)
-            .with_batch_size(10000)
+            .with_schema(Arc::new(self.schema.clone()))
+            .with_columns(columns)
+            .with_delimiter(self.delimiter)
+            .with_ignore_parser_errors(self.ignore_errors)
+            .with_skip_rows(self.skip_rows)
+            .with_stop_after_n_rows(self.stop_after_n_rows)
+            .with_encoding(CsvEncoding::LossyUtf8)
             .finish()?;
         Ok(df)
     }

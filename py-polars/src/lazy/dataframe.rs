@@ -36,6 +36,27 @@ impl From<LazyFrame> for PyLazyFrame {
 
 #[pymethods]
 impl PyLazyFrame {
+    #[staticmethod]
+    pub fn new_from_csv(
+        path: String,
+        sep: &str,
+        has_header: bool,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+    ) -> Self {
+        let delimiter = sep.as_bytes()[0];
+        LazyFrame::new_from_csv(
+            path,
+            delimiter,
+            has_header,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+        )
+        .into()
+    }
+
     pub fn describe_plan(&self) -> String {
         self.ldf.describe_plan()
     }
