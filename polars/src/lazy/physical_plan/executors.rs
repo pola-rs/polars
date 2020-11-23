@@ -13,9 +13,11 @@ pub struct CsvExec {
     ignore_errors: bool,
     skip_rows: usize,
     stop_after_n_rows: Option<usize>,
+    with_columns: Option<Vec<String>>,
 }
 
 impl CsvExec {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         path: String,
         schema: Schema,
@@ -24,6 +26,7 @@ impl CsvExec {
         ignore_errors: bool,
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
+        with_columns: Option<Vec<String>>,
     ) -> Self {
         CsvExec {
             path,
@@ -33,29 +36,35 @@ impl CsvExec {
             ignore_errors,
             skip_rows,
             stop_after_n_rows,
+            with_columns,
         }
     }
 }
 
 impl Executor for CsvExec {
+    // todo! make mut to prevent clones
     fn execute(&self) -> Result<DataFrame> {
         let file = std::fs::File::open(&self.path).unwrap();
-        let columns = Some(
-            self.schema
-                .fields()
-                .iter()
-                .map(|f| f.name().to_string())
-                .collect(),
-        );
+
+        let mut with_columns = self.with_columns.clone();
+        let mut projected_len = 0;
+        with_columns.as_ref().map(|columns| {
+            projected_len = columns.len();
+            columns
+        });
+
+        if projected_len == 0 {
+            with_columns = None;
+        }
 
         let df = CsvReader::new(file)
             .has_header(self.has_header)
             .with_schema(Arc::new(self.schema.clone()))
-            .with_columns(columns)
             .with_delimiter(self.delimiter)
             .with_ignore_parser_errors(self.ignore_errors)
             .with_skip_rows(self.skip_rows)
             .with_stop_after_n_rows(self.stop_after_n_rows)
+            .with_columns(with_columns)
             .with_encoding(CsvEncoding::LossyUtf8)
             .finish()?;
         Ok(df)

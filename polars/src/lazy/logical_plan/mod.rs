@@ -92,6 +92,7 @@ pub enum LogicalPlan {
         ignore_errors: bool,
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
+        with_columns: Option<Vec<String>>,
     },
     DataFrameScan {
         df: Arc<Mutex<DataFrame>>,
@@ -145,6 +146,7 @@ impl Default for LogicalPlan {
             ignore_errors: false,
             skip_rows: 0,
             stop_after_n_rows: None,
+            with_columns: None,
         }
     }
 }
@@ -393,6 +395,7 @@ impl LogicalPlanBuilder {
             ignore_errors,
             skip_rows,
             stop_after_n_rows,
+            with_columns: None,
         }
         .into()
     }

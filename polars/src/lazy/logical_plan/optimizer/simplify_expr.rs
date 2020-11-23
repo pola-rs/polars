@@ -72,6 +72,7 @@ enum ALogicalPlan {
         ignore_errors: bool,
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
+        with_columns: Option<Vec<String>>,
     },
     DataFrameScan {
         df: Arc<Mutex<DataFrame>>,
@@ -208,6 +209,7 @@ fn to_alp(
             ignore_errors,
             skip_rows,
             stop_after_n_rows,
+            with_columns,
         } => ALogicalPlan::CsvScan {
             path,
             schema,
@@ -216,6 +218,7 @@ fn to_alp(
             ignore_errors,
             skip_rows,
             stop_after_n_rows,
+            with_columns,
         },
         LogicalPlan::DataFrameScan { df, schema } => ALogicalPlan::DataFrameScan { df, schema },
         LogicalPlan::Projection {
@@ -481,6 +484,7 @@ fn node_to_lp(
             ignore_errors,
             skip_rows,
             stop_after_n_rows,
+            with_columns,
         } => LogicalPlan::CsvScan {
             path: path.clone(),
             schema: schema.clone(),
@@ -489,6 +493,7 @@ fn node_to_lp(
             ignore_errors: *ignore_errors,
             skip_rows: *skip_rows,
             stop_after_n_rows: *stop_after_n_rows,
+            with_columns: with_columns.clone(),
         },
         ALogicalPlan::DataFrameScan { df, schema } => LogicalPlan::DataFrameScan {
             df: df.clone(),

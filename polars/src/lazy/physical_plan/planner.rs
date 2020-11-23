@@ -41,6 +41,7 @@ impl DefaultPlanner {
                 ignore_errors,
                 skip_rows,
                 stop_after_n_rows,
+                with_columns,
             } => Ok(Arc::new(CsvExec::new(
                 path,
                 schema,
@@ -49,6 +50,7 @@ impl DefaultPlanner {
                 ignore_errors,
                 skip_rows,
                 stop_after_n_rows,
+                with_columns,
             ))),
             LogicalPlan::Projection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
