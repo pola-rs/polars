@@ -155,6 +155,7 @@ impl PredicatePushDown {
                 ignore_errors,
                 skip_rows,
                 stop_after_n_rows,
+                with_columns,
             } => {
                 let lp = CsvScan {
                     path,
@@ -164,6 +165,7 @@ impl PredicatePushDown {
                     ignore_errors,
                     skip_rows,
                     stop_after_n_rows,
+                    with_columns,
                 };
                 self.finish_at_leaf(lp, acc_predicates)
             }

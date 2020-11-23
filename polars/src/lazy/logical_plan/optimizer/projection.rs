@@ -183,13 +183,21 @@ impl ProjectionPushDown {
                 ignore_errors,
                 skip_rows,
                 stop_after_n_rows,
+                ..
             } => {
+                let mut columns = Vec::with_capacity(acc_projections.len());
+                for expr in &acc_projections {
+                    if let Ok(name) = expr_to_root_column(expr) {
+                        columns.push((*name).clone())
+                    }
+                }
                 let lp = CsvScan {
                     path,
                     schema,
                     has_header,
                     delimiter,
                     ignore_errors,
+                    with_columns: Some(columns),
                     skip_rows,
                     stop_after_n_rows,
                 };
