@@ -1,4 +1,3 @@
-use crate::error::PyPolarsEr;
 use crate::series::PySeries;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
@@ -145,16 +144,8 @@ impl PyExpr {
     pub fn shift(&self, periods: i32) -> PyExpr {
         self.clone().inner.shift(periods).into()
     }
-    pub fn fill_none(&self, strategy: &str) -> PyResult<PyExpr> {
-        let strat = match strategy {
-            "backward" => FillNoneStrategy::Backward,
-            "forward" => FillNoneStrategy::Forward,
-            "min" => FillNoneStrategy::Min,
-            "max" => FillNoneStrategy::Max,
-            "mean" => FillNoneStrategy::Mean,
-            s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
-        };
-        Ok(self.clone().inner.fill_none(strat).into())
+    pub fn fill_none(&self, expr: PyExpr) -> PyResult<PyExpr> {
+        Ok(self.clone().inner.fill_none(expr.inner).into())
     }
     pub fn reverse(&self) -> PyExpr {
         self.clone().inner.reverse().into()

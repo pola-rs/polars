@@ -952,5 +952,6 @@ mod test {
         }
         .unwrap();
         assert!(out.frame_equal(&correct));
+        assert_eq!(out.get_column_names(), vec!["a", "b"])
     }
 }
