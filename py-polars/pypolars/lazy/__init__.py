@@ -537,12 +537,20 @@ class Expr:
     def apply(
         self,
         f: "Union[UDF, Callable[[Series], Series]]",
-        output_type: Optional["DataType"] = None,
+        dtype_out: Optional["DataType"] = None,
     ) -> "Expr":
         if isinstance(f, UDF):
-            output_type = f.output_type
+            dtype_out = f.output_type
             f = f.f
-        return wrap_expr(self._pyexpr.apply(f, output_type))
+        if dtype_out == str:
+            dtype_out = datatypes.Utf8
+        elif dtype_out == int:
+            dtype_out = datatypes.Int64
+        elif dtype_out == float:
+            dtype_out = datatypes.Float64
+        elif dtype_out == bool:
+            dtype_out = datatypes.Boolean
+        return wrap_expr(self._pyexpr.apply(f, dtype_out))
 
 
 class WhenThen:
