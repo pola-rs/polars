@@ -38,7 +38,7 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
                 _ => panic!("no output name found for any expression?"),
             }
         }
-        Expr::Ternary { predicate, .. } => output_name(predicate),
+        Expr::Ternary { truthy, .. } => output_name(truthy),
         a => Err(PolarsError::Other(
             format!(
                 "No root column name could be found for expr {:?} in output name utillity",

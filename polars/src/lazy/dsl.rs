@@ -1,6 +1,6 @@
 //! Domain specific language for the Lazy api.
 use crate::frame::group_by::{fmt_groupby_column, GroupByMethod};
-use crate::lazy::utils::rename_field;
+use crate::lazy::utils::{output_name, rename_field};
 use crate::{lazy::prelude::*, prelude::*, utils::get_supertype};
 use arrow::datatypes::{Field, Schema};
 use std::{
@@ -252,11 +252,23 @@ impl Expr {
                 Ok(field)
             }
             Literal(sv) => Ok(Field::new("lit", sv.get_datatype(), true)),
-            BinaryExpr { left, right, .. } => {
+            BinaryExpr { left, right, op } => {
                 let left_type = left.get_type(schema)?;
                 let right_type = right.get_type(schema)?;
                 let expr_type = get_supertype(&left_type, &right_type)?;
-                Ok(Field::new("binary_expr", expr_type, true))
+
+                use Operator::*;
+                let out_field;
+                let out_name = match op {
+                    Plus | Minus | Multiply | Divide | Modulus => {
+                        out_field = left.to_field(schema)?;
+                        out_field.name().as_str()
+                    }
+                    Eq | Lt | GtEq | LtEq => "",
+                    _ => "binary_expr",
+                };
+
+                Ok(Field::new(out_name, expr_type, true))
             }
             Not(_) => Ok(Field::new("not", ArrowDataType::Boolean, true)),
             IsNull(_) => Ok(Field::new("is_null", ArrowDataType::Boolean, true)),
@@ -656,9 +668,12 @@ impl Expr {
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](Series::fill_none).
-    pub fn fill_none(self, strategy: FillNoneStrategy) -> Self {
-        let function = move |s: Series| s.fill_none(strategy);
-        self.apply(function, None)
+    pub fn fill_none(self, fill_value: Expr) -> Self {
+        let name = output_name(&self).unwrap();
+        when(self.is_null())
+            .then(fill_value.clone())
+            .otherwise(col(&*name))
+            .alias(&*name)
     }
 
     /// Get the maximum value of the Series.

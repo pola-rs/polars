@@ -411,6 +411,7 @@ impl LogicalPlanBuilder {
                 when(col(name).is_null())
                     .then(fill_value.clone())
                     .otherwise(col(name))
+                    .alias(name)
             })
             .collect();
         self.project_local(exprs)

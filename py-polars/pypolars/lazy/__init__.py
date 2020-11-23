@@ -445,20 +445,10 @@ class Expr:
     def shift(self, periods: int) -> "Expr":
         return wrap_expr(self._pyexpr.shift(periods))
 
-    def fill_none(self, strategy: str) -> "Expr":
-        """
-        Fill null values with a fill strategy.
-
-        Parameters
-        ----------
-        strategy
-               * "backward"
-               * "forward"
-               * "min"
-               * "max"
-               * "mean"
-        """
-        return wrap_expr(self._pyexpr.fill_none(strategy))
+    def fill_none(self, fill_value: "Union[str, int, float, Expr]") -> "Expr":
+        if not isinstance(fill_value, Expr):
+            fill_value = lit(fill_value)
+        return wrap_expr(self._pyexpr.fill_none(fill_value))
 
     def reverse(self) -> "Expr":
         """
