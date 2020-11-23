@@ -174,6 +174,12 @@ impl PyExpr {
     pub fn mean(&self) -> PyExpr {
         self.clone().inner.mean().into()
     }
+    pub fn std(&self) -> PyExpr {
+        self.clone().inner.std().into()
+    }
+    pub fn var(&self) -> PyExpr {
+        self.clone().inner.var().into()
+    }
     pub fn median(&self) -> PyExpr {
         self.clone().inner.median().into()
     }

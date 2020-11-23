@@ -176,6 +176,18 @@ impl TypeCoercion {
                     schema,
                 })
             }
+            LocalProjection {
+                expr,
+                input,
+                schema,
+            } => {
+                let expr = self.rewrite_expressions(expr, input.schema())?;
+                Ok(LocalProjection {
+                    expr,
+                    input,
+                    schema,
+                })
+            }
             DataFrameOp { input, operation } => {
                 let input = self.coerce(*input)?;
                 Ok(DataFrameOp {

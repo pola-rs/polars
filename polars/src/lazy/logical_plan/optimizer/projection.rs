@@ -161,6 +161,16 @@ impl ProjectionPushDown {
                 let builder = LogicalPlanBuilder::from(lp);
                 self.finish_node(local_projection, builder)
             }
+            LocalProjection { expr, input, .. } => {
+                let lp = self.push_down(*input, acc_projections, names)?;
+                let schema = lp.schema();
+                // projection from a wildcard may be dropped if the schema changes due to the optimization
+                let proj = expr
+                    .into_iter()
+                    .filter(|e| check_down_node(e, schema))
+                    .collect();
+                Ok(LogicalPlanBuilder::from(lp).project_local(proj).build())
+            }
             DataFrameScan { df, schema } => {
                 let lp = DataFrameScan { df, schema };
                 self.finish_at_leaf(lp, acc_projections)

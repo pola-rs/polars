@@ -703,6 +703,24 @@ impl Expr {
         self.apply(function, Some(ArrowDataType::UInt32))
     }
 
+    /// Standard deviation of the values of the Series
+    pub fn std(self) -> Self {
+        let function = move |s: Series| {
+            s.std_as_series()
+                .cast_with_arrow_datatype(&ArrowDataType::Float64)
+        };
+        self.apply(function, Some(ArrowDataType::Float64))
+    }
+
+    /// Variance of the values of the Series
+    pub fn var(self) -> Self {
+        let function = move |s: Series| {
+            s.var_as_series()
+                .cast_with_arrow_datatype(&ArrowDataType::Float64)
+        };
+        self.apply(function, Some(ArrowDataType::Float64))
+    }
+
     /// Get a mask of duplicated values
     #[allow(clippy::wrong_self_convention)]
     pub fn is_duplicated(self) -> Self {

@@ -79,6 +79,11 @@ enum ALogicalPlan {
         input: Node,
         schema: Schema,
     },
+    LocalProjection {
+        expr: Vec<Node>,
+        input: Node,
+        schema: Schema,
+    },
     DataFrameOp {
         input: Node,
         operation: DataFrameOperation,
@@ -215,6 +220,22 @@ fn to_alp(
                 .collect();
             let i = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::Projection {
+                expr: exp,
+                input: i,
+                schema,
+            }
+        }
+        LogicalPlan::LocalProjection {
+            expr,
+            input,
+            schema,
+        } => {
+            let exp = expr
+                .iter()
+                .map(|x| to_aexpr(x.clone(), expr_arena))
+                .collect();
+            let i = to_alp(*input, expr_arena, lp_arena);
+            ALogicalPlan::LocalProjection {
                 expr: exp,
                 input: i,
                 schema,
@@ -467,6 +488,20 @@ fn node_to_lp(
             let i = node_to_lp(*input, expr_arena, lp_arena);
 
             LogicalPlan::Projection {
+                expr: exprs,
+                input: Box::new(i),
+                schema: schema.clone(),
+            }
+        }
+        ALogicalPlan::LocalProjection {
+            expr,
+            input,
+            schema,
+        } => {
+            let exprs = expr.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
+            let i = node_to_lp(*input, expr_arena, lp_arena);
+
+            LogicalPlan::LocalProjection {
                 expr: exprs,
                 input: Box::new(i),
                 schema: schema.clone(),
@@ -787,6 +822,10 @@ impl SimplifyOptimizer {
                         exprs.push(*predicate);
                     }
                     ALogicalPlan::Projection { expr, input, .. } => {
+                        plans.push(*input);
+                        exprs.extend(expr);
+                    }
+                    ALogicalPlan::LocalProjection { expr, input, .. } => {
                         plans.push(*input);
                         exprs.extend(expr);
                     }

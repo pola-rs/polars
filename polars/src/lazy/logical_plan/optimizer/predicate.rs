@@ -133,6 +133,16 @@ impl PredicatePushDown {
                     )
                 }
             }
+            LocalProjection { expr, input, .. } => {
+                let input = self.push_down(*input, acc_predicates)?;
+                let schema = input.schema();
+                // projection from a wildcard may be dropped if the schema changes due to the optimization
+                let proj = expr
+                    .into_iter()
+                    .filter(|e| check_down_node(e, schema))
+                    .collect();
+                Ok(LogicalPlanBuilder::from(input).project_local(proj).build())
+            }
             DataFrameScan { df, schema } => {
                 let lp = DataFrameScan { df, schema };
                 self.finish_at_leaf(lp, acc_predicates)

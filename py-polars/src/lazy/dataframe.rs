@@ -176,6 +176,16 @@ impl PyLazyFrame {
         ldf.mean().into()
     }
 
+    pub fn std(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.std().into()
+    }
+
+    pub fn var(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.var().into()
+    }
+
     pub fn median(&self) -> Self {
         let ldf = self.ldf.clone();
         ldf.median().into()
