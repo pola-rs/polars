@@ -12,7 +12,7 @@ impl Default for DefaultPlanner {
 }
 
 impl PhysicalPlanner for DefaultPlanner {
-    fn create_physical_plan(&self, logical_plan: LogicalPlan) -> Result<Arc<dyn Executor>> {
+    fn create_physical_plan(&self, logical_plan: LogicalPlan) -> Result<Box<dyn Executor>> {
         self.create_initial_physical_plan(logical_plan)
     }
 }
@@ -27,12 +27,12 @@ impl DefaultPlanner {
     pub fn create_initial_physical_plan(
         &self,
         logical_plan: LogicalPlan,
-    ) -> Result<Arc<dyn Executor>> {
+    ) -> Result<Box<dyn Executor>> {
         match logical_plan {
             LogicalPlan::Selection { input, predicate } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let predicate = self.create_physical_expr(predicate)?;
-                Ok(Arc::new(FilterExec::new(predicate, input)))
+                Ok(Box::new(FilterExec::new(predicate, input)))
             }
             LogicalPlan::CsvScan {
                 path,
@@ -43,7 +43,7 @@ impl DefaultPlanner {
                 skip_rows,
                 stop_after_n_rows,
                 with_columns,
-            } => Ok(Arc::new(CsvExec::new(
+            } => Ok(Box::new(CsvExec::new(
                 path,
                 schema,
                 has_header,
@@ -56,19 +56,19 @@ impl DefaultPlanner {
             LogicalPlan::Projection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let phys_expr = self.create_physical_expressions(expr)?;
-                Ok(Arc::new(StandardExec::new("projection", input, phys_expr)))
+                Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
             }
             LogicalPlan::LocalProjection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let phys_expr = self.create_physical_expressions(expr)?;
-                Ok(Arc::new(StandardExec::new("projection", input, phys_expr)))
+                Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
             }
-            LogicalPlan::DataFrameScan { df, .. } => Ok(Arc::new(DataFrameExec::new(df))),
+            LogicalPlan::DataFrameScan { df, .. } => Ok(Box::new(DataFrameExec::new(df))),
             LogicalPlan::DataFrameOp { input, operation } => {
                 // this isn't a sort
                 let input = self.create_initial_physical_plan(*input)?;
 
-                Ok(Arc::new(DataFrameOpsExec::new(input, operation)))
+                Ok(Box::new(DataFrameOpsExec::new(input, operation)))
             }
             LogicalPlan::Distinct {
                 input,
@@ -81,14 +81,14 @@ impl DefaultPlanner {
                     subset: (*subset).clone(),
                 };
 
-                Ok(Arc::new(DataFrameOpsExec::new(input, operation)))
+                Ok(Box::new(DataFrameOpsExec::new(input, operation)))
             }
             LogicalPlan::Aggregate {
                 input, keys, aggs, ..
             } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let phys_aggs = self.create_physical_expressions(aggs)?;
-                Ok(Arc::new(GroupByExec::new(input, keys, phys_aggs)))
+                Ok(Box::new(GroupByExec::new(input, keys, phys_aggs)))
             }
             LogicalPlan::Join {
                 input_left,
@@ -102,7 +102,7 @@ impl DefaultPlanner {
                 let input_right = self.create_initial_physical_plan(*input_right)?;
                 let left_on = self.create_physical_expr(left_on)?;
                 let right_on = self.create_physical_expr(right_on)?;
-                Ok(Arc::new(JoinExec::new(
+                Ok(Box::new(JoinExec::new(
                     input_left,
                     input_right,
                     how,
@@ -113,7 +113,7 @@ impl DefaultPlanner {
             LogicalPlan::HStack { input, exprs, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let phys_expr = self.create_physical_expressions(exprs)?;
-                Ok(Arc::new(StackExec::new(input, phys_expr)))
+                Ok(Box::new(StackExec::new(input, phys_expr)))
             }
         }
     }

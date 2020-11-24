@@ -3,6 +3,7 @@ use crate::frame::ser::csv::CsvEncoding;
 use crate::lazy::logical_plan::DataFrameOperation;
 use itertools::Itertools;
 use rayon::prelude::*;
+use std::mem;
 use std::sync::Mutex;
 
 pub struct CsvExec {
@@ -42,11 +43,10 @@ impl CsvExec {
 }
 
 impl Executor for CsvExec {
-    // todo! make mut to prevent clones
-    fn execute(&self) -> Result<DataFrame> {
+    fn execute(&mut self) -> Result<DataFrame> {
         let file = std::fs::File::open(&self.path).unwrap();
 
-        let mut with_columns = self.with_columns.clone();
+        let mut with_columns = mem::take(&mut self.with_columns);
         let mut projected_len = 0;
         with_columns.as_ref().map(|columns| {
             projected_len = columns.len();
@@ -56,10 +56,12 @@ impl Executor for CsvExec {
         if projected_len == 0 {
             with_columns = None;
         }
+        let mut schema = Schema::new(vec![]);
+        mem::swap(&mut self.schema, &mut schema);
 
         let df = CsvReader::new(file)
             .has_header(self.has_header)
-            .with_schema(Arc::new(self.schema.clone()))
+            .with_schema(Arc::new(schema))
             .with_delimiter(self.delimiter)
             .with_ignore_parser_errors(self.ignore_errors)
             .with_skip_rows(self.skip_rows)
@@ -73,17 +75,17 @@ impl Executor for CsvExec {
 
 pub struct FilterExec {
     predicate: Arc<dyn PhysicalExpr>,
-    input: Arc<dyn Executor>,
+    input: Box<dyn Executor>,
 }
 
 impl FilterExec {
-    pub fn new(predicate: Arc<dyn PhysicalExpr>, input: Arc<dyn Executor>) -> Self {
+    pub fn new(predicate: Arc<dyn PhysicalExpr>, input: Box<dyn Executor>) -> Self {
         Self { predicate, input }
     }
 }
 
 impl Executor for FilterExec {
-    fn execute(&self) -> Result<DataFrame> {
+    fn execute(&mut self) -> Result<DataFrame> {
         let df = self.input.execute()?;
         let s = self.predicate.evaluate(&df)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
@@ -93,6 +95,7 @@ impl Executor for FilterExec {
 }
 
 pub struct DataFrameExec {
+    // todo! remove mutex
     df: Arc<Mutex<DataFrame>>,
 }
 
@@ -103,7 +106,7 @@ impl DataFrameExec {
 }
 
 impl Executor for DataFrameExec {
-    fn execute(&self) -> Result<DataFrame> {
+    fn execute(&mut self) -> Result<DataFrame> {
         let guard = self.df.lock().unwrap();
         let out = guard.clone();
         Ok(out)
@@ -115,14 +118,14 @@ impl Executor for DataFrameExec {
 pub struct StandardExec {
     /// i.e. sort, projection
     operation: &'static str,
-    input: Arc<dyn Executor>,
+    input: Box<dyn Executor>,
     expr: Vec<Arc<dyn PhysicalExpr>>,
 }
 
 impl StandardExec {
     pub(crate) fn new(
         operation: &'static str,
-        input: Arc<dyn Executor>,
+        input: Box<dyn Executor>,
         expr: Vec<Arc<dyn PhysicalExpr>>,
     ) -> Self {
         Self {
@@ -134,7 +137,7 @@ impl StandardExec {
 }
 
 impl Executor for StandardExec {
-    fn execute(&self) -> Result<DataFrame> {
+    fn execute(&mut self) -> Result<DataFrame> {
         let df = self.input.execute()?;
         let height = df.height();
 
@@ -166,18 +169,18 @@ impl Executor for StandardExec {
 }
 
 pub struct DataFrameOpsExec {
-    input: Arc<dyn Executor>,
+    input: Box<dyn Executor>,
     operation: DataFrameOperation,
 }
 
 impl DataFrameOpsExec {
-    pub(crate) fn new(input: Arc<dyn Executor>, operation: DataFrameOperation) -> Self {
+    pub(crate) fn new(input: Box<dyn Executor>, operation: DataFrameOperation) -> Self {
         Self { input, operation }
     }
 }
 
 impl Executor for DataFrameOpsExec {
-    fn execute(&self) -> Result<DataFrame> {
+    fn execute(&mut self) -> Result<DataFrame> {
         let df = self.input.execute()?;
         match &self.operation {
             DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
@@ -192,14 +195,14 @@ impl Executor for DataFrameOpsExec {
 
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {
-    input: Arc<dyn Executor>,
+    input: Box<dyn Executor>,
     keys: Arc<Vec<String>>,
     aggs: Vec<Arc<dyn PhysicalExpr>>,
 }
 
 impl GroupByExec {
     pub(crate) fn new(
-        input: Arc<dyn Executor>,
+        input: Box<dyn Executor>,
         keys: Arc<Vec<String>>,
         aggs: Vec<Arc<dyn PhysicalExpr>>,
     ) -> Self {
@@ -208,7 +211,7 @@ impl GroupByExec {
 }
 
 impl Executor for GroupByExec {
-    fn execute(&self) -> Result<DataFrame> {
+    fn execute(&mut self) -> Result<DataFrame> {
         let df = self.input.execute()?;
         let gb = df.groupby(&*self.keys)?;
         let groups = gb.get_groups();
@@ -227,8 +230,8 @@ impl Executor for GroupByExec {
 }
 
 pub struct JoinExec {
-    input_left: Arc<dyn Executor>,
-    input_right: Arc<dyn Executor>,
+    input_left: Box<dyn Executor>,
+    input_right: Box<dyn Executor>,
     how: JoinType,
     left_on: Arc<dyn PhysicalExpr>,
     right_on: Arc<dyn PhysicalExpr>,
@@ -236,8 +239,8 @@ pub struct JoinExec {
 
 impl JoinExec {
     pub(crate) fn new(
-        input_left: Arc<dyn Executor>,
-        input_right: Arc<dyn Executor>,
+        input_left: Box<dyn Executor>,
+        input_right: Box<dyn Executor>,
         how: JoinType,
         left_on: Arc<dyn PhysicalExpr>,
         right_on: Arc<dyn PhysicalExpr>,
@@ -253,7 +256,7 @@ impl JoinExec {
 }
 
 impl Executor for JoinExec {
-    fn execute(&self) -> Result<DataFrame> {
+    fn execute(&mut self) -> Result<DataFrame> {
         // rayon::join was dropped because that resulted in a deadlock when there were dependencies
         // between the DataFrames. Like joining a specific computation of a DF back to itself.
         let df_left = self.input_left.execute();
@@ -273,18 +276,18 @@ impl Executor for JoinExec {
     }
 }
 pub struct StackExec {
-    input: Arc<dyn Executor>,
+    input: Box<dyn Executor>,
     expr: Vec<Arc<dyn PhysicalExpr>>,
 }
 
 impl StackExec {
-    pub(crate) fn new(input: Arc<dyn Executor>, expr: Vec<Arc<dyn PhysicalExpr>>) -> Self {
+    pub(crate) fn new(input: Box<dyn Executor>, expr: Vec<Arc<dyn PhysicalExpr>>) -> Self {
         Self { input, expr }
     }
 }
 
 impl Executor for StackExec {
-    fn execute(&self) -> Result<DataFrame> {
+    fn execute(&mut self) -> Result<DataFrame> {
         let mut df = self.input.execute()?;
         let height = df.height();
 

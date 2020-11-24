@@ -242,7 +242,7 @@ mod tests {
         println!("{:?}", logical_plan);
 
         let planner = DefaultPlanner {};
-        let physical_plan = planner.create_physical_plan(logical_plan).unwrap();
+        let mut physical_plan = planner.create_physical_plan(logical_plan).unwrap();
         println!("{:?}", physical_plan.execute());
     }
 }

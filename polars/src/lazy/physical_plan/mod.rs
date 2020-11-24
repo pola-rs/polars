@@ -3,7 +3,6 @@ pub mod expressions;
 pub mod planner;
 
 use crate::{lazy::prelude::*, prelude::*};
-use arrow::datatypes::SchemaRef;
 use std::sync::Arc;
 
 pub enum ExprVal {
@@ -12,18 +11,15 @@ pub enum ExprVal {
 }
 
 pub trait PhysicalPlanner {
-    fn create_physical_plan(&self, logical_plan: LogicalPlan) -> Result<Arc<dyn Executor>>;
+    fn create_physical_plan(&self, logical_plan: LogicalPlan) -> Result<Box<dyn Executor>>;
 }
 
 // Executor are the executors of the physical plan and produce DataFrames. They
 // combine physical expressions, which produce Series.
 
 /// Executors will evaluate physical expressions and collect them in a DataFrame.
-pub trait Executor: Send + Sync {
-    fn schema(&self) -> SchemaRef {
-        todo!()
-    }
-    fn execute(&self) -> Result<DataFrame>;
+pub trait Executor {
+    fn execute(&mut self) -> Result<DataFrame>;
 }
 
 /// Take a DataFrame and evaluate the expressions.
