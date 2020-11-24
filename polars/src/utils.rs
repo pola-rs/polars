@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::mem;
 use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
@@ -424,11 +423,6 @@ macro_rules! df {
         }
 
     }
-}
-
-/// Clone if upstream hasn't implemented clone
-pub(crate) fn clone<T>(t: &T) -> T {
-    unsafe { mem::transmute_copy(t) }
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
