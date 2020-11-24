@@ -75,7 +75,7 @@ enum ALogicalPlan {
         with_columns: Option<Vec<String>>,
     },
     DataFrameScan {
-        df: Arc<Mutex<DataFrame>>,
+        df: Arc<DataFrame>,
         schema: Schema,
     },
     Projection {

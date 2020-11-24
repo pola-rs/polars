@@ -10,7 +10,6 @@ use crate::{
 use ahash::RandomState;
 use arrow::datatypes::DataType;
 use std::collections::HashSet;
-use std::sync::Mutex;
 use std::{fmt, sync::Arc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -95,7 +94,7 @@ pub enum LogicalPlan {
         with_columns: Option<Vec<String>>,
     },
     DataFrameScan {
-        df: Arc<Mutex<DataFrame>>,
+        df: Arc<DataFrame>,
         schema: Schema,
     },
     // a projection that doesn't have to be optimized
@@ -532,7 +531,7 @@ impl LogicalPlanBuilder {
     pub fn from_existing_df(df: DataFrame) -> Self {
         let schema = df.schema();
         LogicalPlan::DataFrameScan {
-            df: Arc::new(Mutex::new(df)),
+            df: Arc::new(df),
             schema,
         }
         .into()
