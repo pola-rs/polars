@@ -4,7 +4,6 @@ use crate::lazy::logical_plan::DataFrameOperation;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::mem;
-use std::sync::Mutex;
 
 pub struct CsvExec {
     path: String,
@@ -95,21 +94,20 @@ impl Executor for FilterExec {
 }
 
 pub struct DataFrameExec {
-    // todo! remove mutex
-    df: Arc<Mutex<DataFrame>>,
+    df: Arc<DataFrame>,
 }
 
 impl DataFrameExec {
-    pub(crate) fn new(df: Arc<Mutex<DataFrame>>) -> Self {
+    pub(crate) fn new(df: Arc<DataFrame>) -> Self {
         DataFrameExec { df }
     }
 }
 
 impl Executor for DataFrameExec {
     fn execute(&mut self) -> Result<DataFrame> {
-        let guard = self.df.lock().unwrap();
-        let out = guard.clone();
-        Ok(out)
+        let df = mem::take(&mut self.df);
+        let df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
+        Ok(df)
     }
 }
 

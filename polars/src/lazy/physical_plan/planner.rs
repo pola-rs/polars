@@ -76,9 +76,10 @@ impl DefaultPlanner {
                 subset,
             } => {
                 let input = self.create_initial_physical_plan(*input)?;
+                let subset = Arc::try_unwrap(subset).unwrap_or_else(|subset| (*subset).clone());
                 let operation = DataFrameOperation::DropDuplicates {
                     maintain_order,
-                    subset: (*subset).clone(),
+                    subset,
                 };
 
                 Ok(Box::new(DataFrameOpsExec::new(input, operation)))
