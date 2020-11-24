@@ -111,6 +111,11 @@ enum ALogicalPlan {
         exprs: Vec<Node>,
         schema: Schema,
     },
+    Distinct {
+        input: Node,
+        maintain_order: bool,
+        subset: Arc<Option<Vec<String>>>,
+    },
 }
 // converts expression to AExpr, which uses an arena (Vec) for allocation
 fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
@@ -317,6 +322,18 @@ fn to_alp(
                 input: i,
                 exprs: exp,
                 schema,
+            }
+        }
+        LogicalPlan::Distinct {
+            input,
+            maintain_order,
+            subset,
+        } => {
+            let i = to_alp(*input, expr_arena, lp_arena);
+            ALogicalPlan::Distinct {
+                input: i,
+                maintain_order,
+                subset,
             }
         }
     };
@@ -586,6 +603,18 @@ fn node_to_lp(
                 input: Box::new(i),
                 exprs: e,
                 schema: schema.clone(),
+            }
+        }
+        ALogicalPlan::Distinct {
+            input,
+            maintain_order,
+            subset,
+        } => {
+            let i = node_to_lp(*input, expr_arena, lp_arena);
+            LogicalPlan::Distinct {
+                input: Box::new(i),
+                maintain_order: *maintain_order,
+                subset: subset.clone(),
             }
         }
     }
@@ -870,6 +899,7 @@ impl SimplifyOptimizer {
                         plans.push(*input);
                         exprs.extend(e2);
                     }
+                    ALogicalPlan::Distinct { input, .. } => plans.push(*input),
                     ALogicalPlan::CsvScan { .. } | ALogicalPlan::DataFrameScan { .. } => {}
                 }
 

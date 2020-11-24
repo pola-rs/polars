@@ -1,4 +1,5 @@
 use crate::frame::group_by::GroupByMethod;
+use crate::lazy::logical_plan::DataFrameOperation;
 use crate::lazy::physical_plan::executors::{JoinExec, StackExec};
 use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
@@ -66,6 +67,19 @@ impl DefaultPlanner {
             LogicalPlan::DataFrameOp { input, operation } => {
                 // this isn't a sort
                 let input = self.create_initial_physical_plan(*input)?;
+
+                Ok(Arc::new(DataFrameOpsExec::new(input, operation)))
+            }
+            LogicalPlan::Distinct {
+                input,
+                maintain_order,
+                subset,
+            } => {
+                let input = self.create_initial_physical_plan(*input)?;
+                let operation = DataFrameOperation::DropDuplicates {
+                    maintain_order,
+                    subset: (*subset).clone(),
+                };
 
                 Ok(Arc::new(DataFrameOpsExec::new(input, operation)))
             }

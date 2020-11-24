@@ -197,6 +197,18 @@ impl TypeCoercion {
                     operation,
                 })
             }
+            Distinct {
+                input,
+                maintain_order,
+                subset,
+            } => {
+                let input = self.coerce(*input)?;
+                Ok(Distinct {
+                    input: Box::new(input),
+                    maintain_order,
+                    subset,
+                })
+            }
             Aggregate {
                 input,
                 keys,

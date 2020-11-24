@@ -115,6 +115,7 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         operation: DataFrameOperation,
     },
+
     Aggregate {
         input: Box<LogicalPlan>,
         keys: Arc<Vec<String>>,
@@ -133,6 +134,11 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         exprs: Vec<Expr>,
         schema: Schema,
+    },
+    Distinct {
+        input: Box<LogicalPlan>,
+        maintain_order: bool,
+        subset: Arc<Option<Vec<String>>>,
     },
 }
 
@@ -178,9 +184,7 @@ impl fmt::Debug for LogicalPlan {
             } => match operation {
                 DataFrameOperation::Sort { .. } => write!(f, "SORT {:?}", input),
                 DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
-                DataFrameOperation::DropDuplicates { .. } => {
-                    write!(f, "DROP DUPLICATES {:?}", input)
-                }
+                _ => unimplemented!(),
             },
             Aggregate {
                 input, keys, aggs, ..
@@ -199,6 +203,7 @@ impl fmt::Debug for LogicalPlan {
             HStack { input, exprs, .. } => {
                 write!(f, "\n{:?}\n\tWITH COLUMN(S)\n{:?}\n", input, exprs)
             }
+            Distinct { input, .. } => write!(f, "DISTINCT {:?}", input),
         }
     }
 }
@@ -356,6 +361,7 @@ impl LogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
+            Distinct { input, .. } => input.schema(),
         }
     }
     pub fn describe(&self) -> String {
@@ -549,12 +555,10 @@ impl LogicalPlanBuilder {
     }
 
     pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
-        LogicalPlan::DataFrameOp {
+        LogicalPlan::Distinct {
             input: Box::new(self.0),
-            operation: DataFrameOperation::DropDuplicates {
-                maintain_order,
-                subset,
-            },
+            maintain_order,
+            subset: Arc::new(subset),
         }
         .into()
     }

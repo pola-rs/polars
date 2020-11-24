@@ -210,6 +210,18 @@ impl ProjectionPushDown {
                     operation,
                 })
             }
+            Distinct {
+                input,
+                maintain_order,
+                subset,
+            } => {
+                let input = self.push_down(*input, acc_projections, names)?;
+                Ok(Distinct {
+                    input: Box::new(input),
+                    maintain_order,
+                    subset,
+                })
+            }
             Selection { predicate, input } => {
                 let local_projections = if !acc_projections.is_empty() {
                     let local_projections = projected_names(&acc_projections)?;

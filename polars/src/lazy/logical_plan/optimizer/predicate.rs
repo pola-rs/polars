@@ -176,6 +176,18 @@ impl PredicatePushDown {
                     operation,
                 })
             }
+            Distinct {
+                input,
+                subset,
+                maintain_order,
+            } => {
+                let input = self.push_down(*input, acc_predicates)?;
+                Ok(Distinct {
+                    input: Box::new(input),
+                    maintain_order,
+                    subset,
+                })
+            }
             Aggregate {
                 input,
                 keys,
