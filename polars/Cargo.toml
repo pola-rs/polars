@@ -40,6 +40,7 @@ ahash = "0.5"
 csv = "1.1"
 crossbeam = "0.8"
 serde_json = "1.0"
+lexical = "^5.2"
 
 [package.metadata.docs.rs]
 all-features = true

@@ -385,43 +385,16 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         builder: &mut PrimitiveChunkedBuilder<T>,
     ) -> Result<()>
     where
-        T: PolarsPrimitiveType,
+        T: PolarsPrimitiveType + PrimitiveParser,
     {
-        let is_boolean_type = *self.schema.field(col_idx).data_type() == ArrowDataType::Boolean;
-
         for (row_index, row) in rows.iter().enumerate() {
             match row.get(col_idx) {
-                Some(s) => {
-                    if s.is_empty() {
+                Some(bytes) => {
+                    if bytes.is_empty() {
                         builder.append_null();
                         continue;
                     }
-
-                    let s = match std::str::from_utf8(s) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            if self.ignore_parser_errors {
-                                builder.append_null();
-                                continue;
-                            }
-                            return Err(PolarsError::Other(
-                                format!(
-                                    "Error while parsing value {} for column {} at line {}. Not valid UTF8",
-                                    e,
-                                    col_idx,
-                                    self.line_number + row_index
-                                )
-                                    .into(),
-                            ));
-                        }
-                    };
-
-                    let parsed = if is_boolean_type {
-                        s.to_lowercase().parse::<T::Native>()
-                    } else {
-                        s.parse::<T::Native>()
-                    };
-                    match parsed {
+                    match T::parse(bytes) {
                         Ok(e) => builder.append_value(e),
                         Err(_) => {
                             if self.ignore_parser_errors {
@@ -430,9 +403,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             }
                             return Err(PolarsError::Other(
                                 format!(
-                                    // TODO: we should surface the underlying error here.
                                     "Error while parsing value {} for column {} at line {}",
-                                    s,
+                                    String::from_utf8_lossy(bytes),
                                     col_idx,
                                     self.line_number + row_index
                                 )
@@ -457,10 +429,14 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             let field = self.schema.field(*i);
             match field.data_type() {
                 ArrowDataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
+                ArrowDataType::Int8 => self.add_to_primitive(rows, *i, builder.i32()),
+                ArrowDataType::Int16 => self.add_to_primitive(rows, *i, builder.i32()),
                 ArrowDataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
                 ArrowDataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
-                ArrowDataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
+                ArrowDataType::UInt8 => self.add_to_primitive(rows, *i, builder.u32()),
+                ArrowDataType::UInt16 => self.add_to_primitive(rows, *i, builder.u32()),
                 ArrowDataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
+                ArrowDataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
                 ArrowDataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
                 ArrowDataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
                 ArrowDataType::Utf8 => add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding),
@@ -658,6 +634,90 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         parsed_dfs.push(builders_to_df(builders));
         utils::accumulate_dataframes_vertical(parsed_dfs)
+    }
+}
+
+impl From<lexical::Error> for PolarsError {
+    fn from(_: lexical::Error) -> Self {
+        PolarsError::Other("Could not parse primitive type during csv parsing".into())
+    }
+}
+
+trait PrimitiveParser: ArrowPrimitiveType {
+    fn parse(bytes: &[u8]) -> Result<Self::Native>;
+}
+
+impl PrimitiveParser for BooleanType {
+    fn parse(bytes: &[u8]) -> Result<bool> {
+        if bytes.eq_ignore_ascii_case(b"false") {
+            Ok(false)
+        } else if bytes.eq_ignore_ascii_case(b"true") {
+            Ok(true)
+        } else {
+            Err(PolarsError::Other("Could not parse boolean".into()))
+        }
+    }
+}
+
+impl PrimitiveParser for Float32Type {
+    fn parse(bytes: &[u8]) -> Result<f32> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Float64Type {
+    fn parse(bytes: &[u8]) -> Result<f64> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+
+impl PrimitiveParser for UInt8Type {
+    fn parse(bytes: &[u8]) -> Result<u8> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for UInt16Type {
+    fn parse(bytes: &[u8]) -> Result<u16> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for UInt32Type {
+    fn parse(bytes: &[u8]) -> Result<u32> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for UInt64Type {
+    fn parse(bytes: &[u8]) -> Result<u64> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Int8Type {
+    fn parse(bytes: &[u8]) -> Result<i8> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Int16Type {
+    fn parse(bytes: &[u8]) -> Result<i16> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Int32Type {
+    fn parse(bytes: &[u8]) -> Result<i32> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Int64Type {
+    fn parse(bytes: &[u8]) -> Result<i64> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
     }
 }
 
