@@ -21,6 +21,14 @@ impl TypeCoercion {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.reverse())
             }
+            Unique(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.is_unique())
+            }
+            Duplicated(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.is_duplicated())
+            }
             Alias(expr, name) => Ok(Expr::Alias(
                 Box::new(self.rewrite_expr(*expr, input_schema)?),
                 name,

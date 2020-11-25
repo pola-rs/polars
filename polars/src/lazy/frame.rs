@@ -131,7 +131,7 @@ impl LazyFrame {
     /// Describe the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> Result<String> {
         let logical_plan = self.clone().get_plan_builder().build();
-        let predicate_pushdown_opt = PredicatePushDown {};
+        let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
         let simplify_expr_opt = SimplifyExpr {};
         let logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
@@ -233,7 +233,7 @@ impl LazyFrame {
         let simplify_expr = self.simplify_expr;
         let mut logical_plan = self.get_plan_builder().build();
 
-        let predicate_pushdown_opt = PredicatePushDown {};
+        let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
         let type_coercion_opt = TypeCoercion {};
         let simplify_expr_opt = SimplifyExpr {};

@@ -209,6 +209,12 @@ impl fmt::Debug for LogicalPlan {
 
 fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
     match expr {
+        Expr::Unique(expr) => {
+            Expr::Unique(Box::new(replace_wildcard_with_column(*expr, column_name)))
+        }
+        Expr::Duplicated(expr) => {
+            Expr::Duplicated(Box::new(replace_wildcard_with_column(*expr, column_name)))
+        }
         Expr::Reverse(expr) => {
             Expr::Reverse(Box::new(replace_wildcard_with_column(*expr, column_name)))
         }
@@ -312,6 +318,8 @@ fn remove_wildcard_from_exprs(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
 /// Check if Expression has a wildcard somewhere in the tree.
 fn has_wildcard(expr: &Expr) -> bool {
     match expr {
+        Expr::Duplicated(expr) => has_wildcard(expr),
+        Expr::Unique(expr) => has_wildcard(expr),
         Expr::Wildcard => true,
         Expr::Column(_) => false,
         Expr::Reverse(expr) => has_wildcard(expr),

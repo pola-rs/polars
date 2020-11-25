@@ -1,6 +1,8 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::{count_downtree_projections, expr_to_root_column, rename_expr_root_name};
+use crate::lazy::utils::{
+    count_downtree_projections, expr_to_root_column, has_expr, rename_expr_root_name,
+};
 use crate::prelude::*;
 use ahash::RandomState;
 use std::collections::HashMap;
@@ -23,7 +25,20 @@ fn insert_and_combine_predicate(
     *existing_predicate = existing_predicate.clone().and(predicate)
 }
 
-pub struct PredicatePushDown {}
+pub struct PredicatePushDown {
+    // used in has_expr check. This reduces box allocations
+    unique_dummy: Expr,
+    duplicated_dummy: Expr,
+}
+
+impl Default for PredicatePushDown {
+    fn default() -> Self {
+        PredicatePushDown {
+            unique_dummy: lit("_").is_unique(),
+            duplicated_dummy: lit("_").is_duplicated(),
+        }
+    }
+}
 
 pub(crate) fn combine_predicates<I>(iter: I) -> Expr
 where
@@ -216,9 +231,18 @@ impl PredicatePushDown {
 
                 let mut pushdown_left = init_hashmap();
                 let mut pushdown_right = init_hashmap();
-                let mut local_predicates = vec![];
+                let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
                 for predicate in acc_predicates.values() {
+                    if has_expr(predicate, &self.unique_dummy) {
+                        local_predicates.push(predicate.clone());
+                        continue;
+                    }
+                    if has_expr(predicate, &self.duplicated_dummy) {
+                        local_predicates.push(predicate.clone());
+                        continue;
+                    }
+
                     // no else if. predicate can be in both tables.
                     if check_down_node(&predicate, schema_left) {
                         let name =
