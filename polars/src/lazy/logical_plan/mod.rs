@@ -295,14 +295,14 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-fn remove_wildcard_from_exprs(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
+fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     if exprs.len() == 1 && exprs[0] == Expr::Wildcard {
         // no projection needed
         return vec![];
     };
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
     for expr in exprs {
-        if expr_to_root_column_expr(&expr).expect("should have a root column") == &Expr::Wildcard {
+        if let Ok(Expr::Wildcard) = expr_to_root_column_expr(&expr) {
             for field in schema.fields() {
                 let name = field.name();
                 let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
@@ -383,7 +383,7 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 }
 
 fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
-    let exprs = remove_wildcard_from_exprs(exprs, schema);
+    let exprs = rewrite_projections(exprs, schema);
     let schema = utils::expressions_to_schema(&exprs, schema);
     (exprs, schema)
 }
@@ -511,7 +511,7 @@ impl LogicalPlanBuilder {
 
     pub fn groupby(self, keys: Arc<Vec<String>>, aggs: Vec<Expr>) -> Self {
         let current_schema = self.0.schema();
-        let aggs = remove_wildcard_from_exprs(aggs, current_schema);
+        let aggs = rewrite_projections(aggs, current_schema);
 
         let fields = keys
             .iter()

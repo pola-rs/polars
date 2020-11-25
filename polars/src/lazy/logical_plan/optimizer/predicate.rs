@@ -29,6 +29,7 @@ pub struct PredicatePushDown {
     // used in has_expr check. This reduces box allocations
     unique_dummy: Expr,
     duplicated_dummy: Expr,
+    binary_dummy: Expr,
 }
 
 impl Default for PredicatePushDown {
@@ -36,6 +37,7 @@ impl Default for PredicatePushDown {
         PredicatePushDown {
             unique_dummy: lit("_").is_unique(),
             duplicated_dummy: lit("_").is_duplicated(),
+            binary_dummy: lit("_").eq(lit("_")),
         }
     }
 }
@@ -196,12 +198,32 @@ impl PredicatePushDown {
                 subset,
                 maintain_order,
             } => {
-                let input = self.push_down(*input, acc_predicates)?;
-                Ok(Distinct {
+                // currently the distinct operation only keeps the first occurrences.
+                // this may have influence on the pushed down predicates. If the pushed down predicates
+                // contain a binary expression (thus depending on values in multiple columns) the final result may differ if it is pushed down.
+                let mut local_pred = Vec::with_capacity(acc_predicates.len());
+
+                let mut new_acc_predicates = init_hashmap();
+                for (name, predicate) in acc_predicates {
+                    if has_expr(&predicate, &self.binary_dummy) {
+                        local_pred.push(predicate)
+                    } else {
+                        new_acc_predicates.insert(name, predicate);
+                    }
+                }
+
+                let input = self.push_down(*input, new_acc_predicates)?;
+                let lp = Distinct {
                     input: Box::new(input),
                     maintain_order,
                     subset,
-                })
+                };
+                let mut builder = LogicalPlanBuilder::from(lp);
+                if !local_pred.is_empty() {
+                    let predicate = combine_predicates(local_pred.into_iter());
+                    builder = builder.filter(predicate)
+                }
+                Ok(builder.build())
             }
             Aggregate {
                 input,
