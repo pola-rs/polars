@@ -7,6 +7,7 @@ use crate::prelude::*;
 use ahash::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
+
 // arbitrary constant to reduce reallocation.
 // don't expect more than 100 predicates.
 const HASHMAP_SIZE: usize = 100;
@@ -30,6 +31,8 @@ pub struct PredicatePushDown {
     unique_dummy: Expr,
     duplicated_dummy: Expr,
     binary_dummy: Expr,
+    is_null_dummy: Expr,
+    is_not_null_dummy: Expr,
 }
 
 impl Default for PredicatePushDown {
@@ -38,6 +41,8 @@ impl Default for PredicatePushDown {
             unique_dummy: lit("_").is_unique(),
             duplicated_dummy: lit("_").is_duplicated(),
             binary_dummy: lit("_").eq(lit("_")),
+            is_null_dummy: lit("_").is_null(),
+            is_not_null_dummy: lit("_").is_null(),
         }
     }
 }
@@ -255,28 +260,47 @@ impl PredicatePushDown {
                 let mut pushdown_right = init_hashmap();
                 let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
-                for predicate in acc_predicates.values() {
-                    if has_expr(predicate, &self.unique_dummy) {
+                for (_, predicate) in acc_predicates {
+                    // unique and duplicated can be caused by joins
+                    if has_expr(&predicate, &self.unique_dummy) {
                         local_predicates.push(predicate.clone());
                         continue;
                     }
-                    if has_expr(predicate, &self.duplicated_dummy) {
+                    if has_expr(&predicate, &self.duplicated_dummy) {
                         local_predicates.push(predicate.clone());
                         continue;
                     }
+                    let mut filter_left = false;
+                    let mut filter_right = false;
 
                     // no else if. predicate can be in both tables.
                     if check_down_node(&predicate, schema_left) {
                         let name =
                             Arc::new(predicate.to_field(schema_left).unwrap().name().clone());
                         insert_and_combine_predicate(&mut pushdown_left, name, predicate.clone());
+                        filter_left = true;
                     }
                     if check_down_node(&predicate, schema_right) {
                         let name =
                             Arc::new(predicate.to_field(schema_right).unwrap().name().clone());
                         insert_and_combine_predicate(&mut pushdown_right, name, predicate.clone());
-                    } else {
-                        local_predicates.push(predicate.clone())
+                        filter_right = true;
+                    }
+                    if !(filter_left & filter_right) {
+                        local_predicates.push(predicate.clone());
+                        continue;
+                    }
+                    // An outer join or left join may create null values.
+                    // we also do it local
+                    if (how == JoinType::Outer) | (how == JoinType::Left) {
+                        if has_expr(&predicate, &self.is_not_null_dummy) {
+                            local_predicates.push(predicate.clone());
+                            continue;
+                        }
+                        if has_expr(&predicate, &self.is_null_dummy) {
+                            local_predicates.push(predicate);
+                            continue;
+                        }
                     }
                 }
 
