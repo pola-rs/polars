@@ -75,6 +75,8 @@ pub enum Expr {
         periods: i32,
     },
     Reverse(Box<Expr>),
+    Duplicated(Box<Expr>),
+    Unique(Box<Expr>),
     Wildcard,
 }
 
@@ -91,6 +93,8 @@ macro_rules! impl_partial_eq {
 impl PartialEq for Expr {
     fn eq(&self, other: &Self) -> bool {
         match self {
+            Expr::Duplicated(left) => impl_partial_eq!(Duplicated, left, other),
+            Expr::Unique(left) => impl_partial_eq!(Unique, left, other),
             Expr::Reverse(left) => impl_partial_eq!(Reverse, left, other),
             Expr::AggMean(left) => impl_partial_eq!(AggMean, left, other),
             Expr::AggMedian(left) => impl_partial_eq!(AggMedian, left, other),
@@ -190,6 +194,8 @@ impl Expr {
     pub fn get_type(&self, schema: &Schema) -> Result<ArrowDataType> {
         use Expr::*;
         match self {
+            Unique(_) => Ok(ArrowDataType::Boolean),
+            Duplicated(_) => Ok(ArrowDataType::Boolean),
             Reverse(expr) => expr.get_type(schema),
             Alias(expr, ..) => expr.get_type(schema),
             Column(name) => Ok(schema.field_with_name(name)?.data_type().clone()),
@@ -245,6 +251,14 @@ impl Expr {
     pub(crate) fn to_field(&self, schema: &Schema) -> Result<Field> {
         use Expr::*;
         match self {
+            Unique(expr) => {
+                let field = expr.to_field(&schema)?;
+                Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
+            }
+            Duplicated(expr) => {
+                let field = expr.to_field(&schema)?;
+                Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
+            }
             Reverse(expr) => expr.to_field(&schema),
             Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema)?, true)),
             Column(name) => {
@@ -373,6 +387,8 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
+            Unique(expr) => write!(f, "UNIQUE {:?}", expr),
+            Duplicated(expr) => write!(f, "DUPLICATED {:?}", expr),
             Reverse(expr) => write!(f, "REVERSE {:?}", expr),
             Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
             Column(name) => write!(f, "COLUMN {}", name),
@@ -739,15 +755,13 @@ impl Expr {
     /// Get a mask of duplicated values
     #[allow(clippy::wrong_self_convention)]
     pub fn is_duplicated(self) -> Self {
-        let function = move |s: Series| s.is_duplicated().map(|ca| ca.into());
-        self.apply(function, Some(ArrowDataType::Boolean))
+        Expr::Duplicated(Box::new(self))
     }
 
     /// Get a mask of unique values
     #[allow(clippy::wrong_self_convention)]
     pub fn is_unique(self) -> Self {
-        let function = move |s: Series| s.is_unique().map(|ca| ca.into());
-        self.apply(function, Some(ArrowDataType::Boolean))
+        Expr::Unique(Box::new(self))
     }
 
     /// and operation

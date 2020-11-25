@@ -18,6 +18,217 @@ pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
     }
 }
 
+/// Can check if an expression tree has a matching_expr. This
+/// requires a dummy expression to be created that will be used to patter match against.
+///
+/// Another option was to create a recursive macro but would increase code bloat.
+pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
+    match current_expr {
+        Expr::Duplicated(e) => {
+            if matches!(current_expr, Expr::Duplicated(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::Unique(e) => {
+            if matches!(current_expr, Expr::Unique(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::Reverse(e) => {
+            if matches!(current_expr, Expr::Reverse(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::Alias(e, _) => {
+            if matches!(current_expr, Expr::Alias(_, _)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::Column(_) => {
+            if matches!(current_expr, Expr::Column(_)) {
+                true
+            } else {
+                panic!("should not happen")
+            }
+        }
+        Expr::Literal(_) => {
+            if matches!(current_expr, Expr::Literal(_)) {
+                true
+            } else {
+                panic!("should not happen")
+            }
+        }
+        Expr::BinaryExpr { left, right, .. } => {
+            if matches!(current_expr, Expr::BinaryExpr{..}) {
+                true
+            } else {
+                has_expr(left, matching_expr) | has_expr(right, matching_expr)
+            }
+        }
+        Expr::Not(e) => {
+            if matches!(current_expr, Expr::Not(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::IsNotNull(e) => {
+            if matches!(current_expr, Expr::IsNotNull(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::IsNull(e) => {
+            if matches!(current_expr, Expr::IsNull(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::Cast { expr, .. } => {
+            if matches!(current_expr, Expr::Cast{..}) {
+                true
+            } else {
+                has_expr(expr, matching_expr)
+            }
+        }
+        Expr::Sort { expr, .. } => {
+            if matches!(current_expr, Expr::Sort{..}) {
+                true
+            } else {
+                has_expr(expr, matching_expr)
+            }
+        }
+        Expr::AggMin(e) => {
+            if matches!(current_expr, Expr::AggMin(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggMax(e) => {
+            if matches!(current_expr, Expr::AggMax(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggMedian(e) => {
+            if matches!(current_expr, Expr::AggMedian(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggNUnique(e) => {
+            if matches!(current_expr, Expr::AggNUnique(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggFirst(e) => {
+            if matches!(current_expr, Expr::AggFirst(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggLast(e) => {
+            if matches!(current_expr, Expr::AggLast(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggMean(e) => {
+            if matches!(current_expr, Expr::AggMean(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggList(e) => {
+            if matches!(current_expr, Expr::AggList(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggCount(e) => {
+            if matches!(current_expr, Expr::AggCount(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggQuantile { expr, .. } => {
+            if matches!(**expr, Expr::AggQuantile{..}) {
+                true
+            } else {
+                has_expr(expr, matching_expr)
+            }
+        }
+        Expr::AggSum(e) => {
+            if matches!(current_expr, Expr::AggSum(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::AggGroups(e) => {
+            if matches!(current_expr, Expr::AggGroups(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            if matches!(current_expr, Expr::Ternary{..}) {
+                true
+            } else {
+                has_expr(predicate, matching_expr)
+                    | has_expr(truthy, matching_expr)
+                    | has_expr(falsy, matching_expr)
+            }
+        }
+        Expr::Apply { input, .. } => {
+            if matches!(current_expr, Expr::Apply{..}) {
+                true
+            } else {
+                has_expr(input, matching_expr)
+            }
+        }
+        Expr::Shift { input, .. } => {
+            if matches!(current_expr, Expr::Shift{..}) {
+                true
+            } else {
+                has_expr(input, matching_expr)
+            }
+        }
+        Expr::Wildcard => {
+            if matches!(current_expr, Expr::Wildcard) {
+                true
+            } else {
+                panic!("should not happen")
+            }
+        }
+    }
+}
+
 /// output name of expr
 pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
     match expr {
@@ -82,6 +293,8 @@ pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
 // TODO! reuse expr_to_root_column_expr
 pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
     match expr {
+        Expr::Duplicated(expr) => expr_to_root_column(expr),
+        Expr::Unique(expr) => expr_to_root_column(expr),
         Expr::Reverse(expr) => expr_to_root_column(expr),
         Expr::Column(name) => Ok(name.clone()),
         Expr::Alias(expr, _) => expr_to_root_column(expr),
@@ -141,6 +354,8 @@ pub(crate) fn expressions_to_root_column_exprs(exprs: &[Expr]) -> Result<Vec<Exp
 // Find the first binary expressions somewhere in the tree.
 pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
     match expr {
+        Expr::Unique(expr) => unpack_binary_exprs(expr),
+        Expr::Duplicated(expr) => unpack_binary_exprs(expr),
         Expr::Reverse(expr) => unpack_binary_exprs(expr),
         Expr::Alias(expr, _) => unpack_binary_exprs(expr),
         Expr::Not(expr) => unpack_binary_exprs(expr),
@@ -172,6 +387,8 @@ pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
 pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
     match expr {
         Expr::Column(_) => Ok(expr),
+        Expr::Duplicated(expr) => expr_to_root_column_expr(expr),
+        Expr::Unique(expr) => expr_to_root_column_expr(expr),
         Expr::Reverse(expr) => expr_to_root_column_expr(expr),
         Expr::Alias(expr, _) => expr_to_root_column_expr(expr),
         Expr::Not(expr) => expr_to_root_column_expr(expr),
@@ -217,6 +434,8 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
     match expr {
         Expr::Column(_) => Ok(Expr::Column(new_name)),
         Expr::Reverse(expr) => rename_expr_root_name(expr, new_name),
+        Expr::Unique(expr) => rename_expr_root_name(expr, new_name),
+        Expr::Duplicated(expr) => rename_expr_root_name(expr, new_name),
         Expr::Alias(expr, alias) => rename_expr_root_name(expr, new_name)
             .map(|expr| Expr::Alias(Box::new(expr), alias.clone())),
         Expr::Not(expr) => {

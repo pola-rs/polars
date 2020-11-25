@@ -6,6 +6,8 @@ use std::sync::Arc;
 // AExpr representation of Nodes which are allocated in an Arena
 #[derive(Clone)]
 enum AExpr {
+    Unique(Node),
+    Duplicated(Node),
     Reverse(Node),
     Alias(Node, Arc<String>),
     Column(Arc<String>),
@@ -120,6 +122,8 @@ enum ALogicalPlan {
 // converts expression to AExpr, which uses an arena (Vec) for allocation
 fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
+        Expr::Unique(expr) => AExpr::Unique(to_aexpr(*expr, arena)),
+        Expr::Duplicated(expr) => AExpr::Duplicated(to_aexpr(*expr, arena)),
         Expr::Reverse(expr) => AExpr::Reverse(to_aexpr(*expr, arena)),
         Expr::Alias(e, name) => AExpr::Alias(to_aexpr(*e, arena), name),
         Expr::Literal(value) => AExpr::Literal(value),
@@ -344,6 +348,8 @@ fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node);
 
     match expr {
+        AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_exp(*node, expr_arena))),
+        AExpr::Unique(node) => Expr::Unique(Box::new(node_to_exp(*node, expr_arena))),
         AExpr::Reverse(node) => Expr::Reverse(Box::new(node_to_exp(*node, expr_arena))),
         AExpr::Alias(expr, name) => {
             let exp = node_to_exp(*expr, expr_arena);
@@ -915,6 +921,12 @@ impl SimplifyOptimizer {
                     let expr = expr_arena.get(node);
 
                     match expr {
+                        AExpr::Duplicated(expr) => {
+                            exprs.push(*expr);
+                        }
+                        AExpr::Unique(expr) => {
+                            exprs.push(*expr);
+                        }
                         AExpr::Reverse(expr) => {
                             exprs.push(*expr);
                         }
