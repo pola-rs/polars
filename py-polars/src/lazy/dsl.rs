@@ -243,7 +243,10 @@ impl PyExpr {
             // Wrap this PySeries object in the python side Series wrapper
             let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
             // call the lambda en get a python side Series wrapper
-            let result_series_wrapper = lambda.call1(py, (python_series_wrapper,)).unwrap();
+            let result_series_wrapper = match lambda.call1(py, (python_series_wrapper,)) {
+                Ok(pyobj) => pyobj,
+                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+            };
             // unpack the wrapper in a PySeries
             let py_pyseries = result_series_wrapper
                 .getattr(py, "_s")

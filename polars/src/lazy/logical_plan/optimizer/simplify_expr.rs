@@ -592,7 +592,7 @@ fn node_to_lp(
                 input_left: Box::new(i_l),
                 input_right: Box::new(i_r),
                 schema: schema.clone(),
-                how: how.clone(),
+                how: *how,
                 left_on: l_on,
                 right_on: r_on,
             }

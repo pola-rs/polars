@@ -613,7 +613,7 @@ impl LogicalPlanBuilder {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum JoinType {
     Left,
     Inner,
