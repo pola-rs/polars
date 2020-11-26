@@ -1,18 +1,10 @@
-use crate::lazy::logical_plan::optimizer::check_down_node;
+use crate::lazy::logical_plan::optimizer::{check_down_node, HASHMAP_SIZE};
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{expr_to_root_column, has_expr, rename_expr_root_name};
 use crate::prelude::*;
 use ahash::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-// arbitrary constant to reduce reallocation.
-// don't expect more than 100 predicates.
-const HASHMAP_SIZE: usize = 100;
-
-fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
-    HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new())
-}
 
 /// Don't overwrite predicates but combine them.
 fn insert_and_combine_predicate(
@@ -113,6 +105,7 @@ impl PredicatePushDown {
         logical_plan: LogicalPlan,
         mut acc_predicates: HashMap<Arc<String>, Expr, RandomState>,
     ) -> Result<LogicalPlan> {
+        use crate::lazy::logical_plan::optimizer;
         use LogicalPlan::*;
 
         match logical_plan {
@@ -225,7 +218,7 @@ impl PredicatePushDown {
                 // contain a binary expression (thus depending on values in multiple columns) the final result may differ if it is pushed down.
                 let mut local_pred = Vec::with_capacity(acc_predicates.len());
 
-                let mut new_acc_predicates = init_hashmap();
+                let mut new_acc_predicates = optimizer::init_hashmap();
                 for (name, predicate) in acc_predicates {
                     if has_expr(&predicate, &self.binary_dummy) {
                         local_pred.push(predicate)
@@ -255,7 +248,7 @@ impl PredicatePushDown {
             } => {
                 // dont push down predicates. An aggregation needs all rows
                 let lp = Aggregate {
-                    input: Box::new(self.push_down(*input, init_hashmap())?),
+                    input: Box::new(self.push_down(*input, optimizer::init_hashmap())?),
                     keys,
                     aggs,
                     schema,
@@ -273,8 +266,8 @@ impl PredicatePushDown {
                 let schema_left = input_left.schema();
                 let schema_right = input_right.schema();
 
-                let mut pushdown_left = init_hashmap();
-                let mut pushdown_right = init_hashmap();
+                let mut pushdown_left = optimizer::init_hashmap();
+                let mut pushdown_right = optimizer::init_hashmap();
                 let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
                 for (_, predicate) in acc_predicates {
