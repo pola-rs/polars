@@ -277,12 +277,12 @@ impl LazyFrame {
             let opt = TypeCoercion {};
             logical_plan = opt.optimize(logical_plan)?;
         }
-        if simplify_expr {
-            let opt = SimplifyExpr {};
-            logical_plan = opt.optimize(logical_plan)?;
-        }
         if agg_scan_projection {
             let opt = AggScanProjection {};
+            logical_plan = opt.optimize(logical_plan)?;
+        }
+        if simplify_expr {
+            let opt = SimplifyExpr {};
             logical_plan = opt.optimize(logical_plan)?;
         }
 
