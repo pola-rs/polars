@@ -76,7 +76,6 @@ impl DefaultPlanner {
                 selection,
                 ..
             } => {
-                dbg!("expr: selection", &selection);
                 let selection = selection
                     .map(|pred| self.create_physical_expr(pred))
                     .map_or(Ok(None), |v| v.map(Some))?;

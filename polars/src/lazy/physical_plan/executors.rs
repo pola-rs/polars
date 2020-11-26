@@ -15,6 +15,8 @@ pub struct CsvExec {
     stop_after_n_rows: Option<usize>,
     with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
+    // make sure that we are not called twice
+    valid: bool,
 }
 
 impl CsvExec {
@@ -40,13 +42,17 @@ impl CsvExec {
             stop_after_n_rows,
             with_columns,
             predicate,
+            valid: true,
         }
     }
 }
 
 impl Executor for CsvExec {
     fn execute(&mut self) -> Result<DataFrame> {
+        assert!(self.valid);
+        self.valid = false;
         let file = std::fs::File::open(&self.path).unwrap();
+        dbg!(&self.path, self.predicate.is_some());
 
         let mut with_columns = mem::take(&mut self.with_columns);
         let mut projected_len = 0;
@@ -103,6 +109,8 @@ pub struct DataFrameExec {
     df: Arc<DataFrame>,
     projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
     selection: Option<Arc<dyn PhysicalExpr>>,
+    // make sure that we are not called twice
+    valid: bool,
 }
 
 impl DataFrameExec {
@@ -115,36 +123,30 @@ impl DataFrameExec {
             df,
             projection,
             selection,
+            valid: true,
         }
     }
 }
 
 impl Executor for DataFrameExec {
     fn execute(&mut self) -> Result<DataFrame> {
+        assert!(self.valid);
+        self.valid = false;
         let df = mem::take(&mut self.df);
         let mut df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
 
-        dbg!(&df);
-
         // projection should be before selection as those are free
         if let Some(projection) = &self.projection {
-            dbg!("in projection");
             df = evaluate_physical_expressions(&df, projection)?;
         }
 
-        dbg!(&df);
-
         if let Some(selection) = &self.selection {
-            dbg!("in selection");
             let s = selection.evaluate(&df)?;
-            dbg!(&s);
             let mask = s.bool().map_err(|_| {
                 PolarsError::Other("filter predicate was not of type boolean".into())
             })?;
             df = df.filter(mask)?;
         }
-        dbg!(&df);
-
         Ok(df)
     }
 }
@@ -156,6 +158,8 @@ pub struct StandardExec {
     operation: &'static str,
     input: Box<dyn Executor>,
     expr: Vec<Arc<dyn PhysicalExpr>>,
+    // make sure that we are not called twice
+    valid: bool,
 }
 
 impl StandardExec {
@@ -168,6 +172,7 @@ impl StandardExec {
             operation,
             input,
             expr,
+            valid: true,
         }
     }
 }
@@ -204,6 +209,8 @@ fn evaluate_physical_expressions(
 
 impl Executor for StandardExec {
     fn execute(&mut self) -> Result<DataFrame> {
+        assert!(self.valid);
+        self.valid = false;
         let df = self.input.execute()?;
 
         evaluate_physical_expressions(&df, &self.expr)

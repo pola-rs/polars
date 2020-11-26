@@ -75,12 +75,12 @@ enum ALogicalPlan {
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
-        predicate: Option<Expr>,
+        predicate: Option<Node>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: Schema,
-        projection: Option<Vec<Expr>>,
+        projection: Option<Vec<Node>>,
         selection: Option<Node>,
     },
     Projection {
@@ -232,7 +232,7 @@ fn to_alp(
             skip_rows,
             stop_after_n_rows,
             with_columns,
-            predicate,
+            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
         },
         LogicalPlan::DataFrameScan {
             df,
@@ -242,7 +242,8 @@ fn to_alp(
         } => ALogicalPlan::DataFrameScan {
             df,
             schema,
-            projection,
+            projection: projection
+                .map(|exprs| exprs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect()),
             selection: selection.map(|expr| to_aexpr(expr, expr_arena)),
         },
         LogicalPlan::Projection {
@@ -250,10 +251,7 @@ fn to_alp(
             input,
             schema,
         } => {
-            let exp = expr
-                .iter()
-                .map(|x| to_aexpr(x.clone(), expr_arena))
-                .collect();
+            let exp = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
             let i = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::Projection {
                 expr: exp,
@@ -266,10 +264,7 @@ fn to_alp(
             input,
             schema,
         } => {
-            let exp = expr
-                .iter()
-                .map(|x| to_aexpr(x.clone(), expr_arena))
-                .collect();
+            let exp = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
             let i = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::LocalProjection {
                 expr: exp,
@@ -291,10 +286,7 @@ fn to_alp(
             schema,
         } => {
             let i = to_alp(*input, expr_arena, lp_arena);
-            let aggs_new = aggs
-                .iter()
-                .map(|x| to_aexpr(x.clone(), expr_arena))
-                .collect();
+            let aggs_new = aggs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
 
             ALogicalPlan::Aggregate {
                 input: i,
@@ -332,10 +324,7 @@ fn to_alp(
             exprs,
             schema,
         } => {
-            let exp = exprs
-                .iter()
-                .map(|x| to_aexpr(x.clone(), expr_arena))
-                .collect();
+            let exp = exprs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
             let i = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::HStack {
                 input: i,
@@ -534,7 +523,7 @@ fn node_to_lp(
             skip_rows: *skip_rows,
             stop_after_n_rows: *stop_after_n_rows,
             with_columns: with_columns.clone(),
-            predicate: predicate.clone(),
+            predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
         },
         ALogicalPlan::DataFrameScan {
             df,
@@ -544,7 +533,9 @@ fn node_to_lp(
         } => LogicalPlan::DataFrameScan {
             df: df.clone(),
             schema: schema.clone(),
-            projection: projection.clone(),
+            projection: projection
+                .as_ref()
+                .map(|nodes| nodes.iter().map(|n| node_to_exp(*n, expr_arena)).collect()),
             selection: selection.map(|n| node_to_exp(n, expr_arena)),
         },
         ALogicalPlan::Projection {
