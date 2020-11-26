@@ -43,16 +43,23 @@ impl DefaultPlanner {
                 skip_rows,
                 stop_after_n_rows,
                 with_columns,
-            } => Ok(Box::new(CsvExec::new(
-                path,
-                schema,
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                stop_after_n_rows,
-                with_columns,
-            ))),
+                predicate,
+            } => {
+                let predicate = predicate
+                    .map(|pred| self.create_physical_expr(pred))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+                Ok(Box::new(CsvExec::new(
+                    path,
+                    schema,
+                    has_header,
+                    delimiter,
+                    ignore_errors,
+                    skip_rows,
+                    stop_after_n_rows,
+                    with_columns,
+                    predicate,
+                )))
+            }
             LogicalPlan::Projection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let phys_expr = self.create_physical_expressions(expr)?;

@@ -48,10 +48,11 @@
 //! assert_eq!("sepal.length", df.get_columns()[0].name());
 //! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
-use crate::frame::ser::fork::csv::build_csv_reader;
+use crate::frame::ser::fork::csv::{build_csv_reader, SequentialReader};
+use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 pub use arrow::csv::WriterBuilder;
-use std::io::{BufRead, BufReader, Read, Seek, Write};
+use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 /// Write a DataFrame to csv.
@@ -179,7 +180,7 @@ where
 
 impl<R> CsvReader<R>
 where
-    R: Read + Seek + Sync + Send,
+    R: 'static + Read + Seek + Sync + Send,
 {
     pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
         self.encoding = enc;
@@ -257,6 +258,37 @@ where
         self.one_thread = one_thread;
         self
     }
+
+    fn build_inner_reader(self) -> Result<SequentialReader<R>> {
+        build_csv_reader(
+            self.reader,
+            self.stop_after_n_rows,
+            self.skip_rows,
+            self.projection,
+            self.batch_size,
+            self.max_records,
+            self.delimiter,
+            self.has_header,
+            self.ignore_parser_errors,
+            self.schema,
+            self.columns,
+            self.encoding,
+            self.one_thread,
+        )
+    }
+    /// Read the file and create the DataFrame. Used from lazy execution
+    pub(crate) fn finish_with_predicate(
+        self,
+        predicate: Arc<dyn PhysicalExpr>,
+    ) -> Result<DataFrame> {
+        let rechunk = self.rechunk;
+        let mut csv_reader = self.build_inner_reader()?;
+        let df = csv_reader.as_df(Some(predicate))?;
+        match rechunk {
+            true => Ok(df.agg_chunks()),
+            false => Ok(df),
+        }
+    }
 }
 
 impl<R> SerReader<R> for CsvReader<R>
@@ -291,39 +323,14 @@ where
 
     /// Read the file and create the DataFrame.
     fn finish(self) -> Result<DataFrame> {
-        let mut csv_reader = build_csv_reader(
-            self.reader,
-            self.stop_after_n_rows,
-            self.skip_rows,
-            self.projection,
-            self.batch_size,
-            self.max_records,
-            self.delimiter,
-            self.has_header,
-            self.ignore_parser_errors,
-            self.schema,
-            self.columns,
-            self.encoding,
-            self.one_thread,
-        )?;
-
-        let df = csv_reader.as_df()?;
-        match self.rechunk {
+        let rechunk = self.rechunk;
+        let mut csv_reader = self.build_inner_reader()?;
+        let df = csv_reader.as_df(None)?;
+        match rechunk {
             true => Ok(df.agg_chunks()),
             false => Ok(df),
         }
     }
-}
-
-fn count_lines<R: Read + Seek>(reader: &mut R) -> anyhow::Result<usize> {
-    const LF: u8 = b'\n';
-    let mut reader = BufReader::new(reader);
-    let mut count = 0;
-    let mut line: Vec<u8> = Vec::new();
-    while matches!(reader.read_until(LF, &mut line)?, n if n > 0) {
-        count += 1;
-    }
-    Ok(count)
 }
 
 #[cfg(test)]

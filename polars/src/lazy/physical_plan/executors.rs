@@ -14,6 +14,7 @@ pub struct CsvExec {
     skip_rows: usize,
     stop_after_n_rows: Option<usize>,
     with_columns: Option<Vec<String>>,
+    predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
 impl CsvExec {
@@ -27,6 +28,7 @@ impl CsvExec {
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Self {
         CsvExec {
             path,
@@ -37,6 +39,7 @@ impl CsvExec {
             skip_rows,
             stop_after_n_rows,
             with_columns,
+            predicate,
         }
     }
 }
@@ -58,7 +61,7 @@ impl Executor for CsvExec {
         let mut schema = Schema::new(vec![]);
         mem::swap(&mut self.schema, &mut schema);
 
-        let df = CsvReader::new(file)
+        let reader = CsvReader::new(file)
             .has_header(self.has_header)
             .with_schema(Arc::new(schema))
             .with_delimiter(self.delimiter)
@@ -66,9 +69,12 @@ impl Executor for CsvExec {
             .with_skip_rows(self.skip_rows)
             .with_stop_after_n_rows(self.stop_after_n_rows)
             .with_columns(with_columns)
-            .with_encoding(CsvEncoding::LossyUtf8)
-            .finish()?;
-        Ok(df)
+            .with_encoding(CsvEncoding::LossyUtf8);
+        let df = match &self.predicate {
+            Some(predicate) => reader.finish_with_predicate(predicate.clone()),
+            None => reader.finish(),
+        };
+        Ok(df?)
     }
 }
 

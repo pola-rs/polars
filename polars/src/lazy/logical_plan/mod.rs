@@ -92,6 +92,7 @@ pub enum LogicalPlan {
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
+        predicate: Option<Expr>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -152,6 +153,7 @@ impl Default for LogicalPlan {
             skip_rows: 0,
             stop_after_n_rows: None,
             with_columns: None,
+            predicate: None,
         }
     }
 }
@@ -174,7 +176,9 @@ impl fmt::Debug for LogicalPlan {
                     .take(4)
                     .collect::<Vec<_>>()
             ),
-            Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
+            Projection { expr, input, .. } => {
+                write!(f, "SELECT {:?} COLUMNS \nFROM\n{:?}", expr.len(), input)
+            }
             LocalProjection { expr, input, .. } => {
                 write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input)
             }
@@ -409,6 +413,7 @@ impl LogicalPlanBuilder {
             skip_rows,
             stop_after_n_rows,
             with_columns: None,
+            predicate: None,
         }
         .into()
     }

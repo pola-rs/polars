@@ -75,6 +75,7 @@ enum ALogicalPlan {
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
+        predicate: Option<Expr>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -219,6 +220,7 @@ fn to_alp(
             skip_rows,
             stop_after_n_rows,
             with_columns,
+            predicate,
         } => ALogicalPlan::CsvScan {
             path,
             schema,
@@ -228,6 +230,7 @@ fn to_alp(
             skip_rows,
             stop_after_n_rows,
             with_columns,
+            predicate,
         },
         LogicalPlan::DataFrameScan { df, schema } => ALogicalPlan::DataFrameScan { df, schema },
         LogicalPlan::Projection {
@@ -488,6 +491,7 @@ fn node_to_lp(
     expr_arena: &Arena<AExpr>,
     lp_arena: &Arena<ALogicalPlan>,
 ) -> LogicalPlan {
+    // todo! get node by value?
     let lp = lp_arena.get(node);
 
     match lp {
@@ -508,6 +512,7 @@ fn node_to_lp(
             skip_rows,
             stop_after_n_rows,
             with_columns,
+            predicate,
         } => LogicalPlan::CsvScan {
             path: path.clone(),
             schema: schema.clone(),
@@ -517,6 +522,7 @@ fn node_to_lp(
             skip_rows: *skip_rows,
             stop_after_n_rows: *stop_after_n_rows,
             with_columns: with_columns.clone(),
+            predicate: predicate.clone(),
         },
         ALogicalPlan::DataFrameScan { df, schema } => LogicalPlan::DataFrameScan {
             df: df.clone(),
