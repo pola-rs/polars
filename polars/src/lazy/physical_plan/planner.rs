@@ -140,34 +140,34 @@ impl DefaultPlanner {
     }
 
     // todo! add schema and ctxt
-    pub fn create_physical_expr(&self, expr: Expr) -> Result<Arc<dyn PhysicalExpr>> {
-        match expr {
-            Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value))),
+    pub fn create_physical_expr(&self, expression: Expr) -> Result<Arc<dyn PhysicalExpr>> {
+        match expression.clone() {
+            Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value, expression))),
             Expr::BinaryExpr { left, op, right } => {
                 let lhs = self.create_physical_expr(*left)?;
                 let rhs = self.create_physical_expr(*right)?;
-                Ok(Arc::new(BinaryExpr::new(lhs, op, rhs)))
+                Ok(Arc::new(BinaryExpr::new(lhs, op, rhs, expression)))
             }
-            Expr::Column(column) => Ok(Arc::new(ColumnExpr::new(column))),
+            Expr::Column(column) => Ok(Arc::new(ColumnExpr::new(column, expression))),
             Expr::Sort { expr, reverse } => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(SortExpr::new(phys_expr, reverse)))
+                Ok(Arc::new(SortExpr::new(phys_expr, reverse, expression)))
             }
             Expr::Not(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(NotExpr::new(phys_expr)))
+                Ok(Arc::new(NotExpr::new(phys_expr, expression)))
             }
             Expr::Alias(expr, name) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AliasExpr::new(phys_expr, name)))
+                Ok(Arc::new(AliasExpr::new(phys_expr, name, expression)))
             }
             Expr::IsNull(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(IsNullExpr::new(phys_expr)))
+                Ok(Arc::new(IsNullExpr::new(phys_expr, expression)))
             }
             Expr::IsNotNull(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(IsNotNullExpr::new(phys_expr)))
+                Ok(Arc::new(IsNotNullExpr::new(phys_expr, expression)))
             }
             Expr::AggMin(expr) => {
                 let phys_expr = self.create_physical_expr(*expr)?;

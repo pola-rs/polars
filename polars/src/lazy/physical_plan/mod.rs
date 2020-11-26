@@ -3,7 +3,9 @@ pub mod expressions;
 pub mod planner;
 
 use crate::{lazy::prelude::*, prelude::*};
-use std::sync::Arc;
+use ahash::RandomState;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 pub enum ExprVal {
     Series(Series),
@@ -19,15 +21,19 @@ pub trait PhysicalPlanner {
 
 /// Executors will evaluate physical expressions and collect them in a DataFrame.
 pub trait Executor {
-    fn execute(&mut self) -> Result<DataFrame>;
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame>;
 }
+
+pub(crate) type Cache = Mutex<HashMap<String, DataFrame, RandomState>>;
 
 /// Take a DataFrame and evaluate the expressions.
 /// Implement this for Column, lt, eq, etc
 pub trait PhysicalExpr: Send + Sync {
-    fn data_type(&self, _input_schema: &Schema) -> Result<ArrowDataType> {
+    fn as_expression(&self) -> &Expr {
+        // for instance not needed for aggregations (for now)
         unimplemented!()
     }
+
     /// Take a DataFrame and evaluate the expression.
     fn evaluate(&self, df: &DataFrame) -> Result<Series>;
 

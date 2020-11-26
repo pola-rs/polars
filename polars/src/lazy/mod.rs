@@ -202,7 +202,6 @@ pub(crate) mod utils;
 
 #[cfg(test)]
 mod tests {
-    use crate::lazy::prelude::*;
     use crate::prelude::*;
     use std::io::Cursor;
 
@@ -229,20 +228,5 @@ mod tests {
             .finish()
             .unwrap();
         df
-    }
-
-    #[test]
-    fn plan_builder_simple() {
-        let df = get_df();
-
-        let logical_plan = LogicalPlanBuilder::from_existing_df(df)
-            .filter(col("sepal.length").lt(lit(5)))
-            .build();
-
-        println!("{:?}", logical_plan);
-
-        let planner = DefaultPlanner {};
-        let mut physical_plan = planner.create_physical_plan(logical_plan).unwrap();
-        println!("{:?}", physical_plan.execute());
     }
 }

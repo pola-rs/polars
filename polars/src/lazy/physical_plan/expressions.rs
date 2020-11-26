@@ -8,15 +8,18 @@ use crate::{
 };
 use std::sync::Arc;
 
-pub struct LiteralExpr(pub ScalarValue);
+pub struct LiteralExpr(pub ScalarValue, Expr);
 
 impl LiteralExpr {
-    pub fn new(value: ScalarValue) -> Self {
-        Self(value)
+    pub fn new(value: ScalarValue, expr: Expr) -> Self {
+        Self(value, expr)
     }
 }
 
 impl PhysicalExpr for LiteralExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.1
+    }
     fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
         use ScalarValue::*;
         let s = match &self.0 {
@@ -63,15 +66,30 @@ pub struct BinaryExpr {
     left: Arc<dyn PhysicalExpr>,
     op: Operator,
     right: Arc<dyn PhysicalExpr>,
+    expr: Expr,
 }
 
 impl BinaryExpr {
-    pub fn new(left: Arc<dyn PhysicalExpr>, op: Operator, right: Arc<dyn PhysicalExpr>) -> Self {
-        Self { left, op, right }
+    pub fn new(
+        left: Arc<dyn PhysicalExpr>,
+        op: Operator,
+        right: Arc<dyn PhysicalExpr>,
+        expr: Expr,
+    ) -> Self {
+        Self {
+            left,
+            op,
+            right,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for BinaryExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let left = self.left.evaluate(df)?;
         let right = self.right.evaluate(df)?;
@@ -101,15 +119,18 @@ impl PhysicalExpr for BinaryExpr {
     }
 }
 
-pub struct ColumnExpr(Arc<String>);
+pub struct ColumnExpr(Arc<String>, Expr);
 
 impl ColumnExpr {
-    pub fn new(name: Arc<String>) -> Self {
-        Self(name)
+    pub fn new(name: Arc<String>, expr: Expr) -> Self {
+        Self(name, expr)
     }
 }
 
 impl PhysicalExpr for ColumnExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.1
+    }
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let column = df.column(&self.0)?;
         Ok(column.clone())
@@ -121,34 +142,47 @@ impl PhysicalExpr for ColumnExpr {
 }
 
 pub struct SortExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    physical_expr: Arc<dyn PhysicalExpr>,
     reverse: bool,
+    expr: Expr,
 }
 
 impl SortExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, reverse: bool) -> Self {
-        Self { expr, reverse }
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, reverse: bool, expr: Expr) -> Self {
+        Self {
+            physical_expr,
+            reverse,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for SortExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.expr.evaluate(df)?;
+        let series = self.physical_expr.evaluate(df)?;
         Ok(series.sort(self.reverse))
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.expr.to_field(input_schema)
+        self.physical_expr.to_field(input_schema)
     }
 }
 
-pub struct NotExpr(Arc<dyn PhysicalExpr>);
+pub struct NotExpr(Arc<dyn PhysicalExpr>, Expr);
 
 impl NotExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self(expr)
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, expr: Expr) -> Self {
+        Self(physical_expr, expr)
     }
 }
 impl PhysicalExpr for NotExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.1
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let series = self.0.evaluate(df)?;
         if let Series::Bool(ca) = series {
@@ -165,19 +199,28 @@ impl PhysicalExpr for NotExpr {
 }
 
 pub struct AliasExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    physical_expr: Arc<dyn PhysicalExpr>,
     name: Arc<String>,
+    expr: Expr,
 }
 
 impl AliasExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, name: Arc<String>) -> Self {
-        Self { expr, name }
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, name: Arc<String>, expr: Expr) -> Self {
+        Self {
+            physical_expr,
+            name,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for AliasExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let mut series = self.expr.evaluate(df)?;
+        let mut series = self.physical_expr.evaluate(df)?;
         series.rename(&self.name);
         Ok(series)
     }
@@ -185,7 +228,10 @@ impl PhysicalExpr for AliasExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         Ok(Field::new(
             &self.name,
-            self.expr.to_field(input_schema)?.data_type().clone(),
+            self.physical_expr
+                .to_field(input_schema)?
+                .data_type()
+                .clone(),
             true,
         ))
     }
@@ -197,7 +243,7 @@ impl PhysicalExpr for AliasExpr {
 
 impl AggPhysicalExpr for AliasExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let agg_expr = self.expr.as_agg_expr()?;
+        let agg_expr = self.physical_expr.as_agg_expr()?;
         let opt_agg = agg_expr.evaluate(df, groups)?;
         Ok(opt_agg.map(|mut agg| {
             agg.rename(&self.name);
@@ -207,18 +253,26 @@ impl AggPhysicalExpr for AliasExpr {
 }
 
 pub struct IsNullExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    physical_expr: Arc<dyn PhysicalExpr>,
+    expr: Expr,
 }
 
 impl IsNullExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, expr: Expr) -> Self {
+        Self {
+            physical_expr,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for IsNullExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.expr.evaluate(df)?;
+        let series = self.physical_expr.evaluate(df)?;
         Ok(series.is_null().into_series())
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -227,18 +281,26 @@ impl PhysicalExpr for IsNullExpr {
 }
 
 pub struct IsNotNullExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    physical_expr: Arc<dyn PhysicalExpr>,
+    expr: Expr,
 }
 
 impl IsNotNullExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, expr: Expr) -> Self {
+        Self {
+            physical_expr,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for IsNotNullExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.expr.evaluate(df)?;
+        let series = self.physical_expr.evaluate(df)?;
         Ok(series.is_not_null().into_series())
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
