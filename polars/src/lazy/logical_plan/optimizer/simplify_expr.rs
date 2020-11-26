@@ -80,6 +80,8 @@ enum ALogicalPlan {
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: Schema,
+        projection: Option<Vec<Expr>>,
+        selection: Option<Node>,
     },
     Projection {
         expr: Vec<Node>,
@@ -232,7 +234,17 @@ fn to_alp(
             with_columns,
             predicate,
         },
-        LogicalPlan::DataFrameScan { df, schema } => ALogicalPlan::DataFrameScan { df, schema },
+        LogicalPlan::DataFrameScan {
+            df,
+            schema,
+            projection,
+            selection,
+        } => ALogicalPlan::DataFrameScan {
+            df,
+            schema,
+            projection,
+            selection: selection.map(|expr| to_aexpr(expr, expr_arena)),
+        },
         LogicalPlan::Projection {
             expr,
             input,
@@ -524,9 +536,16 @@ fn node_to_lp(
             with_columns: with_columns.clone(),
             predicate: predicate.clone(),
         },
-        ALogicalPlan::DataFrameScan { df, schema } => LogicalPlan::DataFrameScan {
+        ALogicalPlan::DataFrameScan {
+            df,
+            schema,
+            projection,
+            selection,
+        } => LogicalPlan::DataFrameScan {
             df: df.clone(),
             schema: schema.clone(),
+            projection: projection.clone(),
+            selection: selection.map(|n| node_to_exp(n, expr_arena)),
         },
         ALogicalPlan::Projection {
             expr,
@@ -912,7 +931,12 @@ impl SimplifyOptimizer {
                         exprs.extend(e2);
                     }
                     ALogicalPlan::Distinct { input, .. } => plans.push(*input),
-                    ALogicalPlan::CsvScan { .. } | ALogicalPlan::DataFrameScan { .. } => {}
+                    ALogicalPlan::DataFrameScan { selection, .. } => {
+                        if let Some(selection) = *selection {
+                            exprs.push(selection)
+                        }
+                    }
+                    ALogicalPlan::CsvScan { .. } => {}
                 }
 
                 while let Some(node) = exprs.pop() {

@@ -94,9 +94,12 @@ pub enum LogicalPlan {
         with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
     },
+    // we keep track of the projection and selection as it is cheaper to first project and then filter
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: Schema,
+        projection: Option<Vec<Expr>>,
+        selection: Option<Expr>,
     },
     // a projection that doesn't have to be optimized
     // or may drop projected columns if they aren't in current schema (after optimization)
@@ -546,6 +549,8 @@ impl LogicalPlanBuilder {
         LogicalPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
+            projection: None,
+            selection: None,
         }
         .into()
     }
