@@ -43,7 +43,16 @@ macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{
         if $self.len() != $filter.len() {
             return Err(PolarsError::ShapeMisMatch(
-                "Filter's length differs from that of the ChunkedArray/ Series.".into(),
+                format!(
+                    "Filter's length differs from that of the ChunkedArray/ Series. \
+                Length Self: {} Length mask: {}\
+                Self: {:?}; mask: {:?}",
+                    $self.len(),
+                    $filter.len(),
+                    $self,
+                    $filter
+                )
+                .into(),
             ));
         }
     }};
@@ -84,6 +93,13 @@ where
     ChunkedArray<T>: ChunkOps,
 {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<T>> {
+        // broadcast
+        if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone()),
+                _ => Ok(ChunkedArray::new_from_slice(self.name(), &[])),
+            };
+        }
         check_filter_len!(self, filter);
         if self.chunk_id == filter.chunk_id {
             let chunks = self
@@ -117,6 +133,13 @@ where
 
 impl ChunkFilter<BooleanType> for BooleanChunked {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<BooleanType>> {
+        // broadcast
+        if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone()),
+                _ => Ok(ChunkedArray::new_from_slice(self.name(), &[])),
+            };
+        }
         check_filter_len!(self, filter);
         let out = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
@@ -138,6 +161,13 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
 }
 impl ChunkFilter<Utf8Type> for Utf8Chunked {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<Utf8Type>> {
+        // broadcast
+        if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone()),
+                _ => Ok(Utf8Chunked::new_from_chunks(self.name(), vec![])),
+            };
+        }
         check_filter_len!(self, filter);
         let out: Result<Utf8Chunked> = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
@@ -161,6 +191,13 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
 
 impl ChunkFilter<ListType> for ListChunked {
     fn filter(&self, filter: &BooleanChunked) -> Result<ListChunked> {
+        // broadcast
+        if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone()),
+                _ => Ok(ListChunked::new_from_chunks(self.name(), vec![])),
+            };
+        }
         let dt = self.get_inner_dtype();
         let mut builder = get_list_builder(dt, self.len(), self.name());
         filter
@@ -186,6 +223,13 @@ where
     where
         Self: Sized,
     {
+        // broadcast
+        if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone()),
+                _ => Ok(ObjectChunked::new_from_chunks(self.name(), vec![])),
+            };
+        }
         if self.is_empty() {
             return Err(PolarsError::NoData(
                 "cannot filter empty object array".into(),

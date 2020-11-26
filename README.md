@@ -94,5 +94,7 @@ Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).
 
 
 ## Env vars
-* POLARS_PAR_COLUMN_BP -> breakpoint for (some) parallel operations on columns. 
+* `POLARS_PAR_COLUMN_BP` -> breakpoint for (some) parallel operations on columns. 
     If the number of columns exceeds this it will run in parallel
+* `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames
+* `POLARS_FMT_MAX_ROW` -> maximum number of rows shown when formatting DataFrames
