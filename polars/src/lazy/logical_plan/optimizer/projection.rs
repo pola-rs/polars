@@ -183,6 +183,7 @@ impl ProjectionPushDown {
                 ignore_errors,
                 skip_rows,
                 stop_after_n_rows,
+                predicate,
                 ..
             } => {
                 let mut columns = Vec::with_capacity(acc_projections.len());
@@ -200,6 +201,7 @@ impl ProjectionPushDown {
                     with_columns: Some(columns),
                     skip_rows,
                     stop_after_n_rows,
+                    predicate,
                 };
                 self.finish_at_leaf(lp, acc_projections)
             }

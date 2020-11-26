@@ -58,7 +58,7 @@ where
             Some(e) => Some(e.and(expr)),
         };
     }
-    single_pred.unwrap()
+    single_pred.expect("an empty iterator was passed")
 }
 
 impl PredicatePushDown {
@@ -73,7 +73,7 @@ impl PredicatePushDown {
             _ => {
                 let mut builder = LogicalPlanBuilder::from(lp);
 
-                let predicate = combine_predicates(acc_predicates.values().cloned());
+                let predicate = combine_predicates(acc_predicates.into_iter().map(|t| t.1));
                 builder = builder.filter(predicate);
                 Ok(builder.build())
             }
@@ -178,7 +178,19 @@ impl PredicatePushDown {
                 skip_rows,
                 stop_after_n_rows,
                 with_columns,
+                predicate,
             } => {
+                let predicate = if !acc_predicates.is_empty() {
+                    let mut new_predicate =
+                        combine_predicates(acc_predicates.into_iter().map(|t| t.1));
+                    if let Some(pred) = predicate {
+                        new_predicate = new_predicate.and(pred)
+                    }
+                    Some(new_predicate)
+                } else {
+                    None
+                };
+
                 let lp = CsvScan {
                     path,
                     schema,
@@ -188,8 +200,9 @@ impl PredicatePushDown {
                     skip_rows,
                     stop_after_n_rows,
                     with_columns,
+                    predicate,
                 };
-                self.finish_at_leaf(lp, acc_predicates)
+                Ok(lp)
             }
             DataFrameOp { input, operation } => {
                 let input = self.push_down(*input, acc_predicates)?;

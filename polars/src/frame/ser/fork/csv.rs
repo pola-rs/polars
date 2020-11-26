@@ -16,6 +16,7 @@
 // under the License.
 
 use crate::frame::ser::csv::CsvEncoding;
+use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 use crate::utils;
 use ahash::RandomState;
@@ -494,6 +495,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
         mut record_iter: ByteRecordsIntoIter<R>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
         let mut rows = Vec::with_capacity(self.batch_size);
         let mut count = 0;
@@ -512,7 +514,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     &self.schema,
                 )?;
                 std::mem::swap(&mut builders_tmp, builders);
-                parsed_dfs.push(builders_to_df(builders_tmp));
+                let mut df = builders_to_df(builders_tmp);
+                if let Some(predicate) = &predicate {
+                    let s = predicate.evaluate(&df)?;
+                    let mask = s.bool().expect("filter predicates was not of type boolean");
+                    df = df.filter(mask)?;
+                }
+                parsed_dfs.push(df);
             }
 
             self.add_to_builders(builders, &projection, &rows)?;
@@ -533,6 +541,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         mut record_iter: ByteRecordsIntoIter<R>,
         parsed_dfs: &mut Vec<DataFrame>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
         let (tx, rx) = bounded(256);
         // used to end rampant thread
@@ -587,7 +596,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         &self.schema,
                     )?;
                     std::mem::swap(&mut builders_tmp, builders);
-                    parsed_dfs.push(builders_to_df(builders_tmp));
+                    let mut df = builders_to_df(builders_tmp);
+                    if let Some(predicate) = &predicate {
+                        let s = predicate.evaluate(&df)?;
+                        let mask = s.bool().expect("filter predicates was not of type boolean");
+                        df = df.filter(mask)?;
+                    }
+                    parsed_dfs.push(df);
                 }
                 let rows = res?;
 
@@ -606,7 +621,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         Ok(())
     }
 
-    pub fn as_df(&mut self) -> Result<DataFrame> {
+    /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
+    pub fn as_df(&mut self, predicate: Option<Arc<dyn PhysicalExpr>>) -> Result<DataFrame> {
         let mut record_iter = self.record_iter.take().unwrap();
         if self.skip_rows > 0 {
             for _ in 0..self.skip_rows {
@@ -628,8 +644,20 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let mut parsed_dfs = Vec::with_capacity(128);
 
         match self.one_thread {
-            true => self.one_thread(&mut builders, &projection, &mut parsed_dfs, record_iter)?,
-            false => self.two_threads(&mut builders, &projection, record_iter, &mut parsed_dfs)?,
+            true => self.one_thread(
+                &mut builders,
+                &projection,
+                &mut parsed_dfs,
+                record_iter,
+                predicate,
+            )?,
+            false => self.two_threads(
+                &mut builders,
+                &projection,
+                record_iter,
+                &mut parsed_dfs,
+                predicate,
+            )?,
         }
 
         parsed_dfs.push(builders_to_df(builders));
