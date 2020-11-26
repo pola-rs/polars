@@ -836,6 +836,7 @@ impl Rule for SimplifyExprRule {
                 Some(AExpr::Literal(ScalarValue::Null))
             }
 
+            // lit(left) + lit(right) => lit(left = right)
             AExpr::BinaryExpr {
                 left,
                 op: Operator::Plus,

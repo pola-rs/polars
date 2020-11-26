@@ -51,19 +51,13 @@ impl Executor for CsvExec {
             None => self.path.to_string(),
         };
         let guard = cache.lock().unwrap();
+        // cache hit
         if let Some(df) = guard.get(&cache_key) {
-            if let Some(columns) = &self.with_columns {
-                // todo! add optimization rule that makes sure that all columns are aggregated in LP.
-                // if columns are not in df we continue with csv scanning
-                if let Ok(df) = df.select(columns) {
-                    return Ok(df);
-                }
-            } else {
-                return Ok(df.clone());
-            }
+            return Ok(df.clone());
         }
         drop(guard);
 
+        // cache miss
         let file = std::fs::File::open(&self.path).unwrap();
 
         let mut with_columns = mem::take(&mut self.with_columns);

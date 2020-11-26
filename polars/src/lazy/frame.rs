@@ -1,5 +1,6 @@
 //! Lazy variant of a [DataFrame](crate::prelude::DataFrame).
 use crate::frame::select::Selection;
+use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::{lazy::prelude::*, prelude::*};
 use ahash::RandomState;
@@ -24,6 +25,7 @@ pub struct LazyFrame {
     predicate_pushdown: bool,
     type_coercion: bool,
     simplify_expr: bool,
+    agg_scan_projection: bool,
 }
 
 impl Default for LazyFrame {
@@ -34,6 +36,7 @@ impl Default for LazyFrame {
             predicate_pushdown: false,
             type_coercion: false,
             simplify_expr: false,
+            agg_scan_projection: false,
         }
     }
 }
@@ -46,6 +49,7 @@ impl From<LogicalPlan> for LazyFrame {
             predicate_pushdown: true,
             type_coercion: true,
             simplify_expr: true,
+            agg_scan_projection: false,
         }
     }
 }
@@ -55,6 +59,7 @@ struct OptState {
     predicate_pushdown: bool,
     type_coercion: bool,
     simplify_expr: bool,
+    agg_scan_projection: bool,
 }
 
 impl LazyFrame {
@@ -67,7 +72,7 @@ impl LazyFrame {
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
     ) -> Self {
-        LogicalPlanBuilder::scan_csv(
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             path,
             delimiter,
             has_header,
@@ -76,7 +81,9 @@ impl LazyFrame {
             stop_after_n_rows,
         )
         .build()
-        .into()
+        .into();
+        lf.agg_scan_projection = true;
+        lf
     }
 
     fn get_plan_builder(self) -> LogicalPlanBuilder {
@@ -89,6 +96,7 @@ impl LazyFrame {
             predicate_pushdown: self.predicate_pushdown,
             type_coercion: self.type_coercion,
             simplify_expr: self.simplify_expr,
+            agg_scan_projection: self.agg_scan_projection,
         }
     }
 
@@ -99,6 +107,7 @@ impl LazyFrame {
             predicate_pushdown: opt_state.predicate_pushdown,
             type_coercion: opt_state.type_coercion,
             simplify_expr: opt_state.simplify_expr,
+            agg_scan_projection: opt_state.agg_scan_projection,
         }
     }
 
@@ -234,12 +243,11 @@ impl LazyFrame {
         let projection_pushdown = self.projection_pushdown;
         let type_coercion = self.type_coercion;
         let simplify_expr = self.simplify_expr;
+        let agg_scan_projection = self.agg_scan_projection;
         let mut logical_plan = self.get_plan_builder().build();
 
         let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
-        let type_coercion_opt = TypeCoercion {};
-        let simplify_expr_opt = SimplifyExpr {};
 
         if cfg!(debug_assertions) {
             // check that the optimization don't interfere with the schema result.
@@ -266,10 +274,16 @@ impl LazyFrame {
         };
 
         if type_coercion {
-            logical_plan = type_coercion_opt.optimize(logical_plan)?;
+            let opt = TypeCoercion {};
+            logical_plan = opt.optimize(logical_plan)?;
         }
         if simplify_expr {
-            logical_plan = simplify_expr_opt.optimize(logical_plan)?;
+            let opt = SimplifyExpr {};
+            logical_plan = opt.optimize(logical_plan)?;
+        }
+        if agg_scan_projection {
+            let opt = AggScanProjection {};
+            logical_plan = opt.optimize(logical_plan)?;
         }
 
         let planner = DefaultPlanner::default();
