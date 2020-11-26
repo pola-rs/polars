@@ -1,8 +1,6 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::{
-    count_downtree_projections, expr_to_root_column, has_expr, rename_expr_root_name,
-};
+use crate::lazy::utils::{expr_to_root_column, has_expr, rename_expr_root_name};
 use crate::prelude::*;
 use ahash::RandomState;
 use std::collections::HashMap;
@@ -24,6 +22,21 @@ fn insert_and_combine_predicate(
 ) {
     let existing_predicate = predicates_map.entry(name).or_insert_with(|| lit(true));
     *existing_predicate = existing_predicate.clone().and(predicate)
+}
+
+fn predicate_at_scan(
+    acc_predicates: HashMap<Arc<String>, Expr, RandomState>,
+    predicate: Option<Expr>,
+) -> Option<Expr> {
+    if !acc_predicates.is_empty() {
+        let mut new_predicate = combine_predicates(acc_predicates.into_iter().map(|t| t.1));
+        if let Some(pred) = predicate {
+            new_predicate = new_predicate.and(pred)
+        }
+        Some(new_predicate)
+    } else {
+        None
+    }
 }
 
 pub struct PredicatePushDown {
@@ -120,40 +133,29 @@ impl PredicatePushDown {
                 self.push_down(*input, acc_predicates)
             }
             Projection { expr, input, .. } => {
-                // don't filter before the last projection that is more expensive as projections are free
-                if count_downtree_projections(&input, 0) == 0 {
-                    let builder = LogicalPlanBuilder::from(self.push_down(
-                        *input,
-                        HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new()),
-                    )?)
-                    .project(expr);
-                    // todo! write utility that takes hashmap values by value
-                    self.finish_node(acc_predicates.values().cloned().collect(), builder)
-                } else {
-                    // maybe update predicate name if a projection is an alias
-                    for e in &expr {
-                        // check if there is an alias
-                        if let Expr::Alias(e, name) = e {
-                            // if this alias refers to one of the predicates in the upper nodes
-                            // we rename the column of the predicate before we push it downwards.
-                            if let Some(predicate) = acc_predicates.remove(name) {
-                                let new_name = expr_to_root_column(e).unwrap();
-                                let new_predicate =
-                                    rename_expr_root_name(&predicate, new_name.clone()).unwrap();
-                                insert_and_combine_predicate(
-                                    &mut acc_predicates,
-                                    new_name,
-                                    new_predicate,
-                                );
-                            }
+                // maybe update predicate name if a projection is an alias
+                for e in &expr {
+                    // check if there is an alias
+                    if let Expr::Alias(e, name) = e {
+                        // if this alias refers to one of the predicates in the upper nodes
+                        // we rename the column of the predicate before we push it downwards.
+                        if let Some(predicate) = acc_predicates.remove(name) {
+                            let new_name = expr_to_root_column(e).unwrap();
+                            let new_predicate =
+                                rename_expr_root_name(&predicate, new_name.clone()).unwrap();
+                            insert_and_combine_predicate(
+                                &mut acc_predicates,
+                                new_name,
+                                new_predicate,
+                            );
                         }
                     }
-                    Ok(
-                        LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
-                            .project(expr)
-                            .build(),
-                    )
                 }
+                Ok(
+                    LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
+                        .project(expr)
+                        .build(),
+                )
             }
             LocalProjection { expr, input, .. } => {
                 let input = self.push_down(*input, acc_predicates)?;
@@ -165,9 +167,20 @@ impl PredicatePushDown {
                     .collect();
                 Ok(LogicalPlanBuilder::from(input).project_local(proj).build())
             }
-            DataFrameScan { df, schema } => {
-                let lp = DataFrameScan { df, schema };
-                self.finish_at_leaf(lp, acc_predicates)
+            DataFrameScan {
+                df,
+                schema,
+                projection,
+                selection,
+            } => {
+                let selection = predicate_at_scan(acc_predicates, selection);
+                let lp = DataFrameScan {
+                    df,
+                    schema,
+                    projection,
+                    selection,
+                };
+                Ok(lp)
             }
             CsvScan {
                 path,
@@ -180,16 +193,7 @@ impl PredicatePushDown {
                 with_columns,
                 predicate,
             } => {
-                let predicate = if !acc_predicates.is_empty() {
-                    let mut new_predicate =
-                        combine_predicates(acc_predicates.into_iter().map(|t| t.1));
-                    if let Some(pred) = predicate {
-                        new_predicate = new_predicate.and(pred)
-                    }
-                    Some(new_predicate)
-                } else {
-                    None
-                };
+                let predicate = predicate_at_scan(acc_predicates, predicate);
 
                 let lp = CsvScan {
                     path,

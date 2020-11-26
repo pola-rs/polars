@@ -171,9 +171,19 @@ impl ProjectionPushDown {
                     .collect();
                 Ok(LogicalPlanBuilder::from(lp).project_local(proj).build())
             }
-            DataFrameScan { df, schema } => {
-                let lp = DataFrameScan { df, schema };
-                self.finish_at_leaf(lp, acc_projections)
+            DataFrameScan {
+                df,
+                schema,
+                projection,
+                selection,
+            } => {
+                let lp = DataFrameScan {
+                    df,
+                    schema,
+                    projection,
+                    selection,
+                };
+                Ok(lp)
             }
             CsvScan {
                 path,

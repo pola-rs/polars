@@ -70,7 +70,21 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expressions(expr)?;
                 Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
             }
-            LogicalPlan::DataFrameScan { df, .. } => Ok(Box::new(DataFrameExec::new(df))),
+            LogicalPlan::DataFrameScan {
+                df,
+                projection,
+                selection,
+                ..
+            } => {
+                dbg!("expr: selection", &selection);
+                let selection = selection
+                    .map(|pred| self.create_physical_expr(pred))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+                let projection = projection
+                    .map(|proj| self.create_physical_expressions(proj))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+                Ok(Box::new(DataFrameExec::new(df, projection, selection)))
+            }
             LogicalPlan::DataFrameOp { input, operation } => {
                 // this isn't a sort
                 let input = self.create_initial_physical_plan(*input)?;

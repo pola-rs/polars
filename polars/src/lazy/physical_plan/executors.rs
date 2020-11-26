@@ -101,18 +101,50 @@ impl Executor for FilterExec {
 
 pub struct DataFrameExec {
     df: Arc<DataFrame>,
+    projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
+    selection: Option<Arc<dyn PhysicalExpr>>,
 }
 
 impl DataFrameExec {
-    pub(crate) fn new(df: Arc<DataFrame>) -> Self {
-        DataFrameExec { df }
+    pub(crate) fn new(
+        df: Arc<DataFrame>,
+        projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
+        selection: Option<Arc<dyn PhysicalExpr>>,
+    ) -> Self {
+        DataFrameExec {
+            df,
+            projection,
+            selection,
+        }
     }
 }
 
 impl Executor for DataFrameExec {
     fn execute(&mut self) -> Result<DataFrame> {
         let df = mem::take(&mut self.df);
-        let df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
+        let mut df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
+
+        dbg!(&df);
+
+        // projection should be before selection as those are free
+        if let Some(projection) = &self.projection {
+            dbg!("in projection");
+            df = evaluate_physical_expressions(&df, projection)?;
+        }
+
+        dbg!(&df);
+
+        if let Some(selection) = &self.selection {
+            dbg!("in selection");
+            let s = selection.evaluate(&df)?;
+            dbg!(&s);
+            let mask = s.bool().map_err(|_| {
+                PolarsError::Other("filter predicate was not of type boolean".into())
+            })?;
+            df = df.filter(mask)?;
+        }
+        dbg!(&df);
+
         Ok(df)
     }
 }
@@ -140,35 +172,41 @@ impl StandardExec {
     }
 }
 
+fn evaluate_physical_expressions(
+    df: &DataFrame,
+    exprs: &[Arc<dyn PhysicalExpr>],
+) -> Result<DataFrame> {
+    let height = df.height();
+    let mut selected_columns = exprs
+        .par_iter()
+        .map(|expr| expr.evaluate(df))
+        .collect::<Result<Vec<Series>>>()?;
+
+    // If all series are the same length it is ok. If not we can broadcast Series of length one.
+    if selected_columns.len() > 1 {
+        let all_equal_len = selected_columns.iter().map(|s| s.len()).all_equal();
+        if !all_equal_len {
+            selected_columns = selected_columns
+                .into_iter()
+                .map(|series| {
+                    if series.len() == 1 && height > 1 {
+                        series.expand_at_index(0, height)
+                    } else {
+                        series
+                    }
+                })
+                .collect()
+        }
+    }
+
+    Ok(DataFrame::new_no_checks(selected_columns))
+}
+
 impl Executor for StandardExec {
     fn execute(&mut self) -> Result<DataFrame> {
         let df = self.input.execute()?;
-        let height = df.height();
 
-        let mut selected_columns = self
-            .expr
-            .par_iter()
-            .map(|expr| expr.evaluate(&df))
-            .collect::<Result<Vec<Series>>>()?;
-
-        // If all series are the same length it is ok. If not we can broadcast Series of length one.
-        if selected_columns.len() > 1 {
-            let all_equal_len = selected_columns.iter().map(|s| s.len()).all_equal();
-            if !all_equal_len {
-                selected_columns = selected_columns
-                    .into_iter()
-                    .map(|series| {
-                        if series.len() == 1 && height > 1 {
-                            series.expand_at_index(0, height)
-                        } else {
-                            series
-                        }
-                    })
-                    .collect()
-            }
-        }
-
-        Ok(DataFrame::new_no_checks(selected_columns))
+        evaluate_physical_expressions(&df, &self.expr)
     }
 }
 
