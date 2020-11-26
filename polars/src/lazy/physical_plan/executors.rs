@@ -15,8 +15,6 @@ pub struct CsvExec {
     stop_after_n_rows: Option<usize>,
     with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
-    // make sure that we are not called twice
-    valid: bool,
 }
 
 impl CsvExec {
@@ -42,17 +40,31 @@ impl CsvExec {
             stop_after_n_rows,
             with_columns,
             predicate,
-            valid: true,
         }
     }
 }
 
 impl Executor for CsvExec {
-    fn execute(&mut self) -> Result<DataFrame> {
-        assert!(self.valid);
-        self.valid = false;
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let cache_key = match &self.predicate {
+            Some(predicate) => format!("{}{:?}", self.path, predicate.as_expression()),
+            None => self.path.to_string(),
+        };
+        let guard = cache.lock().unwrap();
+        if let Some(df) = guard.get(&cache_key) {
+            if let Some(columns) = &self.with_columns {
+                // todo! add optimization rule that makes sure that all columns are aggregated in LP.
+                // if columns are not in df we continue with csv scanning
+                if let Ok(df) = df.select(columns) {
+                    return Ok(df);
+                }
+            } else {
+                return Ok(df.clone());
+            }
+        }
+        drop(guard);
+
         let file = std::fs::File::open(&self.path).unwrap();
-        dbg!(&self.path, self.predicate.is_some());
 
         let mut with_columns = mem::take(&mut self.with_columns);
         let mut projected_len = 0;
@@ -76,11 +88,16 @@ impl Executor for CsvExec {
             .with_stop_after_n_rows(self.stop_after_n_rows)
             .with_columns(with_columns)
             .with_encoding(CsvEncoding::LossyUtf8);
+
         let df = match &self.predicate {
             Some(predicate) => reader.finish_with_predicate(predicate.clone()),
             None => reader.finish(),
-        };
-        Ok(df?)
+        }?;
+
+        let mut guard = cache.lock().unwrap();
+        guard.insert(cache_key, df.clone());
+
+        Ok(df)
     }
 }
 
@@ -96,8 +113,8 @@ impl FilterExec {
 }
 
 impl Executor for FilterExec {
-    fn execute(&mut self) -> Result<DataFrame> {
-        let df = self.input.execute()?;
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
         let s = self.predicate.evaluate(&df)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
 
@@ -129,7 +146,7 @@ impl DataFrameExec {
 }
 
 impl Executor for DataFrameExec {
-    fn execute(&mut self) -> Result<DataFrame> {
+    fn execute(&mut self, _: &Cache) -> Result<DataFrame> {
         assert!(self.valid);
         self.valid = false;
         let df = mem::take(&mut self.df);
@@ -208,10 +225,10 @@ fn evaluate_physical_expressions(
 }
 
 impl Executor for StandardExec {
-    fn execute(&mut self) -> Result<DataFrame> {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         assert!(self.valid);
         self.valid = false;
-        let df = self.input.execute()?;
+        let df = self.input.execute(cache)?;
 
         evaluate_physical_expressions(&df, &self.expr)
     }
@@ -229,8 +246,8 @@ impl DataFrameOpsExec {
 }
 
 impl Executor for DataFrameOpsExec {
-    fn execute(&mut self) -> Result<DataFrame> {
-        let df = self.input.execute()?;
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
         match &self.operation {
             DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
             DataFrameOperation::Explode(column) => df.explode(column),
@@ -260,8 +277,8 @@ impl GroupByExec {
 }
 
 impl Executor for GroupByExec {
-    fn execute(&mut self) -> Result<DataFrame> {
-        let df = self.input.execute()?;
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
         let gb = df.groupby(&*self.keys)?;
         let groups = gb.get_groups();
 
@@ -305,11 +322,11 @@ impl JoinExec {
 }
 
 impl Executor for JoinExec {
-    fn execute(&mut self) -> Result<DataFrame> {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         // rayon::join was dropped because that resulted in a deadlock when there were dependencies
         // between the DataFrames. Like joining a specific computation of a DF back to itself.
-        let df_left = self.input_left.execute();
-        let df_right = self.input_right.execute();
+        let df_left = self.input_left.execute(cache);
+        let df_right = self.input_right.execute(cache);
         let df_left = df_left?;
         let df_right = df_right?;
 
@@ -336,8 +353,8 @@ impl StackExec {
 }
 
 impl Executor for StackExec {
-    fn execute(&mut self) -> Result<DataFrame> {
-        let mut df = self.input.execute()?;
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let mut df = self.input.execute(cache)?;
         let height = df.height();
 
         let res: Result<_> = self.expr.iter().try_for_each(|expr| {

@@ -2,7 +2,10 @@
 use crate::frame::select::Selection;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::{lazy::prelude::*, prelude::*};
+use ahash::RandomState;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 impl DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
@@ -179,9 +182,6 @@ impl LazyFrame {
     }
 
     /// Rename a column in the DataFrame
-    ///
-    /// Currently this blocks projection pushdown optimization
-    #[deprecated(note = "please use col(foo).alias(bar)")]
     pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self
@@ -274,7 +274,11 @@ impl LazyFrame {
 
         let planner = DefaultPlanner::default();
         let mut physical_plan = planner.create_physical_plan(logical_plan)?;
-        physical_plan.execute()
+        let cache = Mutex::new(HashMap::with_capacity_and_hasher(
+            64,
+            RandomState::default(),
+        ));
+        physical_plan.execute(&cache)
     }
 
     /// Filter by some predicate expression.
