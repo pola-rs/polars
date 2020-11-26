@@ -331,6 +331,7 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::AggCount(expr) => expr_to_root_column(expr),
         Expr::Cast { expr, .. } => expr_to_root_column(expr),
         Expr::Apply { input, .. } => expr_to_root_column(input),
+        Expr::Shift { input, .. } => expr_to_root_column(input),
         Expr::Ternary { predicate, .. } => expr_to_root_column(predicate),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),

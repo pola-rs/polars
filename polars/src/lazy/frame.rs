@@ -179,6 +179,9 @@ impl LazyFrame {
     }
 
     /// Rename a column in the DataFrame
+    ///
+    /// Currently this blocks projection pushdown optimization
+    #[deprecated(note = "please use col(foo).alias(bar)")]
     pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self

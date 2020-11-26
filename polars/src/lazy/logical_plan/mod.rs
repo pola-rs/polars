@@ -168,22 +168,63 @@ impl fmt::Debug for LogicalPlan {
             Selection { predicate, input } => {
                 write!(f, "Filter\n\t{:?}\nFROM\n\t{:?}", predicate, input)
             }
-            CsvScan { path, .. } => write!(f, "CSVScan {}", path),
-            DataFrameScan { schema, .. } => write!(
-                f,
-                "TABLE: {:?}",
-                schema
-                    .fields()
-                    .iter()
-                    .map(|f| f.name())
-                    .take(4)
-                    .collect::<Vec<_>>()
-            ),
+            CsvScan {
+                path,
+                with_columns,
+                schema,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                write!(
+                    f,
+                    "CSVScan {}; PROJECT {}/{} COLUMNS; SELECTION: {}",
+                    path,
+                    n_columns,
+                    total_columns,
+                    predicate.is_some()
+                )
+            }
+            DataFrameScan {
+                schema,
+                projection,
+                selection,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = projection {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                write!(
+                    f,
+                    "TABLE: {:?}; PROJECT {}/{} COLUMNS; SELECTION: {}",
+                    schema
+                        .fields()
+                        .iter()
+                        .map(|f| f.name())
+                        .take(4)
+                        .collect::<Vec<_>>(),
+                    n_columns,
+                    total_columns,
+                    selection.is_some()
+                )
+            }
             Projection { expr, input, .. } => {
                 write!(f, "SELECT {:?} COLUMNS \nFROM\n{:?}", expr.len(), input)
             }
             LocalProjection { expr, input, .. } => {
-                write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input)
+                write!(
+                    f,
+                    "LOCAL SELECT {:?} COLUMNS \nFROM\n{:?}",
+                    expr.len(),
+                    input
+                )
             }
             DataFrameOp {
                 input, operation, ..
@@ -483,6 +524,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn with_column_renamed(self, existing: &str, new: &str) -> Self {
+        // TODO! make sure that it doesn't select all columns
         let projection = self
             .0
             .schema()

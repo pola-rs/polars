@@ -140,11 +140,7 @@ impl ProjectionPushDown {
                 // add the root of the projections to accumulation,
                 // but also do them locally to keep the schema and the alias.
                 for e in &expr {
-                    let expr = expr_to_root_column_expr(e)?;
-                    let name = expr_to_root_column(expr)?;
-                    if names.insert(name) {
-                        acc_projections.push(expr.clone());
-                    }
+                    add_to_accumulated(e, &mut acc_projections, &mut names)?;
                 }
 
                 let (acc_projections, _local_projections, names) =
@@ -174,9 +170,13 @@ impl ProjectionPushDown {
             DataFrameScan {
                 df,
                 schema,
-                projection,
                 selection,
+                ..
             } => {
+                let mut projection = None;
+                if !acc_projections.is_empty() {
+                    projection = Some(acc_projections)
+                }
                 let lp = DataFrameScan {
                     df,
                     schema,
@@ -196,11 +196,15 @@ impl ProjectionPushDown {
                 predicate,
                 ..
             } => {
-                let mut columns = Vec::with_capacity(acc_projections.len());
-                for expr in &acc_projections {
-                    if let Ok(name) = expr_to_root_column(expr) {
-                        columns.push((*name).clone())
+                let mut with_columns = None;
+                if !acc_projections.is_empty() {
+                    let mut columns = Vec::with_capacity(acc_projections.len());
+                    for expr in &acc_projections {
+                        if let Ok(name) = expr_to_root_column(expr) {
+                            columns.push((*name).clone())
+                        }
                     }
+                    with_columns = Some(columns);
                 }
                 let lp = CsvScan {
                     path,
@@ -208,12 +212,12 @@ impl ProjectionPushDown {
                     has_header,
                     delimiter,
                     ignore_errors,
-                    with_columns: Some(columns),
+                    with_columns,
                     skip_rows,
                     stop_after_n_rows,
                     predicate,
                 };
-                self.finish_at_leaf(lp, acc_projections)
+                Ok(lp)
             }
             DataFrameOp { input, operation } => {
                 let input = self.push_down(*input, acc_projections, names)?;
@@ -235,19 +239,15 @@ impl ProjectionPushDown {
                 })
             }
             Selection { predicate, input } => {
-                let local_projections = if !acc_projections.is_empty() {
-                    let local_projections = projected_names(&acc_projections)?;
+                if !acc_projections.is_empty() {
                     add_to_accumulated(&predicate, &mut acc_projections, &mut names)?;
-
-                    local_projections
-                } else {
-                    vec![]
                 };
 
-                let builder =
+                let lp =
                     LogicalPlanBuilder::from(self.push_down(*input, acc_projections, names)?)
-                        .filter(predicate);
-                self.finish_node(local_projections, builder)
+                        .filter(predicate)
+                        .build();
+                Ok(lp)
             }
             Aggregate {
                 input, keys, aggs, ..
@@ -262,10 +262,7 @@ impl ProjectionPushDown {
                     let root_projections = expressions_to_root_column_exprs(&aggs)?;
 
                     for proj in root_projections {
-                        let name = expr_to_root_column(&proj)?;
-                        if names.insert(name) {
-                            acc_projections.push(proj)
-                        }
+                        add_to_accumulated(&proj, &mut acc_projections, &mut names)?;
                     }
 
                     // todo! maybe we need this later if an uptree udf needs a column?
@@ -274,9 +271,8 @@ impl ProjectionPushDown {
 
                     // make sure the keys are projected
                     for key in &*keys {
+                        add_to_accumulated(&col(key), &mut acc_projections, &mut names)?;
                         local_projections.push(col(key));
-
-                        acc_projections.push(col(key))
                     }
                     for agg in &aggs {
                         local_projections.push(col(agg.to_field(input.schema())?.name()))
@@ -313,6 +309,10 @@ impl ProjectionPushDown {
                     // We need the join columns so we push the projection downwards
                     pushdown_left.push(left_on.clone());
                     pushdown_right.push(right_on.clone());
+                    // let root_column_name_left = expr_to_root_column(&left_on).unwrap();
+                    // let root_column_name_right = expr_to_root_column(&right_on).unwrap();
+                    // names_left.insert(root_column_name_left);
+                    // names_right.insert(root_column_name_right);
 
                     for mut proj in acc_projections {
                         let mut add_local = true;
@@ -392,7 +392,7 @@ impl ProjectionPushDown {
                     for expression in &exprs {
                         // todo! maybe we should loop or recurse to find all binary expressions?
                         match expr_to_root_column_expr(expression) {
-                            Ok(e) => acc_projections.push(e.clone()),
+                            Ok(e) => add_to_accumulated(e, &mut acc_projections, &mut names)?,
                             Err(_) => {
                                 // could be:
                                 //   * alias(lit)
@@ -401,10 +401,16 @@ impl ProjectionPushDown {
                                 // may fail, for literal cases
                                 if let Ok((left, right)) = unpack_binary_exprs(expression) {
                                     expr_to_root_column_expr(left)
-                                        .map(|p| acc_projections.push(p.clone()))
+                                        .map(|p| {
+                                            add_to_accumulated(p, &mut acc_projections, &mut names)
+                                                .unwrap()
+                                        })
                                         .ok();
                                     expr_to_root_column_expr(right)
-                                        .map(|p| acc_projections.push(p.clone()))
+                                        .map(|p| {
+                                            add_to_accumulated(p, &mut acc_projections, &mut names)
+                                                .unwrap()
+                                        })
                                         .ok();
                                 }
                             }
