@@ -49,11 +49,15 @@
 //! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
 use crate::frame::ser::fork::csv::{build_csv_reader, SequentialReader};
+#[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 pub use arrow::csv::WriterBuilder;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
+
+#[cfg(not(feature = "lazy"))]
+pub trait PhysicalExpr {}
 
 /// Write a DataFrame to csv.
 pub struct CsvWriter<'a, W: Write> {
@@ -277,6 +281,7 @@ where
         )
     }
     /// Read the file and create the DataFrame. Used from lazy execution
+    #[cfg(feature = "lazy")]
     pub(crate) fn finish_with_predicate(
         self,
         predicate: Arc<dyn PhysicalExpr>,
