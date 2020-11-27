@@ -16,6 +16,7 @@
 // under the License.
 
 use crate::frame::ser::csv::CsvEncoding;
+#[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 use crate::utils;
@@ -25,13 +26,18 @@ use crossbeam::{
     channel::{bounded, TryRecvError},
     thread,
 };
-use csv::{ByteRecord, ByteRecordsIntoIter};
+use csv::{ByteRecord, ByteRecordsIntoIter, Reader};
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
+
+#[cfg(not(feature = "lazy"))]
+pub trait PhysicalExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series>;
+}
 
 /// Is multiplied with batch_size to determine capacity of builders
 const CAPACITY_MULTIPLIER: usize = 512;
@@ -466,15 +472,21 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     fn next_rows(
         &mut self,
         rows: &mut Vec<ByteRecord>,
-        record_iter: &mut ByteRecordsIntoIter<R>,
-    ) -> Result<()> {
+        csv_reader: &mut Reader<R>,
+    ) -> Result<usize> {
+        let mut count = 0;
         for i in 0..self.batch_size {
             self.line_number += 1;
-            match record_iter.next() {
-                Some(Ok(r)) => {
-                    rows.push(r);
+            debug_assert!(rows.get(count).is_some());
+            let record = unsafe { rows.get_unchecked_mut(count) };
+
+            match csv_reader.read_byte_record(record) {
+                Ok(true) => count += 1,
+                // end of file
+                Ok(false) => {
+                    break;
                 }
-                Some(Err(e)) => {
+                Err(e) => {
                     if self.ignore_parser_errors {
                         continue;
                     } else {
@@ -483,29 +495,40 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         ));
                     }
                 }
-                None => break,
             }
         }
-        Ok(())
+        Ok(count)
     }
 
+    ///
+    /// # Safety
+    /// This function uses unsafe code to amortize allocs/deallocs
+    /// Before changing this make sure sure that all allocated memory gets dropped.
     fn one_thread(
         &mut self,
         builders: &mut Vec<Builder>,
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
-        mut record_iter: ByteRecordsIntoIter<R>,
+        csv_reader: &mut Reader<R>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
+        // this will be used to amortize allocations
+        // Only correctly parsed lines will fill the start of the Vec.
+        // The whole vec is initialized with default values.
+        // Once a batch of rows is read we use the correctly parsed information to truncate the lenght
+        // to all correct values.
         let mut rows = Vec::with_capacity(self.batch_size);
+        rows.resize_with(self.batch_size, Default::default);
         let mut count = 0;
         loop {
             count += 1;
-            rows.clear();
-            self.next_rows(&mut rows, &mut record_iter)?;
+            let correctly_parsed = self.next_rows(&mut rows, csv_reader)?;
             // stop when the whole file is processed
-            if rows.is_empty() {
+            if correctly_parsed == 0 {
                 break;
+            } else if correctly_parsed < self.batch_size {
+                // make sure to set len to batch size later otherwise we leak memory
+                unsafe { rows.set_len(correctly_parsed) }
             }
             if count % CAPACITY_MULTIPLIER == 0 {
                 let mut builders_tmp = init_builders(
@@ -531,6 +554,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     break;
                 }
             }
+
+            // Set length back to original length. This makes sure that all elements get dropped.
+            debug_assert!(rows.capacity() == self.batch_size);
+            unsafe { rows.set_len(self.batch_size) }
         }
         Ok(())
     }
@@ -543,6 +570,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         parsed_dfs: &mut Vec<DataFrame>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
+        // TODO: Save allocations. Send rows back over channel?
         let (tx, rx) = bounded(256);
         // used to end rampant thread
         let (tx_end, rx_end) = bounded(1);
@@ -648,7 +676,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 &mut builders,
                 &projection,
                 &mut parsed_dfs,
-                record_iter,
+                record_iter.reader_mut(),
                 predicate,
             )?,
             false => self.two_threads(
