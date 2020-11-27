@@ -268,6 +268,7 @@ pub(crate) fn count_downtree_projections(lp: &LogicalPlan, n: usize) -> usize {
         DataFrameOp { input, .. } => count_downtree_projections(input, n),
         Distinct { input, .. } => count_downtree_projections(input, n),
         CsvScan { .. } => n,
+        ParquetScan { .. } => n,
         DataFrameScan { .. } => n,
         Aggregate { input, .. } => count_downtree_projections(input, n),
         Join {

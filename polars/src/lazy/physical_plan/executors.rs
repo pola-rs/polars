@@ -5,6 +5,77 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::mem;
 
+pub struct ParquetExec {
+    path: String,
+    schema: Schema,
+    with_columns: Option<Vec<String>>,
+    predicate: Option<Arc<dyn PhysicalExpr>>,
+    stop_after_n_rows: Option<usize>,
+}
+
+impl ParquetExec {
+    pub fn new(
+        path: String,
+        schema: Schema,
+        with_columns: Option<Vec<String>>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
+        stop_after_n_rows: Option<usize>,
+    ) -> Self {
+        ParquetExec {
+            path,
+            schema,
+            with_columns,
+            predicate,
+            stop_after_n_rows,
+        }
+    }
+}
+
+impl Executor for ParquetExec {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let cache_key = match &self.predicate {
+            Some(predicate) => format!("{}{:?}", self.path, predicate.as_expression()),
+            None => self.path.to_string(),
+        };
+        let guard = cache.lock().unwrap();
+        // cache hit
+        if let Some(df) = guard.get(&cache_key) {
+            return Ok(df.clone());
+        }
+        drop(guard);
+
+        // cache miss
+        let file = std::fs::File::open(&self.path).unwrap();
+
+        let with_columns = mem::take(&mut self.with_columns);
+        let mut schema = Schema::new(vec![]);
+        mem::swap(&mut self.schema, &mut schema);
+
+        let projection: Option<Vec<_>> = if let Some(with_columns) = with_columns {
+            Some(
+                with_columns
+                    .iter()
+                    .map(|name| schema.column_with_name(name).unwrap().0)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        let df = ParquetReader::new(file)
+            .with_stop_after_n_rows(self.stop_after_n_rows)
+            .finish_with_predicate(
+                self.predicate.clone(),
+                projection.as_ref().map(|v| v.as_ref()),
+            )?;
+
+        let mut guard = cache.lock().unwrap();
+        guard.insert(cache_key, df.clone());
+
+        Ok(df)
+    }
+}
+
 pub struct CsvExec {
     path: String,
     schema: Schema,

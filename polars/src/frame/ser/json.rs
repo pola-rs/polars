@@ -88,11 +88,6 @@ where
         }
     }
 
-    fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
-        self.ignore_parser_error = ignore;
-        self
-    }
-
     fn set_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
         self
@@ -100,12 +95,7 @@ where
 
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        finish_reader(
-            self.reader_builder.build(self.reader)?,
-            rechunk,
-            self.ignore_parser_error,
-            None,
-        )
+        finish_reader(self.reader_builder.build(self.reader)?, rechunk, None, None)
     }
 }
 

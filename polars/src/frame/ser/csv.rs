@@ -198,6 +198,12 @@ where
         self
     }
 
+    /// Continue with next batch when a ParserError is encountered.
+    pub fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
+        self.ignore_parser_errors = ignore;
+        self
+    }
+
     /// Set the CSV file's schema
     pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
         self.schema = Some(schema);
@@ -318,12 +324,6 @@ where
             encoding: CsvEncoding::Utf8,
             one_thread: true,
         }
-    }
-
-    /// Continue with next batch when a ParserError is encountered.
-    fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
-        self.ignore_parser_errors = ignore;
-        self
     }
 
     /// Read the file and create the DataFrame.

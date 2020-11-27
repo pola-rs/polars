@@ -57,6 +57,11 @@ impl PyLazyFrame {
         .into()
     }
 
+    #[staticmethod]
+    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>) -> Self {
+        LazyFrame::new_from_parquet(path, stop_after_n_rows).into()
+    }
+
     pub fn describe_plan(&self) -> String {
         self.ldf.describe_plan()
     }

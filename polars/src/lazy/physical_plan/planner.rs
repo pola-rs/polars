@@ -1,6 +1,6 @@
 use crate::frame::group_by::GroupByMethod;
 use crate::lazy::logical_plan::DataFrameOperation;
-use crate::lazy::physical_plan::executors::{JoinExec, StackExec};
+use crate::lazy::physical_plan::executors::{JoinExec, ParquetExec, StackExec};
 use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
 
@@ -58,6 +58,24 @@ impl DefaultPlanner {
                     stop_after_n_rows,
                     with_columns,
                     predicate,
+                )))
+            }
+            LogicalPlan::ParquetScan {
+                path,
+                schema,
+                with_columns,
+                predicate,
+                stop_after_n_rows,
+            } => {
+                let predicate = predicate
+                    .map(|pred| self.create_physical_expr(pred))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+                Ok(Box::new(ParquetExec::new(
+                    path,
+                    schema,
+                    with_columns,
+                    predicate,
+                    stop_after_n_rows,
                 )))
             }
             LogicalPlan::Projection { expr, input, .. } => {

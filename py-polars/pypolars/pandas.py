@@ -104,8 +104,7 @@ def scan_csv(
     skip_rows
         Start reading after `skip_rows`.
     stop_after_n_rows
-        After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
-        on the batch size.
+        After n rows are read from the CSV stop reading.
     """
     return LazyFrame.scan_csv(
         file=file,
@@ -113,5 +112,25 @@ def scan_csv(
         sep=sep,
         ignore_errors=ignore_errors,
         skip_rows=skip_rows,
+        stop_after_n_rows=stop_after_n_rows,
+    )
+
+
+def scan_parquet(
+    file: str,
+    stop_after_n_rows: "Optional[int]" = None,
+) -> "LazyFrame":
+    """
+    Read into a DataFrame from a csv file.
+
+    Parameters
+    ----------
+    file
+        Path to a file
+    stop_after_n_rows
+        After n rows are read from the parquet stops reading.
+    """
+    return LazyFrame.scan_parquet(
+        file=file,
         stop_after_n_rows=stop_after_n_rows,
     )

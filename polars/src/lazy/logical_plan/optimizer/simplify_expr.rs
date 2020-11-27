@@ -3,6 +3,7 @@ use crate::lazy::prelude::*;
 use crate::prelude::*;
 use crate::utils::{Arena, Node};
 use std::sync::Arc;
+
 // AExpr representation of Nodes which are allocated in an Arena
 #[derive(Clone)]
 enum AExpr {
@@ -76,6 +77,13 @@ enum ALogicalPlan {
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
+    },
+    ParquetScan {
+        path: String,
+        schema: Schema,
+        with_columns: Option<Vec<String>>,
+        predicate: Option<Node>,
+        stop_after_n_rows: Option<usize>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -213,7 +221,7 @@ fn to_alp(
                 predicate: p,
             }
         }
-        CsvScan {
+        LogicalPlan::CsvScan {
             path,
             schema,
             has_header,
@@ -233,6 +241,19 @@ fn to_alp(
             stop_after_n_rows,
             with_columns,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+        },
+        LogicalPlan::ParquetScan {
+            path,
+            schema,
+            with_columns,
+            predicate,
+            stop_after_n_rows,
+        } => ALogicalPlan::ParquetScan {
+            path,
+            schema,
+            with_columns,
+            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            stop_after_n_rows,
         },
         LogicalPlan::DataFrameScan {
             df,
@@ -524,6 +545,19 @@ fn node_to_lp(
             stop_after_n_rows: *stop_after_n_rows,
             with_columns: with_columns.clone(),
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+        },
+        ALogicalPlan::ParquetScan {
+            path,
+            schema,
+            with_columns,
+            predicate,
+            stop_after_n_rows,
+        } => LogicalPlan::ParquetScan {
+            path: path.clone(),
+            schema: schema.clone(),
+            with_columns: with_columns.clone(),
+            predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            stop_after_n_rows: *stop_after_n_rows,
         },
         ALogicalPlan::DataFrameScan {
             df,
@@ -928,7 +962,16 @@ impl SimplifyOptimizer {
                             exprs.push(selection)
                         }
                     }
-                    ALogicalPlan::CsvScan { .. } => {}
+                    ALogicalPlan::CsvScan { predicate, .. } => {
+                        if let Some(predicate) = *predicate {
+                            exprs.push(predicate)
+                        }
+                    }
+                    ALogicalPlan::ParquetScan { predicate, .. } => {
+                        if let Some(predicate) = *predicate {
+                            exprs.push(predicate)
+                        }
+                    }
                 }
 
                 while let Some(node) = exprs.pop() {

@@ -4,6 +4,19 @@ use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+fn process_with_columns(
+    path: &str,
+    with_columns: &Option<Vec<String>>,
+    columns: &mut HashMap<String, HashSet<String, RandomState>, RandomState>,
+) {
+    if let Some(with_columns) = &with_columns {
+        let cols = columns
+            .entry(path.to_string())
+            .or_insert_with(|| HashSet::with_capacity_and_hasher(256, RandomState::default()));
+        cols.extend(with_columns.iter().cloned());
+    }
+}
+
 /// Aggregate all the columns used in csv scans and make sure that all columns are scanned in on go.
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
@@ -35,12 +48,7 @@ impl AggScanProjection {
                 with_columns,
                 predicate,
             } => {
-                if let Some(with_columns) = &with_columns {
-                    let cols = columns.entry(path.clone()).or_insert_with(|| {
-                        HashSet::with_capacity_and_hasher(256, RandomState::default())
-                    });
-                    cols.extend(with_columns.iter().cloned());
-                }
+                process_with_columns(&path, &with_columns, columns);
                 Ok(CsvScan {
                     path,
                     schema,
@@ -51,6 +59,22 @@ impl AggScanProjection {
                     stop_after_n_rows,
                     with_columns,
                     predicate,
+                })
+            }
+            ParquetScan {
+                path,
+                schema,
+                with_columns,
+                predicate,
+                stop_after_n_rows,
+            } => {
+                process_with_columns(&path, &with_columns, columns);
+                Ok(ParquetScan {
+                    path,
+                    schema,
+                    with_columns,
+                    predicate,
+                    stop_after_n_rows,
                 })
             }
             DataFrameScan { .. } => Ok(logical_plan),
@@ -137,6 +161,30 @@ impl AggScanProjection {
         }
     }
 
+    fn finish_rewrite(
+        &self,
+        mut lp: LogicalPlan,
+        path: &str,
+        with_columns: Option<Vec<String>>,
+        columns: &HashMap<String, HashSet<String, RandomState>, RandomState>,
+    ) -> Result<LogicalPlan> {
+        // if the original projection is less than the new one. Also project locally
+        if let Some(with_columns) = with_columns {
+            let agg = columns.get(path).unwrap();
+            if with_columns.len() < agg.len() {
+                lp = LogicalPlanBuilder::from(lp)
+                    .project(
+                        with_columns
+                            .into_iter()
+                            .map(|s| Expr::Column(Arc::new(s)))
+                            .collect(),
+                    )
+                    .build();
+            }
+        }
+        Ok(lp)
+    }
+
     fn rewrite_plan(
         &self,
         logical_plan: LogicalPlan,
@@ -147,6 +195,26 @@ impl AggScanProjection {
             Selection { input, predicate } => {
                 let input = Box::new(self.rewrite_plan(*input, columns)?);
                 Ok(Selection { input, predicate })
+            }
+            ParquetScan {
+                path,
+                schema,
+                predicate,
+                with_columns,
+                stop_after_n_rows,
+            } => {
+                let new_with_columns = match columns.get(&path) {
+                    Some(agg) => Some(agg.iter().cloned().collect()),
+                    None => None,
+                };
+                let lp = ParquetScan {
+                    path: path.clone(),
+                    schema,
+                    with_columns: new_with_columns,
+                    predicate,
+                    stop_after_n_rows,
+                };
+                self.finish_rewrite(lp, &path, with_columns, columns)
             }
             CsvScan {
                 path,
@@ -159,10 +227,12 @@ impl AggScanProjection {
                 predicate,
                 with_columns,
             } => {
-                let agg = columns.get(&path).unwrap();
-                let new_with_columns = Some(agg.iter().cloned().collect());
-                let mut lp = CsvScan {
-                    path,
+                let new_with_columns = match columns.get(&path) {
+                    Some(agg) => Some(agg.iter().cloned().collect()),
+                    None => None,
+                };
+                let lp = CsvScan {
+                    path: path.clone(),
                     schema,
                     has_header,
                     delimiter,
@@ -172,20 +242,7 @@ impl AggScanProjection {
                     with_columns: new_with_columns,
                     predicate,
                 };
-                // if the original projection is less than the new one. Also project locally
-                if let Some(with_columns) = with_columns {
-                    if with_columns.len() < agg.len() {
-                        lp = LogicalPlanBuilder::from(lp)
-                            .project(
-                                with_columns
-                                    .into_iter()
-                                    .map(|s| Expr::Column(Arc::new(s)))
-                                    .collect(),
-                            )
-                            .build();
-                    }
-                }
-                Ok(lp)
+                self.finish_rewrite(lp, &path, with_columns, columns)
             }
             DataFrameScan { .. } => Ok(logical_plan),
             Projection {
