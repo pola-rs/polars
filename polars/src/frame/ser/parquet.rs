@@ -50,17 +50,24 @@ where
 {
     #[cfg(feature = "lazy")]
     pub(crate) fn finish_with_predicate(
-        self,
+        mut self,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         projection: Option<&[usize]>,
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
 
         let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
-        let n_rows = file_reader.metadata().file_metadata().num_rows() as usize;
+        let rows_in_file = file_reader.metadata().file_metadata().num_rows() as usize;
+
+        if let Some(stop_after_n_rows) = self.stop_after_n_rows {
+            if stop_after_n_rows > rows_in_file {
+                self.stop_after_n_rows = Some(rows_in_file)
+            }
+        }
+
         let batch_size = match predicate {
             Some(_) => 512 * 1024,
-            None => n_rows,
+            None => rows_in_file,
         };
         let batch_size = set_batch_size(batch_size, self.stop_after_n_rows);
 

@@ -9,7 +9,7 @@ use crate::{
 };
 use ahash::RandomState;
 use arrow::datatypes::DataType;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::{fmt, sync::Arc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -551,8 +551,23 @@ impl LogicalPlanBuilder {
         // current schema
         let schema = self.0.schema();
 
-        let added_schema = utils::expressions_to_schema(&exprs, schema);
-        let new_schema = Schema::try_merge(&[schema.clone(), added_schema]).unwrap();
+        let mut name_to_field = HashMap::with_capacity_and_hasher(
+            schema.fields().len() + exprs.len(),
+            RandomState::default(),
+        );
+
+        for field in schema.fields() {
+            let field = field.clone();
+            name_to_field.insert(field.name().clone(), field);
+        }
+
+        for e in &exprs {
+            let field = e.to_field(schema).unwrap();
+            name_to_field.insert(field.name().clone(), field);
+        }
+
+        let fields = name_to_field.into_iter().map(|t| t.1).collect();
+        let new_schema = Schema::new(fields);
 
         LogicalPlan::HStack {
             input: Box::new(self.0),
@@ -560,25 +575,6 @@ impl LogicalPlanBuilder {
             schema: new_schema,
         }
         .into()
-    }
-
-    pub fn with_column_renamed(self, existing: &str, new: &str) -> Self {
-        // TODO! make sure that it doesn't select all columns
-        let projection = self
-            .0
-            .schema()
-            .fields()
-            .iter()
-            .map(|f| {
-                let name = f.name();
-                if f.name() == existing {
-                    col(name).alias(new)
-                } else {
-                    col(name)
-                }
-            })
-            .collect::<Vec<_>>();
-        self.project(projection)
     }
 
     /// Apply a filter
