@@ -475,7 +475,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         csv_reader: &mut Reader<R>,
     ) -> Result<usize> {
         let mut count = 0;
-        for i in 0..self.batch_size {
+        loop {
             self.line_number += 1;
             debug_assert!(rows.get(count).is_some());
             let record = unsafe { rows.get_unchecked_mut(count) };
@@ -491,19 +491,18 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         continue;
                     } else {
                         return Err(PolarsError::Other(
-                            format!("Error parsing line {}: {:?}", self.line_number + i, e).into(),
+                            format!("Error parsing line {}: {:?}", self.line_number, e).into(),
                         ));
                     }
                 }
+            }
+            if count == self.batch_size {
+                break;
             }
         }
         Ok(count)
     }
 
-    ///
-    /// # Safety
-    /// This function uses unsafe code to amortize allocs/deallocs
-    /// Before changing this make sure sure that all allocated memory gets dropped.
     fn one_thread(
         &mut self,
         builders: &mut Vec<Builder>,
@@ -527,8 +526,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             if correctly_parsed == 0 {
                 break;
             } else if correctly_parsed < self.batch_size {
-                // make sure to set len to batch size later otherwise we leak memory
-                unsafe { rows.set_len(correctly_parsed) }
+                // this only happens at the last batch if it doesn't fit a whole batch.
+                rows.truncate(correctly_parsed);
             }
             if count % CAPACITY_MULTIPLIER == 0 {
                 let mut builders_tmp = init_builders(
@@ -554,10 +553,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     break;
                 }
             }
-
-            // Set length back to original length. This makes sure that all elements get dropped.
-            debug_assert!(rows.capacity() == self.batch_size);
-            unsafe { rows.set_len(self.batch_size) }
         }
         Ok(())
     }
@@ -653,9 +648,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     pub fn as_df(&mut self, predicate: Option<Arc<dyn PhysicalExpr>>) -> Result<DataFrame> {
         let mut record_iter = self.record_iter.take().unwrap();
         if self.skip_rows > 0 {
+            let reader = record_iter.reader_mut();
+            let mut record = Default::default();
             for _ in 0..self.skip_rows {
                 self.line_number += 1;
-                let _ = record_iter.next();
+                let _ = reader.read_byte_record(&mut record);
             }
         }
 
