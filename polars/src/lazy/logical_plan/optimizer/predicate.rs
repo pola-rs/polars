@@ -175,6 +175,24 @@ impl PredicatePushDown {
                 };
                 Ok(lp)
             }
+            ParquetScan {
+                path,
+                schema,
+                with_columns,
+                predicate,
+                stop_after_n_rows,
+            } => {
+                let predicate = predicate_at_scan(acc_predicates, predicate);
+
+                let lp = ParquetScan {
+                    path,
+                    schema,
+                    with_columns,
+                    predicate,
+                    stop_after_n_rows,
+                };
+                Ok(lp)
+            }
             CsvScan {
                 path,
                 schema,

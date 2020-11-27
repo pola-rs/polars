@@ -77,15 +77,10 @@ where
         self
     }
 
-    fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
-        self.ignore_parser_error = ignore;
-        self
-    }
-
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let ipc_reader = ArrowIPCFileReader::try_new(self.reader)?;
-        finish_reader(ipc_reader, rechunk, self.ignore_parser_error, None)
+        finish_reader(ipc_reader, rechunk, None, None)
     }
 }
 

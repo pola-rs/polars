@@ -41,6 +41,20 @@ fn add_to_accumulated(
     Ok(())
 }
 
+fn get_scan_columns(acc_projections: &mut Vec<Expr>) -> Option<Vec<String>> {
+    let mut with_columns = None;
+    if !acc_projections.is_empty() {
+        let mut columns = Vec::with_capacity(acc_projections.len());
+        for expr in acc_projections {
+            if let Ok(name) = expr_to_root_column(expr) {
+                columns.push((*name).clone())
+            }
+        }
+        with_columns = Some(columns);
+    }
+    with_columns
+}
+
 pub struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
@@ -185,6 +199,23 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
+            ParquetScan {
+                path,
+                schema,
+                predicate,
+                stop_after_n_rows,
+                ..
+            } => {
+                let with_columns = get_scan_columns(&mut acc_projections);
+                let lp = ParquetScan {
+                    path,
+                    schema,
+                    with_columns,
+                    predicate,
+                    stop_after_n_rows,
+                };
+                Ok(lp)
+            }
             CsvScan {
                 path,
                 schema,
@@ -196,16 +227,7 @@ impl ProjectionPushDown {
                 predicate,
                 ..
             } => {
-                let mut with_columns = None;
-                if !acc_projections.is_empty() {
-                    let mut columns = Vec::with_capacity(acc_projections.len());
-                    for expr in &acc_projections {
-                        if let Ok(name) = expr_to_root_column(expr) {
-                            columns.push((*name).clone())
-                        }
-                    }
-                    with_columns = Some(columns);
-                }
+                let with_columns = get_scan_columns(&mut acc_projections);
                 let lp = CsvScan {
                     path,
                     schema,

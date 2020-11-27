@@ -94,6 +94,13 @@ pub enum LogicalPlan {
         with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
     },
+    ParquetScan {
+        path: String,
+        schema: Schema,
+        with_columns: Option<Vec<String>>,
+        predicate: Option<Expr>,
+        stop_after_n_rows: Option<usize>,
+    },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -165,8 +172,26 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
+            ParquetScan {
+                path,
+                schema,
+                with_columns,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                write!(
+                    f,
+                    "PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    path, n_columns, total_columns, predicate
+                )
+            }
             Selection { predicate, input } => {
-                write!(f, "Filter\n\t{:?}\nFROM\n\t{:?}", predicate, input)
+                write!(f, "FILTER\n\t{:?}\nFROM\n\t{:?}", predicate, input)
             }
             CsvScan {
                 path,
@@ -182,11 +207,8 @@ impl fmt::Debug for LogicalPlan {
                 }
                 write!(
                     f,
-                    "CSVScan {}; PROJECT {}/{} COLUMNS; SELECTION: {}",
-                    path,
-                    n_columns,
-                    total_columns,
-                    predicate.is_some()
+                    "CSV SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    path, n_columns, total_columns, predicate
                 )
             }
             DataFrameScan {
@@ -203,7 +225,7 @@ impl fmt::Debug for LogicalPlan {
 
                 write!(
                     f,
-                    "TABLE: {:?}; PROJECT {}/{} COLUMNS; SELECTION: {}",
+                    "TABLE: {:?}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
                     schema
                         .fields()
                         .iter()
@@ -212,7 +234,7 @@ impl fmt::Debug for LogicalPlan {
                         .collect::<Vec<_>>(),
                     n_columns,
                     total_columns,
-                    selection.is_some()
+                    selection
                 )
             }
             Projection { expr, input, .. } => {
@@ -407,6 +429,7 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &Schema {
         use LogicalPlan::*;
         match self {
+            ParquetScan { schema, .. } => schema,
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => input.schema(),
             CsvScan { schema, .. } => schema,
@@ -437,6 +460,22 @@ fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) 
 }
 
 impl LogicalPlanBuilder {
+    pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>) -> Self {
+        let file = std::fs::File::open(&path).expect("could not open file");
+        let schema = ParquetReader::new(file)
+            .schema()
+            .expect("could not get parquet schema");
+
+        LogicalPlan::ParquetScan {
+            path,
+            schema,
+            stop_after_n_rows,
+            with_columns: None,
+            predicate: None,
+        }
+        .into()
+    }
+
     pub fn scan_csv(
         path: String,
         delimiter: u8,

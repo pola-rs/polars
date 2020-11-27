@@ -76,6 +76,16 @@ class LazyFrame:
         )
         return self
 
+    @staticmethod
+    def scan_parquet(
+        file: str,
+        stop_after_n_rows: "Optional[int]" = None,
+    ):
+
+        self = LazyFrame.__new__(LazyFrame)
+        self._ldf = PyLazyFrame.new_from_parquet(file, stop_after_n_rows)
+        return self
+
     def pipe(self, func: Callable, *args, **kwargs):
         """
         Apply a function on Self
