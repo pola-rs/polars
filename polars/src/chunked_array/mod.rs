@@ -724,7 +724,10 @@ where
     ///     }
     /// }
     /// ```
-    pub fn map_null_checks<B, F>(&self, f: F) -> Map<NumericChunkIterDispatch<T>, F>
+    pub fn map_null_checks<'a, B, F>(
+        &'a self,
+        f: F,
+    ) -> Map<Box<dyn PolarsIterator<Item = Option<T::Native>> + 'a>, F>
     where
         F: Fn(Option<T::Native>) -> B,
     {
