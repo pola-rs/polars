@@ -1,3 +1,4 @@
+use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::expr_to_root_column_expr;
 use crate::prelude::*;
@@ -14,7 +15,7 @@ pub(crate) mod type_coercion;
 fn check_down_node(expr: &Expr, down_schema: &Schema) -> bool {
     match expr_to_root_column_expr(expr) {
         Err(_) => false,
-        Ok(e) => e.to_field(down_schema).is_ok(),
+        Ok(e) => e.to_field(down_schema, Context::Other).is_ok(),
     }
 }
 

@@ -699,6 +699,11 @@ impl Series {
         Ok(apply_method_all_arrow_series_and_return!(self, unique, [],?))
     }
 
+    /// Get unique values in the Series.
+    pub fn n_unique(&self) -> Result<usize> {
+        apply_method_all_arrow_series!(self, n_unique,)
+    }
+
     /// Get first indexes of unique values.
     pub fn arg_unique(&self) -> Result<Vec<usize>> {
         apply_method_all_arrow_series!(self, arg_unique,)

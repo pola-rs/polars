@@ -2,7 +2,7 @@ pub(crate) mod optimizer;
 use crate::frame::ser::fork::csv::infer_file_schema;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
-use crate::lazy::utils::expr_to_root_column_expr;
+use crate::lazy::utils::{expr_to_root_column_expr, has_expr};
 use crate::{
     lazy::{prelude::*, utils},
     prelude::*,
@@ -11,6 +11,12 @@ use ahash::RandomState;
 use arrow::datatypes::DataType;
 use std::collections::HashSet;
 use std::{fmt, sync::Arc};
+
+#[derive(Clone, Copy)]
+pub enum Context {
+    Aggregation,
+    Other,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ScalarValue {
@@ -322,31 +328,23 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             Box::new(replace_wildcard_with_column(*e, column_name)),
             name,
         ),
-        Expr::AggMean(e) => Expr::AggMean(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggMedian(e) => {
-            Expr::AggMedian(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
-        Expr::AggMax(e) => Expr::AggMax(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggMin(e) => Expr::AggMin(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggSum(e) => Expr::AggSum(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggCount(e) => {
-            Expr::AggCount(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
-        Expr::AggLast(e) => Expr::AggLast(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggFirst(e) => {
-            Expr::AggFirst(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
-        Expr::AggNUnique(e) => {
-            Expr::AggNUnique(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
+        Expr::Mean(e) => Expr::Mean(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Median(e) => Expr::Median(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Max(e) => Expr::Max(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Min(e) => Expr::Min(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Sum(e) => Expr::Sum(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Count(e) => Expr::Count(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Last(e) => Expr::Last(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::First(e) => Expr::First(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::NUnique(e) => Expr::NUnique(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::AggGroups(e) => {
             Expr::AggGroups(Box::new(replace_wildcard_with_column(*e, column_name)))
         }
-        Expr::AggQuantile { expr, quantile } => Expr::AggQuantile {
+        Expr::Quantile { expr, quantile } => Expr::Quantile {
             expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
             quantile,
         },
-        Expr::AggList(e) => Expr::AggList(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::List(e) => Expr::List(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::Shift { input, periods } => Expr::Shift {
             input: Box::new(replace_wildcard_with_column(*input, column_name)),
             periods,
@@ -386,44 +384,6 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     result
 }
 
-/// Check if Expression has a wildcard somewhere in the tree.
-fn has_wildcard(expr: &Expr) -> bool {
-    match expr {
-        Expr::Duplicated(expr) => has_wildcard(expr),
-        Expr::Unique(expr) => has_wildcard(expr),
-        Expr::Wildcard => true,
-        Expr::Column(_) => false,
-        Expr::Reverse(expr) => has_wildcard(expr),
-        Expr::Alias(expr, _) => has_wildcard(expr),
-        Expr::Not(expr) => has_wildcard(expr),
-        Expr::IsNull(expr) => has_wildcard(expr),
-        Expr::IsNotNull(expr) => has_wildcard(expr),
-        Expr::BinaryExpr { left, right, .. } => has_wildcard(left) | has_wildcard(right),
-        Expr::Sort { expr, .. } => has_wildcard(expr),
-        Expr::AggFirst(expr) => has_wildcard(expr),
-        Expr::AggLast(expr) => has_wildcard(expr),
-        Expr::AggGroups(expr) => has_wildcard(expr),
-        Expr::AggNUnique(expr) => has_wildcard(expr),
-        Expr::AggQuantile { expr, .. } => has_wildcard(expr),
-        Expr::AggSum(expr) => has_wildcard(expr),
-        Expr::AggMin(expr) => has_wildcard(expr),
-        Expr::AggMax(expr) => has_wildcard(expr),
-        Expr::AggMedian(expr) => has_wildcard(expr),
-        Expr::AggMean(expr) => has_wildcard(expr),
-        Expr::AggCount(expr) => has_wildcard(expr),
-        Expr::Cast { expr, .. } => has_wildcard(expr),
-        Expr::Apply { input, .. } => has_wildcard(input),
-        Expr::Literal(_) => false,
-        Expr::AggList(expr) => has_wildcard(expr),
-        Expr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => has_wildcard(predicate) | has_wildcard(truthy) | has_wildcard(falsy),
-        Expr::Shift { input, .. } => has_wildcard(input),
-    }
-}
-
 pub struct LogicalPlanBuilder(LogicalPlan);
 
 impl LogicalPlan {
@@ -457,7 +417,7 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 
 fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
     let exprs = rewrite_projections(exprs, schema);
-    let schema = utils::expressions_to_schema(&exprs, schema);
+    let schema = utils::expressions_to_schema(&exprs, schema, Context::Other);
     (exprs, schema)
 }
 
@@ -556,7 +516,7 @@ impl LogicalPlanBuilder {
         let mut new_fields = schema.fields().clone();
 
         for e in &exprs {
-            let field = e.to_field(schema).unwrap();
+            let field = e.to_field(schema, Context::Other).unwrap();
             match schema.index_of(field.name()) {
                 Ok(idx) => {
                     new_fields[idx] = field;
@@ -577,7 +537,7 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
-        let predicate = if has_wildcard(&predicate) {
+        let predicate = if has_expr(&predicate, &Expr::Wildcard) {
             let it = self.0.schema().fields().iter().map(|field| {
                 replace_wildcard_with_column(predicate.clone(), Arc::new(field.name().clone()))
             });
@@ -596,6 +556,7 @@ impl LogicalPlanBuilder {
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs, current_schema);
 
+        // todo! use same merge method as in with_columns
         let fields = keys
             .iter()
             .map(|name| current_schema.field_with_name(name).unwrap().clone())
@@ -603,7 +564,7 @@ impl LogicalPlanBuilder {
 
         let schema1 = Schema::new(fields);
 
-        let schema2 = utils::expressions_to_schema(&aggs, self.0.schema());
+        let schema2 = utils::expressions_to_schema(&aggs, self.0.schema(), Context::Aggregation);
         let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
 
         LogicalPlan::Aggregate {
@@ -768,7 +729,7 @@ mod test {
         let lp = df
             .lazy()
             .groupby("variety")
-            .agg(vec![col("sepal.width").agg_min()])
+            .agg(vec![col("sepal.width").min()])
             .logical_plan;
         println!("{:#?}", lp.schema().fields());
         assert!(lp.schema().field_with_name("sepal.width_min").is_ok());

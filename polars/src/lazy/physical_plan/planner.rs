@@ -1,5 +1,5 @@
 use crate::frame::group_by::GroupByMethod;
-use crate::lazy::logical_plan::DataFrameOperation;
+use crate::lazy::logical_plan::{Context, DataFrameOperation};
 use crate::lazy::physical_plan::executors::{JoinExec, ParquetExec, StackExec};
 use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
@@ -18,10 +18,14 @@ impl PhysicalPlanner for DefaultPlanner {
 }
 
 impl DefaultPlanner {
-    fn create_physical_expressions(&self, exprs: Vec<Expr>) -> Result<Vec<Arc<dyn PhysicalExpr>>> {
+    fn create_physical_expressions(
+        &self,
+        exprs: Vec<Expr>,
+        context: Context,
+    ) -> Result<Vec<Arc<dyn PhysicalExpr>>> {
         exprs
             .into_iter()
-            .map(|e| self.create_physical_expr(e))
+            .map(|e| self.create_physical_expr(e, context))
             .collect()
     }
     pub fn create_initial_physical_plan(
@@ -31,7 +35,7 @@ impl DefaultPlanner {
         match logical_plan {
             LogicalPlan::Selection { input, predicate } => {
                 let input = self.create_initial_physical_plan(*input)?;
-                let predicate = self.create_physical_expr(predicate)?;
+                let predicate = self.create_physical_expr(predicate, Context::Other)?;
                 Ok(Box::new(FilterExec::new(predicate, input)))
             }
             LogicalPlan::CsvScan {
@@ -46,7 +50,7 @@ impl DefaultPlanner {
                 predicate,
             } => {
                 let predicate = predicate
-                    .map(|pred| self.create_physical_expr(pred))
+                    .map(|pred| self.create_physical_expr(pred, Context::Other))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(CsvExec::new(
                     path,
@@ -68,7 +72,7 @@ impl DefaultPlanner {
                 stop_after_n_rows,
             } => {
                 let predicate = predicate
-                    .map(|pred| self.create_physical_expr(pred))
+                    .map(|pred| self.create_physical_expr(pred, Context::Other))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(ParquetExec::new(
                     path,
@@ -80,12 +84,12 @@ impl DefaultPlanner {
             }
             LogicalPlan::Projection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
-                let phys_expr = self.create_physical_expressions(expr)?;
+                let phys_expr = self.create_physical_expressions(expr, Context::Other)?;
                 Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
             }
             LogicalPlan::LocalProjection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
-                let phys_expr = self.create_physical_expressions(expr)?;
+                let phys_expr = self.create_physical_expressions(expr, Context::Other)?;
                 Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
             }
             LogicalPlan::DataFrameScan {
@@ -95,10 +99,10 @@ impl DefaultPlanner {
                 ..
             } => {
                 let selection = selection
-                    .map(|pred| self.create_physical_expr(pred))
+                    .map(|pred| self.create_physical_expr(pred, Context::Other))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 let projection = projection
-                    .map(|proj| self.create_physical_expressions(proj))
+                    .map(|proj| self.create_physical_expressions(proj, Context::Other))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(DataFrameExec::new(df, projection, selection)))
             }
@@ -134,7 +138,7 @@ impl DefaultPlanner {
                 input, keys, aggs, ..
             } => {
                 let input = self.create_initial_physical_plan(*input)?;
-                let phys_aggs = self.create_physical_expressions(aggs)?;
+                let phys_aggs = self.create_physical_expressions(aggs, Context::Aggregation)?;
                 Ok(Box::new(GroupByExec::new(input, keys, phys_aggs)))
             }
             LogicalPlan::Join {
@@ -147,8 +151,8 @@ impl DefaultPlanner {
             } => {
                 let input_left = self.create_initial_physical_plan(*input_left)?;
                 let input_right = self.create_initial_physical_plan(*input_right)?;
-                let left_on = self.create_physical_expr(left_on)?;
-                let right_on = self.create_physical_expr(right_on)?;
+                let left_on = self.create_physical_expr(left_on, Context::Other)?;
+                let right_on = self.create_physical_expr(right_on, Context::Other)?;
                 Ok(Box::new(JoinExec::new(
                     input_left,
                     input_right,
@@ -159,92 +163,201 @@ impl DefaultPlanner {
             }
             LogicalPlan::HStack { input, exprs, .. } => {
                 let input = self.create_initial_physical_plan(*input)?;
-                let phys_expr = self.create_physical_expressions(exprs)?;
+                let phys_expr = self.create_physical_expressions(exprs, Context::Other)?;
                 Ok(Box::new(StackExec::new(input, phys_expr)))
             }
         }
     }
 
-    // todo! add schema and ctxt
-    pub fn create_physical_expr(&self, expression: Expr) -> Result<Arc<dyn PhysicalExpr>> {
+    pub fn create_physical_expr(
+        &self,
+        expression: Expr,
+        ctxt: Context,
+    ) -> Result<Arc<dyn PhysicalExpr>> {
         match expression.clone() {
             Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value, expression))),
             Expr::BinaryExpr { left, op, right } => {
-                let lhs = self.create_physical_expr(*left)?;
-                let rhs = self.create_physical_expr(*right)?;
+                let lhs = self.create_physical_expr(*left, ctxt)?;
+                let rhs = self.create_physical_expr(*right, ctxt)?;
                 Ok(Arc::new(BinaryExpr::new(lhs, op, rhs, expression)))
             }
             Expr::Column(column) => Ok(Arc::new(ColumnExpr::new(column, expression))),
             Expr::Sort { expr, reverse } => {
-                let phys_expr = self.create_physical_expr(*expr)?;
+                let phys_expr = self.create_physical_expr(*expr, ctxt)?;
                 Ok(Arc::new(SortExpr::new(phys_expr, reverse, expression)))
             }
             Expr::Not(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
+                let phys_expr = self.create_physical_expr(*expr, ctxt)?;
                 Ok(Arc::new(NotExpr::new(phys_expr, expression)))
             }
             Expr::Alias(expr, name) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
+                let phys_expr = self.create_physical_expr(*expr, ctxt)?;
                 Ok(Arc::new(AliasExpr::new(phys_expr, name, expression)))
             }
             Expr::IsNull(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
+                let phys_expr = self.create_physical_expr(*expr, ctxt)?;
                 Ok(Arc::new(IsNullExpr::new(phys_expr, expression)))
             }
             Expr::IsNotNull(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
+                let phys_expr = self.create_physical_expr(*expr, ctxt)?;
                 Ok(Arc::new(IsNotNullExpr::new(phys_expr, expression)))
             }
-            Expr::AggMin(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Min)))
+            Expr::Min(expr) => {
+                // todo! Output type is dependent on schema.
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Min))),
+                    Context::Other => {
+                        let function = Arc::new(move |s: Series| Ok(s.min_as_series()));
+                        Ok(Arc::new(ApplyExpr {
+                            input,
+                            function,
+                            output_type: None,
+                        }))
+                    }
+                }
             }
-            Expr::AggMax(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Max)))
+            Expr::Max(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Max))),
+                    Context::Other => {
+                        let function = Arc::new(move |s: Series| Ok(s.max_as_series()));
+                        Ok(Arc::new(ApplyExpr {
+                            input,
+                            function,
+                            output_type: None,
+                        }))
+                    }
+                }
             }
-            Expr::AggSum(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Sum)))
+            Expr::Sum(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Sum))),
+                    Context::Other => {
+                        let function = Arc::new(move |s: Series| Ok(s.sum_as_series()));
+                        Ok(Arc::new(ApplyExpr {
+                            input,
+                            function,
+                            output_type: None,
+                        }))
+                    }
+                }
             }
-            Expr::AggMean(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Mean)))
+            Expr::Mean(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Mean))),
+                    Context::Other => {
+                        let function = Arc::new(move |s: Series| Ok(s.mean_as_series()));
+                        Ok(Arc::new(ApplyExpr {
+                            input,
+                            function,
+                            output_type: None,
+                        }))
+                    }
+                }
             }
-            Expr::AggMedian(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Median)))
+            Expr::Median(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => {
+                        Ok(Arc::new(AggExpr::new(input, GroupByMethod::Median)))
+                    }
+                    Context::Other => {
+                        let function = Arc::new(move |s: Series| Ok(s.median_as_series()));
+                        Ok(Arc::new(ApplyExpr {
+                            input,
+                            function,
+                            output_type: None,
+                        }))
+                    }
+                }
             }
-            Expr::AggFirst(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::First)))
+            Expr::First(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::First))),
+                    Context::Other => todo!(),
+                }
             }
-            Expr::AggLast(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Last)))
+            Expr::Last(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Last))),
+                    Context::Other => todo!(),
+                }
             }
-            Expr::AggList(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::List)))
+            Expr::List(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Last))),
+                    Context::Other => {
+                        panic!("list expression is only supported in the aggregation context")
+                    }
+                }
             }
-            Expr::AggNUnique(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::NUnique)))
+            Expr::NUnique(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => {
+                        Ok(Arc::new(AggExpr::new(input, GroupByMethod::NUnique)))
+                    }
+                    Context::Other => {
+                        let function = Arc::new(move |s: Series| {
+                            s.n_unique()
+                                .map(|count| Series::new(s.name(), &[count as u32]))
+                        });
+                        Ok(Arc::new(ApplyExpr {
+                            input,
+                            function,
+                            output_type: Some(ArrowDataType::UInt32),
+                        }))
+                    }
+                }
             }
-            Expr::AggQuantile { expr, quantile } => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggQuantileExpr::new(phys_expr, quantile)))
+            Expr::Quantile { expr, quantile } => {
+                // todo! add schema to get correct output type
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggQuantileExpr::new(input, quantile))),
+                    Context::Other => {
+                        let function = Arc::new(move |s: Series| s.quantile_as_series(quantile));
+                        Ok(Arc::new(ApplyExpr {
+                            input,
+                            function,
+                            output_type: None,
+                        }))
+                    }
+                }
             }
             Expr::AggGroups(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
+                if let Context::Other = ctxt {
+                    panic!("agg groups expression only supported in aggregation context")
+                }
+                let phys_expr = self.create_physical_expr(*expr, ctxt)?;
                 Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Groups)))
             }
-            Expr::AggCount(expr) => {
-                let phys_expr = self.create_physical_expr(*expr)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Count)))
+            Expr::Count(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                match ctxt {
+                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Count))),
+                    Context::Other => {
+                        let function = Arc::new(move |s: Series| {
+                            let count = s.len();
+                            Ok(Series::new(s.name(), &[count as u32]))
+                        });
+                        Ok(Arc::new(ApplyExpr {
+                            input,
+                            function,
+                            output_type: Some(ArrowDataType::UInt32),
+                        }))
+                    }
+                }
             }
             Expr::Cast { expr, data_type } => {
-                let phys_expr = self.create_physical_expr(*expr)?;
+                let phys_expr = self.create_physical_expr(*expr, ctxt)?;
                 Ok(Arc::new(CastExpr::new(phys_expr, data_type)))
             }
             Expr::Ternary {
@@ -252,9 +365,9 @@ impl DefaultPlanner {
                 truthy,
                 falsy,
             } => {
-                let predicate = self.create_physical_expr(*predicate)?;
-                let truthy = self.create_physical_expr(*truthy)?;
-                let falsy = self.create_physical_expr(*falsy)?;
+                let predicate = self.create_physical_expr(*predicate, ctxt)?;
+                let truthy = self.create_physical_expr(*truthy, ctxt)?;
+                let falsy = self.create_physical_expr(*falsy, ctxt)?;
                 Ok(Arc::new(TernaryExpr {
                     predicate,
                     truthy,
@@ -266,7 +379,7 @@ impl DefaultPlanner {
                 function,
                 output_type,
             } => {
-                let input = self.create_physical_expr(*input)?;
+                let input = self.create_physical_expr(*input, ctxt)?;
                 Ok(Arc::new(ApplyExpr {
                     input,
                     function,
@@ -274,22 +387,22 @@ impl DefaultPlanner {
                 }))
             }
             Expr::Shift { input, periods } => {
-                let input = self.create_physical_expr(*input)?;
+                let input = self.create_physical_expr(*input, ctxt)?;
                 let function = Arc::new(move |s: Series| s.shift(periods));
                 Ok(Arc::new(ApplyExpr::new(input, function, None)))
             }
             Expr::Reverse(expr) => {
-                let input = self.create_physical_expr(*expr)?;
+                let input = self.create_physical_expr(*expr, ctxt)?;
                 let function = Arc::new(move |s: Series| Ok(s.reverse()));
                 Ok(Arc::new(ApplyExpr::new(input, function, None)))
             }
             Expr::Duplicated(expr) => {
-                let input = self.create_physical_expr(*expr)?;
+                let input = self.create_physical_expr(*expr, ctxt)?;
                 let function = Arc::new(move |s: Series| s.is_duplicated().map(|ca| ca.into()));
                 Ok(Arc::new(ApplyExpr::new(input, function, None)))
             }
             Expr::Unique(expr) => {
-                let input = self.create_physical_expr(*expr)?;
+                let input = self.create_physical_expr(*expr, ctxt)?;
                 let function = Arc::new(move |s: Series| s.is_unique().map(|ca| ca.into()));
                 Ok(Arc::new(ApplyExpr::new(input, function, None)))
             }

@@ -86,49 +86,49 @@ impl PyExpr {
         self.clone().inner.is_not_null().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_min(&self) -> PyExpr {
-        self.clone().inner.agg_min().into()
+    pub fn min(&self) -> PyExpr {
+        self.clone().inner.min().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_max(&self) -> PyExpr {
-        self.clone().inner.agg_max().into()
+    pub fn max(&self) -> PyExpr {
+        self.clone().inner.max().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_mean(&self) -> PyExpr {
-        self.clone().inner.agg_mean().into()
+    pub fn mean(&self) -> PyExpr {
+        self.clone().inner.mean().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_median(&self) -> PyExpr {
-        self.clone().inner.agg_median().into()
+    pub fn median(&self) -> PyExpr {
+        self.clone().inner.median().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_sum(&self) -> PyExpr {
-        self.clone().inner.agg_sum().into()
+    pub fn sum(&self) -> PyExpr {
+        self.clone().inner.sum().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_n_unique(&self) -> PyExpr {
-        self.clone().inner.agg_n_unique().into()
+    pub fn n_unique(&self) -> PyExpr {
+        self.clone().inner.n_unique().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_first(&self) -> PyExpr {
-        self.clone().inner.agg_first().into()
+    pub fn first(&self) -> PyExpr {
+        self.clone().inner.first().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_last(&self) -> PyExpr {
-        self.clone().inner.agg_last().into()
+    pub fn last(&self) -> PyExpr {
+        self.clone().inner.last().into()
     }
-    pub fn agg_list(&self) -> PyExpr {
-        self.clone().inner.agg_list().into()
+    pub fn list(&self) -> PyExpr {
+        self.clone().inner.list().into()
     }
     #[text_signature = "($self, quantile)"]
-    pub fn agg_quantile(&self, quantile: f64) -> PyExpr {
-        self.clone().inner.agg_quantile(quantile).into()
+    pub fn quantile(&self, quantile: f64) -> PyExpr {
+        self.clone().inner.quantile(quantile).into()
     }
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
     }
-    pub fn agg_count(&self) -> PyExpr {
-        self.clone().inner.agg_count().into()
+    pub fn count(&self) -> PyExpr {
+        self.clone().inner.count().into()
     }
     #[text_signature = "($self, data_type)"]
     pub fn cast(&self, data_type: &PyAny) -> PyExpr {
@@ -150,38 +150,17 @@ impl PyExpr {
     pub fn reverse(&self) -> PyExpr {
         self.clone().inner.reverse().into()
     }
-    pub fn count(&self) -> PyExpr {
-        self.clone().inner.count().into()
-    }
-    pub fn max(&self) -> PyExpr {
-        self.clone().inner.max().into()
-    }
-    pub fn min(&self) -> PyExpr {
-        self.clone().inner.min().into()
-    }
-    pub fn sum(&self) -> PyExpr {
-        self.clone().inner.sum().into()
-    }
-    pub fn mean(&self) -> PyExpr {
-        self.clone().inner.mean().into()
-    }
     pub fn std(&self) -> PyExpr {
         self.clone().inner.std().into()
     }
     pub fn var(&self) -> PyExpr {
         self.clone().inner.var().into()
     }
-    pub fn median(&self) -> PyExpr {
-        self.clone().inner.median().into()
-    }
     pub fn is_unique(&self) -> PyExpr {
         self.clone().inner.is_unique().into()
     }
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
-    }
-    pub fn quantile(&self, quantile: f64) -> PyExpr {
-        self.clone().inner.quantile(quantile).into()
     }
     pub fn str_lengths(&self) -> PyExpr {
         let function = |s: Series| {
