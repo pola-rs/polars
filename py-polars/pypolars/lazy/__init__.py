@@ -418,41 +418,11 @@ class Expr:
     def is_not_null(self) -> "Expr":
         return wrap_expr(self._pyexpr.is_not_null())
 
-    def agg_min(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_min())
-
-    def agg_max(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_max())
-
-    def agg_mean(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_mean())
-
-    def agg_median(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_median())
-
-    def agg_sum(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_sum())
-
-    def agg_n_unique(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_n_unique())
-
-    def agg_first(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_first())
-
-    def agg_last(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_last())
-
-    def agg_list(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_list())
-
-    def agg_quantile(self, quantile: float) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_quantile(quantile))
-
     def agg_groups(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_groups())
 
-    def agg_count(self) -> "Expr":
-        return wrap_expr(self._pyexpr.agg_count())
+    def count(self) -> "Expr":
+        return wrap_expr(self._pyexpr.count())
 
     def cast(self, dtype: "DataType") -> "Expr":
         if dtype == str:
@@ -481,12 +451,6 @@ class Expr:
         Reverse the selection
         """
         return wrap_expr(self._pyexpr.reverse())
-
-    def count(self) -> "Expr":
-        """
-        Count the number of values of this column.
-        """
-        return wrap_expr(self._pyexpr.count())
 
     def std(self) -> "Expr":
         """
@@ -529,6 +493,28 @@ class Expr:
         Get median value
         """
         return wrap_expr(self._pyexpr.mean())
+
+    def n_unique(self) -> "Expr":
+        """Count unique values"""
+        return wrap_expr(self._pyexpr.n_unique())
+
+    def first(self) -> "Expr":
+        """
+        Get first value
+        """
+        return wrap_expr(self._pyexpr.first())
+
+    def last(self) -> "Expr":
+        """
+        Get last value
+        """
+        return wrap_expr(self._pyexpr.last())
+
+    def list(self) -> "Expr":
+        """
+        Aggregate to list
+        """
+        return wrap_expr(self._pyexpr.list())
 
     def is_unique(self) -> "Expr":
         """
@@ -613,6 +599,74 @@ def count(name: str) -> "Expr":
     Count the number of values in this column
     """
     return col(name).count()
+
+
+def std(name: str) -> "Expr":
+    """
+    Get standard deviation
+    """
+    return col(name).std()
+
+
+def var(name: str) -> "Expr":
+    """
+    Get variance
+    """
+    return col(name).var()
+
+
+def max(name: str) -> "Expr":
+    """
+    Get maximum value
+    """
+    return col(name).max()
+
+
+def min(name: str) -> "Expr":
+    """
+    Get minimum value
+    """
+    return col(name).min()
+
+
+def sum(name: str) -> "Expr":
+    """
+    Get sum value
+    """
+    return col(name).sum()
+
+
+def mean(name: str) -> "Expr":
+    """
+    Get mean value
+    """
+    return col(name).mean()
+
+
+def median(name: str) -> "Expr":
+    """
+    Get median value
+    """
+    return col(name).median()
+
+
+def n_unique(name: str) -> "Expr":
+    """Count unique values"""
+    return col(name).n_unique()
+
+
+def first(name: str) -> "Expr":
+    """
+    Get first value
+    """
+    return col(name).first()
+
+
+def last(name: str) -> "Expr":
+    """
+    Get last value
+    """
+    return col(name).last()
 
 
 def lit(value: Union[float, int]) -> "Expr":

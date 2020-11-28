@@ -213,6 +213,7 @@ impl DefaultPlanner {
                             input,
                             function,
                             output_type: None,
+                            expr: expression,
                         }))
                     }
                 }
@@ -227,6 +228,7 @@ impl DefaultPlanner {
                             input,
                             function,
                             output_type: None,
+                            expr: expression,
                         }))
                     }
                 }
@@ -241,6 +243,7 @@ impl DefaultPlanner {
                             input,
                             function,
                             output_type: None,
+                            expr: expression,
                         }))
                     }
                 }
@@ -255,6 +258,7 @@ impl DefaultPlanner {
                             input,
                             function,
                             output_type: None,
+                            expr: expression,
                         }))
                     }
                 }
@@ -271,6 +275,7 @@ impl DefaultPlanner {
                             input,
                             function,
                             output_type: None,
+                            expr: expression,
                         }))
                     }
                 }
@@ -313,6 +318,7 @@ impl DefaultPlanner {
                             input,
                             function,
                             output_type: Some(ArrowDataType::UInt32),
+                            expr: expression,
                         }))
                     }
                 }
@@ -328,6 +334,7 @@ impl DefaultPlanner {
                             input,
                             function,
                             output_type: None,
+                            expr: expression,
                         }))
                     }
                 }
@@ -352,13 +359,14 @@ impl DefaultPlanner {
                             input,
                             function,
                             output_type: Some(ArrowDataType::UInt32),
+                            expr: expression,
                         }))
                     }
                 }
             }
             Expr::Cast { expr, data_type } => {
                 let phys_expr = self.create_physical_expr(*expr, ctxt)?;
-                Ok(Arc::new(CastExpr::new(phys_expr, data_type)))
+                Ok(Arc::new(CastExpr::new(phys_expr, data_type, expression)))
             }
             Expr::Ternary {
                 predicate,
@@ -372,6 +380,7 @@ impl DefaultPlanner {
                     predicate,
                     truthy,
                     falsy,
+                    expr: expression,
                 }))
             }
             Expr::Apply {
@@ -384,27 +393,28 @@ impl DefaultPlanner {
                     input,
                     function,
                     output_type,
+                    expr: expression,
                 }))
             }
             Expr::Shift { input, periods } => {
                 let input = self.create_physical_expr(*input, ctxt)?;
                 let function = Arc::new(move |s: Series| s.shift(periods));
-                Ok(Arc::new(ApplyExpr::new(input, function, None)))
+                Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Reverse(expr) => {
                 let input = self.create_physical_expr(*expr, ctxt)?;
                 let function = Arc::new(move |s: Series| Ok(s.reverse()));
-                Ok(Arc::new(ApplyExpr::new(input, function, None)))
+                Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Duplicated(expr) => {
                 let input = self.create_physical_expr(*expr, ctxt)?;
                 let function = Arc::new(move |s: Series| s.is_duplicated().map(|ca| ca.into()));
-                Ok(Arc::new(ApplyExpr::new(input, function, None)))
+                Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Unique(expr) => {
                 let input = self.create_physical_expr(*expr, ctxt)?;
                 let function = Arc::new(move |s: Series| s.is_unique().map(|ca| ca.into()));
-                Ok(Arc::new(ApplyExpr::new(input, function, None)))
+                Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Wildcard => panic!("should be no wildcard at this point"),
         }
