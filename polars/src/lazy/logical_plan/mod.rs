@@ -9,7 +9,7 @@ use crate::{
 };
 use ahash::RandomState;
 use arrow::datatypes::DataType;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::{fmt, sync::Arc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -121,11 +121,6 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         schema: Schema,
     },
-    DataFrameOp {
-        input: Box<LogicalPlan>,
-        operation: DataFrameOperation,
-    },
-
     Aggregate {
         input: Box<LogicalPlan>,
         keys: Arc<Vec<String>>,
@@ -149,6 +144,15 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         maintain_order: bool,
         subset: Arc<Option<Vec<String>>>,
+    },
+    Sort {
+        input: Box<LogicalPlan>,
+        by_column: String,
+        reverse: bool,
+    },
+    Explode {
+        input: Box<LogicalPlan>,
+        column: String,
     },
 }
 
@@ -248,13 +252,10 @@ impl fmt::Debug for LogicalPlan {
                     input
                 )
             }
-            DataFrameOp {
-                input, operation, ..
-            } => match operation {
-                DataFrameOperation::Sort { .. } => write!(f, "SORT {:?}", input),
-                DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
-                _ => unimplemented!(),
-            },
+            Sort {
+                input, by_column, ..
+            } => write!(f, "SORT {:?} BY COLUMN {}", input, by_column),
+            Explode { input, column, .. } => write!(f, "EXPLODE COLUMN {} OF {:?}", column, input),
             Aggregate {
                 input, keys, aggs, ..
             } => write!(f, "Aggregate\n\t{:?} BY {:?} FROM {:?}", aggs, keys, input),
@@ -429,13 +430,14 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &Schema {
         use LogicalPlan::*;
         match self {
+            Sort { input, .. } => input.schema(),
+            Explode { input, .. } => input.schema(),
             ParquetScan { schema, .. } => schema,
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => input.schema(),
             CsvScan { schema, .. } => schema,
             Projection { schema, .. } => schema,
             LocalProjection { schema, .. } => schema,
-            DataFrameOp { input, .. } => input.schema(),
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
@@ -551,23 +553,19 @@ impl LogicalPlanBuilder {
         // current schema
         let schema = self.0.schema();
 
-        let mut name_to_field = HashMap::with_capacity_and_hasher(
-            schema.fields().len() + exprs.len(),
-            RandomState::default(),
-        );
-
-        for field in schema.fields() {
-            let field = field.clone();
-            name_to_field.insert(field.name().clone(), field);
-        }
+        let mut new_fields = schema.fields().clone();
 
         for e in &exprs {
             let field = e.to_field(schema).unwrap();
-            name_to_field.insert(field.name().clone(), field);
+            match schema.index_of(field.name()) {
+                Ok(idx) => {
+                    new_fields[idx] = field;
+                }
+                Err(_) => new_fields.push(field),
+            }
         }
 
-        let fields = name_to_field.into_iter().map(|t| t.1).collect();
-        let new_schema = Schema::new(fields);
+        let new_schema = Schema::new(new_fields);
 
         LogicalPlan::HStack {
             input: Box::new(self.0),
@@ -633,17 +631,18 @@ impl LogicalPlanBuilder {
     }
 
     pub fn sort(self, by_column: String, reverse: bool) -> Self {
-        LogicalPlan::DataFrameOp {
+        LogicalPlan::Sort {
             input: Box::new(self.0),
-            operation: DataFrameOperation::Sort { by_column, reverse },
+            by_column,
+            reverse,
         }
         .into()
     }
 
-    pub fn explode(self, column: &str) -> Self {
-        LogicalPlan::DataFrameOp {
+    pub fn explode(self, column: String) -> Self {
+        LogicalPlan::Explode {
             input: Box::new(self.0),
-            operation: DataFrameOperation::Explode(column.to_owned()),
+            column,
         }
         .into()
     }

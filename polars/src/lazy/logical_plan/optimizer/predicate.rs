@@ -219,12 +219,21 @@ impl PredicatePushDown {
                 };
                 Ok(lp)
             }
-            DataFrameOp { input, operation } => {
-                let input = self.push_down(*input, acc_predicates)?;
-                Ok(DataFrameOp {
-                    input: Box::new(input),
-                    operation,
+            Sort {
+                input,
+                by_column,
+                reverse,
+            } => {
+                let input = Box::new(self.push_down(*input, acc_predicates)?);
+                Ok(Sort {
+                    input,
+                    by_column,
+                    reverse,
                 })
+            }
+            Explode { input, column } => {
+                let input = Box::new(self.push_down(*input, acc_predicates)?);
+                Ok(Explode { input, column })
             }
             Distinct {
                 input,
