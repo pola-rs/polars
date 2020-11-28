@@ -216,6 +216,7 @@ impl ProjectionPushDown {
                 schema,
                 predicate,
                 stop_after_n_rows,
+                cache,
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections);
@@ -225,6 +226,7 @@ impl ProjectionPushDown {
                     with_columns,
                     predicate,
                     stop_after_n_rows,
+                    cache,
                 };
                 Ok(lp)
             }
@@ -237,6 +239,7 @@ impl ProjectionPushDown {
                 skip_rows,
                 stop_after_n_rows,
                 predicate,
+                cache,
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections);
@@ -250,6 +253,7 @@ impl ProjectionPushDown {
                     skip_rows,
                     stop_after_n_rows,
                     predicate,
+                    cache,
                 };
                 Ok(lp)
             }

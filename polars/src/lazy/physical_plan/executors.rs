@@ -37,6 +37,7 @@ pub struct ParquetExec {
     with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     stop_after_n_rows: Option<usize>,
+    cache: bool,
 }
 
 impl ParquetExec {
@@ -46,6 +47,7 @@ impl ParquetExec {
         with_columns: Option<Vec<String>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         stop_after_n_rows: Option<usize>,
+        cache: bool,
     ) -> Self {
         ParquetExec {
             path,
@@ -53,6 +55,7 @@ impl ParquetExec {
             with_columns,
             predicate,
             stop_after_n_rows,
+            cache,
         }
     }
 }
@@ -63,12 +66,14 @@ impl Executor for ParquetExec {
             Some(predicate) => format!("{}{:?}", self.path, predicate.as_expression()),
             None => self.path.to_string(),
         };
-        let guard = cache.lock().unwrap();
-        // cache hit
-        if let Some(df) = guard.get(&cache_key) {
-            return Ok(df.clone());
+        if self.cache {
+            let guard = cache.lock().unwrap();
+            // cache hit
+            if let Some(df) = guard.get(&cache_key) {
+                return Ok(df.clone());
+            }
+            drop(guard);
         }
-        drop(guard);
 
         // cache miss
         let file = std::fs::File::open(&self.path).unwrap();
@@ -95,8 +100,10 @@ impl Executor for ParquetExec {
                 projection.as_ref().map(|v| v.as_ref()),
             )?;
 
-        let mut guard = cache.lock().unwrap();
-        guard.insert(cache_key, df.clone());
+        if self.cache {
+            let mut guard = cache.lock().unwrap();
+            guard.insert(cache_key, df.clone());
+        }
 
         Ok(df)
     }
@@ -112,6 +119,7 @@ pub struct CsvExec {
     stop_after_n_rows: Option<usize>,
     with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
+    cache: bool,
 }
 
 impl CsvExec {
@@ -126,6 +134,7 @@ impl CsvExec {
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
+        cache: bool,
     ) -> Self {
         CsvExec {
             path,
@@ -137,6 +146,7 @@ impl CsvExec {
             stop_after_n_rows,
             with_columns,
             predicate,
+            cache,
         }
     }
 }
@@ -147,12 +157,14 @@ impl Executor for CsvExec {
             Some(predicate) => format!("{}{:?}", self.path, predicate.as_expression()),
             None => self.path.to_string(),
         };
-        let guard = cache.lock().unwrap();
-        // cache hit
-        if let Some(df) = guard.get(&cache_key) {
-            return Ok(df.clone());
+        if self.cache {
+            let guard = cache.lock().unwrap();
+            // cache hit
+            if let Some(df) = guard.get(&cache_key) {
+                return Ok(df.clone());
+            }
+            drop(guard);
         }
-        drop(guard);
 
         // cache miss
         let file = std::fs::File::open(&self.path).unwrap();
@@ -185,8 +197,10 @@ impl Executor for CsvExec {
             None => reader.finish(),
         }?;
 
-        let mut guard = cache.lock().unwrap();
-        guard.insert(cache_key, df.clone());
+        if self.cache {
+            let mut guard = cache.lock().unwrap();
+            guard.insert(cache_key, df.clone());
+        }
 
         Ok(df)
     }

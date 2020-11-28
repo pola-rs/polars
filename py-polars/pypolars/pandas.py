@@ -87,6 +87,7 @@ def scan_csv(
     sep: str = ",",
     skip_rows: int = 0,
     stop_after_n_rows: "Optional[int]" = None,
+    cache: bool = True,
 ) -> "LazyFrame":
     """
     Read into a DataFrame from a csv file.
@@ -105,6 +106,8 @@ def scan_csv(
         Start reading after `skip_rows`.
     stop_after_n_rows
         After n rows are read from the CSV stop reading.
+    cache
+        Cache the result after reading
     """
     return LazyFrame.scan_csv(
         file=file,
@@ -113,12 +116,12 @@ def scan_csv(
         ignore_errors=ignore_errors,
         skip_rows=skip_rows,
         stop_after_n_rows=stop_after_n_rows,
+        cache=cache,
     )
 
 
 def scan_parquet(
-    file: str,
-    stop_after_n_rows: "Optional[int]" = None,
+    file: str, stop_after_n_rows: "Optional[int]" = None, cache: bool = True
 ) -> "LazyFrame":
     """
     Read into a DataFrame from a csv file.
@@ -129,8 +132,9 @@ def scan_parquet(
         Path to a file
     stop_after_n_rows
         After n rows are read from the parquet stops reading.
+    cache
+        Cache the result after reading
     """
     return LazyFrame.scan_parquet(
-        file=file,
-        stop_after_n_rows=stop_after_n_rows,
+        file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
     )

@@ -68,22 +68,22 @@ class LazyFrame:
         sep: str = ",",
         skip_rows: int = 0,
         stop_after_n_rows: "Optional[int]" = None,
+        cache: bool = True,
     ):
 
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = PyLazyFrame.new_from_csv(
-            file, sep, has_headers, ignore_errors, skip_rows, stop_after_n_rows
+            file, sep, has_headers, ignore_errors, skip_rows, stop_after_n_rows, cache
         )
         return self
 
     @staticmethod
     def scan_parquet(
-        file: str,
-        stop_after_n_rows: "Optional[int]" = None,
+        file: str, stop_after_n_rows: "Optional[int]" = None, cache: bool = True
     ):
 
         self = LazyFrame.__new__(LazyFrame)
-        self._ldf = PyLazyFrame.new_from_parquet(file, stop_after_n_rows)
+        self._ldf = PyLazyFrame.new_from_parquet(file, stop_after_n_rows, cache)
         return self
 
     def pipe(self, func: Callable, *args, **kwargs):

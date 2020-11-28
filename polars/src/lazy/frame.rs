@@ -71,6 +71,7 @@ impl LazyFrame {
         ignore_errors: bool,
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
+        cache: bool,
     ) -> Self {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             path,
@@ -79,6 +80,7 @@ impl LazyFrame {
             ignore_errors,
             skip_rows,
             stop_after_n_rows,
+            cache,
         )
         .build()
         .into();
@@ -87,8 +89,8 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>) -> Self {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, stop_after_n_rows)
+    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, stop_after_n_rows, cache)
             .build()
             .into();
         lf.agg_scan_projection = true;
@@ -239,8 +241,8 @@ impl LazyFrame {
     /// fn example(df: DataFrame) -> Result<DataFrame> {
     ///       df.lazy()
     ///         .groupby("foo")
-    ///         .agg(vec!(col("bar").agg_sum(),
-    ///                   col("ham").agg_mean().alias("avg_ham")))
+    ///         .agg(vec!(col("bar").sum(),
+    ///                   col("ham").mean().alias("avg_ham")))
     ///         .collect()
     /// }
     /// ```
@@ -367,9 +369,9 @@ impl LazyFrame {
     ///       df.lazy()
     ///        .groupby("date")
     ///        .agg(vec![
-    ///            col("rain").agg_min(),
-    ///            col("rain").agg_sum(),
-    ///            col("rain").agg_quantile(0.5).alias("median_rain"),
+    ///            col("rain").min(),
+    ///            col("rain").sum(),
+    ///            col("rain").quantile(0.5).alias("median_rain"),
     ///        ])
     ///        .sort("date", false)
     /// }

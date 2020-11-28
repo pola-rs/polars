@@ -51,6 +51,7 @@ impl AggScanProjection {
                 stop_after_n_rows,
                 with_columns,
                 predicate,
+                cache,
             } => {
                 process_with_columns(&path, &with_columns, columns);
                 Ok(CsvScan {
@@ -63,6 +64,7 @@ impl AggScanProjection {
                     stop_after_n_rows,
                     with_columns,
                     predicate,
+                    cache,
                 })
             }
             ParquetScan {
@@ -71,6 +73,7 @@ impl AggScanProjection {
                 with_columns,
                 predicate,
                 stop_after_n_rows,
+                cache,
             } => {
                 process_with_columns(&path, &with_columns, columns);
                 Ok(ParquetScan {
@@ -79,6 +82,7 @@ impl AggScanProjection {
                     with_columns,
                     predicate,
                     stop_after_n_rows,
+                    cache,
                 })
             }
             DataFrameScan { .. } => Ok(logical_plan),
@@ -222,6 +226,7 @@ impl AggScanProjection {
                 predicate,
                 with_columns,
                 stop_after_n_rows,
+                cache,
             } => {
                 let new_with_columns = match columns.get(&path) {
                     Some(agg) => Some(agg.iter().cloned().collect()),
@@ -233,6 +238,7 @@ impl AggScanProjection {
                     with_columns: new_with_columns,
                     predicate,
                     stop_after_n_rows,
+                    cache,
                 };
                 self.finish_rewrite(lp, &path, with_columns, columns)
             }
@@ -246,6 +252,7 @@ impl AggScanProjection {
                 stop_after_n_rows,
                 predicate,
                 with_columns,
+                cache,
             } => {
                 let new_with_columns = match columns.get(&path) {
                     Some(agg) => Some(agg.iter().cloned().collect()),
@@ -261,6 +268,7 @@ impl AggScanProjection {
                     stop_after_n_rows,
                     with_columns: new_with_columns,
                     predicate,
+                    cache,
                 };
                 self.finish_rewrite(lp, &path, with_columns, columns)
             }
