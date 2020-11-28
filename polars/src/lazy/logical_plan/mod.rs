@@ -102,6 +102,7 @@ pub enum LogicalPlan {
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
+        cache: bool,
     },
     ParquetScan {
         path: String,
@@ -109,6 +110,7 @@ pub enum LogicalPlan {
         with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
         stop_after_n_rows: Option<usize>,
+        cache: bool,
     },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     DataFrameScan {
@@ -177,6 +179,7 @@ impl Default for LogicalPlan {
             stop_after_n_rows: None,
             with_columns: None,
             predicate: None,
+            cache: true,
         }
     }
 }
@@ -427,7 +430,7 @@ fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) 
 }
 
 impl LogicalPlanBuilder {
-    pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>) -> Self {
+    pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
         let file = std::fs::File::open(&path).expect("could not open file");
         let schema = ParquetReader::new(file)
             .schema()
@@ -439,6 +442,7 @@ impl LogicalPlanBuilder {
             stop_after_n_rows,
             with_columns: None,
             predicate: None,
+            cache,
         }
         .into()
     }
@@ -450,6 +454,7 @@ impl LogicalPlanBuilder {
         ignore_errors: bool,
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
+        cache: bool,
     ) -> Self {
         let mut file = std::fs::File::open(&path).expect("could not open file");
         let (schema, _) = infer_file_schema(&mut file, delimiter, Some(100), has_header)
@@ -464,6 +469,7 @@ impl LogicalPlanBuilder {
             stop_after_n_rows,
             with_columns: None,
             predicate: None,
+            cache,
         }
         .into()
     }

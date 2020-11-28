@@ -44,6 +44,7 @@ impl PyLazyFrame {
         ignore_errors: bool,
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
+        cache: bool,
     ) -> Self {
         let delimiter = sep.as_bytes()[0];
         LazyFrame::new_from_csv(
@@ -53,13 +54,14 @@ impl PyLazyFrame {
             ignore_errors,
             skip_rows,
             stop_after_n_rows,
+            cache,
         )
         .into()
     }
 
     #[staticmethod]
-    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>) -> Self {
-        LazyFrame::new_from_parquet(path, stop_after_n_rows).into()
+    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
+        LazyFrame::new_from_parquet(path, stop_after_n_rows, cache).into()
     }
 
     pub fn describe_plan(&self) -> String {

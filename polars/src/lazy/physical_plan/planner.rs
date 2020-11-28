@@ -50,6 +50,7 @@ impl DefaultPlanner {
                 stop_after_n_rows,
                 with_columns,
                 predicate,
+                cache,
             } => {
                 let predicate = predicate
                     .map(|pred| self.create_physical_expr(pred, Context::Other))
@@ -64,6 +65,7 @@ impl DefaultPlanner {
                     stop_after_n_rows,
                     with_columns,
                     predicate,
+                    cache,
                 )))
             }
             LogicalPlan::ParquetScan {
@@ -72,6 +74,7 @@ impl DefaultPlanner {
                 with_columns,
                 predicate,
                 stop_after_n_rows,
+                cache,
             } => {
                 let predicate = predicate
                     .map(|pred| self.create_physical_expr(pred, Context::Other))
@@ -82,6 +85,7 @@ impl DefaultPlanner {
                     with_columns,
                     predicate,
                     stop_after_n_rows,
+                    cache,
                 )))
             }
             LogicalPlan::Projection { expr, input, .. } => {

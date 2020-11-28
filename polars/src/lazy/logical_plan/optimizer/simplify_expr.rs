@@ -83,6 +83,7 @@ enum ALogicalPlan {
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
+        cache: bool,
     },
     ParquetScan {
         path: String,
@@ -90,6 +91,7 @@ enum ALogicalPlan {
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
         stop_after_n_rows: Option<usize>,
+        cache: bool,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -254,6 +256,7 @@ fn to_alp(
             stop_after_n_rows,
             with_columns,
             predicate,
+            cache,
         } => ALogicalPlan::CsvScan {
             path,
             schema,
@@ -264,6 +267,7 @@ fn to_alp(
             stop_after_n_rows,
             with_columns,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            cache,
         },
         LogicalPlan::ParquetScan {
             path,
@@ -271,12 +275,14 @@ fn to_alp(
             with_columns,
             predicate,
             stop_after_n_rows,
+            cache,
         } => ALogicalPlan::ParquetScan {
             path,
             schema,
             with_columns,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             stop_after_n_rows,
+            cache,
         },
         LogicalPlan::DataFrameScan {
             df,
@@ -572,6 +578,7 @@ fn node_to_lp(
             stop_after_n_rows,
             with_columns,
             predicate,
+            cache,
         } => LogicalPlan::CsvScan {
             path,
             schema,
@@ -582,6 +589,7 @@ fn node_to_lp(
             stop_after_n_rows,
             with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            cache,
         },
         ALogicalPlan::ParquetScan {
             path,
@@ -589,12 +597,14 @@ fn node_to_lp(
             with_columns,
             predicate,
             stop_after_n_rows,
+            cache,
         } => LogicalPlan::ParquetScan {
             path,
             schema,
             with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
             stop_after_n_rows,
+            cache,
         },
         ALogicalPlan::DataFrameScan {
             df,
