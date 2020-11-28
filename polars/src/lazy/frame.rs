@@ -731,7 +731,7 @@ mod test {
         let new = df
             .lazy()
             .groupby("variety")
-            .agg(vec![col("sepal.width").agg_min()])
+            .agg(vec![col("sepal.width").min()])
             .collect()
             .unwrap();
 
@@ -747,8 +747,8 @@ mod test {
             .lazy()
             .groupby(&["variety"])
             .agg(vec![
-                col("sepal.length").agg_min(),
-                col("petal.length").agg_min().alias("foo"),
+                col("sepal.length").min(),
+                col("petal.length").min().alias("foo"),
             ])
             .select(&[col("foo")])
             // second selection is to test if optimizer can handle that
@@ -781,9 +781,9 @@ mod test {
             .lazy()
             .groupby("date")
             .agg(vec![
-                col("rain").agg_min(),
-                col("rain").agg_sum(),
-                col("rain").agg_quantile(0.5).alias("median_rain"),
+                col("rain").min(),
+                col("rain").sum(),
+                col("rain").quantile(0.5).alias("median_rain"),
             ])
             .sort("date", false);
 
@@ -861,7 +861,7 @@ mod test {
             .left_join(df_b.lazy(), col("b"), col("b"))
             .filter(col("a").lt(lit(2)))
             .groupby("b")
-            .agg(vec![col("b").agg_first(), col("c").agg_first()])
+            .agg(vec![col("b").first(), col("c").first()])
             .select(&[col("b"), col("c_first")])
             .collect()
             .unwrap();
@@ -904,7 +904,7 @@ mod test {
         let new = df
             .lazy()
             .groupby("b")
-            .agg(vec![col("*").agg_sum(), col("*").agg_first()])
+            .agg(vec![col("*").sum(), col("*").first()])
             .collect()
             .unwrap();
         assert_eq!(new.shape(), (3, 6));

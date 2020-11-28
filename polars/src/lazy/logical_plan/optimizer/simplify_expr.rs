@@ -180,20 +180,20 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             expr: to_aexpr(*expr, arena),
             reverse,
         },
-        Expr::AggMin(expr) => AExpr::AggMin(to_aexpr(*expr, arena)),
-        Expr::AggMax(expr) => AExpr::AggMax(to_aexpr(*expr, arena)),
-        Expr::AggMedian(expr) => AExpr::AggMedian(to_aexpr(*expr, arena)),
-        Expr::AggNUnique(expr) => AExpr::AggNUnique(to_aexpr(*expr, arena)),
-        Expr::AggFirst(expr) => AExpr::AggFirst(to_aexpr(*expr, arena)),
-        Expr::AggLast(expr) => AExpr::AggLast(to_aexpr(*expr, arena)),
-        Expr::AggMean(expr) => AExpr::AggMean(to_aexpr(*expr, arena)),
-        Expr::AggList(expr) => AExpr::AggList(to_aexpr(*expr, arena)),
-        Expr::AggCount(expr) => AExpr::AggCount(to_aexpr(*expr, arena)),
-        Expr::AggQuantile { expr, quantile } => AExpr::AggQuantile {
+        Expr::Min(expr) => AExpr::AggMin(to_aexpr(*expr, arena)),
+        Expr::Max(expr) => AExpr::AggMax(to_aexpr(*expr, arena)),
+        Expr::Median(expr) => AExpr::AggMedian(to_aexpr(*expr, arena)),
+        Expr::NUnique(expr) => AExpr::AggNUnique(to_aexpr(*expr, arena)),
+        Expr::First(expr) => AExpr::AggFirst(to_aexpr(*expr, arena)),
+        Expr::Last(expr) => AExpr::AggLast(to_aexpr(*expr, arena)),
+        Expr::Mean(expr) => AExpr::AggMean(to_aexpr(*expr, arena)),
+        Expr::List(expr) => AExpr::AggList(to_aexpr(*expr, arena)),
+        Expr::Count(expr) => AExpr::AggCount(to_aexpr(*expr, arena)),
+        Expr::Quantile { expr, quantile } => AExpr::AggQuantile {
             expr: to_aexpr(*expr, arena),
             quantile,
         },
-        Expr::AggSum(expr) => AExpr::AggSum(to_aexpr(*expr, arena)),
+        Expr::Sum(expr) => AExpr::AggSum(to_aexpr(*expr, arena)),
         Expr::AggGroups(expr) => AExpr::AggGroups(to_aexpr(*expr, arena)),
         Expr::Ternary {
             predicate,
@@ -449,47 +449,47 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
         }
         AExpr::AggMin(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggMin(Box::new(exp))
+            Expr::Min(Box::new(exp))
         }
         AExpr::AggMax(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggMax(Box::new(exp))
+            Expr::Max(Box::new(exp))
         }
 
         AExpr::AggMedian(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggMedian(Box::new(exp))
+            Expr::Median(Box::new(exp))
         }
         AExpr::AggNUnique(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggNUnique(Box::new(exp))
+            Expr::NUnique(Box::new(exp))
         }
         AExpr::AggFirst(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggFirst(Box::new(exp))
+            Expr::First(Box::new(exp))
         }
         AExpr::AggLast(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggLast(Box::new(exp))
+            Expr::Last(Box::new(exp))
         }
         AExpr::AggMean(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggMean(Box::new(exp))
+            Expr::Mean(Box::new(exp))
         }
         AExpr::AggList(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggList(Box::new(exp))
+            Expr::List(Box::new(exp))
         }
         AExpr::AggQuantile { expr, quantile } => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggQuantile {
+            Expr::Quantile {
                 expr: Box::new(exp),
                 quantile,
             }
         }
         AExpr::AggSum(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggSum(Box::new(exp))
+            Expr::Sum(Box::new(exp))
         }
         AExpr::AggGroups(expr) => {
             let exp = node_to_exp(expr, expr_arena);
@@ -531,7 +531,7 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
         }
         AExpr::AggCount(expr) => {
             let exp = node_to_exp(expr, expr_arena);
-            Expr::AggCount(Box::new(exp))
+            Expr::Count(Box::new(exp))
         }
 
         AExpr::Wildcard => Expr::Wildcard,

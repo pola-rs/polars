@@ -68,53 +68,53 @@ impl TypeCoercion {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.sort(reverse))
             }
-            AggMin(expr) => {
+            Min(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_min())
+                Ok(expr.min())
             }
-            AggMax(expr) => {
+            Max(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_max())
+                Ok(expr.max())
             }
-            AggMedian(expr) => {
+            Median(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_median())
+                Ok(expr.median())
             }
-            AggNUnique(expr) => {
+            NUnique(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_n_unique())
+                Ok(expr.n_unique())
             }
-            AggFirst(expr) => {
+            First(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_first())
+                Ok(expr.first())
             }
-            AggLast(expr) => {
+            Last(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_last())
+                Ok(expr.last())
             }
-            AggList(expr) => {
+            List(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_list())
+                Ok(expr.list())
             }
-            AggMean(expr) => {
+            Mean(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_mean())
+                Ok(expr.mean())
             }
-            AggQuantile { expr, quantile } => {
+            Quantile { expr, quantile } => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_quantile(quantile))
+                Ok(expr.quantile(quantile))
             }
-            AggSum(expr) => {
+            Sum(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_sum())
+                Ok(expr.sum())
             }
             AggGroups(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.agg_groups())
             }
-            AggCount(expr) => {
+            Count(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_count())
+                Ok(expr.count())
             }
             Ternary {
                 predicate,

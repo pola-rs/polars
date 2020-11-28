@@ -1,4 +1,5 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
+use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
     expr_to_root_column, expr_to_root_column_expr, expressions_to_root_column_exprs, has_expr,
@@ -165,7 +166,7 @@ impl ProjectionPushDown {
                 if projections_seen == 0 {
                     for expr in expr {
                         // why do we check this?
-                        if expr.to_field(lp.schema()).is_ok() {
+                        if expr.to_field(lp.schema(), Context::Other).is_ok() {
                             local_projection.push(expr);
                         }
                     }
@@ -286,16 +287,9 @@ impl ProjectionPushDown {
                 if !acc_projections.is_empty() {
                     add_to_accumulated(&predicate, &mut acc_projections, &mut names)?;
                 };
-
-                let lp = LogicalPlanBuilder::from(self.push_down(
-                    *input,
-                    acc_projections,
-                    names,
-                    projections_seen,
-                )?)
-                .filter(predicate)
-                .build();
-                Ok(lp)
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
+                Ok(Selection { predicate, input })
             }
             Aggregate {
                 input, keys, aggs, ..
@@ -323,7 +317,9 @@ impl ProjectionPushDown {
                         local_projections.push(col(key));
                     }
                     for agg in &aggs {
-                        local_projections.push(col(agg.to_field(input.schema())?.name()))
+                        local_projections.push(col(agg
+                            .to_field(input.schema(), Context::Aggregation)?
+                            .name()))
                     }
 
                     (acc_projections, local_projections)

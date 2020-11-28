@@ -1,4 +1,5 @@
 use crate::lazy::logical_plan::optimizer::{check_down_node, HASHMAP_SIZE};
+use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{expr_to_root_column, has_expr, rename_expr_root_name};
 use crate::prelude::*;
@@ -312,14 +313,24 @@ impl PredicatePushDown {
 
                     // no else if. predicate can be in both tables.
                     if check_down_node(&predicate, schema_left) {
-                        let name =
-                            Arc::new(predicate.to_field(schema_left).unwrap().name().clone());
+                        let name = Arc::new(
+                            predicate
+                                .to_field(schema_left, Context::Other)
+                                .unwrap()
+                                .name()
+                                .clone(),
+                        );
                         insert_and_combine_predicate(&mut pushdown_left, name, predicate.clone());
                         filter_left = true;
                     }
                     if check_down_node(&predicate, schema_right) {
-                        let name =
-                            Arc::new(predicate.to_field(schema_right).unwrap().name().clone());
+                        let name = Arc::new(
+                            predicate
+                                .to_field(schema_right, Context::Other)
+                                .unwrap()
+                                .name()
+                                .clone(),
+                        );
                         insert_and_combine_predicate(&mut pushdown_right, name, predicate.clone());
                         filter_right = true;
                     }
