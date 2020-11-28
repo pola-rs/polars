@@ -112,9 +112,9 @@
 //!     .lazy()
 //!     .groupby("date")
 //!     .agg(vec![
-//!         col("rain").agg_min(),
-//!         col("rain").agg_sum(),
-//!         col("rain").agg_quantile(0.5).alias("median_rain"),
+//!         col("rain").min(),
+//!         col("rain").sum(),
+//!         col("rain").quantile(0.5).alias("median_rain"),
 //!     ])
 //!     .sort("date", false)
 //!     .collect()
@@ -173,7 +173,7 @@
 //!     )
 //!     .groupby("b")
 //!     .agg(
-//!         vec![col("b").agg_first(), col("c").agg_first()]
+//!         vec![col("b").first(), col("c").first()]
 //!      )
 //!     .select(&[col("b"), col("c_first")])
 //! }
@@ -189,7 +189,7 @@
 //!     df_a.lazy()
 //!     .groupby("b")
 //!     .agg(
-//!         vec![col("*").agg_first()]
+//!         vec![col("*").first()]
 //!      )
 //! }
 //! ```
