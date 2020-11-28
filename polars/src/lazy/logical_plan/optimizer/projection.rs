@@ -1,7 +1,7 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column, expr_to_root_column_expr, expressions_to_root_column_exprs,
+    expr_to_root_column, expr_to_root_column_expr, expressions_to_root_column_exprs, has_expr,
     projected_names, unpack_binary_exprs,
 };
 use crate::prelude::*;
@@ -147,6 +147,7 @@ impl ProjectionPushDown {
         logical_plan: LogicalPlan,
         mut acc_projections: Vec<Expr>,
         mut names: HashSet<Arc<String>, RandomState>,
+        projections_seen: usize,
     ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
         match logical_plan {
@@ -156,15 +157,25 @@ impl ProjectionPushDown {
                 for e in &expr {
                     add_to_accumulated(e, &mut acc_projections, &mut names)?;
                 }
-
-                let (acc_projections, _local_projections, names) =
-                    self.split_acc_projections(acc_projections, input.schema());
-                let lp = self.push_down(*input, acc_projections, names)?;
+                let lp = self.push_down(*input, acc_projections, names, projections_seen + 1)?;
 
                 let mut local_projection = Vec::with_capacity(expr.len());
-                for expr in expr {
-                    if expr.to_field(lp.schema()).is_ok() {
-                        local_projection.push(expr);
+
+                // the projections should all be done locally to keep the same schema order
+                if projections_seen == 0 {
+                    for expr in expr {
+                        // why do we check this?
+                        if expr.to_field(lp.schema()).is_ok() {
+                            local_projection.push(expr);
+                        }
+                    }
+                // only aliases should be projected locally
+                } else {
+                    let dummy = Expr::Alias(Box::new(Expr::Wildcard), Arc::new("".to_string()));
+                    for expr in expr {
+                        if has_expr(&expr, &dummy) {
+                            local_projection.push(expr)
+                        }
                     }
                 }
 
@@ -172,7 +183,7 @@ impl ProjectionPushDown {
                 self.finish_node(local_projection, builder)
             }
             LocalProjection { expr, input, .. } => {
-                let lp = self.push_down(*input, acc_projections, names)?;
+                let lp = self.push_down(*input, acc_projections, names, projections_seen)?;
                 let schema = lp.schema();
                 // projection from a wildcard may be dropped if the schema changes due to the optimization
                 let proj = expr
@@ -246,7 +257,8 @@ impl ProjectionPushDown {
                 by_column,
                 reverse,
             } => {
-                let input = Box::new(self.push_down(*input, acc_projections, names)?);
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
                 Ok(Sort {
                     input,
                     by_column,
@@ -254,7 +266,8 @@ impl ProjectionPushDown {
                 })
             }
             Explode { input, column } => {
-                let input = Box::new(self.push_down(*input, acc_projections, names)?);
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
                 Ok(Explode { input, column })
             }
             Distinct {
@@ -262,7 +275,7 @@ impl ProjectionPushDown {
                 maintain_order,
                 subset,
             } => {
-                let input = self.push_down(*input, acc_projections, names)?;
+                let input = self.push_down(*input, acc_projections, names, projections_seen)?;
                 Ok(Distinct {
                     input: Box::new(input),
                     maintain_order,
@@ -274,10 +287,14 @@ impl ProjectionPushDown {
                     add_to_accumulated(&predicate, &mut acc_projections, &mut names)?;
                 };
 
-                let lp =
-                    LogicalPlanBuilder::from(self.push_down(*input, acc_projections, names)?)
-                        .filter(predicate)
-                        .build();
+                let lp = LogicalPlanBuilder::from(self.push_down(
+                    *input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                )?)
+                .filter(predicate)
+                .build();
                 Ok(lp)
             }
             Aggregate {
@@ -314,7 +331,7 @@ impl ProjectionPushDown {
                     (vec![], vec![])
                 };
 
-                let lp = self.push_down(*input, acc_projections, names)?;
+                let lp = self.push_down(*input, acc_projections, names, projections_seen)?;
                 let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
                 self.finish_node(local_projections, builder)
             }
@@ -407,8 +424,10 @@ impl ProjectionPushDown {
                         }
                     }
                 }
-                let lp_left = self.push_down(*input_left, pushdown_left, names_left)?;
-                let lp_right = self.push_down(*input_right, pushdown_right, names_right)?;
+                let lp_left =
+                    self.push_down(*input_left, pushdown_left, names_left, projections_seen)?;
+                let lp_right =
+                    self.push_down(*input_right, pushdown_right, names_right, projections_seen)?;
                 let builder =
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
                 self.finish_node(local_projection, builder)
@@ -452,9 +471,13 @@ impl ProjectionPushDown {
                 let (acc_projections, _, names) =
                     self.split_acc_projections(acc_projections, input.schema());
 
-                let builder =
-                    LogicalPlanBuilder::from(self.push_down(*input, acc_projections, names)?)
-                        .with_columns(exprs);
+                let builder = LogicalPlanBuilder::from(self.push_down(
+                    *input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                )?)
+                .with_columns(exprs);
                 // locally re-project all columns plus the stacked columns to keep the order of the schema equal
                 self.finish_node(local_renamed_projections, builder)
             }
@@ -464,6 +487,6 @@ impl ProjectionPushDown {
 
 impl Optimize for ProjectionPushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.push_down(logical_plan, init_vec(), init_set())
+        self.push_down(logical_plan, init_vec(), init_set(), 0)
     }
 }
