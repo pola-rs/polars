@@ -221,8 +221,10 @@ impl LazyFrame {
 
     /// Caches the result into a new LazyFrame. This should be used to prevent computations
     /// running multiple times
-    pub fn cache(self) -> Result<LazyFrame> {
-        self.collect().map(|df| df.lazy())
+    pub fn cache(self) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().cache().build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).

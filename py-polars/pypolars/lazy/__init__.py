@@ -143,34 +143,11 @@ class LazyFrame:
 
     def cache(
         self,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
     ) -> "LazyFrame":
         """
-        Run query up to this point and cache the result.
-
-        Parameters
-        ----------
-        type_coercion
-            do type coercion optimization
-        predicate_pushdown
-            do predicate pushdown optimization
-        projection_pushdown
-            do projection pushdown optimization
-        simplify_expression
-            run simplify expressions optimization
-
-        Returns
-        -------
-        LazyFrame
-
+        Cache the result once Physical plan hits this node.
         """
-        ldf = self._ldf.optimization_toggle(
-            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
-        )
-        return wrap_df(ldf.collect()).lazy()
+        return wrap_ldf(self._ldf.cache())
 
     def filter(self, predicate: "Expr") -> "LazyFrame":
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))

@@ -271,6 +271,11 @@ impl ProjectionPushDown {
                     Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
                 Ok(Explode { input, column })
             }
+            Cache { input } => {
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
+                Ok(Cache { input })
+            }
             Distinct {
                 input,
                 maintain_order,

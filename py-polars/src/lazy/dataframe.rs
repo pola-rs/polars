@@ -94,6 +94,10 @@ impl PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.sort(by_column, reverse).into()
     }
+    pub fn cache(&self) -> PyLazyFrame {
+        let ldf = self.ldf.clone();
+        ldf.cache().into()
+    }
 
     pub fn collect(&self) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
