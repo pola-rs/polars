@@ -12,23 +12,21 @@ use std::slice::Iter;
 pub mod par;
 
 // ExactSizeIterator trait implementations for all Iterator structs in this file
+impl<'a, T> ExactSizeIterator for NumIterSingleChunk<'a, T> where T: PolarsNumericType {}
 impl<'a, T> ExactSizeIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
-impl<'a, T> ExactSizeIterator for NumIterSingleChunk<'a, T>
-where
-    T: PolarsNumericType,
-    T::Native: Copy,
-{
-}
 impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
 impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
-impl<'a> ExactSizeIterator for Utf8IterSingleChunkReturnUnwrapped<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterManyChunkReturnUnwrapped<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterSingleChunkReturnOption<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterSingleChunkNullCheckReturnOption<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterManyChunkReturnOption<'a> {}
-impl<'a> ExactSizeIterator for Utf8IterManyChunkNullCheckReturnOption<'a> {}
+impl<'a, T> PolarsIterator for NumIterSingleChunk<'a, T> where T: PolarsNumericType {}
+impl<'a, T> PolarsIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
+impl<'a, T> PolarsIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
+impl<'a, T> PolarsIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
+
+/// A `PolarsIterator` is an iterator over a `ChunkedArray` which contains polars types. A `PolarsIterator`
+/// must implement `ExactSizeIterator` and `DoubleEndedIterator`.
+pub trait PolarsIterator: ExactSizeIterator + DoubleEndedIterator {}
 
 /// Trait for ChunkedArrays that don't have null values.
+/// The result is the most efficient implementation `Iterator`, according to the number of chunks.
 pub trait IntoNoNullIterator {
     type Item;
     type IntoIter: Iterator<Item = Self::Item>;
@@ -36,27 +34,92 @@ pub trait IntoNoNullIterator {
     fn into_no_null_iter(self) -> Self::IntoIter;
 }
 
-impl<'a, T> IntoNoNullIterator for &'a ChunkedArray<T>
+/// Wrapper strunct to convert an iterator of type `T` into one of type `Option<T>`.  It is useful to make the
+/// `IntoIterator` trait, in which every iterator shall return an `Option<T>`.
+struct SomeIterator<I>(I)
+where
+    I: Iterator;
+
+impl<I> Iterator for SomeIterator<I>
+where
+    I: Iterator,
+{
+    type Item = Option<I::Item>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(Some)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl<I> DoubleEndedIterator for SomeIterator<I>
+where
+    I: DoubleEndedIterator,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(Some)
+    }
+}
+
+impl<I> ExactSizeIterator for SomeIterator<I> where I: ExactSizeIterator {}
+impl<I> PolarsIterator for SomeIterator<I> where I: PolarsIterator {}
+
+
+/// Iterator for chunked arrays with just one chunk.
+/// The chunk cannot have null values so it does NOT perform null checks.
+///
+/// The return type is `PolarsNumeriType::Native`.
+pub struct NumIterSingleChunk<'a, T>
+where
+    T: PolarsNumericType,
+{
+    iter: Copied<Iter<'a, T::Native>>,
+}
+
+impl<'a, T> NumIterSingleChunk<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn new(ca: &'a ChunkedArray<T>) -> Self {
+        let chunk = ca.downcast_chunks()[0];
+        let slice = chunk.value_slice(0, chunk.len());
+        let iter = slice.iter().copied();
+
+        NumIterSingleChunk { iter }
+    }
+}
+
+impl<'a, T> Iterator for NumIterSingleChunk<'a, T>
 where
     T: PolarsNumericType,
 {
     type Item = T::Native;
-    type IntoIter = Box<dyn Iterator<Item = Self::Item> + 'a>;
 
-    fn into_no_null_iter(self) -> Self::IntoIter {
-        match self.chunks.len() {
-            1 => Box::new(
-                self.downcast_chunks()[0]
-                    .value_slice(0, self.len())
-                    .iter()
-                    .copied(),
-            ),
-            _ => Box::new(NumIterManyChunk::new(self)),
-        }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
     }
 }
 
-/// Single chunk with null values
+impl<'a, T> DoubleEndedIterator for NumIterSingleChunk<'a, T>
+where
+    T: PolarsNumericType,
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back()
+    }
+}
+
+/// Iterator for chunked arrays with just one chunk.
+/// The chunk have null values so it DOES perform null checks.
+///
+/// The return type is `Option<PolarsNumeriType::Native>`.
 pub struct NumIterSingleChunkNullCheck<'a, T>
 where
     T: PolarsNumericType,
@@ -70,6 +133,15 @@ impl<'a, T> NumIterSingleChunkNullCheck<'a, T>
 where
     T: PolarsNumericType,
 {
+    fn new(ca: &'a ChunkedArray<T>) -> Self {
+        let chunks = ca.downcast_chunks();
+        let arr = chunks[0];
+        let idx = 0;
+        let back_idx = arr.len();
+
+        NumIterSingleChunkNullCheck { arr, idx, back_idx }
+    }
+
     fn return_opt_val(&self, index: usize) -> Option<Option<T::Native>> {
         if self.arr.is_null(index) {
             Some(None)
@@ -89,8 +161,10 @@ where
         if self.idx == self.back_idx {
             None
         } else {
+            let ret = self.return_opt_val(self.idx);
             self.idx += 1;
-            self.return_opt_val(self.idx - 1)
+
+            ret
         }
     }
 
@@ -114,44 +188,10 @@ where
     }
 }
 
-/// Single chunk no null values
-pub struct NumIterSingleChunk<'a, T>
-where
-    T: PolarsNumericType,
-    T::Native: Copy,
-{
-    iter: Copied<Iter<'a, T::Native>>,
-}
-
-impl<'a, T> Iterator for NumIterSingleChunk<'a, T>
-where
-    T: PolarsNumericType,
-    T::Native: Copy,
-{
-    type Item = Option<T::Native>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(Some)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.iter.size_hint()
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for NumIterSingleChunk<'a, T>
-where
-    T: PolarsNumericType,
-    T::Native: Copy,
-{
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back().map(Some)
-    }
-}
-
-/// Many chunks no null checks
-/// Both used as iterator with null checks and without. We later map Some on it for the iter
-/// with null checks
+/// Iterator for chunked arrays with many chunks.
+/// The chunks cannot have null values so it does NOT perform null checks.
+///
+/// The return type is `PolarsNumericType::Native`.
 pub struct NumIterManyChunk<'a, T>
 where
     T: PolarsNumericType,
@@ -290,7 +330,10 @@ where
     }
 }
 
-/// Many chunks with null checks
+/// Iterator for chunked arrays with many chunks.
+/// The chunks have null values so it DOES perform null checks.
+///
+/// The return type is `Option<PolarsNumericType::Native>`.
 pub struct NumIterManyChunkNullCheck<'a, T>
 where
     T: PolarsNumericType,
@@ -341,6 +384,7 @@ where
             );
         }
     }
+
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         let chunks = ca.downcast_chunks();
         let arr_left = chunks[0];
@@ -462,797 +506,91 @@ where
     }
 }
 
-pub enum NumericChunkIterDispatch<'a, T>
-where
-    T: PolarsNumericType,
-{
-    SingleChunk(NumIterSingleChunk<'a, T>),
-    SingleChunkNullCheck(NumIterSingleChunkNullCheck<'a, T>),
-    ManyChunk(NumIterManyChunk<'a, T>),
-    ManyChunkNullCheck(NumIterManyChunkNullCheck<'a, T>),
-}
-
-impl<'a, T> Iterator for NumericChunkIterDispatch<'a, T>
-where
-    T: PolarsNumericType,
-{
-    type Item = Option<T::Native>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            NumericChunkIterDispatch::SingleChunk(a) => a.next(),
-            NumericChunkIterDispatch::SingleChunkNullCheck(a) => a.next(),
-            NumericChunkIterDispatch::ManyChunk(a) => a.next().map(Some),
-            NumericChunkIterDispatch::ManyChunkNullCheck(a) => a.next(),
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        match self {
-            NumericChunkIterDispatch::SingleChunk(a) => a.size_hint(),
-            NumericChunkIterDispatch::SingleChunkNullCheck(a) => a.size_hint(),
-            NumericChunkIterDispatch::ManyChunk(a) => a.size_hint(),
-            NumericChunkIterDispatch::ManyChunkNullCheck(a) => a.size_hint(),
-        }
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for NumericChunkIterDispatch<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn next_back(&mut self) -> Option<Self::Item> {
-        match self {
-            NumericChunkIterDispatch::SingleChunk(a) => a.next_back(),
-            NumericChunkIterDispatch::SingleChunkNullCheck(a) => a.next_back(),
-            NumericChunkIterDispatch::ManyChunk(a) => a.next_back().map(Some),
-            NumericChunkIterDispatch::ManyChunkNullCheck(a) => a.next_back(),
-        }
-    }
-}
-
-impl<'a, T> ExactSizeIterator for NumericChunkIterDispatch<'a, T> where T: PolarsNumericType {}
-
 impl<'a, T> IntoIterator for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     type Item = Option<T::Native>;
-    type IntoIter = NumericChunkIterDispatch<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        match self.cont_slice() {
-            Ok(slice) => {
-                // Compile could not infer T.
-                let a: NumIterSingleChunk<'_, T> = NumIterSingleChunk {
-                    iter: slice.iter().copied(),
-                };
-                NumericChunkIterDispatch::SingleChunk(a)
-            }
-            Err(_) => {
-                let chunks = self.downcast_chunks();
-                match chunks.len() {
-                    1 => {
-                        let arr = chunks[0];
-                        let len = arr.len();
-
-                        NumericChunkIterDispatch::SingleChunkNullCheck(
-                            NumIterSingleChunkNullCheck {
-                                arr,
-                                idx: 0,
-                                back_idx: len,
-                            },
-                        )
-                    }
-                    _ => {
-                        if self.null_count() == 0 {
-                            NumericChunkIterDispatch::ManyChunk(NumIterManyChunk::new(self))
-                        } else {
-                            NumericChunkIterDispatch::ManyChunkNullCheck(
-                                NumIterManyChunkNullCheck::new(self),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Iterator for chunked arrays with just one chunk.
-/// The chunks cannot have null values so it does NOT perform null checks.
-///
-/// The return type is `&'a str` instead of `Option<&'a str>`. So this struct is not return by the IntoIterator trait.
-pub struct Utf8IterSingleChunkReturnUnwrapped<'a> {
-    current_array: &'a StringArray,
-    idx_left: usize,
-    idx_right: usize,
-}
-
-impl<'a> Utf8IterSingleChunkReturnUnwrapped<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        let chunks = ca.downcast_chunks();
-        let current_array = chunks[0];
-        let idx_left = 0;
-        let idx_right = current_array.len();
-
-        Utf8IterSingleChunkReturnUnwrapped {
-            current_array,
-            idx_left,
-            idx_right,
-        }
-    }
-}
-
-impl<'a> Iterator for Utf8IterSingleChunkReturnUnwrapped<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-
-        let v = self.current_array.value(self.idx_left);
-        self.idx_left += 1;
-        Some(v)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.current_array.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8IterSingleChunkReturnUnwrapped<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-        self.idx_right -= 1;
-        Some(self.current_array.value(self.idx_right))
-    }
-}
-
-/// Iterator for chunked arrays with many chunks.
-/// The chunks cannot have null values so it does NOT perform null checks.
-///
-/// The return type is `&'a str` instead of `Option<&'a str>`. So this struct is not return by the IntoIterator trait.
-pub struct Utf8IterManyChunkReturnUnwrapped<'a> {
-    ca: &'a Utf8Chunked,
-    chunks: Vec<&'a StringArray>,
-    current_array_left: &'a StringArray,
-    current_array_right: &'a StringArray,
-    current_array_idx_left: usize,
-    current_array_idx_right: usize,
-    current_array_left_len: usize,
-    idx_left: usize,
-    idx_right: usize,
-    chunk_idx_left: usize,
-    chunk_idx_right: usize,
-}
-
-impl<'a> Utf8IterManyChunkReturnUnwrapped<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        let chunks = ca.downcast_chunks();
-        let current_array_left = chunks[0];
-        let idx_left = 0;
-        let chunk_idx_left = 0;
-        let chunk_idx_right = chunks.len() - 1;
-        let current_array_right = chunks[chunk_idx_right];
-        let idx_right = ca.len();
-        let current_array_idx_left = 0;
-        let current_array_idx_right = current_array_right.len();
-        let current_array_left_len = current_array_left.len();
-
-        Utf8IterManyChunkReturnUnwrapped {
-            ca,
-            chunks,
-            current_array_left,
-            current_array_right,
-            current_array_idx_left,
-            current_array_idx_right,
-            current_array_left_len,
-            idx_left,
-            idx_right,
-            chunk_idx_left,
-            chunk_idx_right,
-        }
-    }
-}
-
-impl<'a> Iterator for Utf8IterManyChunkReturnUnwrapped<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-
-        // return value
-        let ret = self.current_array_left.value(self.current_array_idx_left);
-
-        // increment index pointers
-        self.idx_left += 1;
-        self.current_array_idx_left += 1;
-
-        // we've reached the end of the chunk
-        if self.current_array_idx_left == self.current_array_left_len {
-            // Set a new chunk as current data
-            self.chunk_idx_left += 1;
-
-            // if this evaluates to False, next call will be end of iterator
-            if self.chunk_idx_left < self.chunks.len() {
-                // reset to new array
-                self.current_array_idx_left = 0;
-                self.current_array_left = self.chunks[self.chunk_idx_left];
-                self.current_array_left_len = self.current_array_left.len();
-            }
-        }
-        Some(ret)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.ca.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8IterManyChunkReturnUnwrapped<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-        self.idx_right -= 1;
-        self.current_array_idx_right -= 1;
-
-        let ret = self.current_array_right.value(self.current_array_idx_right);
-
-        // we've reached the end of the chunk from the right
-        if self.current_array_idx_right == 0 && self.idx_right > 0 {
-            // set a new chunk as current data
-            self.chunk_idx_right -= 1;
-            // reset to new array
-            self.current_array_right = self.chunks[self.chunk_idx_right];
-            self.current_array_idx_right = self.current_array_right.len();
-        }
-        Some(ret)
-    }
-}
-
-/// Static dispatching structure to allow static polymorphism of non-nullables chunked iterators.
-///
-/// All the iterators of the dispatcher returns `&'a str` instead of `Option<&'a str>`.
-pub enum Utf8ChunkIterReturnUnwrappedDispatch<'a> {
-    SingleChunk(Utf8IterSingleChunkReturnUnwrapped<'a>),
-    ManyChunk(Utf8IterManyChunkReturnUnwrapped<'a>),
-}
-
-impl<'a> Iterator for Utf8ChunkIterReturnUnwrappedDispatch<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Utf8ChunkIterReturnUnwrappedDispatch::SingleChunk(a) => a.next(),
-            Utf8ChunkIterReturnUnwrappedDispatch::ManyChunk(a) => a.next(),
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        match self {
-            Utf8ChunkIterReturnUnwrappedDispatch::SingleChunk(a) => a.size_hint(),
-            Utf8ChunkIterReturnUnwrappedDispatch::ManyChunk(a) => a.size_hint(),
-        }
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8ChunkIterReturnUnwrappedDispatch<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        match self {
-            Utf8ChunkIterReturnUnwrappedDispatch::SingleChunk(a) => a.next_back(),
-            Utf8ChunkIterReturnUnwrappedDispatch::ManyChunk(a) => a.next_back(),
-        }
-    }
-}
-
-impl<'a> ExactSizeIterator for Utf8ChunkIterReturnUnwrappedDispatch<'a> {}
-
-impl<'a> IntoNoNullIterator for &'a Utf8Chunked {
-    type Item = &'a str;
-    type IntoIter = Utf8ChunkIterReturnUnwrappedDispatch<'a>;
-
-    fn into_no_null_iter(self) -> Self::IntoIter {
-        let chunks = self.downcast_chunks();
-        match chunks.len() {
-            1 => Utf8ChunkIterReturnUnwrappedDispatch::SingleChunk(
-                Utf8IterSingleChunkReturnUnwrapped::new(self),
-            ),
-            _ => Utf8ChunkIterReturnUnwrappedDispatch::ManyChunk(
-                Utf8IterManyChunkReturnUnwrapped::new(self),
-            ),
-        }
-    }
-}
-
-/// Iterator for chunked arrays with just one chunk.
-/// The chunk cannot have null values so it does NOT perform null checks.
-///
-/// The return type is `Option<&'a str>`. This struct is returned by `IntoIterator` trait.
-pub struct Utf8IterSingleChunkReturnOption<'a> {
-    current_array: &'a StringArray,
-    idx_left: usize,
-    idx_right: usize,
-}
-
-impl<'a> Utf8IterSingleChunkReturnOption<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        let chunks = ca.downcast_chunks();
-        let current_array = chunks[0];
-        let idx_left = 0;
-        let idx_right = current_array.len();
-
-        Utf8IterSingleChunkReturnOption {
-            current_array,
-            idx_left,
-            idx_right,
-        }
-    }
-}
-
-impl<'a> Iterator for Utf8IterSingleChunkReturnOption<'a> {
-    type Item = Option<&'a str>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-
-        let v = self.current_array.value(self.idx_left);
-        self.idx_left += 1;
-        Some(Some(v))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.current_array.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8IterSingleChunkReturnOption<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-        self.idx_right -= 1;
-        Some(Some(self.current_array.value(self.idx_right)))
-    }
-}
-
-/// Iterator for chunked arrays with just one chunk.
-/// The chunk have null values so it DOES perform null checks.
-///
-/// The return type is `Option<&'a str>`. This struct is returned by `IntoIterator` trait.
-pub struct Utf8IterSingleChunkNullCheckReturnOption<'a> {
-    current_data: ArrayDataRef,
-    current_array: &'a StringArray,
-    idx_left: usize,
-    idx_right: usize,
-}
-
-impl<'a> Utf8IterSingleChunkNullCheckReturnOption<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        let chunks = ca.downcast_chunks();
-        let current_array = chunks[0];
-        let current_data = current_array.data();
-        let idx_left = 0;
-        let idx_right = current_array.len();
-
-        Utf8IterSingleChunkNullCheckReturnOption {
-            current_data,
-            current_array,
-            idx_left,
-            idx_right,
-        }
-    }
-}
-
-impl<'a> Iterator for Utf8IterSingleChunkNullCheckReturnOption<'a> {
-    type Item = Option<&'a str>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-        let ret;
-        if self.current_data.is_null(self.idx_left) {
-            ret = Some(None)
-        } else {
-            let v = self.current_array.value(self.idx_left);
-            ret = Some(Some(v))
-        }
-        self.idx_left += 1;
-        ret
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.current_array.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8IterSingleChunkNullCheckReturnOption<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-        self.idx_right -= 1;
-        if self.current_data.is_null(self.idx_right) {
-            Some(None)
-        } else {
-            Some(Some(self.current_array.value(self.idx_right)))
-        }
-    }
-}
-
-/// Iterator for chunked arrays with many chunks.
-/// The chunks cannot have null values so it does NOT perform null checks.
-///
-/// The return type is `Option<&'a str>`. This struct is returned by `IntoIterator` trait.
-pub struct Utf8IterManyChunkReturnOption<'a> {
-    ca: &'a Utf8Chunked,
-    chunks: Vec<&'a StringArray>,
-    current_array_left: &'a StringArray,
-    current_array_right: &'a StringArray,
-    current_array_idx_left: usize,
-    current_array_idx_right: usize,
-    current_array_left_len: usize,
-    idx_left: usize,
-    idx_right: usize,
-    chunk_idx_left: usize,
-    chunk_idx_right: usize,
-}
-
-impl<'a> Utf8IterManyChunkReturnOption<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        let chunks = ca.downcast_chunks();
-        let current_array_left = chunks[0];
-        let idx_left = 0;
-        let chunk_idx_left = 0;
-        let chunk_idx_right = chunks.len() - 1;
-        let current_array_right = chunks[chunk_idx_right];
-        let idx_right = ca.len();
-        let current_array_idx_left = 0;
-        let current_array_idx_right = current_array_right.len();
-        let current_array_left_len = current_array_left.len();
-
-        Utf8IterManyChunkReturnOption {
-            ca,
-            chunks,
-            current_array_left,
-            current_array_right,
-            current_array_idx_left,
-            current_array_idx_right,
-            current_array_left_len,
-            idx_left,
-            idx_right,
-            chunk_idx_left,
-            chunk_idx_right,
-        }
-    }
-}
-
-impl<'a> Iterator for Utf8IterManyChunkReturnOption<'a> {
-    type Item = Option<&'a str>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-
-        // return value
-        let ret = self.current_array_left.value(self.current_array_idx_left);
-
-        // increment index pointers
-        self.idx_left += 1;
-        self.current_array_idx_left += 1;
-
-        // we've reached the end of the chunk
-        if self.current_array_idx_left == self.current_array_left_len {
-            // Set a new chunk as current data
-            self.chunk_idx_left += 1;
-
-            // if this evaluates to False, next call will be end of iterator
-            if self.chunk_idx_left < self.chunks.len() {
-                // reset to new array
-                self.current_array_idx_left = 0;
-                self.current_array_left = self.chunks[self.chunk_idx_left];
-                self.current_array_left_len = self.current_array_left.len();
-            }
-        }
-        Some(Some(ret))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.ca.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8IterManyChunkReturnOption<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-        self.idx_right -= 1;
-        self.current_array_idx_right -= 1;
-
-        let ret = self.current_array_right.value(self.current_array_idx_right);
-
-        // we've reached the end of the chunk from the right
-        if self.current_array_idx_right == 0 && self.idx_right > 0 {
-            // set a new chunk as current data
-            self.chunk_idx_right -= 1;
-            // reset to new array
-            self.current_array_right = self.chunks[self.chunk_idx_right];
-            self.current_array_idx_right = self.current_array_right.len();
-        }
-        Some(Some(ret))
-    }
-}
-
-/// Iterator for chunked arrays with many chunks.
-/// The chunks have null values so it DOES perform null checks.
-///
-/// The return type is `Option<&'a str>`. This struct is returned by `IntoIterator` trait.
-pub struct Utf8IterManyChunkNullCheckReturnOption<'a> {
-    ca: &'a Utf8Chunked,
-    chunks: Vec<&'a StringArray>,
-    current_data_left: ArrayDataRef,
-    current_array_left: &'a StringArray,
-    current_data_right: ArrayDataRef,
-    current_array_right: &'a StringArray,
-    current_array_idx_left: usize,
-    current_array_idx_right: usize,
-    current_array_left_len: usize,
-    idx_left: usize,
-    idx_right: usize,
-    chunk_idx_left: usize,
-    chunk_idx_right: usize,
-}
-
-impl<'a> Utf8IterManyChunkNullCheckReturnOption<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        let chunks = ca.downcast_chunks();
-        let current_array_left = chunks[0];
-        let current_data_left = current_array_left.data();
-        let idx_left = 0;
-        let chunk_idx_left = 0;
-        let chunk_idx_right = chunks.len() - 1;
-        let current_array_right = chunks[chunk_idx_right];
-        let current_data_right = current_array_right.data();
-        let idx_right = ca.len();
-        let current_array_idx_left = 0;
-        let current_array_idx_right = current_data_right.len();
-        let current_array_left_len = current_array_left.len();
-
-        Utf8IterManyChunkNullCheckReturnOption {
-            ca,
-            chunks,
-            current_data_left,
-            current_array_left,
-            current_data_right,
-            current_array_right,
-            current_array_idx_left,
-            current_array_idx_right,
-            current_array_left_len,
-            idx_left,
-            idx_right,
-            chunk_idx_left,
-            chunk_idx_right,
-        }
-    }
-}
-
-impl<'a> Iterator for Utf8IterManyChunkNullCheckReturnOption<'a> {
-    type Item = Option<&'a str>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-
-        // return value
-        let ret;
-        if self.current_array_left.is_null(self.current_array_idx_left) {
-            ret = None
-        } else {
-            ret = Some(self.current_array_left.value(self.current_array_idx_left));
-        }
-
-        // increment index pointers
-        self.idx_left += 1;
-        self.current_array_idx_left += 1;
-
-        // we've reached the end of the chunk
-        if self.current_array_idx_left == self.current_array_left_len {
-            // Set a new chunk as current data
-            self.chunk_idx_left += 1;
-
-            // if this evaluates to False, next call will be end of iterator
-            if self.chunk_idx_left < self.chunks.len() {
-                // reset to new array
-                self.current_array_idx_left = 0;
-                self.current_array_left = self.chunks[self.chunk_idx_left];
-                self.current_data_left = self.current_array_left.data();
-                self.current_array_left_len = self.current_array_left.len();
-            }
-        }
-        Some(ret)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.ca.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8IterManyChunkNullCheckReturnOption<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        // end of iterator or meet reversed iterator in the middle
-        if self.idx_left == self.idx_right {
-            return None;
-        }
-        self.idx_right -= 1;
-        self.current_array_idx_right -= 1;
-
-        let ret = if self
-            .current_data_right
-            .is_null(self.current_array_idx_right)
-        {
-            Some(None)
-        } else {
-            Some(Some(
-                self.current_array_right.value(self.current_array_idx_right),
-            ))
-        };
-
-        // we've reached the end of the chunk from the right
-        if self.current_array_idx_right == 0 && self.idx_right > 0 {
-            // set a new chunk as current data
-            self.chunk_idx_right -= 1;
-            // reset to new array
-            self.current_array_right = self.chunks[self.chunk_idx_right];
-            self.current_data_right = self.current_array_right.data();
-            self.current_array_idx_right = self.current_array_right.len();
-        }
-        ret
-    }
-}
-
-/// Static dispatching structure to allow static polymorphism of chunked iterators.
-///
-/// All the iterators of the dispatcher returns `Option<&'a str>`.
-pub enum Utf8ChunkIterReturnOptionDispatch<'a> {
-    SingleChunk(Utf8IterSingleChunkReturnOption<'a>),
-    SingleChunkNullCheck(Utf8IterSingleChunkNullCheckReturnOption<'a>),
-    ManyChunk(Utf8IterManyChunkReturnOption<'a>),
-    ManyChunkNullCheck(Utf8IterManyChunkNullCheckReturnOption<'a>),
-}
-
-impl<'a> Iterator for Utf8ChunkIterReturnOptionDispatch<'a> {
-    type Item = Option<&'a str>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Utf8ChunkIterReturnOptionDispatch::SingleChunk(a) => a.next(),
-            Utf8ChunkIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.next(),
-            Utf8ChunkIterReturnOptionDispatch::ManyChunk(a) => a.next(),
-            Utf8ChunkIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.next(),
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        match self {
-            Utf8ChunkIterReturnOptionDispatch::SingleChunk(a) => a.size_hint(),
-            Utf8ChunkIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.size_hint(),
-            Utf8ChunkIterReturnOptionDispatch::ManyChunk(a) => a.size_hint(),
-            Utf8ChunkIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.size_hint(),
-        }
-    }
-}
-
-impl<'a> DoubleEndedIterator for Utf8ChunkIterReturnOptionDispatch<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        match self {
-            Utf8ChunkIterReturnOptionDispatch::SingleChunk(a) => a.next_back(),
-            Utf8ChunkIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.next_back(),
-            Utf8ChunkIterReturnOptionDispatch::ManyChunk(a) => a.next_back(),
-            Utf8ChunkIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.next_back(),
-        }
-    }
-}
-
-impl<'a> ExactSizeIterator for Utf8ChunkIterReturnOptionDispatch<'a> {}
-
-impl<'a> IntoIterator for &'a Utf8Chunked {
-    type Item = Option<&'a str>;
-    type IntoIter = Utf8ChunkIterReturnOptionDispatch<'a>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         let chunks = self.downcast_chunks();
         match chunks.len() {
             1 => {
                 if self.null_count() == 0 {
-                    Utf8ChunkIterReturnOptionDispatch::SingleChunk(
-                        Utf8IterSingleChunkReturnOption::new(self),
-                    )
+                    Box::new(SomeIterator(NumIterSingleChunk::new(self)))
                 } else {
-                    Utf8ChunkIterReturnOptionDispatch::SingleChunkNullCheck(
-                        Utf8IterSingleChunkNullCheckReturnOption::new(self),
-                    )
+                    Box::new(NumIterSingleChunkNullCheck::new(self))
                 }
             }
             _ => {
                 if self.null_count() == 0 {
-                    Utf8ChunkIterReturnOptionDispatch::ManyChunk(
-                        Utf8IterManyChunkReturnOption::new(self),
-                    )
+                    Box::new(SomeIterator(NumIterManyChunk::new(self)))
                 } else {
-                    Utf8ChunkIterReturnOptionDispatch::ManyChunkNullCheck(
-                        Utf8IterManyChunkNullCheckReturnOption::new(self),
-                    )
+                    Box::new(NumIterManyChunkNullCheck::new(self))
                 }
             }
         }
     }
 }
 
-macro_rules! impl_iterator_traits {
-    ($ca_type:ident, // ChunkedArray type
-     $arrow_array:ident, // Arrow array Type
-     $no_null_iter_struct:ident, // Name of Iterator in case of no null checks and return type is T instead of Option<T>
-     $single_chunk_ident:ident, // Name of Iterator in case of single chunk
-     $single_chunk_null_ident:ident, // Name of Iterator in case of single chunk and nulls
-     $many_chunk_ident:ident, // Name of Iterator in case of many chunks
-     $many_chunk_null_ident:ident, // Name of Iterator in case of many chunks and null
-     $chunkdispatch:ident, // Name of Dispatch struct
-     $iter_item:ty, // Item returned by Iterator e.g. Option<bool>
-     $iter_item_no_null:ty, // Iterm return by Iterator that doesn't do null checks. e.g. bool
-     $return_function: ident, // function that is called upon returning from the iterator with the inner type
-                              // So in case of both Option<T> and T function is called with T
-                              // Fn(method_name: &str, type: T) -> ?
-     ) => {
-        impl<'a> ExactSizeIterator for $single_chunk_ident<'a> {}
-        impl<'a> ExactSizeIterator for $single_chunk_null_ident<'a> {}
-        impl<'a> ExactSizeIterator for $many_chunk_ident<'a> {}
-        impl<'a> ExactSizeIterator for $many_chunk_null_ident<'a> {}
+impl<'a, T> IntoNoNullIterator for &'a ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    type Item = T::Native;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
 
-        /// No null checks and dont return Option<T> but T directly. So this struct is not return by the
-        /// IntoIterator trait
-        pub struct $no_null_iter_struct<'a> {
+    fn into_no_null_iter(self) -> Self::IntoIter {
+        match self.chunks.len() {
+            1 => Box::new(NumIterSingleChunk::new(self)),
+            _ => Box::new(NumIterManyChunk::new(self)),
+        }
+    }
+}
+
+
+/// Creates and implement a iterator for chunked arrays with a single chunks and no null values, so
+/// it iterates over the only chunk without performing null checks. Returns `iter_item`, as elements
+/// cannot be null.
+///
+/// It also implements, for the created iterator, the following traits:
+/// - Iterator
+/// - DoubleEndedIterator
+/// - ExactSizeIterator
+/// - PolarsIterator
+///
+/// # Input
+///
+/// ca_type: The chunked array for which the which the single chunks iterator is implemented.
+/// arrow_array: The arrow type of the chunked array chunks.
+/// iterator_name: The name of the iterator struct to be implemented for a `SingleChunk` iterator.
+/// iter_item: The iterator `Item`, the type which is going to be returned by the iterator.
+/// (Optional) return_function: The function to apply to the each value of the chunked array before returning
+///     the value.
+macro_rules! impl_single_chunk_iterator {
+    ($ca_type:ident, $arrow_array:ident, $iterator_name:ident, $iter_item:ty $(, $return_function:ident)?) => {
+        impl<'a> ExactSizeIterator for $iterator_name<'a> {}
+        impl<'a> PolarsIterator for $iterator_name<'a> {}
+
+        /// Iterator for chunked arrays with just one chunk.
+        /// The chunk cannot have null values so it does NOT perform null checks.
+        ///
+        /// The return type is `$iter_item`.
+        pub struct $iterator_name<'a> {
             current_array: &'a $arrow_array,
             idx_left: usize,
             idx_right: usize,
         }
 
-        impl<'a> $no_null_iter_struct<'a> {
+        impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
                 let chunks = ca.downcast_chunks();
                 let current_array = chunks[0];
                 let idx_left = 0;
                 let idx_right = current_array.len();
 
-                $no_null_iter_struct {
+                Self {
                     current_array,
                     idx_left,
                     idx_right,
@@ -1260,58 +598,7 @@ macro_rules! impl_iterator_traits {
             }
         }
 
-        impl<'a> Iterator for $no_null_iter_struct<'a> {
-            type Item = $iter_item_no_null;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                // end of iterator or meet reversed iterator in the middle
-                if self.idx_left == self.idx_right {
-                    return None;
-                }
-
-                let v = self.current_array.value(self.idx_left);
-                self.idx_left += 1;
-                Some($return_function("next", v))
-            }
-
-            fn size_hint(&self) -> (usize, Option<usize>) {
-                let len = self.current_array.len();
-                (len, Some(len))
-            }
-        }
-
-        impl<'a> IntoNoNullIterator for &'a $ca_type {
-            type Item = $iter_item_no_null;
-            type IntoIter = $no_null_iter_struct<'a>;
-
-            fn into_no_null_iter(self) -> Self::IntoIter {
-                $no_null_iter_struct::new(self)
-            }
-        }
-
-        /// No null checks
-        pub struct $single_chunk_ident<'a> {
-            current_array: &'a $arrow_array,
-            idx_left: usize,
-            idx_right: usize,
-        }
-
-        impl<'a> $single_chunk_ident<'a> {
-            fn new(ca: &'a $ca_type) -> Self {
-                let chunks = ca.downcast_chunks();
-                let current_array = chunks[0];
-                let idx_left = 0;
-                let idx_right = current_array.len();
-
-                $single_chunk_ident {
-                    current_array,
-                    idx_left,
-                    idx_right,
-                }
-            }
-        }
-
-        impl<'a> Iterator for $single_chunk_ident<'a> {
+        impl<'a> Iterator for $iterator_name<'a> {
             type Item = $iter_item;
 
             fn next(&mut self) -> Option<Self::Item> {
@@ -1322,7 +609,14 @@ macro_rules! impl_iterator_traits {
 
                 let v = self.current_array.value(self.idx_left);
                 self.idx_left += 1;
-                Some(Some($return_function("next", v)))
+
+                $(
+                    // If return function is provided, apply the next function to the value.
+                    // The result value will shadow, the `v` variable.
+                    let v = $return_function("next", v);
+                )?
+
+                Some(v)
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -1331,7 +625,7 @@ macro_rules! impl_iterator_traits {
             }
         }
 
-        impl<'a> DoubleEndedIterator for $single_chunk_ident<'a> {
+        impl<'a> DoubleEndedIterator for $iterator_name<'a> {
             fn next_back(&mut self) -> Option<Self::Item> {
                 // end of iterator or meet reversed iterator in the middle
                 if self.idx_left == self.idx_right {
@@ -1339,18 +633,54 @@ macro_rules! impl_iterator_traits {
                 }
                 self.idx_right -= 1;
                 let v = self.current_array.value(self.idx_right);
-                Some(Some($return_function("next_back", v)))
+
+                $(
+                    // If return function is provided, apply the next_back function to the value.
+                    // The result value will shadow, the `v` variable.
+                    let v = $return_function("next_back", v);
+                )?
+
+                Some(v)
             }
         }
+    };
+}
 
-        pub struct $single_chunk_null_ident<'a> {
+/// Creates and implement a iterator for chunked arrays with a single chunks and null values, so
+/// it iterates over the only chunk and performing null checks. Returns `Option<iter_item>`, as elements
+/// can be null.
+///
+/// It also implements, for the created iterator, the following traits:
+/// - Iterator
+/// - DoubleEndedIterator
+/// - ExactSizeIterator
+/// - PolarsIterator
+///
+/// # Input
+///
+/// ca_type: The chunked array for which the which the single chunks with null check iterator is implemented.
+/// arrow_array: The arrow type of the chunked array chunks.
+/// iterator_name: The name of the iterator struct to be implemented for a `SingleChunkNullCheck` iterator.
+/// iter_item: The iterator `Item`, the type which is going to be returned by the iterator.
+/// (Optional) return_function: The function to apply to the each value of the chunked array before returning
+///     the value.
+macro_rules! impl_single_chunk_null_check_iterator {
+    ($ca_type:ident, $arrow_array:ident, $iterator_name:ident, $iter_item:ty $(, $return_function:ident)?) => {
+        impl<'a> ExactSizeIterator for $iterator_name<'a> {}
+        impl<'a> PolarsIterator for $iterator_name<'a> {}
+
+        /// Iterator for chunked arrays with just one chunk.
+        /// The chunk have null values so it DOES perform null checks.
+        ///
+        /// The return type is `Option<$iter_item>`.
+        pub struct $iterator_name<'a> {
             current_data: ArrayDataRef,
             current_array: &'a $arrow_array,
             idx_left: usize,
             idx_right: usize,
         }
 
-        impl<'a> $single_chunk_null_ident<'a> {
+        impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
                 let chunks = ca.downcast_chunks();
                 let current_array = chunks[0];
@@ -1358,7 +688,7 @@ macro_rules! impl_iterator_traits {
                 let idx_left = 0;
                 let idx_right = current_array.len();
 
-                $single_chunk_null_ident {
+                Self {
                     current_data,
                     current_array,
                     idx_left,
@@ -1367,23 +697,29 @@ macro_rules! impl_iterator_traits {
             }
         }
 
-        impl<'a> Iterator for $single_chunk_null_ident<'a> {
-            type Item = $iter_item;
+        impl<'a> Iterator for $iterator_name<'a> {
+            type Item = Option<$iter_item>;
 
             fn next(&mut self) -> Option<Self::Item> {
                 // end of iterator or meet reversed iterator in the middle
                 if self.idx_left == self.idx_right {
                     return None;
                 }
-                let ret;
-                if self.current_data.is_null(self.idx_left) {
-                    ret = None
+                let ret = if self.current_data.is_null(self.idx_left) {
+                    Some(None)
                 } else {
                     let v = self.current_array.value(self.idx_left);
-                    ret = Some($return_function("next", v))
-                }
+
+                    $(
+                        // If return function is provided, apply the next function to the value.
+                        // The result value will shadow, the `v` variable.
+                        let v = $return_function("next", v);
+                    )?
+
+                    Some(Some(v))
+                };
                 self.idx_left += 1;
-                Some(ret)
+                ret
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -1392,7 +728,7 @@ macro_rules! impl_iterator_traits {
             }
         }
 
-        impl<'a> DoubleEndedIterator for $single_chunk_null_ident<'a> {
+        impl<'a> DoubleEndedIterator for $iterator_name<'a> {
             fn next_back(&mut self) -> Option<Self::Item> {
                 // end of iterator or meet reversed iterator in the middle
                 if self.idx_left == self.idx_right {
@@ -1403,13 +739,48 @@ macro_rules! impl_iterator_traits {
                     Some(None)
                 } else {
                     let v = self.current_array.value(self.idx_right);
-                    Some(Some($return_function("next_back", v)))
+
+                    $(
+                        // If return function is provided, apply the next_back function to the value.
+                        // The result value will shadow, the `v` variable.
+                        let v = $return_function("next_back", v);
+                    )?
+
+                    Some(Some(v))
                 }
             }
         }
+    };
+}
 
-        /// Many chunks no nulls
-        pub struct $many_chunk_ident<'a> {
+/// Creates and implement a iterator for chunked arrays with many chunks and no null values, so
+/// it iterates over several chunks without performing null checks. Returns `iter_item`, as elements
+/// cannot be null.
+///
+/// It also implements, for the created iterator, the following traits:
+/// - Iterator
+/// - DoubleEndedIterator
+/// - ExactSizeIterator
+/// - PolarsIterator
+///
+/// # Input
+///
+/// ca_type: The chunked array for which the which the many chunks iterator is implemented.
+/// arrow_array: The arrow type of the chunked array chunks.
+/// iterator_name: The name of the iterator struct to be implemented for a `ManyChunk` iterator.
+/// iter_item: The iterator `Item`, the type which is going to be returned by the iterator.
+/// (Optional) return_function: The function to apply to the each value of the chunked array before returning
+///     the value.
+macro_rules! impl_many_chunk_iterator {
+    ($ca_type:ident, $arrow_array:ident, $iterator_name:ident, $iter_item:ty $(, $return_function:ident)?) => {
+        impl<'a> ExactSizeIterator for $iterator_name<'a> {}
+        impl<'a> PolarsIterator for $iterator_name<'a> {}
+
+        /// Iterator for chunked arrays with many chunks.
+        /// The chunks cannot have null values so it does NOT perform null checks.
+        ///
+        /// The return type is `$iter_item`.
+        pub struct $iterator_name<'a> {
             ca: &'a $ca_type,
             chunks: Vec<&'a $arrow_array>,
             current_array_left: &'a $arrow_array,
@@ -1423,7 +794,7 @@ macro_rules! impl_iterator_traits {
             chunk_idx_right: usize,
         }
 
-        impl<'a> $many_chunk_ident<'a> {
+        impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
                 let chunks = ca.downcast_chunks();
                 let current_array_left = chunks[0];
@@ -1436,7 +807,7 @@ macro_rules! impl_iterator_traits {
                 let current_array_idx_right = current_array_right.len();
                 let current_array_left_len = current_array_left.len();
 
-                $many_chunk_ident {
+                Self {
                     ca,
                     chunks,
                     current_array_left,
@@ -1452,7 +823,7 @@ macro_rules! impl_iterator_traits {
             }
         }
 
-        impl<'a> Iterator for $many_chunk_ident<'a> {
+        impl<'a> Iterator for $iterator_name<'a> {
             type Item = $iter_item;
 
             fn next(&mut self) -> Option<Self::Item> {
@@ -1462,8 +833,7 @@ macro_rules! impl_iterator_traits {
                 }
 
                 // return value
-                let v = self.current_array_left.value(self.current_array_idx_left);
-                let ret = $return_function("next", v);
+                let ret = self.current_array_left.value(self.current_array_idx_left);
 
                 // increment index pointers
                 self.idx_left += 1;
@@ -1482,7 +852,14 @@ macro_rules! impl_iterator_traits {
                         self.current_array_left_len = self.current_array_left.len();
                     }
                 }
-                Some(Some(ret))
+
+                $(
+                    // If return function is provided, apply the next function to the value.
+                    // The result value will shadow, the `ret` variable.
+                    let ret = $return_function("next", ret);
+                )?
+
+                Some(ret)
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -1491,7 +868,7 @@ macro_rules! impl_iterator_traits {
             }
         }
 
-        impl<'a> DoubleEndedIterator for $many_chunk_ident<'a> {
+        impl<'a> DoubleEndedIterator for $iterator_name<'a> {
             fn next_back(&mut self) -> Option<Self::Item> {
                 // end of iterator or meet reversed iterator in the middle
                 if self.idx_left == self.idx_right {
@@ -1510,12 +887,48 @@ macro_rules! impl_iterator_traits {
                     self.current_array_right = self.chunks[self.chunk_idx_right];
                     self.current_array_idx_right = self.current_array_right.len();
                 }
-                Some(Some($return_function("next_back", ret)))
+
+                $(
+                    // If return function is provided, apply the next_back function to the value.
+                    // The result value will shadow, the `ret` variable.
+                    let ret = $return_function("next_back", ret);
+                )?
+
+                Some(ret)
             }
         }
+    };
+}
 
-        /// Many chunks no nulls
-        pub struct $many_chunk_null_ident<'a> {
+/// Creates and implement a iterator for chunked arrays with many chunks and null values, so
+/// it iterates over several chunks and perform null checks. Returns `Option<iter_item>`, as elements
+/// can be null.
+///
+/// It also implements, for the created iterator, the following traits:
+/// - Iterator
+/// - DoubleEndedIterator
+/// - ExactSizeIterator
+/// - PolarsIterator
+///
+/// # Input
+///
+/// ca_type: The chunked array for which the which the many chunks with null check iterator is implemented.
+/// arrow_array: The arrow type of the chunked array chunks.
+/// iterator_name: The name of the iterator struct to be implemented for a `ManyChunkNullCheck` iterator.
+/// iter_item: The iterator `Item`, the type which is going to be returned by the iterator, wrapped
+///     into and `Option`, as null check is performed by this iterator. 
+/// (Optional) return_function: The function to apply to the each value of the chunked array before returning
+///     the value.
+macro_rules! impl_many_chunk_null_check_iterator {
+    ($ca_type:ident, $arrow_array:ident, $iterator_name:ident, $iter_item:ty $(, $return_function:ident)? ) => {
+        impl<'a> ExactSizeIterator for $iterator_name<'a> {}
+        impl<'a> PolarsIterator for $iterator_name<'a> {}
+
+        /// Iterator for chunked arrays with many chunks.
+        /// The chunks have null values so it DOES perform null checks.
+        ///
+        /// The return type is `Option<$iter_item>`.
+        pub struct $iterator_name<'a> {
             ca: &'a $ca_type,
             chunks: Vec<&'a $arrow_array>,
             current_data_left: ArrayDataRef,
@@ -1531,7 +944,7 @@ macro_rules! impl_iterator_traits {
             chunk_idx_right: usize,
         }
 
-        impl<'a> $many_chunk_null_ident<'a> {
+        impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
                 let chunks = ca.downcast_chunks();
                 let current_array_left = chunks[0];
@@ -1546,7 +959,7 @@ macro_rules! impl_iterator_traits {
                 let current_array_idx_right = current_data_right.len();
                 let current_array_left_len = current_array_left.len();
 
-                $many_chunk_null_ident {
+                Self {
                     ca,
                     chunks,
                     current_data_left,
@@ -1564,8 +977,8 @@ macro_rules! impl_iterator_traits {
             }
         }
 
-        impl<'a> Iterator for $many_chunk_null_ident<'a> {
-            type Item = $iter_item;
+        impl<'a> Iterator for $iterator_name<'a> {
+            type Item = Option<$iter_item>;
 
             fn next(&mut self) -> Option<Self::Item> {
                 // end of iterator or meet reversed iterator in the middle
@@ -1579,7 +992,14 @@ macro_rules! impl_iterator_traits {
                     ret = None
                 } else {
                     let v = self.current_array_left.value(self.current_array_idx_left);
-                    ret = Some($return_function("next", v));
+
+                    $(
+                        // If return function is provided, apply the next function to the value.
+                        // The result value will shadow, the `v` variable.
+                        let v = $return_function("next", v);
+                    )?
+
+                    ret = Some(v);
                 }
 
                 // increment index pointers
@@ -1600,6 +1020,7 @@ macro_rules! impl_iterator_traits {
                         self.current_array_left_len = self.current_array_left.len();
                     }
                 }
+
                 Some(ret)
             }
 
@@ -1609,7 +1030,7 @@ macro_rules! impl_iterator_traits {
             }
         }
 
-        impl<'a> DoubleEndedIterator for $many_chunk_null_ident<'a> {
+        impl<'a> DoubleEndedIterator for $iterator_name<'a> {
             fn next_back(&mut self) -> Option<Self::Item> {
                 // end of iterator or meet reversed iterator in the middle
                 if self.idx_left == self.idx_right {
@@ -1625,7 +1046,14 @@ macro_rules! impl_iterator_traits {
                     Some(None)
                 } else {
                     let v = self.current_array_right.value(self.current_array_idx_right);
-                    Some(Some($return_function("next_back", v)))
+
+                    $(
+                        // If return function is provided, apply the next_back function to the value.
+                        // The result value will shadow, the `v` variable.
+                        let v = $return_function("next_back", v);
+                    )?
+
+                    Some(Some(v))
                 };
 
                 // we've reached the end of the chunk from the right
@@ -1640,70 +1068,48 @@ macro_rules! impl_iterator_traits {
                 ret
             }
         }
+    };
+}
 
-        pub enum $chunkdispatch<'a> {
-            SingleChunk($single_chunk_ident<'a>),
-            SingleChunkNullCheck($single_chunk_null_ident<'a>),
-            ManyChunk($many_chunk_ident<'a>),
-            ManyChunkNullCheck($many_chunk_null_ident<'a>),
-        }
-
-        impl<'a> Iterator for $chunkdispatch<'a> {
-            type Item = $iter_item;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                match self {
-                    $chunkdispatch::SingleChunk(a) => a.next(),
-                    $chunkdispatch::SingleChunkNullCheck(a) => a.next(),
-                    $chunkdispatch::ManyChunk(a) => a.next(),
-                    $chunkdispatch::ManyChunkNullCheck(a) => a.next(),
-                }
-            }
-
-            fn size_hint(&self) -> (usize, Option<usize>) {
-                match self {
-                    $chunkdispatch::SingleChunk(a) => a.size_hint(),
-                    $chunkdispatch::SingleChunkNullCheck(a) => a.size_hint(),
-                    $chunkdispatch::ManyChunk(a) => a.size_hint(),
-                    $chunkdispatch::ManyChunkNullCheck(a) => a.size_hint(),
-                }
-            }
-        }
-
-        impl<'a> DoubleEndedIterator for $chunkdispatch<'a> {
-            fn next_back(&mut self) -> Option<Self::Item> {
-                match self {
-                    $chunkdispatch::SingleChunk(a) => a.next_back(),
-                    $chunkdispatch::SingleChunkNullCheck(a) => a.next_back(),
-                    $chunkdispatch::ManyChunk(a) => a.next_back(),
-                    $chunkdispatch::ManyChunkNullCheck(a) => a.next_back(),
-                }
-            }
-        }
-
-        impl<'a> ExactSizeIterator for $chunkdispatch<'a> {}
-
+/// Implement the `IntoIterator` to convert a given chunked array type into a `PolarsIterator`
+/// with null checks.
+///
+/// # Input
+///
+/// ca_type: The chunked array for which the `IntoIterator` trait is implemented.
+/// iter_item: The iterator `Item`, the type which is going to be returned by the iterator, wrapped
+///     into and `Option`, as null check is performed. 
+/// single_chunk_ident: Identifier for the struct representing a single chunk without null
+///     check iterator. Which returns `iter_item`.
+/// single_chunk_null_ident: Identifier for the struct representing a single chunk with null
+///     check iterator. Which returns `Option<iter_item>`.
+/// many_chunk_ident: Identifier for the struct representing a many chunk without null
+///     check iterator. Which returns `iter_item`.
+/// many_chunk_null_ident: Identifier for the struct representing a many chunk with null
+///     check iterator. Which returns `Option<iter_item>`.
+macro_rules! impl_into_polars_iterator {
+    ($ca_type:ident, $iter_item:ty, $single_chunk_ident:ident, $single_chunk_null_ident:ident, $many_chunk_ident:ident, $many_chunk_null_ident:ident) => {
         impl<'a> IntoIterator for &'a $ca_type {
-            type Item = $iter_item;
-            type IntoIter = $chunkdispatch<'a>;
+            type Item = Option<$iter_item>;
+            type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
 
+            /// Decides which iterator fits best the current chunked array. The decision are based
+            /// on the number of chunks and the existence of null values.
             fn into_iter(self) -> Self::IntoIter {
                 let chunks = self.downcast_chunks();
                 match chunks.len() {
                     1 => {
                         if self.null_count() == 0 {
-                            $chunkdispatch::SingleChunk($single_chunk_ident::new(self))
+                            Box::new(SomeIterator($single_chunk_ident::new(self)))
                         } else {
-                            $chunkdispatch::SingleChunkNullCheck($single_chunk_null_ident::new(
-                                self,
-                            ))
+                            Box::new($single_chunk_null_ident::new(self))
                         }
                     }
                     _ => {
                         if self.null_count() == 0 {
-                            $chunkdispatch::ManyChunk($many_chunk_ident::new(self))
+                            Box::new(SomeIterator($many_chunk_ident::new(self)))
                         } else {
-                            $chunkdispatch::ManyChunkNullCheck($many_chunk_null_ident::new(self))
+                            Box::new($many_chunk_null_ident::new(self))
                         }
                     }
                 }
@@ -1712,23 +1118,140 @@ macro_rules! impl_iterator_traits {
     };
 }
 
-// Used for macro. method_name is ignored
-fn return_from_bool_iter(_method_name: &str, v: bool) -> bool {
-    v
+/// Implement the `IntoNoNullIterator` to convert a given chunked array type into a `PolarsIterator`
+/// without null checks.
+///
+/// # Input
+///
+/// ca_type: The chunked array for which the `IntoNoNull` trait is implemented.
+/// iter_item: The iterator `Item`, the type which is going to be returned by the iterator.
+///     The return type is not wrapped into `Option` as the chunked array shall not have
+///     null values.
+/// single_chunk_ident: Identifier for the struct representing a single chunk without null
+///     check iterator. Which returns `iter_item`.
+/// many_chunk_ident: Identifier for the struct representing a many chunk without null
+///     check iterator. Which returns `iter_item`.
+macro_rules! impl_into_no_null_polars_iterator {
+    ($ca_type:ident, $iter_item:ty, $single_chunk_ident:ident, $many_chunk_ident:ident) => {
+        impl<'a> IntoNoNullIterator for &'a $ca_type {
+            type Item = $iter_item;
+            type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+
+            /// Decides which iterator fits best the current no null chunked array. The decision are based
+            /// on the number of chunks.
+            fn into_no_null_iter(self) -> Self::IntoIter {
+                match self.chunks.len() {
+                    1 => Box::new($single_chunk_ident::new(self)),
+                    _ => Box::new($many_chunk_ident::new(self)),
+                }
+            }
+        }
+    };
 }
 
-impl_iterator_traits!(
+/// Generates all the iterators and implements its traits. Also implement the `IntoIterator` and `IntoNoNullIterator`.
+/// - SingleChunkIterator
+/// - SingleChunkIteratorNullCheck
+/// - ManyChunkIterator
+/// - ManyChunkIteratorNullCheck
+/// - IntoIterator
+/// - IntoNoNullIterator
+///
+/// # Input
+///
+/// ca_type: The chunked array for which the iterators are implemented. The `IntoIterator` and `IntoNoNullIterator`
+///     traits are going to be implemented for this chunked array.
+/// arrow_array: The arrow type of the chunked array chunks.
+/// single_chunk_ident: The name of the `SingleChunkIterator` to create.
+/// single_chunk_null_ident: The name of the `SingleChunkIteratorNullCheck` iterator to create.
+/// many_chunk_ident: The name of the `ManyChunkIterator` to create.
+/// many_chunk_null_ident: The name of the `ManyChunkIteratorNullCheck` iterator to create.
+/// iter_item: The iterator item. `NullCheck` iterators and `IntoIterator` will wrap this iter into an `Option`.
+/// (Optional) return_function: The function to apply to the each value of the chunked array before returning
+///     the value.
+macro_rules! impl_all_iterators {
+    ($ca_type:ident,
+     $arrow_array:ident,
+     $single_chunk_ident:ident,
+     $single_chunk_null_ident:ident,
+     $many_chunk_ident:ident,
+     $many_chunk_null_ident:ident,
+     $iter_item:ty
+     $(, $return_function: ident )?
+    ) => {
+        // Generate single chunk iterator.
+        impl_single_chunk_iterator!(
+            $ca_type,
+            $arrow_array,
+            $single_chunk_ident,
+            $iter_item
+            $(, $return_function )? // Optional argument, only used if provided
+        );
+
+        // Generate single chunk iterator with null checks.
+        impl_single_chunk_null_check_iterator!(
+            $ca_type,
+            $arrow_array,
+            $single_chunk_null_ident,
+            $iter_item
+            $(, $return_function )? // Optional argument, only used if provided
+        );
+
+        // Generate many chunk iterator.
+        impl_many_chunk_iterator!(
+            $ca_type,
+            $arrow_array,
+            $many_chunk_ident,
+            $iter_item
+            $(, $return_function )? // Optional argument, only used if provided
+        );
+
+        // Generate many chunk iterator with null checks.
+        impl_many_chunk_null_check_iterator!(
+            $ca_type,
+            $arrow_array,
+            $many_chunk_null_ident,
+            $iter_item
+            $(, $return_function )? // Optional argument, only used if provided
+        );
+
+        // Generate into iterator function.
+        impl_into_polars_iterator!(
+            $ca_type,
+            $iter_item,
+            $single_chunk_ident,
+            $single_chunk_null_ident,
+            $many_chunk_ident,
+            $many_chunk_null_ident
+        );
+
+        // Generate into no null iterator function.
+        impl_into_no_null_polars_iterator!(
+            $ca_type,
+            $iter_item,
+            $single_chunk_ident,
+            $many_chunk_ident
+        );
+    }
+}
+
+impl_all_iterators!(
+    Utf8Chunked,
+    StringArray,
+    Utf8IterSingleChunk,
+    Utf8IterSingleChunkNullCheck,
+    Utf8IterManyChunk,
+    Utf8IterManyChunkNullCheck,
+    &'a str
+);
+impl_all_iterators!(
     BooleanChunked,
     BooleanArray,
-    BooleanIterCont,
     BooleanIterSingleChunk,
     BooleanIterSingleChunkNullCheck,
     BooleanIterManyChunk,
     BooleanIterManyChunkNullCheck,
-    BooleanIterDispatch,
-    Option<bool>,
-    bool,
-    return_from_bool_iter,
+    bool
 );
 
 // used for macro
@@ -1736,18 +1259,15 @@ fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
     (method_name, v).into()
 }
 
-impl_iterator_traits!(
+impl_all_iterators!(
     ListChunked,
     ListArray,
-    ListIterCont,
     ListIterSingleChunk,
     ListIterSingleChunkNullCheck,
     ListIterManyChunk,
     ListIterManyChunkNullCheck,
-    ListIterDispatch,
-    Option<Series>,
     Series,
-    return_from_list_iter,
+    return_from_list_iter
 );
 
 #[cfg(test)]
