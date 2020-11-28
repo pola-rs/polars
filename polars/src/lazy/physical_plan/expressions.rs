@@ -471,23 +471,28 @@ impl AggPhysicalExpr for AggQuantileExpr {
 }
 
 pub struct CastExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    input: Arc<dyn PhysicalExpr>,
     data_type: ArrowDataType,
+    expr: Expr,
 }
 
 impl CastExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, data_type: ArrowDataType) -> Self {
-        Self { expr, data_type }
+    pub fn new(input: Arc<dyn PhysicalExpr>, data_type: ArrowDataType, expr: Expr) -> Self {
+        Self {
+            input,
+            data_type,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for CastExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.expr.evaluate(df)?;
+        let series = self.input.evaluate(df)?;
         series.cast_with_arrow_datatype(&self.data_type)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.expr.to_field(input_schema)
+        self.input.to_field(input_schema)
     }
 }
 
@@ -495,9 +500,13 @@ pub struct TernaryExpr {
     pub predicate: Arc<dyn PhysicalExpr>,
     pub truthy: Arc<dyn PhysicalExpr>,
     pub falsy: Arc<dyn PhysicalExpr>,
+    pub expr: Expr,
 }
 
 impl PhysicalExpr for TernaryExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let mask_series = self.predicate.evaluate(df)?;
         let mask = mask_series.bool()?;
@@ -514,6 +523,7 @@ pub struct ApplyExpr {
     pub input: Arc<dyn PhysicalExpr>,
     pub function: Arc<dyn Udf>,
     pub output_type: Option<ArrowDataType>,
+    pub expr: Expr,
 }
 
 impl ApplyExpr {
@@ -521,16 +531,22 @@ impl ApplyExpr {
         input: Arc<dyn PhysicalExpr>,
         function: Arc<dyn Udf>,
         output_type: Option<ArrowDataType>,
+        expr: Expr,
     ) -> Self {
         ApplyExpr {
             input,
             function,
             output_type,
+            expr,
         }
     }
 }
 
 impl PhysicalExpr for ApplyExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let input = self.input.evaluate(df)?;
         let in_name = input.name().to_string();
