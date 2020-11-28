@@ -135,6 +135,15 @@ enum ALogicalPlan {
         subset: Arc<Option<Vec<String>>>,
     },
 }
+
+impl Default for ALogicalPlan {
+    fn default() -> Self {
+        ALogicalPlan::Selection {
+            input: Node(0),
+            predicate: Node(0),
+        }
+    }
+}
 // converts expression to AExpr, which uses an arena (Vec) for allocation
 fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
@@ -525,15 +534,15 @@ fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 fn node_to_lp(
     node: Node,
     expr_arena: &Arena<AExpr>,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<ALogicalPlan>,
 ) -> LogicalPlan {
-    // todo! get node by value?
-    let lp = lp_arena.get(node);
+    let lp = lp_arena.get_mut(node);
+    let lp = std::mem::take(lp);
 
     match lp {
         ALogicalPlan::Selection { input, predicate } => {
-            let lp = node_to_lp(*input, expr_arena, lp_arena);
-            let p = node_to_exp(*predicate, expr_arena);
+            let lp = node_to_lp(input, expr_arena, lp_arena);
+            let p = node_to_exp(predicate, expr_arena);
             LogicalPlan::Selection {
                 input: Box::new(lp),
                 predicate: p,
@@ -550,14 +559,14 @@ fn node_to_lp(
             with_columns,
             predicate,
         } => LogicalPlan::CsvScan {
-            path: path.clone(),
-            schema: schema.clone(),
-            has_header: *has_header,
-            delimiter: *delimiter,
-            ignore_errors: *ignore_errors,
-            skip_rows: *skip_rows,
-            stop_after_n_rows: *stop_after_n_rows,
-            with_columns: with_columns.clone(),
+            path,
+            schema,
+            has_header,
+            delimiter,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+            with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
         },
         ALogicalPlan::ParquetScan {
@@ -567,11 +576,11 @@ fn node_to_lp(
             predicate,
             stop_after_n_rows,
         } => LogicalPlan::ParquetScan {
-            path: path.clone(),
-            schema: schema.clone(),
-            with_columns: with_columns.clone(),
+            path,
+            schema,
+            with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
-            stop_after_n_rows: *stop_after_n_rows,
+            stop_after_n_rows,
         },
         ALogicalPlan::DataFrameScan {
             df,
@@ -579,8 +588,8 @@ fn node_to_lp(
             projection,
             selection,
         } => LogicalPlan::DataFrameScan {
-            df: df.clone(),
-            schema: schema.clone(),
+            df,
+            schema,
             projection: projection
                 .as_ref()
                 .map(|nodes| nodes.iter().map(|n| node_to_exp(*n, expr_arena)).collect()),
@@ -592,12 +601,12 @@ fn node_to_lp(
             schema,
         } => {
             let exprs = expr.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
-            let i = node_to_lp(*input, expr_arena, lp_arena);
+            let i = node_to_lp(input, expr_arena, lp_arena);
 
             LogicalPlan::Projection {
                 expr: exprs,
                 input: Box::new(i),
-                schema: schema.clone(),
+                schema,
             }
         }
         ALogicalPlan::LocalProjection {
@@ -606,12 +615,12 @@ fn node_to_lp(
             schema,
         } => {
             let exprs = expr.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
-            let i = node_to_lp(*input, expr_arena, lp_arena);
+            let i = node_to_lp(input, expr_arena, lp_arena);
 
             LogicalPlan::LocalProjection {
                 expr: exprs,
                 input: Box::new(i),
-                schema: schema.clone(),
+                schema,
             }
         }
         ALogicalPlan::Sort {
@@ -619,19 +628,16 @@ fn node_to_lp(
             by_column,
             reverse,
         } => {
-            let input = Box::new(node_to_lp(*input, expr_arena, lp_arena));
+            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
             LogicalPlan::Sort {
                 input,
-                by_column: by_column.clone(),
-                reverse: *reverse,
+                by_column,
+                reverse,
             }
         }
         ALogicalPlan::Explode { input, column } => {
-            let input = Box::new(node_to_lp(*input, expr_arena, lp_arena));
-            LogicalPlan::Explode {
-                input,
-                column: column.clone(),
-            }
+            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
+            LogicalPlan::Explode { input, column }
         }
         ALogicalPlan::Aggregate {
             input,
@@ -639,14 +645,14 @@ fn node_to_lp(
             aggs,
             schema,
         } => {
-            let i = node_to_lp(*input, expr_arena, lp_arena);
+            let i = node_to_lp(input, expr_arena, lp_arena);
             let a = aggs.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
 
             LogicalPlan::Aggregate {
                 input: Box::new(i),
-                keys: keys.clone(),
+                keys,
                 aggs: a,
-                schema: schema.clone(),
+                schema,
             }
         }
         ALogicalPlan::Join {
@@ -657,17 +663,17 @@ fn node_to_lp(
             left_on,
             right_on,
         } => {
-            let i_l = node_to_lp(*input_left, expr_arena, lp_arena);
-            let i_r = node_to_lp(*input_right, expr_arena, lp_arena);
+            let i_l = node_to_lp(input_left, expr_arena, lp_arena);
+            let i_r = node_to_lp(input_right, expr_arena, lp_arena);
 
-            let l_on = node_to_exp(*left_on, expr_arena);
-            let r_on = node_to_exp(*right_on, expr_arena);
+            let l_on = node_to_exp(left_on, expr_arena);
+            let r_on = node_to_exp(right_on, expr_arena);
 
             LogicalPlan::Join {
                 input_left: Box::new(i_l),
                 input_right: Box::new(i_r),
-                schema: schema.clone(),
-                how: *how,
+                schema,
+                how,
                 left_on: l_on,
                 right_on: r_on,
             }
@@ -677,13 +683,13 @@ fn node_to_lp(
             exprs,
             schema,
         } => {
-            let i = node_to_lp(*input, expr_arena, lp_arena);
+            let i = node_to_lp(input, expr_arena, lp_arena);
             let e = exprs.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
 
             LogicalPlan::HStack {
                 input: Box::new(i),
                 exprs: e,
-                schema: schema.clone(),
+                schema,
             }
         }
         ALogicalPlan::Distinct {
@@ -691,11 +697,11 @@ fn node_to_lp(
             maintain_order,
             subset,
         } => {
-            let i = node_to_lp(*input, expr_arena, lp_arena);
+            let i = node_to_lp(input, expr_arena, lp_arena);
             LogicalPlan::Distinct {
                 input: Box::new(i),
-                maintain_order: *maintain_order,
-                subset: subset.clone(),
+                maintain_order,
+                subset,
             }
         }
     }
@@ -1102,7 +1108,7 @@ impl SimplifyOptimizer {
             }
         }
 
-        node_to_lp(lp_top, &expr_arena, &lp_arena)
+        node_to_lp(lp_top, &expr_arena, &mut lp_arena)
     }
 }
 
