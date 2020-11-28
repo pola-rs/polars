@@ -98,3 +98,4 @@ Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).
     If the number of columns exceeds this it will run in parallel
 * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames
 * `POLARS_FMT_MAX_ROW` -> maximum number of rows shown when formatting DataFrames
+* `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting

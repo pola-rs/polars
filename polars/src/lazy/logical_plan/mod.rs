@@ -372,10 +372,6 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
-    if exprs.len() == 1 && exprs[0] == Expr::Wildcard {
-        // no projection needed
-        return vec![];
-    };
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
     for expr in exprs {
         if let Ok(Expr::Wildcard) = expr_to_root_column_expr(&expr) {

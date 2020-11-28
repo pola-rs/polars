@@ -2,8 +2,7 @@ use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column, expr_to_root_column_expr, expressions_to_root_column_exprs, has_expr,
-    projected_names, unpack_binary_exprs,
+    expr_to_root_column, expr_to_root_column_expr, has_expr, projected_names, unpack_binary_exprs,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -303,42 +302,24 @@ impl ProjectionPushDown {
             Aggregate {
                 input, keys, aggs, ..
             } => {
-                let (acc_projections, local_projections) = if !acc_projections.is_empty() {
-                    // todo! remove unnecessary vec alloc.
-                    let (mut acc_projections, _local_projections, mut names) =
-                        self.split_acc_projections(acc_projections, input.schema());
+                dbg!(&aggs);
+                // todo! remove unnecessary vec alloc.
+                let (mut acc_projections, _local_projections, mut names) =
+                    self.split_acc_projections(acc_projections, input.schema());
 
-                    // add the columns used in the aggregations to the projection
-                    // todo! remove aggregations that aren't selected?
-                    let root_projections = expressions_to_root_column_exprs(&aggs)?;
+                // add the columns used in the aggregations to the projection
+                for agg in &aggs {
+                    add_to_accumulated(agg, &mut acc_projections, &mut names)?;
+                }
 
-                    for proj in root_projections {
-                        add_to_accumulated(&proj, &mut acc_projections, &mut names)?;
-                    }
-
-                    // todo! maybe we need this later if an uptree udf needs a column?
-                    // create local projections. This is the key plus the aggregations
-                    let mut local_projections = Vec::with_capacity(aggs.len() + keys.len());
-
-                    // make sure the keys are projected
-                    for key in &*keys {
-                        add_to_accumulated(&col(key), &mut acc_projections, &mut names)?;
-                        local_projections.push(col(key));
-                    }
-                    for agg in &aggs {
-                        local_projections.push(col(agg
-                            .to_field(input.schema(), Context::Aggregation)?
-                            .name()))
-                    }
-
-                    (acc_projections, local_projections)
-                } else {
-                    (vec![], vec![])
-                };
+                // make sure the keys are projected
+                for key in &*keys {
+                    add_to_accumulated(&col(key), &mut acc_projections, &mut names)?;
+                }
 
                 let lp = self.push_down(*input, acc_projections, names, projections_seen)?;
                 let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
-                self.finish_node(local_projections, builder)
+                Ok(builder.build())
             }
             Join {
                 input_left,
