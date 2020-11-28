@@ -215,6 +215,10 @@ impl TypeCoercion {
                 let input = Box::new(self.coerce(*input)?);
                 Ok(Explode { input, column })
             }
+            Cache { input } => {
+                let input = Box::new(self.coerce(*input)?);
+                Ok(Cache { input })
+            }
             Distinct {
                 input,
                 maintain_order,

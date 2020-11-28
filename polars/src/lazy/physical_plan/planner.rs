@@ -1,7 +1,9 @@
 use crate::frame::group_by::GroupByMethod;
 use crate::lazy::logical_plan::{Context, DataFrameOperation};
-use crate::lazy::physical_plan::executors::{JoinExec, ParquetExec, StackExec};
+use crate::lazy::physical_plan::executors::{CacheExec, JoinExec, ParquetExec, StackExec};
 use crate::{lazy::prelude::*, prelude::*};
+use ahash::RandomState;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub struct DefaultPlanner {}
@@ -119,6 +121,21 @@ impl DefaultPlanner {
                 let input = self.create_initial_physical_plan(*input)?;
                 let operation = DataFrameOperation::Explode(column);
                 Ok(Box::new(DataFrameOpsExec::new(input, operation)))
+            }
+            LogicalPlan::Cache { input } => {
+                let fields = input.schema().fields();
+                // todo! fix the unique constraint in the schema. Probably in projection pushdown at joins
+                let mut unique =
+                    HashSet::with_capacity_and_hasher(fields.len(), RandomState::default());
+                // assumption of 80 characters per column name
+                let mut key = String::with_capacity(fields.len() * 80);
+                for field in fields {
+                    if unique.insert(field.name()) {
+                        key.push_str(field.name())
+                    }
+                }
+                let input = self.create_initial_physical_plan(*input)?;
+                Ok(Box::new(CacheExec { input, key }))
             }
             LogicalPlan::Distinct {
                 input,

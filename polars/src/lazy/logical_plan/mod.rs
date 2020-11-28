@@ -89,6 +89,9 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         predicate: Expr,
     },
+    Cache {
+        input: Box<LogicalPlan>,
+    },
     CsvScan {
         path: String,
         schema: Schema,
@@ -182,6 +185,7 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
+            Cache { input } => write!(f, "CACHE {:?}", input),
             ParquetScan {
                 path,
                 schema,
@@ -390,6 +394,7 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &Schema {
         use LogicalPlan::*;
         match self {
+            Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
             Explode { input, .. } => input.schema(),
             ParquetScan { schema, .. } => schema,
@@ -459,6 +464,13 @@ impl LogicalPlanBuilder {
             stop_after_n_rows,
             with_columns: None,
             predicate: None,
+        }
+        .into()
+    }
+
+    pub fn cache(self) -> Self {
+        LogicalPlan::Cache {
+            input: Box::new(self.0),
         }
         .into()
     }

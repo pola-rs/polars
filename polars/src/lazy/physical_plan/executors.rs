@@ -5,6 +5,32 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::mem;
 
+pub struct CacheExec {
+    pub key: String,
+    pub input: Box<dyn Executor>,
+}
+
+impl Executor for CacheExec {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let guard = cache.lock().unwrap();
+
+        // cache hit
+        if let Some(df) = guard.get(&self.key) {
+            return Ok(df.clone());
+        }
+        drop(guard);
+
+        // cache miss
+        let df = self.input.execute(cache)?;
+
+        let mut guard = cache.lock().unwrap();
+        let key = std::mem::take(&mut self.key);
+        guard.insert(key, df.clone());
+
+        Ok(df)
+    }
+}
+
 pub struct ParquetExec {
     path: String,
     schema: Schema,

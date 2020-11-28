@@ -116,6 +116,9 @@ enum ALogicalPlan {
         input: Node,
         column: String,
     },
+    Cache {
+        input: Node,
+    },
     Aggregate {
         input: Node,
         keys: Arc<Vec<String>>,
@@ -328,6 +331,10 @@ fn to_alp(
         LogicalPlan::Explode { input, column } => {
             let input = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::Explode { input, column }
+        }
+        LogicalPlan::Cache { input } => {
+            let input = to_alp(*input, expr_arena, lp_arena);
+            ALogicalPlan::Cache { input }
         }
         LogicalPlan::Aggregate {
             input,
@@ -645,6 +652,10 @@ fn node_to_lp(
         ALogicalPlan::Explode { input, column } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
             LogicalPlan::Explode { input, column }
+        }
+        ALogicalPlan::Cache { input } => {
+            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
+            LogicalPlan::Cache { input }
         }
         ALogicalPlan::Aggregate {
             input,
@@ -977,6 +988,9 @@ impl SimplifyOptimizer {
                         plans.push(*input);
                     }
                     ALogicalPlan::Explode { input, .. } => {
+                        plans.push(*input);
+                    }
+                    ALogicalPlan::Cache { input } => {
                         plans.push(*input);
                     }
                     ALogicalPlan::Aggregate { input, aggs, .. } => {

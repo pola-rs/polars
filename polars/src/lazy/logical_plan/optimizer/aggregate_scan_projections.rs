@@ -37,6 +37,10 @@ impl AggScanProjection {
                 let input = Box::new(self.agg_projection(*input, columns)?);
                 Ok(Selection { input, predicate })
             }
+            Cache { input } => {
+                let input = Box::new(self.agg_projection(*input, columns)?);
+                Ok(Cache { input })
+            }
             CsvScan {
                 path,
                 schema,
@@ -204,6 +208,10 @@ impl AggScanProjection {
     ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
         match logical_plan {
+            Cache { input } => {
+                let input = Box::new(self.rewrite_plan(*input, columns)?);
+                Ok(Cache { input })
+            }
             Selection { input, predicate } => {
                 let input = Box::new(self.rewrite_plan(*input, columns)?);
                 Ok(Selection { input, predicate })

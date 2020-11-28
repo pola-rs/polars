@@ -236,6 +236,10 @@ impl PredicatePushDown {
                 let input = Box::new(self.push_down(*input, acc_predicates)?);
                 Ok(Explode { input, column })
             }
+            Cache { input } => {
+                let input = Box::new(self.push_down(*input, acc_predicates)?);
+                Ok(Cache { input })
+            }
             Distinct {
                 input,
                 subset,
