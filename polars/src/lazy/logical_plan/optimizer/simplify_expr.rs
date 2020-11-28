@@ -101,9 +101,14 @@ enum ALogicalPlan {
         input: Node,
         schema: Schema,
     },
-    DataFrameOp {
+    Sort {
         input: Node,
-        operation: DataFrameOperation,
+        by_column: String,
+        reverse: bool,
+    },
+    Explode {
+        input: Node,
+        column: String,
     },
     Aggregate {
         input: Node,
@@ -293,12 +298,21 @@ fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::DataFrameOp { input, operation } => {
-            let i = to_alp(*input, expr_arena, lp_arena);
-            ALogicalPlan::DataFrameOp {
-                input: i,
-                operation,
+        LogicalPlan::Sort {
+            input,
+            by_column,
+            reverse,
+        } => {
+            let input = to_alp(*input, expr_arena, lp_arena);
+            ALogicalPlan::Sort {
+                input,
+                by_column,
+                reverse,
             }
+        }
+        LogicalPlan::Explode { input, column } => {
+            let input = to_alp(*input, expr_arena, lp_arena);
+            ALogicalPlan::Explode { input, column }
         }
         LogicalPlan::Aggregate {
             input,
@@ -600,12 +614,23 @@ fn node_to_lp(
                 schema: schema.clone(),
             }
         }
-        ALogicalPlan::DataFrameOp { input, operation } => {
-            let lp = node_to_lp(*input, expr_arena, lp_arena);
-
-            LogicalPlan::DataFrameOp {
-                input: Box::new(lp),
-                operation: operation.clone(),
+        ALogicalPlan::Sort {
+            input,
+            by_column,
+            reverse,
+        } => {
+            let input = Box::new(node_to_lp(*input, expr_arena, lp_arena));
+            LogicalPlan::Sort {
+                input,
+                by_column: by_column.clone(),
+                reverse: *reverse,
+            }
+        }
+        ALogicalPlan::Explode { input, column } => {
+            let input = Box::new(node_to_lp(*input, expr_arena, lp_arena));
+            LogicalPlan::Explode {
+                input,
+                column: column.clone(),
             }
         }
         ALogicalPlan::Aggregate {
@@ -935,7 +960,10 @@ impl SimplifyOptimizer {
                         plans.push(*input);
                         exprs.extend(expr);
                     }
-                    ALogicalPlan::DataFrameOp { input, .. } => {
+                    ALogicalPlan::Sort { input, .. } => {
+                        plans.push(*input);
+                    }
+                    ALogicalPlan::Explode { input, .. } => {
                         plans.push(*input);
                     }
                     ALogicalPlan::Aggregate { input, aggs, .. } => {

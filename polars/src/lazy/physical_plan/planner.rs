@@ -102,10 +102,18 @@ impl DefaultPlanner {
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(DataFrameExec::new(df, projection, selection)))
             }
-            LogicalPlan::DataFrameOp { input, operation } => {
-                // this isn't a sort
+            LogicalPlan::Sort {
+                input,
+                by_column,
+                reverse,
+            } => {
                 let input = self.create_initial_physical_plan(*input)?;
-
+                let operation = DataFrameOperation::Sort { by_column, reverse };
+                Ok(Box::new(DataFrameOpsExec::new(input, operation)))
+            }
+            LogicalPlan::Explode { input, column } => {
+                let input = self.create_initial_physical_plan(*input)?;
+                let operation = DataFrameOperation::Explode(column);
                 Ok(Box::new(DataFrameOpsExec::new(input, operation)))
             }
             LogicalPlan::Distinct {

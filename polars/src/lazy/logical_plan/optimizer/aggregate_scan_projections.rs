@@ -102,11 +102,23 @@ impl AggScanProjection {
                     schema,
                 })
             }
-            DataFrameOp { input, operation } => {
+            Sort {
+                input,
+                by_column,
+                reverse,
+            } => {
                 let input = self.agg_projection(*input, columns)?;
-                Ok(DataFrameOp {
+                Ok(Sort {
                     input: Box::new(input),
-                    operation,
+                    by_column,
+                    reverse,
+                })
+            }
+            Explode { input, column } => {
+                let input = self.agg_projection(*input, columns)?;
+                Ok(Explode {
+                    input: Box::new(input),
+                    column,
                 })
             }
             Distinct {
@@ -269,12 +281,21 @@ impl AggScanProjection {
                     schema,
                 })
             }
-            DataFrameOp { input, operation } => {
-                let input = self.rewrite_plan(*input, columns)?;
-                Ok(DataFrameOp {
-                    input: Box::new(input),
-                    operation,
+            Sort {
+                input,
+                by_column,
+                reverse,
+            } => {
+                let input = Box::new(self.rewrite_plan(*input, columns)?);
+                Ok(Sort {
+                    input,
+                    by_column,
+                    reverse,
                 })
+            }
+            Explode { input, column } => {
+                let input = Box::new(self.rewrite_plan(*input, columns)?);
+                Ok(Explode { input, column })
             }
             Distinct {
                 input,

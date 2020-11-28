@@ -536,7 +536,7 @@ impl LazyFrame {
     pub fn explode(self, column: &str) -> LazyFrame {
         // Note: this operation affects multiple columns. Therefore it isn't implemented as expression.
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().explode(column).build();
+        let lp = self.get_plan_builder().explode(column.to_string()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
