@@ -588,9 +588,9 @@ impl LazyGroupBy {
     ///       df.lazy()
     ///        .groupby("date")
     ///        .agg(vec![
-    ///            col("rain").agg_min(),
-    ///            col("rain").agg_sum(),
-    ///            col("rain").agg_quantile(0.5).alias("median_rain"),
+    ///            col("rain").min(),
+    ///            col("rain").sum(),
+    ///            col("rain").quantile(0.5).alias("median_rain"),
     ///        ])
     ///        .sort("date", false)
     /// }
