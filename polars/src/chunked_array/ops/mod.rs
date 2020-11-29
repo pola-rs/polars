@@ -248,6 +248,19 @@ pub trait ChunkTake {
     ) -> Self
     where
         Self: std::marker::Sized;
+
+    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+
+    fn take_from_single_chunked_iter(&self, indices: impl Iterator<Item = usize>) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        let idx_ca: Xob<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
+        let idx_ca = idx_ca.into_inner();
+        self.take_from_single_chunked(&idx_ca)
+    }
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
