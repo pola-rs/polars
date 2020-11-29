@@ -437,6 +437,15 @@ impl Series {
         }
     }
 
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
+        let s = apply_method_all_arrow_series_and_return!(self, take_from_single_chunked, [idx], ?);
+        Ok(s)
+    }
+
     /// Take by index from an iterator. This operation clones the data.
     ///
     /// # Safety

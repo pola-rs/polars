@@ -2,7 +2,7 @@
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::accumulate_dataframes_horizontal;
+use crate::utils::{accumulate_dataframes_horizontal, Xob};
 use ahash::RandomState;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
@@ -655,6 +655,25 @@ impl DataFrame {
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
+        let n_chunks = match self.n_chunks() {
+            Err(_) => return self.clone(),
+            Ok(n) => n,
+        };
+
+        if n_chunks == 1 {
+            let idx_ca: Xob<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca = idx_ca.into_inner();
+            let cols = self
+                .columns
+                .par_iter()
+                .map(|s| {
+                    s.take_from_single_chunked(&idx_ca)
+                        .expect("already checked single chunk")
+                })
+                .collect();
+            return DataFrame::new_no_checks(cols);
+        }
+
         let new_col = self
             .columns
             .par_iter()
@@ -670,11 +689,30 @@ impl DataFrame {
     ///
     /// # Safety
     ///
-    /// This doesn't do any bound or null validity checking.
+    /// This doesn't do any bound checking but checks null validity.
     pub unsafe fn take_iter_unchecked_bounds<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
+        let n_chunks = match self.n_chunks() {
+            Err(_) => return self.clone(),
+            Ok(n) => n,
+        };
+
+        if n_chunks == 1 {
+            let idx_ca: Xob<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca = idx_ca.into_inner();
+            let cols = self
+                .columns
+                .par_iter()
+                .map(|s| {
+                    s.take_from_single_chunked(&idx_ca)
+                        .expect("already checked single chunk")
+                })
+                .collect();
+            return DataFrame::new_no_checks(cols);
+        }
+
         let new_col = self
             .columns
             .par_iter()
@@ -686,7 +724,7 @@ impl DataFrame {
                     s.take_iter(&mut i, capacity)
                 }
             })
-            .collect::<Vec<_>>();
+            .collect();
         DataFrame::new_no_checks(new_col)
     }
 
@@ -709,6 +747,24 @@ impl DataFrame {
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
+        let n_chunks = match self.n_chunks() {
+            Err(_) => return self.clone(),
+            Ok(n) => n,
+        };
+
+        if n_chunks == 1 {
+            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
+            let cols = self
+                .columns
+                .par_iter()
+                .map(|s| unsafe {
+                    s.take_from_single_chunked(&idx_ca)
+                        .expect("already checked single chunk")
+                })
+                .collect();
+            return DataFrame::new_no_checks(cols);
+        }
+
         let new_col = self
             .columns
             .par_iter()
@@ -730,6 +786,24 @@ impl DataFrame {
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
+        let n_chunks = match self.n_chunks() {
+            Err(_) => return self.clone(),
+            Ok(n) => n,
+        };
+
+        if n_chunks == 1 {
+            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
+            let cols = self
+                .columns
+                .par_iter()
+                .map(|s| {
+                    s.take_from_single_chunked(&idx_ca)
+                        .expect("already checked single chunk")
+                })
+                .collect();
+            return DataFrame::new_no_checks(cols);
+        }
+
         let new_col = self
             .columns
             .par_iter()
@@ -1562,16 +1636,5 @@ mod test {
         .unwrap();
         dbg!(&df);
         assert!(df.frame_equal(&valid));
-    }
-
-    #[test]
-    fn test_take() {
-        let df = df! {
-            "foo" => &[1, 2, 3]
-        }
-        .unwrap();
-        let out = df.take_iter(0..4, None);
-        // out of bound access will be Null
-        assert_eq!(out.get(3).unwrap(), vec![AnyType::Null]);
     }
 }
