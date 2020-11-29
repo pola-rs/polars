@@ -235,10 +235,7 @@ where
 
             let new_arr = if self.null_count() == 0 {
                 let arr = self.downcast_chunks()[0];
-                let arr = take_no_null_primitive(arr, idx_arr) as ArrayRef;
-                dbg!(&arr);
-                dbg!(arr.null_count());
-                arr
+                take_no_null_primitive(arr, idx_arr) as ArrayRef
             } else {
                 let arr = &self.chunks[0];
                 take(arr, idx_arr, None).unwrap()
