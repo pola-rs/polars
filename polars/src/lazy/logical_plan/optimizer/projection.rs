@@ -302,7 +302,6 @@ impl ProjectionPushDown {
             Aggregate {
                 input, keys, aggs, ..
             } => {
-                dbg!(&aggs);
                 // todo! remove unnecessary vec alloc.
                 let (mut acc_projections, _local_projections, mut names) =
                     self.split_acc_projections(acc_projections, input.schema());
