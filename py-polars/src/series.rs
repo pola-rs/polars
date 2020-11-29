@@ -824,7 +824,7 @@ macro_rules! impl_ufuncs {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
                 let size = self.len();
-                let (out_array, ptr) = aligned_array::<$type>(py, size);
+                let (out_array, ptr) = unsafe { aligned_array::<$type>(py, size) };
 
                 debug_assert_eq!(out_array.get_refcnt(), 1);
                 // inserting it in a tuple increase the reference count by 1.
