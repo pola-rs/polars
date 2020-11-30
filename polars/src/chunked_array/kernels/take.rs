@@ -68,60 +68,43 @@ pub(crate) fn take_no_null_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc
         .expect("out of memory");
     let offset_typed = offset_buf.typed_data_mut();
 
-    // The required size is yet unknown
-    // Allocate 1.5 times the expected size.
-    // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
-    let mut values_capacity =
-        ((arr.value_data().len() as f32 * 1.5) as usize) / arr.len() * indices.len() as usize;
-    let mut values_buf = MutableBuffer::new(values_capacity);
-
     let mut length_so_far = 0;
     offset_typed[0] = length_so_far;
+    let mut values_buf;
 
     let nulls;
 
+    // the two loops are ~30% faster then a single loop in benchmarks.
+    offset_typed
+        .iter_mut()
+        .skip(1)
+        .enumerate()
+        .for_each(|(idx, offset)| {
+            let index = indices.value(idx) as usize;
+            let s = arr.value(index);
+            length_so_far += s.len() as i32;
+            *offset = length_so_far;
+        });
+    values_buf = MutableBuffer::new(length_so_far as usize);
+
     // both 0 nulls
     if arr.null_count() == indices.null_count() {
-        offset_typed
-            .iter_mut()
-            .skip(1) // first value is already set
-            .enumerate()
-            .for_each(|(idx, offset)| {
-                let index = indices.value(idx) as usize;
-                let s = arr.value(index);
-                length_so_far += s.len() as i32;
-                if length_so_far > values_capacity as i32 {
-                    values_capacity = (values_capacity as f32 * 1.2) as usize;
-                    values_buf.reserve(values_capacity).expect("oom");
-                }
-
-                values_buf.write_all(s.as_bytes()).expect("enough capacity");
-
-                *offset = length_so_far;
-            });
+        (0..data_len).for_each(|idx| {
+            let index = indices.value(idx) as usize;
+            let s = arr.value(index);
+            values_buf.write_all(s.as_bytes()).expect("enough capacity");
+        });
         nulls = None
     } else {
-        offset_typed
-            .iter_mut()
-            .skip(1) // first value is already set
-            .enumerate()
-            .for_each(|(idx, offset)| {
-                if indices.is_valid(idx) {
-                    let index = indices.value(idx) as usize;
-                    let s = arr.value(index);
-                    length_so_far += s.len() as i32;
-                    if length_so_far > values_capacity as i32 {
-                        values_capacity = (values_capacity as f32 * 1.2) as usize;
-                        values_buf.reserve(values_capacity).expect("oom");
-                    }
-                    values_buf.write_all(s.as_bytes()).expect("enough capacity");
-                }
-                *offset = length_so_far;
-            });
+        (0..data_len).for_each(|idx| {
+            if indices.is_valid(idx) {
+                let index = indices.value(idx) as usize;
+                let s = arr.value(index);
+                values_buf.write_all(s.as_bytes()).expect("enough capacity");
+            }
+        });
         nulls = indices.data_ref().null_buffer().cloned();
     }
-
-    // todo! shrink to fit? How to?
 
     let mut data = ArrayData::builder(ArrowDataType::Utf8)
         .len(data_len)
