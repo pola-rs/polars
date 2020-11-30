@@ -7,7 +7,7 @@ use crate::chunked_array::builder::{
     get_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::chunked_array::kernels::take::{
-    take_no_null_boolean, take_no_null_primitive, take_no_null_utf8,
+    take_no_null_boolean, take_no_null_primitive, take_utf8,
 };
 use crate::prelude::*;
 use crate::utils::Xob;
@@ -346,14 +346,8 @@ impl ChunkTake for Utf8Chunked {
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
         if self.chunks.len() == 1 && idx.chunks.len() == 1 {
             let idx_arr = idx.downcast_chunks()[0];
-            let arr = &self.chunks[0];
-
-            let new_arr = if self.null_count() == 0 {
-                let arr = arr.as_any().downcast_ref::<StringArray>().unwrap();
-                take_no_null_utf8(arr, idx_arr) as ArrayRef
-            } else {
-                take(arr, idx_arr, None).unwrap()
-            };
+            let arr = self.downcast_chunks()[0];
+            let new_arr = take_utf8(arr, idx_arr) as ArrayRef;
             Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
         } else {
             Err(PolarsError::NoSlice)
