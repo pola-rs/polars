@@ -1,7 +1,8 @@
 use crate::chunked_array::builder::aligned_vec_to_primitive_array;
 use crate::prelude::*;
 use arrow::array::{
-    Array, ArrayData, BooleanArray, PrimitiveArray, PrimitiveArrayOps, StringArray, UInt32Array,
+    Array, ArrayData, BooleanArray, PrimitiveArray, PrimitiveArrayOps, StringArray, StringBuilder,
+    UInt32Array,
 };
 use arrow::buffer::MutableBuffer;
 use arrow::util::bit_util;
@@ -57,8 +58,7 @@ pub(crate) fn take_no_null_primitive<T: PolarsNumericType>(
     Arc::new(arr)
 }
 
-pub(crate) fn take_no_null_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringArray> {
-    assert_eq!(arr.null_count(), 0);
+pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringArray> {
     let data_len = indices.len();
 
     let offset_len_in_bytes = (data_len + 1) * mem::size_of::<i32>();
@@ -88,14 +88,14 @@ pub(crate) fn take_no_null_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc
     values_buf = MutableBuffer::new(length_so_far as usize);
 
     // both 0 nulls
-    if arr.null_count() == indices.null_count() {
+    if arr.null_count() == 0 && indices.null_count() == 0 {
         (0..data_len).for_each(|idx| {
             let index = indices.value(idx) as usize;
             let s = arr.value(index);
             values_buf.write_all(s.as_bytes()).expect("enough capacity");
         });
         nulls = None
-    } else {
+    } else if arr.null_count() == 0 {
         (0..data_len).for_each(|idx| {
             if indices.is_valid(idx) {
                 let index = indices.value(idx) as usize;
@@ -104,6 +104,32 @@ pub(crate) fn take_no_null_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc
             }
         });
         nulls = indices.data_ref().null_buffer().cloned();
+    } else {
+        let mut builder = StringBuilder::with_capacity(data_len, length_so_far as usize);
+
+        if indices.null_count() == 0 {
+            (0..data_len).for_each(|idx| {
+                if arr.is_valid(idx) {
+                    let index = indices.value(idx) as usize;
+                    let s = arr.value(index);
+                    builder.append_value(s).unwrap();
+                } else {
+                    builder.append_null().unwrap();
+                }
+            });
+        } else {
+            (0..data_len).for_each(|idx| {
+                if arr.is_valid(idx) && indices.is_valid(idx) {
+                    let index = indices.value(idx) as usize;
+                    let s = arr.value(index);
+                    builder.append_value(s).unwrap();
+                } else {
+                    builder.append_null().unwrap();
+                }
+            });
+        }
+
+        return Arc::new(builder.finish());
     }
 
     let mut data = ArrayData::builder(ArrowDataType::Utf8)
