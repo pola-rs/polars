@@ -3,7 +3,7 @@ use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyFloat, PyInt};
+use pyo3::types::{PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
 
 #[pyclass]
@@ -324,7 +324,14 @@ pub fn lit(value: &PyAny) -> PyExpr {
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
         dsl::lit(val).into()
+    } else if let Ok(pystr) = value.downcast::<PyString>() {
+        dsl::lit(
+            pystr
+                .to_str()
+                .expect("could not transform Python string to Rust Unicode"),
+        )
+        .into()
     } else {
-        panic!("could not convert type")
+        panic!(format!("could not convert value {:?} as a Literal", value))
     }
 }

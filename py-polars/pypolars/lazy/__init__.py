@@ -104,8 +104,19 @@ class LazyFrame:
     def describe_plan(self) -> str:
         return self._ldf.describe_plan()
 
-    def describe_optimized_plan(self) -> str:
-        return self._ldf.describe_optimized_plan()
+    def describe_optimized_plan(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+    ) -> str:
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
+        )
+
+        return ldf.describe_optimized_plan()
 
     def sort(self, by_column: str) -> "LazyFrame":
         return wrap_ldf(self._ldf.sort(by_column))

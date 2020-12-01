@@ -2,7 +2,7 @@ use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column, expr_to_root_column_expr, has_expr, projected_names, unpack_binary_exprs,
+    expr_to_root_column, expr_to_root_column_expr, has_expr, unpack_binary_exprs,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -58,16 +58,6 @@ fn get_scan_columns(acc_projections: &mut Vec<Expr>) -> Option<Vec<String>> {
 pub struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
-    fn finish_at_leaf(&self, lp: LogicalPlan, acc_projections: Vec<Expr>) -> Result<LogicalPlan> {
-        match acc_projections.len() {
-            // There was no Projection in the logical plan
-            0 => Ok(lp),
-            _ => Ok(LogicalPlanBuilder::from(lp)
-                .project(acc_projections)
-                .build()),
-        }
-    }
-
     /// split in a projection vec that can be pushed down and a projection vec that should be used
     /// in this node
     ///
@@ -418,9 +408,6 @@ impl ProjectionPushDown {
                 self.finish_node(local_projection, builder)
             }
             HStack { input, exprs, .. } => {
-                // just the original projections at this level that may be renamed
-                let local_renamed_projections = projected_names(&acc_projections)?;
-
                 // Make sure that columns selected with_columns are available
                 // only if not empty. If empty we already select everything.
                 if !acc_projections.is_empty() {
@@ -456,15 +443,15 @@ impl ProjectionPushDown {
                 let (acc_projections, _, names) =
                     self.split_acc_projections(acc_projections, input.schema());
 
-                let builder = LogicalPlanBuilder::from(self.push_down(
+                let lp = LogicalPlanBuilder::from(self.push_down(
                     *input,
                     acc_projections,
                     names,
                     projections_seen,
                 )?)
-                .with_columns(exprs);
-                // locally re-project all columns plus the stacked columns to keep the order of the schema equal
-                self.finish_node(local_renamed_projections, builder)
+                .with_columns(exprs)
+                .build();
+                Ok(lp)
             }
         }
     }
