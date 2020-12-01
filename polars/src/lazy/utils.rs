@@ -270,19 +270,29 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::IsNull(expr) => expr_to_root_column(expr),
         Expr::IsNotNull(expr) => expr_to_root_column(expr),
         Expr::BinaryExpr { left, right, .. } => {
-            let mut left = expr_to_root_column(left);
-            let mut right = expr_to_root_column(right);
+            let left_result = expr_to_root_column(left);
+            let right_result = expr_to_root_column(right);
 
-            match (&mut left, &mut right) {
-                (Ok(left), Err(_)) => Ok(std::mem::take(left)),
-                (Err(_), Ok(right)) => Ok(std::mem::take(right)),
-                _ => Err(PolarsError::Other(
+            let err = || {
+                Err(PolarsError::Other(
                     format!(
-                        "cannot find root column for binary expression {:?}, {:?}",
-                        left, right
+                        "cannot find root column name for binary expression {:?}, {:?}",
+                        left_result, right_result
                     )
                     .into(),
-                )),
+                ))
+            };
+
+            match (&left_result, &right_result) {
+                (Ok(left), Err(_)) => match &**right {
+                    Expr::BinaryExpr { .. } => err(),
+                    _ => Ok(left.clone()),
+                },
+                (Err(_), Ok(right)) => match &**left {
+                    Expr::BinaryExpr { .. } => err(),
+                    _ => Ok(right.clone()),
+                },
+                _ => err(),
             }
         }
         Expr::Sort { expr, .. } => expr_to_root_column(expr),
@@ -374,19 +384,33 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
         Expr::Median(expr) => expr_to_root_column_expr(expr),
         Expr::Mean(expr) => expr_to_root_column_expr(expr),
         Expr::Count(expr) => expr_to_root_column_expr(expr),
-        Expr::BinaryExpr { left, right, .. } => match expr_to_root_column_expr(left) {
-            Err(_) => expr_to_root_column_expr(right),
-            Ok(expr) => match expr_to_root_column_expr(right) {
-                Ok(_) => Err(PolarsError::Other(
+        Expr::BinaryExpr { left, right, .. } => {
+            let left_result = expr_to_root_column_expr(left);
+            let right_result = expr_to_root_column_expr(right);
+
+            let root_col_err = || {
+                Err(PolarsError::Other(
                     format!(
                         "cannot find root column expr for binary expression {:?}, {:?}",
                         left, right
                     )
                     .into(),
-                )),
-                Err(_) => Ok(expr),
-            },
-        },
+                ))
+            };
+
+            match (left_result, right_result) {
+                (Ok(left), Err(_)) => match &**right {
+                    Expr::BinaryExpr { .. } => root_col_err(),
+                    _ => Ok(left),
+                },
+                (Err(_), Ok(right)) => match &**left {
+                    Expr::BinaryExpr { .. } => root_col_err(),
+                    _ => Ok(right),
+                },
+                (Ok(_), Ok(_)) => root_col_err(),
+                _ => root_col_err(),
+            }
+        }
         Expr::Sort { expr, .. } => expr_to_root_column_expr(expr),
         Expr::Shift { input, .. } => expr_to_root_column_expr(input),
         Expr::Apply { input, .. } => expr_to_root_column_expr(input),

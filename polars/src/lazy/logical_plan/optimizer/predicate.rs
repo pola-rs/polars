@@ -114,10 +114,8 @@ impl PredicatePushDown {
                 match expr_to_root_column(&predicate) {
                     Ok(name) => insert_and_combine_predicate(&mut acc_predicates, name, predicate),
                     Err(e) => {
-                        if let Expr::BinaryExpr { left, right, .. } = &predicate {
-                            let left_name = expr_to_root_column(&*left)?;
-                            let right_name = expr_to_root_column(&*right)?;
-                            let name = Arc::new(format!("{}-binary-{}", left_name, right_name));
+                        if let Expr::BinaryExpr { .. } = &predicate {
+                            let name = Arc::new(format!("{:?}", &predicate));
                             insert_and_combine_predicate(&mut acc_predicates, name, predicate);
                         } else {
                             panic!(format!("{:?}", e))
