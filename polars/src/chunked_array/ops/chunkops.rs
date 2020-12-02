@@ -1,7 +1,10 @@
 use crate::chunked_array::builder::get_list_builder;
+use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
 use arrow::compute::concat;
+use std::any::Any;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 pub trait ChunkOps {
@@ -189,12 +192,46 @@ impl ChunkOps for ListChunked {
     }
 }
 
-impl<T> ChunkOps for ObjectChunked<T> {
-    fn rechunk(&self, _chunk_lengths: Option<&[usize]>) -> Result<Self>
+impl<T> ChunkOps for ObjectChunked<T>
+where
+    T: Any + Debug + Clone + Send + Sync + Default,
+{
+    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self>
     where
         Self: std::marker::Sized,
     {
-        todo!()
+        match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
+            (1, Some(1)) | (1, None) => Ok(self.clone()),
+            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (_, None) => {
+                let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
+                let chunks = self.downcast_chunks();
+
+                // todo! use iterators once implemented
+                // no_null path
+                if self.null_count() == 0 {
+                    for idx in 0..self.len() {
+                        let (chunk_idx, idx) = self.index_to_chunked_index(idx);
+                        let arr = unsafe { &**chunks.get_unchecked(chunk_idx) };
+                        builder.append_value(arr.value(idx).clone())
+                    }
+                } else {
+                    for idx in 0..self.len() {
+                        let (chunk_idx, idx) = self.index_to_chunked_index(idx);
+                        let arr = unsafe { &**chunks.get_unchecked(chunk_idx) };
+                        if arr.is_valid(idx) {
+                            builder.append_value(arr.value(idx).clone())
+                        } else {
+                            builder.append_null()
+                        }
+                    }
+                }
+                Ok(builder.finish())
+            }
+            _ => Err(PolarsError::Other(
+                "rechunk of ObjectChunked still needs to be implemented".into(),
+            )),
+        }
     }
 
     fn optional_rechunk<A>(&self, _rhs: &ChunkedArray<A>) -> Result<Option<Self>>

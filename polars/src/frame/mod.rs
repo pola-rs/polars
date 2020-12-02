@@ -2,7 +2,7 @@
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::accumulate_dataframes_horizontal;
+use crate::utils::{accumulate_dataframes_horizontal, Xob};
 use ahash::RandomState;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
@@ -139,11 +139,19 @@ impl DataFrame {
 
     /// Aggregate all chunks to contiguous memory.
     pub fn agg_chunks(&self) -> Self {
-        let cols = self
-            .columns
-            .par_iter()
-            .map(|s| s.rechunk(Some(&[1])).expect("can always rechunk to single"))
-            .collect();
+        let f = |s: &Series| s.rechunk(Some(&[1])).expect("can always rechunk to single");
+        // breakpoint for parallel aggregation
+        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
+            .unwrap_or_else(|_| "".to_string())
+            .parse()
+            .unwrap_or(15);
+
+        let cols = if self.columns.len() > bp {
+            self.columns.par_iter().map(f).collect()
+        } else {
+            self.columns.iter().map(f).collect()
+        };
+
         DataFrame::new_no_checks(cols)
     }
 
@@ -398,8 +406,17 @@ impl DataFrame {
     }
 
     /// Return a new DataFrame where all null values are dropped
-    pub fn drop_nulls(&self) -> Result<Self> {
-        let mut iter = self.columns.iter();
+    pub fn drop_nulls(&self, subset: Option<&[String]>) -> Result<Self> {
+        let selected_series;
+
+        let mut iter = match subset {
+            Some(cols) => {
+                selected_series = self.select_series(&cols)?;
+                selected_series.iter()
+            }
+            None => self.columns.iter(),
+        };
+
         let mask = iter
             .next()
             .ok_or_else(|| PolarsError::NoData("No data to drop nulls from".into()))?;
@@ -638,6 +655,25 @@ impl DataFrame {
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
+        let n_chunks = match self.n_chunks() {
+            Err(_) => return self.clone(),
+            Ok(n) => n,
+        };
+
+        if n_chunks == 1 {
+            let idx_ca: Xob<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca = idx_ca.into_inner();
+            let cols = self
+                .columns
+                .par_iter()
+                .map(|s| {
+                    s.take_from_single_chunked(&idx_ca)
+                        .expect("already checked single chunk")
+                })
+                .collect();
+            return DataFrame::new_no_checks(cols);
+        }
+
         let new_col = self
             .columns
             .par_iter()
@@ -653,11 +689,30 @@ impl DataFrame {
     ///
     /// # Safety
     ///
-    /// This doesn't do any bound or null validity checking.
+    /// This doesn't do any bound checking but checks null validity.
     pub unsafe fn take_iter_unchecked_bounds<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
+        let n_chunks = match self.n_chunks() {
+            Err(_) => return self.clone(),
+            Ok(n) => n,
+        };
+
+        if n_chunks == 1 {
+            let idx_ca: Xob<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca = idx_ca.into_inner();
+            let cols = self
+                .columns
+                .par_iter()
+                .map(|s| {
+                    s.take_from_single_chunked(&idx_ca)
+                        .expect("already checked single chunk")
+                })
+                .collect();
+            return DataFrame::new_no_checks(cols);
+        }
+
         let new_col = self
             .columns
             .par_iter()
@@ -669,7 +724,7 @@ impl DataFrame {
                     s.take_iter(&mut i, capacity)
                 }
             })
-            .collect::<Vec<_>>();
+            .collect();
         DataFrame::new_no_checks(new_col)
     }
 
@@ -692,6 +747,24 @@ impl DataFrame {
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
+        let n_chunks = match self.n_chunks() {
+            Err(_) => return self.clone(),
+            Ok(n) => n,
+        };
+
+        if n_chunks == 1 {
+            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
+            let cols = self
+                .columns
+                .par_iter()
+                .map(|s| unsafe {
+                    s.take_from_single_chunked(&idx_ca)
+                        .expect("already checked single chunk")
+                })
+                .collect();
+            return DataFrame::new_no_checks(cols);
+        }
+
         let new_col = self
             .columns
             .par_iter()
@@ -713,6 +786,24 @@ impl DataFrame {
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
+        let n_chunks = match self.n_chunks() {
+            Err(_) => return self.clone(),
+            Ok(n) => n,
+        };
+
+        if n_chunks == 1 {
+            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
+            let cols = self
+                .columns
+                .par_iter()
+                .map(|s| {
+                    s.take_from_single_chunked(&idx_ca)
+                        .expect("already checked single chunk")
+                })
+                .collect();
+            return DataFrame::new_no_checks(cols);
+        }
+
         let new_col = self
             .columns
             .par_iter()
@@ -818,6 +909,15 @@ impl DataFrame {
     /// Replace a column with a series.
     pub fn replace<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
         self.apply(column, |_| new_col.into_series())
+    }
+
+    /// Replace or update a column.
+    pub fn replace_or_add<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
+        let new_col = new_col.into_series();
+        match self.replace(column, new_col.clone()) {
+            Err(_) => self.add_column(new_col),
+            Ok(_) => Ok(self),
+        }
     }
 
     /// Replace column at index `idx` with a series.
@@ -1349,7 +1449,7 @@ impl DataFrame {
     ///                    "int" => [1, 1, 2, 2, 3, 3, ],
     ///                    "str" => ["a", "a", "b", "b", "c", "c"]
     ///                }?;
-    ///      df.drop_duplicates(true)
+    ///      df.drop_duplicates(true, None)
     ///  }
     /// # }
     /// ```
@@ -1368,8 +1468,12 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    pub fn drop_duplicates(&self, maintain_order: bool) -> Result<Self> {
-        let gb = self.groupby(self.get_column_names())?;
+    pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<&[String]>) -> Result<Self> {
+        let names = match &subset {
+            Some(s) => s.iter().map(|s| &**s).collect(),
+            None => self.get_column_names(),
+        };
+        let gb = self.groupby(names)?;
         let groups = gb.get_groups().iter().map(|v| v.0);
 
         let df = if maintain_order {
@@ -1389,14 +1493,14 @@ impl DataFrame {
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        is_unique_helper(groups, self.height(), true, false)
+        Ok(is_unique_helper(groups, self.height(), true, false))
     }
 
     /// Get a mask of all the duplicated rows in the DataFrame.
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        is_unique_helper(groups, self.height(), false, true)
+        Ok(is_unique_helper(groups, self.height(), false, true))
     }
 }
 
@@ -1520,7 +1624,7 @@ mod test {
         .unwrap();
         dbg!(&df);
         let df = df
-            .drop_duplicates(true)
+            .drop_duplicates(true, None)
             .unwrap()
             .sort("flt", false)
             .unwrap();
@@ -1532,16 +1636,5 @@ mod test {
         .unwrap();
         dbg!(&df);
         assert!(df.frame_equal(&valid));
-    }
-
-    #[test]
-    fn test_take() {
-        let df = df! {
-            "foo" => &[1, 2, 3]
-        }
-        .unwrap();
-        let out = df.take_iter(0..4, None);
-        // out of bound access will be Null
-        assert_eq!(out.get(3).unwrap(), vec![AnyType::Null]);
     }
 }

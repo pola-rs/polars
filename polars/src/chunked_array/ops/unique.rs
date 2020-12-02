@@ -14,9 +14,8 @@ pub(crate) fn is_unique_helper(
     len: usize,
     unique_val: bool,
     duplicated_val: bool,
-) -> Result<BooleanChunked> {
+) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
-    // let mut groups = groups.collect::<Vec<_>>();
     groups.sort_unstable_by_key(|t| t.0);
 
     let mut unique_idx_iter = groups
@@ -25,7 +24,7 @@ pub(crate) fn is_unique_helper(
         .map(|(first, _)| first);
 
     let mut next_unique_idx = unique_idx_iter.next();
-    let mask = (0..len)
+    (0..len)
         .into_iter()
         .map(|idx| match next_unique_idx {
             Some(unique_idx) => {
@@ -38,8 +37,7 @@ pub(crate) fn is_unique_helper(
             }
             None => duplicated_val,
         })
-        .collect();
-    Ok(mask)
+        .collect()
 }
 
 fn is_unique<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
@@ -48,7 +46,9 @@ where
     ChunkedArray<T>: IntoGroupTuples,
 {
     let groups = ca.group_tuples();
-    is_unique_helper(groups, ca.len(), true, false)
+    let mut out = is_unique_helper(groups, ca.len(), true, false);
+    out.rename(ca.name());
+    Ok(out)
 }
 
 fn is_duplicated<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
@@ -57,7 +57,9 @@ where
     ChunkedArray<T>: IntoGroupTuples,
 {
     let groups = ca.group_tuples();
-    is_unique_helper(groups, ca.len(), false, true)
+    let mut out = is_unique_helper(groups, ca.len(), false, true);
+    out.rename(ca.name());
+    Ok(out)
 }
 
 impl ChunkUnique<ListType> for ListChunked {

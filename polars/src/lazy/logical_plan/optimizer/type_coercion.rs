@@ -17,6 +17,18 @@ impl TypeCoercion {
         // the important expression is BinaryExpr. The rest just traverses the tree.
         use Expr::*;
         match expr {
+            Reverse(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.reverse())
+            }
+            Unique(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.is_unique())
+            }
+            Duplicated(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.is_duplicated())
+            }
             Alias(expr, name) => Ok(Expr::Alias(
                 Box::new(self.rewrite_expr(*expr, input_schema)?),
                 name,
@@ -56,49 +68,53 @@ impl TypeCoercion {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.sort(reverse))
             }
-            AggMin(expr) => {
+            Min(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_min())
+                Ok(expr.min())
             }
-            AggMax(expr) => {
+            Max(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_max())
+                Ok(expr.max())
             }
-            AggMedian(expr) => {
+            Median(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_median())
+                Ok(expr.median())
             }
-            AggNUnique(expr) => {
+            NUnique(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_n_unique())
+                Ok(expr.n_unique())
             }
-            AggFirst(expr) => {
+            First(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_first())
+                Ok(expr.first())
             }
-            AggLast(expr) => {
+            Last(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_last())
+                Ok(expr.last())
             }
-            AggList(expr) => {
+            List(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_list())
+                Ok(expr.list())
             }
-            AggMean(expr) => {
+            Mean(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_mean())
+                Ok(expr.mean())
             }
-            AggQuantile { expr, quantile } => {
+            Quantile { expr, quantile } => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_quantile(quantile))
+                Ok(expr.quantile(quantile))
             }
-            AggSum(expr) => {
+            Sum(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_sum())
+                Ok(expr.sum())
             }
             AggGroups(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.agg_groups())
+            }
+            Count(expr) => {
+                let expr = self.rewrite_expr(*expr, input_schema)?;
+                Ok(expr.count())
             }
             Ternary {
                 predicate,
@@ -154,6 +170,7 @@ impl TypeCoercion {
                 let input = Box::new(self.coerce(*input)?);
                 Ok(Selection { input, predicate })
             }
+            ParquetScan { .. } => Ok(logical_plan),
             CsvScan { .. } => Ok(logical_plan),
             DataFrameScan { .. } => Ok(logical_plan),
             Projection {
@@ -161,6 +178,7 @@ impl TypeCoercion {
                 input,
                 schema,
             } => {
+                let input = Box::new(self.coerce(*input)?);
                 let expr = self.rewrite_expressions(expr, input.schema())?;
                 Ok(Projection {
                     expr,
@@ -168,11 +186,49 @@ impl TypeCoercion {
                     schema,
                 })
             }
-            DataFrameOp { input, operation } => {
+            LocalProjection {
+                expr,
+                input,
+                schema,
+            } => {
+                let input = Box::new(self.coerce(*input)?);
+                let expr = self.rewrite_expressions(expr, input.schema())?;
+                Ok(LocalProjection {
+                    expr,
+                    input,
+                    schema,
+                })
+            }
+            Sort {
+                input,
+                by_column,
+                reverse,
+            } => {
+                let input = Box::new(self.coerce(*input)?);
+                Ok(Sort {
+                    input,
+                    by_column,
+                    reverse,
+                })
+            }
+            Explode { input, column } => {
+                let input = Box::new(self.coerce(*input)?);
+                Ok(Explode { input, column })
+            }
+            Cache { input } => {
+                let input = Box::new(self.coerce(*input)?);
+                Ok(Cache { input })
+            }
+            Distinct {
+                input,
+                maintain_order,
+                subset,
+            } => {
                 let input = self.coerce(*input)?;
-                Ok(DataFrameOp {
+                Ok(Distinct {
                     input: Box::new(input),
-                    operation,
+                    maintain_order,
+                    subset,
                 })
             }
             Aggregate {

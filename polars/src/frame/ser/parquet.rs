@@ -14,6 +14,8 @@
 //! ```
 //!
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
+#[cfg(feature = "lazy")]
+use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 use arrow::record_batch::RecordBatchReader;
 use parquet::arrow::{
@@ -25,11 +27,73 @@ use std::io::{Read, Seek};
 use std::rc::Rc;
 use std::sync::Arc;
 
+fn set_batch_size(max_rows: usize, stop_after_n_rows: Option<usize>) -> usize {
+    let mut batch_size = max_rows;
+    if let Some(n) = stop_after_n_rows {
+        // set batch size exactly to n_rows
+        batch_size = std::cmp::min(batch_size, n);
+        batch_size = std::cmp::max(batch_size, n);
+    }
+    batch_size
+}
+
 /// Read Apache parquet format into a DataFrame.
 pub struct ParquetReader<R> {
     reader: R,
     rechunk: bool,
-    ignore_parser_error: bool,
+    stop_after_n_rows: Option<usize>,
+}
+
+impl<R> ParquetReader<R>
+where
+    R: 'static + Read + Seek + parquet::file::reader::Length + parquet::file::reader::TryClone,
+{
+    #[cfg(feature = "lazy")]
+    pub(crate) fn finish_with_predicate(
+        mut self,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
+        projection: Option<&[usize]>,
+    ) -> Result<DataFrame> {
+        let rechunk = self.rechunk;
+
+        let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
+        let rows_in_file = file_reader.metadata().file_metadata().num_rows() as usize;
+
+        if let Some(stop_after_n_rows) = self.stop_after_n_rows {
+            if stop_after_n_rows > rows_in_file {
+                self.stop_after_n_rows = Some(rows_in_file)
+            }
+        }
+
+        let batch_size = match predicate {
+            Some(_) => 512 * 1024,
+            None => rows_in_file,
+        };
+        let batch_size = set_batch_size(batch_size, self.stop_after_n_rows);
+
+        let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
+        let record_reader = match projection {
+            Some(projection) => {
+                arrow_reader.get_record_reader_by_columns(projection.iter().copied(), batch_size)
+            }
+            None => arrow_reader.get_record_reader(batch_size),
+        }?;
+        finish_reader(record_reader, rechunk, self.stop_after_n_rows, predicate)
+    }
+
+    /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
+    /// sequentially.
+    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.stop_after_n_rows = num_rows;
+        self
+    }
+
+    pub fn schema(self) -> Result<Schema> {
+        let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
+        let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
+        let schema = arrow_reader.get_schema()?;
+        Ok(schema)
+    }
 }
 
 impl ArrowReader for ParquetRecordBatchReader {
@@ -52,7 +116,7 @@ where
         ParquetReader {
             reader,
             rechunk: false,
-            ignore_parser_error: false,
+            stop_after_n_rows: None,
         }
     }
 
@@ -61,19 +125,14 @@ where
         self
     }
 
-    fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
-        self.ignore_parser_error = ignore;
-        self
-    }
-
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-
         let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
         let n_rows = file_reader.metadata().file_metadata().num_rows() as usize;
+        let batch_size = set_batch_size(n_rows, self.stop_after_n_rows);
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
-        let record_reader = arrow_reader.get_record_reader(n_rows)?;
-        finish_reader(record_reader, rechunk, self.ignore_parser_error, None)
+        let record_reader = arrow_reader.get_record_reader(batch_size)?;
+        finish_reader(record_reader, rechunk, None, None)
     }
 }
 

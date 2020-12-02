@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::mem;
 use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
@@ -76,6 +75,40 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
         (_lower, Some(upper)) => upper,
         (0, None) => 1024,
         (lower, None) => lower,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Node(pub usize);
+
+pub struct Arena<T> {
+    items: Vec<T>,
+}
+
+/// Simple Arena implementation
+/// Allocates memory and stores item in a Vec. Only deallocates when being dropped itself.
+impl<T> Arena<T> {
+    pub fn add(&mut self, val: T) -> Node {
+        let idx = self.items.len();
+        self.items.push(val);
+        Node(idx)
+    }
+
+    pub fn new() -> Self {
+        Arena { items: vec![] }
+    }
+
+    pub fn get(&self, idx: Node) -> &T {
+        unsafe { self.items.get_unchecked(idx.0) }
+    }
+
+    pub fn get_mut(&mut self, idx: Node) -> &mut T {
+        unsafe { self.items.get_unchecked_mut(idx.0) }
+    }
+
+    pub fn assign(&mut self, idx: Node, val: T) {
+        let x = self.get_mut(idx);
+        *x = val;
     }
 }
 
@@ -390,11 +423,6 @@ macro_rules! df {
         }
 
     }
-}
-
-/// Clone if upstream hasn't implemented clone
-pub(crate) fn clone<T>(t: &T) -> T {
-    unsafe { mem::transmute_copy(t) }
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to

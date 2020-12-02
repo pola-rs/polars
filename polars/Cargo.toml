@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.8.1"
+version = "0.9.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -15,7 +15,7 @@ simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "simd"]
+default = ["docs", "temporal", "simd", "lazy", "parquet"]
 lazy = []
 parallel = []
 # extra utilities for Utf8Chunked
@@ -38,9 +38,9 @@ regex = {version = "1.4" }
 anyhow = "1.0"
 ahash = "0.5"
 csv = "1.1"
-lazy_static = "1.4"
 crossbeam = "0.8"
 serde_json = "1.0"
+lexical = "^5.2"
 
 [package.metadata.docs.rs]
 all-features = true

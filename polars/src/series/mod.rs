@@ -143,7 +143,11 @@ pub enum Series {
 
 impl Clone for Series {
     fn clone(&self) -> Self {
-        apply_method_all_arrow_series_and_return!(self, clone, [],)
+        if let Series::Object(ca) = self {
+            Series::Object((*ca).clone())
+        } else {
+            apply_method_all_arrow_series_and_return!(self, clone, [],)
+        }
     }
 }
 
@@ -433,6 +437,15 @@ impl Series {
         }
     }
 
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
+        let s = apply_method_all_arrow_series_and_return!(self, take_from_single_chunked, [idx], ?);
+        Ok(s)
+    }
+
     /// Take by index from an iterator. This operation clones the data.
     ///
     /// # Safety
@@ -693,6 +706,11 @@ impl Series {
     /// Get unique values in the Series.
     pub fn unique(&self) -> Result<Self> {
         Ok(apply_method_all_arrow_series_and_return!(self, unique, [],?))
+    }
+
+    /// Get unique values in the Series.
+    pub fn n_unique(&self) -> Result<usize> {
+        apply_method_all_arrow_series!(self, n_unique,)
     }
 
     /// Get first indexes of unique values.

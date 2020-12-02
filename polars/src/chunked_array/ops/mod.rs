@@ -248,6 +248,19 @@ pub trait ChunkTake {
     ) -> Self
     where
         Self: std::marker::Sized;
+
+    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+
+    fn take_from_single_chunked_iter(&self, indices: impl Iterator<Item = usize>) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        let idx_ca: Xob<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
+        let idx_ca = idx_ca.into_inner();
+        self.take_from_single_chunked(&idx_ca)
+    }
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
@@ -332,6 +345,16 @@ pub trait ChunkApply<'a, A, B> {
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(A) -> B + Copy;
+
+    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
+    fn apply_with_idx<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, A)) -> B + Copy;
+
+    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
+    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, Option<A>)) -> Option<B> + Copy;
 }
 
 /// Aggregation operations

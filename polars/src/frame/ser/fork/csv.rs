@@ -1,4 +1,4 @@
-// Licensed to the Apache Software Foundation (ASF) under one
+// Licensed to the Apache Software Foundation (ASF) under one_
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
 // regarding copyright ownership.  The ASF licenses this file
@@ -16,36 +16,35 @@
 // under the License.
 
 use crate::frame::ser::csv::CsvEncoding;
+#[cfg(feature = "lazy")]
+use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 use crate::utils;
 use ahash::RandomState;
 use arrow::datatypes::SchemaRef;
-use arrow::error::Result as ArrowResult;
 use crossbeam::{
     channel::{bounded, TryRecvError},
     thread,
 };
-use csv::{ByteRecord, ByteRecordsIntoIter};
-use lazy_static::lazy_static;
+use csv::{ByteRecord, ByteRecordsIntoIter, Reader};
 use rayon::prelude::*;
-use regex::{Regex, RegexBuilder};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
+#[cfg(not(feature = "lazy"))]
+pub trait PhysicalExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series>;
+}
+
 /// Is multiplied with batch_size to determine capacity of builders
 const CAPACITY_MULTIPLIER: usize = 512;
 
-lazy_static! {
-    static ref DECIMAL_RE: Regex = Regex::new(r"^-?(\d+\.\d+)$").unwrap();
-    static ref INTEGER_RE: Regex = Regex::new(r"^-?(\d+)$").unwrap();
-    static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^(true)$|^(false)$")
-        .case_insensitive(true)
-        .build()
-        .unwrap();
+fn all_digit(string: &str) -> bool {
+    string.chars().all(|c| c.is_ascii_digit())
 }
-
 /// Infer the data type of a record
 fn infer_field_schema(string: &str) -> ArrowDataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
@@ -54,15 +53,31 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
         return ArrowDataType::Utf8;
     }
     // match regex in a particular order
-    if BOOLEAN_RE.is_match(string) {
-        ArrowDataType::Boolean
-    } else if DECIMAL_RE.is_match(string) {
-        ArrowDataType::Float64
-    } else if INTEGER_RE.is_match(string) {
-        ArrowDataType::Int64
-    } else {
-        ArrowDataType::Utf8
+    let lower = string.to_ascii_lowercase();
+    if lower == "true" || lower == "false" {
+        return ArrowDataType::Boolean;
     }
+    let skip_minus = if string.starts_with('-') { 1 } else { 0 };
+
+    let mut parts = string[skip_minus..].split('.');
+    let (left, right) = (parts.next(), parts.next());
+    let left_is_number = left.map_or(false, all_digit);
+    if left_is_number && right.map_or(false, all_digit) {
+        return ArrowDataType::Float64;
+    } else if left_is_number {
+        return ArrowDataType::Int64;
+    }
+    ArrowDataType::Utf8
+}
+
+fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> Result<Cow<str>> {
+    let s = match encoding {
+        CsvEncoding::Utf8 => std::str::from_utf8(bytes)
+            .map_err(anyhow::Error::from)?
+            .into(),
+        CsvEncoding::LossyUtf8 => String::from_utf8_lossy(bytes),
+    };
+    Ok(s)
 }
 
 /// Infer the schema of a CSV file by reading through the first n records of the file,
@@ -71,57 +86,66 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
 /// If `max_read_records` is not set, the whole file is read to infer its schema.
 ///
 /// Return infered schema and number of records used for inference.
-fn infer_file_schema<R: Read + Seek>(
+pub(crate) fn infer_file_schema<R: Read + Seek>(
     reader: &mut R,
     delimiter: u8,
     max_read_records: Option<usize>,
     has_header: bool,
-) -> ArrowResult<(Schema, usize)> {
-    let mut csv_reader = csv::ReaderBuilder::new()
-        .delimiter(delimiter)
-        .from_reader(reader);
+) -> Result<(Schema, usize)> {
+    // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
+    // It may later.
+    let encoding = CsvEncoding::LossyUtf8;
+    // set headers to false otherwise the csv crate, skips them.
+    let csv_reader = init_csv_reader(reader, false, delimiter);
+
+    let mut records = csv_reader.into_byte_records();
+    let header_length;
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
-    let headers: Vec<String> = if has_header {
-        let headers = csv_reader.headers()?;
-        headers.iter().map(|s| s.to_string()).collect()
+    let headers: Vec<String> = if let Some(byterecord) = records.next() {
+        let byterecord = byterecord.map_err(anyhow::Error::from)?;
+        header_length = byterecord.len();
+        if has_header {
+            byterecord
+                .iter()
+                .map(|slice| {
+                    let s = parse_bytes_with_encoding(slice, encoding)?;
+                    Ok(s.into())
+                })
+                .collect::<Result<_>>()?
+        } else {
+            (0..header_length)
+                .map(|i| format!("column_{}", i + 1))
+                .collect()
+        }
     } else {
-        let first_record_count = &csv_reader.headers()?.len();
-        (0..*first_record_count)
-            .map(|i| format!("column_{}", i + 1))
-            .collect()
+        return Err(PolarsError::NoData("empty csv".into()));
     };
 
-    // save the csv reader position after reading headers
-    let position = csv_reader.position().clone();
-
-    let header_length = headers.len();
     // keep track of inferred field types
     let mut column_types: Vec<HashSet<ArrowDataType, RandomState>> =
         vec![HashSet::with_hasher(RandomState::new()); header_length];
     // keep track of columns with nulls
     let mut nulls: Vec<bool> = vec![false; header_length];
 
-    // return csv reader position to after headers
-    csv_reader.seek(position)?;
-
     let mut records_count = 0;
-    let mut fields = vec![];
+    let mut fields = Vec::with_capacity(header_length);
 
-    for result in csv_reader
-        .records()
-        .take(max_read_records.unwrap_or(std::usize::MAX))
-    {
-        let record = result?;
+    // needed to prevent ownership going into the iterator loop
+    let records_ref = &mut records;
+
+    for result in records_ref.take(max_read_records.unwrap_or(std::usize::MAX)) {
+        let record = result.map_err(anyhow::Error::from)?;
         records_count += 1;
 
         for i in 0..header_length {
-            if let Some(string) = record.get(i) {
-                if string.is_empty() {
+            if let Some(slice) = record.get(i) {
+                if slice.is_empty() {
                     nulls[i] = true;
                 } else {
-                    column_types[i].insert(infer_field_schema(string));
+                    let s = parse_bytes_with_encoding(slice, encoding)?;
+                    column_types[i].insert(infer_field_schema(&s));
                 }
             }
         }
@@ -155,6 +179,7 @@ fn infer_file_schema<R: Read + Seek>(
             _ => fields.push(Field::new(&field_name, ArrowDataType::Utf8, has_nulls)),
         }
     }
+    let csv_reader = records.into_reader();
 
     // return the reader seek back to the start
     csv_reader.into_inner().seek(SeekFrom::Start(0))?;
@@ -258,12 +283,10 @@ fn add_to_utf8_builder(
         let v = row.get(col_idx);
         match v {
             None => builder.append_null(),
-            Some(bytes) => match encoding {
-                CsvEncoding::Utf8 => {
-                    builder.append_value(std::str::from_utf8(bytes).map_err(anyhow::Error::from)?)
-                }
-                CsvEncoding::LossyUtf8 => builder.append_value(String::from_utf8_lossy(bytes)),
-            },
+            Some(bytes) => {
+                let s = parse_bytes_with_encoding(bytes, encoding)?;
+                builder.append_value(&s);
+            }
         }
     }
     Ok(())
@@ -369,43 +392,16 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         builder: &mut PrimitiveChunkedBuilder<T>,
     ) -> Result<()>
     where
-        T: PolarsPrimitiveType,
+        T: PolarsPrimitiveType + PrimitiveParser,
     {
-        let is_boolean_type = *self.schema.field(col_idx).data_type() == ArrowDataType::Boolean;
-
         for (row_index, row) in rows.iter().enumerate() {
             match row.get(col_idx) {
-                Some(s) => {
-                    if s.is_empty() {
+                Some(bytes) => {
+                    if bytes.is_empty() {
                         builder.append_null();
                         continue;
                     }
-
-                    let s = match std::str::from_utf8(s) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            if self.ignore_parser_errors {
-                                builder.append_null();
-                                continue;
-                            }
-                            return Err(PolarsError::Other(
-                                format!(
-                                    "Error while parsing value {} for column {} at line {}. Not valid UTF8",
-                                    e,
-                                    col_idx,
-                                    self.line_number + row_index
-                                )
-                                    .into(),
-                            ));
-                        }
-                    };
-
-                    let parsed = if is_boolean_type {
-                        s.to_lowercase().parse::<T::Native>()
-                    } else {
-                        s.parse::<T::Native>()
-                    };
-                    match parsed {
+                    match T::parse(bytes) {
                         Ok(e) => builder.append_value(e),
                         Err(_) => {
                             if self.ignore_parser_errors {
@@ -414,9 +410,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             }
                             return Err(PolarsError::Other(
                                 format!(
-                                    // TODO: we should surface the underlying error here.
                                     "Error while parsing value {} for column {} at line {}",
-                                    s,
+                                    String::from_utf8_lossy(bytes),
                                     col_idx,
                                     self.line_number + row_index
                                 )
@@ -437,26 +432,39 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         rows: &[ByteRecord],
     ) -> Result<()> {
-        projection
-            .par_iter()
-            .zip(builders)
-            .map(|(i, builder)| {
-                let field = self.schema.field(*i);
-                match field.data_type() {
-                    ArrowDataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
-                    ArrowDataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
-                    ArrowDataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
-                    ArrowDataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
-                    ArrowDataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
-                    ArrowDataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
-                    ArrowDataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
-                    ArrowDataType::Utf8 => {
-                        add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding)
-                    }
-                    _ => todo!(),
-                }
-            })
-            .collect::<Result<_>>()?;
+        let dispatch = |(i, builder): (&usize, &mut Builder)| {
+            let field = self.schema.field(*i);
+            match field.data_type() {
+                ArrowDataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
+                ArrowDataType::Int8 => self.add_to_primitive(rows, *i, builder.i32()),
+                ArrowDataType::Int16 => self.add_to_primitive(rows, *i, builder.i32()),
+                ArrowDataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
+                ArrowDataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
+                ArrowDataType::UInt8 => self.add_to_primitive(rows, *i, builder.u32()),
+                ArrowDataType::UInt16 => self.add_to_primitive(rows, *i, builder.u32()),
+                ArrowDataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
+                ArrowDataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
+                ArrowDataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
+                ArrowDataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
+                ArrowDataType::Utf8 => add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding),
+                _ => todo!(),
+            }
+        };
+
+        // TODO! benchmark this
+        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
+            .unwrap_or_else(|_| "".to_string())
+            .parse()
+            .unwrap_or(15);
+        if projection.len() > bp {
+            projection
+                .par_iter()
+                .zip(builders)
+                .map(dispatch)
+                .collect::<Result<_>>()?;
+        } else {
+            projection.iter().zip(builders).try_for_each(dispatch)?;
+        }
 
         Ok(())
     }
@@ -464,27 +472,35 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     fn next_rows(
         &mut self,
         rows: &mut Vec<ByteRecord>,
-        record_iter: &mut ByteRecordsIntoIter<R>,
-    ) -> Result<()> {
-        for i in 0..self.batch_size {
+        csv_reader: &mut Reader<R>,
+    ) -> Result<usize> {
+        let mut count = 0;
+        loop {
             self.line_number += 1;
-            match record_iter.next() {
-                Some(Ok(r)) => {
-                    rows.push(r);
+            debug_assert!(rows.get(count).is_some());
+            let record = unsafe { rows.get_unchecked_mut(count) };
+
+            match csv_reader.read_byte_record(record) {
+                Ok(true) => count += 1,
+                // end of file
+                Ok(false) => {
+                    break;
                 }
-                Some(Err(e)) => {
+                Err(e) => {
                     if self.ignore_parser_errors {
                         continue;
                     } else {
                         return Err(PolarsError::Other(
-                            format!("Error parsing line {}: {:?}", self.line_number + i, e).into(),
+                            format!("Error parsing line {}: {:?}", self.line_number, e).into(),
                         ));
                     }
                 }
-                None => break,
+            }
+            if count == self.batch_size {
+                break;
             }
         }
-        Ok(())
+        Ok(count)
     }
 
     fn one_thread(
@@ -492,17 +508,26 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         builders: &mut Vec<Builder>,
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
-        mut record_iter: ByteRecordsIntoIter<R>,
+        csv_reader: &mut Reader<R>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
+        // this will be used to amortize allocations
+        // Only correctly parsed lines will fill the start of the Vec.
+        // The whole vec is initialized with default values.
+        // Once a batch of rows is read we use the correctly parsed information to truncate the lenght
+        // to all correct values.
         let mut rows = Vec::with_capacity(self.batch_size);
+        rows.resize_with(self.batch_size, Default::default);
         let mut count = 0;
         loop {
             count += 1;
-            rows.clear();
-            self.next_rows(&mut rows, &mut record_iter)?;
+            let correctly_parsed = self.next_rows(&mut rows, csv_reader)?;
             // stop when the whole file is processed
-            if rows.is_empty() {
+            if correctly_parsed == 0 {
                 break;
+            } else if correctly_parsed < self.batch_size {
+                // this only happens at the last batch if it doesn't fit a whole batch.
+                rows.truncate(correctly_parsed);
             }
             if count % CAPACITY_MULTIPLIER == 0 {
                 let mut builders_tmp = init_builders(
@@ -511,7 +536,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     &self.schema,
                 )?;
                 std::mem::swap(&mut builders_tmp, builders);
-                parsed_dfs.push(builders_to_df(builders_tmp));
+                let mut df = builders_to_df(builders_tmp);
+                if let Some(predicate) = &predicate {
+                    let s = predicate.evaluate(&df)?;
+                    let mask = s.bool().expect("filter predicates was not of type boolean");
+                    df = df.filter(mask)?;
+                }
+                parsed_dfs.push(df);
             }
 
             self.add_to_builders(builders, &projection, &rows)?;
@@ -532,8 +563,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         mut record_iter: ByteRecordsIntoIter<R>,
         parsed_dfs: &mut Vec<DataFrame>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
-        let (tx, rx) = bounded(64);
+        // TODO: Save allocations. Send rows back over channel?
+        let (tx, rx) = bounded(256);
         // used to end rampant thread
         let (tx_end, rx_end) = bounded(1);
 
@@ -586,7 +619,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         &self.schema,
                     )?;
                     std::mem::swap(&mut builders_tmp, builders);
-                    parsed_dfs.push(builders_to_df(builders_tmp));
+                    let mut df = builders_to_df(builders_tmp);
+                    if let Some(predicate) = &predicate {
+                        let s = predicate.evaluate(&df)?;
+                        let mask = s.bool().expect("filter predicates was not of type boolean");
+                        df = df.filter(mask)?;
+                    }
+                    parsed_dfs.push(df);
                 }
                 let rows = res?;
 
@@ -605,12 +644,15 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         Ok(())
     }
 
-    pub fn as_df(&mut self) -> Result<DataFrame> {
+    /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
+    pub fn as_df(&mut self, predicate: Option<Arc<dyn PhysicalExpr>>) -> Result<DataFrame> {
         let mut record_iter = self.record_iter.take().unwrap();
         if self.skip_rows > 0 {
+            let reader = record_iter.reader_mut();
+            let mut record = Default::default();
             for _ in 0..self.skip_rows {
                 self.line_number += 1;
-                let _ = record_iter.next();
+                let _ = reader.read_byte_record(&mut record);
             }
         }
 
@@ -627,12 +669,108 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let mut parsed_dfs = Vec::with_capacity(128);
 
         match self.one_thread {
-            true => self.one_thread(&mut builders, &projection, &mut parsed_dfs, record_iter)?,
-            false => self.two_threads(&mut builders, &projection, record_iter, &mut parsed_dfs)?,
+            true => self.one_thread(
+                &mut builders,
+                &projection,
+                &mut parsed_dfs,
+                record_iter.reader_mut(),
+                predicate,
+            )?,
+            false => self.two_threads(
+                &mut builders,
+                &projection,
+                record_iter,
+                &mut parsed_dfs,
+                predicate,
+            )?,
         }
 
         parsed_dfs.push(builders_to_df(builders));
         utils::accumulate_dataframes_vertical(parsed_dfs)
+    }
+}
+
+impl From<lexical::Error> for PolarsError {
+    fn from(_: lexical::Error) -> Self {
+        PolarsError::Other("Could not parse primitive type during csv parsing".into())
+    }
+}
+
+trait PrimitiveParser: ArrowPrimitiveType {
+    fn parse(bytes: &[u8]) -> Result<Self::Native>;
+}
+
+impl PrimitiveParser for BooleanType {
+    fn parse(bytes: &[u8]) -> Result<bool> {
+        if bytes.eq_ignore_ascii_case(b"false") {
+            Ok(false)
+        } else if bytes.eq_ignore_ascii_case(b"true") {
+            Ok(true)
+        } else {
+            Err(PolarsError::Other("Could not parse boolean".into()))
+        }
+    }
+}
+
+impl PrimitiveParser for Float32Type {
+    fn parse(bytes: &[u8]) -> Result<f32> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Float64Type {
+    fn parse(bytes: &[u8]) -> Result<f64> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+
+impl PrimitiveParser for UInt8Type {
+    fn parse(bytes: &[u8]) -> Result<u8> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for UInt16Type {
+    fn parse(bytes: &[u8]) -> Result<u16> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for UInt32Type {
+    fn parse(bytes: &[u8]) -> Result<u32> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for UInt64Type {
+    fn parse(bytes: &[u8]) -> Result<u64> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Int8Type {
+    fn parse(bytes: &[u8]) -> Result<i8> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Int16Type {
+    fn parse(bytes: &[u8]) -> Result<i16> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Int32Type {
+    fn parse(bytes: &[u8]) -> Result<i32> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
+    }
+}
+impl PrimitiveParser for Int64Type {
+    fn parse(bytes: &[u8]) -> Result<i64> {
+        let a = lexical::parse(bytes)?;
+        Ok(a)
     }
 }
 

@@ -46,6 +46,11 @@ class DataFrame:
         if isinstance(data, dict):
             for k, v in data.items():
                 columns.append(Series(k, v, nullable=nullable).inner())
+        elif isinstance(data, list):
+            for s in data:
+                if not isinstance(s, Series):
+                    raise ValueError("a list should contain Series")
+                columns.append(s.inner())
         else:
             try:
                 import pandas as pd
@@ -84,43 +89,8 @@ class DataFrame:
         columns: "Optional[List[str]]" = None,
         rechunk: bool = True,
         encoding: str = "utf8",
+        one_thread: bool = True,
     ) -> "DataFrame":
-        """
-        Read into a DataFrame from a csv file.
-
-        Parameters
-        ----------
-        file
-            Path to a file or a file like object.
-        infer_schema_length
-            Maximum number of lines to read to infer schema.
-        batch_size
-            Number of lines to read into the buffer at once. Modify this to change performance.
-        has_headers
-            If the CSV file has headers or not.
-        ignore_errors
-            Try to keep reading lines if some lines yield errors.
-        stop_after_n_rows
-            After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
-            on the batch size.
-        skip_rows
-            Start reading after `skip_rows`.
-        projection
-            Indexes of columns to select
-        sep
-            Delimiter/ value seperator
-        columns
-            Columns to project/ select
-        rechunk
-            Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
-        encoding
-            - "utf8"
-            _ "utf8-lossy"
-
-        Returns
-        -------
-        DataFrame
-        """
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_csv(
             file,
@@ -135,6 +105,7 @@ class DataFrame:
             rechunk,
             columns,
             encoding,
+            one_thread,
         )
         return self
 
@@ -341,7 +312,7 @@ class DataFrame:
                 else:
                     return wrap_df(self._df.take(item))
             dtype = item.dtype
-            if dtype == Bool:
+            if dtype == Boolean:
                 return wrap_df(self._df.filter(item.inner()))
             if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
@@ -516,11 +487,13 @@ class DataFrame:
         """
         return wrap_df(self._df.tail(length))
 
-    def drop_nulls(self) -> "DataFrame":
+    def drop_nulls(self, subset: "Optional[List[str]]") -> "DataFrame":
         """
         Return a new DataFrame where the null values are dropped
         """
-        return wrap_df(self._df.drop_nulls())
+        if subset is not None and isinstance(subset, str):
+            subset = [subset]
+        return wrap_df(self._df.drop_nulls(subset))
 
     def pipe(self, func: Callable, *args, **kwargs):
         """
@@ -553,8 +526,9 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: str,
-        right_on: str,
+        left_on: "Optional[str]" = None,
+        right_on: "Optional[str]" = None,
+        on: "Optional[str]" = None,
         how="inner",
     ) -> "DataFrame":
         """
@@ -568,6 +542,8 @@ class DataFrame:
             Name of the left join column
         right_on
             Name of the right join column
+        on
+            Name of the join columns in both DataFrames
         how
             Join strategy
                 - "inner"
@@ -578,18 +554,21 @@ class DataFrame:
         -------
             Joined DataFrame
         """
-        try:
-            if how == "inner":
-                inner = self._df.inner_join(df._df, left_on, right_on)
-            elif how == "left":
-                inner = self._df.left_join(df._df, left_on, right_on)
-            elif how == "outer":
-                inner = self._df.outer_join(df._df, left_on, right_on)
-            else:
-                return NotImplemented
-        except Exception as e:
-            self._df.with_parallel(False)
-            raise e
+
+        if isinstance(on, str):
+            left_on = on
+            right_on = on
+        if left_on is None or right_on is None:
+            raise ValueError("you should pass the column to join on as an argument")
+
+        if how == "inner":
+            inner = self._df.inner_join(df._df, left_on, right_on)
+        elif how == "left":
+            inner = self._df.left_join(df._df, left_on, right_on)
+        elif how == "outer":
+            inner = self._df.outer_join(df._df, left_on, right_on)
+        else:
+            return NotImplemented
         return wrap_df(inner)
 
     def hstack(
@@ -750,8 +729,10 @@ class DataFrame:
         """
         return wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "LazyFrame":
-        pass
+    def lazy(self) -> "pypolars.lazy.LazyFrame":
+        from pypolars.lazy import wrap_ldf
+
+        return wrap_ldf(self._df.lazy())
 
     def n_chunks(self) -> int:
         """
@@ -813,12 +794,16 @@ class DataFrame:
         """
         return wrap_df(self._df.to_dummies())
 
-    def drop_duplicates(self, maintain_order=True) -> "DataFrame":
+    def drop_duplicates(
+        self, maintain_order=True, subset: "Optional[List[str]]" = None
+    ) -> "DataFrame":
         """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
-        return wrap_df(self._df.drop_duplicates(maintain_order))
+        if subset is not None and not isinstance(subset, list):
+            subset = [subset]
+        return wrap_df(self._df.drop_duplicates(maintain_order, subset))
 
     def _rechunk(self) -> "DataFrame":
         return wrap_df(self._df.rechunk())

@@ -6,13 +6,22 @@ pub mod json;
 #[doc(cfg(feature = "parquet"))]
 pub mod parquet;
 
+#[cfg(feature = "lazy")]
+use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
+use crate::utils::accumulate_dataframes_vertical;
+use arrow::array::ArrayRef;
 use arrow::{
-    csv::Reader as ArrowCsvReader, error::ArrowError, error::Result as ArrowResult,
-    json::Reader as ArrowJsonReader, record_batch::RecordBatch,
+    csv::Reader as ArrowCsvReader, error::Result as ArrowResult, json::Reader as ArrowJsonReader,
+    record_batch::RecordBatch,
 };
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
+
+#[cfg(not(feature = "lazy"))]
+pub trait PhysicalExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series>;
+}
 
 pub trait SerReader<R>
 where
@@ -27,9 +36,6 @@ where
     {
         self
     }
-
-    /// Continue with next batch when a ParserError is encountered.
-    fn with_ignore_parser_errors(self, ignore: bool) -> Self;
 
     /// Take the SerReader and return a parsed DataFrame.
     fn finish(self) -> Result<DataFrame>;
@@ -69,109 +75,102 @@ impl<R: Read> ArrowReader for ArrowJsonReader<R> {
     }
 }
 
+fn init_ca<T>(arr: &ArrayRef, field: &Field) -> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    ChunkedArray::new_from_chunks(field.name(), vec![arr.clone()])
+}
+
+fn arr_to_series(arr: &ArrayRef, field: &Field) -> Series {
+    match arr.data_type() {
+        ArrowDataType::UInt8 => Series::UInt8(init_ca(arr, field)),
+        ArrowDataType::UInt16 => Series::UInt16(init_ca(arr, field)),
+        ArrowDataType::UInt32 => Series::UInt32(init_ca(arr, field)),
+        ArrowDataType::UInt64 => Series::UInt64(init_ca(arr, field)),
+        ArrowDataType::Int8 => Series::Int8(init_ca(arr, field)),
+        ArrowDataType::Int16 => Series::Int16(init_ca(arr, field)),
+        ArrowDataType::Int32 => Series::Int32(init_ca(arr, field)),
+        ArrowDataType::Int64 => Series::Int64(init_ca(arr, field)),
+        ArrowDataType::Float32 => Series::Float32(init_ca(arr, field)),
+        ArrowDataType::Float64 => Series::Float64(init_ca(arr, field)),
+        ArrowDataType::Utf8 => Series::Utf8(init_ca(arr, field)),
+        ArrowDataType::Boolean => Series::Bool(init_ca(arr, field)),
+        ArrowDataType::Date32(DateUnit::Millisecond) => Series::Date32(init_ca(arr, field)),
+        ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(init_ca(arr, field)),
+        ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+            Series::DurationNanosecond(init_ca(arr, field))
+        }
+        ArrowDataType::Duration(TimeUnit::Microsecond) => {
+            Series::DurationMicrosecond(init_ca(arr, field))
+        }
+        ArrowDataType::Duration(TimeUnit::Millisecond) => {
+            Series::DurationMillisecond(init_ca(arr, field))
+        }
+        ArrowDataType::Duration(TimeUnit::Second) => Series::DurationSecond(init_ca(arr, field)),
+        ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+            Series::Time64Nanosecond(init_ca(arr, field))
+        }
+        ArrowDataType::Time64(TimeUnit::Microsecond) => {
+            Series::Time64Microsecond(init_ca(arr, field))
+        }
+        ArrowDataType::Time32(TimeUnit::Millisecond) => {
+            Series::Time32Millisecond(init_ca(arr, field))
+        }
+        ArrowDataType::Time32(TimeUnit::Second) => Series::Time32Second(init_ca(arr, field)),
+        ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+            Series::TimestampNanosecond(init_ca(arr, field))
+        }
+        ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+            Series::TimestampMicrosecond(init_ca(arr, field))
+        }
+        ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
+            Series::TimestampMillisecond(init_ca(arr, field))
+        }
+        ArrowDataType::Timestamp(TimeUnit::Second, _) => {
+            Series::TimestampSecond(init_ca(arr, field))
+        }
+        ArrowDataType::List(_) => Series::List(init_ca(arr, field)),
+        t => panic!(format!("Arrow datatype {:?} is not supported", t)),
+    }
+}
+
 pub fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
-    ignore_parser_error: bool,
     stop_after_n_rows: Option<usize>,
+    predicate: Option<Arc<dyn PhysicalExpr>>,
 ) -> Result<DataFrame> {
-    fn init_ca<T>(field: &Field) -> ChunkedArray<T>
-    where
-        T: PolarsDataType,
-    {
-        ChunkedArray::new_from_chunks(field.name(), vec![])
-    }
-
-    let mut columns = reader
-        .schema()
-        .fields()
-        .iter()
-        .map(|field| match field.data_type() {
-            ArrowDataType::UInt8 => Series::UInt8(init_ca(field)),
-            ArrowDataType::UInt16 => Series::UInt16(init_ca(field)),
-            ArrowDataType::UInt32 => Series::UInt32(init_ca(field)),
-            ArrowDataType::UInt64 => Series::UInt64(init_ca(field)),
-            ArrowDataType::Int8 => Series::Int8(init_ca(field)),
-            ArrowDataType::Int16 => Series::Int16(init_ca(field)),
-            ArrowDataType::Int32 => Series::Int32(init_ca(field)),
-            ArrowDataType::Int64 => Series::Int64(init_ca(field)),
-            ArrowDataType::Float32 => Series::Float32(init_ca(field)),
-            ArrowDataType::Float64 => Series::Float64(init_ca(field)),
-            ArrowDataType::Utf8 => Series::Utf8(init_ca(field)),
-            ArrowDataType::Boolean => Series::Bool(init_ca(field)),
-            ArrowDataType::Date32(DateUnit::Millisecond) => Series::Date32(init_ca(field)),
-            ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(init_ca(field)),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                Series::DurationNanosecond(init_ca(field))
-            }
-            ArrowDataType::Duration(TimeUnit::Microsecond) => {
-                Series::DurationMicrosecond(init_ca(field))
-            }
-            ArrowDataType::Duration(TimeUnit::Millisecond) => {
-                Series::DurationMillisecond(init_ca(field))
-            }
-            ArrowDataType::Duration(TimeUnit::Second) => Series::DurationSecond(init_ca(field)),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => Series::Time64Nanosecond(init_ca(field)),
-            ArrowDataType::Time64(TimeUnit::Microsecond) => {
-                Series::Time64Microsecond(init_ca(field))
-            }
-            ArrowDataType::Time32(TimeUnit::Millisecond) => {
-                Series::Time32Millisecond(init_ca(field))
-            }
-            ArrowDataType::Time32(TimeUnit::Second) => Series::Time32Second(init_ca(field)),
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                Series::TimestampNanosecond(init_ca(field))
-            }
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                Series::TimestampMicrosecond(init_ca(field))
-            }
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-                Series::TimestampMillisecond(init_ca(field))
-            }
-            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-                Series::TimestampSecond(init_ca(field))
-            }
-            ArrowDataType::List(_) => Series::List(init_ca(field)),
-            t => panic!(format!("Arrow datatype {:?} is not supported", t)),
-        })
-        .collect::<Vec<_>>();
-
     let mut n_rows = 0;
-    loop {
-        let batch = match reader.next_record_batch() {
-            Err(ArrowError::ParseError(s)) => {
-                if ignore_parser_error {
-                    continue;
-                } else {
-                    return Err(PolarsError::ArrowError(ArrowError::ParseError(s)));
-                }
-            }
-            Err(e) => return Err(PolarsError::ArrowError(e)),
-            Ok(None) => break,
-            Ok(Some(batch)) => batch,
-        };
+    let mut parsed_dfs = Vec::with_capacity(1024);
+
+    while let Some(batch) = reader.next_record_batch()? {
         n_rows += batch.num_rows();
-        batch
+
+        let columns = batch
             .columns()
             .iter()
-            .zip(&mut columns)
-            .map(|(arr, ser)| ser.append_array(arr.clone()))
-            .collect::<Result<Vec<_>>>()?;
+            .zip(reader.schema().fields())
+            .map(|(arr, field)| arr_to_series(arr, field))
+            .collect();
+
+        let mut df = DataFrame::new_no_checks(columns);
+
+        if let Some(predicate) = &predicate {
+            let s = predicate.evaluate(&df)?;
+            let mask = s.bool().expect("filter predicates was not of type boolean");
+            df = df.filter(mask)?;
+        }
+        parsed_dfs.push(df);
         if let Some(n) = stop_after_n_rows {
-            if n_rows > n {
+            if n_rows >= n {
                 break;
             }
         }
     }
-    if rechunk {
-        columns = columns
-            .into_iter()
-            .map(|s| {
-                let s = s.rechunk(None)?;
-                Ok(s)
-            })
-            .collect::<Result<Vec<_>>>()?;
+    let df = accumulate_dataframes_vertical(parsed_dfs)?;
+    match rechunk {
+        true => Ok(df.agg_chunks()),
+        false => Ok(df),
     }
-
-    Ok(DataFrame { columns })
 }

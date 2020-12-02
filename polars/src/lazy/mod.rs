@@ -112,9 +112,9 @@
 //!     .lazy()
 //!     .groupby("date")
 //!     .agg(vec![
-//!         col("rain").agg_min(),
-//!         col("rain").agg_sum(),
-//!         col("rain").agg_quantile(0.5).alias("median_rain"),
+//!         col("rain").min(),
+//!         col("rain").sum(),
+//!         col("rain").quantile(0.5).alias("median_rain"),
 //!     ])
 //!     .sort("date", false)
 //!     .collect()
@@ -173,7 +173,7 @@
 //!     )
 //!     .groupby("b")
 //!     .agg(
-//!         vec![col("b").agg_first(), col("c").agg_first()]
+//!         vec![col("b").first(), col("c").first()]
 //!      )
 //!     .select(&[col("b"), col("c_first")])
 //! }
@@ -189,7 +189,7 @@
 //!     df_a.lazy()
 //!     .groupby("b")
 //!     .agg(
-//!         vec![col("*").agg_first()]
+//!         vec![col("*").first()]
 //!      )
 //! }
 //! ```
@@ -202,7 +202,6 @@ pub(crate) mod utils;
 
 #[cfg(test)]
 mod tests {
-    use crate::lazy::prelude::*;
     use crate::prelude::*;
     use std::io::Cursor;
 
@@ -229,20 +228,5 @@ mod tests {
             .finish()
             .unwrap();
         df
-    }
-
-    #[test]
-    fn plan_builder_simple() {
-        let df = get_df();
-
-        let logical_plan = LogicalPlanBuilder::from_existing_df(df)
-            .filter(col("sepal.length").lt(lit(5)))
-            .build();
-
-        println!("{:?}", logical_plan);
-
-        let planner = DefaultPlanner {};
-        let physical_plan = planner.create_physical_plan(logical_plan).unwrap();
-        println!("{:?}", physical_plan.execute());
     }
 }

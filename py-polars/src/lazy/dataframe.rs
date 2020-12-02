@@ -36,6 +36,34 @@ impl From<LazyFrame> for PyLazyFrame {
 
 #[pymethods]
 impl PyLazyFrame {
+    #[staticmethod]
+    pub fn new_from_csv(
+        path: String,
+        sep: &str,
+        has_header: bool,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+    ) -> Self {
+        let delimiter = sep.as_bytes()[0];
+        LazyFrame::new_from_csv(
+            path,
+            delimiter,
+            has_header,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+            cache,
+        )
+        .into()
+    }
+
+    #[staticmethod]
+    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
+        LazyFrame::new_from_parquet(path, stop_after_n_rows, cache).into()
+    }
+
     pub fn describe_plan(&self) -> String {
         self.ldf.describe_plan()
     }
@@ -53,11 +81,13 @@ impl PyLazyFrame {
         type_coercion: bool,
         predicate_pushdown: bool,
         projection_pushdown: bool,
+        simplify_expr: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
             .with_type_coercion_optimization(type_coercion)
             .with_predicate_pushdown_optimization(predicate_pushdown)
+            .with_simplify_expr_optimization(simplify_expr)
             .with_projection_pushdown_optimization(projection_pushdown);
         ldf.into()
     }
@@ -65,6 +95,10 @@ impl PyLazyFrame {
     pub fn sort(&self, by_column: &str, reverse: bool) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.sort(by_column, reverse).into()
+    }
+    pub fn cache(&self) -> PyLazyFrame {
+        let ldf = self.ldf.clone();
+        ldf.cache().into()
     }
 
     pub fn collect(&self) -> PyResult<PyDataFrame> {
@@ -134,6 +168,11 @@ impl PyLazyFrame {
         ldf.with_columns(py_exprs_to_exprs(exprs)).into()
     }
 
+    pub fn with_column_renamed(&mut self, existing: &str, new: &str) -> PyLazyFrame {
+        let ldf = self.ldf.clone();
+        ldf.with_column_renamed(existing, new).into()
+    }
+
     pub fn reverse(&self) -> Self {
         let ldf = self.ldf.clone();
         ldf.reverse().into()
@@ -142,6 +181,11 @@ impl PyLazyFrame {
     pub fn shift(&self, periods: i32) -> Self {
         let ldf = self.ldf.clone();
         ldf.shift(periods).into()
+    }
+
+    pub fn fill_none(&self, fill_value: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.fill_none(fill_value.inner).into()
     }
 
     pub fn min(&self) -> Self {
@@ -164,6 +208,16 @@ impl PyLazyFrame {
         ldf.mean().into()
     }
 
+    pub fn std(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.std().into()
+    }
+
+    pub fn var(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.var().into()
+    }
+
     pub fn median(&self) -> Self {
         let ldf = self.ldf.clone();
         ldf.median().into()
@@ -177,6 +231,16 @@ impl PyLazyFrame {
     pub fn explode(&self, column: &str) -> Self {
         let ldf = self.ldf.clone();
         ldf.explode(column).into()
+    }
+
+    pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.drop_duplicates(maintain_order, subset).into()
+    }
+
+    pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.drop_nulls(subset.as_ref().map(|v| v.as_ref())).into()
     }
 
     pub fn clone(&self) -> PyLazyFrame {

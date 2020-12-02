@@ -1,4 +1,5 @@
 pub mod set;
+pub(crate) mod take;
 #[cfg(feature = "temporal")]
 #[doc(cfg(feature = "temporal"))]
 pub mod temporal;

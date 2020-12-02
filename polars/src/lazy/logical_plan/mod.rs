@@ -1,6 +1,8 @@
 pub(crate) mod optimizer;
+use crate::frame::ser::fork::csv::infer_file_schema;
+use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
-use crate::lazy::utils::expr_to_root_column_expr;
+use crate::lazy::utils::{expr_to_root_column_expr, has_expr};
 use crate::{
     lazy::{prelude::*, utils},
     prelude::*,
@@ -8,8 +10,13 @@ use crate::{
 use ahash::RandomState;
 use arrow::datatypes::DataType;
 use std::collections::HashSet;
-use std::sync::Mutex;
 use std::{fmt, sync::Arc};
+
+#[derive(Clone, Copy)]
+pub enum Context {
+    Aggregation,
+    Other,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ScalarValue {
@@ -63,16 +70,15 @@ impl ScalarValue {
 
 #[derive(Clone)]
 pub enum DataFrameOperation {
-    Sort { by_column: String, reverse: bool },
-    Reverse,
-    Shift { periods: i32 },
-    Max,
-    Min,
-    Sum,
-    Mean,
-    Median,
-    Quantile(f64),
+    Sort {
+        by_column: String,
+        reverse: bool,
+    },
     Explode(String),
+    DropDuplicates {
+        maintain_order: bool,
+        subset: Option<Vec<String>>,
+    },
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -83,14 +89,41 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         predicate: Expr,
     },
+    Cache {
+        input: Box<LogicalPlan>,
+    },
     CsvScan {
         path: String,
         schema: Schema,
         has_header: bool,
-        delimiter: Option<u8>,
+        delimiter: u8,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+        with_columns: Option<Vec<String>>,
+        predicate: Option<Expr>,
+        cache: bool,
     },
+    ParquetScan {
+        path: String,
+        schema: Schema,
+        with_columns: Option<Vec<String>>,
+        predicate: Option<Expr>,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+    },
+    // we keep track of the projection and selection as it is cheaper to first project and then filter
     DataFrameScan {
-        df: Arc<Mutex<DataFrame>>,
+        df: Arc<DataFrame>,
+        schema: Schema,
+        projection: Option<Vec<Expr>>,
+        selection: Option<Expr>,
+    },
+    // a projection that doesn't have to be optimized
+    // or may drop projected columns if they aren't in current schema (after optimization)
+    LocalProjection {
+        expr: Vec<Expr>,
+        input: Box<LogicalPlan>,
         schema: Schema,
     },
     // vertical selection
@@ -98,10 +131,6 @@ pub enum LogicalPlan {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
         schema: Schema,
-    },
-    DataFrameOp {
-        input: Box<LogicalPlan>,
-        operation: DataFrameOperation,
     },
     Aggregate {
         input: Box<LogicalPlan>,
@@ -122,6 +151,20 @@ pub enum LogicalPlan {
         exprs: Vec<Expr>,
         schema: Schema,
     },
+    Distinct {
+        input: Box<LogicalPlan>,
+        maintain_order: bool,
+        subset: Arc<Option<Vec<String>>>,
+    },
+    Sort {
+        input: Box<LogicalPlan>,
+        by_column: String,
+        reverse: bool,
+    },
+    Explode {
+        input: Box<LogicalPlan>,
+        column: String,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -130,7 +173,13 @@ impl Default for LogicalPlan {
             path: "".to_string(),
             schema: Schema::new(vec![Field::new("", ArrowDataType::Null, true)]),
             has_header: false,
-            delimiter: None,
+            delimiter: b',',
+            ignore_errors: false,
+            skip_rows: 0,
+            stop_after_n_rows: None,
+            with_columns: None,
+            predicate: None,
+            cache: true,
         }
     }
 }
@@ -139,37 +188,87 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
-            Selection { predicate, input } => {
-                write!(f, "Filter\n\t{:?}\nFROM\n\t{:?}", predicate, input)
-            }
-            CsvScan { path, .. } => write!(f, "CSVScan {}", path),
-            DataFrameScan { schema, .. } => write!(
-                f,
-                "TABLE: {:?}",
-                schema
-                    .fields()
-                    .iter()
-                    .map(|f| f.name())
-                    .take(4)
-                    .collect::<Vec<_>>()
-            ),
-            Projection { expr, input, .. } => write!(f, "SELECT {:?} \nFROM\n{:?}", expr, input),
-            DataFrameOp {
-                input, operation, ..
-            } => match operation {
-                DataFrameOperation::Sort { .. } => write!(f, "SORT {:?}", input),
-                DataFrameOperation::Reverse => write!(f, "REVERSE {:?}", input),
-                DataFrameOperation::Shift { periods } => {
-                    write!(f, "SHIFT {:?} BY {}", input, periods)
+            Cache { input } => write!(f, "CACHE {:?}", input),
+            ParquetScan {
+                path,
+                schema,
+                with_columns,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = with_columns {
+                    n_columns = format!("{}", columns.len());
                 }
-                DataFrameOperation::Max => write!(f, "MAX {:?}", input),
-                DataFrameOperation::Min => write!(f, "MIN {:?}", input),
-                DataFrameOperation::Sum => write!(f, "SUM {:?}", input),
-                DataFrameOperation::Mean => write!(f, "MEAN {:?}", input),
-                DataFrameOperation::Median => write!(f, "MEDIAN {:?}", input),
-                DataFrameOperation::Quantile(_) => write!(f, "QUANTILE {:?}", input),
-                DataFrameOperation::Explode(_) => write!(f, "EXPLODE {:?}", input),
-            },
+                write!(
+                    f,
+                    "PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    path, n_columns, total_columns, predicate
+                )
+            }
+            Selection { predicate, input } => {
+                write!(f, "FILTER\n\t{:?}\nFROM\n\t{:?}", predicate, input)
+            }
+            CsvScan {
+                path,
+                with_columns,
+                schema,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                write!(
+                    f,
+                    "CSV SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    path, n_columns, total_columns, predicate
+                )
+            }
+            DataFrameScan {
+                schema,
+                projection,
+                selection,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = projection {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                write!(
+                    f,
+                    "TABLE: {:?}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    schema
+                        .fields()
+                        .iter()
+                        .map(|f| f.name())
+                        .take(4)
+                        .collect::<Vec<_>>(),
+                    n_columns,
+                    total_columns,
+                    selection
+                )
+            }
+            Projection { expr, input, .. } => {
+                write!(f, "SELECT {:?} COLUMNS \nFROM\n{:?}", expr.len(), input)
+            }
+            LocalProjection { expr, input, .. } => {
+                write!(
+                    f,
+                    "LOCAL SELECT {:?} COLUMNS \nFROM\n{:?}",
+                    expr.len(),
+                    input
+                )
+            }
+            Sort {
+                input, by_column, ..
+            } => write!(f, "SORT {:?} BY COLUMN {}", input, by_column),
+            Explode { input, column, .. } => write!(f, "EXPLODE COLUMN {} OF {:?}", column, input),
             Aggregate {
                 input, keys, aggs, ..
             } => write!(f, "Aggregate\n\t{:?} BY {:?} FROM {:?}", aggs, keys, input),
@@ -187,12 +286,22 @@ impl fmt::Debug for LogicalPlan {
             HStack { input, exprs, .. } => {
                 write!(f, "\n{:?}\n\tWITH COLUMN(S)\n{:?}\n", input, exprs)
             }
+            Distinct { input, .. } => write!(f, "DISTINCT {:?}", input),
         }
     }
 }
 
 fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
     match expr {
+        Expr::Unique(expr) => {
+            Expr::Unique(Box::new(replace_wildcard_with_column(*expr, column_name)))
+        }
+        Expr::Duplicated(expr) => {
+            Expr::Duplicated(Box::new(replace_wildcard_with_column(*expr, column_name)))
+        }
+        Expr::Reverse(expr) => {
+            Expr::Reverse(Box::new(replace_wildcard_with_column(*expr, column_name)))
+        }
         Expr::Ternary {
             predicate,
             truthy,
@@ -226,28 +335,23 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             Box::new(replace_wildcard_with_column(*e, column_name)),
             name,
         ),
-        Expr::AggMean(e) => Expr::AggMean(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggMedian(e) => {
-            Expr::AggMedian(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
-        Expr::AggMax(e) => Expr::AggMax(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggMin(e) => Expr::AggMin(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggSum(e) => Expr::AggSum(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggLast(e) => Expr::AggLast(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggFirst(e) => {
-            Expr::AggFirst(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
-        Expr::AggNUnique(e) => {
-            Expr::AggNUnique(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
+        Expr::Mean(e) => Expr::Mean(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Median(e) => Expr::Median(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Max(e) => Expr::Max(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Min(e) => Expr::Min(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Sum(e) => Expr::Sum(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Count(e) => Expr::Count(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::Last(e) => Expr::Last(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::First(e) => Expr::First(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::NUnique(e) => Expr::NUnique(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::AggGroups(e) => {
             Expr::AggGroups(Box::new(replace_wildcard_with_column(*e, column_name)))
         }
-        Expr::AggQuantile { expr, quantile } => Expr::AggQuantile {
+        Expr::Quantile { expr, quantile } => Expr::Quantile {
             expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
             quantile,
         },
-        Expr::AggList(e) => Expr::AggList(Box::new(replace_wildcard_with_column(*e, column_name))),
+        Expr::List(e) => Expr::List(Box::new(replace_wildcard_with_column(*e, column_name))),
         Expr::Shift { input, periods } => Expr::Shift {
             input: Box::new(replace_wildcard_with_column(*input, column_name)),
             periods,
@@ -267,14 +371,10 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-fn remove_wildcard_from_exprs(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
-    if exprs.len() == 1 && exprs[0] == Expr::Wildcard {
-        // no projection needed
-        return vec![];
-    };
+fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
     for expr in exprs {
-        if expr_to_root_column_expr(&expr).expect("should have a root column") == &Expr::Wildcard {
+        if let Ok(Expr::Wildcard) = expr_to_root_column_expr(&expr) {
             for field in schema.fields() {
                 let name = field.name();
                 let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
@@ -293,14 +393,19 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &Schema {
         use LogicalPlan::*;
         match self {
+            Cache { input } => input.schema(),
+            Sort { input, .. } => input.schema(),
+            Explode { input, .. } => input.schema(),
+            ParquetScan { schema, .. } => schema,
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => input.schema(),
             CsvScan { schema, .. } => schema,
             Projection { schema, .. } => schema,
-            DataFrameOp { input, .. } => input.schema(),
+            LocalProjection { schema, .. } => schema,
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
+            Distinct { input, .. } => input.schema(),
         }
     }
     pub fn describe(&self) -> String {
@@ -314,14 +419,66 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
     }
 }
 
+fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
+    let exprs = rewrite_projections(exprs, schema);
+    let schema = utils::expressions_to_schema(&exprs, schema, Context::Other);
+    (exprs, schema)
+}
+
 impl LogicalPlanBuilder {
-    pub fn scan_csv() -> Self {
-        todo!()
+    pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
+        let file = std::fs::File::open(&path).expect("could not open file");
+        let schema = ParquetReader::new(file)
+            .schema()
+            .expect("could not get parquet schema");
+
+        LogicalPlan::ParquetScan {
+            path,
+            schema,
+            stop_after_n_rows,
+            with_columns: None,
+            predicate: None,
+            cache,
+        }
+        .into()
+    }
+
+    pub fn scan_csv(
+        path: String,
+        delimiter: u8,
+        has_header: bool,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+    ) -> Self {
+        let mut file = std::fs::File::open(&path).expect("could not open file");
+        let (schema, _) = infer_file_schema(&mut file, delimiter, Some(100), has_header)
+            .expect("could not read schema");
+        LogicalPlan::CsvScan {
+            path,
+            schema,
+            has_header,
+            delimiter,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+            with_columns: None,
+            predicate: None,
+            cache,
+        }
+        .into()
+    }
+
+    pub fn cache(self) -> Self {
+        LogicalPlan::Cache {
+            input: Box::new(self.0),
+        }
+        .into()
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
-        let exprs = remove_wildcard_from_exprs(exprs, &self.0.schema());
-        let schema = utils::expressions_to_schema(&exprs, self.0.schema());
+        let (exprs, schema) = prepare_projection(exprs, &self.0.schema());
 
         // if len == 0, no projection has to be done. This is a select all operation.
         if !exprs.is_empty() {
@@ -336,11 +493,53 @@ impl LogicalPlanBuilder {
         }
     }
 
+    pub fn project_local(self, exprs: Vec<Expr>) -> Self {
+        let (exprs, schema) = prepare_projection(exprs, &self.0.schema());
+        if !exprs.is_empty() {
+            LogicalPlan::LocalProjection {
+                expr: exprs,
+                input: Box::new(self.0),
+                schema,
+            }
+            .into()
+        } else {
+            self
+        }
+    }
+
+    pub fn fill_none(self, fill_value: Expr) -> Self {
+        let schema = self.0.schema();
+        let exprs = schema
+            .fields()
+            .iter()
+            .map(|field| {
+                let name = field.name();
+                when(col(name).is_null())
+                    .then(fill_value.clone())
+                    .otherwise(col(name))
+                    .alias(name)
+            })
+            .collect();
+        self.project_local(exprs)
+    }
+
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
         let schema = self.0.schema();
-        let added_schema = utils::expressions_to_schema(&exprs, schema);
-        let new_schema = Schema::try_merge(&[schema.clone(), added_schema]).unwrap();
+
+        let mut new_fields = schema.fields().clone();
+
+        for e in &exprs {
+            let field = e.to_field(schema, Context::Other).unwrap();
+            match schema.index_of(field.name()) {
+                Ok(idx) => {
+                    new_fields[idx] = field;
+                }
+                Err(_) => new_fields.push(field),
+            }
+        }
+
+        let new_schema = Schema::new(new_fields);
 
         LogicalPlan::HStack {
             input: Box::new(self.0),
@@ -352,6 +551,14 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
+        let predicate = if has_expr(&predicate, &Expr::Wildcard) {
+            let it = self.0.schema().fields().iter().map(|field| {
+                replace_wildcard_with_column(predicate.clone(), Arc::new(field.name().clone()))
+            });
+            combine_predicates(it)
+        } else {
+            predicate
+        };
         LogicalPlan::Selection {
             predicate,
             input: Box::new(self.0),
@@ -361,8 +568,9 @@ impl LogicalPlanBuilder {
 
     pub fn groupby(self, keys: Arc<Vec<String>>, aggs: Vec<Expr>) -> Self {
         let current_schema = self.0.schema();
-        let aggs = remove_wildcard_from_exprs(aggs, current_schema);
+        let aggs = rewrite_projections(aggs, current_schema);
 
+        // todo! use same merge method as in with_columns
         let fields = keys
             .iter()
             .map(|name| current_schema.field_with_name(name).unwrap().clone())
@@ -370,7 +578,7 @@ impl LogicalPlanBuilder {
 
         let schema1 = Schema::new(fields);
 
-        let schema2 = utils::expressions_to_schema(&aggs, self.0.schema());
+        let schema2 = utils::expressions_to_schema(&aggs, self.0.schema(), Context::Aggregation);
         let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
 
         LogicalPlan::Aggregate {
@@ -389,88 +597,36 @@ impl LogicalPlanBuilder {
     pub fn from_existing_df(df: DataFrame) -> Self {
         let schema = df.schema();
         LogicalPlan::DataFrameScan {
-            df: Arc::new(Mutex::new(df)),
+            df: Arc::new(df),
             schema,
+            projection: None,
+            selection: None,
         }
         .into()
     }
 
     pub fn sort(self, by_column: String, reverse: bool) -> Self {
-        LogicalPlan::DataFrameOp {
+        LogicalPlan::Sort {
             input: Box::new(self.0),
-            operation: DataFrameOperation::Sort { by_column, reverse },
+            by_column,
+            reverse,
         }
         .into()
     }
 
-    pub fn reverse(self) -> Self {
-        LogicalPlan::DataFrameOp {
+    pub fn explode(self, column: String) -> Self {
+        LogicalPlan::Explode {
             input: Box::new(self.0),
-            operation: DataFrameOperation::Reverse,
+            column,
         }
         .into()
     }
 
-    pub fn shift(self, periods: i32) -> Self {
-        LogicalPlan::DataFrameOp {
+    pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
+        LogicalPlan::Distinct {
             input: Box::new(self.0),
-            operation: DataFrameOperation::Shift { periods },
-        }
-        .into()
-    }
-
-    pub fn explode(self, column: &str) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Explode(column.to_owned()),
-        }
-        .into()
-    }
-
-    pub fn min(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Min,
-        }
-        .into()
-    }
-
-    pub fn max(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Max,
-        }
-        .into()
-    }
-
-    pub fn sum(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Sum,
-        }
-        .into()
-    }
-
-    pub fn mean(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Mean,
-        }
-        .into()
-    }
-
-    pub fn median(self) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Median,
-        }
-        .into()
-    }
-
-    pub fn quantile(self, quantile: f64) -> Self {
-        LogicalPlan::DataFrameOp {
-            input: Box::new(self.0),
-            operation: DataFrameOperation::Quantile(quantile),
+            maintain_order,
+            subset: Arc::new(subset),
         }
         .into()
     }
@@ -518,7 +674,7 @@ impl LogicalPlanBuilder {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum JoinType {
     Left,
     Inner,
@@ -587,7 +743,7 @@ mod test {
         let lp = df
             .lazy()
             .groupby("variety")
-            .agg(vec![col("sepal.width").agg_min()])
+            .agg(vec![col("sepal.width").min()])
             .logical_plan;
         println!("{:#?}", lp.schema().fields());
         assert!(lp.schema().field_with_name("sepal.width_min").is_ok());

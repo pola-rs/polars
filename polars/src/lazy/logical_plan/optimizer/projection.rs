@@ -1,8 +1,8 @@
 use crate::lazy::logical_plan::optimizer::check_down_node;
+use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column, expr_to_root_column_expr, expressions_to_root_column_exprs,
-    projected_names,
+    expr_to_root_column, expr_to_root_column_expr, has_expr, projected_names, unpack_binary_exprs,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -15,6 +15,44 @@ fn init_vec() -> Vec<Expr> {
 }
 fn init_set() -> HashSet<Arc<String>, RandomState> {
     HashSet::with_capacity_and_hasher(128, RandomState::default())
+}
+
+// utility function such that we can recurse all binary expressions in the expression tree
+fn add_to_accumulated(
+    predicate: &Expr,
+    acc_projections: &mut Vec<Expr>,
+    names: &mut HashSet<Arc<String>, RandomState>,
+) -> Result<()> {
+    if let Expr::Literal(_) = predicate {
+        return Ok(());
+    }
+    match unpack_binary_exprs(predicate) {
+        Ok((left, right)) => {
+            add_to_accumulated(left, acc_projections, names)?;
+            add_to_accumulated(right, acc_projections, names)?;
+        }
+        Err(_) => {
+            let name = expr_to_root_column(predicate)?;
+            if names.insert(name) {
+                acc_projections.push(expr_to_root_column_expr(predicate)?.clone());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn get_scan_columns(acc_projections: &mut Vec<Expr>) -> Option<Vec<String>> {
+    let mut with_columns = None;
+    if !acc_projections.is_empty() {
+        let mut columns = Vec::with_capacity(acc_projections.len());
+        for expr in acc_projections {
+            if let Ok(name) = expr_to_root_column(expr) {
+                columns.push((*name).clone())
+            }
+        }
+        with_columns = Some(columns);
+    }
+    with_columns
 }
 
 pub struct ProjectionPushDown {}
@@ -109,6 +147,7 @@ impl ProjectionPushDown {
         logical_plan: LogicalPlan,
         mut acc_projections: Vec<Expr>,
         mut names: HashSet<Arc<String>, RandomState>,
+        projections_seen: usize,
     ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
         match logical_plan {
@@ -116,111 +155,170 @@ impl ProjectionPushDown {
                 // add the root of the projections to accumulation,
                 // but also do them locally to keep the schema and the alias.
                 for e in &expr {
-                    let expr = expr_to_root_column_expr(e)?;
-                    let name = expr_to_root_column(expr)?;
-                    if names.insert(name) {
-                        acc_projections.push(expr.clone());
-                    }
+                    add_to_accumulated(e, &mut acc_projections, &mut names)?;
                 }
-
-                let (acc_projections, _local_projections, names) =
-                    self.split_acc_projections(acc_projections, input.schema());
-                let lp = self.push_down(*input, acc_projections, names)?;
+                let lp = self.push_down(*input, acc_projections, names, projections_seen + 1)?;
 
                 let mut local_projection = Vec::with_capacity(expr.len());
-                for expr in expr {
-                    if expr.to_field(lp.schema()).is_ok() {
-                        local_projection.push(expr);
+
+                // the projections should all be done locally to keep the same schema order
+                if projections_seen == 0 {
+                    for expr in expr {
+                        // why do we check this?
+                        if expr.to_field(lp.schema(), Context::Other).is_ok() {
+                            local_projection.push(expr);
+                        }
+                    }
+                // only aliases should be projected locally
+                } else {
+                    let dummy = Expr::Alias(Box::new(Expr::Wildcard), Arc::new("".to_string()));
+                    for expr in expr {
+                        if has_expr(&expr, &dummy) {
+                            local_projection.push(expr)
+                        }
                     }
                 }
 
                 let builder = LogicalPlanBuilder::from(lp);
                 self.finish_node(local_projection, builder)
             }
-            DataFrameScan { df, schema } => {
-                let lp = DataFrameScan { df, schema };
-                self.finish_at_leaf(lp, acc_projections)
+            LocalProjection { expr, input, .. } => {
+                let lp = self.push_down(*input, acc_projections, names, projections_seen)?;
+                let schema = lp.schema();
+                // projection from a wildcard may be dropped if the schema changes due to the optimization
+                let proj = expr
+                    .into_iter()
+                    .filter(|e| check_down_node(e, schema))
+                    .collect();
+                Ok(LogicalPlanBuilder::from(lp).project_local(proj).build())
+            }
+            DataFrameScan {
+                df,
+                schema,
+                selection,
+                ..
+            } => {
+                let mut projection = None;
+                if !acc_projections.is_empty() {
+                    projection = Some(acc_projections)
+                }
+                let lp = DataFrameScan {
+                    df,
+                    schema,
+                    projection,
+                    selection,
+                };
+                Ok(lp)
+            }
+            ParquetScan {
+                path,
+                schema,
+                predicate,
+                stop_after_n_rows,
+                cache,
+                ..
+            } => {
+                let with_columns = get_scan_columns(&mut acc_projections);
+                let lp = ParquetScan {
+                    path,
+                    schema,
+                    with_columns,
+                    predicate,
+                    stop_after_n_rows,
+                    cache,
+                };
+                Ok(lp)
             }
             CsvScan {
                 path,
                 schema,
                 has_header,
                 delimiter,
+                ignore_errors,
+                skip_rows,
+                stop_after_n_rows,
+                predicate,
+                cache,
+                ..
             } => {
+                let with_columns = get_scan_columns(&mut acc_projections);
                 let lp = CsvScan {
                     path,
                     schema,
                     has_header,
                     delimiter,
+                    ignore_errors,
+                    with_columns,
+                    skip_rows,
+                    stop_after_n_rows,
+                    predicate,
+                    cache,
                 };
-                self.finish_at_leaf(lp, acc_projections)
+                Ok(lp)
             }
-            DataFrameOp { input, operation } => {
-                let input = self.push_down(*input, acc_projections, names)?;
-                Ok(DataFrameOp {
+            Sort {
+                input,
+                by_column,
+                reverse,
+            } => {
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
+                Ok(Sort {
+                    input,
+                    by_column,
+                    reverse,
+                })
+            }
+            Explode { input, column } => {
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
+                Ok(Explode { input, column })
+            }
+            Cache { input } => {
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
+                Ok(Cache { input })
+            }
+            Distinct {
+                input,
+                maintain_order,
+                subset,
+            } => {
+                let input = self.push_down(*input, acc_projections, names, projections_seen)?;
+                Ok(Distinct {
                     input: Box::new(input),
-                    operation,
+                    maintain_order,
+                    subset,
                 })
             }
             Selection { predicate, input } => {
-                let local_projections = if !acc_projections.is_empty() {
-                    let local_projections = projected_names(&acc_projections)?;
-                    let name = expr_to_root_column(&predicate)?;
-                    if names.insert(name) {
-                        acc_projections.push(expr_to_root_column_expr(&predicate)?.clone());
-                    }
-
-                    local_projections
-                } else {
-                    vec![]
+                if !acc_projections.is_empty() {
+                    add_to_accumulated(&predicate, &mut acc_projections, &mut names)?;
                 };
-
-                let builder =
-                    LogicalPlanBuilder::from(self.push_down(*input, acc_projections, names)?)
-                        .filter(predicate);
-                self.finish_node(local_projections, builder)
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
+                Ok(Selection { predicate, input })
             }
             Aggregate {
                 input, keys, aggs, ..
             } => {
-                let (acc_projections, local_projections) = if !acc_projections.is_empty() {
-                    // todo! remove unnecessary vec alloc.
-                    let (mut acc_projections, _local_projections, mut names) =
-                        self.split_acc_projections(acc_projections, input.schema());
+                // todo! remove unnecessary vec alloc.
+                let (mut acc_projections, _local_projections, mut names) =
+                    self.split_acc_projections(acc_projections, input.schema());
 
-                    // add the columns used in the aggregations to the projection
-                    // todo! remove aggregations that aren't selected?
-                    let root_projections = expressions_to_root_column_exprs(&aggs)?;
+                // add the columns used in the aggregations to the projection
+                for agg in &aggs {
+                    add_to_accumulated(agg, &mut acc_projections, &mut names)?;
+                }
 
-                    for proj in root_projections {
-                        let name = expr_to_root_column(&proj)?;
-                        if names.insert(name) {
-                            acc_projections.push(proj)
-                        }
-                    }
+                // make sure the keys are projected
+                for key in &*keys {
+                    add_to_accumulated(&col(key), &mut acc_projections, &mut names)?;
+                }
 
-                    // todo! maybe we need this later if an uptree udf needs a column?
-                    // create local projections. This is the key plus the aggregations
-                    let mut local_projections = Vec::with_capacity(aggs.len() + keys.len());
-
-                    // make sure the keys are projected
-                    for key in &*keys {
-                        local_projections.push(col(key));
-
-                        acc_projections.push(col(key))
-                    }
-                    for agg in &aggs {
-                        local_projections.push(col(agg.to_field(input.schema())?.name()))
-                    }
-
-                    (acc_projections, local_projections)
-                } else {
-                    (vec![], vec![])
-                };
-
-                let lp = self.push_down(*input, acc_projections, names)?;
+                let lp = self.push_down(*input, acc_projections, names, projections_seen)?;
                 let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
-                self.finish_node(local_projections, builder)
+                Ok(builder.build())
             }
             Join {
                 input_left,
@@ -244,6 +342,10 @@ impl ProjectionPushDown {
                     // We need the join columns so we push the projection downwards
                     pushdown_left.push(left_on.clone());
                     pushdown_right.push(right_on.clone());
+                    // let root_column_name_left = expr_to_root_column(&left_on).unwrap();
+                    // let root_column_name_right = expr_to_root_column(&right_on).unwrap();
+                    // names_left.insert(root_column_name_left);
+                    // names_right.insert(root_column_name_right);
 
                     for mut proj in acc_projections {
                         let mut add_local = true;
@@ -307,8 +409,10 @@ impl ProjectionPushDown {
                         }
                     }
                 }
-                let lp_left = self.push_down(*input_left, pushdown_left, names_left)?;
-                let lp_right = self.push_down(*input_right, pushdown_right, names_right)?;
+                let lp_left =
+                    self.push_down(*input_left, pushdown_left, names_left, projections_seen)?;
+                let lp_right =
+                    self.push_down(*input_right, pushdown_right, names_right, projections_seen)?;
                 let builder =
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
                 self.finish_node(local_projection, builder)
@@ -318,10 +422,33 @@ impl ProjectionPushDown {
                 let local_renamed_projections = projected_names(&acc_projections)?;
 
                 // Make sure that columns selected with_columns are available
+                // only if not empty. If empty we already select everything.
                 if !acc_projections.is_empty() {
-                    for e in &exprs {
-                        if let Ok(e) = expr_to_root_column_expr(e) {
-                            acc_projections.push(e.clone())
+                    for expression in &exprs {
+                        // todo! maybe we should loop or recurse to find all binary expressions?
+                        match expr_to_root_column_expr(expression) {
+                            Ok(e) => add_to_accumulated(e, &mut acc_projections, &mut names)?,
+                            Err(_) => {
+                                // could be:
+                                //   * alias(lit)
+                                //   * lit
+                                //   * binary expr
+                                // may fail, for literal cases
+                                if let Ok((left, right)) = unpack_binary_exprs(expression) {
+                                    expr_to_root_column_expr(left)
+                                        .map(|p| {
+                                            add_to_accumulated(p, &mut acc_projections, &mut names)
+                                                .unwrap()
+                                        })
+                                        .ok();
+                                    expr_to_root_column_expr(right)
+                                        .map(|p| {
+                                            add_to_accumulated(p, &mut acc_projections, &mut names)
+                                                .unwrap()
+                                        })
+                                        .ok();
+                                }
+                            }
                         }
                     }
                 }
@@ -329,9 +456,13 @@ impl ProjectionPushDown {
                 let (acc_projections, _, names) =
                     self.split_acc_projections(acc_projections, input.schema());
 
-                let builder =
-                    LogicalPlanBuilder::from(self.push_down(*input, acc_projections, names)?)
-                        .with_columns(exprs);
+                let builder = LogicalPlanBuilder::from(self.push_down(
+                    *input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                )?)
+                .with_columns(exprs);
                 // locally re-project all columns plus the stacked columns to keep the order of the schema equal
                 self.finish_node(local_renamed_projections, builder)
             }
@@ -341,6 +472,6 @@ impl ProjectionPushDown {
 
 impl Optimize for ProjectionPushDown {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.push_down(logical_plan, init_vec(), init_set())
+        self.push_down(logical_plan, init_vec(), init_set(), 0)
     }
 }

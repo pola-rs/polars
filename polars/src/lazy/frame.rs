@@ -1,7 +1,13 @@
 //! Lazy variant of a [DataFrame](crate::prelude::DataFrame).
 use crate::frame::select::Selection;
+use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
+use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::{lazy::prelude::*, prelude::*};
+use ahash::RandomState;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
+
 impl DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
     pub fn lazy(self) -> LazyFrame {
@@ -19,6 +25,7 @@ pub struct LazyFrame {
     predicate_pushdown: bool,
     type_coercion: bool,
     simplify_expr: bool,
+    agg_scan_projection: bool,
 }
 
 impl Default for LazyFrame {
@@ -29,6 +36,7 @@ impl Default for LazyFrame {
             predicate_pushdown: false,
             type_coercion: false,
             simplify_expr: false,
+            agg_scan_projection: false,
         }
     }
 }
@@ -41,6 +49,7 @@ impl From<LogicalPlan> for LazyFrame {
             predicate_pushdown: true,
             type_coercion: true,
             simplify_expr: true,
+            agg_scan_projection: false,
         }
     }
 }
@@ -50,9 +59,44 @@ struct OptState {
     predicate_pushdown: bool,
     type_coercion: bool,
     simplify_expr: bool,
+    agg_scan_projection: bool,
 }
 
 impl LazyFrame {
+    /// Create a LazyFrame directly from a csv scan.
+    pub fn new_from_csv(
+        path: String,
+        delimiter: u8,
+        has_header: bool,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+    ) -> Self {
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
+            path,
+            delimiter,
+            has_header,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+            cache,
+        )
+        .build()
+        .into();
+        lf.agg_scan_projection = true;
+        lf
+    }
+
+    /// Create a LazyFrame directly from a parquet scan.
+    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, stop_after_n_rows, cache)
+            .build()
+            .into();
+        lf.agg_scan_projection = true;
+        lf
+    }
+
     fn get_plan_builder(self) -> LogicalPlanBuilder {
         LogicalPlanBuilder::from(self.logical_plan)
     }
@@ -63,6 +107,7 @@ impl LazyFrame {
             predicate_pushdown: self.predicate_pushdown,
             type_coercion: self.type_coercion,
             simplify_expr: self.simplify_expr,
+            agg_scan_projection: self.agg_scan_projection,
         }
     }
 
@@ -73,6 +118,7 @@ impl LazyFrame {
             predicate_pushdown: opt_state.predicate_pushdown,
             type_coercion: opt_state.type_coercion,
             simplify_expr: opt_state.simplify_expr,
+            agg_scan_projection: opt_state.agg_scan_projection,
         }
     }
 
@@ -108,7 +154,7 @@ impl LazyFrame {
     /// Describe the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> Result<String> {
         let logical_plan = self.clone().get_plan_builder().build();
-        let predicate_pushdown_opt = PredicatePushDown {};
+        let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
         let simplify_expr_opt = SimplifyExpr {};
         let logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
@@ -152,9 +198,12 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn reverse(self) -> Self {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().reverse().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select_local(vec![col("*").reverse()])
+    }
+
+    /// Rename a column in the DataFrame
+    pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
+        self.with_column(col(existing_name).alias(new_name))
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -162,8 +211,21 @@ impl LazyFrame {
     ///
     /// See the method on [Series](Series::shift) for more info on the `shift` operation.
     pub fn shift(self, periods: i32) -> Self {
+        self.select_local(vec![col("*").shift(periods)])
+    }
+
+    /// Fill none values in the DataFrame
+    pub fn fill_none(self, fill_value: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().shift(periods).build();
+        let lp = self.get_plan_builder().fill_none(fill_value).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Caches the result into a new LazyFrame. This should be used to prevent computations
+    /// running multiple times
+    pub fn cache(self) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().cache().build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -179,8 +241,8 @@ impl LazyFrame {
     /// fn example(df: DataFrame) -> Result<DataFrame> {
     ///       df.lazy()
     ///         .groupby("foo")
-    ///         .agg(vec!(col("bar").agg_sum(),
-    ///                   col("ham").agg_mean().alias("avg_ham")))
+    ///         .agg(vec!(col("bar").sum(),
+    ///                   col("ham").mean().alias("avg_ham")))
     ///         .collect()
     /// }
     /// ```
@@ -189,12 +251,11 @@ impl LazyFrame {
         let projection_pushdown = self.projection_pushdown;
         let type_coercion = self.type_coercion;
         let simplify_expr = self.simplify_expr;
+        let agg_scan_projection = self.agg_scan_projection;
         let mut logical_plan = self.get_plan_builder().build();
 
-        let predicate_pushdown_opt = PredicatePushDown {};
+        let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
-        let type_coercion_opt = TypeCoercion {};
-        let simplify_expr_opt = SimplifyExpr {};
 
         if cfg!(debug_assertions) {
             // check that the optimization don't interfere with the schema result.
@@ -221,15 +282,25 @@ impl LazyFrame {
         };
 
         if type_coercion {
-            logical_plan = type_coercion_opt.optimize(logical_plan)?;
+            let opt = TypeCoercion {};
+            logical_plan = opt.optimize(logical_plan)?;
+        }
+        if agg_scan_projection {
+            let opt = AggScanProjection {};
+            logical_plan = opt.optimize(logical_plan)?;
         }
         if simplify_expr {
-            logical_plan = simplify_expr_opt.optimize(logical_plan)?;
+            let opt = SimplifyExpr {};
+            logical_plan = opt.optimize(logical_plan)?;
         }
 
         let planner = DefaultPlanner::default();
-        let physical_plan = planner.create_physical_plan(logical_plan)?;
-        physical_plan.execute()
+        let mut physical_plan = planner.create_physical_plan(logical_plan)?;
+        let cache = Mutex::new(HashMap::with_capacity_and_hasher(
+            64,
+            RandomState::default(),
+        ));
+        physical_plan.execute(&cache)
     }
 
     /// Filter by some predicate expression.
@@ -278,6 +349,14 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// A projection that doesn't get optimized and may drop projections if they are not in
+    /// schema after optimization
+    fn select_local(self, exprs: Vec<Expr>) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().project_local(exprs).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Group by and aggregate.
     ///
     /// # Example
@@ -290,9 +369,9 @@ impl LazyFrame {
     ///       df.lazy()
     ///        .groupby("date")
     ///        .agg(vec![
-    ///            col("rain").agg_min(),
-    ///            col("rain").agg_sum(),
-    ///            col("rain").agg_quantile(0.5).alias("median_rain"),
+    ///            col("rain").min(),
+    ///            col("rain").sum(),
+    ///            col("rain").quantile(0.5).alias("median_rain"),
     ///        ])
     ///        .sort("date", false)
     /// }
@@ -419,51 +498,74 @@ impl LazyFrame {
 
     /// Aggregate all the columns as their maximum values.
     pub fn max(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().max().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select_local(vec![col("*").max()])
     }
 
     /// Aggregate all the columns as their minimum values.
     pub fn min(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().min().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select_local(vec![col("*").min()])
     }
 
     /// Aggregate all the columns as their sum values.
     pub fn sum(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().sum().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select_local(vec![col("*").sum()])
     }
 
     /// Aggregate all the columns as their mean values.
     pub fn mean(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().sum().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select_local(vec![col("*").mean()])
     }
 
     /// Aggregate all the columns as their median values.
     pub fn median(self) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().median().build();
-        Self::from_logical_plan(lp, opt_state)
+        self.select_local(vec![col("*").median()])
     }
 
     /// Aggregate all the columns as their quantile values.
     pub fn quantile(self, quantile: f64) -> LazyFrame {
+        self.select_local(vec![col("*").quantile(quantile)])
+    }
+
+    /// Aggregate all the columns as their standard deviation values.
+    pub fn std(self) -> LazyFrame {
+        self.select_local(vec![col("*").std()])
+    }
+
+    /// Aggregate all the columns as their variance values.
+    pub fn var(self) -> LazyFrame {
+        self.select_local(vec![col("*").var()])
+    }
+
+    /// Apply explode operation. [See eager explode](crate::prelude::DataFrame::explode).
+    pub fn explode(self, column: &str) -> LazyFrame {
+        // Note: this operation affects multiple columns. Therefore it isn't implemented as expression.
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().quantile(quantile).build();
+        let lp = self.get_plan_builder().explode(column.to_string()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Apply explode operation. [See eager explode](crate::prelude::DataFrame::melt).
-    pub fn explode(self, column: &str) -> LazyFrame {
+    /// Drop duplicate rows. [See eager](crate::prelude::DataFrame::drop_duplicates).
+    pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().explode(column).build();
+        let lp = self
+            .get_plan_builder()
+            .drop_duplicates(maintain_order, subset)
+            .build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Drop null rows.
+    ///
+    /// Equal to `LazyFrame::filter(col("*").is_not_null())`
+    pub fn drop_nulls(self, subset: Option<&[String]>) -> LazyFrame {
+        match subset {
+            None => self.filter(col("*").is_not_null()),
+            Some(subset) => {
+                let it = subset.iter().map(|name| col(name).is_not_null());
+                let predicate = combine_predicates(it);
+                self.filter(predicate)
+            }
+        }
     }
 }
 
@@ -490,9 +592,9 @@ impl LazyGroupBy {
     ///       df.lazy()
     ///        .groupby("date")
     ///        .agg(vec![
-    ///            col("rain").agg_min(),
-    ///            col("rain").agg_sum(),
-    ///            col("rain").agg_quantile(0.5).alias("median_rain"),
+    ///            col("rain").min(),
+    ///            col("rain").sum(),
+    ///            col("rain").quantile(0.5).alias("median_rain"),
     ///        ])
     ///        .sort("date", false)
     /// }
@@ -580,6 +682,23 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_drop_nulls() {
+        let df = df! {
+            "foo" => &[Some(1), None, Some(3)],
+            "bar" => &[Some(1), Some(2), None]
+        }
+        .unwrap();
+
+        let new = df.lazy().drop_nulls(None).collect().unwrap();
+        let out = df! {
+            "foo" => &[Some(1)],
+            "bar" => &[Some(1)]
+        }
+        .unwrap();
+        assert!(new.frame_equal(&out));
+    }
+
+    #[test]
     fn test_lazy_udf() {
         let df = get_df();
         let new = df
@@ -616,7 +735,7 @@ mod test {
         let new = df
             .lazy()
             .groupby("variety")
-            .agg(vec![col("sepal.width").agg_min()])
+            .agg(vec![col("sepal.width").min()])
             .collect()
             .unwrap();
 
@@ -632,8 +751,8 @@ mod test {
             .lazy()
             .groupby(&["variety"])
             .agg(vec![
-                col("sepal.length").agg_min(),
-                col("petal.length").agg_min().alias("foo"),
+                col("sepal.length").min(),
+                col("petal.length").min().alias("foo"),
             ])
             .select(&[col("foo")])
             // second selection is to test if optimizer can handle that
@@ -666,9 +785,9 @@ mod test {
             .lazy()
             .groupby("date")
             .agg(vec![
-                col("rain").agg_min(),
-                col("rain").agg_sum(),
-                col("rain").agg_quantile(0.5).alias("median_rain"),
+                col("rain").min(),
+                col("rain").sum(),
+                col("rain").quantile(0.5).alias("median_rain"),
             ])
             .sort("date", false);
 
@@ -746,7 +865,7 @@ mod test {
             .left_join(df_b.lazy(), col("b"), col("b"))
             .filter(col("a").lt(lit(2)))
             .groupby("b")
-            .agg(vec![col("b").agg_first(), col("c").agg_first()])
+            .agg(vec![col("b").first(), col("c").first()])
             .select(&[col("b"), col("c_first")])
             .collect()
             .unwrap();
@@ -789,9 +908,100 @@ mod test {
         let new = df
             .lazy()
             .groupby("b")
-            .agg(vec![col("*").agg_sum(), col("*").agg_first()])
+            .agg(vec![col("*").sum(), col("*").first()])
             .collect()
             .unwrap();
         assert_eq!(new.shape(), (3, 6));
+    }
+
+    #[test]
+    fn test_lazy_reverse() {
+        let df = load_df();
+        assert!(df
+            .clone()
+            .lazy()
+            .reverse()
+            .collect()
+            .unwrap()
+            .frame_equal_missing(&df.reverse()))
+    }
+
+    #[test]
+    fn test_lazy_filter_and_rename() {
+        let df = load_df();
+        let lf = df
+            .lazy()
+            .with_column_renamed("a", "x")
+            .filter(col("x").apply(
+                |s: Series| Ok(s.gt(3).into_series()),
+                Some(ArrowDataType::Boolean),
+            ))
+            .select(&[col("x")]);
+
+        let correct = df! {
+            "x" => &[4, 5]
+        }
+        .unwrap();
+        assert!(lf.collect().unwrap().frame_equal(&correct));
+    }
+
+    #[test]
+    fn test_lazy_df_aggregations() {
+        let df = load_df();
+
+        assert!(df
+            .clone()
+            .lazy()
+            .min()
+            .collect()
+            .unwrap()
+            .frame_equal_missing(&df.min()));
+        assert!(df
+            .clone()
+            .lazy()
+            .median()
+            .collect()
+            .unwrap()
+            .frame_equal_missing(&df.median()));
+        assert!(df
+            .clone()
+            .lazy()
+            .quantile(0.5)
+            .collect()
+            .unwrap()
+            .frame_equal_missing(&df.quantile(0.5).unwrap()));
+    }
+
+    #[test]
+    fn test_lazy_predicate_pushdown_binary_expr() {
+        let df = load_df();
+        df.lazy()
+            .filter(col("a").eq(col("b")))
+            .select(&[col("c")])
+            .collect()
+            .unwrap();
+    }
+
+    #[test]
+    fn test_lazy_update_column() {
+        let df = load_df();
+        df.lazy().with_column(col("a") / lit(10)).collect().unwrap();
+    }
+
+    #[test]
+    fn test_lazy_fill_none() {
+        let df = df! {
+            "a" => &[None, Some(2)],
+            "b" => &[Some(1), None]
+        }
+        .unwrap();
+        let out = df.lazy().fill_none(lit(10.0)).collect().unwrap();
+        let correct = df! {
+            "a" => &[Some(10.0), Some(2.0)],
+            "b" => &[Some(1.0), Some(10.0)]
+        }
+        .unwrap();
+        assert!(out.frame_equal(&correct));
+        assert_eq!(out.get_column_names(), vec!["a", "b"])
     }
 }

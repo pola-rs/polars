@@ -52,6 +52,7 @@ impl PyDataFrame {
         rechunk: bool,
         columns: Option<Vec<String>>,
         encoding: &str,
+        one_thread_opt: Option<bool>,
     ) -> PyResult<Self> {
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
@@ -76,6 +77,7 @@ impl PyDataFrame {
                 Box::new(f)
             }
         };
+        let one_thread = one_thread_opt.unwrap_or(one_thread);
 
         let df = CsvReader::new(file)
             .infer_schema(Some(infer_schema_length))
@@ -277,8 +279,11 @@ impl PyDataFrame {
         Ok(PySeries { series: s })
     }
 
-    pub fn drop_nulls(&self) -> PyResult<Self> {
-        let df = self.df.drop_nulls().map_err(PyPolarsEr::from)?;
+    pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> PyResult<Self> {
+        let df = self
+            .df
+            .drop_nulls(subset.as_ref().map(|s| s.as_ref()))
+            .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
@@ -493,10 +498,14 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn drop_duplicates(&self, maintain_order: bool) -> PyResult<Self> {
+    pub fn drop_duplicates(
+        &self,
+        maintain_order: bool,
+        subset: Option<Vec<String>>,
+    ) -> PyResult<Self> {
         let df = self
             .df
-            .drop_duplicates(maintain_order)
+            .drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }

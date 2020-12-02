@@ -197,9 +197,10 @@ pub(crate) fn set_null_bits(
         }
         None => match null_bit_buffer {
             None => builder.null_count(0),
-            Some(buffer) => builder
-                .null_count(bit_util::count_set_bits(buffer.data()))
-                .null_bit_buffer(buffer),
+            Some(_) => {
+                // this should take account into offset and length
+                unimplemented!()
+            }
         },
     }
 }

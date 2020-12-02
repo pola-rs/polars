@@ -1,4 +1,3 @@
-use crate::error::PyPolarsEr;
 use crate::series::PySeries;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
@@ -87,53 +86,52 @@ impl PyExpr {
         self.clone().inner.is_not_null().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_min(&self) -> PyExpr {
-        self.clone().inner.agg_min().into()
+    pub fn min(&self) -> PyExpr {
+        self.clone().inner.min().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_max(&self) -> PyExpr {
-        self.clone().inner.agg_max().into()
+    pub fn max(&self) -> PyExpr {
+        self.clone().inner.max().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_mean(&self) -> PyExpr {
-        self.clone().inner.agg_mean().into()
+    pub fn mean(&self) -> PyExpr {
+        self.clone().inner.mean().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_median(&self) -> PyExpr {
-        self.clone().inner.agg_median().into()
+    pub fn median(&self) -> PyExpr {
+        self.clone().inner.median().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_sum(&self) -> PyExpr {
-        self.clone().inner.agg_sum().into()
+    pub fn sum(&self) -> PyExpr {
+        self.clone().inner.sum().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_n_unique(&self) -> PyExpr {
-        self.clone().inner.agg_n_unique().into()
+    pub fn n_unique(&self) -> PyExpr {
+        self.clone().inner.n_unique().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_first(&self) -> PyExpr {
-        self.clone().inner.agg_first().into()
+    pub fn first(&self) -> PyExpr {
+        self.clone().inner.first().into()
     }
     #[text_signature = "($self)"]
-    pub fn agg_last(&self) -> PyExpr {
-        self.clone().inner.agg_last().into()
+    pub fn last(&self) -> PyExpr {
+        self.clone().inner.last().into()
     }
-    pub fn agg_list(&self) -> PyExpr {
-        self.clone().inner.agg_list().into()
+    pub fn list(&self) -> PyExpr {
+        self.clone().inner.list().into()
     }
     #[text_signature = "($self, quantile)"]
-    pub fn agg_quantile(&self, quantile: f64) -> PyExpr {
-        self.clone().inner.agg_quantile(quantile).into()
+    pub fn quantile(&self, quantile: f64) -> PyExpr {
+        self.clone().inner.quantile(quantile).into()
     }
-    #[text_signature = "($self)"]
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
     }
-
+    pub fn count(&self) -> PyExpr {
+        self.clone().inner.count().into()
+    }
     #[text_signature = "($self, data_type)"]
     pub fn cast(&self, data_type: &PyAny) -> PyExpr {
-        // TODO! accept the DataType objects.
-
         let str_repr = data_type.str().unwrap().to_str().unwrap();
         let dt = str_to_arrow_type(str_repr);
         let expr = self.inner.clone().cast(dt);
@@ -146,34 +144,23 @@ impl PyExpr {
     pub fn shift(&self, periods: i32) -> PyExpr {
         self.clone().inner.shift(periods).into()
     }
-    pub fn fill_none(&self, strategy: &str) -> PyResult<PyExpr> {
-        let strat = match strategy {
-            "backward" => FillNoneStrategy::Backward,
-            "forward" => FillNoneStrategy::Forward,
-            "min" => FillNoneStrategy::Min,
-            "max" => FillNoneStrategy::Max,
-            "mean" => FillNoneStrategy::Mean,
-            s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
-        };
-        Ok(self.clone().inner.fill_none(strat).into())
+    pub fn fill_none(&self, expr: PyExpr) -> PyResult<PyExpr> {
+        Ok(self.clone().inner.fill_none(expr.inner).into())
     }
-    pub fn max(&self) -> PyExpr {
-        self.clone().inner.max().into()
+    pub fn reverse(&self) -> PyExpr {
+        self.clone().inner.reverse().into()
     }
-    pub fn min(&self) -> PyExpr {
-        self.clone().inner.min().into()
+    pub fn std(&self) -> PyExpr {
+        self.clone().inner.std().into()
     }
-    pub fn sum(&self) -> PyExpr {
-        self.clone().inner.sum().into()
+    pub fn var(&self) -> PyExpr {
+        self.clone().inner.var().into()
     }
-    pub fn mean(&self) -> PyExpr {
-        self.clone().inner.mean().into()
+    pub fn is_unique(&self) -> PyExpr {
+        self.clone().inner.is_unique().into()
     }
-    pub fn median(&self) -> PyExpr {
-        self.clone().inner.median().into()
-    }
-    pub fn quantile(&self, quantile: f64) -> PyExpr {
-        self.clone().inner.quantile(quantile).into()
+    pub fn is_duplicated(&self) -> PyExpr {
+        self.clone().inner.is_duplicated().into()
     }
     pub fn str_lengths(&self) -> PyExpr {
         let function = |s: Series| {
@@ -235,7 +222,10 @@ impl PyExpr {
             // Wrap this PySeries object in the python side Series wrapper
             let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
             // call the lambda en get a python side Series wrapper
-            let result_series_wrapper = lambda.call1(py, (python_series_wrapper,)).unwrap();
+            let result_series_wrapper = match lambda.call1(py, (python_series_wrapper,)) {
+                Ok(pyobj) => pyobj,
+                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+            };
             // unpack the wrapper in a PySeries
             let py_pyseries = result_series_wrapper
                 .getattr(py, "_s")

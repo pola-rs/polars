@@ -8,15 +8,18 @@ use crate::{
 };
 use std::sync::Arc;
 
-pub struct LiteralExpr(pub ScalarValue);
+pub struct LiteralExpr(pub ScalarValue, Expr);
 
 impl LiteralExpr {
-    pub fn new(value: ScalarValue) -> Self {
-        Self(value)
+    pub fn new(value: ScalarValue, expr: Expr) -> Self {
+        Self(value, expr)
     }
 }
 
 impl PhysicalExpr for LiteralExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.1
+    }
     fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
         use ScalarValue::*;
         let s = match &self.0 {
@@ -63,15 +66,30 @@ pub struct BinaryExpr {
     left: Arc<dyn PhysicalExpr>,
     op: Operator,
     right: Arc<dyn PhysicalExpr>,
+    expr: Expr,
 }
 
 impl BinaryExpr {
-    pub fn new(left: Arc<dyn PhysicalExpr>, op: Operator, right: Arc<dyn PhysicalExpr>) -> Self {
-        Self { left, op, right }
+    pub fn new(
+        left: Arc<dyn PhysicalExpr>,
+        op: Operator,
+        right: Arc<dyn PhysicalExpr>,
+        expr: Expr,
+    ) -> Self {
+        Self {
+            left,
+            op,
+            right,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for BinaryExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let left = self.left.evaluate(df)?;
         let right = self.right.evaluate(df)?;
@@ -101,15 +119,18 @@ impl PhysicalExpr for BinaryExpr {
     }
 }
 
-pub struct ColumnExpr(Arc<String>);
+pub struct ColumnExpr(Arc<String>, Expr);
 
 impl ColumnExpr {
-    pub fn new(name: Arc<String>) -> Self {
-        Self(name)
+    pub fn new(name: Arc<String>, expr: Expr) -> Self {
+        Self(name, expr)
     }
 }
 
 impl PhysicalExpr for ColumnExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.1
+    }
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let column = df.column(&self.0)?;
         Ok(column.clone())
@@ -121,34 +142,47 @@ impl PhysicalExpr for ColumnExpr {
 }
 
 pub struct SortExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    physical_expr: Arc<dyn PhysicalExpr>,
     reverse: bool,
+    expr: Expr,
 }
 
 impl SortExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, reverse: bool) -> Self {
-        Self { expr, reverse }
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, reverse: bool, expr: Expr) -> Self {
+        Self {
+            physical_expr,
+            reverse,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for SortExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.expr.evaluate(df)?;
+        let series = self.physical_expr.evaluate(df)?;
         Ok(series.sort(self.reverse))
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.expr.to_field(input_schema)
+        self.physical_expr.to_field(input_schema)
     }
 }
 
-pub struct NotExpr(Arc<dyn PhysicalExpr>);
+pub struct NotExpr(Arc<dyn PhysicalExpr>, Expr);
 
 impl NotExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self(expr)
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, expr: Expr) -> Self {
+        Self(physical_expr, expr)
     }
 }
 impl PhysicalExpr for NotExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.1
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let series = self.0.evaluate(df)?;
         if let Series::Bool(ca) = series {
@@ -165,19 +199,28 @@ impl PhysicalExpr for NotExpr {
 }
 
 pub struct AliasExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    physical_expr: Arc<dyn PhysicalExpr>,
     name: Arc<String>,
+    expr: Expr,
 }
 
 impl AliasExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, name: Arc<String>) -> Self {
-        Self { expr, name }
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, name: Arc<String>, expr: Expr) -> Self {
+        Self {
+            physical_expr,
+            name,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for AliasExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let mut series = self.expr.evaluate(df)?;
+        let mut series = self.physical_expr.evaluate(df)?;
         series.rename(&self.name);
         Ok(series)
     }
@@ -185,7 +228,10 @@ impl PhysicalExpr for AliasExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         Ok(Field::new(
             &self.name,
-            self.expr.to_field(input_schema)?.data_type().clone(),
+            self.physical_expr
+                .to_field(input_schema)?
+                .data_type()
+                .clone(),
             true,
         ))
     }
@@ -197,7 +243,7 @@ impl PhysicalExpr for AliasExpr {
 
 impl AggPhysicalExpr for AliasExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let agg_expr = self.expr.as_agg_expr()?;
+        let agg_expr = self.physical_expr.as_agg_expr()?;
         let opt_agg = agg_expr.evaluate(df, groups)?;
         Ok(opt_agg.map(|mut agg| {
             agg.rename(&self.name);
@@ -207,18 +253,26 @@ impl AggPhysicalExpr for AliasExpr {
 }
 
 pub struct IsNullExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    physical_expr: Arc<dyn PhysicalExpr>,
+    expr: Expr,
 }
 
 impl IsNullExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, expr: Expr) -> Self {
+        Self {
+            physical_expr,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for IsNullExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.expr.evaluate(df)?;
+        let series = self.physical_expr.evaluate(df)?;
         Ok(series.is_null().into_series())
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -227,18 +281,26 @@ impl PhysicalExpr for IsNullExpr {
 }
 
 pub struct IsNotNullExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    physical_expr: Arc<dyn PhysicalExpr>,
+    expr: Expr,
 }
 
 impl IsNotNullExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, expr: Expr) -> Self {
+        Self {
+            physical_expr,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for IsNotNullExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.expr.evaluate(df)?;
+        let series = self.physical_expr.evaluate(df)?;
         Ok(series.is_not_null().into_series())
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -259,106 +321,114 @@ macro_rules! impl_to_field_for_agg {
     }};
 }
 
-macro_rules! impl_aggregation {
-    ($expr_struct:ident, $agg_method:ident, $groupby_method_variant:expr, $finish_evaluate:ident) => {
-        pub struct $expr_struct {
-            expr: Arc<dyn PhysicalExpr>,
-        }
-
-        impl $expr_struct {
-            pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-                Self { expr }
-            }
-        }
-
-        impl PhysicalExpr for $expr_struct {
-            fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-                unimplemented!()
-            }
-
-            fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-                impl_to_field_for_agg!(self, input_schema, $groupby_method_variant)
-            }
-
-            fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-                Ok(self)
-            }
-        }
-
-        impl AggPhysicalExpr for $expr_struct {
-            fn evaluate(
-                &self,
-                df: &DataFrame,
-                groups: &[(usize, Vec<usize>)],
-            ) -> Result<Option<Series>> {
-                let series = self.expr.evaluate(df)?;
-                let new_name = fmt_groupby_column(series.name(), $groupby_method_variant);
-                let opt_agg = apply_method_all_arrow_series!(series, $agg_method, groups);
-                $finish_evaluate!(opt_agg, new_name)
-            }
-        }
-    };
+pub(crate) struct AggExpr {
+    expr: Arc<dyn PhysicalExpr>,
+    agg_type: GroupByMethod,
 }
 
-macro_rules! rename_and_cast_to_series {
-    ($opt_agg:expr, $new_name:expr) => {{
-        let opt_agg = $opt_agg.map(|mut agg| {
-            agg.rename(&$new_name);
-            agg.into_series()
-        });
-        Ok(opt_agg)
-    }};
-}
-macro_rules! rename_and_cast_to_option {
-    ($agg:expr, $new_name:expr) => {{
-        let mut agg = $agg;
-        agg.rename(&$new_name);
-        Ok(Some(agg))
-    }};
+impl AggExpr {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod) -> Self {
+        Self { expr, agg_type }
+    }
 }
 
-impl_aggregation!(
-    AggMinExpr,
-    agg_min,
-    GroupByMethod::Min,
-    rename_and_cast_to_series
-);
-impl_aggregation!(
-    AggMaxExpr,
-    agg_max,
-    GroupByMethod::Max,
-    rename_and_cast_to_series
-);
-impl_aggregation!(
-    AggFirstExpr,
-    agg_first,
-    GroupByMethod::First,
-    rename_and_cast_to_option
-);
-impl_aggregation!(
-    AggLastExpr,
-    agg_last,
-    GroupByMethod::Last,
-    rename_and_cast_to_option
-);
-impl_aggregation!(
-    AggMedianExpr,
-    agg_median,
-    GroupByMethod::Median,
-    rename_and_cast_to_series
-);
-impl_aggregation!(
-    AggMeanExpr,
-    agg_mean,
-    GroupByMethod::Mean,
-    rename_and_cast_to_series
-);
-impl_aggregation!(
-    AggSumExpr,
-    agg_sum,
-    GroupByMethod::Sum,
-    rename_and_cast_to_series
-);
+impl PhysicalExpr for AggExpr {
+    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        let field = self.expr.to_field(input_schema)?;
+        let new_name = fmt_groupby_column(field.name(), self.agg_type);
+        Ok(Field::new(
+            &new_name,
+            field.data_type().clone(),
+            field.is_nullable(),
+        ))
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+fn rename_option_series(opt: Option<Series>, name: &str) -> Option<Series> {
+    opt.map(|mut s| {
+        s.rename(name);
+        s
+    })
+}
+
+impl AggPhysicalExpr for AggExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
+        let series = self.expr.evaluate(df)?;
+        let new_name = fmt_groupby_column(series.name(), self.agg_type);
+
+        match self.agg_type {
+            GroupByMethod::Min => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_min, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Max => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_max, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Median => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_median, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Mean => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_mean, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Sum => {
+                let agg_s = apply_method_all_arrow_series!(series, agg_sum, groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Count => {
+                let mut ca: Xob<UInt32Chunked> =
+                    groups.iter().map(|(_, g)| g.len() as u32).collect();
+                ca.rename(&new_name);
+                Ok(Some(ca.into_inner().into()))
+            }
+            GroupByMethod::First => {
+                let mut agg_s = apply_method_all_arrow_series!(series, agg_first, groups);
+                agg_s.rename(&new_name);
+                Ok(Some(agg_s))
+            }
+            GroupByMethod::Last => {
+                let mut agg_s = apply_method_all_arrow_series!(series, agg_last, groups);
+                agg_s.rename(&new_name);
+                Ok(Some(agg_s))
+            }
+            GroupByMethod::NUnique => {
+                let opt_agg = apply_method_all_arrow_series!(series, agg_n_unique, groups);
+                let opt_agg = opt_agg.map(|mut agg| {
+                    agg.rename(&new_name);
+                    agg.into_series()
+                });
+                Ok(opt_agg)
+            }
+            GroupByMethod::List => {
+                let opt_agg = apply_method_all_arrow_series!(series, agg_list, groups);
+                Ok(rename_option_series(opt_agg, &new_name))
+            }
+            GroupByMethod::Groups => {
+                let mut column: ListChunked = groups
+                    .iter()
+                    .map(|(_first, idx)| {
+                        let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
+                        ca.into_inner().into_series()
+                    })
+                    .collect();
+
+                column.rename(&new_name);
+                Ok(Some(column.into_series()))
+            }
+            _ => unimplemented!(),
+        }
+    }
+}
 
 pub struct AggQuantileExpr {
     expr: Arc<dyn PhysicalExpr>,
@@ -400,150 +470,29 @@ impl AggPhysicalExpr for AggQuantileExpr {
     }
 }
 
-pub struct AggGroupsExpr {
-    expr: Arc<dyn PhysicalExpr>,
-}
-
-impl AggGroupsExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
-    }
-}
-
-impl PhysicalExpr for AggGroupsExpr {
-    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-        let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
-        Ok(new_field)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        Ok(self)
-    }
-}
-
-impl AggPhysicalExpr for AggGroupsExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df)?;
-        let new_name = fmt_groupby_column(series.name(), GroupByMethod::Groups);
-
-        let mut column: ListChunked = groups
-            .iter()
-            .map(|(_first, idx)| {
-                let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
-                ca.into_inner().into_series()
-            })
-            .collect();
-
-        column.rename(&new_name);
-        Ok(Some(column.into_series()))
-    }
-}
-
-pub struct AggNUniqueExpr {
-    expr: Arc<dyn PhysicalExpr>,
-}
-
-impl AggNUniqueExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
-    }
-}
-
-impl PhysicalExpr for AggNUniqueExpr {
-    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        impl_to_field_for_agg!(self, input_schema, GroupByMethod::List)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        Ok(self)
-    }
-}
-
-impl AggPhysicalExpr for AggListExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df)?;
-        let new_name = fmt_groupby_column(series.name(), GroupByMethod::List);
-        let opt_agg = apply_method_all_arrow_series!(series, agg_list, groups);
-
-        let opt_agg = opt_agg.map(|mut agg| {
-            agg.rename(&new_name);
-            agg.into_series()
-        });
-
-        Ok(opt_agg)
-    }
-}
-
-pub struct AggListExpr {
-    expr: Arc<dyn PhysicalExpr>,
-}
-
-impl AggListExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        Self { expr }
-    }
-}
-
-impl PhysicalExpr for AggListExpr {
-    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), GroupByMethod::List);
-        let new_field = Field::new(&new_name, ArrowDataType::UInt32, field.is_nullable());
-        Ok(new_field)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        Ok(self)
-    }
-}
-
-impl AggPhysicalExpr for AggNUniqueExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df)?;
-        let new_name = fmt_groupby_column(series.name(), GroupByMethod::NUnique);
-        let opt_agg = apply_method_all_arrow_series!(series, agg_n_unique, groups);
-
-        let opt_agg = opt_agg.map(|mut agg| {
-            agg.rename(&new_name);
-            agg.into_series()
-        });
-
-        Ok(opt_agg)
-    }
-}
-
 pub struct CastExpr {
-    expr: Arc<dyn PhysicalExpr>,
+    input: Arc<dyn PhysicalExpr>,
     data_type: ArrowDataType,
+    expr: Expr,
 }
 
 impl CastExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, data_type: ArrowDataType) -> Self {
-        Self { expr, data_type }
+    pub fn new(input: Arc<dyn PhysicalExpr>, data_type: ArrowDataType, expr: Expr) -> Self {
+        Self {
+            input,
+            data_type,
+            expr,
+        }
     }
 }
 
 impl PhysicalExpr for CastExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.expr.evaluate(df)?;
+        let series = self.input.evaluate(df)?;
         series.cast_with_arrow_datatype(&self.data_type)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.expr.to_field(input_schema)
+        self.input.to_field(input_schema)
     }
 }
 
@@ -551,9 +500,13 @@ pub struct TernaryExpr {
     pub predicate: Arc<dyn PhysicalExpr>,
     pub truthy: Arc<dyn PhysicalExpr>,
     pub falsy: Arc<dyn PhysicalExpr>,
+    pub expr: Expr,
 }
 
 impl PhysicalExpr for TernaryExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let mask_series = self.predicate.evaluate(df)?;
         let mask = mask_series.bool()?;
@@ -570,6 +523,7 @@ pub struct ApplyExpr {
     pub input: Arc<dyn PhysicalExpr>,
     pub function: Arc<dyn Udf>,
     pub output_type: Option<ArrowDataType>,
+    pub expr: Expr,
 }
 
 impl ApplyExpr {
@@ -577,16 +531,22 @@ impl ApplyExpr {
         input: Arc<dyn PhysicalExpr>,
         function: Arc<dyn Udf>,
         output_type: Option<ArrowDataType>,
+        expr: Expr,
     ) -> Self {
         ApplyExpr {
             input,
             function,
             output_type,
+            expr,
         }
     }
 }
 
 impl PhysicalExpr for ApplyExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let input = self.input.evaluate(df)?;
         let in_name = input.name().to_string();

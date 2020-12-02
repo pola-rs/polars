@@ -16,16 +16,10 @@ where
     T: Any + Debug + Clone + Send + Sync,
 {
     values: Arc<Vec<T>>,
-    null_bitmap: Arc<Option<Bitmap>>,
+    null_bitmap: Option<Arc<Bitmap>>,
     null_count: usize,
     offset: usize,
     len: usize,
-}
-
-pub struct ObjectChunkedBuilder<T> {
-    field: Field,
-    bitmask_builder: BooleanBufferBuilder,
-    values: Vec<T>,
 }
 
 impl<T> ObjectArray<T>
@@ -93,7 +87,7 @@ where
 
         new.len = length;
         new.offset = offset;
-        new.null_count = if let Some(bitmap) = &*new.null_bitmap {
+        new.null_count = if let Some(bitmap) = &new.null_bitmap {
             let valid_bits = bitmap.buffer_ref().data();
             len.checked_sub(count_set_bits_offset(valid_bits, offset, length))
                 .unwrap();
@@ -117,14 +111,14 @@ where
     }
 
     fn is_null(&self, index: usize) -> bool {
-        match &*self.null_bitmap {
+        match &self.null_bitmap {
             Some(b) => !b.is_set(index),
-            None => true,
+            None => false,
         }
     }
 
     fn is_valid(&self, index: usize) -> bool {
-        match &*self.null_bitmap {
+        match &self.null_bitmap {
             Some(b) => b.is_set(index),
             None => true,
         }
@@ -140,6 +134,18 @@ where
 
     fn get_array_memory_size(&self) -> usize {
         unimplemented!()
+    }
+}
+
+impl<T> ObjectChunked<T>
+where
+    T: Any + Debug + Clone + Send + Sync + Default,
+{
+    pub fn get_as_any(&self, index: usize) -> &dyn Any {
+        let chunks = self.downcast_chunks();
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let arr = unsafe { *chunks.get_unchecked(chunk_idx) };
+        arr.value(idx)
     }
 }
 
