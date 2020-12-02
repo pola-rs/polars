@@ -109,8 +109,8 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
 
         if indices.null_count() == 0 {
             (0..data_len).for_each(|idx| {
-                if arr.is_valid(idx) {
-                    let index = indices.value(idx) as usize;
+                let index = indices.value(idx) as usize;
+                if arr.is_valid(index) {
                     let s = arr.value(index);
                     builder.append_value(s).unwrap();
                 } else {
@@ -119,10 +119,15 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
             });
         } else {
             (0..data_len).for_each(|idx| {
-                if arr.is_valid(idx) && indices.is_valid(idx) {
+                if indices.is_valid(idx) {
                     let index = indices.value(idx) as usize;
-                    let s = arr.value(index);
-                    builder.append_value(s).unwrap();
+
+                    if arr.is_valid(index) {
+                        let s = arr.value(index);
+                        builder.append_value(s).unwrap();
+                    } else {
+                        builder.append_null().unwrap();
+                    }
                 } else {
                     builder.append_null().unwrap();
                 }
@@ -140,4 +145,23 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
         data = data.null_bit_buffer(null_buffer);
     }
     Arc::new(StringArray::from(data.build()))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_utf8_kernel() {
+        let s = StringArray::from(vec![Some("foo"), None, Some("bar")]);
+        let out = take_utf8(&s, &UInt32Array::from(vec![1, 2]));
+        assert!(out.is_null(0));
+        assert!(out.is_valid(1));
+        let out = take_utf8(&s, &UInt32Array::from(vec![None, Some(2)]));
+        assert!(out.is_null(0));
+        assert!(out.is_valid(1));
+        let out = take_utf8(&s, &UInt32Array::from(vec![None, None]));
+        assert!(out.is_null(0));
+        assert!(out.is_null(1));
+    }
 }
