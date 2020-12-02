@@ -509,7 +509,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
         csv_reader: &mut Reader<R>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: &Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
         // this will be used to amortize allocations
         // Only correctly parsed lines will fill the start of the Vec.
@@ -537,10 +537,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 )?;
                 std::mem::swap(&mut builders_tmp, builders);
                 let mut df = builders_to_df(builders_tmp);
-                if let Some(predicate) = &predicate {
+                if let Some(predicate) = predicate {
                     let s = predicate.evaluate(&df)?;
                     let mask = s.bool().expect("filter predicates was not of type boolean");
-                    df = df.filter(mask)?;
+                    let local_df = df.filter(mask)?;
+                    if df.height() > 0 {
+                        df = local_df;
+                    }
                 }
                 parsed_dfs.push(df);
             }
@@ -563,7 +566,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         mut record_iter: ByteRecordsIntoIter<R>,
         parsed_dfs: &mut Vec<DataFrame>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: &Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
         // TODO: Save allocations. Send rows back over channel?
         let (tx, rx) = bounded(256);
@@ -620,10 +623,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     )?;
                     std::mem::swap(&mut builders_tmp, builders);
                     let mut df = builders_to_df(builders_tmp);
-                    if let Some(predicate) = &predicate {
+                    if let Some(predicate) = predicate {
                         let s = predicate.evaluate(&df)?;
                         let mask = s.bool().expect("filter predicates was not of type boolean");
-                        df = df.filter(mask)?;
+                        let local_df = df.filter(mask)?;
+                        if df.height() > 0 {
+                            df = local_df;
+                        }
                     }
                     parsed_dfs.push(df);
                 }
@@ -674,18 +680,27 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 &projection,
                 &mut parsed_dfs,
                 record_iter.reader_mut(),
-                predicate,
+                &predicate,
             )?,
             false => self.two_threads(
                 &mut builders,
                 &projection,
                 record_iter,
                 &mut parsed_dfs,
-                predicate,
+                &predicate,
             )?,
         }
+        let mut df = builders_to_df(builders);
+        if let Some(predicate) = &predicate {
+            let s = predicate.evaluate(&df)?;
+            let mask = s.bool().expect("filter predicates was not of type boolean");
+            let local_df = df.filter(mask)?;
+            if df.height() > 0 {
+                df = local_df;
+            }
+        }
 
-        parsed_dfs.push(builders_to_df(builders));
+        parsed_dfs.push(df);
         utils::accumulate_dataframes_vertical(parsed_dfs)
     }
 }
