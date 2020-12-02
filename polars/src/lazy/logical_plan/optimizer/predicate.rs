@@ -7,7 +7,7 @@ use crate::lazy::utils::{
 };
 use crate::prelude::*;
 use ahash::RandomState;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// Don't overwrite predicates but combine them.
@@ -374,13 +374,26 @@ impl PredicatePushDown {
                 let mut local = Vec::with_capacity(acc_predicates.len());
                 let mut local_keys = Vec::with_capacity(acc_predicates.len());
                 for (key, predicate) in &acc_predicates {
-                    // We don't know what happens in an apply so we keep local
-                    if has_expr(predicate, &self.apply_dummy) {
-                        local_keys.push(key.clone());
-                    } else if !check_down_node(predicate, input.schema()) {
+                    if !check_down_node(predicate, input.schema()) {
                         local_keys.push(key.clone());
                     }
                 }
+
+                // get all names of added columns in this HStack
+                let mut added_cols =
+                    HashSet::with_capacity_and_hasher(exprs.len(), RandomState::default());
+                for e in &exprs {
+                    if let Ok(name) = expr_to_root_column(e) {
+                        added_cols.insert(name);
+                    }
+                }
+                // remove predicates that are dependent on columns added in this HStack.
+                for (key, _predicate) in &acc_predicates {
+                    if added_cols.contains(key) {
+                        local_keys.push(key.clone())
+                    }
+                }
+
                 for key in local_keys {
                     local.push(acc_predicates.remove(&key).unwrap());
                 }
