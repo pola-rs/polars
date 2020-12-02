@@ -1,7 +1,7 @@
 use crate::chunked_array::iterator::{
-    Utf8IterManyChunkNullCheckReturnOption, Utf8IterManyChunkReturnOption,
-    Utf8IterManyChunkReturnUnwrapped, Utf8IterSingleChunkNullCheckReturnOption,
-    Utf8IterSingleChunkReturnOption, Utf8IterSingleChunkReturnUnwrapped,
+    Utf8IterManyChunkNullCheck, Utf8IterManyChunk,
+    Utf8IterSingleChunkNullCheck, Utf8IterSingleChunk,
+    SomeIterator
 };
 use crate::prelude::*;
 use arrow::array::Array;
@@ -29,7 +29,7 @@ use rayon::prelude::*;
 ///
 /// iter_item: The iterator `Item`, it represents the iterator return type.
 macro_rules! impl_utf8_parallel_iterator {
-    ($parallel_iterator:ident, $parallel_producer:ident, $sequential_iterator:ident, $iter_item:ty) => {
+    ($parallel_iterator:ident, $parallel_producer:ident, $sequential_iterator:ty, $iter_item:ty) => {
         impl<'a> ParallelIterator for $parallel_iterator<'a> {
             type Item = $iter_item;
 
@@ -77,7 +77,7 @@ macro_rules! impl_utf8_parallel_iterator {
 
         impl<'a> Producer for $parallel_producer<'a> {
             type Item = $iter_item;
-            type IntoIter = $sequential_iterator<'a>;
+            type IntoIter = $sequential_iterator;
 
             fn into_iter(self) -> Self::IntoIter {
                 self.into()
@@ -101,6 +101,51 @@ macro_rules! impl_utf8_parallel_iterator {
     };
 }
 
+// Implement methods to generate sequential iterators from raw parts.
+// The methods are the same for the `ReturnOption` and `ReturnUnwrap` variant.
+impl<'a> Utf8IterSingleChunk<'a> {
+    fn from_parts(ca: &'a Utf8Chunked, offset: usize, len: usize) -> Utf8IterSingleChunk {
+        let chunks = ca.downcast_chunks();
+        let current_array = chunks[0];
+        let idx_left = offset;
+        let idx_right = offset + len;
+
+        Utf8IterSingleChunk {
+            current_array,
+            idx_left,
+            idx_right,
+        }
+    }
+}
+
+impl<'a> Utf8IterManyChunk<'a> {
+    fn from_parts(ca: &'a Utf8Chunked, offset: usize, len: usize) -> Utf8IterManyChunk {
+        let ca = ca;
+        let chunks = ca.downcast_chunks();
+        let idx_left = offset;
+        let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
+        let current_array_left = chunks[chunk_idx_left];
+        let idx_right = offset + len;
+        let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
+        let current_array_right = chunks[chunk_idx_right];
+        let current_array_left_len = current_array_left.len();
+
+        Utf8IterManyChunk {
+            ca,
+            chunks,
+            current_array_left,
+            current_array_right,
+            current_array_idx_left,
+            current_array_idx_right,
+            current_array_left_len,
+            idx_left,
+            idx_right,
+            chunk_idx_left,
+            chunk_idx_right,
+        }
+    }
+}
+
 /// Parallel Iterator for chunked arrays with just one chunk.
 /// It does NOT perform null check, then, it is appropriated
 /// for chunks whose contents are never null.
@@ -117,25 +162,18 @@ impl<'a> Utf8ParIterSingleChunkReturnOption<'a> {
     }
 }
 
-impl<'a> From<Utf8ProducerSingleChunkReturnOption<'a>> for Utf8IterSingleChunkReturnOption<'a> {
+impl<'a> From<Utf8ProducerSingleChunkReturnOption<'a>> for SomeIterator<Utf8IterSingleChunk<'a>> {
     fn from(prod: Utf8ProducerSingleChunkReturnOption<'a>) -> Self {
-        let chunks = prod.ca.downcast_chunks();
-        let current_array = chunks[0];
-        let idx_left = prod.offset;
-        let idx_right = prod.offset + prod.len;
-
-        Utf8IterSingleChunkReturnOption {
-            current_array,
-            idx_left,
-            idx_right,
-        }
+        SomeIterator(
+            Utf8IterSingleChunk::from_parts(prod.ca, prod.offset, prod.len)
+        )
     }
 }
 
 impl_utf8_parallel_iterator!(
     Utf8ParIterSingleChunkReturnOption,
     Utf8ProducerSingleChunkReturnOption,
-    Utf8IterSingleChunkReturnOption,
+    SomeIterator<Utf8IterSingleChunk<'a>>,
     Option<&'a str>
 );
 
@@ -156,7 +194,7 @@ impl<'a> Utf8ParIterSingleChunkNullCheckReturnOption<'a> {
 }
 
 impl<'a> From<Utf8ProducerSingleChunkNullCheckReturnOption<'a>>
-    for Utf8IterSingleChunkNullCheckReturnOption<'a>
+    for Utf8IterSingleChunkNullCheck<'a>
 {
     fn from(prod: Utf8ProducerSingleChunkNullCheckReturnOption<'a>) -> Self {
         let chunks = prod.ca.downcast_chunks();
@@ -165,7 +203,7 @@ impl<'a> From<Utf8ProducerSingleChunkNullCheckReturnOption<'a>>
         let idx_left = prod.offset;
         let idx_right = prod.offset + prod.len;
 
-        Utf8IterSingleChunkNullCheckReturnOption {
+        Utf8IterSingleChunkNullCheck {
             current_data,
             current_array,
             idx_left,
@@ -177,7 +215,7 @@ impl<'a> From<Utf8ProducerSingleChunkNullCheckReturnOption<'a>>
 impl_utf8_parallel_iterator!(
     Utf8ParIterSingleChunkNullCheckReturnOption,
     Utf8ProducerSingleChunkNullCheckReturnOption,
-    Utf8IterSingleChunkNullCheckReturnOption,
+    Utf8IterSingleChunkNullCheck<'a>,
     Option<&'a str>
 );
 
@@ -197,38 +235,18 @@ impl<'a> Utf8ParIterManyChunkReturnOption<'a> {
     }
 }
 
-impl<'a> From<Utf8ProducerManyChunkReturnOption<'a>> for Utf8IterManyChunkReturnOption<'a> {
+impl<'a> From<Utf8ProducerManyChunkReturnOption<'a>> for SomeIterator<Utf8IterManyChunk<'a>> {
     fn from(prod: Utf8ProducerManyChunkReturnOption<'a>) -> Self {
-        let ca = prod.ca;
-        let chunks = ca.downcast_chunks();
-        let idx_left = prod.offset;
-        let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
-        let current_array_left = chunks[chunk_idx_left];
-        let idx_right = prod.offset + prod.len;
-        let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
-        let current_array_right = chunks[chunk_idx_right];
-        let current_array_left_len = current_array_left.len();
-
-        Utf8IterManyChunkReturnOption {
-            ca,
-            chunks,
-            current_array_left,
-            current_array_right,
-            current_array_idx_left,
-            current_array_idx_right,
-            current_array_left_len,
-            idx_left,
-            idx_right,
-            chunk_idx_left,
-            chunk_idx_right,
-        }
+        SomeIterator(
+            Utf8IterManyChunk::from_parts(prod.ca, prod.offset, prod.len)
+        )
     }
 }
 
 impl_utf8_parallel_iterator!(
     Utf8ParIterManyChunkReturnOption,
     Utf8ProducerManyChunkReturnOption,
-    Utf8IterManyChunkReturnOption,
+    SomeIterator<Utf8IterManyChunk<'a>>,
     Option<&'a str>
 );
 
@@ -249,7 +267,7 @@ impl<'a> Utf8ParIterManyChunkNullCheckReturnOption<'a> {
 }
 
 impl<'a> From<Utf8ProducerManyChunkNullCheckReturnOption<'a>>
-    for Utf8IterManyChunkNullCheckReturnOption<'a>
+    for Utf8IterManyChunkNullCheck<'a>
 {
     fn from(prod: Utf8ProducerManyChunkNullCheckReturnOption<'a>) -> Self {
         let ca = prod.ca;
@@ -268,7 +286,7 @@ impl<'a> From<Utf8ProducerManyChunkNullCheckReturnOption<'a>>
         let current_array_right = chunks[chunk_idx_right];
         let current_data_right = current_array_right.data();
 
-        Utf8IterManyChunkNullCheckReturnOption {
+        Utf8IterManyChunkNullCheck {
             ca,
             chunks,
             current_data_left,
@@ -289,7 +307,7 @@ impl<'a> From<Utf8ProducerManyChunkNullCheckReturnOption<'a>>
 impl_utf8_parallel_iterator!(
     Utf8ParIterManyChunkNullCheckReturnOption,
     Utf8ProducerManyChunkNullCheckReturnOption,
-    Utf8IterManyChunkNullCheckReturnOption,
+    Utf8IterManyChunkNullCheck<'a>,
     Option<&'a str>
 );
 
@@ -428,27 +446,16 @@ impl<'a> Utf8ParIterSingleChunkReturnUnwrapped<'a> {
     }
 }
 
-impl<'a> From<Utf8ProducerSingleChunkReturnUnwrapped<'a>>
-    for Utf8IterSingleChunkReturnUnwrapped<'a>
-{
+impl<'a> From<Utf8ProducerSingleChunkReturnUnwrapped<'a>> for Utf8IterSingleChunk<'a> {
     fn from(prod: Utf8ProducerSingleChunkReturnUnwrapped<'a>) -> Self {
-        let chunks = prod.ca.downcast_chunks();
-        let current_array = chunks[0];
-        let idx_left = prod.offset;
-        let idx_right = prod.offset + prod.len;
-
-        Utf8IterSingleChunkReturnUnwrapped {
-            current_array,
-            idx_left,
-            idx_right,
-        }
+        Utf8IterSingleChunk::from_parts(prod.ca, prod.offset, prod.len)
     }
 }
 
 impl_utf8_parallel_iterator!(
     Utf8ParIterSingleChunkReturnUnwrapped,
     Utf8ProducerSingleChunkReturnUnwrapped,
-    Utf8IterSingleChunkReturnUnwrapped,
+    Utf8IterSingleChunk<'a>,
     &'a str
 );
 
@@ -468,38 +475,16 @@ impl<'a> Utf8ParIterManyChunkReturnUnwrapped<'a> {
     }
 }
 
-impl<'a> From<Utf8ProducerManyChunkReturnUnwrapped<'a>> for Utf8IterManyChunkReturnUnwrapped<'a> {
+impl<'a> From<Utf8ProducerManyChunkReturnUnwrapped<'a>> for Utf8IterManyChunk<'a> {
     fn from(prod: Utf8ProducerManyChunkReturnUnwrapped<'a>) -> Self {
-        let ca = prod.ca;
-        let chunks = ca.downcast_chunks();
-        let idx_left = prod.offset;
-        let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
-        let current_array_left = chunks[chunk_idx_left];
-        let idx_right = prod.offset + prod.len;
-        let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
-        let current_array_right = chunks[chunk_idx_right];
-        let current_array_left_len = current_array_left.len();
-
-        Utf8IterManyChunkReturnUnwrapped {
-            ca,
-            chunks,
-            current_array_left,
-            current_array_right,
-            current_array_idx_left,
-            current_array_idx_right,
-            current_array_left_len,
-            idx_left,
-            idx_right,
-            chunk_idx_left,
-            chunk_idx_right,
-        }
+        Utf8IterManyChunk::from_parts(prod.ca, prod.offset, prod.len)
     }
 }
 
 impl_utf8_parallel_iterator!(
     Utf8ParIterManyChunkReturnUnwrapped,
     Utf8ProducerManyChunkReturnUnwrapped,
-    Utf8IterManyChunkReturnUnwrapped,
+    Utf8IterManyChunk<'a>,
     &'a str
 );
 
