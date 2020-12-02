@@ -1,7 +1,6 @@
 use crate::chunked_array::iterator::{
-    Utf8IterManyChunkNullCheck, Utf8IterManyChunk,
-    Utf8IterSingleChunkNullCheck, Utf8IterSingleChunk,
-    SomeIterator
+    SomeIterator, Utf8IterManyChunk, Utf8IterManyChunkNullCheck, Utf8IterSingleChunk,
+    Utf8IterSingleChunkNullCheck,
 };
 use crate::prelude::*;
 use arrow::array::Array;
@@ -164,9 +163,11 @@ impl<'a> Utf8ParIterSingleChunkReturnOption<'a> {
 
 impl<'a> From<Utf8ProducerSingleChunkReturnOption<'a>> for SomeIterator<Utf8IterSingleChunk<'a>> {
     fn from(prod: Utf8ProducerSingleChunkReturnOption<'a>) -> Self {
-        SomeIterator(
-            Utf8IterSingleChunk::from_parts(prod.ca, prod.offset, prod.len)
-        )
+        SomeIterator(Utf8IterSingleChunk::from_parts(
+            prod.ca,
+            prod.offset,
+            prod.len,
+        ))
     }
 }
 
@@ -237,9 +238,11 @@ impl<'a> Utf8ParIterManyChunkReturnOption<'a> {
 
 impl<'a> From<Utf8ProducerManyChunkReturnOption<'a>> for SomeIterator<Utf8IterManyChunk<'a>> {
     fn from(prod: Utf8ProducerManyChunkReturnOption<'a>) -> Self {
-        SomeIterator(
-            Utf8IterManyChunk::from_parts(prod.ca, prod.offset, prod.len)
-        )
+        SomeIterator(Utf8IterManyChunk::from_parts(
+            prod.ca,
+            prod.offset,
+            prod.len,
+        ))
     }
 }
 
@@ -266,9 +269,7 @@ impl<'a> Utf8ParIterManyChunkNullCheckReturnOption<'a> {
     }
 }
 
-impl<'a> From<Utf8ProducerManyChunkNullCheckReturnOption<'a>>
-    for Utf8IterManyChunkNullCheck<'a>
-{
+impl<'a> From<Utf8ProducerManyChunkNullCheckReturnOption<'a>> for Utf8IterManyChunkNullCheck<'a> {
     fn from(prod: Utf8ProducerManyChunkNullCheckReturnOption<'a>) -> Self {
         let ca = prod.ca;
         let chunks = ca.downcast_chunks();
