@@ -70,7 +70,7 @@ impl<I> PolarsIterator for SomeIterator<I> where I: PolarsIterator {}
 /// Iterator for chunked arrays with just one chunk.
 /// The chunk cannot have null values so it does NOT perform null checks.
 ///
-/// The return type is `PolarsNumeriType::Native`.
+/// The return type is `PolarsNumericType::Native`.
 pub struct NumIterSingleChunk<'a, T>
 where
     T: PolarsNumericType,
@@ -118,7 +118,7 @@ where
 /// Iterator for chunked arrays with just one chunk.
 /// The chunk have null values so it DOES perform null checks.
 ///
-/// The return type is `Option<PolarsNumeriType::Native>`.
+/// The return type is `Option<PolarsNumericType::Native>`.
 pub struct NumIterSingleChunkNullCheck<'a, T>
 where
     T: PolarsNumericType,
