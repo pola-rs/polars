@@ -362,6 +362,53 @@ pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
     }
 }
 
+// Find the first ternary expression somewhere in the tree.
+pub(crate) fn unpack_ternary_expr(expr: &Expr) -> Result<(&Expr, &Expr, &Expr)> {
+    match expr {
+        Expr::Unique(expr) => unpack_ternary_expr(expr),
+        Expr::Duplicated(expr) => unpack_ternary_expr(expr),
+        Expr::Reverse(expr) => unpack_ternary_expr(expr),
+        Expr::Alias(expr, _) => unpack_ternary_expr(expr),
+        Expr::Not(expr) => unpack_ternary_expr(expr),
+        Expr::IsNull(expr) => unpack_ternary_expr(expr),
+        Expr::IsNotNull(expr) => unpack_ternary_expr(expr),
+        Expr::First(expr) => unpack_ternary_expr(expr),
+        Expr::Last(expr) => unpack_ternary_expr(expr),
+        Expr::AggGroups(expr) => unpack_ternary_expr(expr),
+        Expr::NUnique(expr) => unpack_ternary_expr(expr),
+        Expr::Quantile { expr, .. } => unpack_ternary_expr(expr),
+        Expr::Sum(expr) => unpack_ternary_expr(expr),
+        Expr::Min(expr) => unpack_ternary_expr(expr),
+        Expr::Max(expr) => unpack_ternary_expr(expr),
+        Expr::Median(expr) => unpack_ternary_expr(expr),
+        Expr::Mean(expr) => unpack_ternary_expr(expr),
+        Expr::Count(expr) => unpack_ternary_expr(expr),
+        Expr::BinaryExpr { left, right, .. } => {
+            let left = unpack_ternary_expr(left);
+            let right = unpack_ternary_expr(right);
+            match (left, right) {
+                (Ok(left), _) => Ok(left),
+                (_, Ok(right)) => Ok(right),
+                _ => Err(PolarsError::Other(
+                    format!("No ternary expression could be found for {:?}", expr).into(),
+                )),
+            }
+        }
+        Expr::Sort { expr, .. } => unpack_ternary_expr(expr),
+        Expr::Shift { input, .. } => unpack_ternary_expr(input),
+        Expr::Apply { input, .. } => unpack_ternary_expr(input),
+        Expr::Cast { expr, .. } => unpack_ternary_expr(expr),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => Ok((predicate, truthy, falsy)),
+        _ => Err(PolarsError::Other(
+            format!("No ternary expression could be found for {:?}", expr).into(),
+        )),
+    }
+}
+
 // unpack alias(col) to name of the root column name
 pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
     match expr {
