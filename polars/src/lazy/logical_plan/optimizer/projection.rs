@@ -19,22 +19,22 @@ fn init_set() -> HashSet<Arc<String>, RandomState> {
 
 // utility function such that we can recurse all binary expressions in the expression tree
 fn add_to_accumulated(
-    predicate: &Expr,
+    expression: &Expr,
     acc_projections: &mut Vec<Expr>,
     names: &mut HashSet<Arc<String>, RandomState>,
 ) -> Result<()> {
-    if let Expr::Literal(_) = predicate {
+    if let Expr::Literal(_) = expression {
         return Ok(());
     }
-    match unpack_binary_exprs(predicate) {
+    match unpack_binary_exprs(expression) {
         Ok((left, right)) => {
             add_to_accumulated(left, acc_projections, names)?;
             add_to_accumulated(right, acc_projections, names)?;
         }
         Err(_) => {
-            let name = expr_to_root_column(predicate)?;
+            let name = expr_to_root_column(expression)?;
             if names.insert(name) {
-                acc_projections.push(expr_to_root_column_expr(predicate)?.clone());
+                acc_projections.push(expr_to_root_column_expr(expression)?.clone());
             }
         }
     }
@@ -274,6 +274,15 @@ impl ProjectionPushDown {
                 maintain_order,
                 subset,
             } => {
+                if let Some(subset) = subset.as_ref() {
+                    if !acc_projections.is_empty() {
+                        for name in subset {
+                            add_to_accumulated(&col(name), &mut acc_projections, &mut names)
+                                .unwrap();
+                        }
+                    }
+                };
+
                 let input = self.push_down(*input, acc_projections, names, projections_seen)?;
                 Ok(Distinct {
                     input: Box::new(input),
