@@ -362,6 +362,58 @@ pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
     }
 }
 
+// Find the first apply expression somewhere in the tree.
+pub(crate) fn unpack_apply_expr(expr: &Expr) -> Result<&Expr> {
+    match expr {
+        Expr::Unique(expr) => unpack_apply_expr(expr),
+        Expr::Duplicated(expr) => unpack_apply_expr(expr),
+        Expr::Reverse(expr) => unpack_apply_expr(expr),
+        Expr::Alias(expr, _) => unpack_apply_expr(expr),
+        Expr::Not(expr) => unpack_apply_expr(expr),
+        Expr::IsNull(expr) => unpack_apply_expr(expr),
+        Expr::IsNotNull(expr) => unpack_apply_expr(expr),
+        Expr::First(expr) => unpack_apply_expr(expr),
+        Expr::Last(expr) => unpack_apply_expr(expr),
+        Expr::AggGroups(expr) => unpack_apply_expr(expr),
+        Expr::NUnique(expr) => unpack_apply_expr(expr),
+        Expr::Quantile { expr, .. } => unpack_apply_expr(expr),
+        Expr::Sum(expr) => unpack_apply_expr(expr),
+        Expr::Min(expr) => unpack_apply_expr(expr),
+        Expr::Max(expr) => unpack_apply_expr(expr),
+        Expr::Median(expr) => unpack_apply_expr(expr),
+        Expr::Mean(expr) => unpack_apply_expr(expr),
+        Expr::Count(expr) => unpack_apply_expr(expr),
+        Expr::Sort { expr, .. } => unpack_apply_expr(expr),
+        Expr::Shift { input, .. } => unpack_apply_expr(input),
+        Expr::Apply { .. } => Ok(expr),
+        Expr::Cast { expr, .. } => unpack_apply_expr(expr),
+        Expr::BinaryExpr { left, right, .. } => {
+            let left_result = unpack_apply_expr(left);
+            let right_result = unpack_apply_expr(right);
+
+            let err = || {
+                Err(PolarsError::Other(
+                    format!(
+                        "cannot find apply expr for binary expression {:?}, {:?}",
+                        left, right
+                    )
+                    .into(),
+                ))
+            };
+
+            match (left_result, right_result) {
+                (Ok(left), Err(_)) => Ok(left),
+                (Err(_), Ok(right)) => Ok(right),
+                _ => err(),
+            }
+        }
+        Expr::Ternary { predicate, .. } => unpack_apply_expr(predicate),
+        a => Err(PolarsError::Other(
+            format!("No apply expression could be found for {:?}", a).into(),
+        )),
+    }
+}
+
 // Find the first ternary expression somewhere in the tree.
 pub(crate) fn unpack_ternary_expr(expr: &Expr) -> Result<(&Expr, &Expr, &Expr)> {
     match expr {
