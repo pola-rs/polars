@@ -2,8 +2,7 @@ use crate::lazy::logical_plan::optimizer::{check_down_node, HASHMAP_SIZE};
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column, has_expr, rename_expr_root_name, unpack_apply_expr, unpack_binary_exprs,
-    unpack_ternary_expr,
+    expr_to_root_column, expr_to_root_column_names, has_expr, rename_expr_root_name,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -42,7 +41,6 @@ pub struct PredicatePushDown {
     binary_dummy: Expr,
     is_null_dummy: Expr,
     is_not_null_dummy: Expr,
-    apply_dummy: Expr,
 }
 
 impl Default for PredicatePushDown {
@@ -53,7 +51,6 @@ impl Default for PredicatePushDown {
             binary_dummy: lit("_").eq(lit("_")),
             is_null_dummy: lit("_").is_null(),
             is_not_null_dummy: lit("_").is_null(),
-            apply_dummy: lit("_").apply(|s: Series| Ok(s), None),
         }
     }
 }
@@ -383,12 +380,14 @@ impl PredicatePushDown {
                 let mut added_cols =
                     HashSet::with_capacity_and_hasher(exprs.len(), RandomState::default());
                 for e in &exprs {
-                    if let Ok(name) = expr_to_root_column(e) {
-                        added_cols.insert(name);
+                    if let Ok(names) = expr_to_root_column_names(e) {
+                        for name in names {
+                            added_cols.insert(name);
+                        }
                     }
                 }
                 // remove predicates that are dependent on columns added in this HStack.
-                for (key, _predicate) in &acc_predicates {
+                for key in acc_predicates.keys() {
                     if added_cols.contains(key) {
                         local_keys.push(key.clone())
                     }
@@ -396,38 +395,6 @@ impl PredicatePushDown {
 
                 for key in local_keys {
                     local.push(acc_predicates.remove(&key).unwrap());
-                }
-
-                // If we have a Ternary Exprs or Binary Expr that's dependent on a column
-                // that's filtered we should not push the filter down.
-                for e in &exprs {
-                    if has_expr(e, &self.apply_dummy) {
-                        //  If we can't we don't push it down.
-                        if let Ok(expr) = unpack_apply_expr(e) {
-                            let key =
-                                expr_to_root_column(expr).expect("could not find a root column");
-                            if let Some(predicate) = acc_predicates.remove(&key) {
-                                local.push(predicate)
-                            }
-                        } else {
-                            panic!("we couldn't find the apply")
-                        }
-                    }
-
-                    if let Ok((left, right)) = unpack_binary_exprs(e) {
-                        let key = expr_to_root_column(left).unwrap_or_else(|_| {
-                            expr_to_root_column(right).expect("could not find a root column")
-                        });
-                        if let Some(predicate) = acc_predicates.remove(&key) {
-                            local.push(predicate)
-                        }
-                    } else if let Ok((predicate, _truthy, _falsy)) = unpack_ternary_expr(e) {
-                        let key = expr_to_root_column(predicate)
-                            .expect("could not find root column name");
-                        if let Some(predicate) = acc_predicates.remove(&key) {
-                            local.push(predicate)
-                        }
-                    }
                 }
 
                 let mut lp_builder =
