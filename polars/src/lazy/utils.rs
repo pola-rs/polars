@@ -257,6 +257,79 @@ pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
     Field::new(name, field.data_type().clone(), field.is_nullable())
 }
 
+/// This should gradually replace expr_to_root_column as this will get all names in the tree.
+pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Result<Vec<Arc<String>>> {
+    match expr {
+        Expr::Duplicated(expr) => expr_to_root_column_names(expr),
+        Expr::Unique(expr) => expr_to_root_column_names(expr),
+        Expr::Reverse(expr) => expr_to_root_column_names(expr),
+        Expr::Column(name) => Ok(vec![name.clone()]),
+        Expr::Alias(expr, _) => expr_to_root_column_names(expr),
+        Expr::Not(expr) => expr_to_root_column_names(expr),
+        Expr::IsNull(expr) => expr_to_root_column_names(expr),
+        Expr::IsNotNull(expr) => expr_to_root_column_names(expr),
+        Expr::BinaryExpr { left, right, .. } => {
+            let left_result = expr_to_root_column_names(left);
+            let right_result = expr_to_root_column_names(right);
+
+            match (left_result, right_result) {
+                (Ok(left), Err(_)) => Ok(left),
+                (Err(_), Ok(right)) => Ok(right),
+                (Ok(mut left), Ok(right)) => {
+                    left.extend(right.into_iter());
+                    Ok(left)
+                }
+                _ => Err(PolarsError::Other(
+                    format!(
+                        "cannot find root column name for binary expression {:?}",
+                        expr
+                    )
+                    .into(),
+                )),
+            }
+        }
+        Expr::Sort { expr, .. } => expr_to_root_column_names(expr),
+        Expr::First(expr) => expr_to_root_column_names(expr),
+        Expr::Last(expr) => expr_to_root_column_names(expr),
+        Expr::AggGroups(expr) => expr_to_root_column_names(expr),
+        Expr::NUnique(expr) => expr_to_root_column_names(expr),
+        Expr::Quantile { expr, .. } => expr_to_root_column_names(expr),
+        Expr::Sum(expr) => expr_to_root_column_names(expr),
+        Expr::Min(expr) => expr_to_root_column_names(expr),
+        Expr::Max(expr) => expr_to_root_column_names(expr),
+        Expr::Median(expr) => expr_to_root_column_names(expr),
+        Expr::Mean(expr) => expr_to_root_column_names(expr),
+        Expr::Count(expr) => expr_to_root_column_names(expr),
+        Expr::Cast { expr, .. } => expr_to_root_column_names(expr),
+        Expr::Apply { input, .. } => expr_to_root_column_names(input),
+        Expr::Shift { input, .. } => expr_to_root_column_names(input),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            let predicate = expr_to_root_column_names(predicate);
+            let truthy = expr_to_root_column_names(truthy);
+            let falsy = expr_to_root_column_names(falsy);
+
+            let mut all = Vec::with_capacity(16);
+            if let Ok(predicate) = predicate {
+                all.extend(predicate.into_iter());
+            }
+            if let Ok(truthy) = truthy {
+                all.extend(truthy.into_iter());
+            }
+            if let Ok(falsy) = falsy {
+                all.extend(falsy.into_iter());
+            }
+            Ok(all)
+        }
+        a => Err(PolarsError::Other(
+            format!("No root column name could be found for {:?}", a).into(),
+        )),
+    }
+}
+
 // unpack alias(col) to name of the root column name
 // TODO! reuse expr_to_root_column_expr
 pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
@@ -270,19 +343,29 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::IsNull(expr) => expr_to_root_column(expr),
         Expr::IsNotNull(expr) => expr_to_root_column(expr),
         Expr::BinaryExpr { left, right, .. } => {
-            let mut left = expr_to_root_column(left);
-            let mut right = expr_to_root_column(right);
+            let left_result = expr_to_root_column(left);
+            let right_result = expr_to_root_column(right);
 
-            match (&mut left, &mut right) {
-                (Ok(left), Err(_)) => Ok(std::mem::take(left)),
-                (Err(_), Ok(right)) => Ok(std::mem::take(right)),
-                _ => Err(PolarsError::Other(
+            let err = || {
+                Err(PolarsError::Other(
                     format!(
-                        "cannot find root column for binary expression {:?}, {:?}",
-                        left, right
+                        "cannot find root column name for binary expression {:?}, {:?}",
+                        left_result, right_result
                     )
                     .into(),
-                )),
+                ))
+            };
+
+            match (&left_result, &right_result) {
+                (Ok(left), Err(_)) => match &**right {
+                    Expr::BinaryExpr { .. } => err(),
+                    _ => Ok(left.clone()),
+                },
+                (Err(_), Ok(right)) => match &**left {
+                    Expr::BinaryExpr { .. } => err(),
+                    _ => Ok(right.clone()),
+                },
+                _ => err(),
             }
         }
         Expr::Sort { expr, .. } => expr_to_root_column(expr),
@@ -352,6 +435,105 @@ pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
     }
 }
 
+// Find the first apply expression somewhere in the tree.
+pub(crate) fn unpack_apply_expr(expr: &Expr) -> Result<&Expr> {
+    match expr {
+        Expr::Unique(expr) => unpack_apply_expr(expr),
+        Expr::Duplicated(expr) => unpack_apply_expr(expr),
+        Expr::Reverse(expr) => unpack_apply_expr(expr),
+        Expr::Alias(expr, _) => unpack_apply_expr(expr),
+        Expr::Not(expr) => unpack_apply_expr(expr),
+        Expr::IsNull(expr) => unpack_apply_expr(expr),
+        Expr::IsNotNull(expr) => unpack_apply_expr(expr),
+        Expr::First(expr) => unpack_apply_expr(expr),
+        Expr::Last(expr) => unpack_apply_expr(expr),
+        Expr::AggGroups(expr) => unpack_apply_expr(expr),
+        Expr::NUnique(expr) => unpack_apply_expr(expr),
+        Expr::Quantile { expr, .. } => unpack_apply_expr(expr),
+        Expr::Sum(expr) => unpack_apply_expr(expr),
+        Expr::Min(expr) => unpack_apply_expr(expr),
+        Expr::Max(expr) => unpack_apply_expr(expr),
+        Expr::Median(expr) => unpack_apply_expr(expr),
+        Expr::Mean(expr) => unpack_apply_expr(expr),
+        Expr::Count(expr) => unpack_apply_expr(expr),
+        Expr::Sort { expr, .. } => unpack_apply_expr(expr),
+        Expr::Shift { input, .. } => unpack_apply_expr(input),
+        Expr::Apply { .. } => Ok(expr),
+        Expr::Cast { expr, .. } => unpack_apply_expr(expr),
+        Expr::BinaryExpr { left, right, .. } => {
+            let left_result = unpack_apply_expr(left);
+            let right_result = unpack_apply_expr(right);
+
+            let err = || {
+                Err(PolarsError::Other(
+                    format!(
+                        "cannot find apply expr for binary expression {:?}, {:?}",
+                        left, right
+                    )
+                    .into(),
+                ))
+            };
+
+            match (left_result, right_result) {
+                (Ok(left), Err(_)) => Ok(left),
+                (Err(_), Ok(right)) => Ok(right),
+                _ => err(),
+            }
+        }
+        Expr::Ternary { predicate, .. } => unpack_apply_expr(predicate),
+        a => Err(PolarsError::Other(
+            format!("No apply expression could be found for {:?}", a).into(),
+        )),
+    }
+}
+
+// Find the first ternary expression somewhere in the tree.
+pub(crate) fn unpack_ternary_expr(expr: &Expr) -> Result<(&Expr, &Expr, &Expr)> {
+    match expr {
+        Expr::Unique(expr) => unpack_ternary_expr(expr),
+        Expr::Duplicated(expr) => unpack_ternary_expr(expr),
+        Expr::Reverse(expr) => unpack_ternary_expr(expr),
+        Expr::Alias(expr, _) => unpack_ternary_expr(expr),
+        Expr::Not(expr) => unpack_ternary_expr(expr),
+        Expr::IsNull(expr) => unpack_ternary_expr(expr),
+        Expr::IsNotNull(expr) => unpack_ternary_expr(expr),
+        Expr::First(expr) => unpack_ternary_expr(expr),
+        Expr::Last(expr) => unpack_ternary_expr(expr),
+        Expr::AggGroups(expr) => unpack_ternary_expr(expr),
+        Expr::NUnique(expr) => unpack_ternary_expr(expr),
+        Expr::Quantile { expr, .. } => unpack_ternary_expr(expr),
+        Expr::Sum(expr) => unpack_ternary_expr(expr),
+        Expr::Min(expr) => unpack_ternary_expr(expr),
+        Expr::Max(expr) => unpack_ternary_expr(expr),
+        Expr::Median(expr) => unpack_ternary_expr(expr),
+        Expr::Mean(expr) => unpack_ternary_expr(expr),
+        Expr::Count(expr) => unpack_ternary_expr(expr),
+        Expr::BinaryExpr { left, right, .. } => {
+            let left = unpack_ternary_expr(left);
+            let right = unpack_ternary_expr(right);
+            match (left, right) {
+                (Ok(left), _) => Ok(left),
+                (_, Ok(right)) => Ok(right),
+                _ => Err(PolarsError::Other(
+                    format!("No ternary expression could be found for {:?}", expr).into(),
+                )),
+            }
+        }
+        Expr::Sort { expr, .. } => unpack_ternary_expr(expr),
+        Expr::Shift { input, .. } => unpack_ternary_expr(input),
+        Expr::Apply { input, .. } => unpack_ternary_expr(input),
+        Expr::Cast { expr, .. } => unpack_ternary_expr(expr),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => Ok((predicate, truthy, falsy)),
+        _ => Err(PolarsError::Other(
+            format!("No ternary expression could be found for {:?}", expr).into(),
+        )),
+    }
+}
+
 // unpack alias(col) to name of the root column name
 pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
     match expr {
@@ -374,19 +556,33 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
         Expr::Median(expr) => expr_to_root_column_expr(expr),
         Expr::Mean(expr) => expr_to_root_column_expr(expr),
         Expr::Count(expr) => expr_to_root_column_expr(expr),
-        Expr::BinaryExpr { left, right, .. } => match expr_to_root_column_expr(left) {
-            Err(_) => expr_to_root_column_expr(right),
-            Ok(expr) => match expr_to_root_column_expr(right) {
-                Ok(_) => Err(PolarsError::Other(
+        Expr::BinaryExpr { left, right, .. } => {
+            let left_result = expr_to_root_column_expr(left);
+            let right_result = expr_to_root_column_expr(right);
+
+            let root_col_err = || {
+                Err(PolarsError::Other(
                     format!(
                         "cannot find root column expr for binary expression {:?}, {:?}",
                         left, right
                     )
                     .into(),
-                )),
-                Err(_) => Ok(expr),
-            },
-        },
+                ))
+            };
+
+            match (left_result, right_result) {
+                (Ok(left), Err(_)) => match &**right {
+                    Expr::BinaryExpr { .. } => root_col_err(),
+                    _ => Ok(left),
+                },
+                (Err(_), Ok(right)) => match &**left {
+                    Expr::BinaryExpr { .. } => root_col_err(),
+                    _ => Ok(right),
+                },
+                (Ok(_), Ok(_)) => root_col_err(),
+                _ => root_col_err(),
+            }
+        }
         Expr::Sort { expr, .. } => expr_to_root_column_expr(expr),
         Expr::Shift { input, .. } => expr_to_root_column_expr(input),
         Expr::Apply { input, .. } => expr_to_root_column_expr(input),

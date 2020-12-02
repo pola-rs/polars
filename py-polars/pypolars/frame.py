@@ -487,7 +487,7 @@ class DataFrame:
         """
         return wrap_df(self._df.tail(length))
 
-    def drop_nulls(self, subset: "Optional[List[str]]") -> "DataFrame":
+    def drop_nulls(self, subset: "Optional[List[str]]" = None) -> "DataFrame":
         """
         Return a new DataFrame where the null values are dropped
         """

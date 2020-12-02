@@ -3,7 +3,7 @@ use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyFloat, PyInt};
+use pyo3::types::{PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
 
 #[pyclass]
@@ -162,12 +162,62 @@ impl PyExpr {
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }
+
+    pub fn str_parse_date_32(&self, fmt: Option<String>) -> PyExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            ca.as_date32(fmt.as_ref().map(|s| s.as_str()))
+                .map(|ca| ca.into_series())
+        };
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::Date32(DateUnit::Day)))
+            .into()
+    }
+
+    pub fn str_parse_date_64(&self, fmt: Option<String>) -> PyExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            ca.as_date64(fmt.as_ref().map(|s| s.as_str()))
+                .map(|ca| ca.into_series())
+        };
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::Date64(DateUnit::Millisecond)))
+            .into()
+    }
+
+    pub fn str_to_uppercase(&self) -> PyExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.to_uppercase().into_series())
+        };
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+
+    pub fn str_to_lowercase(&self) -> PyExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.to_lowercase().into_series())
+        };
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+
     pub fn str_lengths(&self) -> PyExpr {
         let function = |s: Series| {
             let ca = s.utf8()?;
             Ok(ca.str_lengths().into_series())
         };
-        self.clone().inner.apply(function, None).into()
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
     }
 
     pub fn str_replace(&self, pat: String, val: String) -> PyExpr {
@@ -324,7 +374,14 @@ pub fn lit(value: &PyAny) -> PyExpr {
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
         dsl::lit(val).into()
+    } else if let Ok(pystr) = value.downcast::<PyString>() {
+        dsl::lit(
+            pystr
+                .to_str()
+                .expect("could not transform Python string to Rust Unicode"),
+        )
+        .into()
     } else {
-        panic!("could not convert type")
+        panic!(format!("could not convert value {:?} as a Literal", value))
     }
 }

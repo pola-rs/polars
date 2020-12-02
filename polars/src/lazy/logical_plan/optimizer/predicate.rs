@@ -1,10 +1,12 @@
 use crate::lazy::logical_plan::optimizer::{check_down_node, HASHMAP_SIZE};
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::{expr_to_root_column, has_expr, rename_expr_root_name};
+use crate::lazy::utils::{
+    expr_to_root_column, expr_to_root_column_names, has_expr, rename_expr_root_name,
+};
 use crate::prelude::*;
 use ahash::RandomState;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// Don't overwrite predicates but combine them.
@@ -114,10 +116,8 @@ impl PredicatePushDown {
                 match expr_to_root_column(&predicate) {
                     Ok(name) => insert_and_combine_predicate(&mut acc_predicates, name, predicate),
                     Err(e) => {
-                        if let Expr::BinaryExpr { left, right, .. } = &predicate {
-                            let left_name = expr_to_root_column(&*left)?;
-                            let right_name = expr_to_root_column(&*right)?;
-                            let name = Arc::new(format!("{}-binary-{}", left_name, right_name));
+                        if let Expr::BinaryExpr { .. } = &predicate {
+                            let name = Arc::new(format!("{:?}", &predicate));
                             insert_and_combine_predicate(&mut acc_predicates, name, predicate);
                         } else {
                             panic!(format!("{:?}", e))
@@ -368,8 +368,35 @@ impl PredicatePushDown {
                 self.finish_node(local_predicates, builder)
             }
             HStack { input, exprs, .. } => {
-                let (local, acc_predicates) =
-                    self.split_pushdown_and_local(acc_predicates, input.schema());
+                let mut local = Vec::with_capacity(acc_predicates.len());
+                let mut local_keys = Vec::with_capacity(acc_predicates.len());
+                for (key, predicate) in &acc_predicates {
+                    if !check_down_node(predicate, input.schema()) {
+                        local_keys.push(key.clone());
+                    }
+                }
+
+                // get all names of added columns in this HStack
+                let mut added_cols =
+                    HashSet::with_capacity_and_hasher(exprs.len(), RandomState::default());
+                for e in &exprs {
+                    if let Ok(names) = expr_to_root_column_names(e) {
+                        for name in names {
+                            added_cols.insert(name);
+                        }
+                    }
+                }
+                // remove predicates that are dependent on columns added in this HStack.
+                for key in acc_predicates.keys() {
+                    if added_cols.contains(key) {
+                        local_keys.push(key.clone())
+                    }
+                }
+
+                for key in local_keys {
+                    local.push(acc_predicates.remove(&key).unwrap());
+                }
+
                 let mut lp_builder =
                     LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
                         .with_columns(exprs);
@@ -381,25 +408,6 @@ impl PredicatePushDown {
                 Ok(lp_builder.build())
             }
         }
-    }
-
-    /// Check if a predicate can be pushed down or not. If it cannot remove it from the accumulated predicates.
-    fn split_pushdown_and_local(
-        &self,
-        mut acc_predicates: HashMap<Arc<String>, Expr, RandomState>,
-        schema: &Schema,
-    ) -> (Vec<Expr>, HashMap<Arc<String>, Expr, RandomState>) {
-        let mut local = Vec::with_capacity(acc_predicates.len());
-        let mut local_keys = Vec::with_capacity(acc_predicates.len());
-        for (key, predicate) in &acc_predicates {
-            if !check_down_node(predicate, schema) {
-                local_keys.push(key.clone());
-            }
-        }
-        for key in local_keys {
-            local.push(acc_predicates.remove(&key).unwrap());
-        }
-        (local, acc_predicates)
     }
 }
 

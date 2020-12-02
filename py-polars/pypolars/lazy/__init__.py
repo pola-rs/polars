@@ -104,8 +104,19 @@ class LazyFrame:
     def describe_plan(self) -> str:
         return self._ldf.describe_plan()
 
-    def describe_optimized_plan(self) -> str:
-        return self._ldf.describe_optimized_plan()
+    def describe_optimized_plan(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+    ) -> str:
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
+        )
+
+        return ldf.describe_optimized_plan()
 
     def sort(self, by_column: str) -> "LazyFrame":
         return wrap_ldf(self._ldf.sort(by_column))
@@ -290,7 +301,9 @@ class LazyFrame:
         return wrap_ldf(self._ldf.explode(column))
 
     def drop_duplicates(
-        self, maintain_order: bool, subset: "Optional[List[str]]" = None
+        self,
+        maintain_order: bool = False,
+        subset: "Optional[Union[List[str], str]]" = None,
     ) -> "LazyFrame":
         """
         Drop duplicate rows from this DataFrame.
@@ -300,7 +313,9 @@ class LazyFrame:
             subset = [subset]
         return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
 
-    def drop_nulls(self, subset: "Optional[List[str]]" = None) -> "LazyFrame":
+    def drop_nulls(
+        self, subset: "Optional[Union[List[str], str]]" = None
+    ) -> "LazyFrame":
         """
         Drop rows with null values from this DataFrame.
         """
@@ -511,16 +526,76 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.quantile(quantile))
 
+    def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
+        """
+        Parse utf8 expression as a Date32/Date64 type.
+
+        Parameters
+        ----------
+        datatype
+            Date32 | Date64
+        fmt
+            "yyyy-mm-dd"
+        """
+        if datatype == datatypes.Date32:
+            return wrap_expr(self._pyexpr.str_parse_dat32(fmt))
+        if datatype == datatypes.Date64:
+            return wrap_expr(self._pyexpr.str_parse_dat32(fmt))
+        raise NotImplementedError
+
     def str_lengths(self) -> "Expr":
+        """
+        Get the length of the Strings as UInt32
+        """
         return wrap_expr(self._pyexpr.str_lengths())
 
+    def str_to_uppercase(self) -> "Expr":
+        """
+        Transform to uppercase variant
+        """
+        return wrap_expr(self._pyexpr.str_to_uppercase())
+
+    def str_to_lowercase(self) -> "Expr":
+        """
+        Transform to lowercase variant
+        """
+        return wrap_expr(self._pyexpr.str_to_lowercase())
+
     def str_contains(self, pattern: str) -> "Expr":
+        """
+        Check if string contains regex.
+
+        Parameters
+        ----------
+        pattern
+            regex pattern
+        """
         return wrap_expr(self._pyexpr.str_contains(pattern))
 
     def str_replace(self, pattern: str, value: str) -> "Expr":
+        """
+        Replace substring where regex pattern first matches.
+
+        Parameters
+        ----------
+        pattern
+            regex pattern
+        value
+            replacement string
+        """
         return wrap_expr(self._pyexpr.str_replace(pattern, value))
 
     def str_replace_all(self, pattern: str, value: str) -> "Expr":
+        """
+        Replace substring on all regex pattern matches.
+
+        Parameters
+        ----------
+        pattern
+            regex pattern
+        value
+            replacement string
+        """
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
     def apply(
@@ -542,11 +617,18 @@ class Expr:
         return wrap_expr(self._pyexpr.apply(f, dtype_out))
 
 
+def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":
+    if isinstance(expr, (int, float, str)):
+        return lit(expr)
+    return expr
+
+
 class WhenThen:
     def __init__(self, pywhenthen: "PyWhenThen"):
         self._pywhenthen = pywhenthen
 
     def otherwise(self, expr: "Expr") -> "Expr":
+        expr = expr_to_lit_or_expr(expr)
         return wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
 
@@ -555,11 +637,13 @@ class When:
         self._pywhen = pywhen
 
     def then(self, expr: "Expr") -> WhenThen:
+        expr = expr_to_lit_or_expr(expr)
         whenthen = self._pywhen.then(expr._pyexpr)
         return WhenThen(whenthen)
 
 
 def when(expr: "Expr") -> When:
+    expr = expr_to_lit_or_expr(expr)
     pw = pywhen(expr._pyexpr)
     return When(pw)
 
@@ -646,7 +730,7 @@ def last(name: str) -> "Expr":
     return col(name).last()
 
 
-def lit(value: Union[float, int]) -> "Expr":
+def lit(value: Union[float, int, str]) -> "Expr":
     return wrap_expr(pylit(value))
 
 
