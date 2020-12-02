@@ -2,7 +2,8 @@ use crate::lazy::logical_plan::optimizer::{check_down_node, HASHMAP_SIZE};
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column, has_expr, rename_expr_root_name, unpack_binary_exprs, unpack_ternary_expr,
+    expr_to_root_column, has_expr, rename_expr_root_name, unpack_apply_expr, unpack_binary_exprs,
+    unpack_ternary_expr,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -41,6 +42,7 @@ pub struct PredicatePushDown {
     binary_dummy: Expr,
     is_null_dummy: Expr,
     is_not_null_dummy: Expr,
+    apply_dummy: Expr,
 }
 
 impl Default for PredicatePushDown {
@@ -51,6 +53,7 @@ impl Default for PredicatePushDown {
             binary_dummy: lit("_").eq(lit("_")),
             is_null_dummy: lit("_").is_null(),
             is_not_null_dummy: lit("_").is_null(),
+            apply_dummy: lit("_").apply(|s: Series| Ok(s), None),
         }
     }
 }
@@ -368,12 +371,36 @@ impl PredicatePushDown {
                 self.finish_node(local_predicates, builder)
             }
             HStack { input, exprs, .. } => {
-                let (mut local, mut acc_predicates) =
-                    self.split_pushdown_and_local(acc_predicates, input.schema());
+                let mut local = Vec::with_capacity(acc_predicates.len());
+                let mut local_keys = Vec::with_capacity(acc_predicates.len());
+                for (key, predicate) in &acc_predicates {
+                    // We don't know what happens in an apply so we keep local
+                    if has_expr(predicate, &self.apply_dummy) {
+                        local_keys.push(key.clone());
+                    } else if !check_down_node(predicate, input.schema()) {
+                        local_keys.push(key.clone());
+                    }
+                }
+                for key in local_keys {
+                    local.push(acc_predicates.remove(&key).unwrap());
+                }
 
                 // If we have a Ternary Exprs or Binary Expr that's dependent on a column
                 // that's filtered we should not push the filter down.
                 for e in &exprs {
+                    if has_expr(e, &self.apply_dummy) {
+                        //  If we can't we don't push it down.
+                        if let Ok(expr) = unpack_apply_expr(e) {
+                            let key =
+                                expr_to_root_column(expr).expect("could not find a root column");
+                            if let Some(predicate) = acc_predicates.remove(&key) {
+                                local.push(predicate)
+                            }
+                        } else {
+                            panic!("we couldn't find the apply")
+                        }
+                    }
+
                     if let Ok((left, right)) = unpack_binary_exprs(e) {
                         let key = expr_to_root_column(left).unwrap_or_else(|_| {
                             expr_to_root_column(right).expect("could not find a root column")
@@ -401,25 +428,6 @@ impl PredicatePushDown {
                 Ok(lp_builder.build())
             }
         }
-    }
-
-    /// Check if a predicate can be pushed down or not. If it cannot remove it from the accumulated predicates.
-    fn split_pushdown_and_local(
-        &self,
-        mut acc_predicates: HashMap<Arc<String>, Expr, RandomState>,
-        schema: &Schema,
-    ) -> (Vec<Expr>, HashMap<Arc<String>, Expr, RandomState>) {
-        let mut local = Vec::with_capacity(acc_predicates.len());
-        let mut local_keys = Vec::with_capacity(acc_predicates.len());
-        for (key, predicate) in &acc_predicates {
-            if !check_down_node(predicate, schema) {
-                local_keys.push(key.clone());
-            }
-        }
-        for key in local_keys {
-            local.push(acc_predicates.remove(&key).unwrap());
-        }
-        (local, acc_predicates)
     }
 }
 

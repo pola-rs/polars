@@ -284,7 +284,7 @@ impl fmt::Debug for LogicalPlan {
                 input_left, input_right, left_on, right_on
             ),
             HStack { input, exprs, .. } => {
-                write!(f, "\n{:?}\n\tWITH COLUMN(S)\n{:?}\n", input, exprs)
+                write!(f, "STACK [{:?}\n\tWITH COLUMN(S)\n{:?}\n]", input, exprs)
             }
             Distinct { input, .. } => write!(f, "DISTINCT {:?}", input),
         }
