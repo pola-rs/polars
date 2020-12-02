@@ -1,7 +1,9 @@
 use crate::lazy::logical_plan::optimizer::{check_down_node, HASHMAP_SIZE};
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
-use crate::lazy::utils::{expr_to_root_column, has_expr, rename_expr_root_name};
+use crate::lazy::utils::{
+    expr_to_root_column, has_expr, rename_expr_root_name, unpack_binary_exprs, unpack_ternary_expr,
+};
 use crate::prelude::*;
 use ahash::RandomState;
 use std::collections::HashMap;
@@ -366,8 +368,28 @@ impl PredicatePushDown {
                 self.finish_node(local_predicates, builder)
             }
             HStack { input, exprs, .. } => {
-                let (local, acc_predicates) =
+                let (mut local, mut acc_predicates) =
                     self.split_pushdown_and_local(acc_predicates, input.schema());
+
+                // If we have a Ternary Exprs or Binary Expr that's dependent on a column
+                // that's filtered we should not push the filter down.
+                for e in &exprs {
+                    if let Ok((left, right)) = unpack_binary_exprs(e) {
+                        let key = expr_to_root_column(left).unwrap_or_else(|_| {
+                            expr_to_root_column(right).expect("could not find a root column")
+                        });
+                        if let Some(predicate) = acc_predicates.remove(&key) {
+                            local.push(predicate)
+                        }
+                    } else if let Ok((predicate, _truthy, _falsy)) = unpack_ternary_expr(e) {
+                        let key = expr_to_root_column(predicate)
+                            .expect("could not find root column name");
+                        if let Some(predicate) = acc_predicates.remove(&key) {
+                            local.push(predicate)
+                        }
+                    }
+                }
+
                 let mut lp_builder =
                     LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
                         .with_columns(exprs);
