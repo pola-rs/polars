@@ -176,6 +176,7 @@ impl PredicatePushDown {
                 };
                 Ok(lp)
             }
+            #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
                 schema,

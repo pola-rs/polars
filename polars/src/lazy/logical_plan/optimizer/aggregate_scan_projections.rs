@@ -67,6 +67,7 @@ impl AggScanProjection {
                     cache,
                 })
             }
+            #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
                 schema,
@@ -220,6 +221,7 @@ impl AggScanProjection {
                 let input = Box::new(self.rewrite_plan(*input, columns)?);
                 Ok(Selection { input, predicate })
             }
+            #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
                 schema,
