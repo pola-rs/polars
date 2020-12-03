@@ -23,7 +23,7 @@ except:
 
 
 def _selection_to_pyexpr_list(exprs) -> "List[PyExpr]":
-    if not isinstance(exprs, list):
+    if not isinstance(exprs, List):
         if isinstance(exprs, str):
             exprs = col(exprs)
         exprs = [exprs._pyexpr]
