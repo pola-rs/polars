@@ -662,6 +662,13 @@ def count(name: str) -> "Expr":
     return col(name).count()
 
 
+def list(name: str) -> "Expr":
+    """
+    Aggregate to list
+    """
+    return col(name).list()
+
+
 def std(name: str) -> "Expr":
     """
     Get standard deviation
@@ -700,6 +707,13 @@ def sum(name: str) -> "Expr":
 def mean(name: str) -> "Expr":
     """
     Get mean value
+    """
+    return col(name).mean()
+
+
+def avg(name: str) -> "Expr":
+    """
+    Alias for mean
     """
     return col(name).mean()
 
