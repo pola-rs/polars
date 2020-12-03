@@ -1,5 +1,5 @@
 # Some functions similar to the pandas API
-from typing import Union, TextIO, Optional, List
+from typing import Union, TextIO, Optional, List, BinaryIO
 
 from .frame import DataFrame
 from .lazy import LazyFrame
@@ -138,3 +138,37 @@ def scan_parquet(
     return LazyFrame.scan_parquet(
         file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
     )
+
+
+def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
+    """
+    Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file like object.
+
+    Returns
+    -------
+    DataFrame
+    """
+    return DataFrame.read_ipc(file)
+
+
+def read_parquet(
+    file: Union[str, BinaryIO],
+) -> "DataFrame":
+    """
+    Read into a DataFrame from a parquet file.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file like object.
+
+    Returns
+    -------
+    DataFrame
+    """
+    return DataFrame.read_parquet(file)

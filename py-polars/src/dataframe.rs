@@ -132,10 +132,9 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn to_ipc(&mut self, py_f: PyObject, batch_size: usize) -> PyResult<()> {
+    pub fn to_ipc(&mut self, py_f: PyObject) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         IPCWriter::new(&mut buf)
-            .with_batch_size(batch_size)
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())

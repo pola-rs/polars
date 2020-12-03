@@ -1550,6 +1550,19 @@ mod test {
     }
 
     #[test]
+    fn test_recordbatch_iterator() {
+        let mut df = df!(
+            "foo" => &[1, 2, 3, 4, 5]
+        )
+        .unwrap();
+        let mut iter = df.iter_record_batches(2);
+        assert_eq!(2, iter.next().unwrap().num_rows());
+        assert_eq!(2, iter.next().unwrap().num_rows());
+        assert_eq!(1, iter.next().unwrap().num_rows());
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
     fn test_select() {
         let df = create_frame();
         assert_eq!(df.column("days").unwrap().eq(1).sum(), Some(1));

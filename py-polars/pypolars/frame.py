@@ -187,7 +187,7 @@ class DataFrame:
         """
         self._df.to_csv(file, batch_size, has_headers, ord(delimiter))
 
-    def to_ipc(self, file: Union[BinaryIO, str], batch_size):
+    def to_ipc(self, file: Union[BinaryIO, str]):
         """
         Write to Arrow IPC binary stream, or a feather file.
 
@@ -198,7 +198,7 @@ class DataFrame:
         batch_size
             Size of the write buffer. Increase to have faster io.
         """
-        self._df.to_ipc(file, batch_size)
+        self._df.to_ipc(file)
 
     def to_numpy(self) -> np.ndarray:
         """

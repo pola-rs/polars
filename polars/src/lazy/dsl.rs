@@ -754,6 +754,10 @@ pub fn mean(name: &str) -> Expr {
     col(name).mean()
 }
 
+pub fn avg(name: &str) -> Expr {
+    col(name).mean()
+}
+
 pub fn median(name: &str) -> Expr {
     col(name).median()
 }
