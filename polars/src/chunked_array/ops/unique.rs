@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode_f64, Xob};
 use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
 use ahash::RandomState;
+use itertools::Itertools;
 use num::{NumCast, ToPrimitive};
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -221,6 +222,13 @@ fn dummies_helper(mut groups: Vec<usize>, len: usize, name: &str) -> UInt8Chunke
     ChunkedArray::new_from_aligned_vec(name, av)
 }
 
+fn sort_columns(columns: Vec<Series>) -> Vec<Series> {
+    columns
+        .into_iter()
+        .sorted_by_key(|s| s.name().to_string())
+        .collect()
+}
+
 impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
         let groups = self.group_tuples();
@@ -236,7 +244,7 @@ impl ToDummies<Utf8Type> for Utf8Chunked {
             })
             .collect();
 
-        Ok(DataFrame::new_no_checks(columns))
+        Ok(DataFrame::new_no_checks(sort_columns(columns)))
     }
 }
 impl<T> ToDummies<T> for ChunkedArray<T>
@@ -259,7 +267,7 @@ where
             })
             .collect();
 
-        Ok(DataFrame::new_no_checks(columns))
+        Ok(DataFrame::new_no_checks(sort_columns(columns)))
     }
 }
 
