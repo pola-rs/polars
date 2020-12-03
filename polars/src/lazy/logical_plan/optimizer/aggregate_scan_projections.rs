@@ -188,7 +188,7 @@ impl AggScanProjection {
         path: &str,
         with_columns: Option<Vec<String>>,
         columns: &HashMap<String, HashSet<String, RandomState>, RandomState>,
-    ) -> Result<LogicalPlan> {
+    ) -> LogicalPlan {
         // if the original projection is less than the new one. Also project locally
         if let Some(with_columns) = with_columns {
             let agg = columns.get(path).unwrap();
@@ -203,7 +203,7 @@ impl AggScanProjection {
                     .build();
             }
         }
-        Ok(lp)
+        lp
     }
 
     fn rewrite_plan(
@@ -242,7 +242,7 @@ impl AggScanProjection {
                     stop_after_n_rows,
                     cache,
                 };
-                self.finish_rewrite(lp, &path, with_columns, columns)
+                Ok(self.finish_rewrite(lp, &path, with_columns, columns))
             }
             CsvScan {
                 path,
@@ -272,7 +272,7 @@ impl AggScanProjection {
                     predicate,
                     cache,
                 };
-                self.finish_rewrite(lp, &path, with_columns, columns)
+                Ok(self.finish_rewrite(lp, &path, with_columns, columns))
             }
             DataFrameScan { .. } => Ok(logical_plan),
             Projection {

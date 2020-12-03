@@ -74,31 +74,30 @@ impl PredicatePushDown {
         &self,
         lp: LogicalPlan,
         acc_predicates: HashMap<Arc<String>, Expr, RandomState>,
-    ) -> Result<LogicalPlan> {
+    ) -> LogicalPlan {
         match acc_predicates.len() {
             // No filter in the logical plan
-            0 => Ok(lp),
+            0 => lp,
             _ => {
                 let mut builder = LogicalPlanBuilder::from(lp);
 
                 let predicate = combine_predicates(acc_predicates.into_iter().map(|t| t.1));
                 builder = builder.filter(predicate);
-                Ok(builder.build())
+                builder.build()
             }
         }
     }
-
     fn finish_node(
         &self,
         local_predicates: Vec<Expr>,
         mut builder: LogicalPlanBuilder,
-    ) -> Result<LogicalPlan> {
+    ) -> LogicalPlan {
         if !local_predicates.is_empty() {
             let predicate = combine_predicates(local_predicates.into_iter());
             builder = builder.filter(predicate);
-            Ok(builder.build())
+            builder.build()
         } else {
-            Ok(builder.build())
+            builder.build()
         }
     }
 
@@ -290,7 +289,7 @@ impl PredicatePushDown {
                     aggs,
                     schema,
                 };
-                self.finish_at_leaf(lp, acc_predicates)
+                Ok(self.finish_at_leaf(lp, acc_predicates))
             }
             Join {
                 input_left,
@@ -366,7 +365,7 @@ impl PredicatePushDown {
 
                 let builder =
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
-                self.finish_node(local_predicates, builder)
+                Ok(self.finish_node(local_predicates, builder))
             }
             HStack { input, exprs, .. } => {
                 let mut local = Vec::with_capacity(acc_predicates.len());
