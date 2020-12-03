@@ -58,6 +58,10 @@ pub trait SeriesOps: Send + Sync + Debug + ZipOuterJoinColumn {
     fn limit(&self, num_elements: usize) -> Result<Box<dyn SeriesOps>>;
     fn slice(&self, offset: usize, length: usize) -> Result<Box<dyn SeriesOps>>;
     fn clone(&self) -> Box<dyn SeriesOps>;
+
+    #[cfg(feature = "random")]
+    #[doc(cfg(feature = "random"))]
+    fn sample_n(&self, n: usize) -> Result<Box<dyn SeriesOps>>;
 }
 
 fn to_object_chunked<T>(mut ca: Box<dyn SeriesOps>) -> ObjectChunked<T>
@@ -237,5 +241,11 @@ where
     }
     fn clone(&self) -> Box<dyn SeriesOps> {
         Clone::clone(self).as_series_ops()
+    }
+
+    #[cfg(feature = "random")]
+    #[doc(cfg(feature = "random"))]
+    fn sample_n(&self, n: usize) -> Result<Box<dyn SeriesOps>> {
+        self.sample_n(n).map(|ca| ca.as_series_ops())
     }
 }

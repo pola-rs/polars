@@ -50,7 +50,7 @@ type DfColumns = Vec<DfSeries>;
 
 #[derive(Clone)]
 pub struct DataFrame {
-    columns: DfColumns,
+    pub(crate) columns: DfColumns,
 }
 
 impl DataFrame {

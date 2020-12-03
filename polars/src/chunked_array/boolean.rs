@@ -3,23 +3,8 @@ use crate::utils::Xob;
 
 impl BooleanChunked {
     pub fn arg_true(&self) -> UInt32Chunked {
-        let ca: Xob<_> = if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .enumerate()
-                .filter_map(|(idx, valid)| match valid {
-                    true => Some(idx as u32),
-                    false => None,
-                })
-                .collect()
-        } else {
-            self.into_iter()
-                .enumerate()
-                .filter_map(|(idx, opt_valid)| match opt_valid {
-                    Some(true) => Some(idx as u32),
-                    _ => None,
-                })
-                .collect()
-        };
-        ca.into_inner()
+        // the allocation is probably cheaper as the filter is super fast
+        let ca: Xob<UInt32Chunked> = (0u32..self.len() as u32).collect();
+        ca.into_inner().filter(self).unwrap()
     }
 }
