@@ -85,6 +85,7 @@ enum ALogicalPlan {
         predicate: Option<Node>,
         cache: bool,
     },
+    #[cfg(feature = "parquet")]
     ParquetScan {
         path: String,
         schema: Schema,
@@ -269,6 +270,7 @@ fn to_alp(
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             cache,
         },
+        #[cfg(feature = "parquet")]
         LogicalPlan::ParquetScan {
             path,
             schema,
@@ -591,6 +593,7 @@ fn node_to_lp(
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
             cache,
         },
+        #[cfg(feature = "parquet")]
         ALogicalPlan::ParquetScan {
             path,
             schema,
@@ -1032,6 +1035,7 @@ impl SimplifyOptimizer {
                             exprs.push(predicate)
                         }
                     }
+                    #[cfg(feature = "parquet")]
                     ALogicalPlan::ParquetScan { predicate, .. } => {
                         if let Some(predicate) = *predicate {
                             exprs.push(predicate)

@@ -170,6 +170,7 @@ impl TypeCoercion {
                 let input = Box::new(self.coerce(*input)?);
                 Ok(Selection { input, predicate })
             }
+            #[cfg(feature = "parquet")]
             ParquetScan { .. } => Ok(logical_plan),
             CsvScan { .. } => Ok(logical_plan),
             DataFrameScan { .. } => Ok(logical_plan),

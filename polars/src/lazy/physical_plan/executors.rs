@@ -31,6 +31,7 @@ impl Executor for CacheExec {
     }
 }
 
+#[cfg(feature = "parquet")]
 pub struct ParquetExec {
     path: String,
     schema: Schema,
@@ -40,6 +41,7 @@ pub struct ParquetExec {
     cache: bool,
 }
 
+#[cfg(feature = "parquet")]
 impl ParquetExec {
     pub fn new(
         path: String,
@@ -60,6 +62,7 @@ impl ParquetExec {
     }
 }
 
+#[cfg(feature = "parquet")]
 impl Executor for ParquetExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let cache_key = match &self.predicate {

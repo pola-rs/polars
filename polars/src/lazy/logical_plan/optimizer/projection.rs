@@ -200,6 +200,7 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
+            #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
                 schema,

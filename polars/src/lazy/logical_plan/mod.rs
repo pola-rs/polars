@@ -104,6 +104,8 @@ pub enum LogicalPlan {
         predicate: Option<Expr>,
         cache: bool,
     },
+    #[cfg(feature = "parquet")]
+    #[doc(cfg(feature = "parquet"))]
     ParquetScan {
         path: String,
         schema: Schema,
@@ -189,6 +191,7 @@ impl fmt::Debug for LogicalPlan {
         use LogicalPlan::*;
         match self {
             Cache { input } => write!(f, "CACHE {:?}", input),
+            #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
                 schema,
@@ -396,6 +399,7 @@ impl LogicalPlan {
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
             Explode { input, .. } => input.schema(),
+            #[cfg(feature = "parquet")]
             ParquetScan { schema, .. } => schema,
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => input.schema(),
@@ -426,6 +430,8 @@ fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) 
 }
 
 impl LogicalPlanBuilder {
+    #[cfg(feature = "parquet")]
+    #[doc(cfg(feature = "parquet"))]
     pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
         let file = std::fs::File::open(&path).expect("could not open file");
         let schema = ParquetReader::new(file)

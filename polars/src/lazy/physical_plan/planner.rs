@@ -1,6 +1,6 @@
 use crate::frame::group_by::GroupByMethod;
 use crate::lazy::logical_plan::{Context, DataFrameOperation};
-use crate::lazy::physical_plan::executors::{CacheExec, JoinExec, ParquetExec, StackExec};
+use crate::lazy::physical_plan::executors::*;
 use crate::{lazy::prelude::*, prelude::*};
 use ahash::RandomState;
 use std::collections::HashSet;
@@ -68,6 +68,7 @@ impl DefaultPlanner {
                     cache,
                 )))
             }
+            #[cfg(feature = "parquet")]
             LogicalPlan::ParquetScan {
                 path,
                 schema,
