@@ -373,6 +373,8 @@ class Series:
         """
         if self.dtype == Boolean:
             return self._s.sum_u32()
+        if self.dtype == UInt8:
+            return self.cast(UInt64).sum()
         f = get_ffi_func("sum_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
