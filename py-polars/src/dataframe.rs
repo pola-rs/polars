@@ -165,6 +165,16 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    pub fn sample_n(&self, n: usize) -> PyResult<Self> {
+        let df = self.df.sample_n(n).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn sample_frac(&self, frac: f64) -> PyResult<Self> {
+        let df = self.df.sample_frac(frac).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn rechunk(&mut self) -> Self {
         self.df.agg_chunks().into()
     }

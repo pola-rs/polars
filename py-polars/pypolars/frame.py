@@ -808,6 +808,23 @@ class DataFrame:
     def _rechunk(self) -> "DataFrame":
         return wrap_df(self._df.rechunk())
 
+    def sample(
+        self, n: "Optional[int]" = None, frac: "Optional[float]" = None
+    ) -> "DataFrame":
+        """
+        Sample from this DataFrame by setting either `n` or `frac`
+
+        Parameters
+        ----------
+        n
+            Number of samples < self.len()
+        frac
+            Fraction between 0.0 and 1.0
+        """
+        if n is not None:
+            return wrap_df(self._df.sample_n(n))
+        return wrap_df(self._df.sample_frac(frac))
+
 
 class GroupBy:
     def __init__(self, df: DataFrame, by: "List[str]"):
