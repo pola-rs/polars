@@ -150,7 +150,7 @@ fn finish_rolling_method<T, F>(
     window_size: usize,
     weight: Option<&[f64]>,
     init_fold: InitFold,
-) -> Result<ChunkedArray<T>>
+) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Zero
@@ -165,7 +165,7 @@ where
     let weight: Option<Vec<T::Native>> = weight.map(weight_to_native);
     let window = vec![None; window_size];
     let mut idx_count = 0;
-    let ca = if ca.null_count() == 0 {
+    if ca.null_count() == 0 {
         ca.into_no_null_iter()
             .scan((window, 0usize), |state, v| {
                 idx_count = update_state(state, idx_count, Some(v), window_size);
@@ -182,8 +182,7 @@ where
                 Some(apply_window(weight.as_deref(), window, fold_fn, init_fold))
             })
             .collect()
-    };
-    Ok(ca)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -216,7 +215,13 @@ where
             sum_fold::<T::Native>
         };
 
-        finish_rolling_method(self, fold_fn, window_size, weight, InitFold::Zero)
+        Ok(finish_rolling_method(
+            self,
+            fold_fn,
+            window_size,
+            weight,
+            InitFold::Zero,
+        ))
     }
 
     fn rolling_mean(
@@ -241,7 +246,13 @@ where
             min_fold::<T::Native>
         };
 
-        finish_rolling_method(self, fold_fn, window_size, weight, InitFold::Max)
+        Ok(finish_rolling_method(
+            self,
+            fold_fn,
+            window_size,
+            weight,
+            InitFold::Max,
+        ))
     }
 
     fn rolling_max(
@@ -256,7 +267,13 @@ where
             max_fold::<T::Native>
         };
 
-        finish_rolling_method(self, fold_fn, window_size, weight, InitFold::Min)
+        Ok(finish_rolling_method(
+            self,
+            fold_fn,
+            window_size,
+            weight,
+            InitFold::Min,
+        ))
     }
 
     fn rolling_custom<F>(
@@ -269,7 +286,13 @@ where
     where
         F: Fn(Option<T::Native>, Option<T::Native>) -> Option<T::Native> + Copy,
     {
-        finish_rolling_method(self, fold_fn, window_size, weight, init_fold)
+        Ok(finish_rolling_method(
+            self,
+            fold_fn,
+            window_size,
+            weight,
+            init_fold,
+        ))
     }
 }
 

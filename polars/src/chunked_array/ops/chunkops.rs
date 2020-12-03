@@ -31,7 +31,7 @@ macro_rules! optional_rechunk {
 }
 
 #[inline]
-fn mimic_chunks<T>(arr: &ArrayRef, chunk_lengths: &[usize], name: &str) -> Result<ChunkedArray<T>>
+fn mimic_chunks<T>(arr: &ArrayRef, chunk_lengths: &[usize], name: &str) -> ChunkedArray<T>
 where
     T: PolarsDataType,
     ChunkedArray<T>: ChunkOps,
@@ -42,7 +42,7 @@ where
         chunks.push(arr.slice(offset, *chunk_length));
         offset += *chunk_length
     }
-    Ok(ChunkedArray::new_from_chunks(name, chunks))
+    ChunkedArray::new_from_chunks(name, chunks)
 }
 
 impl<T> ChunkOps for ChunkedArray<T>
@@ -60,7 +60,11 @@ where
                 Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
             }
             // Left contains a single chunk. We can cheaply mimic right as arrow slices are zero copy
-            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (1, Some(_)) => Ok(mimic_chunks(
+                &self.chunks[0],
+                chunk_lengths.unwrap(),
+                self.name(),
+            )),
             // Left will be aggregated to match right
             (_, Some(_)) | (_, None) => {
                 let default = &[self.len()];
@@ -97,7 +101,11 @@ impl ChunkOps for BooleanChunked {
                 let chunks = vec![concat(&self.chunks)?];
                 Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
             }
-            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (1, Some(_)) => Ok(mimic_chunks(
+                &self.chunks[0],
+                chunk_lengths.unwrap(),
+                self.name(),
+            )),
             (_, Some(_)) | (_, None) => {
                 let default = &[self.len()];
                 let chunk_id = chunk_lengths.unwrap_or(default);
@@ -134,7 +142,11 @@ impl ChunkOps for Utf8Chunked {
                 let chunks = vec![concat(&self.chunks)?];
                 Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
             }
-            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (1, Some(_)) => Ok(mimic_chunks(
+                &self.chunks[0],
+                chunk_lengths.unwrap(),
+                self.name(),
+            )),
             (_, Some(_)) | (_, None) => {
                 let default = &[self.len()];
                 let chunk_id = chunk_lengths.unwrap_or(default);
@@ -166,7 +178,11 @@ impl ChunkOps for ListChunked {
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
             (1, Some(1)) | (1, None) => Ok(self.clone()),
-            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (1, Some(_)) => Ok(mimic_chunks(
+                &self.chunks[0],
+                chunk_lengths.unwrap(),
+                self.name(),
+            )),
             (_, Some(_)) | (_, None) => {
                 let default = &[self.len()];
                 let chunk_id = chunk_lengths.unwrap_or(default);
@@ -202,7 +218,11 @@ where
     {
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {
             (1, Some(1)) | (1, None) => Ok(self.clone()),
-            (1, Some(_)) => mimic_chunks(&self.chunks[0], chunk_lengths.unwrap(), self.name()),
+            (1, Some(_)) => Ok(mimic_chunks(
+                &self.chunks[0],
+                chunk_lengths.unwrap(),
+                self.name(),
+            )),
             (_, None) => {
                 let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
                 let chunks = self.downcast_chunks();

@@ -41,7 +41,7 @@ pub(crate) fn is_unique_helper(
         .collect()
 }
 
-fn is_unique<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
+fn is_unique<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
@@ -49,10 +49,10 @@ where
     let groups = ca.group_tuples();
     let mut out = is_unique_helper(groups, ca.len(), true, false);
     out.rename(ca.name());
-    Ok(out)
+    out
 }
 
-fn is_duplicated<T>(ca: &ChunkedArray<T>) -> Result<BooleanChunked>
+fn is_duplicated<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
@@ -60,7 +60,7 @@ where
     let groups = ca.group_tuples();
     let mut out = is_unique_helper(groups, ca.len(), false, true);
     out.rename(ca.name());
-    Ok(out)
+    out
 }
 
 impl ChunkUnique<ListType> for ListChunked {
@@ -118,7 +118,7 @@ where
     unique
 }
 
-fn arg_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> Result<Vec<usize>>
+fn arg_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> Vec<usize>
 where
     &'a ChunkedArray<T>: IntoIterator + IntoNoNullIterator,
     T: 'a,
@@ -126,8 +126,8 @@ where
     <&'a ChunkedArray<T> as IntoNoNullIterator>::Item: Eq + Hash,
 {
     match ca.null_count() {
-        0 => Ok(arg_unique(ca.into_no_null_iter(), ca.len())),
-        _ => Ok(arg_unique(ca.into_iter(), ca.len())),
+        0 => arg_unique(ca.into_no_null_iter(), ca.len()),
+        _ => arg_unique(ca.into_iter(), ca.len()),
     }
 }
 
@@ -164,15 +164,15 @@ where
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        arg_unique_ca(self)
+        Ok(arg_unique_ca(self))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        is_unique(self)
+        Ok(is_unique(self))
     }
 
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        is_duplicated(self)
+        Ok(is_duplicated(self))
     }
 
     fn value_counts(&self) -> Result<DataFrame> {
@@ -190,14 +190,14 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        arg_unique_ca(self)
+        Ok(arg_unique_ca(self))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        is_unique(self)
+        Ok(is_unique(self))
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        is_duplicated(self)
+        Ok(is_duplicated(self))
     }
 
     fn value_counts(&self) -> Result<DataFrame> {
@@ -293,18 +293,18 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        arg_unique_ca(self)
+        Ok(arg_unique_ca(self))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        is_unique(self)
+        Ok(is_unique(self))
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        is_duplicated(self)
+        Ok(is_duplicated(self))
     }
 }
 
-fn float_unique<T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<T>>
+fn float_unique<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsFloatType,
     T::Native: NumCast + ToPrimitive,
@@ -321,7 +321,7 @@ where
             ca.len(),
         ),
     };
-    Ok(ChunkedArray::new_from_opt_iter(
+    ChunkedArray::new_from_opt_iter(
         ca.name(),
         set.iter().copied().map(|opt| match opt {
             Some((mantissa, exponent, sign)) => {
@@ -331,41 +331,38 @@ where
             }
             None => None,
         }),
-    ))
+    )
 }
 
-fn float_arg_unique<T>(ca: &ChunkedArray<T>) -> Result<Vec<usize>>
+fn float_arg_unique<T>(ca: &ChunkedArray<T>) -> Vec<usize>
 where
     T: PolarsFloatType,
     T::Native: IntegerDecode,
 {
     match ca.null_count() {
-        0 => Ok(arg_unique(
-            ca.into_no_null_iter().map(|v| v.integer_decode()),
-            ca.len(),
-        )),
-        _ => Ok(arg_unique(
+        0 => arg_unique(ca.into_no_null_iter().map(|v| v.integer_decode()), ca.len()),
+        _ => arg_unique(
             ca.into_iter()
                 .map(|opt_v| opt_v.map(|v| v.integer_decode())),
             ca.len(),
-        )),
+        ),
     }
 }
 
 impl ChunkUnique<Float32Type> for Float32Chunked {
     fn unique(&self) -> Result<ChunkedArray<Float32Type>> {
-        float_unique(self)
+        Ok(float_unique(self))
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        float_arg_unique(self)
+        Ok(float_arg_unique(self))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        is_unique(self)
+        Ok(is_unique(self))
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        is_duplicated(self)
+        Ok(is_duplicated(self))
     }
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
@@ -374,18 +371,18 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
     fn unique(&self) -> Result<ChunkedArray<Float64Type>> {
-        float_unique(self)
+        Ok(float_unique(self))
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        float_arg_unique(self)
+        Ok(float_arg_unique(self))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        is_unique(self)
+        Ok(is_unique(self))
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        is_duplicated(self)
+        Ok(is_duplicated(self))
     }
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)

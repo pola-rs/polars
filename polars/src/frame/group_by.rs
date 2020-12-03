@@ -152,13 +152,13 @@ impl From<f32> for Groupable<'_> {
 
 fn float_to_groupable_iter<'a, T>(
     ca: &'a ChunkedArray<T>,
-) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>>
+) -> Box<dyn Iterator<Item = Option<Groupable>> + 'a>
 where
     T: PolarsNumericType,
     T::Native: Into<Groupable<'a>>,
 {
     let iter = ca.into_iter().map(|opt_v| opt_v.map(|v| v.into()));
-    Ok(Box::new(iter))
+    Box::new(iter)
 }
 
 impl Series {
@@ -196,8 +196,8 @@ impl Series {
             Series::IntervalDayTime(ca) => as_groupable_iter!(ca, Int64),
             Series::IntervalYearMonth(ca) => as_groupable_iter!(ca, Int32),
             Series::Utf8(ca) => as_groupable_iter!(ca, Utf8),
-            Series::Float32(ca) => float_to_groupable_iter(ca),
-            Series::Float64(ca) => float_to_groupable_iter(ca),
+            Series::Float32(ca) => Ok(float_to_groupable_iter(ca)),
+            Series::Float64(ca) => Ok(float_to_groupable_iter(ca)),
             s => Err(PolarsError::Other(
                 format!("Column with dtype {:?} is not groupable", s.dtype()).into(),
             )),

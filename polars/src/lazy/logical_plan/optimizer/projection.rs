@@ -89,16 +89,15 @@ impl ProjectionPushDown {
             (acc_projections, local_projections, names)
         }
     }
-
     fn finish_node(
         &self,
         local_projections: Vec<Expr>,
         builder: LogicalPlanBuilder,
-    ) -> Result<LogicalPlan> {
+    ) -> LogicalPlan {
         if !local_projections.is_empty() {
-            Ok(builder.project(local_projections).build())
+            builder.project(local_projections).build()
         } else {
-            Ok(builder.build())
+            builder.build()
         }
     }
     #[allow(clippy::too_many_arguments)]
@@ -170,7 +169,7 @@ impl ProjectionPushDown {
                 }
 
                 let builder = LogicalPlanBuilder::from(lp);
-                self.finish_node(local_projection, builder)
+                Ok(self.finish_node(local_projection, builder))
             }
             LocalProjection { expr, input, .. } => {
                 let lp = self.push_down(*input, acc_projections, names, projections_seen)?;
@@ -415,7 +414,7 @@ impl ProjectionPushDown {
                     self.push_down(*input_right, pushdown_right, names_right, projections_seen)?;
                 let builder =
                     LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
-                self.finish_node(local_projection, builder)
+                Ok(self.finish_node(local_projection, builder))
             }
             HStack { input, exprs, .. } => {
                 // Make sure that columns selected with_columns are available

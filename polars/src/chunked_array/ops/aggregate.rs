@@ -165,8 +165,8 @@ impl ChunkVar<Series> for ListChunked {}
 impl<T> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}
 
-fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
-    let min_max = ca.into_iter().fold(0, |acc: u32, x| match x {
+fn min_max_helper(ca: &BooleanChunked, min: bool) -> u32 {
+    ca.into_iter().fold(0, |acc: u32, x| match x {
         Some(v) => {
             let v = v as u32;
             if min {
@@ -182,8 +182,7 @@ fn min_max_helper(ca: &BooleanChunked, min: bool) -> Option<u32> {
             }
         }
         None => acc,
-    });
-    Some(min_max)
+    })
 }
 
 /// Booleans are casted to 1 or 0.
@@ -204,14 +203,14 @@ impl ChunkAgg<u32> for BooleanChunked {
         if self.is_empty() {
             return None;
         }
-        min_max_helper(self, true)
+        Some(min_max_helper(self, true))
     }
 
     fn max(&self) -> Option<u32> {
         if self.is_empty() {
             return None;
         }
-        min_max_helper(self, false)
+        Some(min_max_helper(self, false))
     }
 
     fn mean(&self) -> Option<u32> {

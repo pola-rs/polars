@@ -141,11 +141,11 @@ where
         NumIterSingleChunkNullCheck { arr, idx, back_idx }
     }
 
-    fn return_opt_val(&self, index: usize) -> Option<Option<T::Native>> {
+    fn return_opt_val(&self, index: usize) -> Option<T::Native> {
         if self.arr.is_null(index) {
-            Some(None)
+            None
         } else {
-            Some(Some(self.arr.value(index)))
+            Some(self.arr.value(index))
         }
     }
 }
@@ -163,7 +163,7 @@ where
             let ret = self.return_opt_val(self.idx);
             self.idx += 1;
 
-            ret
+            Some(ret)
         }
     }
 
@@ -182,7 +182,7 @@ where
             None
         } else {
             self.back_idx -= 1;
-            self.return_opt_val(self.back_idx)
+            Some(self.return_opt_val(self.back_idx))
         }
     }
 }
