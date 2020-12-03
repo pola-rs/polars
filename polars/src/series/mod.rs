@@ -718,6 +718,16 @@ impl Series {
         apply_method_all_arrow_series!(self, arg_unique,)
     }
 
+    /// Get indexes that evaluate true
+    pub fn arg_true(&self) -> Result<UInt32Chunked> {
+        match self {
+            Series::Bool(ca) => Ok(ca.arg_true()),
+            _ => Err(PolarsError::DataTypeMisMatch(
+                format!("Expected Boolean, got {:?}", self.dtype()).into(),
+            )),
+        }
+    }
+
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
         apply_method_all_series!(self, is_null,)

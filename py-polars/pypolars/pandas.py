@@ -172,3 +172,19 @@ def read_parquet(
     DataFrame
     """
     return DataFrame.read_parquet(file)
+
+
+def arg_where(mask: "Series"):
+    """
+    Get index values where Boolean mask evaluate True.
+
+    Parameters
+    ----------
+    mask
+        Boolean Series
+
+    Returns
+    -------
+    UInt32 Series
+    """
+    return mask.arg_true()

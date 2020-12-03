@@ -20,6 +20,7 @@ use std::sync::Arc;
 pub mod ops;
 #[macro_use]
 pub mod arithmetic;
+pub mod boolean;
 pub mod builder;
 pub mod cast;
 pub mod comparison;

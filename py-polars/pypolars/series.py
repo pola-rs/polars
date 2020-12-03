@@ -601,6 +601,16 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_null())
 
+    def arg_true(self) -> "Series":
+        """
+        Get index values where Boolean Series evaluate True
+
+        Returns
+        -------
+        UInt32 Series
+        """
+        return Series._from_pyseries(self._s.arg_true())
+
     def is_not_null(self) -> "Series":
         """
         Get mask of non null values

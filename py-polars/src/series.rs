@@ -323,6 +323,11 @@ impl PySeries {
         Ok(Series::Bool(ca).into())
     }
 
+    pub fn arg_true(&self) -> PyResult<Self> {
+        let ca = self.series.arg_true().map_err(PyPolarsEr::from)?;
+        Ok(Series::UInt32(ca).into())
+    }
+
     pub fn is_duplicated(&self) -> PyResult<Self> {
         let ca = self.series.is_duplicated().map_err(PyPolarsEr::from)?;
         Ok(Series::Bool(ca).into())
