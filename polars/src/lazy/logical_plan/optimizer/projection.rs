@@ -2,7 +2,7 @@ use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column, expr_to_root_column_expr, has_expr, unpack_binary_exprs,
+    expr_to_root_column_expr, expr_to_root_column_exprs, expr_to_root_column_name, has_expr,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -23,19 +23,10 @@ fn add_to_accumulated(
     acc_projections: &mut Vec<Expr>,
     names: &mut HashSet<Arc<String>, RandomState>,
 ) -> Result<()> {
-    if let Expr::Literal(_) = expression {
-        return Ok(());
-    }
-    match unpack_binary_exprs(expression) {
-        Ok((left, right)) => {
-            add_to_accumulated(left, acc_projections, names)?;
-            add_to_accumulated(right, acc_projections, names)?;
-        }
-        Err(_) => {
-            let name = expr_to_root_column(expression)?;
-            if names.insert(name) {
-                acc_projections.push(expr_to_root_column_expr(expression)?.clone());
-            }
+    for e in expr_to_root_column_exprs(expression) {
+        let name = expr_to_root_column_name(&e)?;
+        if names.insert(name) {
+            acc_projections.push(e)
         }
     }
     Ok(())
@@ -46,7 +37,7 @@ fn get_scan_columns(acc_projections: &mut Vec<Expr>) -> Option<Vec<String>> {
     if !acc_projections.is_empty() {
         let mut columns = Vec::with_capacity(acc_projections.len());
         for expr in acc_projections {
-            if let Ok(name) = expr_to_root_column(expr) {
+            if let Ok(name) = expr_to_root_column_name(expr) {
                 columns.push((*name).clone())
             }
         }
@@ -83,7 +74,7 @@ impl ProjectionPushDown {
                 .partition(|expr| check_down_node(expr, down_schema));
             let mut names = init_set();
             for proj in &acc_projections {
-                let name = expr_to_root_column(proj).unwrap();
+                let name = expr_to_root_column_name(proj).unwrap();
                 names.insert(name);
             }
             (acc_projections, local_projections, names)
@@ -112,7 +103,7 @@ impl ProjectionPushDown {
         names_right: &mut HashSet<Arc<String>, RandomState>,
     ) -> Result<bool> {
         let mut pushed_at_least_one = false;
-        let name = expr_to_root_column(&proj)?;
+        let name = expr_to_root_column_name(&proj)?;
         let root_projection = expr_to_root_column_expr(proj)?;
 
         if check_down_node(&root_projection, schema_left) && names_left.insert(name.clone()) {
@@ -341,10 +332,6 @@ impl ProjectionPushDown {
                     // We need the join columns so we push the projection downwards
                     pushdown_left.push(left_on.clone());
                     pushdown_right.push(right_on.clone());
-                    // let root_column_name_left = expr_to_root_column(&left_on).unwrap();
-                    // let root_column_name_right = expr_to_root_column(&right_on).unwrap();
-                    // names_left.insert(root_column_name_left);
-                    // names_right.insert(root_column_name_right);
 
                     for mut proj in acc_projections {
                         let mut add_local = true;
@@ -353,7 +340,7 @@ impl ProjectionPushDown {
                         // but we don't want to project it a this level, otherwise we project both
                         // the root and the alias, hence add_local = false.
                         if let Expr::Alias(expr, name) = proj {
-                            let root_name = expr_to_root_column(&expr).unwrap();
+                            let root_name = expr_to_root_column_name(&expr).unwrap();
 
                             proj = Expr::Column(root_name);
                             local_projection.push(Expr::Alias(Box::new(proj.clone()), name));
@@ -375,7 +362,7 @@ impl ProjectionPushDown {
                             &mut names_right,
                         )? {
                             // Column name of the projection without any alias.
-                            let root_column_name = expr_to_root_column(&proj).unwrap();
+                            let root_column_name = expr_to_root_column_name(&proj).unwrap();
 
                             // If _right suffix exists we need to push a projection down without this
                             // suffix.
@@ -421,31 +408,7 @@ impl ProjectionPushDown {
                 // only if not empty. If empty we already select everything.
                 if !acc_projections.is_empty() {
                     for expression in &exprs {
-                        // todo! maybe we should loop or recurse to find all binary expressions?
-                        match expr_to_root_column_expr(expression) {
-                            Ok(e) => add_to_accumulated(e, &mut acc_projections, &mut names)?,
-                            Err(_) => {
-                                // could be:
-                                //   * alias(lit)
-                                //   * lit
-                                //   * binary expr
-                                // may fail, for literal cases
-                                if let Ok((left, right)) = unpack_binary_exprs(expression) {
-                                    expr_to_root_column_expr(left)
-                                        .map(|p| {
-                                            add_to_accumulated(p, &mut acc_projections, &mut names)
-                                                .unwrap()
-                                        })
-                                        .ok();
-                                    expr_to_root_column_expr(right)
-                                        .map(|p| {
-                                            add_to_accumulated(p, &mut acc_projections, &mut names)
-                                                .unwrap()
-                                        })
-                                        .ok();
-                                }
-                            }
-                        }
+                        add_to_accumulated(expression, &mut acc_projections, &mut names)?;
                     }
                 }
 

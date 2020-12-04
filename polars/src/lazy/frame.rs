@@ -124,25 +124,25 @@ impl LazyFrame {
     }
 
     /// Toggle projection pushdown optimization on or off.
-    pub fn with_projection_pushdown_optimization(mut self, toggle: bool) -> Self {
+    pub fn with_projection_pushdown(mut self, toggle: bool) -> Self {
         self.projection_pushdown = toggle;
         self
     }
 
     /// Toggle predicate pushdown optimization on or off.
-    pub fn with_predicate_pushdown_optimization(mut self, toggle: bool) -> Self {
+    pub fn with_predicate_pushdown(mut self, toggle: bool) -> Self {
         self.predicate_pushdown = toggle;
         self
     }
 
     /// Toggle type coercion optimization on or off.
-    pub fn with_type_coercion_optimization(mut self, toggle: bool) -> Self {
+    pub fn with_type_coercion(mut self, toggle: bool) -> Self {
         self.type_coercion = toggle;
         self
     }
 
     /// Toggle expression simplification optimization on or off
-    pub fn with_simplify_expr_optimization(mut self, toggle: bool) -> Self {
+    pub fn with_simplify_expr(mut self, toggle: bool) -> Self {
         self.simplify_expr = toggle;
         self
     }
@@ -1035,7 +1035,6 @@ mod test {
                 col("groups"),
                 avg("values").over(col("groups")).alias("part"),
             ])
-            .with_projection_pushdown_optimization(false)
             .collect()
             .unwrap();
         dbg!(out);
