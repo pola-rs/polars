@@ -1029,14 +1029,33 @@ mod test {
         }
         .unwrap();
 
-        let out = df
+        // sums
+        // 1 => 16
+        // 2 => 13
+        // 3 => 15
+        let correct = [16, 16, 13, 13, 16, 13, 15, 15, 16]
+            .iter()
+            .copied()
+            .map(Some)
+            .collect::<Vec<_>>();
+
+        // test if groups is available after projection pushdown.
+        let _ = df
+            .clone()
             .lazy()
-            .select(&[
-                col("groups"),
-                avg("values").over(col("groups")).alias("part"),
-            ])
+            .select(&[avg("values").over(col("groups")).alias("part")])
             .collect()
             .unwrap();
+        // test if partition aggregation is correct
+        let out = df
+            .lazy()
+            .select(&[col("groups"), sum("values").over(col("groups"))])
+            .collect()
+            .unwrap();
+        assert_eq!(
+            Vec::from(out.select_at_idx(1).unwrap().i32().unwrap()),
+            correct
+        );
         dbg!(out);
     }
 }

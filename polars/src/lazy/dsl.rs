@@ -715,6 +715,64 @@ impl Expr {
     }
 
     /// Apply window function over a subgroup.
+    /// This is similar to a groupby + aggregation + self join.
+    /// Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).
+    ///
+    /// # Example
+    ///
+    /// ``` rust
+    /// #[macro_use] extern crate polars;
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df = df! {
+    ///             "groups" => &[1, 1, 2, 2, 1, 2, 3, 3, 1],
+    ///             "values" => &[1, 2, 3, 4, 5, 6, 7, 8, 8]
+    ///         }?;
+    ///
+    ///     let out = df
+    ///      .lazy()
+    ///      .select(&[
+    ///          col("groups"),
+    ///          sum("values").over(col("groups")),
+    ///      ])
+    ///      .collect()?;
+    ///     dbg!(&out);
+    ///     Ok(())
+    /// }
+    ///
+    /// ```
+    ///
+    /// Outputs:
+    ///
+    /// ``` text
+    /// ╭────────┬────────╮
+    /// │ groups ┆ values │
+    /// │ ---    ┆ ---    │
+    /// │ i32    ┆ i32    │
+    /// ╞════════╪════════╡
+    /// │ 1      ┆ 16     │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 1      ┆ 16     │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 2      ┆ 13     │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 2      ┆ 13     │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ ...    ┆ ...    │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 1      ┆ 16     │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 2      ┆ 13     │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 3      ┆ 15     │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 3      ┆ 15     │
+    /// ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 1      ┆ 16     │
+    /// ╰────────┴────────╯
+    /// ```
     pub fn over(self, partition_by: Expr) -> Self {
         Expr::Window {
             function: Box::new(self),
