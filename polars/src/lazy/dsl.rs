@@ -714,6 +714,15 @@ impl Expr {
         }
     }
 
+    /// Apply window function over a subgroup.
+    pub fn over(self, partition_by: Expr) -> Self {
+        Expr::Window {
+            function: Box::new(self),
+            partition_by: Box::new(partition_by),
+            order_by: None,
+        }
+    }
+
     /// Shift the values in the array by some period. See [the eager implementation](Series::fill_none).
     pub fn fill_none(self, fill_value: Expr) -> Self {
         let name = output_name(&self).unwrap();
