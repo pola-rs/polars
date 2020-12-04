@@ -269,6 +269,7 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
             }
         }
         Expr::Ternary { truthy, .. } => output_name(truthy),
+        Expr::Window { function, .. } => output_name(function),
         a => Err(PolarsError::Other(
             format!(
                 "No root column name could be found for expr {:?} in output name utillity",
@@ -415,6 +416,7 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
         Expr::Cast { expr, .. } => expr_to_root_column(expr),
         Expr::Apply { input, .. } => expr_to_root_column(input),
         Expr::Shift { input, .. } => expr_to_root_column(input),
+        Expr::Window { function, .. } => expr_to_root_column(function),
         Expr::Ternary { predicate, .. } => expr_to_root_column(predicate),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),

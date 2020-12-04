@@ -1,6 +1,7 @@
 use crate::frame::group_by::GroupByMethod;
 use crate::lazy::logical_plan::{Context, DataFrameOperation};
 use crate::lazy::physical_plan::executors::*;
+use crate::lazy::utils::expr_to_root_column_expr;
 use crate::{lazy::prelude::*, prelude::*};
 use ahash::RandomState;
 use std::collections::HashSet;
@@ -198,11 +199,22 @@ impl DefaultPlanner {
     ) -> Result<Arc<dyn PhysicalExpr>> {
         match expression.clone() {
             Expr::Window {
-                function: _,
-                partition_by: _,
+                function,
+                partition_by,
                 order_by: _,
             } => {
-                todo!()
+                // TODO! Order by
+                let root_column = expr_to_root_column_expr(&*function)
+                    .expect("need a root column for a window function");
+                let root_column = self.create_physical_expr(root_column.clone(), ctxt)?;
+                let function = self.create_physical_expr(*function, ctxt)?;
+                let partition_by = self.create_physical_expr(*partition_by, ctxt)?;
+                Ok(Arc::new(WindowExpr {
+                    root_column,
+                    function,
+                    partition_by,
+                    order_by: None,
+                }))
             }
             Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value, expression))),
             Expr::BinaryExpr { left, op, right } => {

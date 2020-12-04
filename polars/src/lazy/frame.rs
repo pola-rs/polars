@@ -1020,4 +1020,24 @@ mod test {
         assert!(out.frame_equal(&correct));
         assert_eq!(out.get_column_names(), vec!["a", "b"])
     }
+
+    #[test]
+    fn test_lazy_window_functions() {
+        let df = df! {
+            "groups" => &[1, 1, 2, 2, 1, 2, 3, 3, 1],
+            "values" => &[1, 2, 3, 4, 5, 6, 7, 8, 8]
+        }
+        .unwrap();
+
+        let out = df
+            .lazy()
+            .select(&[
+                col("groups"),
+                avg("values").over(col("groups")).alias("part"),
+            ])
+            .with_projection_pushdown_optimization(false)
+            .collect()
+            .unwrap();
+        dbg!(out);
+    }
 }

@@ -935,7 +935,6 @@ impl DataFrame {
     /// ```
     pub fn replace_at_idx<S: IntoSeries>(&mut self, idx: usize, new_col: S) -> Result<&mut Self> {
         let mut new_column = new_col.into_series();
-        self.has_column(new_column.name())?;
         if new_column.len() != self.height() {
             return Err(PolarsError::ShapeMisMatch(
                 format!("Cannot replace Series at index {}. The shape of Series {} does not match that of the DataFrame {}",

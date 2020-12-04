@@ -1,6 +1,6 @@
-use crate::frame::group_by::{fmt_groupby_column, GroupByMethod, NumericAggSync};
+use crate::frame::group_by::{fmt_groupby_column, GroupByMethod, IntoGroupTuples, NumericAggSync};
 use crate::lazy::physical_plan::AggPhysicalExpr;
-use crate::utils::Xob;
+use crate::utils::{accumulate_dataframes_vertical, Xob};
 use crate::{
     frame::group_by::{AggFirst, AggLast, AggList, AggNUnique, AggQuantile},
     lazy::prelude::*,
@@ -568,5 +568,54 @@ impl PhysicalExpr for ApplyExpr {
             }
             None => self.input.to_field(input_schema),
         }
+    }
+}
+
+pub struct WindowExpr {
+    /// the root column that the Function will be applied on.
+    /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
+    pub(crate) root_column: Arc<dyn PhysicalExpr>,
+    pub(crate) function: Arc<dyn PhysicalExpr>,
+    pub(crate) partition_by: Arc<dyn PhysicalExpr>,
+    pub(crate) order_by: Option<Arc<dyn PhysicalExpr>>,
+}
+
+impl PhysicalExpr for WindowExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let partition_by = self.partition_by.evaluate(df)?;
+        let group_tuples = partition_by.group_tuples();
+        let root_column = self.root_column.evaluate(df)?;
+        let mut index_series: Series = (0u32..root_column.len() as u32).collect();
+        // a name that should not be in the DataFrame
+        let index_name = "__INDEX__POLARS__WINDOW_EXPR__";
+        index_series.rename(index_name);
+        let input_df = DataFrame::new_no_checks(vec![index_series, root_column]);
+
+        let dfs = group_tuples
+            .iter()
+            .map(|(_, indexes)| {
+                let length = indexes.len();
+                let mut df = unsafe {
+                    input_df.take_iter_unchecked(indexes.iter().copied(), Some(indexes.len()))
+                };
+                let mut s = self.function.evaluate(&df)?;
+
+                if s.len() == 1 && length != 1 {
+                    s = s.expand_at_index(0, length)
+                }
+                df.replace_at_idx(1, s).unwrap();
+                Ok(df)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let output_df = accumulate_dataframes_vertical(dfs)?;
+        debug_assert_eq!(output_df.width(), 2);
+        let mut output_df = input_df.inner_join(&output_df, index_name, index_name)?;
+        output_df.sort_in_place(index_name, false).unwrap();
+        Ok(output_df.select_at_idx(1).unwrap().clone())
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.function.to_field(input_schema)
     }
 }

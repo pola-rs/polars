@@ -99,6 +99,12 @@ impl IntoGroupTuples for Float32Chunked {
 impl IntoGroupTuples for ListChunked {}
 impl<T> IntoGroupTuples for ObjectChunked<T> {}
 
+impl IntoGroupTuples for Series {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        apply_method_all_arrow_series!(self, group_tuples,)
+    }
+}
+
 /// Utility enum used for grouping on multiple columns
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 enum Groupable<'a> {
@@ -263,7 +269,7 @@ impl DataFrame {
         let groups = match selected_keys.len() {
             1 => {
                 let series = &selected_keys[0];
-                apply_method_all_arrow_series!(series, group_tuples,)
+                series.group_tuples()
             }
             2 => groupby(static_zip!(selected_keys, 1)),
             3 => groupby(static_zip!(selected_keys, 2)),
