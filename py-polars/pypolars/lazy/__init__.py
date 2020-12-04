@@ -118,8 +118,8 @@ class LazyFrame:
 
         return ldf.describe_optimized_plan()
 
-    def sort(self, by_column: str) -> "LazyFrame":
-        return wrap_ldf(self._ldf.sort(by_column))
+    def sort(self, by_column: str, reverse: bool = False) -> "LazyFrame":
+        return wrap_ldf(self._ldf.sort(by_column, reverse))
 
     def collect(
         self,
@@ -211,10 +211,26 @@ class LazyFrame:
         return wrap_ldf(inner)
 
     def with_columns(self, exprs: "List[Expr]") -> "LazyFrame":
+        """
+        Add or overwrite multiple columns in a DataFrame
+
+        Parameters
+        ----------
+        exprs
+            List of Expressions that evaluate to columns
+        """
         exprs = [e._pyexpr for e in exprs]
         return wrap_ldf(self._ldf.with_columns(exprs))
 
     def with_column(self, expr: "Expr") -> "LazyFrame":
+        """
+        Add or overwrite column in a DataFrame
+
+        Parameters
+        ----------
+        expr
+            Expression that evaluates to column
+        """
         return self.with_columns([expr])
 
     def with_column_renamed(self, existing_name: str, new_name: str) -> "LazyFrame":
@@ -507,6 +523,69 @@ class Expr:
         Aggregate to list
         """
         return wrap_expr(self._pyexpr.list())
+
+    def over(self, expr: "Union[str, Expr]") -> "Expr":
+        """
+        Apply window function over a subgroup.
+        This is similar to a groupby + aggregation + self join.
+        Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).Do
+
+        Parameters
+        ----------
+        expr
+            Expression that evaluates to a column of groups
+
+        Examples
+        --------
+
+        ``` python
+        df = DataFrame({
+            "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
+            "values": [1, 2, 3, 4, 5, 6, 7, 8, 8]
+        })
+        print(df.lazy()
+            .select([
+                col("groups")
+                sum("values").over("groups"))
+            ]).collect())
+
+        ```
+
+        outputs:
+
+        ``` text
+            ╭────────┬────────╮
+            │ groups ┆ values │
+            │ ---    ┆ ---    │
+            │ i32    ┆ i32    │
+            ╞════════╪════════╡
+            │ 1      ┆ 16     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1      ┆ 16     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2      ┆ 13     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2      ┆ 13     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ ...    ┆ ...    │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1      ┆ 16     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2      ┆ 13     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3      ┆ 15     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3      ┆ 15     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1      ┆ 16     │
+            ╰────────┴────────╯
+
+        ```
+        """
+        if isinstance(expr, str):
+            expr = col(expr)
+
+        return wrap_expr(self._pyexpr.over(expr._pyexpr))
 
     def is_unique(self) -> "Expr":
         """

@@ -163,6 +163,10 @@ impl PyExpr {
         self.clone().inner.is_duplicated().into()
     }
 
+    pub fn over(&self, partition_by: PyExpr) -> PyExpr {
+        self.clone().inner.over(partition_by.inner).into()
+    }
+
     pub fn str_parse_date32(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;

@@ -589,7 +589,7 @@ impl PhysicalExpr for WindowExpr {
         // a name that should not be in the DataFrame
         let index_name = "__INDEX__POLARS__WINDOW_EXPR__";
         index_series.rename(index_name);
-        let input_df = DataFrame::new_no_checks(vec![index_series, root_column]);
+        let input_df = DataFrame::new_no_checks(vec![index_series.clone(), root_column]);
 
         let dfs = group_tuples
             .iter()
@@ -610,8 +610,8 @@ impl PhysicalExpr for WindowExpr {
 
         let output_df = accumulate_dataframes_vertical(dfs)?;
         debug_assert_eq!(output_df.width(), 2);
-        let mut output_df = input_df.inner_join(&output_df, index_name, index_name)?;
-        output_df.sort_in_place(index_name, false).unwrap();
+        let output_df = DataFrame::new_no_checks(vec![index_series])
+            .left_join(&output_df, index_name, index_name)?;
         Ok(output_df.select_at_idx(1).unwrap().clone())
     }
 
