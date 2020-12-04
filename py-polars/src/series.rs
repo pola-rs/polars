@@ -328,13 +328,19 @@ impl PySeries {
         Ok(Series::UInt32(ca).into())
     }
 
-    pub fn sample_n(&self, n: usize) -> PyResult<Self> {
-        let s = self.series.sample_n(n).map_err(PyPolarsEr::from)?;
+    pub fn sample_n(&self, n: usize, with_replacement: bool) -> PyResult<Self> {
+        let s = self
+            .series
+            .sample_n(n, with_replacement)
+            .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
-    pub fn sample_frac(&self, frac: f64) -> PyResult<Self> {
-        let s = self.series.sample_frac(frac).map_err(PyPolarsEr::from)?;
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> PyResult<Self> {
+        let s = self
+            .series
+            .sample_frac(frac, with_replacement)
+            .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 

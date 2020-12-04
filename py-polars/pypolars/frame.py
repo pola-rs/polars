@@ -809,7 +809,10 @@ class DataFrame:
         return wrap_df(self._df.rechunk())
 
     def sample(
-        self, n: "Optional[int]" = None, frac: "Optional[float]" = None
+        self,
+        n: "Optional[int]" = None,
+        frac: "Optional[float]" = None,
+        with_replacement: bool = False,
     ) -> "DataFrame":
         """
         Sample from this DataFrame by setting either `n` or `frac`
@@ -820,10 +823,12 @@ class DataFrame:
             Number of samples < self.len()
         frac
             Fraction between 0.0 and 1.0
+        with_replacement
+            Sample with replacement
         """
         if n is not None:
-            return wrap_df(self._df.sample_n(n))
-        return wrap_df(self._df.sample_frac(frac))
+            return wrap_df(self._df.sample_n(n, with_replacement))
+        return wrap_df(self._df.sample_frac(frac, with_replacement))
 
 
 class GroupBy:

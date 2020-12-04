@@ -61,7 +61,7 @@ pub trait SeriesOps: Send + Sync + Debug + ZipOuterJoinColumn {
 
     #[cfg(feature = "random")]
     #[doc(cfg(feature = "random"))]
-    fn sample_n(&self, n: usize) -> Result<Box<dyn SeriesOps>>;
+    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Box<dyn SeriesOps>>;
 }
 
 fn to_object_chunked<T>(mut ca: Box<dyn SeriesOps>) -> ObjectChunked<T>
@@ -245,7 +245,8 @@ where
 
     #[cfg(feature = "random")]
     #[doc(cfg(feature = "random"))]
-    fn sample_n(&self, n: usize) -> Result<Box<dyn SeriesOps>> {
-        self.sample_n(n).map(|ca| ca.as_series_ops())
+    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Box<dyn SeriesOps>> {
+        self.sample_n(n, with_replacement)
+            .map(|ca| ca.as_series_ops())
     }
 }
