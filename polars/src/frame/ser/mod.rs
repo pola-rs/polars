@@ -96,7 +96,7 @@ fn arr_to_series(arr: &ArrayRef, field: &Field) -> Series {
         ArrowDataType::Float64 => Series::Float64(init_ca(arr, field)),
         ArrowDataType::Utf8 => Series::Utf8(init_ca(arr, field)),
         ArrowDataType::Boolean => Series::Bool(init_ca(arr, field)),
-        ArrowDataType::Date32(DateUnit::Millisecond) => Series::Date32(init_ca(arr, field)),
+        ArrowDataType::Date32(DateUnit::Day) => Series::Date32(init_ca(arr, field)),
         ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(init_ca(arr, field)),
         ArrowDataType::Duration(TimeUnit::Nanosecond) => {
             Series::DurationNanosecond(init_ca(arr, field))
