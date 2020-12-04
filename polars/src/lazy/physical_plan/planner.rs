@@ -197,6 +197,13 @@ impl DefaultPlanner {
         ctxt: Context,
     ) -> Result<Arc<dyn PhysicalExpr>> {
         match expression.clone() {
+            Expr::Window {
+                function: _,
+                partition_by: _,
+                order_by: _,
+            } => {
+                todo!()
+            }
             Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value, expression))),
             Expr::BinaryExpr { left, op, right } => {
                 let lhs = self.create_physical_expr(*left, ctxt)?;

@@ -78,6 +78,13 @@ pub enum Expr {
     Reverse(Box<Expr>),
     Duplicated(Box<Expr>),
     Unique(Box<Expr>),
+    /// See postgres window functions
+    Window {
+        /// Also has the input. i.e. avg("foo")
+        function: Box<Expr>,
+        partition_by: Box<Expr>,
+        order_by: Option<Box<Expr>>,
+    },
     Wildcard,
 }
 
@@ -171,6 +178,27 @@ impl PartialEq for Expr {
                     false
                 }
             }
+            Expr::Window {
+                function,
+                partition_by,
+                order_by,
+            } => {
+                let function_left = function;
+                let partition_by_left = partition_by;
+                let order_by_left = order_by;
+                if let Expr::Window {
+                    function,
+                    partition_by,
+                    order_by,
+                } = other
+                {
+                    function_left.eq(function)
+                        && partition_by_left.eq(partition_by)
+                        && order_by_left.eq(order_by)
+                } else {
+                    false
+                }
+            }
             Expr::Shift { input, periods } => {
                 let left = input;
                 let lperiods = periods;
@@ -215,6 +243,7 @@ impl Expr {
     pub fn get_type(&self, schema: &Schema) -> Result<ArrowDataType> {
         use Expr::*;
         match self {
+            Window { function, .. } => function.get_type(schema),
             Unique(_) => Ok(ArrowDataType::Boolean),
             Duplicated(_) => Ok(ArrowDataType::Boolean),
             Reverse(expr) => expr.get_type(schema),
@@ -272,6 +301,7 @@ impl Expr {
     pub(crate) fn to_field(&self, schema: &Schema, ctxt: Context) -> Result<Field> {
         use Expr::*;
         match self {
+            Window { function, .. } => function.to_field(schema, ctxt),
             Unique(expr) => {
                 let field = expr.to_field(&schema, ctxt)?;
                 Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
@@ -384,6 +414,15 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
+            Window {
+                function,
+                partition_by,
+                order_by,
+            } => write!(
+                f,
+                "{:?} OVER (PARTION BY {:?} ORDER BY {:?}",
+                function, partition_by, order_by
+            ),
             Unique(expr) => write!(f, "UNIQUE {:?}", expr),
             Duplicated(expr) => write!(f, "DUPLICATED {:?}", expr),
             Reverse(expr) => write!(f, "REVERSE {:?}", expr),

@@ -17,6 +17,23 @@ impl TypeCoercion {
         // the important expression is BinaryExpr. The rest just traverses the tree.
         use Expr::*;
         match expr {
+            Window {
+                function,
+                partition_by,
+                order_by,
+            } => {
+                let order_by = order_by.map(|ob| {
+                    Box::new(
+                        self.rewrite_expr(*ob, input_schema)
+                            .expect("could type coerce ORDER BY"),
+                    )
+                });
+                Ok(Window {
+                    function: Box::new(self.rewrite_expr(*function, input_schema)?),
+                    partition_by: Box::new(self.rewrite_expr(*partition_by, input_schema)?),
+                    order_by,
+                })
+            }
             Reverse(expr) => {
                 let expr = self.rewrite_expr(*expr, input_schema)?;
                 Ok(expr.reverse())
