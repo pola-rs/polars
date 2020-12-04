@@ -296,6 +296,15 @@ impl fmt::Debug for LogicalPlan {
 
 fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
     match expr {
+        Expr::Window {
+            function,
+            partition_by,
+            order_by,
+        } => Expr::Window {
+            function: Box::new(replace_wildcard_with_column(*function, column_name)),
+            partition_by,
+            order_by,
+        },
         Expr::Unique(expr) => {
             Expr::Unique(Box::new(replace_wildcard_with_column(*expr, column_name)))
         }

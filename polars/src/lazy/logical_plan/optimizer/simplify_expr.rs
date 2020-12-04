@@ -58,6 +58,11 @@ enum AExpr {
         input: Node,
         periods: i32,
     },
+    Window {
+        function: Node,
+        partition_by: Node,
+        order_by: Option<Node>,
+    },
     Wildcard,
 }
 
@@ -227,6 +232,15 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Shift { input, periods } => AExpr::Shift {
             input: to_aexpr(*input, arena),
             periods,
+        },
+        Expr::Window {
+            function,
+            partition_by,
+            order_by,
+        } => AExpr::Window {
+            function: to_aexpr(*function, arena),
+            partition_by: to_aexpr(*partition_by, arena),
+            order_by: order_by.map(|ob| to_aexpr(*ob, arena)),
         },
         Expr::Wildcard => AExpr::Wildcard,
     };
@@ -548,7 +562,20 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Count(Box::new(exp))
         }
-
+        AExpr::Window {
+            function,
+            partition_by,
+            order_by,
+        } => {
+            let function = Box::new(node_to_exp(function, expr_arena));
+            let partition_by = Box::new(node_to_exp(partition_by, expr_arena));
+            let order_by = order_by.map(|ob| Box::new(node_to_exp(ob, expr_arena)));
+            Expr::Window {
+                function,
+                partition_by,
+                order_by,
+            }
+        }
         AExpr::Wildcard => Expr::Wildcard,
     }
 }
@@ -1136,6 +1163,17 @@ impl SimplifyOptimizer {
                         }
                         AExpr::Apply { input, .. } => {
                             exprs.push(*input);
+                        }
+                        AExpr::Window {
+                            function,
+                            partition_by,
+                            order_by,
+                        } => {
+                            exprs.push(*function);
+                            exprs.push(*partition_by);
+                            if let Some(order_by) = order_by {
+                                exprs.push(*order_by)
+                            }
                         }
                         AExpr::Literal { .. } | AExpr::Column { .. } | AExpr::Wildcard => {}
                     }

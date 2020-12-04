@@ -8,7 +8,21 @@ pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
         Expr::Column(name) => Ok(Expr::Column(name.clone())),
         Expr::Alias(_, name) => Ok(Expr::Column(name.clone())),
         Expr::Sort { expr, .. } => projected_name(expr),
+        Expr::First(expr) => projected_name(expr),
+        Expr::Last(expr) => projected_name(expr),
+        Expr::Quantile { expr, .. } => projected_name(expr),
+        Expr::Sum(expr) => projected_name(expr),
+        Expr::Min(expr) => projected_name(expr),
+        Expr::List(expr) => projected_name(expr),
+        Expr::Max(expr) => projected_name(expr),
+        Expr::Median(expr) => projected_name(expr),
+        Expr::Mean(expr) => projected_name(expr),
+        Expr::Count(expr) => projected_name(expr),
         Expr::Cast { expr, .. } => projected_name(expr),
+        Expr::Apply { input, .. } => projected_name(input),
+        Expr::Shift { input, .. } => projected_name(input),
+        Expr::Window { function, .. } => projected_name(function),
+        Expr::Ternary { predicate, .. } => projected_name(predicate),
         a => Err(PolarsError::Other(
             format!(
                 "No root column name could be found for expr {:?} in projected_name utillity",
@@ -25,6 +39,22 @@ pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
 /// Another option was to create a recursive macro but would increase code bloat.
 pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
     match current_expr {
+        Expr::Window {
+            function,
+            partition_by,
+            order_by,
+        } => {
+            if matches!(matching_expr, Expr::Window {..}) {
+                true
+            } else {
+                has_expr(function, matching_expr)
+                    || has_expr(partition_by, matching_expr)
+                    || order_by
+                        .as_ref()
+                        .map(|ob| has_expr(&*ob, matching_expr))
+                        .unwrap_or(false)
+            }
+        }
         Expr::Duplicated(e) => {
             if matches!(matching_expr, Expr::Duplicated(_)) {
                 true
@@ -490,53 +520,6 @@ pub(crate) fn unpack_apply_expr(expr: &Expr) -> Result<&Expr> {
     }
 }
 
-// Find the first ternary expression somewhere in the tree.
-pub(crate) fn unpack_ternary_expr(expr: &Expr) -> Result<(&Expr, &Expr, &Expr)> {
-    match expr {
-        Expr::Unique(expr) => unpack_ternary_expr(expr),
-        Expr::Duplicated(expr) => unpack_ternary_expr(expr),
-        Expr::Reverse(expr) => unpack_ternary_expr(expr),
-        Expr::Alias(expr, _) => unpack_ternary_expr(expr),
-        Expr::Not(expr) => unpack_ternary_expr(expr),
-        Expr::IsNull(expr) => unpack_ternary_expr(expr),
-        Expr::IsNotNull(expr) => unpack_ternary_expr(expr),
-        Expr::First(expr) => unpack_ternary_expr(expr),
-        Expr::Last(expr) => unpack_ternary_expr(expr),
-        Expr::AggGroups(expr) => unpack_ternary_expr(expr),
-        Expr::NUnique(expr) => unpack_ternary_expr(expr),
-        Expr::Quantile { expr, .. } => unpack_ternary_expr(expr),
-        Expr::Sum(expr) => unpack_ternary_expr(expr),
-        Expr::Min(expr) => unpack_ternary_expr(expr),
-        Expr::Max(expr) => unpack_ternary_expr(expr),
-        Expr::Median(expr) => unpack_ternary_expr(expr),
-        Expr::Mean(expr) => unpack_ternary_expr(expr),
-        Expr::Count(expr) => unpack_ternary_expr(expr),
-        Expr::BinaryExpr { left, right, .. } => {
-            let left = unpack_ternary_expr(left);
-            let right = unpack_ternary_expr(right);
-            match (left, right) {
-                (Ok(left), _) => Ok(left),
-                (_, Ok(right)) => Ok(right),
-                _ => Err(PolarsError::Other(
-                    format!("No ternary expression could be found for {:?}", expr).into(),
-                )),
-            }
-        }
-        Expr::Sort { expr, .. } => unpack_ternary_expr(expr),
-        Expr::Shift { input, .. } => unpack_ternary_expr(input),
-        Expr::Apply { input, .. } => unpack_ternary_expr(input),
-        Expr::Cast { expr, .. } => unpack_ternary_expr(expr),
-        Expr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => Ok((predicate, truthy, falsy)),
-        _ => Err(PolarsError::Other(
-            format!("No ternary expression could be found for {:?}", expr).into(),
-        )),
-    }
-}
-
 // unpack alias(col) to name of the root column name
 pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
     match expr {
@@ -591,6 +574,7 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
         Expr::Apply { input, .. } => expr_to_root_column_expr(input),
         Expr::Cast { expr, .. } => expr_to_root_column_expr(expr),
         Expr::Ternary { predicate, .. } => expr_to_root_column_expr(predicate),
+        Expr::Window { function, .. } => expr_to_root_column_expr(function),
         Expr::Wildcard => Ok(expr),
         a => Err(PolarsError::Other(
             format!("No root column expr could be found for {:?}", a).into(),
@@ -600,6 +584,18 @@ pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
 
 pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Result<Expr> {
     match expr {
+        Expr::Window {
+            function,
+            partition_by,
+            order_by,
+        } => {
+            let function = Box::new(rename_expr_root_name(function, new_name)?);
+            Ok(Expr::Window {
+                function,
+                partition_by: partition_by.clone(),
+                order_by: order_by.clone(),
+            })
+        }
         Expr::Column(_) => Ok(Expr::Column(new_name)),
         Expr::Reverse(expr) => rename_expr_root_name(expr, new_name),
         Expr::Unique(expr) => rename_expr_root_name(expr, new_name),

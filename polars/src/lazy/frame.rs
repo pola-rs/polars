@@ -282,24 +282,32 @@ impl LazyFrame {
             // NOTE: the order is important. Projection pushdown must be before predicate pushdown,
             // The projection may have aliases that interfere with the predicate expressions.
             if projection_pushdown {
-                logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
+                logical_plan = projection_pushdown_opt
+                    .optimize(logical_plan)
+                    .expect("projection pushdown failed");
             }
             if predicate_pushdown {
-                logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
+                logical_plan = predicate_pushdown_opt
+                    .optimize(logical_plan)
+                    .expect("predicate pushdown failed");
             }
         };
 
         if type_coercion {
             let opt = TypeCoercion {};
-            logical_plan = opt.optimize(logical_plan)?;
+            logical_plan = opt.optimize(logical_plan).expect("type coercion failed");
         }
         if agg_scan_projection {
             let opt = AggScanProjection {};
-            logical_plan = opt.optimize(logical_plan)?;
+            logical_plan = opt
+                .optimize(logical_plan)
+                .expect("scan projection aggregation failed");
         }
         if simplify_expr {
             let opt = SimplifyExpr {};
-            logical_plan = opt.optimize(logical_plan)?;
+            logical_plan = opt
+                .optimize(logical_plan)
+                .expect("simplify expression optimization failed");
         }
 
         let planner = DefaultPlanner::default();
