@@ -85,10 +85,10 @@ impl PyLazyFrame {
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
-            .with_type_coercion_optimization(type_coercion)
-            .with_predicate_pushdown_optimization(predicate_pushdown)
-            .with_simplify_expr_optimization(simplify_expr)
-            .with_projection_pushdown_optimization(projection_pushdown);
+            .with_type_coercion(type_coercion)
+            .with_predicate_pushdown(predicate_pushdown)
+            .with_simplify_expr(simplify_expr)
+            .with_projection_pushdown(projection_pushdown);
         ldf.into()
     }
 

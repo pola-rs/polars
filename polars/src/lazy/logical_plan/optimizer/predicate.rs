@@ -2,7 +2,7 @@ use crate::lazy::logical_plan::optimizer::{check_down_node, HASHMAP_SIZE};
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column, expr_to_root_column_names, has_expr, rename_expr_root_name,
+    expr_to_root_column_name, expr_to_root_column_names, has_expr, rename_expr_root_name,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -112,7 +112,7 @@ impl PredicatePushDown {
 
         match logical_plan {
             Selection { predicate, input } => {
-                match expr_to_root_column(&predicate) {
+                match expr_to_root_column_name(&predicate) {
                     Ok(name) => insert_and_combine_predicate(&mut acc_predicates, name, predicate),
                     Err(e) => {
                         if let Expr::BinaryExpr { .. } = &predicate {
@@ -133,7 +133,7 @@ impl PredicatePushDown {
                         // if this alias refers to one of the predicates in the upper nodes
                         // we rename the column of the predicate before we push it downwards.
                         if let Some(predicate) = acc_predicates.remove(name) {
-                            let new_name = expr_to_root_column(e).unwrap();
+                            let new_name = expr_to_root_column_name(e).unwrap();
                             let new_predicate =
                                 rename_expr_root_name(&predicate, new_name.clone()).unwrap();
                             insert_and_combine_predicate(

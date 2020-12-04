@@ -309,7 +309,7 @@ class LazyFrame:
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
-        if subset is not None and not isinstance(subset, list):
+        if subset is not None and not isinstance(subset, List):
             subset = [subset]
         return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
 
@@ -319,7 +319,7 @@ class LazyFrame:
         """
         Drop rows with null values from this DataFrame.
         """
-        if subset is not None and not isinstance(subset, list):
+        if subset is not None and not isinstance(subset, List):
             subset = [subset]
         return wrap_ldf(self._ldf.drop_nulls(subset))
 

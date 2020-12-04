@@ -362,21 +362,21 @@ pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Result<Vec<Arc<String>>>
     }
 }
 
-// unpack alias(col) to name of the root column name
+/// unpack alias(col) to name of the root column name
 // TODO! reuse expr_to_root_column_expr
-pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
+pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<String>> {
     match expr {
-        Expr::Duplicated(expr) => expr_to_root_column(expr),
-        Expr::Unique(expr) => expr_to_root_column(expr),
-        Expr::Reverse(expr) => expr_to_root_column(expr),
+        Expr::Duplicated(expr) => expr_to_root_column_name(expr),
+        Expr::Unique(expr) => expr_to_root_column_name(expr),
+        Expr::Reverse(expr) => expr_to_root_column_name(expr),
         Expr::Column(name) => Ok(name.clone()),
-        Expr::Alias(expr, _) => expr_to_root_column(expr),
-        Expr::Not(expr) => expr_to_root_column(expr),
-        Expr::IsNull(expr) => expr_to_root_column(expr),
-        Expr::IsNotNull(expr) => expr_to_root_column(expr),
+        Expr::Alias(expr, _) => expr_to_root_column_name(expr),
+        Expr::Not(expr) => expr_to_root_column_name(expr),
+        Expr::IsNull(expr) => expr_to_root_column_name(expr),
+        Expr::IsNotNull(expr) => expr_to_root_column_name(expr),
         Expr::BinaryExpr { left, right, .. } => {
-            let left_result = expr_to_root_column(left);
-            let right_result = expr_to_root_column(right);
+            let left_result = expr_to_root_column_name(left);
+            let right_result = expr_to_root_column_name(right);
 
             let err = || {
                 Err(PolarsError::Other(
@@ -400,41 +400,28 @@ pub(crate) fn expr_to_root_column(expr: &Expr) -> Result<Arc<String>> {
                 _ => err(),
             }
         }
-        Expr::Sort { expr, .. } => expr_to_root_column(expr),
-        Expr::First(expr) => expr_to_root_column(expr),
-        Expr::Last(expr) => expr_to_root_column(expr),
-        Expr::AggGroups(expr) => expr_to_root_column(expr),
-        Expr::NUnique(expr) => expr_to_root_column(expr),
-        Expr::Quantile { expr, .. } => expr_to_root_column(expr),
-        Expr::Sum(expr) => expr_to_root_column(expr),
-        Expr::Min(expr) => expr_to_root_column(expr),
-        Expr::Max(expr) => expr_to_root_column(expr),
-        Expr::Median(expr) => expr_to_root_column(expr),
-        Expr::List(expr) => expr_to_root_column(expr),
-        Expr::Mean(expr) => expr_to_root_column(expr),
-        Expr::Count(expr) => expr_to_root_column(expr),
-        Expr::Cast { expr, .. } => expr_to_root_column(expr),
-        Expr::Apply { input, .. } => expr_to_root_column(input),
-        Expr::Shift { input, .. } => expr_to_root_column(input),
-        Expr::Window { function, .. } => expr_to_root_column(function),
-        Expr::Ternary { predicate, .. } => expr_to_root_column(predicate),
+        Expr::Sort { expr, .. } => expr_to_root_column_name(expr),
+        Expr::First(expr) => expr_to_root_column_name(expr),
+        Expr::Last(expr) => expr_to_root_column_name(expr),
+        Expr::AggGroups(expr) => expr_to_root_column_name(expr),
+        Expr::NUnique(expr) => expr_to_root_column_name(expr),
+        Expr::Quantile { expr, .. } => expr_to_root_column_name(expr),
+        Expr::Sum(expr) => expr_to_root_column_name(expr),
+        Expr::Min(expr) => expr_to_root_column_name(expr),
+        Expr::Max(expr) => expr_to_root_column_name(expr),
+        Expr::Median(expr) => expr_to_root_column_name(expr),
+        Expr::List(expr) => expr_to_root_column_name(expr),
+        Expr::Mean(expr) => expr_to_root_column_name(expr),
+        Expr::Count(expr) => expr_to_root_column_name(expr),
+        Expr::Cast { expr, .. } => expr_to_root_column_name(expr),
+        Expr::Apply { input, .. } => expr_to_root_column_name(input),
+        Expr::Shift { input, .. } => expr_to_root_column_name(input),
+        Expr::Window { function, .. } => expr_to_root_column_name(function),
+        Expr::Ternary { predicate, .. } => expr_to_root_column_name(predicate),
         a => Err(PolarsError::Other(
             format!("No root column name could be found for {:?}", a).into(),
         )),
     }
-}
-
-pub(crate) fn expressions_to_root_columns(exprs: &[Expr]) -> Result<Vec<Arc<String>>> {
-    exprs.iter().map(expr_to_root_column).collect()
-}
-pub(crate) fn expressions_to_root_column_exprs(exprs: &[Expr]) -> Result<Vec<Expr>> {
-    exprs
-        .iter()
-        .map(|e| match expr_to_root_column_expr(e) {
-            Ok(e) => Ok(e.clone()),
-            Err(e) => Err(e),
-        })
-        .collect()
 }
 
 // Find the first binary expressions somewhere in the tree.
@@ -522,7 +509,71 @@ pub(crate) fn unpack_apply_expr(expr: &Expr) -> Result<&Expr> {
     }
 }
 
-// unpack alias(col) to name of the root column name
+/// Get all root column expressions in the expression tree.
+pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
+    match expr {
+        Expr::Column(_) => vec![expr.clone()],
+        Expr::Duplicated(expr) => expr_to_root_column_exprs(expr),
+        Expr::Unique(expr) => expr_to_root_column_exprs(expr),
+        Expr::Reverse(expr) => expr_to_root_column_exprs(expr),
+        Expr::Alias(expr, _) => expr_to_root_column_exprs(expr),
+        Expr::Not(expr) => expr_to_root_column_exprs(expr),
+        Expr::IsNull(expr) => expr_to_root_column_exprs(expr),
+        Expr::IsNotNull(expr) => expr_to_root_column_exprs(expr),
+        Expr::First(expr) => expr_to_root_column_exprs(expr),
+        Expr::Last(expr) => expr_to_root_column_exprs(expr),
+        Expr::AggGroups(expr) => expr_to_root_column_exprs(expr),
+        Expr::NUnique(expr) => expr_to_root_column_exprs(expr),
+        Expr::Quantile { expr, .. } => expr_to_root_column_exprs(expr),
+        Expr::Sum(expr) => expr_to_root_column_exprs(expr),
+        Expr::Min(expr) => expr_to_root_column_exprs(expr),
+        Expr::Max(expr) => expr_to_root_column_exprs(expr),
+        Expr::Median(expr) => expr_to_root_column_exprs(expr),
+        Expr::Mean(expr) => expr_to_root_column_exprs(expr),
+        Expr::Count(expr) => expr_to_root_column_exprs(expr),
+        Expr::BinaryExpr { left, right, .. } => {
+            let mut results = Vec::with_capacity(16);
+            results.extend(expr_to_root_column_exprs(left).into_iter());
+            results.extend(expr_to_root_column_exprs(right).into_iter());
+            results
+        }
+        Expr::Sort { expr, .. } => expr_to_root_column_exprs(expr),
+        Expr::Shift { input, .. } => expr_to_root_column_exprs(input),
+        Expr::Apply { input, .. } => expr_to_root_column_exprs(input),
+        Expr::Cast { expr, .. } => expr_to_root_column_exprs(expr),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            let mut results = Vec::with_capacity(16);
+            results.extend(expr_to_root_column_exprs(predicate).into_iter());
+            results.extend(expr_to_root_column_exprs(truthy).into_iter());
+            results.extend(expr_to_root_column_exprs(falsy).into_iter());
+            results
+        }
+        Expr::Window {
+            function,
+            partition_by,
+            order_by,
+        } => {
+            let mut results = Vec::with_capacity(16);
+            let order_by_res = order_by.as_ref().map(|ob| expr_to_root_column_exprs(&*ob));
+
+            results.extend(expr_to_root_column_exprs(function).into_iter());
+            results.extend(expr_to_root_column_exprs(partition_by).into_iter());
+            if let Some(exprs) = order_by_res {
+                results.extend(exprs.into_iter())
+            }
+            results
+        }
+        Expr::Wildcard => vec![],
+        Expr::Literal(_) => vec![],
+        Expr::List(expr) => expr_to_root_column_exprs(expr),
+    }
+}
+
+/// unpack alias(col) to name of the root column name
 pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
     match expr {
         Expr::Column(_) => Ok(expr),
