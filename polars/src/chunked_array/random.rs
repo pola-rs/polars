@@ -2,6 +2,7 @@ use crate::prelude::*;
 use num::{Float, NumCast};
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
+use rand::seq::IteratorRandom;
 use rand_distr::{Distribution, Normal, StandardNormal, Uniform};
 use rayon::prelude::*;
 
@@ -10,52 +11,63 @@ where
     ChunkedArray<T>: ChunkTake,
 {
     /// Sample n datapoints from this ChunkedArray.
-    pub fn sample_n(&self, n: usize) -> Result<Self> {
-        if n > self.len() {
+    pub fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Self> {
+        if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
                 "n is larger than the number of elements in this array".into(),
             ));
         }
         let len = self.len();
-        let iter = (0..n).map(|_| Uniform::new(0, len).sample(&mut rand::thread_rng()));
-        Ok(self.take(iter, Some(n)))
+        let mut rng = rand::thread_rng();
+
+        match with_replacement {
+            true => {
+                let iter = (0..n).map(|_| Uniform::new(0, len).sample(&mut rng));
+                Ok(self.take(iter, Some(n)))
+            }
+            false => {
+                // TODO! prevent allocation.
+                let iter = (0..len).choose_multiple(&mut rng, n).into_iter();
+                Ok(self.take(iter, Some(n)))
+            }
+        }
     }
 
     /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
-    pub fn sample_frac(&self, frac: f64) -> Result<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Self> {
         let n = (self.len() as f64 * frac) as usize;
-        self.sample_n(n)
+        self.sample_n(n, with_replacement)
     }
 }
 
 impl Series {
     /// Sample n datapoints from this Series.
-    pub fn sample_n(&self, n: usize) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, sample_n, [n],?))
+    pub fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Self> {
+        Ok(apply_method_all_series_and_return!(self, sample_n, [n, with_replacement],?))
     }
 
     /// Sample a fraction between 0.0-1.0 of this Series.
-    pub fn sample_frac(&self, frac: f64) -> Result<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Self> {
         let n = (self.len() as f64 * frac) as usize;
-        self.sample_n(n)
+        self.sample_n(n, with_replacement)
     }
 }
 
 impl DataFrame {
     /// Sample n datapoints from this DataFrame.
-    pub fn sample_n(&self, n: usize) -> Result<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Self> {
         let columns = self
             .columns
             .par_iter()
-            .map(|s| s.sample_n(n))
+            .map(|s| s.sample_n(n, with_replacement))
             .collect::<Result<_>>()?;
         Ok(DataFrame::new_no_checks(columns))
     }
 
     /// Sample a fraction between 0.0-1.0 of this DataFrame.
-    pub fn sample_frac(&self, frac: f64) -> Result<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Self> {
         let n = (self.height() as f64 * frac) as usize;
-        self.sample_n(n)
+        self.sample_n(n, with_replacement)
     }
 }
 
@@ -71,8 +83,9 @@ where
             Err(e) => return Err(PolarsError::RandError(format!("{:?}", e))),
         };
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
+        let mut rng = rand::thread_rng();
         for _ in 0..length {
-            let smpl = normal.sample(&mut rand::thread_rng());
+            let smpl = normal.sample(&mut rng);
             let smpl = NumCast::from(smpl).unwrap();
             builder.append_value(smpl)
         }
@@ -82,8 +95,9 @@ where
     /// Create `ChunkedArray` with samples from a Standard Normal distribution.
     pub fn rand_standard_normal(name: &str, length: usize) -> Self {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
+        let mut rng = rand::thread_rng();
         for _ in 0..length {
-            let smpl: f64 = thread_rng().sample(StandardNormal);
+            let smpl: f64 = rng.sample(StandardNormal);
             let smpl = NumCast::from(smpl).unwrap();
             builder.append_value(smpl)
         }
@@ -94,8 +108,9 @@ where
     pub fn rand_uniform(name: &str, length: usize, low: f64, high: f64) -> Self {
         let uniform = Uniform::new(low, high);
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
+        let mut rng = rand::thread_rng();
         for _ in 0..length {
-            let smpl = uniform.sample(&mut rand::thread_rng());
+            let smpl = uniform.sample(&mut rng);
             let smpl = NumCast::from(smpl).unwrap();
             builder.append_value(smpl)
         }
@@ -110,9 +125,10 @@ impl BooleanChunked {
             Ok(dist) => dist,
             Err(e) => return Err(PolarsError::RandError(format!("{:?}", e))),
         };
+        let mut rng = rand::thread_rng();
         let mut builder = BooleanChunkedBuilder::new(name, length);
         for _ in 0..length {
-            let smpl = dist.sample(&mut rand::thread_rng());
+            let smpl = dist.sample(&mut rng);
             builder.append_value(smpl)
         }
         Ok(builder.finish())
@@ -130,8 +146,13 @@ mod test {
         ]
         .unwrap();
 
-        assert!(df.sample_n(3).is_ok());
-        assert!(df.sample_frac(0.4).is_ok());
-        assert!(df.sample_frac(2.0).is_err());
+        assert!(df.sample_n(3, false).is_ok());
+        assert!(df.sample_frac(0.4, false).is_ok());
+        // without replacement can not sample more than 100%
+        assert!(df.sample_frac(2.0, false).is_err());
+        assert!(df.sample_n(3, true).is_ok());
+        assert!(df.sample_frac(0.4, true).is_ok());
+        // with replacement can sample more than 100%
+        assert!(df.sample_frac(2.0, true).is_ok());
     }
 }

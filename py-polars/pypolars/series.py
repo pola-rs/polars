@@ -1142,7 +1142,10 @@ class Series:
         return wrap_s(f(name, values, fmt))
 
     def sample(
-        self, n: "Optional[int]" = None, frac: "Optional[float]" = None
+        self,
+        n: "Optional[int]" = None,
+        frac: "Optional[float]" = None,
+        with_replacement: bool = False,
     ) -> "DataFrame":
         """
         Sample from this Series by setting either `n` or `frac`
@@ -1153,10 +1156,12 @@ class Series:
             Number of samples < self.len()
         frac
             Fraction between 0.0 and 1.0
+        with_replacement
+            sample with replacement
         """
         if n is not None:
-            return wrap_s(self._s.sample_n(n))
-        return wrap_s(self._s.sample_frac(frac))
+            return wrap_s(self._s.sample_n(n, with_replacement))
+        return wrap_s(self._s.sample_frac(frac, with_replacement))
 
 
 def out_to_dtype(out: Any) -> "Datatype":
