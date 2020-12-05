@@ -1,7 +1,7 @@
 use crate::frame::group_by::GroupByMethod;
 use crate::lazy::logical_plan::{Context, DataFrameOperation};
 use crate::lazy::physical_plan::executors::*;
-use crate::lazy::utils::expr_to_root_column_expr;
+use crate::lazy::utils::expr_to_root_column_name;
 use crate::{lazy::prelude::*, prelude::*};
 use ahash::RandomState;
 use std::collections::HashSet;
@@ -204,16 +204,25 @@ impl DefaultPlanner {
                 order_by: _,
             } => {
                 // TODO! Order by
-                let root_column = expr_to_root_column_expr(&*function)
+                let group_column = expr_to_root_column_name(&*partition_by)
+                    .expect("need a partition_by column for a window function");
+                let out_name;
+                let apply_column = expr_to_root_column_name(&*function)
                     .expect("need a root column for a window function");
-                let root_column = self.create_physical_expr(root_column.clone(), ctxt)?;
-                let function = self.create_physical_expr(*function, ctxt)?;
-                let partition_by = self.create_physical_expr(*partition_by, ctxt)?;
+
+                let mut function = *function;
+                if let Expr::Alias(expr, name) = function {
+                    function = *expr;
+                    out_name = name;
+                } else {
+                    out_name = group_column.clone();
+                }
+
                 Ok(Arc::new(WindowExpr {
-                    root_column,
+                    group_column,
+                    apply_column,
+                    out_name,
                     function,
-                    partition_by,
-                    order_by: None,
                 }))
             }
             Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value, expression))),

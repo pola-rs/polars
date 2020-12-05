@@ -1,6 +1,7 @@
-use crate::frame::group_by::{fmt_groupby_column, GroupByMethod, IntoGroupTuples, NumericAggSync};
+use crate::frame::group_by::{fmt_groupby_column, GroupByMethod, NumericAggSync};
+use crate::lazy::logical_plan::Context;
 use crate::lazy::physical_plan::AggPhysicalExpr;
-use crate::utils::{accumulate_dataframes_vertical, Xob};
+use crate::utils::Xob;
 use crate::{
     frame::group_by::{AggFirst, AggLast, AggList, AggNUnique, AggQuantile},
     lazy::prelude::*,
@@ -574,52 +575,47 @@ impl PhysicalExpr for ApplyExpr {
 pub struct WindowExpr {
     /// the root column that the Function will be applied on.
     /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
-    pub(crate) root_column: Arc<dyn PhysicalExpr>,
-    pub(crate) function: Arc<dyn PhysicalExpr>,
-    pub(crate) partition_by: Arc<dyn PhysicalExpr>,
-    pub(crate) order_by: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) group_column: Arc<String>,
+    pub(crate) apply_column: Arc<String>,
+    pub(crate) out_name: Arc<String>,
+    /// A function Expr. i.e. Mean, Median, Max, etc.
+    pub(crate) function: Expr,
 }
 
 impl PhysicalExpr for WindowExpr {
+    // Note: this was first implemented with expression evaluation but this performed really bad.
+    // Therefore we choose the groupby -> apply -> self join approach
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let partition_by = self.partition_by.evaluate(df)?;
-        let group_tuples = partition_by.group_tuples();
-        let root_column = self.root_column.evaluate(df)?;
-        let mut index_series: Series = (0u32..root_column.len() as u32).collect();
-        // a name that should not be in the DataFrame
-        let index_name = "__INDEX__POLARS__WINDOW_EXPR__";
-        index_series.rename(index_name);
-        let input_df = DataFrame::new_no_checks(vec![index_series, root_column]);
-
-        let dfs = group_tuples
-            .iter()
-            .map(|(_, indexes)| {
-                let length = indexes.len();
-                let mut df = unsafe {
-                    input_df.take_iter_unchecked(indexes.iter().copied(), Some(indexes.len()))
-                };
-                let mut s = self.function.evaluate(&df)?;
-
-                if s.len() == 1 && length != 1 {
-                    s = s.expand_at_index(0, length)
-                }
-                df.replace_at_idx(1, s).unwrap();
-                Ok(df)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        let output_df = accumulate_dataframes_vertical(dfs)?;
-        debug_assert_eq!(output_df.width(), 2);
-        let idx = output_df.select_at_idx(0).unwrap().argsort(false);
-        Ok(unsafe {
-            output_df
-                .select_at_idx(1)
-                .unwrap()
-                .take_iter_unchecked(idx.into_iter(), None)
-        })
+        let gb = df
+            .groupby(self.group_column.as_str())?
+            .select(self.apply_column.as_str());
+        let out = match self.function {
+            Expr::Median(_) => gb.median(),
+            Expr::Mean(_) => gb.mean(),
+            Expr::Max(_) => gb.max(),
+            Expr::Min(_) => gb.min(),
+            Expr::Sum(_) => gb.sum(),
+            Expr::First(_) => gb.first(),
+            Expr::Last(_) => gb.last(),
+            Expr::Count(_) => gb.count(),
+            Expr::NUnique(_) => gb.n_unique(),
+            Expr::Quantile { quantile, .. } => gb.quantile(quantile),
+            Expr::List(_) => gb.agg_list(),
+            _ => Err(PolarsError::Other(
+                format!("{:?} function not supported", self.function).into(),
+            )),
+        }?;
+        let mut out = df
+            .select(self.group_column.as_str())?
+            .left_join(&out, self.group_column.as_str(), &self.group_column)?
+            .select_at_idx(1)
+            .unwrap()
+            .clone();
+        out.rename(self.out_name.as_str());
+        Ok(out)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.function.to_field(input_schema)
+        self.function.to_field(input_schema, Context::Other)
     }
 }

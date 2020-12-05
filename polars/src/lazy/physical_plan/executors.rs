@@ -5,6 +5,8 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::mem;
 
+const POLARS_VERBOSE: &str = "POLARS_VERBOSE";
+
 fn set_n_rows(stop_after_n_rows: usize) -> usize {
     let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
     match fetch_rows {
@@ -35,6 +37,9 @@ impl Executor for CacheExec {
         let key = std::mem::take(&mut self.key);
         guard.insert(key, df.clone());
 
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("cache set {:?}", self.key);
+        }
         Ok(df)
     }
 }
@@ -116,6 +121,9 @@ impl Executor for ParquetExec {
         if self.cache {
             let mut guard = cache.lock().unwrap();
             guard.insert(cache_key, df.clone());
+        }
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("parquet {:?} read", self.path);
         }
 
         Ok(df)
@@ -215,6 +223,9 @@ impl Executor for CsvExec {
             let mut guard = cache.lock().unwrap();
             guard.insert(cache_key, df.clone());
         }
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("csv {:?} read", self.path);
+        }
 
         Ok(df)
     }
@@ -236,8 +247,11 @@ impl Executor for FilterExec {
         let df = self.input.execute(cache)?;
         let s = self.predicate.evaluate(&df)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
-
-        Ok(df.filter(mask)?)
+        let df = df.filter(mask)?;
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("dataframe filtered");
+        }
+        Ok(df)
     }
 }
 
@@ -349,7 +363,11 @@ impl Executor for StandardExec {
         self.valid = false;
         let df = self.input.execute(cache)?;
 
-        evaluate_physical_expressions(&df, &self.expr)
+        let df = evaluate_physical_expressions(&df, &self.expr);
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("operation {} on dataframe finished", self.operation);
+        }
+        df
     }
 }
 
@@ -367,14 +385,18 @@ impl DataFrameOpsExec {
 impl Executor for DataFrameOpsExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let df = self.input.execute(cache)?;
-        match &self.operation {
+        let df = match &self.operation {
             DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
             DataFrameOperation::Explode(column) => df.explode(column),
             DataFrameOperation::DropDuplicates {
                 maintain_order,
                 subset,
             } => df.drop_duplicates(*maintain_order, subset.as_ref().map(|v| v.as_ref())),
+        };
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("{:?} on dataframe finished", self.operation);
         }
+        df
     }
 }
 
@@ -410,7 +432,11 @@ impl Executor for GroupByExec {
                 columns.push(agg)
             }
         }
-        Ok(DataFrame::new_no_checks(columns))
+        let df = DataFrame::new_no_checks(columns);
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("groupby {:?} on dataframe finished", self.keys);
+        };
+        Ok(df)
     }
 }
 
@@ -453,11 +479,15 @@ impl Executor for JoinExec {
         let s_right = self.right_on.evaluate(&df_right)?;
 
         use JoinType::*;
-        match self.how {
+        let df = match self.how {
             Left => df_left.left_join_from_series(&df_right, &s_left, &s_right),
             Inner => df_left.inner_join_from_series(&df_right, &s_left, &s_right),
             Outer => df_left.outer_join_from_series(&df_right, &s_left, &s_right),
-        }
+        };
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("{:?} join dataframes finished", self.how);
+        };
+        df
     }
 }
 pub struct StackExec {
@@ -488,6 +518,9 @@ impl Executor for StackExec {
 
             let name = s.name().to_string();
             df.replace_or_add(&name, s)?;
+            if std::env::var(POLARS_VERBOSE).is_ok() {
+                println!("added column {} to dataframe", name);
+            }
             Ok(())
         });
         let _ = res?;
