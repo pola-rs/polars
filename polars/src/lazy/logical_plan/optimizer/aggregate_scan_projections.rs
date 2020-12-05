@@ -26,158 +26,59 @@ impl AggScanProjection {
     /// Hashmap
     ///     keys: file path
     ///     values: Projected column names
-    fn agg_projection(
+    pub(crate) fn agg_projection(
         &self,
-        logical_plan: LogicalPlan,
+        logical_plan: &LogicalPlan,
         columns: &mut HashMap<String, HashSet<String, RandomState>, RandomState>,
-    ) -> Result<LogicalPlan> {
+    ) {
         use LogicalPlan::*;
         match logical_plan {
-            Selection { input, predicate } => {
-                let input = Box::new(self.agg_projection(*input, columns)?);
-                Ok(Selection { input, predicate })
+            Selection { input, .. } => {
+                self.agg_projection(input, columns);
             }
             Cache { input } => {
-                let input = Box::new(self.agg_projection(*input, columns)?);
-                Ok(Cache { input })
+                self.agg_projection(input, columns);
             }
             CsvScan {
-                path,
-                schema,
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                stop_after_n_rows,
-                with_columns,
-                predicate,
-                cache,
+                path, with_columns, ..
             } => {
                 process_with_columns(&path, &with_columns, columns);
-                Ok(CsvScan {
-                    path,
-                    schema,
-                    has_header,
-                    delimiter,
-                    ignore_errors,
-                    skip_rows,
-                    stop_after_n_rows,
-                    with_columns,
-                    predicate,
-                    cache,
-                })
             }
             #[cfg(feature = "parquet")]
             ParquetScan {
-                path,
-                schema,
-                with_columns,
-                predicate,
-                stop_after_n_rows,
-                cache,
+                path, with_columns, ..
             } => {
                 process_with_columns(&path, &with_columns, columns);
-                Ok(ParquetScan {
-                    path,
-                    schema,
-                    with_columns,
-                    predicate,
-                    stop_after_n_rows,
-                    cache,
-                })
             }
-            DataFrameScan { .. } => Ok(logical_plan),
-            Projection {
-                expr,
-                input,
-                schema,
-            } => {
-                let input = Box::new(self.agg_projection(*input, columns)?);
-                Ok(Projection {
-                    expr,
-                    input,
-                    schema,
-                })
+            DataFrameScan { .. } => (),
+            Projection { input, .. } => {
+                self.agg_projection(input, columns);
             }
-            LocalProjection {
-                expr,
-                input,
-                schema,
-            } => {
-                let input = Box::new(self.agg_projection(*input, columns)?);
-                Ok(LocalProjection {
-                    expr,
-                    input,
-                    schema,
-                })
+            LocalProjection { input, .. } => {
+                self.agg_projection(input, columns);
             }
-            Sort {
-                input,
-                by_column,
-                reverse,
-            } => {
-                let input = self.agg_projection(*input, columns)?;
-                Ok(Sort {
-                    input: Box::new(input),
-                    by_column,
-                    reverse,
-                })
+            Sort { input, .. } => {
+                self.agg_projection(input, columns);
             }
-            Explode { input, column } => {
-                let input = self.agg_projection(*input, columns)?;
-                Ok(Explode {
-                    input: Box::new(input),
-                    column,
-                })
+            Explode { input, .. } => {
+                self.agg_projection(input, columns);
             }
-            Distinct {
-                input,
-                maintain_order,
-                subset,
-            } => {
-                let input = self.agg_projection(*input, columns)?;
-                Ok(Distinct {
-                    input: Box::new(input),
-                    maintain_order,
-                    subset,
-                })
+            Distinct { input, .. } => {
+                self.agg_projection(input, columns);
             }
-            Aggregate {
-                input,
-                keys,
-                aggs,
-                schema,
-            } => {
-                let input = Box::new(self.agg_projection(*input, columns)?);
-                Ok(Aggregate {
-                    input,
-                    keys,
-                    aggs,
-                    schema,
-                })
+            Aggregate { input, .. } => {
+                self.agg_projection(input, columns);
             }
             Join {
                 input_left,
                 input_right,
-                schema,
-                how,
-                left_on,
-                right_on,
+                ..
             } => {
-                let input_left = Box::new(self.agg_projection(*input_left, columns)?);
-                let input_right = Box::new(self.agg_projection(*input_right, columns)?);
-                Ok(Join {
-                    input_left,
-                    input_right,
-                    schema,
-                    how,
-                    left_on,
-                    right_on,
-                })
+                self.agg_projection(input_left, columns);
+                self.agg_projection(input_right, columns);
             }
-            HStack { input, exprs, .. } => {
-                let input = self.agg_projection(*input, columns)?;
-                Ok(LogicalPlanBuilder::from(input).with_columns(exprs).build())
+            HStack { input, .. } => {
+                self.agg_projection(input, columns);
             }
         }
     }
@@ -372,7 +273,7 @@ impl Optimize for AggScanProjection {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
         // First aggregate all the columns projected in scan
         let mut agg = HashMap::with_capacity_and_hasher(32, RandomState::default());
-        let logical_plan = self.agg_projection(logical_plan, &mut agg)?;
+        self.agg_projection(&logical_plan, &mut agg);
         // and then make sure that all scans of the same files have the same columns. Such that the one that get executed first has all the columns.
         // The first scan gets cached
         self.rewrite_plan(logical_plan, &agg)

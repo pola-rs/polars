@@ -1,5 +1,7 @@
 use crate::lazy::logical_plan::Context;
 use crate::{lazy::prelude::*, prelude::*};
+use ahash::RandomState;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// A pushed down projection can create an alias, create a new expr only containing the new names.
@@ -722,4 +724,57 @@ pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema, ctxt: Contex
         .collect::<Result<Vec<_>>>()
         .unwrap();
     Schema::new(fields)
+}
+
+/// Get a set of the data source paths in this LogicalPlan
+pub(crate) fn agg_source_paths(
+    logical_plan: &LogicalPlan,
+    paths: &mut HashSet<String, RandomState>,
+) {
+    use LogicalPlan::*;
+    match logical_plan {
+        Selection { input, .. } => {
+            agg_source_paths(input, paths);
+        }
+        Cache { input } => {
+            agg_source_paths(input, paths);
+        }
+        CsvScan { path, .. } => {
+            paths.insert(path.clone());
+        }
+        #[cfg(feature = "parquet")]
+        ParquetScan { path, .. } => {
+            paths.insert(path.clone());
+        }
+        DataFrameScan { .. } => (),
+        Projection { input, .. } => {
+            agg_source_paths(input, paths);
+        }
+        LocalProjection { input, .. } => {
+            agg_source_paths(input, paths);
+        }
+        Sort { input, .. } => {
+            agg_source_paths(input, paths);
+        }
+        Explode { input, .. } => {
+            agg_source_paths(input, paths);
+        }
+        Distinct { input, .. } => {
+            agg_source_paths(input, paths);
+        }
+        Aggregate { input, .. } => {
+            agg_source_paths(input, paths);
+        }
+        Join {
+            input_left,
+            input_right,
+            ..
+        } => {
+            agg_source_paths(input_left, paths);
+            agg_source_paths(input_right, paths);
+        }
+        HStack { input, .. } => {
+            agg_source_paths(input, paths);
+        }
+    }
 }

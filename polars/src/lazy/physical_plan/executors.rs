@@ -259,8 +259,6 @@ pub struct DataFrameExec {
     df: Arc<DataFrame>,
     projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
     selection: Option<Arc<dyn PhysicalExpr>>,
-    // make sure that we are not called twice
-    valid: bool,
 }
 
 impl DataFrameExec {
@@ -273,15 +271,12 @@ impl DataFrameExec {
             df,
             projection,
             selection,
-            valid: true,
         }
     }
 }
 
 impl Executor for DataFrameExec {
     fn execute(&mut self, _: &Cache) -> Result<DataFrame> {
-        assert!(self.valid);
-        self.valid = false;
         let df = mem::take(&mut self.df);
         let mut df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
 
@@ -359,8 +354,6 @@ fn evaluate_physical_expressions(
 
 impl Executor for StandardExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        assert!(self.valid);
-        self.valid = false;
         let df = self.input.execute(cache)?;
 
         let df = evaluate_physical_expressions(&df, &self.expr);
@@ -472,6 +465,7 @@ impl Executor for JoinExec {
         // between the DataFrames. Like joining a specific computation of a DF back to itself.
         let df_left = self.input_left.execute(cache);
         let df_right = self.input_right.execute(cache);
+
         let df_left = df_left?;
         let df_right = df_right?;
 
