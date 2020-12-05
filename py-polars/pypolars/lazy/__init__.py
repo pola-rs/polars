@@ -152,6 +152,45 @@ class LazyFrame:
         )
         return wrap_df(ldf.collect())
 
+    def fetch(
+        self,
+        n_rows: int = 500,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+    ) -> DataFrame:
+        """
+        Fetch is like a collect operation, but it overwrites the number of rows read by every scan
+        operation. This is a utility that helps debug a query on a smaller number of rows.
+
+        Note that the fetch does not guarantee the final number of rows in the DataFrame.
+        Filter, join operations and a lower number of rows available in the scanned file influence
+        the final number of rows.
+
+        Parameters
+        ----------
+        n_rows
+            Collect n_rows from the data sources.
+
+        type_coercion
+            run type coercion optimization
+        predicate_pushdown
+            run predicate pushdown optimization
+        projection_pushdown
+            run projection pushdown optimization
+        simplify_expression
+            run simplify expressions optimization
+
+        Returns
+        -------
+        DataFrame
+        """
+        ldf = self._ldf.optimization_toggle(
+            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
+        )
+        return wrap_df(ldf.fetch(n_rows))
+
     def cache(
         self,
     ) -> "LazyFrame":

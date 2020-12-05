@@ -1,9 +1,17 @@
 use super::*;
 use crate::frame::ser::csv::CsvEncoding;
-use crate::lazy::logical_plan::DataFrameOperation;
+use crate::lazy::logical_plan::{DataFrameOperation, FETCH_ROWS};
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::mem;
+
+fn set_n_rows(stop_after_n_rows: usize) -> usize {
+    let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
+    match fetch_rows {
+        None => stop_after_n_rows,
+        Some(n) => n,
+    }
+}
 
 pub struct CacheExec {
     pub key: String,
@@ -96,8 +104,10 @@ impl Executor for ParquetExec {
             None
         };
 
+        let stop_after_n_rows = self.stop_after_n_rows.map(set_n_rows);
+
         let df = ParquetReader::new(file)
-            .with_stop_after_n_rows(self.stop_after_n_rows)
+            .with_stop_after_n_rows(stop_after_n_rows)
             .finish_with_predicate(
                 self.predicate.clone(),
                 projection.as_ref().map(|v| v.as_ref()),
@@ -184,6 +194,7 @@ impl Executor for CsvExec {
         }
         let mut schema = Schema::new(vec![]);
         mem::swap(&mut self.schema, &mut schema);
+        let stop_after_n_rows = self.stop_after_n_rows.map(set_n_rows);
 
         let reader = CsvReader::new(file)
             .has_header(self.has_header)
@@ -191,7 +202,7 @@ impl Executor for CsvExec {
             .with_delimiter(self.delimiter)
             .with_ignore_parser_errors(self.ignore_errors)
             .with_skip_rows(self.skip_rows)
-            .with_stop_after_n_rows(self.stop_after_n_rows)
+            .with_stop_after_n_rows(stop_after_n_rows)
             .with_columns(with_columns)
             .with_encoding(CsvEncoding::LossyUtf8);
 

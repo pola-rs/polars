@@ -10,7 +10,10 @@ use crate::{
 use ahash::RandomState;
 use arrow::datatypes::DataType;
 use std::collections::HashSet;
-use std::{fmt, sync::Arc};
+use std::{cell::Cell, fmt, sync::Arc};
+
+// Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
+thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
 
 #[derive(Clone, Copy)]
 pub enum Context {
