@@ -34,6 +34,7 @@ use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
+
 #[cfg(not(feature = "lazy"))]
 pub trait PhysicalExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series>;
@@ -45,28 +46,40 @@ const CAPACITY_MULTIPLIER: usize = 512;
 fn all_digit(string: &str) -> bool {
     string.chars().all(|c| c.is_ascii_digit())
 }
+
 /// Infer the data type of a record
-fn infer_field_schema(string: &str) -> ArrowDataType {
+fn infer_field_schema(s: &str) -> ArrowDataType {
+    // trim input string
+    let string = s.trim();
+
+    // set empty string to null
+    if string.is_empty() {
+        return ArrowDataType::Null;
+    }
+
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // Utf8 for them
     if string.starts_with('"') {
         return ArrowDataType::Utf8;
     }
+
     // match regex in a particular order
     let lower = string.to_ascii_lowercase();
     if lower == "true" || lower == "false" {
         return ArrowDataType::Boolean;
     }
-    let skip_minus = if string.starts_with('-') { 1 } else { 0 };
 
-    let mut parts = string[skip_minus..].split('.');
-    let (left, right) = (parts.next(), parts.next());
-    let left_is_number = left.map_or(false, all_digit);
-    if left_is_number && right.map_or(false, all_digit) {
-        return ArrowDataType::Float64;
-    } else if left_is_number {
+    // first check for int
+    if string.parse::<i64>().is_ok() {
         return ArrowDataType::Int64;
     }
+
+    // then check for float
+    if string.parse::<f64>().is_ok() {
+        return ArrowDataType::Float64;
+    }
+
+    // else string
     ArrowDataType::Utf8
 }
 
@@ -153,13 +166,19 @@ pub(crate) fn infer_file_schema<R: Read + Seek>(
 
     // build schema from inference results
     for i in 0..header_length {
-        let possibilities = &column_types[i];
+        let possibilities = &mut column_types[i];
         let has_nulls = nulls[i];
         let field_name = &headers[i];
 
         // determine data type based on possible types
         // if there are incompatible types, use DataType::Utf8
+        // remove null before
+        possibilities.remove(&ArrowDataType::Null);
+
         match possibilities.len() {
+            0 => {
+                fields.push(Field::new(&field_name, ArrowDataType::Utf8, has_nulls));
+            }
             1 => {
                 for dtype in possibilities.iter() {
                     fields.push(Field::new(&field_name, dtype.clone(), has_nulls));
@@ -230,7 +249,7 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
         other => {
             return Err(PolarsError::Other(
                 format!("Unsupported data type {:?} when reading a csv", other).into(),
-            ))
+            ));
         }
     };
     Ok(builder)
@@ -318,8 +337,8 @@ pub struct SequentialReader<R: Read> {
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
-where
-    R: Read,
+    where
+        R: Read,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reader")
@@ -391,8 +410,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         col_idx: usize,
         builder: &mut PrimitiveChunkedBuilder<T>,
     ) -> Result<()>
-    where
-        T: PolarsPrimitiveType + PrimitiveParser,
+        where
+            T: PolarsPrimitiveType + PrimitiveParser,
     {
         for (row_index, row) in rows.iter().enumerate() {
             match row.get(col_idx) {
@@ -401,22 +420,29 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         builder.append_null();
                         continue;
                     }
-                    match T::parse(bytes) {
-                        Ok(e) => builder.append_value(e),
-                        Err(_) => {
-                            if self.ignore_parser_errors {
-                                builder.append_null();
-                                continue;
+                    // trimm input to get "" for empty values
+                    let trimmed = std::str::from_utf8(bytes).unwrap().trim();
+
+                    if trimmed == "" {
+                        builder.append_null()
+                    } else {
+                        match T::parse(trimmed.as_ref()) {
+                            Ok(e) => builder.append_value(e),
+                            Err(_) => {
+                                if self.ignore_parser_errors {
+                                    builder.append_null();
+                                    continue;
+                                }
+                                return Err(PolarsError::Other(
+                                    format!(
+                                        "Error while parsing value {} for column {} at line {}",
+                                        String::from_utf8_lossy(bytes),
+                                        col_idx,
+                                        self.line_number + row_index
+                                    )
+                                        .into(),
+                                ));
                             }
-                            return Err(PolarsError::Other(
-                                format!(
-                                    "Error while parsing value {} for column {} at line {}",
-                                    String::from_utf8_lossy(bytes),
-                                    col_idx,
-                                    self.line_number + row_index
-                                )
-                                .into(),
-                            ));
                         }
                     }
                 }
@@ -509,7 +535,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
         csv_reader: &mut Reader<R>,
-        predicate: &Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
         // this will be used to amortize allocations
         // Only correctly parsed lines will fill the start of the Vec.
@@ -537,13 +563,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 )?;
                 std::mem::swap(&mut builders_tmp, builders);
                 let mut df = builders_to_df(builders_tmp);
-                if let Some(predicate) = predicate {
+                if let Some(predicate) = &predicate {
                     let s = predicate.evaluate(&df)?;
                     let mask = s.bool().expect("filter predicates was not of type boolean");
-                    let local_df = df.filter(mask)?;
-                    if df.height() > 0 {
-                        df = local_df;
-                    }
+                    df = df.filter(mask)?;
                 }
                 parsed_dfs.push(df);
             }
@@ -566,7 +589,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         mut record_iter: ByteRecordsIntoIter<R>,
         parsed_dfs: &mut Vec<DataFrame>,
-        predicate: &Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Result<()> {
         // TODO: Save allocations. Send rows back over channel?
         let (tx, rx) = bounded(256);
@@ -623,13 +646,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     )?;
                     std::mem::swap(&mut builders_tmp, builders);
                     let mut df = builders_to_df(builders_tmp);
-                    if let Some(predicate) = predicate {
+                    if let Some(predicate) = &predicate {
                         let s = predicate.evaluate(&df)?;
                         let mask = s.bool().expect("filter predicates was not of type boolean");
-                        let local_df = df.filter(mask)?;
-                        if df.height() > 0 {
-                            df = local_df;
-                        }
+                        df = df.filter(mask)?;
                     }
                     parsed_dfs.push(df);
                 }
@@ -646,7 +666,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             }
             Ok(())
         })
-        .expect("a thread has panicked")?;
+            .expect("a thread has panicked")?;
         Ok(())
     }
 
@@ -680,27 +700,18 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 &projection,
                 &mut parsed_dfs,
                 record_iter.reader_mut(),
-                &predicate,
+                predicate,
             )?,
             false => self.two_threads(
                 &mut builders,
                 &projection,
                 record_iter,
                 &mut parsed_dfs,
-                &predicate,
+                predicate,
             )?,
         }
-        let mut df = builders_to_df(builders);
-        if let Some(predicate) = &predicate {
-            let s = predicate.evaluate(&df)?;
-            let mask = s.bool().expect("filter predicates was not of type boolean");
-            let local_df = df.filter(mask)?;
-            if df.height() > 0 {
-                df = local_df;
-            }
-        }
 
-        parsed_dfs.push(df);
+        parsed_dfs.push(builders_to_df(builders));
         utils::accumulate_dataframes_vertical(parsed_dfs)
     }
 }
@@ -733,6 +744,7 @@ impl PrimitiveParser for Float32Type {
         Ok(a)
     }
 }
+
 impl PrimitiveParser for Float64Type {
     fn parse(bytes: &[u8]) -> Result<f64> {
         let a = lexical::parse(bytes)?;
@@ -746,42 +758,49 @@ impl PrimitiveParser for UInt8Type {
         Ok(a)
     }
 }
+
 impl PrimitiveParser for UInt16Type {
     fn parse(bytes: &[u8]) -> Result<u16> {
         let a = lexical::parse(bytes)?;
         Ok(a)
     }
 }
+
 impl PrimitiveParser for UInt32Type {
     fn parse(bytes: &[u8]) -> Result<u32> {
         let a = lexical::parse(bytes)?;
         Ok(a)
     }
 }
+
 impl PrimitiveParser for UInt64Type {
     fn parse(bytes: &[u8]) -> Result<u64> {
         let a = lexical::parse(bytes)?;
         Ok(a)
     }
 }
+
 impl PrimitiveParser for Int8Type {
     fn parse(bytes: &[u8]) -> Result<i8> {
         let a = lexical::parse(bytes)?;
         Ok(a)
     }
 }
+
 impl PrimitiveParser for Int16Type {
     fn parse(bytes: &[u8]) -> Result<i16> {
         let a = lexical::parse(bytes)?;
         Ok(a)
     }
 }
+
 impl PrimitiveParser for Int32Type {
     fn parse(bytes: &[u8]) -> Result<i32> {
         let a = lexical::parse(bytes)?;
         Ok(a)
     }
 }
+
 impl PrimitiveParser for Int64Type {
     fn parse(bytes: &[u8]) -> Result<i64> {
         let a = lexical::parse(bytes)?;
@@ -931,4 +950,40 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         encoding,
         one_thread,
     ))
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_import_csv() {
+        use std::io::Cursor;
+
+// csv with scientific notation,
+// spaces to trim, empty values
+        let s = r#"PAR1,PAR2,PAR3,PAR4,PAR5
+test1, +1 , ,1.1,
+test2,,2.22E+14,2.2,
+test3,-3,-3.33E-14,3.3,
+test4,4,4E+14,4.4,
+,5,5.E+14,5.5,
+
+"#;
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file)
+            .infer_schema(Some(100))
+            .has_header(true)
+            .with_ignore_parser_errors(true)
+            .with_batch_size(100)
+            .finish()
+            .unwrap();
+
+        let f: Vec<ArrowDataType> = df.fields().iter().map(|x| (*x.data_type()).clone()).collect();
+        let g = vec![ArrowDataType::Utf8, ArrowDataType::Int64,
+                     ArrowDataType::Float64, ArrowDataType::Float64,
+                     ArrowDataType::Utf8];
+        assert_eq!(f, g)
+    }
 }
