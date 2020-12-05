@@ -2,7 +2,10 @@
 use crate::frame::select::Selection;
 use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
-use crate::{lazy::prelude::*, prelude::*};
+use crate::{
+    lazy::{logical_plan::FETCH_ROWS, prelude::*},
+    prelude::*,
+};
 use ahash::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -235,6 +238,19 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().cache().build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Fetch is like a collect operation, but it overwrites the number of rows read by every scan
+    /// operation. This is a utility that helps debug a query on a smaller number of rows.
+    ///
+    /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
+    /// Filter, join operations and a lower number of rows available in the scanned file influence
+    /// the final number of rows.
+    pub fn fetch(self, n_rows: usize) -> Result<DataFrame> {
+        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
+        let res = self.collect();
+        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
+        res
     }
 
     /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).

@@ -107,6 +107,12 @@ impl PyLazyFrame {
         Ok(df.into())
     }
 
+    pub fn fetch(&self, n_rows: usize) -> PyResult<PyDataFrame> {
+        let ldf = self.ldf.clone();
+        let df = ldf.fetch(n_rows).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn filter(&mut self, predicate: PyExpr) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.filter(predicate.inner).into()
