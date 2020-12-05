@@ -71,7 +71,7 @@ impl ScalarValue {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DataFrameOperation {
     Sort {
         by_column: String,
