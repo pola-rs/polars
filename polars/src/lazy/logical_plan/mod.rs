@@ -150,6 +150,8 @@ pub enum LogicalPlan {
         how: JoinType,
         left_on: Expr,
         right_on: Expr,
+        allow_par: bool,
+        force_par: bool,
     },
     HStack {
         input: Box<LogicalPlan>,
@@ -649,7 +651,15 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn join(self, other: LogicalPlan, how: JoinType, left_on: Expr, right_on: Expr) -> Self {
+    pub fn join(
+        self,
+        other: LogicalPlan,
+        how: JoinType,
+        left_on: Expr,
+        right_on: Expr,
+        allow_par: bool,
+        force_par: bool,
+    ) -> Self {
         let schema_left = self.0.schema();
         let schema_right = other.schema();
 
@@ -687,6 +697,8 @@ impl LogicalPlanBuilder {
             schema,
             left_on,
             right_on,
+            allow_par,
+            force_par,
         }
         .into()
     }
@@ -783,10 +795,10 @@ mod test {
 
         // check if optimizations succeeds without selection
         {
-            let lf = left
-                .clone()
-                .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"));
+            let lf =
+                left.clone()
+                    .lazy()
+                    .left_join(right.clone().lazy(), col("days"), col("days"), None);
 
             print_plans(&lf);
             // implicitly checks logical plan == optimized logical plan
@@ -799,7 +811,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"))
+                .left_join(right.clone().lazy(), col("days"), col("days"), None)
                 .select(&[col("temp")]);
 
             print_plans(&lf);
@@ -812,7 +824,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"))
+                .left_join(right.clone().lazy(), col("days"), col("days"), None)
                 .select(&[col("temp"), col("rain_right")]);
 
             print_plans(&lf);
@@ -826,7 +838,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"))
+                .left_join(right.clone().lazy(), col("days"), col("days"), None)
                 .select(&[col("temp"), col("rain"), col("rain_right")]);
 
             print_plans(&lf);
@@ -840,7 +852,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"))
+                .left_join(right.clone().lazy(), col("days"), col("days"), None)
                 .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")]);
 
             print_plans(&lf);
@@ -854,7 +866,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"))
+                .left_join(right.clone().lazy(), col("days"), col("days"), None)
                 .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")])
                 .filter(col("foo").lt(lit(0.3)));
 

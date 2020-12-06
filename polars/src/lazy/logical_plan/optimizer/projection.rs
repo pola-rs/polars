@@ -316,6 +316,8 @@ impl ProjectionPushDown {
                 left_on,
                 right_on,
                 how,
+                allow_par,
+                force_par,
                 ..
             } => {
                 let mut pushdown_left = init_vec();
@@ -399,8 +401,8 @@ impl ProjectionPushDown {
                     self.push_down(*input_left, pushdown_left, names_left, projections_seen)?;
                 let lp_right =
                     self.push_down(*input_right, pushdown_right, names_right, projections_seen)?;
-                let builder =
-                    LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
+                let builder = LogicalPlanBuilder::from(lp_left)
+                    .join(lp_right, how, left_on, right_on, allow_par, force_par);
                 Ok(self.finish_node(local_projection, builder))
             }
             HStack { input, exprs, .. } => {

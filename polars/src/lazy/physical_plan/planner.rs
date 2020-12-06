@@ -171,18 +171,27 @@ impl DefaultPlanner {
                 how,
                 left_on,
                 right_on,
+                allow_par,
+                force_par,
                 ..
             } => {
-                let mut sources_left =
-                    HashSet::with_capacity_and_hasher(32, RandomState::default());
-                agg_source_paths(&input_left, &mut sources_left);
-                let mut sources_right =
-                    HashSet::with_capacity_and_hasher(32, RandomState::default());
-                agg_source_paths(&input_right, &mut sources_right);
-                let allow_parallel = !sources_left
-                    .intersection(&sources_right)
-                    .collect_vec()
-                    .is_empty();
+                let parallel = if force_par {
+                    force_par
+                } else if allow_par {
+                    // check if two DataFrames come from a separate source. If they don't we hope it is cached.
+                    let mut sources_left =
+                        HashSet::with_capacity_and_hasher(32, RandomState::default());
+                    agg_source_paths(&input_left, &mut sources_left);
+                    let mut sources_right =
+                        HashSet::with_capacity_and_hasher(32, RandomState::default());
+                    agg_source_paths(&input_right, &mut sources_right);
+                    sources_left
+                        .intersection(&sources_right)
+                        .collect_vec()
+                        .is_empty()
+                } else {
+                    false
+                };
 
                 let input_left = self.create_initial_physical_plan(*input_left)?;
                 let input_right = self.create_initial_physical_plan(*input_right)?;
@@ -194,7 +203,7 @@ impl DefaultPlanner {
                     how,
                     left_on,
                     right_on,
-                    allow_parallel,
+                    parallel,
                 )))
             }
             LogicalPlan::HStack { input, exprs, .. } => {

@@ -297,6 +297,8 @@ impl PredicatePushDown {
                 left_on,
                 right_on,
                 how,
+                allow_par,
+                force_par,
                 ..
             } => {
                 let schema_left = input_left.schema();
@@ -363,8 +365,8 @@ impl PredicatePushDown {
                 let lp_left = self.push_down(*input_left, pushdown_left)?;
                 let lp_right = self.push_down(*input_right, pushdown_right)?;
 
-                let builder =
-                    LogicalPlanBuilder::from(lp_left).join(lp_right, how, left_on, right_on);
+                let builder = LogicalPlanBuilder::from(lp_left)
+                    .join(lp_right, how, left_on, right_on, allow_par, force_par);
                 Ok(self.finish_node(local_predicates, builder))
             }
             HStack { input, exprs, .. } => {

@@ -1,7 +1,7 @@
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use polars::lazy::frame::{LazyFrame, LazyGroupBy};
+use polars::lazy::frame::{JoinOptions, LazyFrame, LazyGroupBy};
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -107,9 +107,7 @@ impl PyLazyFrame {
         let py = gil.python();
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
-        let df = py.allow_threads(|| {
-            ldf.collect().map_err(PyPolarsEr::from)
-        })?;
+        let df = py.allow_threads(|| ldf.collect().map_err(PyPolarsEr::from))?;
         Ok(df.into())
     }
 
@@ -142,10 +140,17 @@ impl PyLazyFrame {
         other: PyLazyFrame,
         left_on: PyExpr,
         right_on: PyExpr,
+        allow_parallel: bool,
+        force_parallel: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let other = other.ldf;
-        ldf.inner_join(other, left_on.inner, right_on.inner).into()
+        let options = JoinOptions {
+            allow_parallel,
+            force_parallel,
+        };
+        ldf.inner_join(other, left_on.inner, right_on.inner, Some(options))
+            .into()
     }
 
     pub fn outer_join(
@@ -153,10 +158,17 @@ impl PyLazyFrame {
         other: PyLazyFrame,
         left_on: PyExpr,
         right_on: PyExpr,
+        allow_parallel: bool,
+        force_parallel: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let other = other.ldf;
-        ldf.outer_join(other, left_on.inner, right_on.inner).into()
+        let options = JoinOptions {
+            allow_parallel,
+            force_parallel,
+        };
+        ldf.outer_join(other, left_on.inner, right_on.inner, Some(options))
+            .into()
     }
 
     pub fn left_join(
@@ -164,10 +176,17 @@ impl PyLazyFrame {
         other: PyLazyFrame,
         left_on: PyExpr,
         right_on: PyExpr,
+        allow_parallel: bool,
+        force_parallel: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let other = other.ldf;
-        ldf.left_join(other, left_on.inner, right_on.inner).into()
+        let options = JoinOptions {
+            allow_parallel,
+            force_parallel,
+        };
+        ldf.left_join(other, left_on.inner, right_on.inner, Some(options))
+            .into()
     }
 
     pub fn with_column(&mut self, expr: PyExpr) -> PyLazyFrame {

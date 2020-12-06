@@ -439,7 +439,7 @@ pub struct JoinExec {
     how: JoinType,
     left_on: Arc<dyn PhysicalExpr>,
     right_on: Arc<dyn PhysicalExpr>,
-    allow_parallel: bool,
+    parallel: bool,
 }
 
 impl JoinExec {
@@ -449,7 +449,7 @@ impl JoinExec {
         how: JoinType,
         left_on: Arc<dyn PhysicalExpr>,
         right_on: Arc<dyn PhysicalExpr>,
-        allow_parallel: bool,
+        parallel: bool,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
@@ -457,7 +457,7 @@ impl JoinExec {
             how,
             left_on,
             right_on,
-            allow_parallel,
+            parallel,
         }
     }
 }
@@ -467,7 +467,7 @@ impl Executor for JoinExec {
         let mut input_left = self.input_left.take().unwrap();
         let mut input_right = self.input_right.take().unwrap();
 
-        let (df_left, df_right) = if self.allow_parallel {
+        let (df_left, df_right) = if self.parallel {
             let cache_left = cache.clone();
             let cache_right = cache.clone();
             let h_left = std::thread::spawn(move || input_left.execute(&cache_left));
