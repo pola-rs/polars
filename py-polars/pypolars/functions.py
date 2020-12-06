@@ -1,4 +1,3 @@
-# Some functions similar to the pandas API
 from typing import Union, TextIO, Optional, List, BinaryIO
 
 from .frame import DataFrame
@@ -22,7 +21,7 @@ def read_csv(
     columns: Optional[List[str]] = None,
     rechunk: bool = True,
     encoding: str = "utf8",
-    one_thread: bool = True,
+    n_threads: Optional[int] = None,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a csv file.
@@ -55,8 +54,8 @@ def read_csv(
     encoding
         - "utf8"
         _ "utf8-lossy"
-    one_thread
-        Use a single thread for the csv parsing. Set this to False to try multi-threaded parsing.
+    n_threads
+        Number of threads to use in csv parsing. Defaults to the number of physical cpu's of you system.
 
     Returns
     -------
@@ -76,7 +75,7 @@ def read_csv(
         columns=columns,
         rechunk=rechunk,
         encoding=encoding,
-        one_thread=one_thread,
+        n_threads=n_threads,
     )
 
 

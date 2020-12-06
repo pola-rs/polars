@@ -179,7 +179,7 @@ where
     ignore_parser_errors: bool,
     schema: Option<Arc<Schema>>,
     encoding: CsvEncoding,
-    one_thread: bool,
+    n_threads: Option<usize>,
 }
 
 impl<R> CsvReader<R>
@@ -259,13 +259,12 @@ where
         self
     }
 
-    /// Use single threaded CSV parsing (this is default).
-    /// This is recommended when there are not many columns in the csv file.
+    /// Set the number of threads used in CSV reading. The default uses the number of cores of
+    /// your cpu.
     ///
-    /// If multi-threaded is faster depends on your specific use case.
-    /// This is internally used for Python file handlers
-    pub fn with_one_thread(mut self, one_thread: bool) -> Self {
-        self.one_thread = one_thread;
+    /// Note that the number of cores is the maximum allowed number of threads.
+    pub fn with_n_threads(mut self, n: Option<usize>) -> Self {
+        self.n_threads = n;
         self
     }
 
@@ -283,7 +282,7 @@ where
             self.schema,
             self.columns,
             self.encoding,
-            self.one_thread,
+            self.n_threads,
         )
     }
     /// Read the file and create the DataFrame. Used from lazy execution
@@ -322,7 +321,7 @@ where
             schema: None,
             columns: None,
             encoding: CsvEncoding::Utf8,
-            one_thread: true,
+            n_threads: None,
         }
     }
 
