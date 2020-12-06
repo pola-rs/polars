@@ -434,11 +434,12 @@ impl Executor for GroupByExec {
 }
 
 pub struct JoinExec {
-    input_left: Box<dyn Executor>,
-    input_right: Box<dyn Executor>,
+    input_left: Option<Box<dyn Executor>>,
+    input_right: Option<Box<dyn Executor>>,
     how: JoinType,
     left_on: Arc<dyn PhysicalExpr>,
     right_on: Arc<dyn PhysicalExpr>,
+    allow_parallel: bool,
 }
 
 impl JoinExec {
@@ -448,23 +449,33 @@ impl JoinExec {
         how: JoinType,
         left_on: Arc<dyn PhysicalExpr>,
         right_on: Arc<dyn PhysicalExpr>,
+        allow_parallel: bool,
     ) -> Self {
         JoinExec {
-            input_left,
-            input_right,
+            input_left: Some(input_left),
+            input_right: Some(input_right),
             how,
             left_on,
             right_on,
+            allow_parallel,
         }
     }
 }
 
 impl Executor for JoinExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        // rayon::join was dropped because that resulted in a deadlock when there were dependencies
-        // between the DataFrames. Like joining a specific computation of a DF back to itself.
-        let df_left = self.input_left.execute(cache);
-        let df_right = self.input_right.execute(cache);
+    fn execute<'a>(&'a mut self, cache: &'a Cache) -> Result<DataFrame> {
+        let mut input_left = self.input_left.take().unwrap();
+        let mut input_right = self.input_right.take().unwrap();
+
+        let (df_left, df_right) = if self.allow_parallel {
+            let cache_left = cache.clone();
+            let cache_right = cache.clone();
+            let h_left = std::thread::spawn(move || input_left.execute(&cache_left));
+            let h_right = std::thread::spawn(move || input_right.execute(&cache_right));
+            (h_left.join().unwrap(), h_right.join().unwrap())
+        } else {
+            (input_left.execute(&cache), input_right.execute(&cache))
+        };
 
         let df_left = df_left?;
         let df_right = df_right?;

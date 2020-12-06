@@ -1,9 +1,10 @@
 use crate::frame::group_by::GroupByMethod;
 use crate::lazy::logical_plan::{Context, DataFrameOperation};
 use crate::lazy::physical_plan::executors::*;
-use crate::lazy::utils::expr_to_root_column_name;
+use crate::lazy::utils::{agg_source_paths, expr_to_root_column_name};
 use crate::{lazy::prelude::*, prelude::*};
 use ahash::RandomState;
+use itertools::Itertools;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -172,6 +173,17 @@ impl DefaultPlanner {
                 right_on,
                 ..
             } => {
+                let mut sources_left =
+                    HashSet::with_capacity_and_hasher(32, RandomState::default());
+                agg_source_paths(&input_left, &mut sources_left);
+                let mut sources_right =
+                    HashSet::with_capacity_and_hasher(32, RandomState::default());
+                agg_source_paths(&input_right, &mut sources_right);
+                let allow_parallel = !sources_left
+                    .intersection(&sources_right)
+                    .collect_vec()
+                    .is_empty();
+
                 let input_left = self.create_initial_physical_plan(*input_left)?;
                 let input_right = self.create_initial_physical_plan(*input_right)?;
                 let left_on = self.create_physical_expr(left_on, Context::Other)?;
@@ -182,6 +194,7 @@ impl DefaultPlanner {
                     how,
                     left_on,
                     right_on,
+                    allow_parallel,
                 )))
             }
             LogicalPlan::HStack { input, exprs, .. } => {
