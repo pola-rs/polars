@@ -328,10 +328,10 @@ impl LazyFrame {
 
         let planner = DefaultPlanner::default();
         let mut physical_plan = planner.create_physical_plan(logical_plan)?;
-        let cache = Mutex::new(HashMap::with_capacity_and_hasher(
+        let cache = Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
             64,
             RandomState::default(),
-        ));
+        )));
         physical_plan.execute(&cache)
     }
 

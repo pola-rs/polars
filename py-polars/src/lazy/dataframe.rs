@@ -103,7 +103,13 @@ impl PyLazyFrame {
 
     pub fn collect(&self) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
-        let df = ldf.collect().map_err(PyPolarsEr::from)?;
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        let df = py.allow_threads(|| {
+            ldf.collect().map_err(PyPolarsEr::from)
+        })?;
         Ok(df.into())
     }
 
