@@ -167,7 +167,7 @@
 //!
 //! fn example(df_a: DataFrame, df_b: DataFrame) -> LazyFrame {
 //!     df_a.lazy()
-//!     .left_join(df_b.lazy(), col("b_left"), col("b_right"))
+//!     .left_join(df_b.lazy(), col("b_left"), col("b_right"), None)
 //!     .filter(
 //!         col("a").lt(lit(2))
 //!     )

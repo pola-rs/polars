@@ -140,6 +140,8 @@ enum ALogicalPlan {
         how: JoinType,
         left_on: Node,
         right_on: Node,
+        allow_par: bool,
+        force_par: bool,
     },
     HStack {
         input: Node,
@@ -381,6 +383,8 @@ fn to_alp(
             how,
             left_on,
             right_on,
+            allow_par,
+            force_par,
         } => {
             let i_l = to_alp(*input_left, expr_arena, lp_arena);
             let i_r = to_alp(*input_right, expr_arena, lp_arena);
@@ -396,6 +400,8 @@ fn to_alp(
                 left_on: l_on,
                 how,
                 right_on: r_on,
+                allow_par,
+                force_par,
             }
         }
         LogicalPlan::HStack {
@@ -720,6 +726,8 @@ fn node_to_lp(
             how,
             left_on,
             right_on,
+            allow_par,
+            force_par,
         } => {
             let i_l = node_to_lp(input_left, expr_arena, lp_arena);
             let i_r = node_to_lp(input_right, expr_arena, lp_arena);
@@ -734,6 +742,8 @@ fn node_to_lp(
                 how,
                 left_on: l_on,
                 right_on: r_on,
+                allow_par,
+                force_par,
             }
         }
         ALogicalPlan::HStack {

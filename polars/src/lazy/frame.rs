@@ -11,6 +11,20 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+pub struct JoinOptions {
+    pub allow_parallel: bool,
+    pub force_parallel: bool,
+}
+
+impl Default for JoinOptions {
+    fn default() -> Self {
+        JoinOptions {
+            allow_parallel: true,
+            force_parallel: false,
+        }
+    }
+}
+
 impl DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
     pub fn lazy(self) -> LazyFrame {
@@ -431,14 +445,28 @@ impl LazyFrame {
     /// use polars::lazy::dsl::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .left_join(other, col("foo"), col("bar"))
+    ///         .left_join(other, col("foo"), col("bar"), None)
     /// }
     /// ```
-    pub fn left_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+    pub fn left_join(
+        self,
+        other: LazyFrame,
+        left_on: Expr,
+        right_on: Expr,
+        options: Option<JoinOptions>,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let opts = options.unwrap_or_default();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Left, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Left,
+                left_on,
+                right_on,
+                opts.allow_parallel,
+                opts.force_parallel,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -452,14 +480,28 @@ impl LazyFrame {
     /// use polars::lazy::dsl::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .outer_join(other, col("foo"), col("bar"))
+    ///         .outer_join(other, col("foo"), col("bar"), None)
     /// }
     /// ```
-    pub fn outer_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+    pub fn outer_join(
+        self,
+        other: LazyFrame,
+        left_on: Expr,
+        right_on: Expr,
+        options: Option<JoinOptions>,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let opts = options.unwrap_or_default();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Outer, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Outer,
+                left_on,
+                right_on,
+                opts.allow_parallel,
+                opts.force_parallel,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -473,14 +515,28 @@ impl LazyFrame {
     /// use polars::lazy::dsl::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .inner_join(other, col("foo"), col("bar").cast(ArrowDataType::Utf8))
+    ///         .inner_join(other, col("foo"), col("bar").cast(ArrowDataType::Utf8), None)
     /// }
     /// ```
-    pub fn inner_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+    pub fn inner_join(
+        self,
+        other: LazyFrame,
+        left_on: Expr,
+        right_on: Expr,
+        options: Option<JoinOptions>,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let opts = options.unwrap_or_default();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Inner, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Inner,
+                left_on,
+                right_on,
+                opts.allow_parallel,
+                opts.force_parallel,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -894,7 +950,7 @@ mod test {
         let df_a = load_df();
         let df_b = df_a.clone();
         df_a.lazy()
-            .left_join(df_b.lazy(), col("b"), col("b"))
+            .left_join(df_b.lazy(), col("b"), col("b"), None)
             .filter(col("a").lt(lit(2)))
             .groupby("b")
             .agg(vec![col("b").first(), col("c").first()])

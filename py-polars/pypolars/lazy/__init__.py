@@ -227,7 +227,32 @@ class LazyFrame:
         right_on: "Union[Optional[Expr], str]" = None,
         on: "Union[Optional[Expr], str]" = None,
         how="inner",
+        allow_parallel: bool = True,
+        force_parallel: bool = False,
     ) -> "LazyFrame":
+        """
+        Add a join operation to the Logical Plan.
+
+        Parameters
+        ----------
+        ldf
+            Lazy DataFrame to join with
+        left_on
+            Join column of the left DataFrame.
+        right_on
+            Join column of the right DataFrame.
+        on
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+        how
+            one of:
+                "inner"
+                "left"
+                "outer"
+        allow_parallel
+            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+        force_parallel
+            Force the physical plan evaluate the computation of both DataFrames up to the join in parallel.
+        """
         if isinstance(left_on, str):
             left_on = col(left_on)
         if isinstance(right_on, str):
@@ -240,11 +265,17 @@ class LazyFrame:
         left_on = left_on._pyexpr
         right_on = right_on._pyexpr
         if how == "inner":
-            inner = self._ldf.inner_join(ldf._ldf, left_on, right_on)
+            inner = self._ldf.inner_join(
+                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
+            )
         elif how == "left":
-            inner = self._ldf.left_join(ldf._ldf, left_on, right_on)
+            inner = self._ldf.left_join(
+                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
+            )
         elif how == "outer":
-            inner = self._ldf.outer_join(ldf._ldf, left_on, right_on)
+            inner = self._ldf.outer_join(
+                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
+            )
         else:
             return NotImplemented
         return wrap_ldf(inner)

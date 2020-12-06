@@ -249,6 +249,8 @@ impl AggScanProjection {
                 how,
                 left_on,
                 right_on,
+                allow_par,
+                force_par,
             } => {
                 let input_left = Box::new(self.rewrite_plan(*input_left, columns)?);
                 let input_right = Box::new(self.rewrite_plan(*input_right, columns)?);
@@ -259,6 +261,8 @@ impl AggScanProjection {
                     how,
                     left_on,
                     right_on,
+                    allow_par,
+                    force_par,
                 })
             }
             HStack { input, exprs, .. } => {
