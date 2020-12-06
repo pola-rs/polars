@@ -22,6 +22,7 @@ use crate::prelude::*;
 use crate::utils;
 use ahash::RandomState;
 use arrow::datatypes::SchemaRef;
+use crossbeam::thread::ScopedJoinHandle;
 use crossbeam::{
     channel::{bounded, TryRecvError},
     thread,
@@ -236,41 +237,40 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
     Ok(builder)
 }
 
-fn next_rows<R: Read>(
-    record_iter: &mut ByteRecordsIntoIter<R>,
-    batch_size: usize,
+fn next_rows<R: Read + Send + Sync>(
+    rows: &mut Vec<ByteRecord>,
+    csv_reader: &mut Reader<R>,
     line_number: &mut usize,
+    batch_size: usize,
     ignore_parser_errors: bool,
-    n_rows: Option<usize>,
-) -> Result<Vec<ByteRecord>> {
-    let mut rows = Vec::with_capacity(batch_size);
-    // if it is None, we set it larger than batch size such that it always evaluates false in
-    // the conditional below
-    let n_rows = n_rows.unwrap_or(*line_number + batch_size * 2);
-    for i in 0..batch_size {
+) -> Result<usize> {
+    let mut count = 0;
+    loop {
         *line_number += 1;
+        debug_assert!(rows.get(count).is_some());
+        let record = unsafe { rows.get_unchecked_mut(count) };
 
-        if *line_number > n_rows {
-            break;
-        }
-
-        match record_iter.next() {
-            Some(Ok(r)) => {
-                rows.push(r);
+        match csv_reader.read_byte_record(record) {
+            Ok(true) => count += 1,
+            // end of file
+            Ok(false) => {
+                break;
             }
-            Some(Err(e)) => {
+            Err(e) => {
                 if ignore_parser_errors {
                     continue;
                 } else {
                     return Err(PolarsError::Other(
-                        format!("Error parsing line {}: {:?}", *line_number + i, e).into(),
+                        format!("Error parsing line {}: {:?}", line_number, e).into(),
                     ));
                 }
             }
-            None => break,
+        }
+        if count == batch_size {
+            break;
         }
     }
-    Ok(rows)
+    Ok(count)
 }
 
 fn add_to_utf8_builder(
@@ -314,7 +314,7 @@ pub struct SequentialReader<R: Read> {
     skip_rows: usize,
     n_rows: Option<usize>,
     encoding: CsvEncoding,
-    one_thread: bool,
+    n_threads: Option<usize>,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -363,7 +363,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         n_rows: Option<usize>,
         skip_rows: usize,
         encoding: CsvEncoding,
-        one_thread: bool,
+        n_threads: Option<usize>,
     ) -> Self {
         let csv_reader = init_csv_reader(reader, has_header, delimiter);
         let record_iter = Some(csv_reader.into_byte_records());
@@ -381,7 +381,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             skip_rows,
             n_rows,
             encoding,
-            one_thread,
+            n_threads,
         }
     }
 
@@ -469,48 +469,15 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         Ok(())
     }
 
-    fn next_rows(
-        &mut self,
-        rows: &mut Vec<ByteRecord>,
-        csv_reader: &mut Reader<R>,
-    ) -> Result<usize> {
-        let mut count = 0;
-        loop {
-            self.line_number += 1;
-            debug_assert!(rows.get(count).is_some());
-            let record = unsafe { rows.get_unchecked_mut(count) };
-
-            match csv_reader.read_byte_record(record) {
-                Ok(true) => count += 1,
-                // end of file
-                Ok(false) => {
-                    break;
-                }
-                Err(e) => {
-                    if self.ignore_parser_errors {
-                        continue;
-                    } else {
-                        return Err(PolarsError::Other(
-                            format!("Error parsing line {}: {:?}", self.line_number, e).into(),
-                        ));
-                    }
-                }
-            }
-            if count == self.batch_size {
-                break;
-            }
-        }
-        Ok(count)
-    }
-
     fn one_thread(
         &mut self,
-        builders: &mut Vec<Builder>,
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
         csv_reader: &mut Reader<R>,
         predicate: &Option<Arc<dyn PhysicalExpr>>,
+        capacity: usize,
     ) -> Result<()> {
+        let mut builders = init_builders(&projection, capacity, &self.schema)?;
         // this will be used to amortize allocations
         // Only correctly parsed lines will fill the start of the Vec.
         // The whole vec is initialized with default values.
@@ -519,9 +486,16 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let mut rows = Vec::with_capacity(self.batch_size);
         rows.resize_with(self.batch_size, Default::default);
         let mut count = 0;
+        let mut line_number = self.line_number;
         loop {
             count += 1;
-            let correctly_parsed = self.next_rows(&mut rows, csv_reader)?;
+            let correctly_parsed = next_rows(
+                &mut rows,
+                csv_reader,
+                &mut line_number,
+                self.batch_size,
+                self.ignore_parser_errors,
+            )?;
             // stop when the whole file is processed
             if correctly_parsed == 0 {
                 break;
@@ -530,75 +504,70 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 rows.truncate(correctly_parsed);
             }
             if count % CAPACITY_MULTIPLIER == 0 {
-                let mut builders_tmp = init_builders(
-                    &projection,
-                    self.batch_size * CAPACITY_MULTIPLIER,
-                    &self.schema,
-                )?;
-                std::mem::swap(&mut builders_tmp, builders);
-                let mut df = builders_to_df(builders_tmp);
-                if let Some(predicate) = predicate {
-                    let s = predicate.evaluate(&df)?;
-                    let mask = s.bool().expect("filter predicates was not of type boolean");
-                    let local_df = df.filter(mask)?;
-                    if df.height() > 0 {
-                        df = local_df;
-                    }
-                }
-                parsed_dfs.push(df);
+                let mut builders_tmp = init_builders(&projection, capacity, &self.schema)?;
+                std::mem::swap(&mut builders_tmp, &mut builders);
+                finish_builder(builders_tmp, parsed_dfs, predicate)?;
             }
 
-            self.add_to_builders(builders, &projection, &rows)?;
+            self.add_to_builders(&mut builders, &projection, &rows)?;
 
             // stop after n_rows are processed
             if let Some(n_rows) = self.n_rows {
-                if self.line_number > n_rows {
+                if line_number > n_rows {
                     break;
                 }
             }
         }
+
         Ok(())
     }
 
-    fn two_threads(
+    fn n_threads(
         &mut self,
-        builders: &mut Vec<Builder>,
         projection: &[usize],
-        mut record_iter: ByteRecordsIntoIter<R>,
+        csv_reader: &mut Reader<R>,
         parsed_dfs: &mut Vec<DataFrame>,
         predicate: &Option<Arc<dyn PhysicalExpr>>,
-    ) -> Result<()> {
-        // TODO: Save allocations. Send rows back over channel?
-        let (tx, rx) = bounded(256);
+        capacity: usize,
+        n_threads: usize,
+    ) {
+        let channel_capacity = 16;
+        // channels with allocated memory
+        // one channels sends full (parsed) rows.
+        // the other channels sends back the processed rows. Note this memory is still initialized, but must be overwritten
+        let (tx_parsed, rx_parsed) = bounded(channel_capacity);
+        let (tx_empty, rx_empty) = bounded(channel_capacity);
+
         // used to end rampant thread
         let (tx_end, rx_end) = bounded(1);
 
-        let _ = thread::scope(|s| {
-            let batch_size = self.batch_size;
-            // note that line number gets copied to the other thread.
+        let _: Result<_> = thread::scope(|s| {
+            // Fill the channel with initialized memory
+            for _ in 0..channel_capacity {
+                let mut rows = Vec::with_capacity(self.batch_size);
+                rows.resize_with(self.batch_size, Default::default);
+                tx_empty.send(rows).unwrap();
+            }
+
             let mut line_number = self.line_number;
+            let batch_size = self.batch_size;
             let ignore_parser_errors = self.ignore_parser_errors;
             let n_rows = self.n_rows;
-
-            let _ = s.spawn(move |_| {
-                loop {
-                    let rows = next_rows(
-                        &mut record_iter,
-                        batch_size,
+            let _: ScopedJoinHandle<Result<_>> = s.spawn(move |_| {
+                while let Ok(mut rows) = rx_empty.recv() {
+                    let correctly_parsed = next_rows(
+                        &mut rows,
+                        csv_reader,
                         &mut line_number,
+                        batch_size,
                         ignore_parser_errors,
-                        n_rows,
-                    );
-                    match &rows {
-                        Ok(rows) => {
-                            // stop when the whole file is processed
-                            if rows.is_empty() {
-                                break;
-                            }
-                        }
-                        Err(_) => {
-                            break;
-                        }
+                    )?;
+                    // stop when the whole file is processed
+                    if correctly_parsed == 0 {
+                        break;
+                    } else if correctly_parsed < batch_size {
+                        // this only happens at the last batch if it doesn't fit a whole batch.
+                        rows.truncate(correctly_parsed);
                     }
                     match rx_end.try_recv() {
                         Ok(_) | Err(TryRecvError::Disconnected) => {
@@ -608,46 +577,59 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         Err(TryRecvError::Empty) => {}
                     }
 
-                    tx.send(rows).expect("could not send message");
-                }
-            });
-
-            let mut count = 0;
-            while let Ok(res) = rx.recv() {
-                count += 1;
-                if count % CAPACITY_MULTIPLIER == 0 {
-                    let mut builders_tmp = init_builders(
-                        &projection,
-                        self.batch_size * CAPACITY_MULTIPLIER,
-                        &self.schema,
-                    )?;
-                    std::mem::swap(&mut builders_tmp, builders);
-                    let mut df = builders_to_df(builders_tmp);
-                    if let Some(predicate) = predicate {
-                        let s = predicate.evaluate(&df)?;
-                        let mask = s.bool().expect("filter predicates was not of type boolean");
-                        let local_df = df.filter(mask)?;
-                        if df.height() > 0 {
-                            df = local_df;
+                    // stop after n_rows are processed
+                    if let Some(n_rows) = n_rows {
+                        if line_number > n_rows {
+                            break;
                         }
                     }
-                    parsed_dfs.push(df);
-                }
-                let rows = res?;
 
-                match self.add_to_builders(builders, &projection, &rows) {
-                    Ok(_) => {}
-                    // kill parsing thread in case of an error.
-                    Err(e) => {
-                        tx_end.send(true).map_err(anyhow::Error::from)?;
-                        return Err(e);
+                    tx_parsed.send(rows).expect("could not send message");
+                }
+                Ok(())
+            });
+
+            let mut threads = Vec::with_capacity(n_threads);
+
+            for _ in 0..n_threads {
+                let h = s.spawn(|_| {
+                    let mut builders = init_builders(&projection, capacity, &self.schema)?;
+                    let mut local_parsed_dfs = Vec::with_capacity(16);
+                    let mut count = 0;
+                    while let Ok(rows) = rx_parsed.recv() {
+                        count += 1;
+                        if count % CAPACITY_MULTIPLIER == 0 {
+                            let mut builders_tmp =
+                                init_builders(&projection, capacity, &self.schema)?;
+                            std::mem::swap(&mut builders_tmp, &mut builders);
+                            finish_builder(builders_tmp, &mut local_parsed_dfs, predicate)?;
+                        }
+
+                        match self.add_to_builders(&mut builders, &projection, &rows) {
+                            Ok(_) => {
+                                tx_empty.send(rows).unwrap_or_default();
+                            }
+                            // kill parsing thread in case of an error.
+                            Err(e) => {
+                                tx_end.send(true).map_err(anyhow::Error::from)?;
+                                return Err(e);
+                            }
+                        };
                     }
-                };
+                    finish_builder(builders, &mut local_parsed_dfs, predicate)?;
+                    Ok(local_parsed_dfs)
+                });
+                threads.push(h);
             }
+
+            for h in threads {
+                let local_parsed_dfs = h.join().unwrap()?;
+                parsed_dfs.extend(local_parsed_dfs.into_iter());
+            }
+
             Ok(())
         })
-        .expect("a thread has panicked")?;
-        Ok(())
+        .expect("a thread has panicked");
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
@@ -670,39 +652,48 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             capacity = std::cmp::min(n, capacity);
         }
 
-        let mut builders = init_builders(&projection, capacity, &self.schema)?;
+        let n_threads = std::cmp::min(num_cpus::get_physical(), self.n_threads.unwrap_or(512));
+
         // we reuse this container to amortize allocations
         let mut parsed_dfs = Vec::with_capacity(128);
 
-        match self.one_thread {
-            true => self.one_thread(
-                &mut builders,
+        match n_threads {
+            1 => self.one_thread(
                 &projection,
                 &mut parsed_dfs,
                 record_iter.reader_mut(),
                 &predicate,
+                capacity,
             )?,
-            false => self.two_threads(
-                &mut builders,
+            _ => self.n_threads(
                 &projection,
-                record_iter,
+                record_iter.reader_mut(),
                 &mut parsed_dfs,
                 &predicate,
-            )?,
+                capacity,
+                n_threads,
+            ),
         }
-        let mut df = builders_to_df(builders);
-        if let Some(predicate) = &predicate {
-            let s = predicate.evaluate(&df)?;
-            let mask = s.bool().expect("filter predicates was not of type boolean");
-            let local_df = df.filter(mask)?;
-            if df.height() > 0 {
-                df = local_df;
-            }
-        }
-
-        parsed_dfs.push(df);
         utils::accumulate_dataframes_vertical(parsed_dfs)
     }
+}
+
+fn finish_builder(
+    builders: Vec<Builder>,
+    parsed_dfs: &mut Vec<DataFrame>,
+    predicate: &Option<Arc<dyn PhysicalExpr>>,
+) -> Result<()> {
+    let mut df = builders_to_df(builders);
+    if let Some(predicate) = &predicate {
+        let s = predicate.evaluate(&df)?;
+        let mask = s.bool().expect("filter predicates was not of type boolean");
+        let local_df = df.filter(mask)?;
+        if df.height() > 0 {
+            df = local_df;
+        }
+    }
+    parsed_dfs.push(df);
+    Ok(())
 }
 
 impl From<lexical::Error> for PolarsError {
@@ -895,7 +886,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     schema: Option<SchemaRef>,
     columns: Option<Vec<String>>,
     encoding: CsvEncoding,
-    one_thread: bool,
+    n_threads: Option<usize>,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -929,6 +920,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         n_rows,
         skip_rows,
         encoding,
-        one_thread,
+        n_threads,
     ))
 }

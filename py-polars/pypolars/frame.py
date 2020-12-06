@@ -89,7 +89,7 @@ class DataFrame:
         columns: "Optional[List[str]]" = None,
         rechunk: bool = True,
         encoding: str = "utf8",
-        one_thread: bool = True,
+        n_threads: Optional[int] = None,
     ) -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_csv(
@@ -105,7 +105,7 @@ class DataFrame:
             rechunk,
             columns,
             encoding,
-            one_thread,
+            n_threads,
         )
         return self
 
