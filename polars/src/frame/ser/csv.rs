@@ -180,6 +180,7 @@ where
     schema: Option<Arc<Schema>>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
+    path: Option<String>,
 }
 
 impl<R> CsvReader<R>
@@ -268,6 +269,11 @@ where
         self
     }
 
+    pub fn with_path(mut self, path: Option<String>) -> Self {
+        self.path = path;
+        self
+    }
+
     fn build_inner_reader(self) -> Result<SequentialReader<R>> {
         build_csv_reader(
             self.reader,
@@ -283,6 +289,7 @@ where
             self.columns,
             self.encoding,
             self.n_threads,
+            self.path,
         )
     }
     /// Read the file and create the DataFrame. Used from lazy execution
@@ -322,6 +329,7 @@ where
             columns: None,
             encoding: CsvEncoding::Utf8,
             n_threads: None,
+            path: None,
         }
     }
 
@@ -352,6 +360,17 @@ mod test {
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
         assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);
+    }
+
+    #[test]
+    fn test_read_csv_file() {
+        let path = "/home/ritchie46/code/polars-book/data/10.csv";
+        let file = std::fs::File::open(path).unwrap();
+        let df = CsvReader::new(file)
+            .with_path(Some(path.to_string()))
+            .finish()
+            .unwrap();
+        dbg!(df);
     }
 
     #[test]

@@ -92,6 +92,12 @@ class DataFrame:
         n_threads: Optional[int] = None,
     ) -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
+
+        if isinstance(file, str):
+            path = file
+        else:
+            path = None
+
         self._df = PyDataFrame.read_csv(
             file,
             infer_schema_length,
@@ -106,6 +112,7 @@ class DataFrame:
             columns,
             encoding,
             n_threads,
+            path,
         )
         return self
 
