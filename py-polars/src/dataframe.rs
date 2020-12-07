@@ -53,7 +53,7 @@ impl PyDataFrame {
         columns: Option<Vec<String>>,
         encoding: &str,
         mut n_threads: Option<usize>,
-        path: Option<String>
+        path: Option<String>,
     ) -> PyResult<Self> {
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
@@ -72,9 +72,7 @@ impl PyDataFrame {
                 n_threads = Some(1);
                 Box::new(f)
             }
-            EitherRustPythonFile::Rust(f) => {
-                Box::new(f)
-            },
+            EitherRustPythonFile::Rust(f) => Box::new(f),
         };
 
         let df = CsvReader::new(file)
