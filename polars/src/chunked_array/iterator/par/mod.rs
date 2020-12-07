@@ -1,5 +1,7 @@
 use crate::chunked_array::ChunkedArray;
 
+#[macro_use]
+mod macros;
 pub mod utf8;
 
 impl<T> ChunkedArray<T> {

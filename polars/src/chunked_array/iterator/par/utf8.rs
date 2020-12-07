@@ -8,98 +8,6 @@ use rayon::iter::plumbing::*;
 use rayon::iter::plumbing::{Consumer, ProducerCallback};
 use rayon::prelude::*;
 
-/// Generate the code for Utf8Chunked parallel iterators.
-///
-/// # Input
-///
-/// parallel_iterator: The name of the structure used as parallel iterator. This structure
-///   MUST EXIST as it is not created by this macro. It must consist on a wrapper around
-///   a reference to a chunked array.
-///
-/// parallel_producer: The name used to create the parallel producer. This structure is
-///   created in this macro and is compose of three parts:
-///   - ca: a reference to the iterator chunked array.
-///   - offset: the index in the chunked array where to start to process.
-///   - len: the number of items this producer is in charge of processing.
-///
-/// sequential_iterator: The sequential iterator used to traverse the iterator once the
-///   chunked array has been divided in different cells. This structure MUST EXIST as it
-///   is not created by this macro. This iterator MUST IMPLEMENT the trait `From<parallel_producer>`.
-///
-/// iter_item: The iterator `Item`, it represents the iterator return type.
-macro_rules! impl_utf8_parallel_iterator {
-    ($parallel_iterator:ident, $parallel_producer:ident, $sequential_iterator:ty, $iter_item:ty) => {
-        impl<'a> ParallelIterator for $parallel_iterator<'a> {
-            type Item = $iter_item;
-
-            fn drive_unindexed<C>(self, consumer: C) -> C::Result
-            where
-                C: UnindexedConsumer<Self::Item>,
-            {
-                bridge(self, consumer)
-            }
-
-            fn opt_len(&self) -> Option<usize> {
-                Some(self.ca.len())
-            }
-        }
-
-        impl<'a> IndexedParallelIterator for $parallel_iterator<'a> {
-            fn len(&self) -> usize {
-                self.ca.len()
-            }
-
-            fn drive<C>(self, consumer: C) -> C::Result
-            where
-                C: Consumer<Self::Item>,
-            {
-                bridge(self, consumer)
-            }
-
-            fn with_producer<CB>(self, callback: CB) -> CB::Output
-            where
-                CB: ProducerCallback<Self::Item>,
-            {
-                callback.callback($parallel_producer {
-                    ca: &self.ca,
-                    offset: 0,
-                    len: self.ca.len(),
-                })
-            }
-        }
-
-        struct $parallel_producer<'a> {
-            ca: &'a Utf8Chunked,
-            offset: usize,
-            len: usize,
-        }
-
-        impl<'a> Producer for $parallel_producer<'a> {
-            type Item = $iter_item;
-            type IntoIter = $sequential_iterator;
-
-            fn into_iter(self) -> Self::IntoIter {
-                self.into()
-            }
-
-            fn split_at(self, index: usize) -> (Self, Self) {
-                (
-                    $parallel_producer {
-                        ca: self.ca,
-                        offset: self.offset,
-                        len: index,
-                    },
-                    $parallel_producer {
-                        ca: self.ca,
-                        offset: self.offset + index,
-                        len: self.len - index,
-                    },
-                )
-            }
-        }
-    };
-}
-
 // Implement methods to generate sequential iterators from raw parts.
 // The methods are the same for the `ReturnOption` and `ReturnUnwrap` variant.
 impl<'a> Utf8IterSingleChunk<'a> {
@@ -171,9 +79,10 @@ impl<'a> From<Utf8ProducerSingleChunkReturnOption<'a>> for SomeIterator<Utf8Iter
     }
 }
 
-impl_utf8_parallel_iterator!(
-    Utf8ParIterSingleChunkReturnOption,
-    Utf8ProducerSingleChunkReturnOption,
+impl_parallel_iterator!(
+    &'a Utf8Chunked,
+    Utf8ParIterSingleChunkReturnOption<'a>,
+    Utf8ProducerSingleChunkReturnOption<'a>,
     SomeIterator<Utf8IterSingleChunk<'a>>,
     Option<&'a str>
 );
@@ -213,9 +122,10 @@ impl<'a> From<Utf8ProducerSingleChunkNullCheckReturnOption<'a>>
     }
 }
 
-impl_utf8_parallel_iterator!(
-    Utf8ParIterSingleChunkNullCheckReturnOption,
-    Utf8ProducerSingleChunkNullCheckReturnOption,
+impl_parallel_iterator!(
+    &'a Utf8Chunked,
+    Utf8ParIterSingleChunkNullCheckReturnOption<'a>,
+    Utf8ProducerSingleChunkNullCheckReturnOption<'a>,
     Utf8IterSingleChunkNullCheck<'a>,
     Option<&'a str>
 );
@@ -246,9 +156,10 @@ impl<'a> From<Utf8ProducerManyChunkReturnOption<'a>> for SomeIterator<Utf8IterMa
     }
 }
 
-impl_utf8_parallel_iterator!(
-    Utf8ParIterManyChunkReturnOption,
-    Utf8ProducerManyChunkReturnOption,
+impl_parallel_iterator!(
+    &'a Utf8Chunked,
+    Utf8ParIterManyChunkReturnOption<'a>,
+    Utf8ProducerManyChunkReturnOption<'a>,
     SomeIterator<Utf8IterManyChunk<'a>>,
     Option<&'a str>
 );
@@ -305,131 +216,13 @@ impl<'a> From<Utf8ProducerManyChunkNullCheckReturnOption<'a>> for Utf8IterManyCh
     }
 }
 
-impl_utf8_parallel_iterator!(
-    Utf8ParIterManyChunkNullCheckReturnOption,
-    Utf8ProducerManyChunkNullCheckReturnOption,
+impl_parallel_iterator!(
+    &'a Utf8Chunked,
+    Utf8ParIterManyChunkNullCheckReturnOption<'a>,
+    Utf8ProducerManyChunkNullCheckReturnOption<'a>,
     Utf8IterManyChunkNullCheck<'a>,
     Option<&'a str>
 );
-
-/// Static dispatching structure to allow static polymorphism of chunked
-/// parallel iterators.
-///
-/// All the iterators of the dispatcher returns `Option<&'a str>`.
-pub enum Utf8ChunkParIterReturnOptionDispatch<'a> {
-    SingleChunk(Utf8ParIterSingleChunkReturnOption<'a>),
-    SingleChunkNullCheck(Utf8ParIterSingleChunkNullCheckReturnOption<'a>),
-    ManyChunk(Utf8ParIterManyChunkReturnOption<'a>),
-    ManyChunkNullCheck(Utf8ParIterManyChunkNullCheckReturnOption<'a>),
-}
-
-/// Convert `&'a Utf8Chunked` into a `ParallelIterator` using the most
-/// efficient `ParallelIterator` for the given `&'a Utf8Chunked`.
-///
-/// - If `&'a Utf8Chunked` has only a chunk and has no null values, it uses `Utf8ParIterSingleChunkReturnOption`.
-/// - If `&'a Utf8Chunked` has only a chunk and does have null values, it uses `Utf8ParIterSingleChunkNullCheckReturnOption`.
-/// - If `&'a Utf8Chunked` has many chunks and has no null values, it uses `Utf8ParIterManyChunkReturnOption`.
-/// - If `&'a Utf8Chunked` has many chunks and does have null values, it uses `Utf8ParIterManyChunkNullCheckReturnOption`.
-impl<'a> IntoParallelIterator for &'a Utf8Chunked {
-    type Iter = Utf8ChunkParIterReturnOptionDispatch<'a>;
-    type Item = Option<&'a str>;
-
-    fn into_par_iter(self) -> Self::Iter {
-        let chunks = self.downcast_chunks();
-        match chunks.len() {
-            1 => {
-                if self.null_count() == 0 {
-                    Utf8ChunkParIterReturnOptionDispatch::SingleChunk(
-                        Utf8ParIterSingleChunkReturnOption::new(self),
-                    )
-                } else {
-                    Utf8ChunkParIterReturnOptionDispatch::SingleChunkNullCheck(
-                        Utf8ParIterSingleChunkNullCheckReturnOption::new(self),
-                    )
-                }
-            }
-            _ => {
-                if self.null_count() == 0 {
-                    Utf8ChunkParIterReturnOptionDispatch::ManyChunk(
-                        Utf8ParIterManyChunkReturnOption::new(self),
-                    )
-                } else {
-                    Utf8ChunkParIterReturnOptionDispatch::ManyChunkNullCheck(
-                        Utf8ParIterManyChunkNullCheckReturnOption::new(self),
-                    )
-                }
-            }
-        }
-    }
-}
-
-impl<'a> ParallelIterator for Utf8ChunkParIterReturnOptionDispatch<'a> {
-    type Item = Option<&'a str>;
-
-    fn drive_unindexed<C>(self, consumer: C) -> C::Result
-    where
-        C: UnindexedConsumer<Self::Item>,
-    {
-        match self {
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunk(a) => a.drive_unindexed(consumer),
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunkNullCheck(a) => {
-                a.drive_unindexed(consumer)
-            }
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunk(a) => a.drive_unindexed(consumer),
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunkNullCheck(a) => {
-                a.drive_unindexed(consumer)
-            }
-        }
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        match self {
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunk(a) => a.opt_len(),
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.opt_len(),
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunk(a) => a.opt_len(),
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.opt_len(),
-        }
-    }
-}
-
-impl<'a> IndexedParallelIterator for Utf8ChunkParIterReturnOptionDispatch<'a> {
-    fn len(&self) -> usize {
-        match self {
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunk(a) => a.len(),
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.len(),
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunk(a) => a.len(),
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.len(),
-        }
-    }
-
-    fn drive<C>(self, consumer: C) -> C::Result
-    where
-        C: Consumer<Self::Item>,
-    {
-        match self {
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunk(a) => a.drive(consumer),
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunkNullCheck(a) => a.drive(consumer),
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunk(a) => a.drive(consumer),
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunkNullCheck(a) => a.drive(consumer),
-        }
-    }
-
-    fn with_producer<CB>(self, callback: CB) -> CB::Output
-    where
-        CB: ProducerCallback<Self::Item>,
-    {
-        match self {
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunk(a) => a.with_producer(callback),
-            Utf8ChunkParIterReturnOptionDispatch::SingleChunkNullCheck(a) => {
-                a.with_producer(callback)
-            }
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunk(a) => a.with_producer(callback),
-            Utf8ChunkParIterReturnOptionDispatch::ManyChunkNullCheck(a) => {
-                a.with_producer(callback)
-            }
-        }
-    }
-}
 
 /// Parallel Iterator for chunked arrays with just one chunk.
 /// The chunks cannot have null values so it does NOT perform null checks.
@@ -453,9 +246,10 @@ impl<'a> From<Utf8ProducerSingleChunkReturnUnwrapped<'a>> for Utf8IterSingleChun
     }
 }
 
-impl_utf8_parallel_iterator!(
-    Utf8ParIterSingleChunkReturnUnwrapped,
-    Utf8ProducerSingleChunkReturnUnwrapped,
+impl_parallel_iterator!(
+    &'a Utf8Chunked,
+    Utf8ParIterSingleChunkReturnUnwrapped<'a>,
+    Utf8ProducerSingleChunkReturnUnwrapped<'a>,
     Utf8IterSingleChunk<'a>,
     &'a str
 );
@@ -482,93 +276,34 @@ impl<'a> From<Utf8ProducerManyChunkReturnUnwrapped<'a>> for Utf8IterManyChunk<'a
     }
 }
 
-impl_utf8_parallel_iterator!(
-    Utf8ParIterManyChunkReturnUnwrapped,
-    Utf8ProducerManyChunkReturnUnwrapped,
+impl_parallel_iterator!(
+    &'a Utf8Chunked,
+    Utf8ParIterManyChunkReturnUnwrapped<'a>,
+    Utf8ProducerManyChunkReturnUnwrapped<'a>,
     Utf8IterManyChunk<'a>,
     &'a str
 );
 
-/// Static dispatching structure to allow static polymorphism of non-nullable chunked parallel iterators.
-///
-/// All the iterators of the dispatcher returns `&'a str`, as there are no nulls in the chunked array.
-pub enum Utf8ChunkParIterReturnUnwrapppedDispatch<'a> {
-    SingleChunk(Utf8ParIterSingleChunkReturnUnwrapped<'a>),
-    ManyChunk(Utf8ParIterManyChunkReturnUnwrapped<'a>),
-}
+// Implement into parallel iterator and into no null parallel iterator for &'a Utf8Chunked.
+// In both implementation it creates a static dispatcher which chooses the best implementation
+// of the parallel iterator, depending of the state of the chunked array.
+impl_into_par_iter!(
+    &'a Utf8Chunked,
+    Utf8ParIterDispatcher<'a>,
+    Utf8ParIterSingleChunkReturnOption<'a>,
+    Utf8ParIterSingleChunkNullCheckReturnOption<'a>,
+    Utf8ParIterManyChunkReturnOption<'a>,
+    Utf8ParIterManyChunkNullCheckReturnOption<'a>,
+    &'a str
+);
 
-/// Convert non-nullable `&'a Utf8Chunked` into a non-nullable `ParallelIterator` using the most
-/// efficient `ParallelIterator` for the given `&'a Utf8Chunked`.
-///
-/// - If `&'a Utf8Chunked` has only a chunk, it uses `Utf8ParIterSingleChunkReturnUnwrapped`.
-/// - If `&'a Utf8Chunked` has many chunks, it uses `Utf8ParIterManyChunkReturnUnwrapped`.
-impl<'a> IntoParallelIterator for NoNull<&'a Utf8Chunked> {
-    type Iter = Utf8ChunkParIterReturnUnwrapppedDispatch<'a>;
-    type Item = &'a str;
-
-    fn into_par_iter(self) -> Self::Iter {
-        let ca = self.0;
-        let chunks = ca.downcast_chunks();
-        match chunks.len() {
-            1 => Utf8ChunkParIterReturnUnwrapppedDispatch::SingleChunk(
-                Utf8ParIterSingleChunkReturnUnwrapped::new(ca),
-            ),
-            _ => Utf8ChunkParIterReturnUnwrapppedDispatch::ManyChunk(
-                Utf8ParIterManyChunkReturnUnwrapped::new(ca),
-            ),
-        }
-    }
-}
-
-impl<'a> ParallelIterator for Utf8ChunkParIterReturnUnwrapppedDispatch<'a> {
-    type Item = &'a str;
-
-    fn drive_unindexed<C>(self, consumer: C) -> C::Result
-    where
-        C: UnindexedConsumer<Self::Item>,
-    {
-        match self {
-            Utf8ChunkParIterReturnUnwrapppedDispatch::SingleChunk(a) => a.drive_unindexed(consumer),
-            Utf8ChunkParIterReturnUnwrapppedDispatch::ManyChunk(a) => a.drive_unindexed(consumer),
-        }
-    }
-
-    fn opt_len(&self) -> Option<usize> {
-        match self {
-            Utf8ChunkParIterReturnUnwrapppedDispatch::SingleChunk(a) => a.opt_len(),
-            Utf8ChunkParIterReturnUnwrapppedDispatch::ManyChunk(a) => a.opt_len(),
-        }
-    }
-}
-
-impl<'a> IndexedParallelIterator for Utf8ChunkParIterReturnUnwrapppedDispatch<'a> {
-    fn len(&self) -> usize {
-        match self {
-            Utf8ChunkParIterReturnUnwrapppedDispatch::SingleChunk(a) => a.len(),
-            Utf8ChunkParIterReturnUnwrapppedDispatch::ManyChunk(a) => a.len(),
-        }
-    }
-
-    fn drive<C>(self, consumer: C) -> C::Result
-    where
-        C: Consumer<Self::Item>,
-    {
-        match self {
-            Utf8ChunkParIterReturnUnwrapppedDispatch::SingleChunk(a) => a.drive(consumer),
-            Utf8ChunkParIterReturnUnwrapppedDispatch::ManyChunk(a) => a.drive(consumer),
-        }
-    }
-
-    fn with_producer<CB>(self, callback: CB) -> CB::Output
-    where
-        CB: ProducerCallback<Self::Item>,
-    {
-        match self {
-            Utf8ChunkParIterReturnUnwrapppedDispatch::SingleChunk(a) => a.with_producer(callback),
-            Utf8ChunkParIterReturnUnwrapppedDispatch::ManyChunk(a) => a.with_producer(callback),
-        }
-    }
-}
+impl_into_no_null_par_iter!(
+    &'a Utf8Chunked,
+    Utf8NoNullParIterDispatcher<'a>,
+    Utf8ParIterSingleChunkReturnUnwrapped<'a>,
+    Utf8ParIterManyChunkReturnUnwrapped<'a>,
+    &'a str
+);
 
 #[cfg(test)]
 mod test {
