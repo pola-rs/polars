@@ -560,7 +560,7 @@ where
 ///
 /// # Input
 ///
-/// ca_type: The chunked array for which the which the single chunks iterator is implemented.
+/// ca_type: The chunked array for which the single chunks iterator is implemented.
 /// arrow_array: The arrow type of the chunked array chunks.
 /// iterator_name: The name of the iterator struct to be implemented for a `SingleChunk` iterator.
 /// iter_item: The iterator `Item`, the type which is going to be returned by the iterator.
