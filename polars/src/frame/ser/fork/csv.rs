@@ -66,6 +66,11 @@ fn get_file_chunks(bytes: &[u8], n_threads: usize) -> Vec<(usize, usize)> {
     let mut offsets = Vec::with_capacity(n_threads);
     for _ in 0..n_threads {
         let search_pos = last_pos + chunk_size;
+
+        if search_pos >= bytes.len() {
+            break;
+        }
+
         let end_pos = match next_line_position(&bytes[search_pos..]) {
             Some(pos) => search_pos + pos,
             None => {
@@ -516,6 +521,14 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         predicate: &Option<Arc<dyn PhysicalExpr>>,
         capacity: usize,
     ) -> Result<()> {
+        if self.skip_rows > 0 {
+            let mut record = Default::default();
+            for _ in 0..self.skip_rows {
+                self.line_number += 1;
+                let _ = csv_reader.read_byte_record(&mut record);
+            }
+        }
+
         let mut builders = init_builders(&projection, capacity, &self.schema)?;
         // this will be used to amortize allocations
         // Only correctly parsed lines will fill the start of the Vec.
@@ -584,9 +597,14 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             let pos = next_line_position(bytes).expect("no newline characters found in file");
             bytes = mmap[pos..].as_ref();
         }
+        if self.skip_rows > 0 {
+            for _ in 0..self.skip_rows {
+                let pos = next_line_position(bytes).expect("no newline characters found in file");
+                bytes = bytes[pos..].as_ref();
+            }
+        }
 
         let file_chunks = get_file_chunks(bytes, n_threads);
-        dbg!(&file_chunks);
 
         let _: Result<_> = thread::scope(|s| {
             let mut handlers = Vec::with_capacity(n_threads);
@@ -663,14 +681,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(&mut self, predicate: Option<Arc<dyn PhysicalExpr>>) -> Result<DataFrame> {
         let mut record_iter = self.record_iter.take().unwrap();
-        if self.skip_rows > 0 {
-            let reader = record_iter.reader_mut();
-            let mut record = Default::default();
-            for _ in 0..self.skip_rows {
-                self.line_number += 1;
-                let _ = reader.read_byte_record(&mut record);
-            }
-        }
 
         // only take projections once
         let projection = take_projection(&mut self.projection, &self.schema);
@@ -681,7 +691,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         }
 
         let physical_cpus = num_cpus::get_physical();
-        let n_threads = std::cmp::min(physical_cpus * 4, self.n_threads.unwrap_or(physical_cpus));
+        let mut n_threads =
+            std::cmp::min(physical_cpus * 4, self.n_threads.unwrap_or(physical_cpus));
+        if self.path.is_none() || self.n_rows.is_some() {
+            n_threads = 1;
+        }
 
         // we reuse this container to amortize allocations
         let mut parsed_dfs = Vec::with_capacity(128);

@@ -53,6 +53,7 @@ use crate::frame::ser::fork::csv::{build_csv_reader, SequentialReader};
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 pub use arrow::csv::WriterBuilder;
+use std::fs::File;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -147,9 +148,8 @@ pub enum CsvEncoding {
 /// use std::fs::File;
 ///
 /// fn example() -> Result<DataFrame> {
-///     let file = File::open("iris.csv").expect("could not open file");
 ///
-///     CsvReader::new(file)
+///     CsvReader::from_path("iris_csv")?
 ///             .infer_schema(None)
 ///             .has_header(true)
 ///             .with_one_thread(true) // set this to false to try multi-threaded parsing
@@ -263,6 +263,7 @@ where
     /// Set the number of threads used in CSV reading. The default uses the number of cores of
     /// your cpu.
     ///
+    /// Note that this only works if this is initialized with `CsvReader::from_path`.
     /// Note that the number of cores is the maximum allowed number of threads.
     pub fn with_n_threads(mut self, n: Option<usize>) -> Self {
         self.n_threads = n;
@@ -305,6 +306,14 @@ where
             true => Ok(df.agg_chunks()),
             false => Ok(df),
         }
+    }
+}
+
+impl CsvReader<File> {
+    /// This is the recommended way to create a csv reader as this allows for fastest parsing.
+    pub fn from_path(path: &str) -> Result<Self> {
+        let f = std::fs::File::open(path)?;
+        Ok(Self::new(f).with_path(Some(path.to_string())))
     }
 }
 
