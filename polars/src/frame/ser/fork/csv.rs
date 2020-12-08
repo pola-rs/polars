@@ -25,6 +25,7 @@ use arrow::datatypes::SchemaRef;
 use crossbeam::thread;
 use crossbeam::thread::ScopedJoinHandle;
 use csv::{ByteRecord, ByteRecordsIntoIter, Reader};
+use num::traits::Pow;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -57,6 +58,35 @@ fn next_line_position(bytes: &[u8]) -> Option<usize> {
             }
         })
     })
+}
+
+/// Get the mean and standard deviation of length of lines in bytes
+fn get_line_stats(mut bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
+    let mut n_read = 0;
+    let mut lengths = Vec::with_capacity(n_lines);
+
+    for _ in 0..n_lines {
+        if n_read >= bytes.len() {
+            return None;
+        }
+        bytes = &bytes[n_read..];
+        match bytes.iter().position(|&b| b == b'\n') {
+            Some(position) => {
+                n_read = position + 1;
+                lengths.push(position + 1);
+            }
+            None => {
+                return None;
+            }
+        }
+    }
+    let mean = (n_read as f32) / (n_lines as f32);
+    let mut std = 0.0;
+    for &len in lengths.iter().take(n_lines) {
+        std += (len as f32 - mean).pow(2.0)
+    }
+    std = (std / n_lines as f32).pow(0.5);
+    Some((mean, std))
 }
 
 fn get_file_chunks(bytes: &[u8], n_threads: usize) -> Vec<(usize, usize)> {
@@ -604,6 +634,21 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 bytes = bytes[pos..].as_ref();
             }
         }
+        if let Some(n_rows) = self.n_rows {
+            // if None, there are less then 128 rows in the file and skipping them isn't worth the effort
+            let n_sample_lines = 128;
+            if let Some((mean, std)) = get_line_stats(bytes, n_sample_lines) {
+                // x % upper bound of byte length per line assuming normally distributed
+                let line_bound = mean + 1.1 * std;
+
+                let n_bytes = (line_bound * (n_rows as f32)) as usize;
+                if n_bytes < bytes.len() {
+                    if let Some(pos) = next_line_position(&bytes[n_bytes..]) {
+                        bytes = &bytes[..n_bytes + pos]
+                    }
+                }
+            }
+        }
 
         let file_chunks = get_file_chunks(bytes, n_threads);
 
@@ -638,6 +683,9 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         total_bytes_offset += bytes_read;
 
                         if correctly_parsed < batch_size {
+                            if correctly_parsed == 0 {
+                                break;
+                            }
                             // this only happens at the last batch if it doesn't fit a whole batch.
                             rows.truncate(correctly_parsed);
                         }
@@ -694,7 +742,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let physical_cpus = num_cpus::get_physical();
         let mut n_threads =
             std::cmp::min(physical_cpus * 4, self.n_threads.unwrap_or(physical_cpus));
-        if self.path.is_none() || self.n_rows.is_some() {
+        if self.path.is_none() {
             n_threads = 1;
         }
 
@@ -717,7 +765,22 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 n_threads,
             )?,
         }
-        utils::accumulate_dataframes_vertical(parsed_dfs)
+        let df = utils::accumulate_dataframes_vertical(parsed_dfs);
+
+        // if multi-threaded the n_rows was probabilistically determined.
+        // Let's slice to correct number of rows if possible.
+        if n_threads > 1 {
+            if let Some(n_rows) = self.n_rows {
+                return df.map(|df| {
+                    if n_rows < df.height() {
+                        df.slice(0, n_rows).unwrap()
+                    } else {
+                        df
+                    }
+                });
+            }
+        }
+        df
     }
 }
 
@@ -895,15 +958,6 @@ fn next_rows_core(
         loop {
             let (result, n_in, n_out) = reader.read_field(bytes, &mut record.out[record.n_out..]);
             match result {
-                ReadFieldResult::InputEmpty => {
-                    panic!("not finished input")
-                }
-                ReadFieldResult::End => {
-                    return (line_count, bytes_read);
-                }
-                ReadFieldResult::OutputFull => {
-                    record.resize_out_buffer();
-                }
                 ReadFieldResult::Field { record_end } => {
                     bytes_read += n_in;
                     bytes = &bytes[n_in..];
@@ -914,6 +968,12 @@ fn next_rows_core(
                         line_count += 1;
                         break;
                     }
+                }
+                ReadFieldResult::OutputFull => {
+                    record.resize_out_buffer();
+                }
+                ReadFieldResult::End | ReadFieldResult::InputEmpty => {
+                    return (line_count, bytes_read);
                 }
             }
         }

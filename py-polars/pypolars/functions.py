@@ -39,8 +39,8 @@ def read_csv(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
     stop_after_n_rows
-        After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
-        on the batch size.
+        After n rows are read from the CSV stop reading. During multi-threaded parsing, an upper bound of `n` rows
+        cannot be guaranteed.
     skip_rows
         Start reading after `skip_rows`.
     projection
@@ -100,11 +100,13 @@ def scan_csv(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
     sep
-        Delimiter/ value seperator
+        Delimiter/ value separator
     skip_rows
         Start reading after `skip_rows`.
     stop_after_n_rows
         After n rows are read from the CSV stop reading.
+        During multi-threaded parsing, an upper bound of `n` rows
+        cannot be guaranteed.
     cache
         Cache the result after reading
     """
