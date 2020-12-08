@@ -191,8 +191,8 @@ where
         self
     }
 
-    /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
-    /// sequentially.
+    /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
+    /// be guaranteed.
     pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.stop_after_n_rows = num_rows;
         self
