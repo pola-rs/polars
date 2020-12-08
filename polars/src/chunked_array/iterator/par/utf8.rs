@@ -8,301 +8,45 @@ use rayon::iter::plumbing::*;
 use rayon::iter::plumbing::{Consumer, ProducerCallback};
 use rayon::prelude::*;
 
-// Implement methods to generate sequential iterators from raw parts.
-// The methods are the same for the `ReturnOption` and `ReturnUnwrap` variant.
-impl<'a> Utf8IterSingleChunk<'a> {
-    fn from_parts(ca: &'a Utf8Chunked, offset: usize, len: usize) -> Utf8IterSingleChunk {
-        let chunks = ca.downcast_chunks();
-        let current_array = chunks[0];
-        let idx_left = offset;
-        let idx_right = offset + len;
-
-        Utf8IterSingleChunk {
-            current_array,
-            idx_left,
-            idx_right,
-        }
-    }
-}
-
-impl<'a> Utf8IterManyChunk<'a> {
-    fn from_parts(ca: &'a Utf8Chunked, offset: usize, len: usize) -> Utf8IterManyChunk {
-        let ca = ca;
-        let chunks = ca.downcast_chunks();
-        let idx_left = offset;
-        let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
-        let current_array_left = chunks[chunk_idx_left];
-        let idx_right = offset + len;
-        let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
-        let current_array_right = chunks[chunk_idx_right];
-        let current_array_left_len = current_array_left.len();
-
-        Utf8IterManyChunk {
-            ca,
-            chunks,
-            current_array_left,
-            current_array_right,
-            current_array_idx_left,
-            current_array_idx_right,
-            current_array_left_len,
-            idx_left,
-            idx_right,
-            chunk_idx_left,
-            chunk_idx_right,
-        }
-    }
-}
-
-/// Parallel Iterator for chunked arrays with just one chunk.
-/// It does NOT perform null check, then, it is appropriated
-/// for chunks whose contents are never null.
-///
-/// It returns the result wrapped in an `Option`.
-#[derive(Debug, Clone)]
-pub struct Utf8ParIterSingleChunkReturnOption<'a> {
-    ca: &'a Utf8Chunked,
-}
-
-impl<'a> Utf8ParIterSingleChunkReturnOption<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        Utf8ParIterSingleChunkReturnOption { ca }
-    }
-}
-
-impl<'a> From<Utf8ProducerSingleChunkReturnOption<'a>> for SomeIterator<Utf8IterSingleChunk<'a>> {
-    fn from(prod: Utf8ProducerSingleChunkReturnOption<'a>) -> Self {
-        SomeIterator(Utf8IterSingleChunk::from_parts(
-            prod.ca,
-            prod.offset,
-            prod.len,
-        ))
-    }
-}
-
-impl_parallel_iterator!(
+// Implement the parallel iterators for Utf8. It also implement the trait `IntoParallelIterator`
+// for `&'a Utf8Chunked` and `NoNull<&'a Utf8Chunked>`, which use static dispatcher to use
+// the best implementation of parallel iterators depending on the number of chunks and the
+// existence of null values.
+impl_all_parallel_iterators!(
+    // Chunked array.
     &'a Utf8Chunked,
-    Utf8ParIterSingleChunkReturnOption<'a>,
-    Utf8ProducerSingleChunkReturnOption<'a>,
-    SomeIterator<Utf8IterSingleChunk<'a>>,
-    Option<&'a str>
-);
 
-/// Parallel Iterator for chunked arrays with just one chunk.
-/// It DOES perform null check, then, it is appropriated
-/// for chunks whose contents can be null.
-///
-/// It returns the result wrapped in an `Option`.
-#[derive(Debug, Clone)]
-pub struct Utf8ParIterSingleChunkNullCheckReturnOption<'a> {
-    ca: &'a Utf8Chunked,
-}
-
-impl<'a> Utf8ParIterSingleChunkNullCheckReturnOption<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        Utf8ParIterSingleChunkNullCheckReturnOption { ca }
-    }
-}
-
-impl<'a> From<Utf8ProducerSingleChunkNullCheckReturnOption<'a>>
-    for Utf8IterSingleChunkNullCheck<'a>
-{
-    fn from(prod: Utf8ProducerSingleChunkNullCheckReturnOption<'a>) -> Self {
-        let chunks = prod.ca.downcast_chunks();
-        let current_array = chunks[0];
-        let current_data = current_array.data();
-        let idx_left = prod.offset;
-        let idx_right = prod.offset + prod.len;
-
-        Utf8IterSingleChunkNullCheck {
-            current_data,
-            current_array,
-            idx_left,
-            idx_right,
-        }
-    }
-}
-
-impl_parallel_iterator!(
-    &'a Utf8Chunked,
-    Utf8ParIterSingleChunkNullCheckReturnOption<'a>,
-    Utf8ProducerSingleChunkNullCheckReturnOption<'a>,
-    Utf8IterSingleChunkNullCheck<'a>,
-    Option<&'a str>
-);
-
-/// Parallel Iterator for chunked arrays with more than one chunk.
-/// It does NOT perform null check, then, it is appropriated
-/// for chunks whose contents are never null.
-///
-/// It returns the result wrapped in an `Option`.
-#[derive(Debug, Clone)]
-pub struct Utf8ParIterManyChunkReturnOption<'a> {
-    ca: &'a Utf8Chunked,
-}
-
-impl<'a> Utf8ParIterManyChunkReturnOption<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        Utf8ParIterManyChunkReturnOption { ca }
-    }
-}
-
-impl<'a> From<Utf8ProducerManyChunkReturnOption<'a>> for SomeIterator<Utf8IterManyChunk<'a>> {
-    fn from(prod: Utf8ProducerManyChunkReturnOption<'a>) -> Self {
-        SomeIterator(Utf8IterManyChunk::from_parts(
-            prod.ca,
-            prod.offset,
-            prod.len,
-        ))
-    }
-}
-
-impl_parallel_iterator!(
-    &'a Utf8Chunked,
-    Utf8ParIterManyChunkReturnOption<'a>,
-    Utf8ProducerManyChunkReturnOption<'a>,
-    SomeIterator<Utf8IterManyChunk<'a>>,
-    Option<&'a str>
-);
-
-/// Parallel Iterator for chunked arrays with more than one chunk.
-/// It DOES perform null check, then, it is appropriated
-/// for chunks whose contents can be null.
-///
-/// It returns the result wrapped in an `Option`.
-#[derive(Debug, Clone)]
-pub struct Utf8ParIterManyChunkNullCheckReturnOption<'a> {
-    ca: &'a Utf8Chunked,
-}
-
-impl<'a> Utf8ParIterManyChunkNullCheckReturnOption<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        Utf8ParIterManyChunkNullCheckReturnOption { ca }
-    }
-}
-
-impl<'a> From<Utf8ProducerManyChunkNullCheckReturnOption<'a>> for Utf8IterManyChunkNullCheck<'a> {
-    fn from(prod: Utf8ProducerManyChunkNullCheckReturnOption<'a>) -> Self {
-        let ca = prod.ca;
-        let chunks = ca.downcast_chunks();
-
-        // Compute left chunk indexes.
-        let idx_left = prod.offset;
-        let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
-        let current_array_left = chunks[chunk_idx_left];
-        let current_data_left = current_array_left.data();
-        let current_array_left_len = current_array_left.len();
-
-        // Compute right chunk indexes.
-        let idx_right = prod.offset + prod.len;
-        let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
-        let current_array_right = chunks[chunk_idx_right];
-        let current_data_right = current_array_right.data();
-
-        Utf8IterManyChunkNullCheck {
-            ca,
-            chunks,
-            current_data_left,
-            current_array_left,
-            current_data_right,
-            current_array_right,
-            current_array_idx_left,
-            current_array_idx_right,
-            current_array_left_len,
-            idx_left,
-            idx_right,
-            chunk_idx_left,
-            chunk_idx_right,
-        }
-    }
-}
-
-impl_parallel_iterator!(
-    &'a Utf8Chunked,
-    Utf8ParIterManyChunkNullCheckReturnOption<'a>,
-    Utf8ProducerManyChunkNullCheckReturnOption<'a>,
-    Utf8IterManyChunkNullCheck<'a>,
-    Option<&'a str>
-);
-
-/// Parallel Iterator for chunked arrays with just one chunk.
-/// The chunks cannot have null values so it does NOT perform null checks.
-///
-/// The return type is `&'a str`. So this structure cannot be handled by the `Utf8ChunkParIterReturnOptionDispatch` but
-/// by `Utf8ParChunkIterReturnOptionUnwrapped` which is aimed for non-nullable chunked arrays.
-#[derive(Debug, Clone)]
-pub struct Utf8ParIterSingleChunkReturnUnwrapped<'a> {
-    ca: &'a Utf8Chunked,
-}
-
-impl<'a> Utf8ParIterSingleChunkReturnUnwrapped<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        Utf8ParIterSingleChunkReturnUnwrapped { ca }
-    }
-}
-
-impl<'a> From<Utf8ProducerSingleChunkReturnUnwrapped<'a>> for Utf8IterSingleChunk<'a> {
-    fn from(prod: Utf8ProducerSingleChunkReturnUnwrapped<'a>) -> Self {
-        Utf8IterSingleChunk::from_parts(prod.ca, prod.offset, prod.len)
-    }
-}
-
-impl_parallel_iterator!(
-    &'a Utf8Chunked,
-    Utf8ParIterSingleChunkReturnUnwrapped<'a>,
-    Utf8ProducerSingleChunkReturnUnwrapped<'a>,
+    // Sequential iterators.
     Utf8IterSingleChunk<'a>,
-    &'a str
-);
-
-/// Parallel Iterator for chunked arrays with many chunk.
-/// The chunks cannot have null values so it does NOT perform null checks.
-///
-/// The return type is `&'a str`. So this structure cannot be handled by the `Utf8ChunkParIterReturnOptionDispatch` but
-/// by `Utf8ChunkParIterReturnUnwrapppedDispatch` which is aimed for non-nullable chunked arrays.
-#[derive(Debug, Clone)]
-pub struct Utf8ParIterManyChunkReturnUnwrapped<'a> {
-    ca: &'a Utf8Chunked,
-}
-
-impl<'a> Utf8ParIterManyChunkReturnUnwrapped<'a> {
-    fn new(ca: &'a Utf8Chunked) -> Self {
-        Utf8ParIterManyChunkReturnUnwrapped { ca }
-    }
-}
-
-impl<'a> From<Utf8ProducerManyChunkReturnUnwrapped<'a>> for Utf8IterManyChunk<'a> {
-    fn from(prod: Utf8ProducerManyChunkReturnUnwrapped<'a>) -> Self {
-        Utf8IterManyChunk::from_parts(prod.ca, prod.offset, prod.len)
-    }
-}
-
-impl_parallel_iterator!(
-    &'a Utf8Chunked,
-    Utf8ParIterManyChunkReturnUnwrapped<'a>,
-    Utf8ProducerManyChunkReturnUnwrapped<'a>,
+    Utf8IterSingleChunkNullCheck<'a>,
     Utf8IterManyChunk<'a>,
-    &'a str
-);
+    Utf8IterManyChunkNullCheck<'a>,
 
-// Implement into parallel iterator and into no null parallel iterator for &'a Utf8Chunked.
-// In both implementation it creates a static dispatcher which chooses the best implementation
-// of the parallel iterator, depending of the state of the chunked array.
-impl_into_par_iter!(
-    &'a Utf8Chunked,
-    Utf8ParIterDispatcher<'a>,
-    Utf8ParIterSingleChunkReturnOption<'a>,
-    Utf8ParIterSingleChunkNullCheckReturnOption<'a>,
-    Utf8ParIterManyChunkReturnOption<'a>,
-    Utf8ParIterManyChunkNullCheckReturnOption<'a>,
-    &'a str
-);
+    // Parallel iterators.
+    Utf8ParIterSingleChunkReturnOption,
+    Utf8ParIterSingleChunkNullCheckReturnOption,
+    Utf8ParIterManyChunkReturnOption,
+    Utf8ParIterManyChunkNullCheckReturnOption,
+    Utf8ParIterSingleChunkReturnUnwrapped,
+    Utf8ParIterManyChunkReturnUnwrapped,
 
-impl_into_no_null_par_iter!(
-    &'a Utf8Chunked,
-    Utf8NoNullParIterDispatcher<'a>,
-    Utf8ParIterSingleChunkReturnUnwrapped<'a>,
-    Utf8ParIterManyChunkReturnUnwrapped<'a>,
-    &'a str
+    // Producers.
+    Utf8ProducerSingleChunkReturnOption,
+    Utf8ProducerSingleChunkNullCheckReturnOption,
+    Utf8ProducerManyChunkReturnOption,
+    Utf8ProducerManyChunkNullCheckReturnOption,
+    Utf8ProducerSingleChunkReturnUnwrapped,
+    Utf8ProducerManyChunkReturnUnwrapped,
+
+    // Dispatchers.
+    Utf8ParIterDispatcher,
+    Utf8NoNullParIterDispatcher,
+
+    // Iter item.
+    &'a str,
+
+    // Lifetime.
+    lifetime = 'a
 );
 
 #[cfg(test)]

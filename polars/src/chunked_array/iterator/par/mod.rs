@@ -3,6 +3,8 @@ use crate::chunked_array::ChunkedArray;
 #[macro_use]
 mod macros;
 pub mod utf8;
+pub mod boolean;
+pub mod list;
 
 impl<T> ChunkedArray<T> {
     /// Helper function for parallel iterators. It computes the chunk index and the index inside that chunk, for right

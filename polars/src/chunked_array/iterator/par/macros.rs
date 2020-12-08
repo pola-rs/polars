@@ -1,5 +1,408 @@
 //! This module defines the macros used to implement parallel iterators.
 
+/// Implement all parallel iterators and producers for a given chunked array. It also implements the
+/// `IntoParallelIterator` trait for `ca_type` and for `NoNull<ca_type>`.
+/// It will implement and iterator and a producer for the followin chunke arrays:
+/// - Chunked arrays with one chunk without null value, which returns the value wrapped in an `Option`.
+/// - Chunked arrays with one chunk with null values, which returns the value wrapped in an `Option`.
+/// - Chunked arrays with many chunks without null value, which returns the value wrapped in an `Option`.
+/// - Chunked arrays with many chunks with null values, which returns the value wrapped in an `Option`.
+/// - Chunked arrays with one chunk without null value, which returns the value unwrapped.
+/// - Chunked arrays with many chunk with null values, which returns the value unwrapped.
+///
+/// # Input
+///
+/// ca_type: The chunked array for which implement all the parallel iterators.
+///
+/// seq_iter_single_chunk: The sequential iterator type for a chunked array with one chunk and without null values.
+///   It is a type, so it MUST exist and its lifetime, if any, shall be included.
+/// seq_iter_single_chunk_null_check: The sequential iterator type for a chunked array with one chunk and with 
+///   null values. It is a type, so it MUST exist and its lifetime, if any, shall be included.
+/// seq_iter_many_chunk: The sequential iterator type for a chunked array with many chunks and without null values.
+///   It is a type, so it MUST exist and its lifetime, if any, shall be included.
+/// seq_iter_many_chunk_null_check: The sequential iterator type for a chunked array with many chunks and with 
+///   null values. It is a type, so it MUST exist and its lifetime, if any, shall be included.
+///
+/// par_iter_single_chunk_return_option: The parallel iterator for chunked arrays with one chunk and no null values.
+///   This parallel iterator return values wrapped in an `Option`. Name must be unique.
+/// par_iter_single_chunk_null_check_return_option: The parallel iterator for chunked arrays with one chunk and
+///   null values. This parallel iterator return valuew wrapped in an `Option`. Name must be unique.
+/// par_iter_many_chunk_return_option: The parallel iterator for chunked arrays with many chunks and no null values.
+///   This parallel iterator return values wrapped in an `Option`. Name must be unique.
+/// par_iter_many_chunk_null_check_return_option: The parallel iterator for chunked arrays with many chunks and
+///   null values. This parallel iterator return valuew wrapped in an `Option`. Name must be unique.
+/// par_iter_single_chunk_return_unwrapped: The parallel iterator for chunked arrays with one chunk and no null values.
+///   This parallel iterator return values unwrapped. Name must be unique.
+/// par_iter_many_chunk_return_unwrapped: The parallel iterator for chunked arrays with many chunks and no null values.
+///   This parallel iterator return values unwrapped. Name must be unique.
+///
+/// producer_single_chunk_return_option: Producer for `par_iter_single_chunk_return_option`. Name must be unique.
+/// producer_single_chunk_null_check_return_option: Producer for `par_iter_single_chunk_null_check_return_option`.
+///   Name must be unique.
+/// producer_many_chunk_return_option: Producer for `par_iter_many_chunk_return_option`. Name must be unique.
+/// producer_many_chunk_null_check_return_option: Producer for `par_iter_many_chunk_null_check_return_option`.
+///   Name must be unique.
+/// producer_single_chunk_return_unwrapped: Producer for `par_iter_single_chunk_return_unwrapped`. Name must be unique.
+/// producer_many_chunk_return_unwrapped: Producer for `par_iter_many_chunk_return_unwrapped`. Name must be unique.
+///
+/// into_par_iter_dispatcher: Static dispatcher for `IntoParallelIterator` trait for `ca_type`. Name must be unique.
+/// into_no_null_par_iter_dispatcher: Static dispatcher for `IntoParallelIterator` trait for `NoNull<ca_type>`.
+///   Name must be unique.
+///
+/// iter_item: The type returned by this parallel iterator.
+///
+/// lifetime: Optional keyword argument. It is the lifetime that will be applied to the new created classes.
+///   It shall match the `ca_type` lifetime.
+macro_rules! impl_all_parallel_iterators {
+    (
+        // Chunked array.
+        $ca_type:ty,
+
+        // Sequential iterators.
+        $seq_iter_single_chunk:ty,
+        $seq_iter_single_chunk_null_check:ty,
+        $seq_iter_many_chunk:ty,
+        $seq_iter_many_chunk_null_check:ty,
+
+        // Parallel iterators.
+        $par_iter_single_chunk_return_option:ident,
+        $par_iter_single_chunk_null_check_return_option:ident,
+        $par_iter_many_chunk_return_option:ident,
+        $par_iter_many_chunk_null_check_return_option:ident,
+        $par_iter_single_chunk_return_unwrapped:ident,
+        $par_iter_many_chunk_return_unwrapped:ident,
+
+        // Producers.
+        $producer_single_chunk_return_option:ident,
+        $producer_single_chunk_null_check_return_option:ident,
+        $producer_many_chunk_return_option:ident,
+        $producer_many_chunk_null_check_return_option:ident,
+        $producer_single_chunk_return_unwrapped:ident,
+        $producer_many_chunk_return_unwrapped:ident,
+
+        // Dispatchers.
+        $into_par_iter_dispatcher:ident,
+        $into_no_null_par_iter_dispatcher:ident,
+
+        // Item iterator.
+        $iter_item:ty
+
+        // Optional lifetime.
+        $(, lifetime = $lifetime:lifetime )?
+    ) => {
+        // Implement methods to generate sequential iterators from raw parts.
+        // The methods are the same for the `ReturnOption` and `ReturnUnwrap` variant.
+        impl<$( $lifetime )?> $seq_iter_single_chunk {
+            fn from_parts(ca: $ca_type, offset: usize, len: usize) -> Self {
+                let chunks = ca.downcast_chunks();
+                let current_array = chunks[0];
+                let idx_left = offset;
+                let idx_right = offset + len;
+        
+                Self {
+                    current_array,
+                    idx_left,
+                    idx_right,
+                }
+            }
+        }
+        
+        impl<$( $lifetime )?> $seq_iter_many_chunk {
+            fn from_parts(ca: $ca_type, offset: usize, len: usize) -> Self {
+                let ca = ca;
+                let chunks = ca.downcast_chunks();
+                let idx_left = offset;
+                let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
+                let current_array_left = chunks[chunk_idx_left];
+                let idx_right = offset + len;
+                let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
+                let current_array_right = chunks[chunk_idx_right];
+                let current_array_left_len = current_array_left.len();
+        
+                Self {
+                    ca,
+                    chunks,
+                    current_array_left,
+                    current_array_right,
+                    current_array_idx_left,
+                    current_array_idx_right,
+                    current_array_left_len,
+                    idx_left,
+                    idx_right,
+                    chunk_idx_left,
+                    chunk_idx_right,
+                }
+            }
+        }
+        
+        /// Parallel Iterator for chunked arrays with just one chunk.
+        /// It does NOT perform null check, then, it is appropriated for chunks whose contents are never null.
+        ///
+        /// It returns the result wrapped in an `Option`.
+        #[derive(Debug, Clone)]
+        pub struct $par_iter_single_chunk_return_option<$( $lifetime )?> {
+            ca: $ca_type,
+        }
+        
+        impl<$( $lifetime )?> $par_iter_single_chunk_return_option<$( $lifetime )?> {
+            fn new(ca: $ca_type) -> Self {
+                Self { ca }
+            }
+        }
+        
+        impl<$( $lifetime )?> From<$producer_single_chunk_return_option<$( $lifetime )?>>
+            for SomeIterator<$seq_iter_single_chunk> 
+        {
+            fn from(prod: $producer_single_chunk_return_option<$( $lifetime )?>) -> Self {
+                SomeIterator(<$seq_iter_single_chunk>::from_parts(
+                    prod.ca,
+                    prod.offset,
+                    prod.len,
+                ))
+            }
+        }
+        
+        impl_parallel_iterator!(
+            $ca_type,
+            $par_iter_single_chunk_return_option<$( $lifetime )?>,
+            $producer_single_chunk_return_option,
+            SomeIterator<$seq_iter_single_chunk>,
+            Option<$iter_item>
+            $(, lifetime =  $lifetime )?
+        );
+        
+        /// Parallel Iterator for chunked arrays with just one chunk.
+        /// It DOES perform null check, then, it is appropriated for chunks whose contents can be null.
+        ///
+        /// It returns the result wrapped in an `Option`.
+        #[derive(Debug, Clone)]
+        pub struct $par_iter_single_chunk_null_check_return_option<$( $lifetime )?> {
+            ca: $ca_type,
+        }
+        
+        impl<$( $lifetime )?> $par_iter_single_chunk_null_check_return_option<$( $lifetime )?> {
+            fn new(ca: $ca_type) -> Self {
+                Self { ca }
+            }
+        }
+        
+        impl<$( $lifetime )?> From<$producer_single_chunk_null_check_return_option<$( $lifetime )?>>
+            for $seq_iter_single_chunk_null_check
+        {
+            fn from(prod: $producer_single_chunk_null_check_return_option<$( $lifetime )?>) -> Self {
+                let chunks = prod.ca.downcast_chunks();
+                let current_array = chunks[0];
+                let current_data = current_array.data();
+                let idx_left = prod.offset;
+                let idx_right = prod.offset + prod.len;
+        
+                Self {
+                    current_data,
+                    current_array,
+                    idx_left,
+                    idx_right,
+                }
+            }
+        }
+        
+        impl_parallel_iterator!(
+            $ca_type,
+            $par_iter_single_chunk_null_check_return_option<$( $lifetime )?>,
+            $producer_single_chunk_null_check_return_option,
+            $seq_iter_single_chunk_null_check,
+            Option<$iter_item>
+            $(, lifetime =  $lifetime )?
+        );
+        
+        /// Parallel Iterator for chunked arrays with more than one chunk.
+        /// It does NOT perform null check, then, it is appropriated for chunks whose contents are never null.
+        ///
+        /// It returns the result wrapped in an `Option`.
+        #[derive(Debug, Clone)]
+        pub struct $par_iter_many_chunk_return_option<$( $lifetime )?> {
+            ca: $ca_type,
+        }
+        
+        impl<$( $lifetime )?> $par_iter_many_chunk_return_option<$( $lifetime )?> {
+            fn new(ca: $ca_type) -> Self {
+                Self { ca }
+            }
+        }
+        
+        impl<$( $lifetime )?> From<$producer_many_chunk_return_option<$( $lifetime )?>> 
+            for SomeIterator<$seq_iter_many_chunk> 
+        {
+            fn from(prod: $producer_many_chunk_return_option<$( $lifetime )?>) -> Self {
+                SomeIterator(<$seq_iter_many_chunk>::from_parts(
+                    prod.ca,
+                    prod.offset,
+                    prod.len,
+                ))
+            }
+        }
+        
+        impl_parallel_iterator!(
+            $ca_type,
+            $par_iter_many_chunk_return_option<$( $lifetime )?>,
+            $producer_many_chunk_return_option,
+            SomeIterator<$seq_iter_many_chunk>,
+            Option<$iter_item>
+            $(, lifetime =  $lifetime )?
+        );
+        
+        /// Parallel Iterator for chunked arrays with more than one chunk.
+        /// It DOES perform null check, then, it is appropriated for chunks whose contents can be null.
+        ///
+        /// It returns the result wrapped in an `Option`.
+        #[derive(Debug, Clone)]
+        pub struct $par_iter_many_chunk_null_check_return_option<$( $lifetime )?> {
+            ca: $ca_type,
+        }
+        
+        impl<$( $lifetime )?> $par_iter_many_chunk_null_check_return_option<$( $lifetime )?> {
+            fn new(ca: $ca_type) -> Self {
+                Self { ca }
+            }
+        }
+        
+        impl<$( $lifetime )?> From<$producer_many_chunk_null_check_return_option<$( $lifetime )?>>
+            for $seq_iter_many_chunk_null_check
+        {
+            fn from(prod: $producer_many_chunk_null_check_return_option<$( $lifetime )?>) -> Self {
+                let ca = prod.ca;
+                let chunks = ca.downcast_chunks();
+        
+                // Compute left chunk indexes.
+                let idx_left = prod.offset;
+                let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
+                let current_array_left = chunks[chunk_idx_left];
+                let current_data_left = current_array_left.data();
+                let current_array_left_len = current_array_left.len();
+        
+                // Compute right chunk indexes.
+                let idx_right = prod.offset + prod.len;
+                let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
+                let current_array_right = chunks[chunk_idx_right];
+                let current_data_right = current_array_right.data();
+        
+                Self {
+                    ca,
+                    chunks,
+                    current_data_left,
+                    current_array_left,
+                    current_data_right,
+                    current_array_right,
+                    current_array_idx_left,
+                    current_array_idx_right,
+                    current_array_left_len,
+                    idx_left,
+                    idx_right,
+                    chunk_idx_left,
+                    chunk_idx_right,
+                }
+            }
+        }
+        
+        impl_parallel_iterator!(
+            $ca_type,
+            $par_iter_many_chunk_null_check_return_option<$( $lifetime )?>,
+            $producer_many_chunk_null_check_return_option,
+            $seq_iter_many_chunk_null_check,
+            Option<$iter_item>
+            $(, lifetime =  $lifetime )?
+        );
+        
+        /// Parallel Iterator for chunked arrays with just one chunk.
+        /// The chunks cannot have null values so it does NOT perform null checks.
+        ///
+        /// The return type is `$iter_item`. So this structure cannot be handled by the `$into_par_iter_dispatcher` but
+        /// by `$into_no_null_par_iter_dispatcher` which is aimed for non-nullable chunked arrays.
+        #[derive(Debug, Clone)]
+        pub struct $par_iter_single_chunk_return_unwrapped<$( $lifetime )?> {
+            ca: $ca_type,
+        }
+        
+        impl<$( $lifetime )?> $par_iter_single_chunk_return_unwrapped<$( $lifetime )?> {
+            fn new(ca: $ca_type) -> Self {
+                Self { ca }
+            }
+        }
+        
+        impl<$( $lifetime )?> From<$producer_single_chunk_return_unwrapped<$( $lifetime )?>>
+            for $seq_iter_single_chunk 
+        {
+            fn from(prod: $producer_single_chunk_return_unwrapped<$( $lifetime )?>) -> Self {
+                Self::from_parts(prod.ca, prod.offset, prod.len)
+            }
+        }
+        
+        impl_parallel_iterator!(
+            $ca_type,
+            $par_iter_single_chunk_return_unwrapped<$( $lifetime )?>,
+            $producer_single_chunk_return_unwrapped,
+            $seq_iter_single_chunk,
+            $iter_item
+            $(, lifetime =  $lifetime )?
+        );
+        
+        /// Parallel Iterator for chunked arrays with many chunk.
+        /// The chunks cannot have null values so it does NOT perform null checks.
+        ///
+        /// The return type is `$iter_item`. So this structure cannot be handled by the `$into_par_iter_dispatcher` but
+        /// by `$into_no_null_par_iter_dispatcher` which is aimed for non-nullable chunked arrays.
+        #[derive(Debug, Clone)]
+        pub struct $par_iter_many_chunk_return_unwrapped<$( $lifetime )?> {
+            ca: $ca_type,
+        }
+        
+        impl<$( $lifetime )?> $par_iter_many_chunk_return_unwrapped<$( $lifetime )?> {
+            fn new(ca: $ca_type) -> Self {
+                Self { ca }
+            }
+        }
+        
+        impl<$( $lifetime )?> From<$producer_many_chunk_return_unwrapped<$( $lifetime )?>>
+            for $seq_iter_many_chunk
+        {
+            fn from(prod: $producer_many_chunk_return_unwrapped<$( $lifetime )?>) -> Self {
+                Self::from_parts(prod.ca, prod.offset, prod.len)
+            }
+        }
+        
+        impl_parallel_iterator!(
+            $ca_type,
+            $par_iter_many_chunk_return_unwrapped<$( $lifetime )?>,
+            $producer_many_chunk_return_unwrapped,
+            $seq_iter_many_chunk,
+            $iter_item
+            $(, lifetime =  $lifetime )?
+        );
+        
+        // Implement into parallel iterator and into no null parallel iterator for $ca_type.
+        // In both implementation it creates a static dispatcher which chooses the best implementation
+        // of the parallel iterator, depending of the state of the chunked array.
+        impl_into_par_iter!(
+            $ca_type,
+            $into_par_iter_dispatcher,
+            $par_iter_single_chunk_return_option<$( $lifetime )?>,
+            $par_iter_single_chunk_null_check_return_option<$( $lifetime )?>,
+            $par_iter_many_chunk_return_option<$( $lifetime )?>,
+            $par_iter_many_chunk_null_check_return_option<$( $lifetime )?>,
+            $iter_item
+            $(, lifetime =  $lifetime )?
+        );
+        
+        impl_into_no_null_par_iter!(
+            $ca_type,
+            $into_no_null_par_iter_dispatcher,
+            $par_iter_single_chunk_return_unwrapped<$( $lifetime )?>,
+            $par_iter_many_chunk_return_unwrapped<$( $lifetime )?>,
+            $iter_item
+            $(, lifetime =  $lifetime )?
+        );
+    };
+}
+
 /// Generate the code for non-aligned parallel iterators.
 ///
 /// # Input
@@ -16,13 +419,16 @@
 ///   divided in different producer. This structure MUST EXIST as it is not created by this macro.
 ///   This iterator MUST IMPLEMENT the trait `From<producer>`.
 /// iter_item: The iterator `Item`, it represents the iterator return type.
+/// lifetime: Optional keyword argument. It is the lifetime that will be applied to the new created classes.
+///   It shall match the `ca_type` lifetime.
 macro_rules! impl_parallel_iterator {
     (
         $ca_type:ty,
         $par_iter:ty ,
-        $producer:ident $( < $lifetime:lifetime > )?,
+        $producer:ident, 
         $seq_iter:ty,
         $iter_item:ty
+        $(, lifetime = $lifetime:lifetime )?
     ) => {
         impl<$( $lifetime )?> ParallelIterator for $par_iter {
             type Item = $iter_item;
@@ -107,22 +513,24 @@ macro_rules! impl_parallel_iterator {
 ///
 /// ca_type: The chunked array for which the `IntoParallelIterator` implemented.
 /// dispatcher: The name of the static dispatcher to be created to implement the `IntoParallelIterator`.
-///   It can contain an optional lifetime.
 /// single_chunk_return_option: A parallel iterator for chunked arrays with just one chunk and no null values.
 /// single_chunk_null_check_return_option: A parallel iterator for chunked arrays with just one chunk and null values.
 /// many_chunk_return_option: A parallel iterator for chunked arrays with many chunks and no null values.
 /// many_chunk_null_check_return_option: A parallel iterator for chunked arrays with many chunks and null values.
 /// iter_item: The iterator `Item`, it represents the iterator return type. It will be wrapped into
 ///   an `Option<iter_type>`.
+/// lifetime: Optional keyword argument. It is the lifetime that will be applied to the new created classes.
+///   It shall match the `ca_type` lifetime.
 macro_rules! impl_into_par_iter {
     (
         $ca_type:ty,
-        $dispatcher:ident $( < $lifetime:lifetime > )?,
+        $dispatcher:ident,
         $single_chunk_return_option:ty,
         $single_chunk_null_check_return_option:ty,
         $many_chunk_return_option:ty,
         $many_chunk_null_check_return_option:ty,
         $iter_item:ty
+        $(, lifetime = $lifetime:lifetime )?
     ) => {
         /// Static dispatching structure to allow static polymorphism of chunked parallel iterators.
         ///
@@ -247,17 +655,19 @@ macro_rules! impl_into_par_iter {
 ///
 /// ca_type: The chunked array for which the `IntoParallelIterator` implemented.
 /// dispatcher: The name of the static dispatcher to be created to implement the `IntoParallelIterator`.
-///   It can contain an optional lifetime.
 /// single_chunk_return_unwrapped: A parallel iterator for chunked arrays with just one chunk and no null values.
 /// many_chunk_return_unwrapped: A parallel iterator for chunked arrays with many chunks and no null values.
 /// iter_item: The iterator `Item`, it represents the iterator return type.
+/// lifetime: Optional keyword argument. It is the lifetime that will be applied to the new created classes.
+///   It shall match the `ca_type` lifetime.
 macro_rules! impl_into_no_null_par_iter {
     (
         $ca_type:ty,
-        $dispatcher:ident $( < $lifetime:lifetime > )?,
+        $dispatcher:ident,
         $single_chunk_return_unwrapped:ty,
         $many_chunk_return_unwrapped:ty,
         $iter_item:ty
+        $(, lifetime = $lifetime:lifetime )?
     ) => {
         /// Static dispatching structure to allow static polymorphism of non-nullable chunked parallel iterators.
         ///
