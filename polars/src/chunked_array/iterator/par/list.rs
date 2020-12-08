@@ -1,6 +1,6 @@
 use crate::chunked_array::iterator::{
-    SomeIterator, ListIterManyChunk, ListIterManyChunkNullCheck, ListIterSingleChunk,
-    ListIterSingleChunkNullCheck,
+    ListIterManyChunk, ListIterManyChunkNullCheck, ListIterSingleChunk,
+    ListIterSingleChunkNullCheck, SomeIterator,
 };
 use crate::prelude::*;
 use arrow::array::Array;
@@ -8,7 +8,7 @@ use rayon::iter::plumbing::*;
 use rayon::iter::plumbing::{Consumer, ProducerCallback};
 use rayon::prelude::*;
 
-// Implement the parallel iterators for Utf8. It also implement the trait `IntoParallelIterator`
+// Implement the parallel iterators for Seriesº. It also implement the trait `IntoParallelIterator`
 // for `&'a ListChunked` and `NoNull<&'a ListChunked>`, which use static dispatcher to use
 // the best implementation of parallel iterators depending on the number of chunks and the
 // existence of null values.

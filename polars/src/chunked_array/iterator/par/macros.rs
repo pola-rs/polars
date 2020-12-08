@@ -16,11 +16,11 @@
 ///
 /// seq_iter_single_chunk: The sequential iterator type for a chunked array with one chunk and without null values.
 ///   It is a type, so it MUST exist and its lifetime, if any, shall be included.
-/// seq_iter_single_chunk_null_check: The sequential iterator type for a chunked array with one chunk and with 
+/// seq_iter_single_chunk_null_check: The sequential iterator type for a chunked array with one chunk and with
 ///   null values. It is a type, so it MUST exist and its lifetime, if any, shall be included.
 /// seq_iter_many_chunk: The sequential iterator type for a chunked array with many chunks and without null values.
 ///   It is a type, so it MUST exist and its lifetime, if any, shall be included.
-/// seq_iter_many_chunk_null_check: The sequential iterator type for a chunked array with many chunks and with 
+/// seq_iter_many_chunk_null_check: The sequential iterator type for a chunked array with many chunks and with
 ///   null values. It is a type, so it MUST exist and its lifetime, if any, shall be included.
 ///
 /// par_iter_single_chunk_return_option: The parallel iterator for chunked arrays with one chunk and no null values.
@@ -98,7 +98,7 @@ macro_rules! impl_all_parallel_iterators {
                 let current_array = chunks[0];
                 let idx_left = offset;
                 let idx_right = offset + len;
-        
+
                 Self {
                     current_array,
                     idx_left,
@@ -106,7 +106,7 @@ macro_rules! impl_all_parallel_iterators {
                 }
             }
         }
-        
+
         impl<$( $lifetime )?> $seq_iter_many_chunk {
             fn from_parts(ca: $ca_type, offset: usize, len: usize) -> Self {
                 let ca = ca;
@@ -118,7 +118,7 @@ macro_rules! impl_all_parallel_iterators {
                 let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
                 let current_array_right = chunks[chunk_idx_right];
                 let current_array_left_len = current_array_left.len();
-        
+
                 Self {
                     ca,
                     chunks,
@@ -134,7 +134,7 @@ macro_rules! impl_all_parallel_iterators {
                 }
             }
         }
-        
+
         /// Parallel Iterator for chunked arrays with just one chunk.
         /// It does NOT perform null check, then, it is appropriated for chunks whose contents are never null.
         ///
@@ -143,15 +143,15 @@ macro_rules! impl_all_parallel_iterators {
         pub struct $par_iter_single_chunk_return_option<$( $lifetime )?> {
             ca: $ca_type,
         }
-        
+
         impl<$( $lifetime )?> $par_iter_single_chunk_return_option<$( $lifetime )?> {
             fn new(ca: $ca_type) -> Self {
                 Self { ca }
             }
         }
-        
+
         impl<$( $lifetime )?> From<$producer_single_chunk_return_option<$( $lifetime )?>>
-            for SomeIterator<$seq_iter_single_chunk> 
+            for SomeIterator<$seq_iter_single_chunk>
         {
             fn from(prod: $producer_single_chunk_return_option<$( $lifetime )?>) -> Self {
                 SomeIterator(<$seq_iter_single_chunk>::from_parts(
@@ -161,7 +161,7 @@ macro_rules! impl_all_parallel_iterators {
                 ))
             }
         }
-        
+
         impl_parallel_iterator!(
             $ca_type,
             $par_iter_single_chunk_return_option<$( $lifetime )?>,
@@ -170,7 +170,7 @@ macro_rules! impl_all_parallel_iterators {
             Option<$iter_item>
             $(, lifetime =  $lifetime )?
         );
-        
+
         /// Parallel Iterator for chunked arrays with just one chunk.
         /// It DOES perform null check, then, it is appropriated for chunks whose contents can be null.
         ///
@@ -179,13 +179,13 @@ macro_rules! impl_all_parallel_iterators {
         pub struct $par_iter_single_chunk_null_check_return_option<$( $lifetime )?> {
             ca: $ca_type,
         }
-        
+
         impl<$( $lifetime )?> $par_iter_single_chunk_null_check_return_option<$( $lifetime )?> {
             fn new(ca: $ca_type) -> Self {
                 Self { ca }
             }
         }
-        
+
         impl<$( $lifetime )?> From<$producer_single_chunk_null_check_return_option<$( $lifetime )?>>
             for $seq_iter_single_chunk_null_check
         {
@@ -195,7 +195,7 @@ macro_rules! impl_all_parallel_iterators {
                 let current_data = current_array.data();
                 let idx_left = prod.offset;
                 let idx_right = prod.offset + prod.len;
-        
+
                 Self {
                     current_data,
                     current_array,
@@ -204,7 +204,7 @@ macro_rules! impl_all_parallel_iterators {
                 }
             }
         }
-        
+
         impl_parallel_iterator!(
             $ca_type,
             $par_iter_single_chunk_null_check_return_option<$( $lifetime )?>,
@@ -213,7 +213,7 @@ macro_rules! impl_all_parallel_iterators {
             Option<$iter_item>
             $(, lifetime =  $lifetime )?
         );
-        
+
         /// Parallel Iterator for chunked arrays with more than one chunk.
         /// It does NOT perform null check, then, it is appropriated for chunks whose contents are never null.
         ///
@@ -222,15 +222,15 @@ macro_rules! impl_all_parallel_iterators {
         pub struct $par_iter_many_chunk_return_option<$( $lifetime )?> {
             ca: $ca_type,
         }
-        
+
         impl<$( $lifetime )?> $par_iter_many_chunk_return_option<$( $lifetime )?> {
             fn new(ca: $ca_type) -> Self {
                 Self { ca }
             }
         }
-        
-        impl<$( $lifetime )?> From<$producer_many_chunk_return_option<$( $lifetime )?>> 
-            for SomeIterator<$seq_iter_many_chunk> 
+
+        impl<$( $lifetime )?> From<$producer_many_chunk_return_option<$( $lifetime )?>>
+            for SomeIterator<$seq_iter_many_chunk>
         {
             fn from(prod: $producer_many_chunk_return_option<$( $lifetime )?>) -> Self {
                 SomeIterator(<$seq_iter_many_chunk>::from_parts(
@@ -240,7 +240,7 @@ macro_rules! impl_all_parallel_iterators {
                 ))
             }
         }
-        
+
         impl_parallel_iterator!(
             $ca_type,
             $par_iter_many_chunk_return_option<$( $lifetime )?>,
@@ -249,7 +249,7 @@ macro_rules! impl_all_parallel_iterators {
             Option<$iter_item>
             $(, lifetime =  $lifetime )?
         );
-        
+
         /// Parallel Iterator for chunked arrays with more than one chunk.
         /// It DOES perform null check, then, it is appropriated for chunks whose contents can be null.
         ///
@@ -258,33 +258,33 @@ macro_rules! impl_all_parallel_iterators {
         pub struct $par_iter_many_chunk_null_check_return_option<$( $lifetime )?> {
             ca: $ca_type,
         }
-        
+
         impl<$( $lifetime )?> $par_iter_many_chunk_null_check_return_option<$( $lifetime )?> {
             fn new(ca: $ca_type) -> Self {
                 Self { ca }
             }
         }
-        
+
         impl<$( $lifetime )?> From<$producer_many_chunk_null_check_return_option<$( $lifetime )?>>
             for $seq_iter_many_chunk_null_check
         {
             fn from(prod: $producer_many_chunk_null_check_return_option<$( $lifetime )?>) -> Self {
                 let ca = prod.ca;
                 let chunks = ca.downcast_chunks();
-        
+
                 // Compute left chunk indexes.
                 let idx_left = prod.offset;
                 let (chunk_idx_left, current_array_idx_left) = ca.index_to_chunked_index(idx_left);
                 let current_array_left = chunks[chunk_idx_left];
                 let current_data_left = current_array_left.data();
                 let current_array_left_len = current_array_left.len();
-        
+
                 // Compute right chunk indexes.
                 let idx_right = prod.offset + prod.len;
                 let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
                 let current_array_right = chunks[chunk_idx_right];
                 let current_data_right = current_array_right.data();
-        
+
                 Self {
                     ca,
                     chunks,
@@ -302,7 +302,7 @@ macro_rules! impl_all_parallel_iterators {
                 }
             }
         }
-        
+
         impl_parallel_iterator!(
             $ca_type,
             $par_iter_many_chunk_null_check_return_option<$( $lifetime )?>,
@@ -311,7 +311,7 @@ macro_rules! impl_all_parallel_iterators {
             Option<$iter_item>
             $(, lifetime =  $lifetime )?
         );
-        
+
         /// Parallel Iterator for chunked arrays with just one chunk.
         /// The chunks cannot have null values so it does NOT perform null checks.
         ///
@@ -321,21 +321,21 @@ macro_rules! impl_all_parallel_iterators {
         pub struct $par_iter_single_chunk_return_unwrapped<$( $lifetime )?> {
             ca: $ca_type,
         }
-        
+
         impl<$( $lifetime )?> $par_iter_single_chunk_return_unwrapped<$( $lifetime )?> {
             fn new(ca: $ca_type) -> Self {
                 Self { ca }
             }
         }
-        
+
         impl<$( $lifetime )?> From<$producer_single_chunk_return_unwrapped<$( $lifetime )?>>
-            for $seq_iter_single_chunk 
+            for $seq_iter_single_chunk
         {
             fn from(prod: $producer_single_chunk_return_unwrapped<$( $lifetime )?>) -> Self {
                 Self::from_parts(prod.ca, prod.offset, prod.len)
             }
         }
-        
+
         impl_parallel_iterator!(
             $ca_type,
             $par_iter_single_chunk_return_unwrapped<$( $lifetime )?>,
@@ -344,7 +344,7 @@ macro_rules! impl_all_parallel_iterators {
             $iter_item
             $(, lifetime =  $lifetime )?
         );
-        
+
         /// Parallel Iterator for chunked arrays with many chunk.
         /// The chunks cannot have null values so it does NOT perform null checks.
         ///
@@ -354,13 +354,13 @@ macro_rules! impl_all_parallel_iterators {
         pub struct $par_iter_many_chunk_return_unwrapped<$( $lifetime )?> {
             ca: $ca_type,
         }
-        
+
         impl<$( $lifetime )?> $par_iter_many_chunk_return_unwrapped<$( $lifetime )?> {
             fn new(ca: $ca_type) -> Self {
                 Self { ca }
             }
         }
-        
+
         impl<$( $lifetime )?> From<$producer_many_chunk_return_unwrapped<$( $lifetime )?>>
             for $seq_iter_many_chunk
         {
@@ -368,7 +368,7 @@ macro_rules! impl_all_parallel_iterators {
                 Self::from_parts(prod.ca, prod.offset, prod.len)
             }
         }
-        
+
         impl_parallel_iterator!(
             $ca_type,
             $par_iter_many_chunk_return_unwrapped<$( $lifetime )?>,
@@ -377,7 +377,7 @@ macro_rules! impl_all_parallel_iterators {
             $iter_item
             $(, lifetime =  $lifetime )?
         );
-        
+
         // Implement into parallel iterator and into no null parallel iterator for $ca_type.
         // In both implementation it creates a static dispatcher which chooses the best implementation
         // of the parallel iterator, depending of the state of the chunked array.
@@ -391,7 +391,7 @@ macro_rules! impl_all_parallel_iterators {
             $iter_item
             $(, lifetime =  $lifetime )?
         );
-        
+
         impl_into_no_null_par_iter!(
             $ca_type,
             $into_no_null_par_iter_dispatcher,
@@ -425,7 +425,7 @@ macro_rules! impl_parallel_iterator {
     (
         $ca_type:ty,
         $par_iter:ty ,
-        $producer:ident, 
+        $producer:ident,
         $seq_iter:ty,
         $iter_item:ty
         $(, lifetime = $lifetime:lifetime )?

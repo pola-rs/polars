@@ -1,6 +1,6 @@
 use crate::chunked_array::iterator::{
-    SomeIterator, BooleanIterManyChunk, BooleanIterManyChunkNullCheck, BooleanIterSingleChunk,
-    BooleanIterSingleChunkNullCheck,
+    BooleanIterManyChunk, BooleanIterManyChunkNullCheck, BooleanIterSingleChunk,
+    BooleanIterSingleChunkNullCheck, SomeIterator,
 };
 use crate::prelude::*;
 use arrow::array::Array;
@@ -68,13 +68,7 @@ mod test {
     /// - Otherwise, the value is `Some(false)`.
     fn generate_opt_boolean_vec(size: usize) -> Vec<Option<bool>> {
         (0..size)
-            .map(|n| {
-                if n % 3 == 0 {
-                    None
-                } else {
-                    Some(n % 2 == 0)
-                }
-            })
+            .map(|n| if n % 3 == 0 { None } else { Some(n % 2 == 0) })
             .collect()
     }
 
@@ -200,50 +194,78 @@ mod test {
     // Single Chunk Null Check Parallel Iterator Tests.
     impl_par_iter_return_option_map_test!(
         boolean_par_iter_single_chunk_null_check_return_option_map,
-        { BooleanChunked::new_from_opt_slice("a", &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE)) }
+        {
+            BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     impl_par_iter_return_option_filter_test!(
         boolean_par_iter_single_chunk_null_check_return_option_filter,
-        { BooleanChunked::new_from_opt_slice("a", &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE)) }
+        {
+            BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     impl_par_iter_return_option_fold_test!(
         boolean_par_iter_single_chunk_null_check_return_option_fold,
-        { BooleanChunked::new_from_opt_slice("a", &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE)) }
+        {
+            BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     // Many Chunk Parallel Iterator Tests.
     impl_par_iter_return_option_map_test!(boolean_par_iter_many_chunk_return_option_map, {
-        let mut a = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
-        let a_b = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     impl_par_iter_return_option_filter_test!(boolean_par_iter_many_chunk_return_option_filter, {
-        let mut a = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
-        let a_b = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     impl_par_iter_return_option_fold_test!(boolean_par_iter_many_chunk_return_option_fold, {
-        let mut a = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
-        let a_b = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     // Many Chunk Null Check Parallel Iterator Tests.
-    impl_par_iter_return_option_map_test!(boolean_par_iter_many_chunk_null_check_return_option_map, {
-        let mut a =
-            BooleanChunked::new_from_opt_slice("a", &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            BooleanChunked::new_from_opt_slice("a", &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
-        a.append(&a_b);
-        a
-    });
+    impl_par_iter_return_option_map_test!(
+        boolean_par_iter_many_chunk_null_check_return_option_map,
+        {
+            let mut a = BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            );
+            a.append(&a_b);
+            a
+        }
+    );
 
     impl_par_iter_return_option_filter_test!(
         boolean_par_iter_many_chunk_null_check_return_option_filter,
@@ -292,16 +314,10 @@ mod test {
                 let a = $ca_init_block;
 
                 // Perform a parallel maping.
-                let par_result = NoNull(&a)
-                    .into_par_iter()
-                    .map(|b| !b)
-                    .collect::<Vec<_>>();
+                let par_result = NoNull(&a).into_par_iter().map(|b| !b).collect::<Vec<_>>();
 
                 // Perform a sequetial maping.
-                let seq_result = a
-                    .into_no_null_iter()
-                    .map(|b| !b)
-                    .collect::<Vec<_>>();
+                let seq_result = a.into_no_null_iter().map(|b| !b).collect::<Vec<_>>();
 
                 // Check sequetial and parallel results are equal.
                 assert_eq!(par_result, seq_result);
@@ -330,10 +346,7 @@ mod test {
                     .collect::<Vec<_>>();
 
                 // Perform a sequetial filter.
-                let seq_result = a
-                    .into_no_null_iter()
-                    .filter(|&b| b)
-                    .collect::<Vec<_>>();
+                let seq_result = a.into_no_null_iter().filter(|&b| b).collect::<Vec<_>>();
 
                 // Check sequetial and parallel results are equal.
                 assert_eq!(par_result, seq_result);
@@ -358,19 +371,20 @@ mod test {
                 // Perform a parallel sum of length.
                 let par_result = NoNull(&a)
                     .into_par_iter()
-                    .fold(|| 0u64, |acc, b| {
-                        let val = if b { 1 } else { 2 };
-                        acc + val
-                    })
+                    .fold(
+                        || 0u64,
+                        |acc, b| {
+                            let val = if b { 1 } else { 2 };
+                            acc + val
+                        },
+                    )
                     .reduce(|| 0u64, |left, right| left + right);
 
                 // Perform a sequential sum of length.
-                let seq_result = a
-                    .into_no_null_iter()
-                    .fold(0u64, |acc, b| {
-                        let val = if b { 1 } else { 2 };
-                        acc + val
-                    });
+                let seq_result = a.into_no_null_iter().fold(0u64, |acc, b| {
+                    let val = if b { 1 } else { 2 };
+                    acc + val
+                });
 
                 // Check sequetial and parallel results are equal.
                 assert_eq!(par_result, seq_result);
@@ -388,14 +402,17 @@ mod test {
         { BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE)) }
     );
 
-    impl_par_iter_return_unwrapped_fold_test!(boolean_par_iter_single_chunk_return_unwrapped_fold, {
-        BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE))
-    });
+    impl_par_iter_return_unwrapped_fold_test!(
+        boolean_par_iter_single_chunk_return_unwrapped_fold,
+        { BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE)) }
+    );
 
     // Many Chunk Return Unwrapped
     impl_par_iter_return_unwrapped_map_test!(boolean_par_iter_many_chunk_return_unwrapped_map, {
-        let mut a = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
-        let a_b = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
@@ -403,17 +420,24 @@ mod test {
     impl_par_iter_return_unwrapped_filter_test!(
         boolean_par_iter_many_chunk_return_unwrapped_filter,
         {
-            let mut a =
-                BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
-            let a_b = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+            let mut a = BooleanChunked::new_from_slice(
+                "a",
+                &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = BooleanChunked::new_from_slice(
+                "a",
+                &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            );
             a.append(&a_b);
             a
         }
     );
 
     impl_par_iter_return_unwrapped_fold_test!(boolean_par_iter_many_chunk_return_unwrapped_fold, {
-        let mut a = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
-        let a_b = BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
