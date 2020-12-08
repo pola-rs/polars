@@ -188,7 +188,6 @@ impl Executor for CsvExec {
         }
 
         // cache miss
-        let file = std::fs::File::open(&self.path).unwrap();
 
         let mut with_columns = mem::take(&mut self.with_columns);
         let mut projected_len = 0;
@@ -204,7 +203,8 @@ impl Executor for CsvExec {
         mem::swap(&mut self.schema, &mut schema);
         let stop_after_n_rows = self.stop_after_n_rows.map(set_n_rows);
 
-        let reader = CsvReader::new(file)
+        let reader = CsvReader::from_path(&self.path)
+            .unwrap()
             .has_header(self.has_header)
             .with_schema(Arc::new(schema))
             .with_delimiter(self.delimiter)

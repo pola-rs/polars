@@ -521,6 +521,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         predicate: &Option<Arc<dyn PhysicalExpr>>,
         capacity: usize,
     ) -> Result<()> {
+        self.batch_size = std::cmp::max(self.batch_size, 128);
         if self.skip_rows > 0 {
             let mut record = Default::default();
             for _ in 0..self.skip_rows {
@@ -606,12 +607,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         let file_chunks = get_file_chunks(bytes, n_threads);
 
-        let _: Result<_> = thread::scope(|s| {
+        let scopes: Result<_> = thread::scope(|s| {
             let mut handlers = Vec::with_capacity(n_threads);
 
-            for i in 0..file_chunks.len() {
+            for (mut total_bytes_offset, stop_at_nbytes) in file_chunks {
                 let delimiter = self.delimiter;
-                let (mut total_bytes_offset, stop_at_nbytes) = file_chunks[i];
                 let batch_size = self.batch_size;
                 let schema = self.schema.clone();
                 let ignore_parser_errors = self.ignore_parser_errors;
@@ -674,6 +674,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             Ok(())
         })
         .unwrap();
+        let _ = scopes?;
 
         Ok(())
     }
@@ -819,9 +820,10 @@ where
                         }
                         return Err(PolarsError::Other(
                             format!(
-                                "Error while parsing value {} for column {}",
+                                "Error while parsing value {} for column {} as {:?}",
                                 String::from_utf8_lossy(bytes),
                                 col_idx,
+                                T::get_data_type()
                             )
                             .into(),
                         ));
@@ -839,18 +841,9 @@ struct PolarsCsvRecord {
     out: Vec<u8>,
     ends: Vec<usize>,
     n_out: usize,
-    n_end: usize,
 }
 
 impl PolarsCsvRecord {
-    fn get_ends(&self) -> &[usize] {
-        &self.ends[..self.n_end]
-    }
-
-    fn get_line(&self) -> &[u8] {
-        &self.out[..*self.get_ends().last().unwrap()]
-    }
-
     fn get(&self, index: usize) -> Option<&[u8]> {
         let start = match index.checked_sub(1).and_then(|idx| self.ends.get(idx)) {
             None => 0,
@@ -860,14 +853,18 @@ impl PolarsCsvRecord {
             Some(i) => *i,
             None => return None,
         };
+
         Some(&self.out[start..end])
     }
 
-    fn resize_buffer(&mut self) {
-        let out_size = std::cmp::max(self.out.len(), 128);
-        self.out.resize(out_size, 0);
-        let end_size = std::cmp::max(self.ends.len(), 128);
-        self.ends.resize(end_size, 0);
+    fn resize_out_buffer(&mut self) {
+        let size = std::cmp::max(self.out.len() * 2, 128);
+        self.out.resize(size, 0);
+    }
+
+    fn reset(&mut self) {
+        self.ends.truncate(0);
+        self.n_out = 0;
     }
 }
 
@@ -877,7 +874,6 @@ impl Default for PolarsCsvRecord {
             out: vec![],
             ends: vec![],
             n_out: 0,
-            n_end: 0,
         }
     }
 }
@@ -888,42 +884,44 @@ fn next_rows_core(
     reader: &mut csv_core::Reader,
     batch_size: usize,
 ) -> (usize, usize) {
-    let mut count = 0;
+    let mut line_count = 0;
     let mut bytes_read = 0;
     loop {
-        debug_assert!(rows.get(count).is_some());
-        let record = unsafe { rows.get_unchecked_mut(count) };
+        debug_assert!(rows.get(line_count).is_some());
+        let mut record = unsafe { rows.get_unchecked_mut(line_count) };
+        record.reset();
 
-        let (result, n_in, n_out, n_end) =
-            reader.read_record(bytes, &mut *record.out, &mut *record.ends);
-        use csv_core::ReadRecordResult::*;
-        match result {
-            Record => {
-                bytes_read += n_in;
-                record.n_end = n_end;
-                record.n_out = n_out;
-                count += 1;
-                bytes = &bytes[n_in..];
-            }
-            InputEmpty => {
-                panic!("not finished input")
-            }
-            OutputFull => {
-                record.resize_buffer();
-            }
-            // end of file
-            End => {
-                break;
-            }
-            OutputEndsFull => {
-                record.resize_buffer();
+        use csv_core::ReadFieldResult;
+        loop {
+            let (result, n_in, n_out) = reader.read_field(bytes, &mut record.out[record.n_out..]);
+            match result {
+                ReadFieldResult::InputEmpty => {
+                    panic!("not finished input")
+                }
+                ReadFieldResult::End => {
+                    return (line_count, bytes_read);
+                }
+                ReadFieldResult::OutputFull => {
+                    record.resize_out_buffer();
+                }
+                ReadFieldResult::Field { record_end } => {
+                    bytes_read += n_in;
+                    bytes = &bytes[n_in..];
+                    record.n_out += n_out;
+                    record.ends.push(record.n_out);
+
+                    if record_end {
+                        line_count += 1;
+                        break;
+                    }
+                }
             }
         }
-        if count == batch_size {
+        if line_count == batch_size {
             break;
         }
     }
-    (count, bytes_read)
+    (line_count, bytes_read)
 }
 
 fn finish_builder(
