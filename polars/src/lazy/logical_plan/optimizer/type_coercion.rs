@@ -271,6 +271,8 @@ impl TypeCoercion {
                 how,
                 left_on,
                 right_on,
+                allow_par,
+                force_par,
             } => {
                 let input_left = Box::new(self.coerce(*input_left)?);
                 let input_right = Box::new(self.coerce(*input_right)?);
@@ -281,6 +283,8 @@ impl TypeCoercion {
                     how,
                     left_on,
                     right_on,
+                    allow_par,
+                    force_par,
                 })
             }
             HStack { input, exprs, .. } => {

@@ -79,7 +79,7 @@ class DataFrame:
     def read_csv(
         file: Union[str, TextIO],
         infer_schema_length: int = 100,
-        batch_size: int = 1000,
+        batch_size: int = 64,
         has_headers: bool = True,
         ignore_errors: bool = False,
         stop_after_n_rows: Optional[int] = None,
@@ -89,9 +89,15 @@ class DataFrame:
         columns: "Optional[List[str]]" = None,
         rechunk: bool = True,
         encoding: str = "utf8",
-        one_thread: bool = True,
+        n_threads: Optional[int] = None,
     ) -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
+
+        if isinstance(file, str):
+            path = file
+        else:
+            path = None
+
         self._df = PyDataFrame.read_csv(
             file,
             infer_schema_length,
@@ -105,7 +111,8 @@ class DataFrame:
             rechunk,
             columns,
             encoding,
-            one_thread,
+            n_threads,
+            path,
         )
         return self
 

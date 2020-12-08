@@ -53,6 +53,7 @@ use crate::frame::ser::fork::csv::{build_csv_reader, SequentialReader};
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 pub use arrow::csv::WriterBuilder;
+use std::fs::File;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -147,12 +148,10 @@ pub enum CsvEncoding {
 /// use std::fs::File;
 ///
 /// fn example() -> Result<DataFrame> {
-///     let file = File::open("iris.csv").expect("could not open file");
 ///
-///     CsvReader::new(file)
+///     CsvReader::from_path("iris_csv")?
 ///             .infer_schema(None)
 ///             .has_header(true)
-///             .with_one_thread(true) // set this to false to try multi-threaded parsing
 ///             .finish()
 /// }
 /// ```
@@ -179,7 +178,8 @@ where
     ignore_parser_errors: bool,
     schema: Option<Arc<Schema>>,
     encoding: CsvEncoding,
-    one_thread: bool,
+    n_threads: Option<usize>,
+    path: Option<String>,
 }
 
 impl<R> CsvReader<R>
@@ -191,8 +191,8 @@ where
         self
     }
 
-    /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
-    /// sequentially.
+    /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
+    /// be guaranteed.
     pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.stop_after_n_rows = num_rows;
         self
@@ -259,13 +259,18 @@ where
         self
     }
 
-    /// Use single threaded CSV parsing (this is default).
-    /// This is recommended when there are not many columns in the csv file.
+    /// Set the number of threads used in CSV reading. The default uses the number of cores of
+    /// your cpu.
     ///
-    /// If multi-threaded is faster depends on your specific use case.
-    /// This is internally used for Python file handlers
-    pub fn with_one_thread(mut self, one_thread: bool) -> Self {
-        self.one_thread = one_thread;
+    /// Note that this only works if this is initialized with `CsvReader::from_path`.
+    /// Note that the number of cores is the maximum allowed number of threads.
+    pub fn with_n_threads(mut self, n: Option<usize>) -> Self {
+        self.n_threads = n;
+        self
+    }
+
+    pub fn with_path(mut self, path: Option<String>) -> Self {
+        self.path = path;
         self
     }
 
@@ -283,7 +288,8 @@ where
             self.schema,
             self.columns,
             self.encoding,
-            self.one_thread,
+            self.n_threads,
+            self.path,
         )
     }
     /// Read the file and create the DataFrame. Used from lazy execution
@@ -302,6 +308,14 @@ where
     }
 }
 
+impl CsvReader<File> {
+    /// This is the recommended way to create a csv reader as this allows for fastest parsing.
+    pub fn from_path(path: &str) -> Result<Self> {
+        let f = std::fs::File::open(path)?;
+        Ok(Self::new(f).with_path(Some(path.to_string())))
+    }
+}
+
 impl<R> SerReader<R> for CsvReader<R>
 where
     R: 'static + Read + Seek + Sync + Send,
@@ -315,14 +329,15 @@ where
             max_records: Some(100),
             skip_rows: 0,
             projection: None,
-            batch_size: 1024,
+            batch_size: 32,
             delimiter: None,
             has_header: true,
             ignore_parser_errors: false,
             schema: None,
             columns: None,
             encoding: CsvEncoding::Utf8,
-            one_thread: true,
+            n_threads: None,
+            path: None,
         }
     }
 
@@ -353,6 +368,17 @@ mod test {
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
         assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);
+    }
+
+    #[test]
+    fn test_read_csv_file() {
+        let path = "../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let file = std::fs::File::open(path).unwrap();
+        let df = CsvReader::new(file)
+            .with_path(Some(path.to_string()))
+            .finish()
+            .unwrap();
+        dbg!(df);
     }
 
     #[test]

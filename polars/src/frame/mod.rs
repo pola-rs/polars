@@ -155,8 +155,21 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
+    /// Aggregate all the chunks in the DataFrame to a single chunk.
+    pub fn as_single_chunk(&mut self) -> &mut Self {
+        self.columns = self
+            .columns
+            .iter()
+            .map(|s| {
+                s.rechunk(Some(&[1]))
+                    .expect("can always aggregate to single chunk")
+            })
+            .collect();
+        self
+    }
+
     /// Ensure all the chunks in the DataFrame are aligned.
-    fn rechunk(&mut self) -> Result<&mut Self> {
+    pub fn rechunk(&mut self) -> Result<&mut Self> {
         let mut all_equal = true;
 
         let mut it = self.columns.iter();
@@ -177,15 +190,7 @@ impl DataFrame {
         if all_equal {
             Ok(self)
         } else {
-            self.columns = self
-                .columns
-                .iter()
-                .map(|s| {
-                    s.rechunk(Some(&[1]))
-                        .expect("can always aggregate to single chunk")
-                })
-                .collect();
-            Ok(self)
+            Ok(self.as_single_chunk())
         }
     }
 

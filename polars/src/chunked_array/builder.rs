@@ -2,7 +2,9 @@ use crate::{
     prelude::*,
     utils::{get_iter_capacity, Xob},
 };
-use arrow::array::{ArrayBuilder, ArrayDataBuilder, ArrayRef, ListBuilder};
+use arrow::array::{
+    ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, ListBuilder,
+};
 use arrow::datatypes::{Field, ToByteSlice};
 pub use arrow::memory;
 use arrow::{
@@ -33,10 +35,14 @@ pub trait ChunkedBuilder<N, T> {
 pub struct PrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
+    T::Native: Default,
 {
-    pub builder: PrimitiveBuilder<T>,
+    values: AlignedVec<T::Native>,
+    bitmap_builder: BooleanBufferBuilder,
+    boolean_builder: PrimitiveBuilder<T>,
     capacity: usize,
     field: Field,
+    null_count: usize,
 }
 
 impl<T> ChunkedBuilder<T::Native, T> for PrimitiveChunkedBuilder<T>
@@ -45,16 +51,38 @@ where
 {
     /// Appends a value of type `T` into the builder
     fn append_value(&mut self, v: T::Native) {
-        self.builder.append_value(v).expect("memory error");
+        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+            self.boolean_builder.append_value(v).unwrap();
+        } else {
+            self.values.push(v);
+            self.bitmap_builder.append(true).unwrap();
+        }
     }
 
     /// Appends a null slot into the builder
     fn append_null(&mut self) {
-        self.builder.append_null().expect("memory error");
+        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+            self.boolean_builder.append_null().unwrap();
+        }
+        {
+            self.bitmap_builder.append(false).unwrap();
+            self.values.push(Default::default());
+            self.null_count += 1;
+        }
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
-        let arr = Arc::new(self.builder.finish());
+        let arr = if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+            self.boolean_builder.finish()
+        } else {
+            let null_bit_buffer = self.bitmap_builder.finish();
+            aligned_vec_to_primitive_array(
+                self.values,
+                Some(null_bit_buffer),
+                Some(self.null_count),
+            )
+        };
+        let arr = Arc::new(arr);
 
         let len = arr.len();
         ChunkedArray {
@@ -71,19 +99,20 @@ where
     T: PolarsPrimitiveType,
 {
     pub fn new(name: &str, capacity: usize) -> Self {
+        let boolean_builder = if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+            PrimitiveBuilder::new(capacity)
+        } else {
+            PrimitiveBuilder::new(0)
+        };
+
         PrimitiveChunkedBuilder {
-            builder: PrimitiveBuilder::<T>::new(capacity),
+            values: AlignedVec::<T::Native>::with_capacity_aligned(capacity),
+            bitmap_builder: BooleanBufferBuilder::new(capacity),
+            boolean_builder,
             capacity,
             field: Field::new(name, T::get_data_type(), true),
+            null_count: 0,
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.builder.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.builder.len() == 0
     }
 
     pub fn capacity(&self) -> usize {
@@ -300,13 +329,13 @@ pub fn aligned_vec_to_primitive_array<T: PolarsPrimitiveType>(
 /// A `Vec` wrapper with a memory alignment equal to Arrow's primitive arrays.
 /// Can be useful in creating a new ChunkedArray or Arrow Primitive array without copying.
 #[derive(Debug)]
-pub struct AlignedVec<T: Clone> {
+pub struct AlignedVec<T> {
     pub(crate) inner: Vec<T>,
     // if into_inner is called, this will be true and we can use the default Vec's destructor
     taken: bool,
 }
 
-impl<T: Clone> Drop for AlignedVec<T> {
+impl<T> Drop for AlignedVec<T> {
     fn drop(&mut self) {
         if !self.taken {
             let inner = mem::take(&mut self.inner);
@@ -318,7 +347,7 @@ impl<T: Clone> Drop for AlignedVec<T> {
     }
 }
 
-impl<T: Clone> FromIterator<T> for AlignedVec<T> {
+impl<T> FromIterator<T> for AlignedVec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let sh = iter.size_hint();
@@ -337,6 +366,12 @@ impl<T: Clone> FromIterator<T> for AlignedVec<T> {
 }
 
 impl<T: Clone> AlignedVec<T> {
+    pub fn resize(&mut self, new_len: usize, value: T) {
+        self.inner.resize(new_len, value)
+    }
+}
+
+impl<T> AlignedVec<T> {
     /// Create a new Vec where first bytes memory address has an alignment of 64 bytes, as described
     /// by arrow spec.
     /// Read more:
@@ -413,10 +448,6 @@ impl<T: Clone> AlignedVec<T> {
     /// - The elements at `old_len..new_len` must be initialized.
     pub unsafe fn set_len(&mut self, new_len: usize) {
         self.inner.set_len(new_len);
-    }
-
-    pub fn resize(&mut self, new_len: usize, value: T) {
-        self.inner.resize(new_len, value)
     }
 
     pub fn as_ptr(&self) -> *const T {

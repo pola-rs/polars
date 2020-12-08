@@ -152,6 +152,45 @@ class LazyFrame:
         )
         return wrap_df(ldf.collect())
 
+    def fetch(
+        self,
+        n_rows: int = 500,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+    ) -> DataFrame:
+        """
+        Fetch is like a collect operation, but it overwrites the number of rows read by every scan
+        operation. This is a utility that helps debug a query on a smaller number of rows.
+
+        Note that the fetch does not guarantee the final number of rows in the DataFrame.
+        Filter, join operations and a lower number of rows available in the scanned file influence
+        the final number of rows.
+
+        Parameters
+        ----------
+        n_rows
+            Collect n_rows from the data sources.
+
+        type_coercion
+            run type coercion optimization
+        predicate_pushdown
+            run predicate pushdown optimization
+        projection_pushdown
+            run projection pushdown optimization
+        simplify_expression
+            run simplify expressions optimization
+
+        Returns
+        -------
+        DataFrame
+        """
+        ldf = self._ldf.optimization_toggle(
+            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
+        )
+        return wrap_df(ldf.fetch(n_rows))
+
     def cache(
         self,
     ) -> "LazyFrame":
@@ -188,7 +227,32 @@ class LazyFrame:
         right_on: "Union[Optional[Expr], str]" = None,
         on: "Union[Optional[Expr], str]" = None,
         how="inner",
+        allow_parallel: bool = True,
+        force_parallel: bool = False,
     ) -> "LazyFrame":
+        """
+        Add a join operation to the Logical Plan.
+
+        Parameters
+        ----------
+        ldf
+            Lazy DataFrame to join with
+        left_on
+            Join column of the left DataFrame.
+        right_on
+            Join column of the right DataFrame.
+        on
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+        how
+            one of:
+                "inner"
+                "left"
+                "outer"
+        allow_parallel
+            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+        force_parallel
+            Force the physical plan evaluate the computation of both DataFrames up to the join in parallel.
+        """
         if isinstance(left_on, str):
             left_on = col(left_on)
         if isinstance(right_on, str):
@@ -201,11 +265,17 @@ class LazyFrame:
         left_on = left_on._pyexpr
         right_on = right_on._pyexpr
         if how == "inner":
-            inner = self._ldf.inner_join(ldf._ldf, left_on, right_on)
+            inner = self._ldf.inner_join(
+                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
+            )
         elif how == "left":
-            inner = self._ldf.left_join(ldf._ldf, left_on, right_on)
+            inner = self._ldf.left_join(
+                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
+            )
         elif how == "outer":
-            inner = self._ldf.outer_join(ldf._ldf, left_on, right_on)
+            inner = self._ldf.outer_join(
+                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
+            )
         else:
             return NotImplemented
         return wrap_ldf(inner)

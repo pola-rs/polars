@@ -20,11 +20,11 @@ pub trait PhysicalPlanner {
 // combine physical expressions, which produce Series.
 
 /// Executors will evaluate physical expressions and collect them in a DataFrame.
-pub trait Executor {
+pub trait Executor: Send {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame>;
 }
 
-pub(crate) type Cache = Mutex<HashMap<String, DataFrame, RandomState>>;
+pub(crate) type Cache = Arc<Mutex<HashMap<String, DataFrame, RandomState>>>;
 
 /// Take a DataFrame and evaluate the expressions.
 /// Implement this for Column, lt, eq, etc

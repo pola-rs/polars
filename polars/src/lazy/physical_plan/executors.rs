@@ -1,9 +1,19 @@
 use super::*;
 use crate::frame::ser::csv::CsvEncoding;
-use crate::lazy::logical_plan::DataFrameOperation;
+use crate::lazy::logical_plan::{DataFrameOperation, FETCH_ROWS};
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::mem;
+
+const POLARS_VERBOSE: &str = "POLARS_VERBOSE";
+
+fn set_n_rows(stop_after_n_rows: usize) -> usize {
+    let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
+    match fetch_rows {
+        None => stop_after_n_rows,
+        Some(n) => n,
+    }
+}
 
 pub struct CacheExec {
     pub key: String,
@@ -27,6 +37,9 @@ impl Executor for CacheExec {
         let key = std::mem::take(&mut self.key);
         guard.insert(key, df.clone());
 
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("cache set {:?}", self.key);
+        }
         Ok(df)
     }
 }
@@ -96,8 +109,10 @@ impl Executor for ParquetExec {
             None
         };
 
+        let stop_after_n_rows = self.stop_after_n_rows.map(set_n_rows);
+
         let df = ParquetReader::new(file)
-            .with_stop_after_n_rows(self.stop_after_n_rows)
+            .with_stop_after_n_rows(stop_after_n_rows)
             .finish_with_predicate(
                 self.predicate.clone(),
                 projection.as_ref().map(|v| v.as_ref()),
@@ -106,6 +121,9 @@ impl Executor for ParquetExec {
         if self.cache {
             let mut guard = cache.lock().unwrap();
             guard.insert(cache_key, df.clone());
+        }
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("parquet {:?} read", self.path);
         }
 
         Ok(df)
@@ -170,7 +188,6 @@ impl Executor for CsvExec {
         }
 
         // cache miss
-        let file = std::fs::File::open(&self.path).unwrap();
 
         let mut with_columns = mem::take(&mut self.with_columns);
         let mut projected_len = 0;
@@ -184,14 +201,16 @@ impl Executor for CsvExec {
         }
         let mut schema = Schema::new(vec![]);
         mem::swap(&mut self.schema, &mut schema);
+        let stop_after_n_rows = self.stop_after_n_rows.map(set_n_rows);
 
-        let reader = CsvReader::new(file)
+        let reader = CsvReader::from_path(&self.path)
+            .unwrap()
             .has_header(self.has_header)
             .with_schema(Arc::new(schema))
             .with_delimiter(self.delimiter)
             .with_ignore_parser_errors(self.ignore_errors)
             .with_skip_rows(self.skip_rows)
-            .with_stop_after_n_rows(self.stop_after_n_rows)
+            .with_stop_after_n_rows(stop_after_n_rows)
             .with_columns(with_columns)
             .with_encoding(CsvEncoding::LossyUtf8);
 
@@ -203,6 +222,9 @@ impl Executor for CsvExec {
         if self.cache {
             let mut guard = cache.lock().unwrap();
             guard.insert(cache_key, df.clone());
+        }
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("csv {:?} read", self.path);
         }
 
         Ok(df)
@@ -225,8 +247,11 @@ impl Executor for FilterExec {
         let df = self.input.execute(cache)?;
         let s = self.predicate.evaluate(&df)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
-
-        Ok(df.filter(mask)?)
+        let df = df.filter(mask)?;
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("dataframe filtered");
+        }
+        Ok(df)
     }
 }
 
@@ -234,8 +259,6 @@ pub struct DataFrameExec {
     df: Arc<DataFrame>,
     projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
     selection: Option<Arc<dyn PhysicalExpr>>,
-    // make sure that we are not called twice
-    valid: bool,
 }
 
 impl DataFrameExec {
@@ -248,15 +271,12 @@ impl DataFrameExec {
             df,
             projection,
             selection,
-            valid: true,
         }
     }
 }
 
 impl Executor for DataFrameExec {
     fn execute(&mut self, _: &Cache) -> Result<DataFrame> {
-        assert!(self.valid);
-        self.valid = false;
         let df = mem::take(&mut self.df);
         let mut df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
 
@@ -334,11 +354,13 @@ fn evaluate_physical_expressions(
 
 impl Executor for StandardExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        assert!(self.valid);
-        self.valid = false;
         let df = self.input.execute(cache)?;
 
-        evaluate_physical_expressions(&df, &self.expr)
+        let df = evaluate_physical_expressions(&df, &self.expr);
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("operation {} on dataframe finished", self.operation);
+        }
+        df
     }
 }
 
@@ -356,14 +378,18 @@ impl DataFrameOpsExec {
 impl Executor for DataFrameOpsExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let df = self.input.execute(cache)?;
-        match &self.operation {
+        let df = match &self.operation {
             DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
             DataFrameOperation::Explode(column) => df.explode(column),
             DataFrameOperation::DropDuplicates {
                 maintain_order,
                 subset,
             } => df.drop_duplicates(*maintain_order, subset.as_ref().map(|v| v.as_ref())),
+        };
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("{:?} on dataframe finished", self.operation);
         }
+        df
     }
 }
 
@@ -399,16 +425,21 @@ impl Executor for GroupByExec {
                 columns.push(agg)
             }
         }
-        Ok(DataFrame::new_no_checks(columns))
+        let df = DataFrame::new_no_checks(columns);
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("groupby {:?} on dataframe finished", self.keys);
+        };
+        Ok(df)
     }
 }
 
 pub struct JoinExec {
-    input_left: Box<dyn Executor>,
-    input_right: Box<dyn Executor>,
+    input_left: Option<Box<dyn Executor>>,
+    input_right: Option<Box<dyn Executor>>,
     how: JoinType,
     left_on: Arc<dyn PhysicalExpr>,
     right_on: Arc<dyn PhysicalExpr>,
+    parallel: bool,
 }
 
 impl JoinExec {
@@ -418,23 +449,34 @@ impl JoinExec {
         how: JoinType,
         left_on: Arc<dyn PhysicalExpr>,
         right_on: Arc<dyn PhysicalExpr>,
+        parallel: bool,
     ) -> Self {
         JoinExec {
-            input_left,
-            input_right,
+            input_left: Some(input_left),
+            input_right: Some(input_right),
             how,
             left_on,
             right_on,
+            parallel,
         }
     }
 }
 
 impl Executor for JoinExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        // rayon::join was dropped because that resulted in a deadlock when there were dependencies
-        // between the DataFrames. Like joining a specific computation of a DF back to itself.
-        let df_left = self.input_left.execute(cache);
-        let df_right = self.input_right.execute(cache);
+    fn execute<'a>(&'a mut self, cache: &'a Cache) -> Result<DataFrame> {
+        let mut input_left = self.input_left.take().unwrap();
+        let mut input_right = self.input_right.take().unwrap();
+
+        let (df_left, df_right) = if self.parallel {
+            let cache_left = cache.clone();
+            let cache_right = cache.clone();
+            let h_left = std::thread::spawn(move || input_left.execute(&cache_left));
+            let h_right = std::thread::spawn(move || input_right.execute(&cache_right));
+            (h_left.join().unwrap(), h_right.join().unwrap())
+        } else {
+            (input_left.execute(&cache), input_right.execute(&cache))
+        };
+
         let df_left = df_left?;
         let df_right = df_right?;
 
@@ -442,11 +484,15 @@ impl Executor for JoinExec {
         let s_right = self.right_on.evaluate(&df_right)?;
 
         use JoinType::*;
-        match self.how {
+        let df = match self.how {
             Left => df_left.left_join_from_series(&df_right, &s_left, &s_right),
             Inner => df_left.inner_join_from_series(&df_right, &s_left, &s_right),
             Outer => df_left.outer_join_from_series(&df_right, &s_left, &s_right),
-        }
+        };
+        if std::env::var(POLARS_VERBOSE).is_ok() {
+            println!("{:?} join dataframes finished", self.how);
+        };
+        df
     }
 }
 pub struct StackExec {
@@ -477,6 +523,9 @@ impl Executor for StackExec {
 
             let name = s.name().to_string();
             df.replace_or_add(&name, s)?;
+            if std::env::var(POLARS_VERBOSE).is_ok() {
+                println!("added column {} to dataframe", name);
+            }
             Ok(())
         });
         let _ = res?;

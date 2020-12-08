@@ -1,9 +1,10 @@
 use crate::frame::group_by::GroupByMethod;
 use crate::lazy::logical_plan::{Context, DataFrameOperation};
 use crate::lazy::physical_plan::executors::*;
-use crate::lazy::utils::expr_to_root_column_expr;
+use crate::lazy::utils::{agg_source_paths, expr_to_root_column_name};
 use crate::{lazy::prelude::*, prelude::*};
 use ahash::RandomState;
+use itertools::Itertools;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -170,8 +171,28 @@ impl DefaultPlanner {
                 how,
                 left_on,
                 right_on,
+                allow_par,
+                force_par,
                 ..
             } => {
+                let parallel = if force_par {
+                    force_par
+                } else if allow_par {
+                    // check if two DataFrames come from a separate source. If they don't we hope it is cached.
+                    let mut sources_left =
+                        HashSet::with_capacity_and_hasher(32, RandomState::default());
+                    agg_source_paths(&input_left, &mut sources_left);
+                    let mut sources_right =
+                        HashSet::with_capacity_and_hasher(32, RandomState::default());
+                    agg_source_paths(&input_right, &mut sources_right);
+                    sources_left
+                        .intersection(&sources_right)
+                        .collect_vec()
+                        .is_empty()
+                } else {
+                    false
+                };
+
                 let input_left = self.create_initial_physical_plan(*input_left)?;
                 let input_right = self.create_initial_physical_plan(*input_right)?;
                 let left_on = self.create_physical_expr(left_on, Context::Other)?;
@@ -182,6 +203,7 @@ impl DefaultPlanner {
                     how,
                     left_on,
                     right_on,
+                    parallel,
                 )))
             }
             LogicalPlan::HStack { input, exprs, .. } => {
@@ -204,16 +226,25 @@ impl DefaultPlanner {
                 order_by: _,
             } => {
                 // TODO! Order by
-                let root_column = expr_to_root_column_expr(&*function)
+                let group_column = expr_to_root_column_name(&*partition_by)
+                    .expect("need a partition_by column for a window function");
+                let out_name;
+                let apply_column = expr_to_root_column_name(&*function)
                     .expect("need a root column for a window function");
-                let root_column = self.create_physical_expr(root_column.clone(), ctxt)?;
-                let function = self.create_physical_expr(*function, ctxt)?;
-                let partition_by = self.create_physical_expr(*partition_by, ctxt)?;
+
+                let mut function = *function;
+                if let Expr::Alias(expr, name) = function {
+                    function = *expr;
+                    out_name = name;
+                } else {
+                    out_name = group_column.clone();
+                }
+
                 Ok(Arc::new(WindowExpr {
-                    root_column,
+                    group_column,
+                    apply_column,
+                    out_name,
                     function,
-                    partition_by,
-                    order_by: None,
                 }))
             }
             Expr::Literal(value) => Ok(Arc::new(LiteralExpr::new(value, expression))),

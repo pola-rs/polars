@@ -2,11 +2,28 @@
 use crate::frame::select::Selection;
 use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
-use crate::{lazy::prelude::*, prelude::*};
+use crate::{
+    lazy::{logical_plan::FETCH_ROWS, prelude::*},
+    prelude::*,
+};
 use ahash::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
+
+pub struct JoinOptions {
+    pub allow_parallel: bool,
+    pub force_parallel: bool,
+}
+
+impl Default for JoinOptions {
+    fn default() -> Self {
+        JoinOptions {
+            allow_parallel: true,
+            force_parallel: false,
+        }
+    }
+}
 
 impl DataFrame {
     /// Convert the `DataFrame` into a lazy `DataFrame`
@@ -237,6 +254,19 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Fetch is like a collect operation, but it overwrites the number of rows read by every scan
+    /// operation. This is a utility that helps debug a query on a smaller number of rows.
+    ///
+    /// Note that the fetch does not guarantee the final number of rows in the DataFrame.
+    /// Filter, join operations and a lower number of rows available in the scanned file influence
+    /// the final number of rows.
+    pub fn fetch(self, n_rows: usize) -> Result<DataFrame> {
+        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(Some(n_rows)));
+        let res = self.collect();
+        FETCH_ROWS.with(|fetch_rows| fetch_rows.set(None));
+        res
+    }
+
     /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).
     /// Before execution the query is being optimized.
     ///
@@ -312,10 +342,10 @@ impl LazyFrame {
 
         let planner = DefaultPlanner::default();
         let mut physical_plan = planner.create_physical_plan(logical_plan)?;
-        let cache = Mutex::new(HashMap::with_capacity_and_hasher(
+        let cache = Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
             64,
             RandomState::default(),
-        ));
+        )));
         physical_plan.execute(&cache)
     }
 
@@ -415,14 +445,28 @@ impl LazyFrame {
     /// use polars::lazy::dsl::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .left_join(other, col("foo"), col("bar"))
+    ///         .left_join(other, col("foo"), col("bar"), None)
     /// }
     /// ```
-    pub fn left_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+    pub fn left_join(
+        self,
+        other: LazyFrame,
+        left_on: Expr,
+        right_on: Expr,
+        options: Option<JoinOptions>,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let opts = options.unwrap_or_default();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Left, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Left,
+                left_on,
+                right_on,
+                opts.allow_parallel,
+                opts.force_parallel,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -436,14 +480,28 @@ impl LazyFrame {
     /// use polars::lazy::dsl::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .outer_join(other, col("foo"), col("bar"))
+    ///         .outer_join(other, col("foo"), col("bar"), None)
     /// }
     /// ```
-    pub fn outer_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+    pub fn outer_join(
+        self,
+        other: LazyFrame,
+        left_on: Expr,
+        right_on: Expr,
+        options: Option<JoinOptions>,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let opts = options.unwrap_or_default();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Outer, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Outer,
+                left_on,
+                right_on,
+                opts.allow_parallel,
+                opts.force_parallel,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -457,14 +515,28 @@ impl LazyFrame {
     /// use polars::lazy::dsl::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .inner_join(other, col("foo"), col("bar").cast(ArrowDataType::Utf8))
+    ///         .inner_join(other, col("foo"), col("bar").cast(ArrowDataType::Utf8), None)
     /// }
     /// ```
-    pub fn inner_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+    pub fn inner_join(
+        self,
+        other: LazyFrame,
+        left_on: Expr,
+        right_on: Expr,
+        options: Option<JoinOptions>,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let opts = options.unwrap_or_default();
         let lp = self
             .get_plan_builder()
-            .join(other.logical_plan, JoinType::Inner, left_on, right_on)
+            .join(
+                other.logical_plan,
+                JoinType::Inner,
+                left_on,
+                right_on,
+                opts.allow_parallel,
+                opts.force_parallel,
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -878,7 +950,7 @@ mod test {
         let df_a = load_df();
         let df_b = df_a.clone();
         df_a.lazy()
-            .left_join(df_b.lazy(), col("b"), col("b"))
+            .left_join(df_b.lazy(), col("b"), col("b"), None)
             .filter(col("a").lt(lit(2)))
             .groupby("b")
             .agg(vec![col("b").first(), col("c").first()])

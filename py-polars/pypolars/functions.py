@@ -1,4 +1,3 @@
-# Some functions similar to the pandas API
 from typing import Union, TextIO, Optional, List, BinaryIO
 
 from .frame import DataFrame
@@ -12,7 +11,7 @@ def get_dummies(df: DataFrame) -> DataFrame:
 def read_csv(
     file: Union[str, TextIO],
     infer_schema_length: int = 100,
-    batch_size: int = 1000,
+    batch_size: int = 64,
     has_headers: bool = True,
     ignore_errors: bool = False,
     stop_after_n_rows: Optional[int] = None,
@@ -22,7 +21,7 @@ def read_csv(
     columns: Optional[List[str]] = None,
     rechunk: bool = True,
     encoding: str = "utf8",
-    one_thread: bool = True,
+    n_threads: Optional[int] = None,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a csv file.
@@ -40,8 +39,8 @@ def read_csv(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
     stop_after_n_rows
-        After n rows are read from the CSV stop reading. This probably not stops exactly at `n_rows` it is dependent
-        on the batch size.
+        After n rows are read from the CSV stop reading. During multi-threaded parsing, an upper bound of `n` rows
+        cannot be guaranteed.
     skip_rows
         Start reading after `skip_rows`.
     projection
@@ -55,8 +54,8 @@ def read_csv(
     encoding
         - "utf8"
         _ "utf8-lossy"
-    one_thread
-        Use a single thread for the csv parsing. Set this to False to try multi-threaded parsing.
+    n_threads
+        Number of threads to use in csv parsing. Defaults to the number of physical cpu's of you system.
 
     Returns
     -------
@@ -76,7 +75,7 @@ def read_csv(
         columns=columns,
         rechunk=rechunk,
         encoding=encoding,
-        one_thread=one_thread,
+        n_threads=n_threads,
     )
 
 
@@ -101,11 +100,13 @@ def scan_csv(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
     sep
-        Delimiter/ value seperator
+        Delimiter/ value separator
     skip_rows
         Start reading after `skip_rows`.
     stop_after_n_rows
         After n rows are read from the CSV stop reading.
+        During multi-threaded parsing, an upper bound of `n` rows
+        cannot be guaranteed.
     cache
         Cache the result after reading
     """

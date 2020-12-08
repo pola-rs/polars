@@ -52,7 +52,8 @@ impl PyDataFrame {
         rechunk: bool,
         columns: Option<Vec<String>>,
         encoding: &str,
-        one_thread_opt: Option<bool>,
+        mut n_threads: Option<usize>,
+        path: Option<String>,
     ) -> PyResult<Self> {
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
@@ -63,21 +64,16 @@ impl PyDataFrame {
                 )
             }
         };
-        let one_thread;
 
         let file = get_either_file(py_f, false)?;
         // Python files cannot be send to another thread.
         let file: Box<dyn FileLike> = match file {
             EitherRustPythonFile::Py(f) => {
-                one_thread = true;
+                n_threads = Some(1);
                 Box::new(f)
             }
-            EitherRustPythonFile::Rust(f) => {
-                one_thread = false;
-                Box::new(f)
-            }
+            EitherRustPythonFile::Rust(f) => Box::new(f),
         };
-        let one_thread = one_thread_opt.unwrap_or(one_thread);
 
         let df = CsvReader::new(file)
             .infer_schema(Some(infer_schema_length))
@@ -91,7 +87,8 @@ impl PyDataFrame {
             .with_batch_size(batch_size)
             .with_encoding(encoding)
             .with_columns(columns)
-            .with_one_thread(one_thread)
+            .with_n_threads(n_threads)
+            .with_path(path)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
