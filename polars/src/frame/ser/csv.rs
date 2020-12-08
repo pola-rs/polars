@@ -152,7 +152,6 @@ pub enum CsvEncoding {
 ///     CsvReader::from_path("iris_csv")?
 ///             .infer_schema(None)
 ///             .has_header(true)
-///             .with_one_thread(true) // set this to false to try multi-threaded parsing
 ///             .finish()
 /// }
 /// ```
@@ -330,7 +329,7 @@ where
             max_records: Some(100),
             skip_rows: 0,
             projection: None,
-            batch_size: 1024,
+            batch_size: 32,
             delimiter: None,
             has_header: true,
             ignore_parser_errors: false,
@@ -373,7 +372,7 @@ mod test {
 
     #[test]
     fn test_read_csv_file() {
-        let path = "/home/ritchie46/code/polars-book/data/10.csv";
+        let path = "../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
         let file = std::fs::File::open(path).unwrap();
         let df = CsvReader::new(file)
             .with_path(Some(path.to_string()))

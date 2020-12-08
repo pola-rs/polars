@@ -11,7 +11,7 @@ def get_dummies(df: DataFrame) -> DataFrame:
 def read_csv(
     file: Union[str, TextIO],
     infer_schema_length: int = 100,
-    batch_size: int = 1000,
+    batch_size: int = 64,
     has_headers: bool = True,
     ignore_errors: bool = False,
     stop_after_n_rows: Optional[int] = None,
