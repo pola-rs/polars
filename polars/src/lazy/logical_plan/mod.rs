@@ -172,6 +172,11 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         column: String,
     },
+    Slice {
+        input: Box<LogicalPlan>,
+        offset: usize,
+        len: usize,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -295,6 +300,9 @@ impl fmt::Debug for LogicalPlan {
                 write!(f, "STACK [{:?}\n\tWITH COLUMN(S)\n{:?}\n]", input, exprs)
             }
             Distinct { input, .. } => write!(f, "DISTINCT {:?}", input),
+            Slice { input, offset, len } => {
+                write!(f, "SLICE {:?}, offset: {}, len: {}", input, offset, len)
+            }
         }
     }
 }
@@ -424,6 +432,7 @@ impl LogicalPlan {
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
             Distinct { input, .. } => input.schema(),
+            Slice { input, .. } => input.schema(),
         }
     }
     pub fn describe(&self) -> String {
@@ -647,6 +656,15 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             maintain_order,
             subset: Arc::new(subset),
+        }
+        .into()
+    }
+
+    pub fn slice(self, offset: usize, len: usize) -> Self {
+        LogicalPlan::Slice {
+            input: Box::new(self.0),
+            offset,
+            len,
         }
         .into()
     }

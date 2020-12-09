@@ -655,6 +655,19 @@ impl LazyFrame {
             }
         }
     }
+
+    /// Slice the DataFrame.
+    pub fn slice(self, offset: usize, len: usize) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().slice(offset, len).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
+    /// use [fetch](LazyFrame::fetch).
+    pub fn limit(self, n: usize) -> LazyFrame {
+        self.slice(0, n)
+    }
 }
 
 /// Utility struct for lazy groupby operation.

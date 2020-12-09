@@ -111,6 +111,10 @@ impl PredicatePushDown {
         use LogicalPlan::*;
 
         match logical_plan {
+            Slice { input, offset, len } => {
+                let input = Box::new(self.push_down(*input, acc_predicates)?);
+                Ok(Slice { input, offset, len })
+            }
             Selection { predicate, input } => {
                 match expr_to_root_column_name(&predicate) {
                     Ok(name) => insert_and_combine_predicate(&mut acc_predicates, name, predicate),

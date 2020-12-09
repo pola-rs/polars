@@ -182,6 +182,10 @@ impl TypeCoercion {
     fn coerce(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
         use LogicalPlan::*;
         match logical_plan {
+            Slice { input, offset, len } => {
+                let input = Box::new(self.coerce(*input)?);
+                Ok(Slice { input, offset, len })
+            }
             Selection { input, predicate } => {
                 let predicate = self.rewrite_expr(predicate, input.schema())?;
                 let input = Box::new(self.coerce(*input)?);

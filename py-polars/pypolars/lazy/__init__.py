@@ -327,6 +327,31 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.shift(periods))
 
+    def slice(self, offset: int, length: int):
+        """
+        Slice the DataFrame
+
+        Parameters
+        ----------
+        offset
+            Start index
+        length
+            Length of the slice
+        """
+        return wrap_ldf(self._ldf.slice(offset, length))
+
+    def limit(self, n: int):
+        """
+        Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
+        use the `fetch` operation.
+
+        Parameters
+        ----------
+        n
+            Number of rows.
+        """
+        return self.slice(0, n)
+
     def fill_none(self, fill_value: "Union[int, str, Expr]"):
         if not isinstance(fill_value, Expr):
             fill_value = lit(fill_value)
