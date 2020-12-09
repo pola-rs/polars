@@ -311,6 +311,8 @@ class DataFrame:
         if isinstance(item, np.ndarray):
             if item.dtype == int:
                 return wrap_df(self._df.take(item))
+            if isinstance(item[0], str):
+                return wrap_df(self._df.select(item))
         if isinstance(item, (Series, Sequence)):
             if isinstance(item, Sequence):
                 # only bool or integers allowed
