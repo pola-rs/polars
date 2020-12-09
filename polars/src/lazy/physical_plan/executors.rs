@@ -532,3 +532,16 @@ impl Executor for StackExec {
         Ok(df)
     }
 }
+
+pub struct SliceExec {
+    pub input: Box<dyn Executor>,
+    pub offset: usize,
+    pub len: usize,
+}
+
+impl Executor for SliceExec {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
+        df.slice(self.offset, self.len)
+    }
+}

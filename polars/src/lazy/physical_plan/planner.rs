@@ -37,6 +37,10 @@ impl DefaultPlanner {
         logical_plan: LogicalPlan,
     ) -> Result<Box<dyn Executor>> {
         match logical_plan {
+            LogicalPlan::Slice { input, offset, len } => {
+                let input = self.create_initial_physical_plan(*input)?;
+                Ok(Box::new(SliceExec { input, offset, len }))
+            }
             LogicalPlan::Selection { input, predicate } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let predicate = self.create_physical_expr(predicate, Context::Other)?;

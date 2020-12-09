@@ -33,6 +33,9 @@ impl AggScanProjection {
     ) {
         use LogicalPlan::*;
         match logical_plan {
+            Slice { input, .. } => {
+                self.agg_projection(input, columns);
+            }
             Selection { input, .. } => {
                 self.agg_projection(input, columns);
             }
@@ -114,6 +117,10 @@ impl AggScanProjection {
     ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
         match logical_plan {
+            Slice { input, offset, len } => {
+                let input = Box::new(self.rewrite_plan(*input, columns)?);
+                Ok(Slice { input, offset, len })
+            }
             Cache { input } => {
                 let input = Box::new(self.rewrite_plan(*input, columns)?);
                 Ok(Cache { input })

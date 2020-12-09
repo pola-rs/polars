@@ -131,6 +131,11 @@ impl ProjectionPushDown {
     ) -> Result<LogicalPlan> {
         use LogicalPlan::*;
         match logical_plan {
+            Slice { input, offset, len } => {
+                let input =
+                    Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
+                Ok(Slice { input, offset, len })
+            }
             Projection { expr, input, .. } => {
                 // add the root of the projections to accumulation,
                 // but also do them locally to keep the schema and the alias.

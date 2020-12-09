@@ -74,6 +74,11 @@ impl Default for AExpr {
 
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 enum ALogicalPlan {
+    Slice {
+        input: Node,
+        offset: usize,
+        len: usize,
+    },
     Selection {
         input: Node,
         predicate: Node,
@@ -262,6 +267,10 @@ fn to_alp(
                 input: i,
                 predicate: p,
             }
+        }
+        LogicalPlan::Slice { input, offset, len } => {
+            let input = to_alp(*input, expr_arena, lp_arena);
+            ALogicalPlan::Slice { input, offset, len }
         }
         LogicalPlan::CsvScan {
             path,
@@ -595,6 +604,14 @@ fn node_to_lp(
     let lp = std::mem::take(lp);
 
     match lp {
+        ALogicalPlan::Slice { input, offset, len } => {
+            let lp = node_to_lp(input, expr_arena, lp_arena);
+            LogicalPlan::Slice {
+                input: Box::new(lp),
+                offset,
+                len,
+            }
+        }
         ALogicalPlan::Selection { input, predicate } => {
             let lp = node_to_lp(input, expr_arena, lp_arena);
             let p = node_to_exp(predicate, expr_arena);
@@ -1022,6 +1039,9 @@ impl SimplifyOptimizer {
                 let plan = lp_arena.get(node);
 
                 match plan {
+                    ALogicalPlan::Slice { input, .. } => {
+                        plans.push(*input);
+                    }
                     ALogicalPlan::Selection { input, predicate } => {
                         plans.push(*input);
                         exprs.push(*predicate);

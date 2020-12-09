@@ -733,6 +733,9 @@ pub(crate) fn agg_source_paths(
 ) {
     use LogicalPlan::*;
     match logical_plan {
+        Slice { input, .. } => {
+            agg_source_paths(input, paths);
+        }
         Selection { input, .. } => {
             agg_source_paths(input, paths);
         }
