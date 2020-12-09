@@ -20,6 +20,86 @@ use std::mem;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
+/// An arrow primitive builder that is faster than Arrow's native builder because it uses Rust Vec's
+/// as buffer
+pub struct PrimitiveArrayBuilder<T>
+where
+    T: PolarsPrimitiveType,
+    T::Native: Default,
+{
+    values: AlignedVec<T::Native>,
+    bitmap_builder: BooleanBufferBuilder,
+    boolean_builder: PrimitiveBuilder<T>,
+    capacity: usize,
+    null_count: usize,
+}
+
+impl<T> PrimitiveArrayBuilder<T>
+where
+    T: PolarsPrimitiveType,
+    T::Native: Default,
+{
+    pub fn new(capacity: usize) -> Self {
+        let (boolean_builder, values, bitmap_builder) =
+            if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+                (
+                    PrimitiveBuilder::new(capacity),
+                    AlignedVec::<T::Native>::with_capacity_aligned(0),
+                    BooleanBufferBuilder::new(0),
+                )
+            } else {
+                (
+                    PrimitiveBuilder::new(0),
+                    AlignedVec::<T::Native>::with_capacity_aligned(capacity),
+                    BooleanBufferBuilder::new(capacity),
+                )
+            };
+
+        Self {
+            values,
+            bitmap_builder,
+            boolean_builder,
+            capacity,
+            null_count: 0,
+        }
+    }
+
+    /// Appends a value of type `T::Native` into the builder
+    pub fn append_value(&mut self, v: T::Native) {
+        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+            self.boolean_builder.append_value(v).unwrap();
+        } else {
+            self.values.push(v);
+            self.bitmap_builder.append(true).unwrap();
+        }
+    }
+
+    /// Appends a null slot into the builder
+    pub fn append_null(&mut self) {
+        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+            self.boolean_builder.append_null().unwrap();
+        }
+        {
+            self.bitmap_builder.append(false).unwrap();
+            self.values.push(Default::default());
+            self.null_count += 1;
+        }
+    }
+
+    pub fn finish(mut self) -> PrimitiveArray<T> {
+        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+            self.boolean_builder.finish()
+        } else {
+            let null_bit_buffer = self.bitmap_builder.finish();
+            aligned_vec_to_primitive_array(
+                self.values,
+                Some(null_bit_buffer),
+                Some(self.null_count),
+            )
+        }
+    }
+}
+
 pub trait ChunkedBuilder<N, T> {
     fn append_value(&mut self, val: N);
     fn append_null(&mut self);
@@ -37,52 +117,27 @@ where
     T: PolarsPrimitiveType,
     T::Native: Default,
 {
-    values: AlignedVec<T::Native>,
-    bitmap_builder: BooleanBufferBuilder,
-    boolean_builder: PrimitiveBuilder<T>,
-    capacity: usize,
+    array_builder: PrimitiveArrayBuilder<T>,
     field: Field,
-    null_count: usize,
 }
 
 impl<T> ChunkedBuilder<T::Native, T> for PrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
+    T::Native: Default,
 {
     /// Appends a value of type `T` into the builder
     fn append_value(&mut self, v: T::Native) {
-        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
-            self.boolean_builder.append_value(v).unwrap();
-        } else {
-            self.values.push(v);
-            self.bitmap_builder.append(true).unwrap();
-        }
+        self.array_builder.append_value(v)
     }
 
     /// Appends a null slot into the builder
     fn append_null(&mut self) {
-        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
-            self.boolean_builder.append_null().unwrap();
-        }
-        {
-            self.bitmap_builder.append(false).unwrap();
-            self.values.push(Default::default());
-            self.null_count += 1;
-        }
+        self.array_builder.append_null()
     }
 
-    fn finish(mut self) -> ChunkedArray<T> {
-        let arr = if matches!(T::get_data_type(), ArrowDataType::Boolean) {
-            self.boolean_builder.finish()
-        } else {
-            let null_bit_buffer = self.bitmap_builder.finish();
-            aligned_vec_to_primitive_array(
-                self.values,
-                Some(null_bit_buffer),
-                Some(self.null_count),
-            )
-        };
-        let arr = Arc::new(arr);
+    fn finish(self) -> ChunkedArray<T> {
+        let arr = Arc::new(self.array_builder.finish());
 
         let len = arr.len();
         ChunkedArray {
@@ -99,24 +154,10 @@ where
     T: PolarsPrimitiveType,
 {
     pub fn new(name: &str, capacity: usize) -> Self {
-        let boolean_builder = if matches!(T::get_data_type(), ArrowDataType::Boolean) {
-            PrimitiveBuilder::new(capacity)
-        } else {
-            PrimitiveBuilder::new(0)
-        };
-
         PrimitiveChunkedBuilder {
-            values: AlignedVec::<T::Native>::with_capacity_aligned(capacity),
-            bitmap_builder: BooleanBufferBuilder::new(capacity),
-            boolean_builder,
-            capacity,
+            array_builder: PrimitiveArrayBuilder::<T>::new(capacity),
             field: Field::new(name, T::get_data_type(), true),
-            null_count: 0,
         }
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.capacity
     }
 }
 
@@ -305,16 +346,8 @@ pub fn aligned_vec_to_primitive_array<T: PolarsPrimitiveType>(
     null_bit_buffer: Option<Buffer>,
     null_count: Option<usize>,
 ) -> PrimitiveArray<T> {
-    let values = unsafe { values.into_inner() };
     let vec_len = values.len();
-
-    let me = mem::ManuallyDrop::new(values);
-    let ptr = me.as_ptr() as *const u8;
-    let len = me.len() * std::mem::size_of::<T::Native>();
-    let capacity = me.capacity() * std::mem::size_of::<T::Native>();
-    debug_assert_eq!((ptr as usize) % 64, 0);
-
-    let buffer = unsafe { Buffer::from_raw_parts(ptr, len, capacity) };
+    let buffer = values.into_arrow_buffer();
 
     let builder = ArrayData::builder(T::get_data_type())
         .len(vec_len)
@@ -481,6 +514,19 @@ impl<T> AlignedVec<T> {
             };
             self.inner = v;
         }
+    }
+
+    /// Transform this array to an Arrow Buffer.
+    pub fn into_arrow_buffer(self) -> Buffer {
+        let values = unsafe { self.into_inner() };
+
+        let me = mem::ManuallyDrop::new(values);
+        let ptr = me.as_ptr() as *const u8;
+        let len = me.len() * std::mem::size_of::<T>();
+        let capacity = me.capacity() * std::mem::size_of::<T>();
+        debug_assert_eq!((ptr as usize) % 64, 0);
+
+        unsafe { Buffer::from_raw_parts(ptr, len, capacity) }
     }
 }
 
