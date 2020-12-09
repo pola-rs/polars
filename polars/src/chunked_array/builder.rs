@@ -402,6 +402,15 @@ impl<T: Clone> AlignedVec<T> {
     pub fn resize(&mut self, new_len: usize, value: T) {
         self.inner.resize(new_len, value)
     }
+
+    pub fn extend_from_slice(&mut self, other: &[T]) {
+        let remaining_cap = self.capacity() - self.len();
+        let needed_cap = other.len();
+        if needed_cap > remaining_cap {
+            self.reserve(needed_cap - remaining_cap);
+        }
+        self.inner.extend_from_slice(other)
+    }
 }
 
 impl<T> AlignedVec<T> {

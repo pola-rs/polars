@@ -6,7 +6,6 @@ use arrow::array::{
 };
 use arrow::buffer::MutableBuffer;
 use arrow::util::bit_util;
-use std::io::Write;
 use std::mem;
 use std::sync::Arc;
 
@@ -70,39 +69,48 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
 
     let mut length_so_far = 0;
     offset_typed[0] = length_so_far;
-    let mut values_buf;
 
     let nulls;
 
-    // the two loops are ~30% faster then a single loop in benchmarks.
-    offset_typed
-        .iter_mut()
-        .skip(1)
-        .enumerate()
-        .for_each(|(idx, offset)| {
-            let index = indices.value(idx) as usize;
-            let s = arr.value(index);
-            length_so_far += s.len() as i32;
-            *offset = length_so_far;
-        });
-    values_buf = MutableBuffer::new(length_so_far as usize);
+    // The required size is yet unknown
+    // Allocate 1.2 times the expected size.
+    // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
+    let values_capacity =
+        ((arr.value_data().len() as f32 * 1.2) as usize) / arr.len() * indices.len() as usize;
+
+    // 16 bytes per string as default alloc
+    let mut values_buf = AlignedVec::<u8>::with_capacity_aligned(values_capacity);
 
     // both 0 nulls
     if arr.null_count() == 0 && indices.null_count() == 0 {
-        (0..data_len).for_each(|idx| {
-            let index = indices.value(idx) as usize;
-            let s = arr.value(index);
-            values_buf.write_all(s.as_bytes()).expect("enough capacity");
-        });
-        nulls = None
-    } else if arr.null_count() == 0 {
-        (0..data_len).for_each(|idx| {
-            if indices.is_valid(idx) {
+        offset_typed
+            .iter_mut()
+            .skip(1)
+            .enumerate()
+            .for_each(|(idx, offset)| {
                 let index = indices.value(idx) as usize;
                 let s = arr.value(index);
-                values_buf.write_all(s.as_bytes()).expect("enough capacity");
-            }
-        });
+                length_so_far += s.len() as i32;
+                *offset = length_so_far;
+
+                values_buf.extend_from_slice(s.as_bytes())
+            });
+        nulls = None;
+    } else if arr.null_count() == 0 {
+        offset_typed
+            .iter_mut()
+            .skip(1)
+            .enumerate()
+            .for_each(|(idx, offset)| {
+                if indices.is_valid(idx) {
+                    let index = indices.value(idx) as usize;
+                    let s = arr.value(index);
+                    length_so_far += s.len() as i32;
+                    *offset = length_so_far;
+
+                    values_buf.extend_from_slice(s.as_bytes())
+                }
+            });
         nulls = indices.data_ref().null_buffer().cloned();
     } else {
         let mut builder = StringBuilder::with_capacity(data_len, length_so_far as usize);
@@ -136,11 +144,12 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
 
         return Arc::new(builder.finish());
     }
+    values_buf.shrink_to_fit();
 
     let mut data = ArrayData::builder(ArrowDataType::Utf8)
         .len(data_len)
         .add_buffer(offset_buf.freeze())
-        .add_buffer(values_buf.freeze());
+        .add_buffer(values_buf.into_arrow_buffer());
     if let Some(null_buffer) = nulls {
         data = data.null_bit_buffer(null_buffer);
     }
