@@ -474,6 +474,9 @@ class Expr:
             return other
         return lit(other)
 
+    def __and__(self, other):
+        return wrap_expr(self._pyexpr._and(other._pyexpr))
+
     def __add__(self, other):
         return wrap_expr(self._pyexpr + self.__to_pyexpr(other))
 
