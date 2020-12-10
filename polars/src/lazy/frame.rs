@@ -7,10 +7,93 @@ use crate::{
     prelude::*,
 };
 use ahash::RandomState;
+use arrow::datatypes::SchemaRef;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+#[derive(Clone)]
+pub struct LazyCsvReader {
+    path: String,
+    delimiter: u8,
+    has_header: bool,
+    ignore_errors: bool,
+    skip_rows: usize,
+    stop_after_n_rows: Option<usize>,
+    cache: bool,
+    schema: Option<SchemaRef>,
+}
+
+impl LazyCsvReader {
+    fn new(path: String) -> Self {
+        LazyCsvReader {
+            path,
+            delimiter: b',',
+            has_header: true,
+            ignore_errors: false,
+            skip_rows: 0,
+            stop_after_n_rows: None,
+            cache: true,
+            schema: None,
+        }
+    }
+
+    /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
+    /// be guaranteed.
+    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.stop_after_n_rows = num_rows;
+        self
+    }
+
+    /// Continue with next batch when a ParserError is encountered.
+    pub fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
+        self.ignore_errors = ignore;
+        self
+    }
+
+    /// Set the CSV file's schema
+    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    /// Skip the first `n` rows during parsing.
+    pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
+        self.skip_rows = skip_rows;
+        self
+    }
+
+    /// Set whether the CSV file has headers
+    pub fn has_header(mut self, has_header: bool) -> Self {
+        self.has_header = has_header;
+        self
+    }
+
+    /// Set the CSV file's column delimiter as a byte character
+    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
+        self.delimiter = delimiter;
+        self
+    }
+
+    pub fn finish(self) -> LazyFrame {
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
+            self.path,
+            self.delimiter,
+            self.has_header,
+            self.ignore_errors,
+            self.skip_rows,
+            self.stop_after_n_rows,
+            self.cache,
+            self.schema,
+        )
+        .build()
+        .into();
+        lf.agg_scan_projection = true;
+        lf
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
 pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
@@ -80,31 +163,6 @@ struct OptState {
 }
 
 impl LazyFrame {
-    /// Create a LazyFrame directly from a csv scan.
-    pub fn new_from_csv(
-        path: String,
-        delimiter: u8,
-        has_header: bool,
-        ignore_errors: bool,
-        skip_rows: usize,
-        stop_after_n_rows: Option<usize>,
-        cache: bool,
-    ) -> Self {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
-            path,
-            delimiter,
-            has_header,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
-            cache,
-        )
-        .build()
-        .into();
-        lf.agg_scan_projection = true;
-        lf
-    }
-
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg(feature = "parquet")]
     pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {

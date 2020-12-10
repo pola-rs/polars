@@ -1,6 +1,7 @@
 use super::*;
 use crate::frame::ser::csv::CsvEncoding;
 use crate::lazy::logical_plan::{DataFrameOperation, FETCH_ROWS};
+use arrow::datatypes::SchemaRef;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::mem;
@@ -132,7 +133,7 @@ impl Executor for ParquetExec {
 
 pub struct CsvExec {
     path: String,
-    schema: Schema,
+    schema: SchemaRef,
     has_header: bool,
     delimiter: u8,
     ignore_errors: bool,
@@ -147,7 +148,7 @@ impl CsvExec {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         path: String,
-        schema: Schema,
+        schema: SchemaRef,
         has_header: bool,
         delimiter: u8,
         ignore_errors: bool,
@@ -199,14 +200,12 @@ impl Executor for CsvExec {
         if projected_len == 0 {
             with_columns = None;
         }
-        let mut schema = Schema::new(vec![]);
-        mem::swap(&mut self.schema, &mut schema);
         let stop_after_n_rows = self.stop_after_n_rows.map(set_n_rows);
 
         let reader = CsvReader::from_path(&self.path)
             .unwrap()
             .has_header(self.has_header)
-            .with_schema(Arc::new(schema))
+            .with_schema(self.schema.clone())
             .with_delimiter(self.delimiter)
             .with_ignore_parser_errors(self.ignore_errors)
             .with_skip_rows(self.skip_rows)
