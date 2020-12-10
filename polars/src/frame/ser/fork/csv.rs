@@ -139,8 +139,9 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
     } else if left_is_number {
         // integers cannot start with leading zero's
         // we can unwrap because the map above succeeded
-        if let Some(lead) = left.unwrap().chars().next() {
-            if lead == '0' {
+        let mut chars = left.unwrap().chars();
+        if let Some(lead) = chars.next() {
+            if lead == '0' && chars.next().is_some() {
                 return ArrowDataType::Utf8;
             }
         }
@@ -149,6 +150,7 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
     ArrowDataType::Utf8
 }
 
+#[inline]
 fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> Result<Cow<str>> {
     let s = match encoding {
         CsvEncoding::Utf8 => std::str::from_utf8(bytes)
@@ -370,7 +372,7 @@ fn add_to_utf8_builder(
         match v {
             None => builder.append_null(),
             Some(bytes) => {
-                if bytes.len() == 0 {
+                if bytes.is_empty() {
                     builder.append_null()
                 } else {
                     let s = parse_bytes_with_encoding(bytes, encoding)?;
@@ -803,6 +805,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     }
 }
 
+#[inline]
 fn add_to_builders_core(
     builders: &mut [Builder],
     projection: &[usize],
@@ -857,6 +860,7 @@ fn add_to_builders_core(
     Ok(())
 }
 
+#[inline]
 fn add_to_utf8_builder_core(
     rows: &[PolarsCsvRecord],
     col_idx: usize,
@@ -868,7 +872,7 @@ fn add_to_utf8_builder_core(
         match v {
             None => builder.append_null(),
             Some(bytes) => {
-                if bytes.len() == 0 {
+                if bytes.is_empty() {
                     builder.append_null()
                 } else {
                     let s = parse_bytes_with_encoding(bytes, encoding)?;
@@ -880,6 +884,7 @@ fn add_to_utf8_builder_core(
     Ok(())
 }
 
+#[inline]
 fn add_to_primitive_core<T>(
     rows: &[PolarsCsvRecord],
     col_idx: usize,
