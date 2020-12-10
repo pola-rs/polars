@@ -1217,4 +1217,17 @@ mod test {
         );
         dbg!(out);
     }
+
+    #[test]
+    fn test_lazy_double_projection() {
+        let df = df! {
+            "foo" => &[1, 2, 3]
+        }
+        .unwrap();
+        df.lazy()
+            .select(&[col("foo").alias("bar")])
+            .select(&[col("bar")])
+            .collect()
+            .unwrap();
+    }
 }
