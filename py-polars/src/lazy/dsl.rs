@@ -255,7 +255,10 @@ impl PyExpr {
                 Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
             }
         };
-        self.clone().inner.apply(function, Some(ArrowDataType::Boolean)).into()
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::Boolean))
+            .into()
     }
 
     pub fn apply(&self, lambda: PyObject, output_type: &PyAny) -> PyExpr {
