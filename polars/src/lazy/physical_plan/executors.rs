@@ -8,11 +8,11 @@ use std::mem;
 
 const POLARS_VERBOSE: &str = "POLARS_VERBOSE";
 
-fn set_n_rows(stop_after_n_rows: usize) -> usize {
+fn set_n_rows(stop_after_n_rows: Option<usize>) -> Option<usize> {
     let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
     match fetch_rows {
         None => stop_after_n_rows,
-        Some(n) => n,
+        Some(n) => Some(n),
     }
 }
 
@@ -110,7 +110,7 @@ impl Executor for ParquetExec {
             None
         };
 
-        let stop_after_n_rows = self.stop_after_n_rows.map(set_n_rows);
+        let stop_after_n_rows = set_n_rows(self.stop_after_n_rows);
 
         let df = ParquetReader::new(file)
             .with_stop_after_n_rows(stop_after_n_rows)
@@ -200,7 +200,8 @@ impl Executor for CsvExec {
         if projected_len == 0 {
             with_columns = None;
         }
-        let stop_after_n_rows = self.stop_after_n_rows.map(set_n_rows);
+        let stop_after_n_rows = set_n_rows(self.stop_after_n_rows);
+        dbg!(stop_after_n_rows);
 
         let reader = CsvReader::from_path(&self.path)
             .unwrap()
