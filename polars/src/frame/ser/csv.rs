@@ -155,7 +155,7 @@ pub enum CsvEncoding {
 ///             .finish()
 /// }
 /// ```
-pub struct CsvReader<R>
+pub struct CsvReader<'a, R>
 where
     R: Read + Seek,
 {
@@ -180,9 +180,10 @@ where
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     path: Option<String>,
+    schema_overwrite: Option<&'a Schema>,
 }
 
-impl<R> CsvReader<R>
+impl<'a, R> CsvReader<'a, R>
 where
     R: 'static + Read + Seek + Sync + Send,
 {
@@ -231,6 +232,13 @@ where
     /// Set the CSV file's column delimiter as a byte character
     pub fn with_delimiter(mut self, delimiter: u8) -> Self {
         self.delimiter = Some(delimiter);
+        self
+    }
+
+    /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
+    /// of the total schema.
+    pub fn with_dtype_overwrite(mut self, schema: Option<&'a Schema>) -> Self {
+        self.schema_overwrite = schema;
         self
     }
 
@@ -290,6 +298,7 @@ where
             self.encoding,
             self.n_threads,
             self.path,
+            self.schema_overwrite,
         )
     }
     /// Read the file and create the DataFrame. Used from lazy execution
@@ -308,7 +317,7 @@ where
     }
 }
 
-impl CsvReader<File> {
+impl<'a> CsvReader<'a, File> {
     /// This is the recommended way to create a csv reader as this allows for fastest parsing.
     pub fn from_path(path: &str) -> Result<Self> {
         let f = std::fs::File::open(path)?;
@@ -316,7 +325,7 @@ impl CsvReader<File> {
     }
 }
 
-impl<R> SerReader<R> for CsvReader<R>
+impl<'a, R> SerReader<R> for CsvReader<'a, R>
 where
     R: 'static + Read + Seek + Sync + Send,
 {
@@ -338,6 +347,7 @@ where
             encoding: CsvEncoding::Utf8,
             n_threads: None,
             path: None,
+            schema_overwrite: None,
         }
     }
 

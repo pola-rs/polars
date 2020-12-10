@@ -22,6 +22,7 @@ def read_csv(
     rechunk: bool = True,
     encoding: str = "utf8",
     n_threads: Optional[int] = None,
+    dtype: "Optional[Dict[str, DataType]]" = None,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a csv file.
@@ -56,6 +57,8 @@ def read_csv(
         _ "utf8-lossy"
     n_threads
         Number of threads to use in csv parsing. Defaults to the number of physical cpu's of you system.
+    dtype
+        Overwrite the dtypes during inference
 
     Returns
     -------
@@ -76,6 +79,7 @@ def read_csv(
         rechunk=rechunk,
         encoding=encoding,
         n_threads=n_threads,
+        dtype=dtype,
     )
 
 
@@ -87,6 +91,7 @@ def scan_csv(
     skip_rows: int = 0,
     stop_after_n_rows: "Optional[int]" = None,
     cache: bool = True,
+    dtype: "Optional[Dict[str, DataType]]" = None,
 ) -> "LazyFrame":
     """
     Read into a DataFrame from a csv file.
@@ -109,6 +114,8 @@ def scan_csv(
         cannot be guaranteed.
     cache
         Cache the result after reading
+    dtype
+        Overwrite the dtypes during inference
     """
     return LazyFrame.scan_csv(
         file=file,
@@ -118,6 +125,7 @@ def scan_csv(
         skip_rows=skip_rows,
         stop_after_n_rows=stop_after_n_rows,
         cache=cache,
+        dtype=dtype,
     )
 
 

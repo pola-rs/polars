@@ -1,7 +1,9 @@
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use polars::lazy::frame::{JoinOptions, LazyFrame, LazyGroupBy};
+use crate::utils::str_to_arrow_type;
+use polars::lazy::frame::{JoinOptions, LazyCsvReader, LazyFrame, LazyGroupBy};
+use polars::prelude::{Field, Schema};
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -45,18 +47,32 @@ impl PyLazyFrame {
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
         cache: bool,
+        overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
     ) -> Self {
         let delimiter = sep.as_bytes()[0];
-        LazyFrame::new_from_csv(
-            path,
-            delimiter,
-            has_header,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
-            cache,
-        )
-        .into()
+
+        let overwrite_dtype = overwrite_dtype.and_then(|overwrite_dtype| {
+            let fields = overwrite_dtype
+                .iter()
+                .map(|(name, dtype)| {
+                    let str_repr = dtype.str().unwrap().to_str().unwrap();
+                    let dtype = str_to_arrow_type(str_repr);
+                    Field::new(name, dtype, true)
+                })
+                .collect();
+            Some(Schema::new(fields))
+        });
+
+        LazyCsvReader::new(path)
+            .with_delimiter(delimiter)
+            .has_header(has_header)
+            .with_ignore_parser_errors(ignore_errors)
+            .with_skip_rows(skip_rows)
+            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_cache(cache)
+            .with_dtype_overwrite(overwrite_dtype.as_ref())
+            .finish()
+            .into()
     }
 
     #[staticmethod]
@@ -113,7 +129,9 @@ impl PyLazyFrame {
 
     pub fn fetch(&self, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
-        let df = ldf.fetch(n_rows).map_err(PyPolarsEr::from)?;
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsEr::from))?;
         Ok(df.into())
     }
 

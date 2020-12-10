@@ -1,4 +1,5 @@
 use crate::series::PySeries;
+use crate::utils::str_to_arrow_type;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -254,7 +255,7 @@ impl PyExpr {
                 Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
             }
         };
-        self.clone().inner.apply(function, None).into()
+        self.clone().inner.apply(function, Some(ArrowDataType::Boolean)).into()
     }
 
     pub fn apply(&self, lambda: PyObject, output_type: &PyAny) -> PyExpr {
@@ -291,26 +292,6 @@ impl PyExpr {
         };
 
         self.clone().inner.apply(function, output_type).into()
-    }
-}
-
-fn str_to_arrow_type(s: &str) -> ArrowDataType {
-    match s {
-        "<class 'pypolars.datatypes.UInt8'>" => ArrowDataType::UInt8,
-        "<class 'pypolars.datatypes.UInt16'>" => ArrowDataType::UInt16,
-        "<class 'pypolars.datatypes.UInt32'>" => ArrowDataType::UInt32,
-        "<class 'pypolars.datatypes.UInt64'>" => ArrowDataType::UInt64,
-        "<class 'pypolars.datatypes.Int8'>" => ArrowDataType::Int8,
-        "<class 'pypolars.datatypes.Int16'>" => ArrowDataType::Int16,
-        "<class 'pypolars.datatypes.Int32'>" => ArrowDataType::Int32,
-        "<class 'pypolars.datatypes.Int64'>" => ArrowDataType::Int64,
-        "<class 'pypolars.datatypes.Float32'>" => ArrowDataType::Float32,
-        "<class 'pypolars.datatypes.Float64'>" => ArrowDataType::Float64,
-        "<class 'pypolars.datatypes.Boolean'>" => ArrowDataType::Boolean,
-        "<class 'pypolars.datatypes.Utf8'>" => ArrowDataType::Utf8,
-        "<class 'pypolars.datatypes.Date32'>" => ArrowDataType::Date32(DateUnit::Day),
-        "<class 'pypolars.datatypes.Date64'>" => ArrowDataType::Date64(DateUnit::Millisecond),
-        tp => panic!(format!("Type {} not implemented in str_to_arrow_type", tp)),
     }
 }
 
