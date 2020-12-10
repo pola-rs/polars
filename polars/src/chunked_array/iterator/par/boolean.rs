@@ -1,6 +1,6 @@
 use crate::chunked_array::iterator::{
-    SomeIterator, Utf8IterManyChunk, Utf8IterManyChunkNullCheck, Utf8IterSingleChunk,
-    Utf8IterSingleChunkNullCheck,
+    BooleanIterManyChunk, BooleanIterManyChunkNullCheck, BooleanIterSingleChunk,
+    BooleanIterSingleChunkNullCheck, SomeIterator,
 };
 use crate::prelude::*;
 use arrow::array::Array;
@@ -8,42 +8,42 @@ use rayon::iter::plumbing::*;
 use rayon::iter::plumbing::{Consumer, ProducerCallback};
 use rayon::prelude::*;
 
-// Implement the parallel iterators for Utf8. It also implement the trait `IntoParallelIterator`
-// for `&'a Utf8Chunked` and `NoNull<&'a Utf8Chunked>`, which use static dispatcher to use
+// Implement the parallel iterators for Boolean. It also implement the trait `IntoParallelIterator`
+// for `&'a BooleanChunked` and `NoNull<&'a BooleanChunked>`, which use static dispatcher to use
 // the best implementation of parallel iterators depending on the number of chunks and the
 // existence of null values.
 impl_all_parallel_iterators!(
     // Chunked array.
-    &'a Utf8Chunked,
+    &'a BooleanChunked,
 
     // Sequential iterators.
-    Utf8IterSingleChunk<'a>,
-    Utf8IterSingleChunkNullCheck<'a>,
-    Utf8IterManyChunk<'a>,
-    Utf8IterManyChunkNullCheck<'a>,
+    BooleanIterSingleChunk<'a>,
+    BooleanIterSingleChunkNullCheck<'a>,
+    BooleanIterManyChunk<'a>,
+    BooleanIterManyChunkNullCheck<'a>,
 
     // Parallel iterators.
-    Utf8ParIterSingleChunkReturnOption,
-    Utf8ParIterSingleChunkNullCheckReturnOption,
-    Utf8ParIterManyChunkReturnOption,
-    Utf8ParIterManyChunkNullCheckReturnOption,
-    Utf8ParIterSingleChunkReturnUnwrapped,
-    Utf8ParIterManyChunkReturnUnwrapped,
+    BooleanParIterSingleChunkReturnOption,
+    BooleanParIterSingleChunkNullCheckReturnOption,
+    BooleanParIterManyChunkReturnOption,
+    BooleanParIterManyChunkNullCheckReturnOption,
+    BooleanParIterSingleChunkReturnUnwrapped,
+    BooleanParIterManyChunkReturnUnwrapped,
 
     // Producers.
-    Utf8ProducerSingleChunkReturnOption,
-    Utf8ProducerSingleChunkNullCheckReturnOption,
-    Utf8ProducerManyChunkReturnOption,
-    Utf8ProducerManyChunkNullCheckReturnOption,
-    Utf8ProducerSingleChunkReturnUnwrapped,
-    Utf8ProducerManyChunkReturnUnwrapped,
+    BooleanProducerSingleChunkReturnOption,
+    BooleanProducerSingleChunkNullCheckReturnOption,
+    BooleanProducerManyChunkReturnOption,
+    BooleanProducerManyChunkNullCheckReturnOption,
+    BooleanProducerSingleChunkReturnUnwrapped,
+    BooleanProducerManyChunkReturnUnwrapped,
 
     // Dispatchers.
-    Utf8ParIterDispatcher,
-    Utf8NoNullParIterDispatcher,
+    BooleanParIterDispatcher,
+    BooleanNoNullParIterDispatcher,
 
     // Iter item.
-    &'a str,
+    bool,
 
     // Lifetime.
     lifetime = 'a
@@ -55,29 +55,26 @@ mod test {
     use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
     /// The size of the chunked array used in tests.
-    const UTF8_CHUNKED_ARRAY_SIZE: usize = 10_000;
+    const BOOLEAN_CHUNKED_ARRAY_SIZE: usize = 1_000_000;
 
-    /// Generates a `Vec` of `Strings`, where every position is the `String` representation of its index.
-    fn generate_utf8_vec(size: usize) -> Vec<String> {
-        (0..size).map(|n| n.to_string()).collect()
+    /// Generates a `Vec` of `bool`, with even indexes are true, and odd indexes are false.
+    fn generate_boolean_vec(size: usize) -> Vec<bool> {
+        (0..size).map(|n| n % 2 == 0).collect()
     }
 
-    /// Generate a `Vec` of `Option<String>`, where even indexes are `None` and odd indexes are `Some("{idx}")`.
-    fn generate_opt_utf8_vec(size: usize) -> Vec<Option<String>> {
+    /// Generate a `Vec` of `Option<bool>`, where:
+    /// - If the index is divisible by 3, then, the value is `None`.
+    /// - If the index is not divisible by 3 and it is even, then, the value is `Some(true)`.
+    /// - Otherwise, the value is `Some(false)`.
+    fn generate_opt_boolean_vec(size: usize) -> Vec<Option<bool>> {
         (0..size)
-            .map(|n| {
-                if n % 2 == 0 {
-                    Some(n.to_string())
-                } else {
-                    None
-                }
-            })
+            .map(|n| if n % 3 == 0 { None } else { Some(n % 2 == 0) })
             .collect()
     }
 
     /// Implement a test which performs a map over a `ParallelIterator` and over its correspondant `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
-    /// Option<&str>.
+    /// Option<bool>.
     ///
     /// # Input
     ///
@@ -92,13 +89,13 @@ mod test {
                 // Perform a parallel maping.
                 let par_result = a
                     .into_par_iter()
-                    .map(|opt_s| opt_s.map(|s| s.replace("0", "a")))
+                    .map(|opt_b| opt_b.map(|b| !b))
                     .collect::<Vec<_>>();
 
                 // Perform a sequetial maping.
                 let seq_result = a
                     .into_iter()
-                    .map(|opt_s| opt_s.map(|s| s.replace("0", "a")))
+                    .map(|opt_b| opt_b.map(|b| !b))
                     .collect::<Vec<_>>();
 
                 // Check sequetial and parallel results are equal.
@@ -109,7 +106,7 @@ mod test {
 
     /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondant `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
-    /// Option<&str>.
+    /// Option<bool>.
     ///
     /// # Input
     ///
@@ -124,21 +121,13 @@ mod test {
                 // Perform a parallel filter.
                 let par_result = a
                     .into_par_iter()
-                    .filter(|opt_s| {
-                        let opt_s = opt_s.map(|s| s.contains("0"));
-
-                        opt_s.unwrap_or(false)
-                    })
+                    .filter(|opt_b| opt_b.unwrap_or(false))
                     .collect::<Vec<_>>();
 
                 // Perform a sequetial filter.
                 let seq_result = a
                     .into_iter()
-                    .filter(|opt_s| {
-                        let opt_s = opt_s.map(|s| s.contains("0"));
-
-                        opt_s.unwrap_or(false)
-                    })
+                    .filter(|opt_b| opt_b.unwrap_or(false))
                     .collect::<Vec<_>>();
 
                 // Check sequetial and parallel results are equal.
@@ -149,7 +138,7 @@ mod test {
 
     /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondant `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
-    /// Option<&str>.
+    /// Option<bool>.
     ///
     /// # Input
     ///
@@ -166,21 +155,21 @@ mod test {
                     .into_par_iter()
                     .fold(
                         || 0u64,
-                        |acc, opt_s| {
-                            let opt_s = opt_s.map(|s| s.len() as u64);
+                        |acc, opt_b| {
+                            let opt_u = opt_b.map(|b| if b { 1 } else { 2 });
 
-                            let len = opt_s.unwrap_or(0);
-                            acc + len
+                            let val = opt_u.unwrap_or(0);
+                            acc + val
                         },
                     )
                     .reduce(|| 0u64, |left, right| left + right);
 
                 // Perform a sequential sum of length.
-                let seq_result = a.into_iter().fold(0u64, |acc, opt_s| {
-                    let opt_s = opt_s.map(|s| s.len() as u64);
+                let seq_result = a.into_iter().fold(0u64, |acc, opt_b| {
+                    let opt_u = opt_b.map(|b| if b { 1 } else { 2 });
 
-                    let len = opt_s.unwrap_or(0);
-                    acc + len
+                    let val = opt_u.unwrap_or(0);
+                    acc + val
                 });
 
                 // Check sequetial and parallel results are equal.
@@ -190,76 +179,104 @@ mod test {
     }
 
     // Single Chunk Parallel Iterator Tests.
-    impl_par_iter_return_option_map_test!(utf8_par_iter_single_chunk_return_option_map, {
-        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    impl_par_iter_return_option_map_test!(boolean_par_iter_single_chunk_return_option_map, {
+        BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE))
     });
 
-    impl_par_iter_return_option_filter_test!(utf8_par_iter_single_chunk_return_option_filter, {
-        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    impl_par_iter_return_option_filter_test!(boolean_par_iter_single_chunk_return_option_filter, {
+        BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE))
     });
 
-    impl_par_iter_return_option_fold_test!(utf8_par_iter_single_chunk_return_option_fold, {
-        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    impl_par_iter_return_option_fold_test!(boolean_par_iter_single_chunk_return_option_fold, {
+        BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE))
     });
 
     // Single Chunk Null Check Parallel Iterator Tests.
     impl_par_iter_return_option_map_test!(
-        utf8_par_iter_single_chunk_null_check_return_option_map,
-        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+        boolean_par_iter_single_chunk_null_check_return_option_map,
+        {
+            BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     impl_par_iter_return_option_filter_test!(
-        utf8_par_iter_single_chunk_null_check_return_option_filter,
-        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+        boolean_par_iter_single_chunk_null_check_return_option_filter,
+        {
+            BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     impl_par_iter_return_option_fold_test!(
-        utf8_par_iter_single_chunk_null_check_return_option_fold,
-        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+        boolean_par_iter_single_chunk_null_check_return_option_fold,
+        {
+            BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     // Many Chunk Parallel Iterator Tests.
-    impl_par_iter_return_option_map_test!(utf8_par_iter_many_chunk_return_option_map, {
-        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+    impl_par_iter_return_option_map_test!(boolean_par_iter_many_chunk_return_option_map, {
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
-    impl_par_iter_return_option_filter_test!(utf8_par_iter_many_chunk_return_option_filter, {
-        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+    impl_par_iter_return_option_filter_test!(boolean_par_iter_many_chunk_return_option_filter, {
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
-    impl_par_iter_return_option_fold_test!(utf8_par_iter_many_chunk_return_option_fold, {
-        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+    impl_par_iter_return_option_fold_test!(boolean_par_iter_many_chunk_return_option_fold, {
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     // Many Chunk Null Check Parallel Iterator Tests.
-    impl_par_iter_return_option_map_test!(utf8_par_iter_many_chunk_null_check_return_option_map, {
-        let mut a =
-            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        a.append(&a_b);
-        a
-    });
+    impl_par_iter_return_option_map_test!(
+        boolean_par_iter_many_chunk_null_check_return_option_map,
+        {
+            let mut a = BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = BooleanChunked::new_from_opt_slice(
+                "a",
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            );
+            a.append(&a_b);
+            a
+        }
+    );
 
     impl_par_iter_return_option_filter_test!(
-        utf8_par_iter_many_chunk_null_check_return_option_filter,
+        boolean_par_iter_many_chunk_null_check_return_option_filter,
         {
-            let mut a = Utf8Chunked::new_from_opt_slice(
+            let mut a = BooleanChunked::new_from_opt_slice(
                 "a",
-                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
             );
-            let a_b = Utf8Chunked::new_from_opt_slice(
+            let a_b = BooleanChunked::new_from_opt_slice(
                 "a",
-                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
             );
             a.append(&a_b);
             a
@@ -267,15 +284,15 @@ mod test {
     );
 
     impl_par_iter_return_option_fold_test!(
-        utf8_par_iter_many_chunk_null_check_return_option_fold,
+        boolean_par_iter_many_chunk_null_check_return_option_fold,
         {
-            let mut a = Utf8Chunked::new_from_opt_slice(
+            let mut a = BooleanChunked::new_from_opt_slice(
                 "a",
-                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
             );
-            let a_b = Utf8Chunked::new_from_opt_slice(
+            let a_b = BooleanChunked::new_from_opt_slice(
                 "a",
-                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
+                &generate_opt_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
             );
             a.append(&a_b);
             a
@@ -297,16 +314,10 @@ mod test {
                 let a = $ca_init_block;
 
                 // Perform a parallel maping.
-                let par_result = NoNull(&a)
-                    .into_par_iter()
-                    .map(|s| s.replace("0", "a"))
-                    .collect::<Vec<_>>();
+                let par_result = NoNull(&a).into_par_iter().map(|b| !b).collect::<Vec<_>>();
 
                 // Perform a sequetial maping.
-                let seq_result = a
-                    .into_no_null_iter()
-                    .map(|s| s.replace("0", "a"))
-                    .collect::<Vec<_>>();
+                let seq_result = a.into_no_null_iter().map(|b| !b).collect::<Vec<_>>();
 
                 // Check sequetial and parallel results are equal.
                 assert_eq!(par_result, seq_result);
@@ -331,14 +342,11 @@ mod test {
                 // Perform a parallel filter.
                 let par_result = NoNull(&a)
                     .into_par_iter()
-                    .filter(|s| s.contains("0"))
+                    .filter(|&b| b)
                     .collect::<Vec<_>>();
 
                 // Perform a sequetial filter.
-                let seq_result = a
-                    .into_no_null_iter()
-                    .filter(|s| s.contains("0"))
-                    .collect::<Vec<_>>();
+                let seq_result = a.into_no_null_iter().filter(|&b| b).collect::<Vec<_>>();
 
                 // Check sequetial and parallel results are equal.
                 assert_eq!(par_result, seq_result);
@@ -363,13 +371,20 @@ mod test {
                 // Perform a parallel sum of length.
                 let par_result = NoNull(&a)
                     .into_par_iter()
-                    .fold(|| 0u64, |acc, s| acc + s.len() as u64)
+                    .fold(
+                        || 0u64,
+                        |acc, b| {
+                            let val = if b { 1 } else { 2 };
+                            acc + val
+                        },
+                    )
                     .reduce(|| 0u64, |left, right| left + right);
 
                 // Perform a sequential sum of length.
-                let seq_result = a
-                    .into_no_null_iter()
-                    .fold(0u64, |acc, s| acc + s.len() as u64);
+                let seq_result = a.into_no_null_iter().fold(0u64, |acc, b| {
+                    let val = if b { 1 } else { 2 };
+                    acc + val
+                });
 
                 // Check sequetial and parallel results are equal.
                 assert_eq!(par_result, seq_result);
@@ -378,41 +393,51 @@ mod test {
     }
 
     // Single Chunk Return Unwrapped
-    impl_par_iter_return_unwrapped_map_test!(utf8_par_iter_single_chunk_return_unwrapped_map, {
-        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
+    impl_par_iter_return_unwrapped_map_test!(boolean_par_iter_single_chunk_return_unwrapped_map, {
+        BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE))
     });
 
     impl_par_iter_return_unwrapped_filter_test!(
-        utf8_par_iter_single_chunk_return_unwrapped_filter,
-        { Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+        boolean_par_iter_single_chunk_return_unwrapped_filter,
+        { BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE)) }
     );
 
-    impl_par_iter_return_unwrapped_fold_test!(utf8_par_iter_single_chunk_return_unwrapped_fold, {
-        Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE))
-    });
+    impl_par_iter_return_unwrapped_fold_test!(
+        boolean_par_iter_single_chunk_return_unwrapped_fold,
+        { BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE)) }
+    );
 
     // Many Chunk Return Unwrapped
-    impl_par_iter_return_unwrapped_map_test!(utf8_par_iter_many_chunk_return_unwrapped_map, {
-        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+    impl_par_iter_return_unwrapped_map_test!(boolean_par_iter_many_chunk_return_unwrapped_map, {
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     impl_par_iter_return_unwrapped_filter_test!(
-        utf8_par_iter_many_chunk_return_unwrapped_filter,
+        boolean_par_iter_many_chunk_return_unwrapped_filter,
         {
-            let mut a =
-                Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-            let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+            let mut a = BooleanChunked::new_from_slice(
+                "a",
+                &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = BooleanChunked::new_from_slice(
+                "a",
+                &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
+            );
             a.append(&a_b);
             a
         }
     );
 
-    impl_par_iter_return_unwrapped_fold_test!(utf8_par_iter_many_chunk_return_unwrapped_fold, {
-        let mut a = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b = Utf8Chunked::new_from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+    impl_par_iter_return_unwrapped_fold_test!(boolean_par_iter_many_chunk_return_unwrapped_fold, {
+        let mut a =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            BooleanChunked::new_from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
