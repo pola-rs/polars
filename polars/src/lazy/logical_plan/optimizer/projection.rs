@@ -137,9 +137,27 @@ impl ProjectionPushDown {
                 Ok(Slice { input, offset, len })
             }
             Projection { expr, input, .. } => {
+                dbg!(&expr, &acc_projections, projections_seen);
                 // add the root of the projections to accumulation,
                 // but also do them locally to keep the schema and the alias.
                 for e in &expr {
+                    // in this branch we check a double projection case
+                    // df
+                    //   .select(col("foo").alias("bar"))
+                    //   .select(col("bar")
+                    //
+                    // In this query, bar cannot pass this projection, as it would not exist in DF.
+                    if !acc_projections.is_empty() {
+                        if let Expr::Alias(_, name) = e {
+                            if names.remove(name) {
+                                acc_projections = acc_projections
+                                    .into_iter()
+                                    .filter(|expr| &expr_to_root_column_name(expr).unwrap() != name)
+                                    .collect();
+                            }
+                        }
+                    }
+
                     add_to_accumulated(e, &mut acc_projections, &mut names)?;
                 }
                 let lp = self.push_down(*input, acc_projections, names, projections_seen + 1)?;
