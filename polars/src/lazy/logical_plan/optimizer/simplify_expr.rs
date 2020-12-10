@@ -85,7 +85,7 @@ enum ALogicalPlan {
     },
     CsvScan {
         path: String,
-        schema: Schema,
+        schema: SchemaRef,
         has_header: bool,
         delimiter: u8,
         ignore_errors: bool,

@@ -8,7 +8,7 @@ use crate::{
     prelude::*,
 };
 use ahash::RandomState;
-use arrow::datatypes::DataType;
+use arrow::datatypes::{DataType, SchemaRef};
 use std::collections::HashSet;
 use std::{cell::Cell, fmt, sync::Arc};
 
@@ -97,7 +97,7 @@ pub enum LogicalPlan {
     },
     CsvScan {
         path: String,
-        schema: Schema,
+        schema: SchemaRef,
         has_header: bool,
         delimiter: u8,
         ignore_errors: bool,
@@ -183,7 +183,7 @@ impl Default for LogicalPlan {
     fn default() -> Self {
         CsvScan {
             path: "".to_string(),
-            schema: Schema::new(vec![Field::new("", ArrowDataType::Null, true)]),
+            schema: Arc::new(Schema::new(vec![Field::new("", ArrowDataType::Null, true)])),
             has_header: false,
             delimiter: b',',
             ignore_errors: false,
@@ -472,6 +472,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn scan_csv(
         path: String,
         delimiter: u8,
@@ -480,10 +481,15 @@ impl LogicalPlanBuilder {
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
         cache: bool,
+        schema: Option<Arc<Schema>>,
     ) -> Self {
         let mut file = std::fs::File::open(&path).expect("could not open file");
-        let (schema, _) = infer_file_schema(&mut file, delimiter, Some(100), has_header)
-            .expect("could not read schema");
+
+        let schema = schema.unwrap_or_else(|| {
+            let (schema, _) = infer_file_schema(&mut file, delimiter, Some(100), has_header)
+                .expect("could not read schema");
+            Arc::new(schema)
+        });
         LogicalPlan::CsvScan {
             path,
             schema,
