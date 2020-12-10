@@ -400,7 +400,9 @@ impl PredicatePushDown {
                 }
 
                 for key in local_keys {
-                    local.push(acc_predicates.remove(&key).unwrap());
+                    if let Some(val) = acc_predicates.remove(&key) {
+                        local.push(val);
+                    }
                 }
 
                 let mut lp_builder =
