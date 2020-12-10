@@ -238,3 +238,15 @@ def dtype_to_int(dtype: "DataType") -> int:
         if dt == dtype:
             return i
         i += 1
+
+
+def pytype_to_polars_type(data_type):
+    if data_type == int:
+        data_type = Int64
+    elif data_type == str:
+        data_type = Utf8
+    elif data_type == float:
+        data_type = Float64
+    else:
+        pass
+    return data_type

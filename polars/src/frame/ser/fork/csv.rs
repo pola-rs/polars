@@ -137,6 +137,13 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
     if left_is_number && right.map_or(false, all_digit) {
         return ArrowDataType::Float64;
     } else if left_is_number {
+        // integers cannot start with leading zero's
+        // we can unwrap because the map above succeeded
+        if let Some(lead) = left.unwrap().chars().next() {
+            if lead == '0' {
+                return ArrowDataType::Utf8;
+            }
+        }
         return ArrowDataType::Int64;
     }
     ArrowDataType::Utf8
@@ -163,6 +170,7 @@ pub(crate) fn infer_file_schema<R: Read + Seek>(
     delimiter: u8,
     max_read_records: Option<usize>,
     has_header: bool,
+    schema_overwrite: Option<&Schema>,
 ) -> Result<(Schema, usize)> {
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
@@ -228,6 +236,13 @@ pub(crate) fn infer_file_schema<R: Read + Seek>(
         let possibilities = &column_types[i];
         let has_nulls = nulls[i];
         let field_name = &headers[i];
+
+        if let Some(schema_overwrite) = schema_overwrite {
+            if let Ok(field_ovw) = schema_overwrite.field_with_name(field_name) {
+                fields.push(field_ovw.clone());
+                continue;
+            }
+        }
 
         // determine data type based on possible types
         // if there are incompatible types, use DataType::Utf8
@@ -355,8 +370,12 @@ fn add_to_utf8_builder(
         match v {
             None => builder.append_null(),
             Some(bytes) => {
-                let s = parse_bytes_with_encoding(bytes, encoding)?;
-                builder.append_value(&s);
+                if bytes.len() == 0 {
+                    builder.append_null()
+                } else {
+                    let s = parse_bytes_with_encoding(bytes, encoding)?;
+                    builder.append_value(&s);
+                }
             }
         }
     }
@@ -849,8 +868,12 @@ fn add_to_utf8_builder_core(
         match v {
             None => builder.append_null(),
             Some(bytes) => {
-                let s = parse_bytes_with_encoding(bytes, encoding)?;
-                builder.append_value(&s);
+                if bytes.len() == 0 {
+                    builder.append_null()
+                } else {
+                    let s = parse_bytes_with_encoding(bytes, encoding)?;
+                    builder.append_value(&s);
+                }
             }
         }
     }
@@ -907,6 +930,7 @@ struct PolarsCsvRecord {
 }
 
 impl PolarsCsvRecord {
+    #[inline]
     fn get(&self, index: usize) -> Option<&[u8]> {
         let start = match index.checked_sub(1).and_then(|idx| self.ends.get(idx)) {
             None => 0,
@@ -920,6 +944,7 @@ impl PolarsCsvRecord {
         Some(&self.out[start..end])
     }
 
+    #[inline]
     fn resize_out_buffer(&mut self) {
         let size = std::cmp::max(self.out.len() * 2, 128);
         self.out.resize(size, 0);
@@ -941,6 +966,7 @@ impl Default for PolarsCsvRecord {
     }
 }
 
+#[inline]
 fn next_rows_core(
     rows: &mut Vec<PolarsCsvRecord>,
     mut bytes: &[u8],
@@ -1194,14 +1220,20 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     path: Option<String>,
+    schema_overwrite: Option<&Schema>,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
     let schema = match schema {
         Some(schema) => schema,
         None => {
-            let (inferred_schema, _) =
-                infer_file_schema(&mut reader, delimiter, max_records, has_header)?;
+            let (inferred_schema, _) = infer_file_schema(
+                &mut reader,
+                delimiter,
+                max_records,
+                has_header,
+                schema_overwrite,
+            )?;
 
             Arc::new(inferred_schema)
         }

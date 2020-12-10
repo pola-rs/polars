@@ -482,12 +482,19 @@ impl LogicalPlanBuilder {
         stop_after_n_rows: Option<usize>,
         cache: bool,
         schema: Option<Arc<Schema>>,
+        schema_overwrite: Option<&Schema>,
     ) -> Self {
         let mut file = std::fs::File::open(&path).expect("could not open file");
 
         let schema = schema.unwrap_or_else(|| {
-            let (schema, _) = infer_file_schema(&mut file, delimiter, Some(100), has_header)
-                .expect("could not read schema");
+            let (schema, _) = infer_file_schema(
+                &mut file,
+                delimiter,
+                Some(100),
+                has_header,
+                schema_overwrite,
+            )
+            .expect("could not read schema");
             Arc::new(schema)
         });
         LogicalPlan::CsvScan {

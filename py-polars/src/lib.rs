@@ -22,6 +22,7 @@ pub mod lazy;
 pub mod npy;
 pub mod prelude;
 pub mod series;
+pub mod utils;
 
 #[pyfunction]
 fn col(name: &str) -> dsl::PyExpr {

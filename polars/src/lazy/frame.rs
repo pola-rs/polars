@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 #[derive(Clone)]
-pub struct LazyCsvReader {
+pub struct LazyCsvReader<'a> {
     path: String,
     delimiter: u8,
     has_header: bool,
@@ -22,10 +22,11 @@ pub struct LazyCsvReader {
     stop_after_n_rows: Option<usize>,
     cache: bool,
     schema: Option<SchemaRef>,
+    schema_overwrite: Option<&'a Schema>,
 }
 
-impl LazyCsvReader {
-    fn new(path: String) -> Self {
+impl<'a> LazyCsvReader<'a> {
+    pub fn new(path: String) -> Self {
         LazyCsvReader {
             path,
             delimiter: b',',
@@ -35,6 +36,7 @@ impl LazyCsvReader {
             stop_after_n_rows: None,
             cache: true,
             schema: None,
+            schema_overwrite: None,
         }
     }
 
@@ -63,6 +65,13 @@ impl LazyCsvReader {
         self
     }
 
+    /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
+    /// of the total schema.
+    pub fn with_dtype_overwrite(mut self, schema: Option<&'a Schema>) -> Self {
+        self.schema_overwrite = schema;
+        self
+    }
+
     /// Set whether the CSV file has headers
     pub fn has_header(mut self, has_header: bool) -> Self {
         self.has_header = has_header;
@@ -72,6 +81,12 @@ impl LazyCsvReader {
     /// Set the CSV file's column delimiter as a byte character
     pub fn with_delimiter(mut self, delimiter: u8) -> Self {
         self.delimiter = delimiter;
+        self
+    }
+
+    /// Cache the DataFrame after reading.
+    pub fn with_cache(mut self, cache: bool) -> Self {
+        self.cache = cache;
         self
     }
 
@@ -85,6 +100,7 @@ impl LazyCsvReader {
             self.stop_after_n_rows,
             self.cache,
             self.schema,
+            self.schema_overwrite,
         )
         .build()
         .into();

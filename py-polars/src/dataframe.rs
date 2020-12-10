@@ -4,6 +4,7 @@ use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use crate::datatypes::DataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
+use crate::utils::str_to_arrow_type;
 use crate::{
     error::PyPolarsEr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
@@ -54,6 +55,7 @@ impl PyDataFrame {
         encoding: &str,
         mut n_threads: Option<usize>,
         path: Option<String>,
+        overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
     ) -> PyResult<Self> {
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
@@ -64,6 +66,18 @@ impl PyDataFrame {
                 )
             }
         };
+
+        let overwrite_dtype = overwrite_dtype.and_then(|overwrite_dtype| {
+            let fields = overwrite_dtype
+                .iter()
+                .map(|(name, dtype)| {
+                    let str_repr = dtype.str().unwrap().to_str().unwrap();
+                    let dtype = str_to_arrow_type(str_repr);
+                    Field::new(name, dtype, true)
+                })
+                .collect();
+            Some(Schema::new(fields))
+        });
 
         let file = get_either_file(py_f, false)?;
         // Python files cannot be send to another thread.
@@ -89,6 +103,7 @@ impl PyDataFrame {
             .with_columns(columns)
             .with_n_threads(n_threads)
             .with_path(path)
+            .with_dtype_overwrite(overwrite_dtype.as_ref())
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())

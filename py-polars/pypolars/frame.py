@@ -90,6 +90,7 @@ class DataFrame:
         rechunk: bool = True,
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
+        dtype: "Optional[Dict[str, DataType]]" = None,
     ) -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
 
@@ -97,6 +98,12 @@ class DataFrame:
             path = file
         else:
             path = None
+
+        if dtype is not None:
+            new_dtype = []
+            for k, v in dtype.items():
+                new_dtype.append((k, pytype_to_polars_type(v)))
+            dtype = new_dtype
 
         self._df = PyDataFrame.read_csv(
             file,
@@ -113,6 +120,7 @@ class DataFrame:
             encoding,
             n_threads,
             path,
+            dtype,
         )
         return self
 

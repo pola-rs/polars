@@ -1,4 +1,4 @@
-from typing import Union, List, Callable, Optional
+from typing import Union, List, Callable, Optional, Dict
 
 from pypolars import Series
 from pypolars.frame import DataFrame, wrap_df
@@ -69,11 +69,24 @@ class LazyFrame:
         skip_rows: int = 0,
         stop_after_n_rows: "Optional[int]" = None,
         cache: bool = True,
+        dtype: "Optional[Dict[str, DataType]]" = None,
     ):
+        if dtype is not None:
+            new_dtype = []
+            for k, v in dtype.items():
+                new_dtype.append((k, datatypes.pytype_to_polars_type(v)))
+            dtype = new_dtype
 
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = PyLazyFrame.new_from_csv(
-            file, sep, has_headers, ignore_errors, skip_rows, stop_after_n_rows, cache
+            file,
+            sep,
+            has_headers,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+            cache,
+            dtype,
         )
         return self
 
