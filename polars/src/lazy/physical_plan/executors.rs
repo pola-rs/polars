@@ -201,7 +201,6 @@ impl Executor for CsvExec {
             with_columns = None;
         }
         let stop_after_n_rows = set_n_rows(self.stop_after_n_rows);
-        dbg!(stop_after_n_rows);
 
         let reader = CsvReader::from_path(&self.path)
             .unwrap()
@@ -470,8 +469,17 @@ impl Executor for JoinExec {
         let (df_left, df_right) = if self.parallel {
             let cache_left = cache.clone();
             let cache_right = cache.clone();
-            let h_left = std::thread::spawn(move || input_left.execute(&cache_left));
-            let h_right = std::thread::spawn(move || input_right.execute(&cache_right));
+            // propagate the fetch_rows static value to the spawning threads.
+            let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
+
+            let h_left = std::thread::spawn(move || {
+                FETCH_ROWS.with(|fr| fr.set(fetch_rows));
+                input_left.execute(&cache_left)
+            });
+            let h_right = std::thread::spawn(move || {
+                FETCH_ROWS.with(|fr| fr.set(fetch_rows));
+                input_right.execute(&cache_right)
+            });
             (h_left.join().unwrap(), h_right.join().unwrap())
         } else {
             (input_left.execute(&cache), input_right.execute(&cache))
