@@ -186,6 +186,9 @@ where
     T: PolarsNumericType,
 {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
@@ -197,6 +200,9 @@ where
         indices: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         if self.chunks.len() == 1 {
             if self.null_count() == 0 {
                 let idx_ca: Xob<UInt32Chunked> =
@@ -218,6 +224,9 @@ where
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
@@ -226,10 +235,16 @@ where
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         if self.chunks.len() == 1 && idx.chunks.len() == 1 {
             let idx_arr = idx.downcast_chunks()[0];
 
@@ -252,6 +267,9 @@ impl ChunkTake for BooleanChunked {
     where
         Self: std::marker::Sized,
     {
+        if self.is_empty() {
+            return self.clone();
+        }
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
@@ -263,6 +281,9 @@ impl ChunkTake for BooleanChunked {
         indices: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
@@ -274,6 +295,9 @@ impl ChunkTake for BooleanChunked {
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
@@ -282,10 +306,16 @@ impl ChunkTake for BooleanChunked {
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         if self.chunks.len() == 1 && idx.chunks.len() == 1 {
             let idx_arr = idx.downcast_chunks()[0];
             let arr = &self.chunks[0];
@@ -308,6 +338,9 @@ impl ChunkTake for Utf8Chunked {
     where
         Self: std::marker::Sized,
     {
+        if self.is_empty() {
+            return self.clone();
+        }
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
@@ -318,6 +351,9 @@ impl ChunkTake for Utf8Chunked {
         indices: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
@@ -332,6 +368,9 @@ impl ChunkTake for Utf8Chunked {
     where
         Self: std::marker::Sized,
     {
+        if self.is_empty() {
+            return self.clone();
+        }
         impl_take_opt!(self, indices, capacity, Utf8ChunkedBuilder)
     }
 
@@ -340,10 +379,16 @@ impl ChunkTake for Utf8Chunked {
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         impl_take_opt_unchecked!(self, indices, capacity, Utf8ChunkedBuilder)
     }
 
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         if self.chunks.len() == 1 && idx.chunks.len() == 1 {
             let idx_arr = idx.downcast_chunks()[0];
             let arr = self.downcast_chunks()[0];
@@ -357,6 +402,9 @@ impl ChunkTake for Utf8Chunked {
 
 impl ChunkTake for ListChunked {
     fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
@@ -380,6 +428,9 @@ impl ChunkTake for ListChunked {
         indices: impl Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
@@ -403,6 +454,9 @@ impl ChunkTake for ListChunked {
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
@@ -431,6 +485,9 @@ impl ChunkTake for ListChunked {
         indices: impl Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
@@ -454,6 +511,9 @@ impl ChunkTake for ListChunked {
     }
 
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         if self.chunks.len() == 1 && idx.chunks.len() == 1 {
             let idx_arr = idx.downcast_chunks()[0];
             let arr = &self.chunks[0];
