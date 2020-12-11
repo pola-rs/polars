@@ -2,7 +2,7 @@ pub(crate) mod optimizer;
 use crate::frame::ser::fork::csv::infer_file_schema;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
-use crate::lazy::utils::{expr_to_root_column_expr, has_expr};
+use crate::lazy::utils::{expr_to_root_column_expr, expr_to_root_column_names, has_expr};
 use crate::{
     lazy::{prelude::*, utils},
     prelude::*,
@@ -10,6 +10,7 @@ use crate::{
 use ahash::RandomState;
 use arrow::datatypes::{DataType, SchemaRef};
 use std::collections::HashSet;
+use std::fmt::Write;
 use std::{cell::Cell, fmt, sync::Arc};
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
@@ -302,6 +303,199 @@ impl fmt::Debug for LogicalPlan {
             Distinct { input, .. } => write!(f, "DISTINCT {:?}", input),
             Slice { input, offset, len } => {
                 write!(f, "SLICE {:?}, offset: {}, len: {}", input, offset, len)
+            }
+        }
+    }
+}
+
+impl LogicalPlan {
+    fn write_dot(
+        &self,
+        acc_str: &mut String,
+        prev_node: &str,
+        current_node: &str,
+        id: usize,
+    ) -> std::fmt::Result {
+        if id == 0 {
+            writeln!(acc_str, "graph  polars_query {{")
+        } else {
+            writeln!(acc_str, "\"{}\" -- \"{}\"", prev_node, current_node)
+        }
+    }
+
+    pub(crate) fn dot(&self, acc_str: &mut String, id: usize, prev_node: &str) -> std::fmt::Result {
+        use LogicalPlan::*;
+        match self {
+            Cache { input } => {
+                let current_node = format!("CACHE [{}]", id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            Selection { predicate, input } => {
+                let current_node = format!("FILTER BY {:?} [{}]", predicate, id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            CsvScan {
+                path,
+                with_columns,
+                schema,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                let current_node = format!(
+                    "CSV SCAN {}; π {}/{}; σ {:?} [{}]",
+                    path, n_columns, total_columns, predicate, id
+                );
+                if id == 0 {
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    write!(acc_str, "\"{}\"", current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, &current_node, id)
+                }
+            }
+            DataFrameScan {
+                schema,
+                projection,
+                selection,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = projection {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                let current_node = format!(
+                    "TABLE π {}/{}; σ {:?} [{}]",
+                    n_columns, total_columns, selection, id
+                );
+                if id == 0 {
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    write!(acc_str, "\"{}\"", current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, &current_node, id)
+                }
+            }
+            Projection { expr, input, .. } => {
+                let current_node = format!(
+                    "π {}/{} [{}]",
+                    expr.len(),
+                    input.schema().fields().len(),
+                    id
+                );
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            Sort {
+                input, by_column, ..
+            } => {
+                let current_node = format!("SORT by {} [{}]", by_column, id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            LocalProjection { expr, input, .. } => {
+                let current_node = format!(
+                    "LOCAL π {}/{} [{}]",
+                    expr.len(),
+                    input.schema().fields().len(),
+                    id
+                );
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            Explode { input, column, .. } => {
+                let current_node = format!("EXPLODE {} [{}]", column, id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            Aggregate {
+                input, keys, aggs, ..
+            } => {
+                let mut s_keys = String::with_capacity(128);
+                for key in keys.iter() {
+                    s_keys.push_str(&key.to_string());
+                }
+                let current_node = format!("AGG {:?} BY {} [{}]", aggs, s_keys, id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            HStack { input, exprs, .. } => {
+                let mut current_node = String::with_capacity(128);
+                current_node.push_str("STACK");
+                for e in exprs {
+                    if let Expr::Alias(_, name) = e {
+                        current_node.push_str(&format!(" {},", name));
+                    } else {
+                        for name in expr_to_root_column_names(e).iter().take(1) {
+                            current_node.push_str(&format!(" {},", name));
+                        }
+                    }
+                }
+                current_node.push_str(&format!(" [{}]", id));
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            Slice { input, offset, len } => {
+                let current_node = format!("SLICE offset: {}; len: {} [{}]", offset, len, id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            Distinct { input, subset, .. } => {
+                let mut current_node = String::with_capacity(128);
+                current_node.push_str("DISTINCT");
+                if let Some(subset) = &**subset {
+                    current_node.push_str(" BY ");
+                    for name in subset.iter() {
+                        current_node.push_str(&format!("{}, ", name));
+                    }
+                }
+                current_node.push_str(&format!(" [{}]", id));
+
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            #[cfg(feature = "parquet")]
+            ParquetScan {
+                path,
+                schema,
+                with_columns,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                let current_node = format!(
+                    "PARQUET SCAN {}; π {}/{}; σ {:?} [{}]",
+                    path, n_columns, total_columns, predicate, id
+                );
+                if id == 0 {
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    write!(acc_str, "\"{}\"", current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, &current_node, id)
+                }
+            }
+            Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                ..
+            } => {
+                let current_node =
+                    format!("JOIN left {:?}; right: {:?} [{}]", left_on, right_on, id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input_left.dot(acc_str, id + 1, &current_node)?;
+                input_right.dot(acc_str, id + 1, &current_node)
             }
         }
     }
@@ -905,5 +1099,21 @@ mod test {
             let df = lf.collect().unwrap();
             println!("{:?}", df);
         }
+    }
+
+    #[test]
+    fn test_dot() {
+        let left = df!("days" => &[0, 1, 2, 3, 4],
+        "temp" => [22.1, 19.9, 7., 2., 3.],
+        "rain" => &[0.1, 0.2, 0.3, 0.4, 0.5]
+        )
+        .unwrap();
+        let mut s = String::new();
+        left.lazy()
+            .select(&[col("days")])
+            .logical_plan
+            .dot(&mut s, 0, "")
+            .unwrap();
+        println!("{}", s);
     }
 }

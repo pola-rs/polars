@@ -3,6 +3,10 @@ from typing import Union, List, Callable, Optional, Dict
 from pypolars import Series
 from pypolars.frame import DataFrame, wrap_df
 from pypolars import datatypes
+import os
+import tempfile
+import subprocess
+import shutil
 
 try:
     from ..pypolars import (
@@ -116,6 +120,39 @@ class LazyFrame:
 
     def describe_plan(self) -> str:
         return self._ldf.describe_plan()
+
+    def show_graph(
+        self,
+        optimized: bool,
+        show: bool = True,
+        output_path: "Optional[str]" = None,
+        raw_output: bool = False,
+    ) -> "Optional[str]":
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib.image as mpimg
+        except ImportError:
+            raise ImportError(
+                "graphviz dot binary should be on your PATH and matplotlib should be installed to show graph"
+            )
+        dot = self._ldf.to_dot(optimized)
+        if raw_output:
+            return dot
+        with tempfile.TemporaryDirectory() as tmpdir_name:
+            dot_path = os.path.join(tmpdir_name, "dot")
+            with open(dot_path, "w") as f:
+                f.write(dot)
+
+            subprocess.run(["dot", "-Tpng", "-O", dot_path])
+            out_path = os.path.join(tmpdir_name, "dot.png")
+
+            if output_path is not None:
+                shutil.copy(out_path, output_path)
+
+            if show:
+                img = mpimg.imread(out_path)
+                plt.imshow(img)
+                plt.show()
 
     def describe_optimized_plan(
         self,

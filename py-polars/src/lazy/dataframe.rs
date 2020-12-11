@@ -91,6 +91,10 @@ impl PyLazyFrame {
             .map_err(PyPolarsEr::from)?;
         Ok(result)
     }
+    pub fn to_dot(&self, optimized: bool) -> PyResult<String> {
+        let result = self.ldf.to_dot(optimized).map_err(PyPolarsEr::from)?;
+        Ok(result)
+    }
 
     pub fn optimization_toggle(
         &self,

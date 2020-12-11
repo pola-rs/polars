@@ -137,7 +137,6 @@ impl ProjectionPushDown {
                 Ok(Slice { input, offset, len })
             }
             Projection { expr, input, .. } => {
-                dbg!(&expr, &acc_projections, projections_seen);
                 // add the root of the projections to accumulation,
                 // but also do them locally to keep the schema and the alias.
                 for e in &expr {
