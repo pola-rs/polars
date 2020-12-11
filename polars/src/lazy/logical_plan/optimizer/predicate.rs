@@ -386,10 +386,8 @@ impl PredicatePushDown {
                 let mut added_cols =
                     HashSet::with_capacity_and_hasher(exprs.len(), RandomState::default());
                 for e in &exprs {
-                    if let Ok(names) = expr_to_root_column_names(e) {
-                        for name in names {
-                            added_cols.insert(name);
-                        }
+                    for name in expr_to_root_column_names(e) {
+                        added_cols.insert(name);
                     }
                 }
                 // remove predicates that are dependent on columns added in this HStack.

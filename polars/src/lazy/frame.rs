@@ -189,6 +189,31 @@ impl LazyFrame {
         lf
     }
 
+    /// Get a dot language representation of the LogicalPlan.
+    pub fn to_dot(&self, optimized: bool) -> Result<String> {
+        let mut s = String::with_capacity(512);
+
+        let mut logical_plan = self.clone().get_plan_builder().build();
+        if optimized {
+            if self.predicate_pushdown {
+                let predicate_pushdown_opt = PredicatePushDown::default();
+                logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
+            }
+            if self.projection_pushdown {
+                let projection_pushdown_opt = ProjectionPushDown {};
+                logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
+            }
+            if self.simplify_expr {
+                let simplify_expr_opt = SimplifyExpr {};
+                logical_plan = simplify_expr_opt.optimize(logical_plan)?;
+            }
+        }
+
+        logical_plan.dot(&mut s, 0, "").expect("io error");
+        s.push_str("\n}");
+        Ok(s)
+    }
+
     fn get_plan_builder(self) -> LogicalPlanBuilder {
         LogicalPlanBuilder::from(self.logical_plan)
     }
@@ -1036,8 +1061,9 @@ mod test {
         // and a filter that is not in the projection
         let df_a = load_df();
         let df_b = df_a.clone();
-        df_a.lazy()
-            .left_join(df_b.lazy(), col("b"), col("b"), None)
+        df_a.clone()
+            .lazy()
+            .left_join(df_b.clone().lazy(), col("b"), col("b"), None)
             .filter(col("a").lt(lit(2)))
             .groupby("b")
             .agg(vec![col("b").first(), col("c").first()])

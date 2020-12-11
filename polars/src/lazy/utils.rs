@@ -291,77 +291,11 @@ pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
-pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Result<Vec<Arc<String>>> {
-    match expr {
-        Expr::Duplicated(expr) => expr_to_root_column_names(expr),
-        Expr::Unique(expr) => expr_to_root_column_names(expr),
-        Expr::Reverse(expr) => expr_to_root_column_names(expr),
-        Expr::Column(name) => Ok(vec![name.clone()]),
-        Expr::Alias(expr, _) => expr_to_root_column_names(expr),
-        Expr::Not(expr) => expr_to_root_column_names(expr),
-        Expr::IsNull(expr) => expr_to_root_column_names(expr),
-        Expr::IsNotNull(expr) => expr_to_root_column_names(expr),
-        Expr::BinaryExpr { left, right, .. } => {
-            let left_result = expr_to_root_column_names(left);
-            let right_result = expr_to_root_column_names(right);
-
-            match (left_result, right_result) {
-                (Ok(left), Err(_)) => Ok(left),
-                (Err(_), Ok(right)) => Ok(right),
-                (Ok(mut left), Ok(right)) => {
-                    left.extend(right.into_iter());
-                    Ok(left)
-                }
-                _ => Err(PolarsError::Other(
-                    format!(
-                        "cannot find root column name for binary expression {:?}",
-                        expr
-                    )
-                    .into(),
-                )),
-            }
-        }
-        Expr::Sort { expr, .. } => expr_to_root_column_names(expr),
-        Expr::First(expr) => expr_to_root_column_names(expr),
-        Expr::Last(expr) => expr_to_root_column_names(expr),
-        Expr::AggGroups(expr) => expr_to_root_column_names(expr),
-        Expr::NUnique(expr) => expr_to_root_column_names(expr),
-        Expr::Quantile { expr, .. } => expr_to_root_column_names(expr),
-        Expr::Sum(expr) => expr_to_root_column_names(expr),
-        Expr::Min(expr) => expr_to_root_column_names(expr),
-        Expr::List(expr) => expr_to_root_column_names(expr),
-        Expr::Max(expr) => expr_to_root_column_names(expr),
-        Expr::Median(expr) => expr_to_root_column_names(expr),
-        Expr::Mean(expr) => expr_to_root_column_names(expr),
-        Expr::Count(expr) => expr_to_root_column_names(expr),
-        Expr::Cast { expr, .. } => expr_to_root_column_names(expr),
-        Expr::Apply { input, .. } => expr_to_root_column_names(input),
-        Expr::Shift { input, .. } => expr_to_root_column_names(input),
-        Expr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            let predicate = expr_to_root_column_names(predicate);
-            let truthy = expr_to_root_column_names(truthy);
-            let falsy = expr_to_root_column_names(falsy);
-
-            let mut all = Vec::with_capacity(16);
-            if let Ok(predicate) = predicate {
-                all.extend(predicate.into_iter());
-            }
-            if let Ok(truthy) = truthy {
-                all.extend(truthy.into_iter());
-            }
-            if let Ok(falsy) = falsy {
-                all.extend(falsy.into_iter());
-            }
-            Ok(all)
-        }
-        a => Err(PolarsError::Other(
-            format!("No root column name could be found for {:?}", a).into(),
-        )),
-    }
+pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<String>> {
+    expr_to_root_column_exprs(expr)
+        .into_iter()
+        .map(|e| expr_to_root_column_name(&e).unwrap())
+        .collect()
 }
 
 /// unpack alias(col) to name of the root column name
