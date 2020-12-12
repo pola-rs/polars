@@ -143,7 +143,7 @@ class LazyFrame:
             with open(dot_path, "w") as f:
                 f.write(dot)
 
-            subprocess.run(["dot", "-Tpng", "-O", dot_path])
+            subprocess.run(["dot", "-Nshape=box", "-Tpng", "-O", dot_path])
             out_path = os.path.join(tmpdir_name, "dot.png")
 
             if output_path is not None:
