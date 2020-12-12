@@ -308,6 +308,22 @@ impl fmt::Debug for LogicalPlan {
     }
 }
 
+fn fmt_predicate(predicate: Option<&Expr>) -> String {
+    if let Some(predicate) = predicate {
+        let n = 25;
+        let mut pred_fmt = format!("{:?}", predicate);
+        pred_fmt = pred_fmt.replace("[", "");
+        pred_fmt = pred_fmt.replace("]", "");
+        if pred_fmt.len() > n {
+            pred_fmt.truncate(n);
+            pred_fmt.push_str("...")
+        }
+        pred_fmt
+    } else {
+        "-".to_string()
+    }
+}
+
 impl LogicalPlan {
     fn write_dot(
         &self,
@@ -332,7 +348,8 @@ impl LogicalPlan {
                 input.dot(acc_str, id + 1, &current_node)
             }
             Selection { predicate, input } => {
-                let current_node = format!("FILTER BY {:?} [{}]", predicate, id);
+                let pred = fmt_predicate(Some(predicate));
+                let current_node = format!("FILTER BY {} [{}]", pred, id);
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, id + 1, &current_node)
             }
@@ -348,9 +365,11 @@ impl LogicalPlan {
                 if let Some(columns) = with_columns {
                     n_columns = format!("{}", columns.len());
                 }
+                let pred = fmt_predicate(predicate.as_ref());
+
                 let current_node = format!(
-                    "CSV SCAN {}; π {}/{}; σ {:?} [{}]",
-                    path, n_columns, total_columns, predicate, id
+                    "CSV SCAN {};\nπ {}/{};\nσ {}\n[{}]",
+                    path, n_columns, total_columns, pred, id
                 );
                 if id == 0 {
                     self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -371,9 +390,10 @@ impl LogicalPlan {
                     n_columns = format!("{}", columns.len());
                 }
 
+                let pred = fmt_predicate(selection.as_ref());
                 let current_node = format!(
-                    "TABLE π {}/{}; σ {:?} [{}]",
-                    n_columns, total_columns, selection, id
+                    "TABLE\nπ {}/{};\nσ {}\n[{}]",
+                    n_columns, total_columns, pred, id
                 );
                 if id == 0 {
                     self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -473,9 +493,11 @@ impl LogicalPlan {
                 if let Some(columns) = with_columns {
                     n_columns = format!("{}", columns.len());
                 }
+
+                let pred = fmt_predicate(predicate.as_ref());
                 let current_node = format!(
-                    "PARQUET SCAN {}; π {}/{}; σ {:?} [{}]",
-                    path, n_columns, total_columns, predicate, id
+                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{}]",
+                    path, n_columns, total_columns, pred, id
                 );
                 if id == 0 {
                     self.write_dot(acc_str, prev_node, &current_node, id)?;
