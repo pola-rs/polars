@@ -1,6 +1,7 @@
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::DataType;
 use crate::error::PyPolarsEr;
+use crate::utils::str_to_arrow_type;
 use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
@@ -523,106 +524,177 @@ impl PySeries {
         PySeries::new(self.series.clone())
     }
 
-    pub fn apply_lambda(&self, lambda: &PyAny, out_dtype: Option<u8>) -> PyResult<PySeries> {
+    pub fn apply_lambda(&self, lambda: &PyAny, output_type: &PyAny) -> PyResult<PySeries> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let series = &self.series;
 
-        let out = match out_dtype {
-            Some(0) => {
+        let output_type = match output_type.is_none() {
+            true => None,
+            false => {
+                let str_repr = output_type.str().unwrap().to_str().unwrap();
+                Some(str_to_arrow_type(str_repr))
+            }
+        };
+
+        let out = match output_type {
+            Some(ArrowDataType::Int8) => {
                 let ca: Int8Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(1) => {
+            Some(ArrowDataType::Int16) => {
                 let ca: Int16Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(2) => {
+            Some(ArrowDataType::Int32) => {
                 let ca: Int32Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(3) => {
+            Some(ArrowDataType::Int64) => {
                 let ca: Int64Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(4) => {
+            Some(ArrowDataType::UInt8) => {
                 let ca: UInt8Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(5) => {
+            Some(ArrowDataType::UInt16) => {
                 let ca: UInt16Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(6) => {
+            Some(ArrowDataType::UInt32) => {
                 let ca: UInt32Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(7) => {
+            Some(ArrowDataType::UInt64) => {
                 let ca: UInt64Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(8) => {
+            Some(ArrowDataType::Float32) => {
                 let ca: Float32Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(9) => {
+            Some(ArrowDataType::Float64) => {
                 let ca: Float64Chunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
                     py,
                     lambda
                 )?;
                 ca.into_series()
             }
-            Some(10) => {
+            Some(ArrowDataType::Boolean) => {
                 let ca: BooleanChunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_dtype,
+                    apply_lambda_with_primitive_out_type,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(ArrowDataType::Date32(_)) => {
+                let ca: Date32Chunked = apply_method_all_arrow_series!(
+                    series,
+                    apply_lambda_with_primitive_out_type,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(ArrowDataType::Date64(_)) => {
+                let ca: Date64Chunked = apply_method_all_arrow_series!(
+                    series,
+                    apply_lambda_with_primitive_out_type,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(ArrowDataType::Duration(TimeUnit::Nanosecond)) => {
+                let ca: DurationNanosecondChunked = apply_method_all_arrow_series!(
+                    series,
+                    apply_lambda_with_primitive_out_type,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(ArrowDataType::Duration(TimeUnit::Millisecond)) => {
+                let ca: DurationMillisecondChunked = apply_method_all_arrow_series!(
+                    series,
+                    apply_lambda_with_primitive_out_type,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(ArrowDataType::Duration(TimeUnit::Microsecond)) => {
+                let ca: DurationMicrosecondChunked = apply_method_all_arrow_series!(
+                    series,
+                    apply_lambda_with_primitive_out_type,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(ArrowDataType::Duration(TimeUnit::Second)) => {
+                let ca: DurationSecondChunked = apply_method_all_arrow_series!(
+                    series,
+                    apply_lambda_with_primitive_out_type,
+                    py,
+                    lambda
+                )?;
+                ca.into_series()
+            }
+            Some(ArrowDataType::Utf8) => {
+                let ca: Utf8Chunked = apply_method_all_arrow_series!(
+                    series,
+                    apply_lambda_with_utf8_out_type,
                     py,
                     lambda
                 )?;

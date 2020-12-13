@@ -765,9 +765,9 @@ class Expr:
             "yyyy-mm-dd"
         """
         if datatype == datatypes.Date32:
-            return wrap_expr(self._pyexpr.str_parse_dat32(fmt))
+            return wrap_expr(self._pyexpr.str_parse_date32(fmt))
         if datatype == datatypes.Date64:
-            return wrap_expr(self._pyexpr.str_parse_dat32(fmt))
+            return wrap_expr(self._pyexpr.str_parse_date64(fmt))
         raise NotImplementedError
 
     def str_lengths(self) -> "Expr":

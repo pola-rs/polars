@@ -884,8 +884,7 @@ class Series:
         if dtype_out is None:
             return wrap_s(self._s.apply_lambda(func))
         else:
-            dt = dtype_to_int(dtype_out)
-            return wrap_s(self._s.apply_lambda(func, dt))
+            return wrap_s(self._s.apply_lambda(func, dtype_out))
 
     def shift(self, periods: int) -> "Series":
         """

@@ -35,11 +35,13 @@ impl PyArrowPrimitiveType for TimestampSecondType {}
 impl PyArrowPrimitiveType for BooleanType {}
 
 pub trait ApplyLambda<'a, 'b> {
+    /// Apply a lambda that doesn't change output types
     fn apply_lambda(&'b self, _py: Python, _lambda: &'a PyAny) -> PyResult<PySeries> {
         unimplemented!()
     }
 
-    fn apply_lambda_with_primitive_dtype<D>(
+    /// Apply a lambda with a primitive output type
+    fn apply_lambda_with_primitive_out_type<D>(
         &'b self,
         _py: Python,
         _lambda: &'a PyAny,
@@ -48,6 +50,15 @@ pub trait ApplyLambda<'a, 'b> {
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
+        unimplemented!()
+    }
+
+    /// Apply a lambda with utf8 output type
+    fn apply_lambda_with_utf8_out_type(
+        &'b self,
+        _py: Python,
+        _lambda: &'a PyAny,
+    ) -> PyResult<Utf8Chunked> {
         unimplemented!()
     }
 }
@@ -90,40 +101,15 @@ macro_rules! impl_lambda_with_primitive_type {
     }};
 }
 
-impl<'a, 'b, T> ApplyLambda<'a, 'b> for ChunkedArray<T>
-where
-    T: PyArrowPrimitiveType,
-    T::Native: ToPyObject + FromPyObject<'a>,
-    &'b ChunkedArray<T>:
-        IntoIterator<Item = Option<T::Native>> + IntoNoNullIterator<Item = T::Native>,
-{
-    fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        self.apply_lambda_with_primitive_dtype::<T>(py, lambda)
-            .map(|ca| PySeries::new(ca.into_series()))
-    }
-
-    fn apply_lambda_with_primitive_dtype<D>(
-        &'b self,
-        py: Python,
-        lambda: &'a PyAny,
-    ) -> PyResult<ChunkedArray<D>>
-    where
-        D: PyArrowPrimitiveType,
-        D::Native: ToPyObject + FromPyObject<'a>,
-    {
-        impl_lambda_with_primitive_type!(self, D, py, lambda)
-    }
-}
-
-impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
-    fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        let ca = if self.null_count() == 0 {
-            let mut it = self.into_no_null_iter();
-            let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+macro_rules! impl_lambda_with_utf8_out_type {
+    ($self:ident, $py:ident, $lambda:ident) => {{
+        let ca = if $self.null_count() == 0 {
+            let mut it = $self.into_no_null_iter();
+            let mut builder = Utf8ChunkedBuilder::new($self.name(), $self.len());
 
             while let Some(v) = it.next() {
-                let arg = PyTuple::new(py, &[v]);
-                let out = lambda.call1(arg)?;
+                let arg = PyTuple::new($py, &[v]);
+                let out = $lambda.call1(arg)?;
 
                 match out.extract::<&str>() {
                     Ok(s) => builder.append_value(s),
@@ -132,12 +118,12 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
             }
             builder.finish()
         } else {
-            let mut it = self.into_iter();
-            let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+            let mut it = $self.into_iter();
+            let mut builder = Utf8ChunkedBuilder::new($self.name(), $self.len());
             while let Some(opt_v) = it.next() {
                 if let Some(v) = opt_v {
-                    let arg = PyTuple::new(py, &[v]);
-                    let out = lambda.call1(arg)?;
+                    let arg = PyTuple::new($py, &[v]);
+                    let out = $lambda.call1(arg)?;
 
                     match out.extract::<&str>() {
                         Ok(s) => builder.append_value(s),
@@ -149,10 +135,23 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
             }
             builder.finish()
         };
-        Ok(PySeries::new(ca.into_series()))
+        Ok(ca)
+    }};
+}
+
+impl<'a, 'b, T> ApplyLambda<'a, 'b> for ChunkedArray<T>
+where
+    T: PyArrowPrimitiveType,
+    T::Native: ToPyObject + FromPyObject<'a>,
+    &'b ChunkedArray<T>:
+        IntoIterator<Item = Option<T::Native>> + IntoNoNullIterator<Item = T::Native>,
+{
+    fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        self.apply_lambda_with_primitive_out_type::<T>(py, lambda)
+            .map(|ca| PySeries::new(ca.into_series()))
     }
 
-    fn apply_lambda_with_primitive_dtype<D>(
+    fn apply_lambda_with_primitive_out_type<D>(
         &'b self,
         py: Python,
         lambda: &'a PyAny,
@@ -162,6 +161,37 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
         D::Native: ToPyObject + FromPyObject<'a>,
     {
         impl_lambda_with_primitive_type!(self, D, py, lambda)
+    }
+
+    fn apply_lambda_with_utf8_out_type(
+        &'b self,
+        py: Python,
+        lambda: &'a PyAny,
+    ) -> PyResult<Utf8Chunked> {
+        impl_lambda_with_utf8_out_type!(self, py, lambda)
+    }
+}
+
+impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
+    fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        let ca = self.apply_lambda_with_utf8_out_type(py, lambda)?;
+        Ok(ca.into_series().into())
+    }
+
+    fn apply_lambda_with_primitive_out_type<D>(
+        &'b self,
+        py: Python,
+        lambda: &'a PyAny,
+    ) -> PyResult<ChunkedArray<D>>
+    where
+        D: PyArrowPrimitiveType,
+        D::Native: ToPyObject + FromPyObject<'a>,
+    {
+        impl_lambda_with_primitive_type!(self, D, py, lambda)
+    }
+
+    fn apply_lambda_with_utf8_out_type(&self, py: Python, lambda: &PyAny) -> PyResult<Utf8Chunked> {
+        impl_lambda_with_utf8_out_type!(self, py, lambda)
     }
 }
 
@@ -245,7 +275,7 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for ListChunked {
         }
     }
 
-    fn apply_lambda_with_primitive_dtype<D>(
+    fn apply_lambda_with_primitive_out_type<D>(
         &'b self,
         py: Python,
         lambda: &'a PyAny,
