@@ -44,13 +44,9 @@ impl Default for DataFrame {
     }
 }
 
-type DfSchema = Arc<Schema>;
-type DfSeries = Series;
-type DfColumns = Vec<DfSeries>;
-
 #[derive(Clone)]
 pub struct DataFrame {
-    pub(crate) columns: DfColumns,
+    pub(crate) columns: Vec<Series>,
 }
 
 impl DataFrame {
@@ -202,7 +198,7 @@ impl DataFrame {
 
     /// Get a reference to the DataFrame columns.
     #[inline]
-    pub fn get_columns(&self) -> &DfColumns {
+    pub fn get_columns(&self) -> &Vec<Series> {
         &self.columns
     }
 
@@ -323,7 +319,7 @@ impl DataFrame {
     }
 
     /// Add multiple Series to a DataFrame
-    /// This expects the Series to have the same length.
+    /// The added Series are required to have the same length.
     ///
     /// # Example
     ///
@@ -359,14 +355,24 @@ impl DataFrame {
         self.hstack_mut_no_checks(columns)
     }
 
-    pub fn hstack(&self, columns: &[DfSeries]) -> Result<Self> {
+    /// Add multiple Series to a DataFrame
+    /// The added Series are required to have the same length.
+    /// ```
+    pub fn hstack(&self, columns: &[Series]) -> Result<Self> {
         let mut new_cols = self.columns.clone();
         new_cols.extend_from_slice(columns);
         DataFrame::new(new_cols)
     }
 
+    /// Concatenate a DataFrame to this DataFrame and return as newly allocated DataFrame
+    pub fn vstack(&self, columns: &DataFrame) -> Result<Self> {
+        let mut df = self.clone();
+        df.vstack_mut(columns)?;
+        Ok(df)
+    }
+
     /// Concatenate a DataFrame to this DataFrame
-    pub fn vstack(&mut self, df: &DataFrame) -> Result<&mut Self> {
+    pub fn vstack_mut(&mut self, df: &DataFrame) -> Result<&mut Self> {
         if self.width() != df.width() {
             return Err(PolarsError::ShapeMisMatch(
                 format!("Could not vertically stack DataFrame. The DataFrames appended width {} differs from the parent DataFrames width {}", self.width(), df.width()).into()
@@ -403,7 +409,7 @@ impl DataFrame {
     ///     df.drop_in_place(name)
     /// }
     /// ```
-    pub fn drop_in_place(&mut self, name: &str) -> Result<DfSeries> {
+    pub fn drop_in_place(&mut self, name: &str) -> Result<Series> {
         let idx = self.name_to_idx(name)?;
         let result = Ok(self.columns.remove(idx));
         self.register_mutation()?;

@@ -191,7 +191,7 @@ fn right_or_append(mut accumulator: DataFrame, right: DataFrame) -> PolarResult<
     if accumulator.width() == 0 {
         Ok(right)
     } else {
-        accumulator.vstack(&right)?;
+        accumulator.vstack_mut(&right)?;
         Ok(accumulator)
     }
 }
