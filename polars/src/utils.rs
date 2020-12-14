@@ -568,7 +568,7 @@ pub fn accumulate_dataframes_vertical(dfs: Vec<DataFrame>) -> Result<DataFrame> 
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
     for df in iter {
-        acc_df.vstack(&df)?;
+        acc_df.vstack_mut(&df)?;
     }
     Ok(acc_df)
 }

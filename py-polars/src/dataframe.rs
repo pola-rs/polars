@@ -297,7 +297,7 @@ impl PyDataFrame {
     }
 
     pub fn vstack(&mut self, df: &PyDataFrame) -> PyResult<()> {
-        self.df.vstack(&df.df).map_err(PyPolarsEr::from)?;
+        self.df.vstack_mut(&df.df).map_err(PyPolarsEr::from)?;
         Ok(())
     }
 

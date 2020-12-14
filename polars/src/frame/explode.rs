@@ -211,7 +211,7 @@ impl DataFrame {
             .ok_or_else(|| PolarsError::NoData("No data in melt operation".into()))?;
 
         while let Some(df) = dataframe_chunks.pop_front() {
-            main_df.vstack(&df)?;
+            main_df.vstack_mut(&df)?;
         }
         Ok(main_df)
     }
