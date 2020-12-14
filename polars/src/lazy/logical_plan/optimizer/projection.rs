@@ -264,6 +264,10 @@ impl ProjectionPushDown {
                 by_column,
                 reverse,
             } => {
+                if !acc_projections.is_empty() {
+                    add_to_accumulated(&col(&by_column), &mut acc_projections, &mut names).unwrap();
+                }
+
                 let input =
                     Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
                 Ok(Sort {
@@ -273,6 +277,9 @@ impl ProjectionPushDown {
                 })
             }
             Explode { input, column } => {
+                if !acc_projections.is_empty() {
+                    add_to_accumulated(&col(&column), &mut acc_projections, &mut names).unwrap();
+                }
                 let input =
                     Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
                 Ok(Explode { input, column })
