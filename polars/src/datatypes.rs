@@ -229,14 +229,9 @@ pub enum AnyType<'a> {
     /// A 64-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     Time64(i64, TimeUnit),
     /// A 32-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
-    Time32(i32, TimeUnit),
-    /// Measure of elapsed time in either seconds, milliseconds, microseconds or nanoseconds.
     Duration(i64, TimeUnit),
     /// Naive Time elapsed from the Unix epoch, 00:00:00.000 on 1 January 1970, excluding leap seconds, as a 64-bit integer.
     /// Note that UNIX time does not include leap seconds.
-    TimeStamp(i64, TimeUnit),
-    /// A "calendar" interval which models types that don't necessarily have a precise duration without the context of a base timestamp
-    /// (e.g. days can differ in length during day light savings time transitions).
     #[cfg(feature = "dtype-interval")]
     IntervalDayTime(i64),
     #[cfg(feature = "dtype-interval")]

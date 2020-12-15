@@ -36,28 +36,11 @@ macro_rules! impl_compare {
             Series::Utf8(a) => compare!(Series::Utf8, a, $rhs, $method),
             Series::Date32(a) => compare!(Series::Date32, a, $rhs, $method),
             Series::Date64(a) => compare!(Series::Date64, a, $rhs, $method),
-            Series::Time32Millisecond(a) => compare!(Series::Time32Millisecond, a, $rhs, $method),
-            Series::Time32Second(a) => compare!(Series::Time32Second, a, $rhs, $method),
             Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, $rhs, $method),
-            Series::Time64Microsecond(a) => compare!(Series::Time64Microsecond, a, $rhs, $method),
             Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, $rhs, $method),
-            Series::DurationMicrosecond(a) => {
-                compare!(Series::DurationMicrosecond, a, $rhs, $method)
-            }
             Series::DurationMillisecond(a) => {
                 compare!(Series::DurationMillisecond, a, $rhs, $method)
             }
-            Series::DurationSecond(a) => compare!(Series::DurationSecond, a, $rhs, $method),
-            Series::TimestampNanosecond(a) => {
-                compare!(Series::TimestampNanosecond, a, $rhs, $method)
-            }
-            Series::TimestampMicrosecond(a) => {
-                compare!(Series::TimestampMicrosecond, a, $rhs, $method)
-            }
-            Series::TimestampMillisecond(a) => {
-                compare!(Series::TimestampMillisecond, a, $rhs, $method)
-            }
-            Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, $rhs, $method),
             #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, $rhs, $method),
             #[cfg(feature = "dtype-interval")]

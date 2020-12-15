@@ -101,34 +101,11 @@ fn arr_to_series(arr: &ArrayRef, field: &Field) -> Series {
         ArrowDataType::Duration(TimeUnit::Nanosecond) => {
             Series::DurationNanosecond(init_ca(arr, field))
         }
-        ArrowDataType::Duration(TimeUnit::Microsecond) => {
-            Series::DurationMicrosecond(init_ca(arr, field))
-        }
         ArrowDataType::Duration(TimeUnit::Millisecond) => {
             Series::DurationMillisecond(init_ca(arr, field))
         }
-        ArrowDataType::Duration(TimeUnit::Second) => Series::DurationSecond(init_ca(arr, field)),
         ArrowDataType::Time64(TimeUnit::Nanosecond) => {
             Series::Time64Nanosecond(init_ca(arr, field))
-        }
-        ArrowDataType::Time64(TimeUnit::Microsecond) => {
-            Series::Time64Microsecond(init_ca(arr, field))
-        }
-        ArrowDataType::Time32(TimeUnit::Millisecond) => {
-            Series::Time32Millisecond(init_ca(arr, field))
-        }
-        ArrowDataType::Time32(TimeUnit::Second) => Series::Time32Second(init_ca(arr, field)),
-        ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-            Series::TimestampNanosecond(init_ca(arr, field))
-        }
-        ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-            Series::TimestampMicrosecond(init_ca(arr, field))
-        }
-        ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-            Series::TimestampMillisecond(init_ca(arr, field))
-        }
-        ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-            Series::TimestampSecond(init_ca(arr, field))
         }
         ArrowDataType::List(_) => Series::List(init_ca(arr, field)),
         t => panic!(format!("Arrow datatype {:?} is not supported", t)),

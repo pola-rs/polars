@@ -3,10 +3,7 @@ use crate::prelude::*;
 
 #[cfg(feature = "temporal")]
 use crate::chunked_array::temporal::{
-    date32_as_datetime, date64_as_datetime, time32_millisecond_as_time, time32_second_as_time,
-    time64_microsecond_as_time, time64_nanosecond_as_time, timestamp_microseconds_as_datetime,
-    timestamp_milliseconds_as_datetime, timestamp_nanoseconds_as_datetime,
-    timestamp_seconds_as_datetime,
+    date32_as_datetime, date64_as_datetime, time64_nanosecond_as_time,
 };
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
@@ -194,27 +191,14 @@ impl Debug for Series {
             Series::Float64(a) => format_array!(limit, f, a, "f64", a.name(), "Series"),
             Series::Date32(a) => format_array!(limit, f, a, "date32(day)", a.name(), "Series"),
             Series::Date64(a) => format_array!(limit, f, a, "date64(ms)", a.name(), "Series"),
-            Series::Time32Millisecond(a) => {
-                format_array!(limit, f, a, "time32(ms)", a.name(), "Series")
-            }
-            Series::Time32Second(a) => format_array!(limit, f, a, "time32(s)", a.name(), "Series"),
             Series::Time64Nanosecond(a) => {
                 format_array!(limit, f, a, "time64(ns)", a.name(), "Series")
-            }
-            Series::Time64Microsecond(a) => {
-                format_array!(limit, f, a, "time64(μs)", a.name(), "Series")
             }
             Series::DurationNanosecond(a) => {
                 format_array!(limit, f, a, "duration(ns)", a.name(), "Series")
             }
-            Series::DurationMicrosecond(a) => {
-                format_array!(limit, f, a, "duration(μs)", a.name(), "Series")
-            }
             Series::DurationMillisecond(a) => {
                 format_array!(limit, f, a, "duration(ms)", a.name(), "Series")
-            }
-            Series::DurationSecond(a) => {
-                format_array!(limit, f, a, "duration(s)", a.name(), "Series")
             }
             #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => {
@@ -223,18 +207,6 @@ impl Debug for Series {
             #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => {
                 format_array!(limit, f, a, "interval(year-month)", a.name(), "Series")
-            }
-            Series::TimestampNanosecond(a) => {
-                format_array!(limit, f, a, "timestamp(ns)", a.name(), "Series")
-            }
-            Series::TimestampMicrosecond(a) => {
-                format_array!(limit, f, a, "timestamp(μs)", a.name(), "Series")
-            }
-            Series::TimestampMillisecond(a) => {
-                format_array!(limit, f, a, "timestamp(ms)", a.name(), "Series")
-            }
-            Series::TimestampSecond(a) => {
-                format_array!(limit, f, a, "timestamp(s)", a.name(), "Series")
             }
             Series::Utf8(a) => format_utf8_array!(80, f, a, a.name(), "Series"),
             Series::List(a) => format_list_array!(limit, f, a, a.name(), "Series"),
@@ -388,32 +360,11 @@ impl Display for AnyType<'_> {
             AnyType::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
             AnyType::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
             AnyType::Date64(v) => write!(f, "{}", date64_as_datetime(*v).date()),
-            AnyType::Time32(v, TimeUnit::Millisecond) => {
-                write!(f, "{}", time32_millisecond_as_time(*v))
-            }
-            AnyType::Time32(v, TimeUnit::Second) => write!(f, "{}", time32_second_as_time(*v)),
             AnyType::Time64(v, TimeUnit::Nanosecond) => {
                 write!(f, "{}", time64_nanosecond_as_time(*v))
             }
-            AnyType::Time64(v, TimeUnit::Microsecond) => {
-                write!(f, "{}", time64_microsecond_as_time(*v))
-            }
             AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
-            AnyType::Duration(v, TimeUnit::Microsecond) => write!(f, "{}", v),
             AnyType::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
-            AnyType::Duration(v, TimeUnit::Second) => write!(f, "{}", v),
-            AnyType::TimeStamp(v, TimeUnit::Nanosecond) => {
-                write!(f, "{}", timestamp_nanoseconds_as_datetime(*v))
-            }
-            AnyType::TimeStamp(v, TimeUnit::Microsecond) => {
-                write!(f, "{}", timestamp_microseconds_as_datetime(*v))
-            }
-            AnyType::TimeStamp(v, TimeUnit::Millisecond) => {
-                write!(f, "{}", timestamp_milliseconds_as_datetime(*v))
-            }
-            AnyType::TimeStamp(v, TimeUnit::Second) => {
-                write!(f, "{}", timestamp_seconds_as_datetime(*v))
-            }
             #[cfg(feature = "dtype-interval")]
             AnyType::IntervalDayTime(v) => write!(f, "{}", v),
             #[cfg(feature = "dtype-interval")]

@@ -44,10 +44,7 @@ pub mod upstream_traits;
 
 use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
-    Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
-    DurationNanosecondArray, DurationSecondArray, ListArray, Time32MillisecondArray,
-    Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
-    TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+    Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray, ListArray,
 };
 #[cfg(feature = "dtype-interval")]
 use arrow::array::{IntervalDayTimeArray, IntervalYearMonthArray};
@@ -238,22 +235,13 @@ impl<T> ChunkedArray<T> {
             ArrowDataType::Float64 => unpack!(Float64),
             ArrowDataType::Date32(DateUnit::Day) => unpack!(Date32),
             ArrowDataType::Date64(DateUnit::Millisecond) => unpack!(Date64),
-            ArrowDataType::Time32(TimeUnit::Millisecond) => unpack!(Time32Millisecond),
-            ArrowDataType::Time32(TimeUnit::Second) => unpack!(Time32Second),
             ArrowDataType::Time64(TimeUnit::Nanosecond) => unpack!(Time64Nanosecond),
-            ArrowDataType::Time64(TimeUnit::Microsecond) => unpack!(Time64Microsecond),
             #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => unpack!(IntervalDayTime),
             #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => unpack!(IntervalYearMonth),
             ArrowDataType::Duration(TimeUnit::Nanosecond) => unpack!(DurationNanosecond),
-            ArrowDataType::Duration(TimeUnit::Microsecond) => unpack!(DurationMicrosecond),
             ArrowDataType::Duration(TimeUnit::Millisecond) => unpack!(DurationMillisecond),
-            ArrowDataType::Duration(TimeUnit::Second) => unpack!(DurationSecond),
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => unpack!(TimestampNanosecond),
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => unpack!(TimestampMicrosecond),
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => unpack!(Time32Millisecond),
-            ArrowDataType::Timestamp(TimeUnit::Second, _) => unpack!(TimestampSecond),
             _ => unimplemented!(),
         }
     }
@@ -544,21 +532,9 @@ where
             ArrowDataType::Float64 => downcast_and_pack!(Float64Array, Float64),
             ArrowDataType::Date32(DateUnit::Day) => downcast_and_pack!(Date32Array, Date32),
             ArrowDataType::Date64(DateUnit::Millisecond) => downcast_and_pack!(Date64Array, Date64),
-            ArrowDataType::Time32(TimeUnit::Millisecond) => {
-                let v = downcast!(Time32MillisecondArray);
-                AnyType::Time32(v, TimeUnit::Millisecond)
-            }
-            ArrowDataType::Time32(TimeUnit::Second) => {
-                let v = downcast!(Time32SecondArray);
-                AnyType::Time32(v, TimeUnit::Second)
-            }
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                 let v = downcast!(Time64NanosecondArray);
                 AnyType::Time64(v, TimeUnit::Nanosecond)
-            }
-            ArrowDataType::Time64(TimeUnit::Microsecond) => {
-                let v = downcast!(Time64MicrosecondArray);
-                AnyType::Time64(v, TimeUnit::Microsecond)
             }
             #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => {
@@ -572,33 +548,9 @@ where
                 let v = downcast!(DurationNanosecondArray);
                 AnyType::Duration(v, TimeUnit::Nanosecond)
             }
-            ArrowDataType::Duration(TimeUnit::Microsecond) => {
-                let v = downcast!(DurationMicrosecondArray);
-                AnyType::Duration(v, TimeUnit::Microsecond)
-            }
             ArrowDataType::Duration(TimeUnit::Millisecond) => {
                 let v = downcast!(DurationMillisecondArray);
                 AnyType::Duration(v, TimeUnit::Millisecond)
-            }
-            ArrowDataType::Duration(TimeUnit::Second) => {
-                let v = downcast!(DurationSecondArray);
-                AnyType::Duration(v, TimeUnit::Second)
-            }
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                let v = downcast!(TimestampNanosecondArray);
-                AnyType::TimeStamp(v, TimeUnit::Nanosecond)
-            }
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                let v = downcast!(TimestampMicrosecondArray);
-                AnyType::TimeStamp(v, TimeUnit::Microsecond)
-            }
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-                let v = downcast!(TimestampMillisecondArray);
-                AnyType::TimeStamp(v, TimeUnit::Millisecond)
-            }
-            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-                let v = downcast!(TimestampSecondArray);
-                AnyType::TimeStamp(v, TimeUnit::Second)
             }
             ArrowDataType::List(_) => {
                 let v = downcast!(ListArray);
