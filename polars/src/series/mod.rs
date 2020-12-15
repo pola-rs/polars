@@ -131,7 +131,11 @@ pub enum Series {
     DurationMicrosecond(DurationMicrosecondChunked),
     DurationMillisecond(DurationMillisecondChunked),
     DurationSecond(DurationSecondChunked),
+    #[cfg(feature = "dtype-interval")]
+    #[doc(cfg(feature = "dtype-interval"))]
     IntervalDayTime(IntervalDayTimeChunked),
+    #[cfg(feature = "dtype-interval")]
+    #[doc(cfg(feature = "dtype-interval"))]
     IntervalYearMonth(IntervalYearMonthChunked),
     TimestampNanosecond(TimestampNanosecondChunked),
     TimestampMicrosecond(TimestampMicrosecondChunked),
@@ -356,11 +360,15 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray
+    #[cfg(feature = "dtype-interval")]
+    #[doc(cfg(feature = "dtype-interval"))]
     pub fn interval_daytime(&self) -> Result<&IntervalDayTimeChunked> {
         unpack_series!(self, IntervalDayTime, "intervaldaytime")
     }
 
     /// Unpack to ChunkedArray
+    #[cfg(feature = "dtype-interval")]
+    #[doc(cfg(feature = "dtype-interval"))]
     pub fn interval_year_month(&self) -> Result<&IntervalYearMonthChunked> {
         unpack_series!(self, IntervalYearMonth, "intervalyearmonth")
     }
@@ -571,7 +579,9 @@ impl Series {
             Series::TimestampMicrosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::TimestampMillisecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::TimestampSecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(arr) => pack_ca_to_series(arr.cast::<N>()?),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::List(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Object(_) => return Err(PolarsError::Other("cannot cast object".into())),
@@ -608,7 +618,9 @@ impl Series {
             Timestamp(TimeUnit::Microsecond, _) => self.cast::<TimestampMicrosecondType>(),
             Timestamp(TimeUnit::Millisecond, _) => self.cast::<TimestampMillisecondType>(),
             Timestamp(TimeUnit::Second, _) => self.cast::<TimestampSecondType>(),
+            #[cfg(feature = "dtype-interval")]
             Interval(IntervalUnit::DayTime) => self.cast::<IntervalDayTimeType>(),
+            #[cfg(feature = "dtype-interval")]
             Interval(IntervalUnit::YearMonth) => self.cast::<IntervalYearMonthType>(),
             List(_) => self.cast::<ListType>(),
             dt => Err(PolarsError::Other(
@@ -670,7 +682,9 @@ impl Series {
             Series::TimestampMicrosecond(arr) => unpack_if_match!(arr),
             Series::TimestampMillisecond(arr) => unpack_if_match!(arr),
             Series::TimestampSecond(arr) => unpack_if_match!(arr),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(arr) => unpack_if_match!(arr),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(arr) => unpack_if_match!(arr),
             Series::List(arr) => unpack_if_match!(arr),
             Series::Object(arr) => unpack_if_match!(arr),
@@ -1093,14 +1107,19 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Timestamp(TimeUnit::Second, _) => {
                 Series::TimestampSecond(mem::transmute(ca))
             }
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => {
                 Series::IntervalYearMonth(mem::transmute(ca))
             }
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => {
                 Series::IntervalDayTime(mem::transmute(ca))
             }
             ArrowDataType::List(_) => Series::List(mem::transmute(ca)),
-            _ => panic!("Not implemented: {:?}", N::get_data_type()),
+            _ => panic!(
+                "Not implemented or feature flag toggled off: {:?}",
+                N::get_data_type()
+            ),
         }
     }
 }
@@ -1207,7 +1226,9 @@ impl_as_ref_ca!(TimestampNanosecondType, TimestampNanosecond);
 impl_as_ref_ca!(TimestampMicrosecondType, TimestampMicrosecond);
 impl_as_ref_ca!(TimestampMillisecondType, TimestampMillisecond);
 impl_as_ref_ca!(TimestampSecondType, TimestampSecond);
+#[cfg(feature = "dtype-interval")]
 impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
+#[cfg(feature = "dtype-interval")]
 impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
 impl_as_ref_ca!(ListType, List);
 
@@ -1259,7 +1280,9 @@ impl_as_mut_ca!(TimestampNanosecondType, TimestampNanosecond);
 impl_as_mut_ca!(TimestampMicrosecondType, TimestampMicrosecond);
 impl_as_mut_ca!(TimestampMillisecondType, TimestampMillisecond);
 impl_as_mut_ca!(TimestampSecondType, TimestampSecond);
+#[cfg(feature = "dtype-interval")]
 impl_as_mut_ca!(IntervalDayTimeType, IntervalDayTime);
+#[cfg(feature = "dtype-interval")]
 impl_as_mut_ca!(IntervalYearMonthType, IntervalYearMonth);
 impl_as_mut_ca!(ListType, List);
 
@@ -1301,7 +1324,9 @@ from_series_to_ca!(TimestampMillisecond, TimestampMillisecondChunked);
 from_series_to_ca!(TimestampSecond, TimestampSecondChunked);
 from_series_to_ca!(TimestampMicrosecond, TimestampMicrosecondChunked);
 from_series_to_ca!(TimestampNanosecond, TimestampNanosecondChunked);
+#[cfg(feature = "dtype-interval")]
 from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
+#[cfg(feature = "dtype-interval")]
 from_series_to_ca!(IntervalYearMonth, IntervalYearMonthChunked);
 from_series_to_ca!(List, ListChunked);
 
@@ -1341,9 +1366,11 @@ impl From<(&str, ArrayRef)> for Series {
             ArrowDataType::Time64(TimeUnit::Microsecond) => {
                 Time64MicrosecondChunked::new_from_chunks(name, chunk).into_series()
             }
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => {
                 IntervalDayTimeChunked::new_from_chunks(name, chunk).into_series()
             }
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => {
                 IntervalYearMonthChunked::new_from_chunks(name, chunk).into_series()
             }

@@ -175,7 +175,9 @@ macro_rules! match_arrow_data_type_apply_macro {
             ArrowDataType::Time32(TimeUnit::Second) => $macro!(Time32SecondType $(, $opt_args)*),
             ArrowDataType::Time64(TimeUnit::Nanosecond) => $macro!(Time64NanosecondType $(, $opt_args)*),
             ArrowDataType::Time64(TimeUnit::Microsecond) => $macro!(Time64MicrosecondType $(, $opt_args)*),
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => $macro!(IntervalDayTimeType $(, $opt_args)*),
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => $macro!(IntervalYearMonthType $(, $opt_args)*),
             ArrowDataType::Duration(TimeUnit::Nanosecond) => $macro!(DurationNanosecondType $(, $opt_args)*),
             ArrowDataType::Duration(TimeUnit::Microsecond) => $macro!(DurationMicrosecondType $(, $opt_args)*),
@@ -220,7 +222,9 @@ macro_rules! apply_method_all_arrow_series {
             Series::TimestampMicrosecond(a) => a.$method($($args),*),
             Series::TimestampMillisecond(a) => a.$method($($args),*),
             Series::TimestampSecond(a) => a.$method($($args),*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => a.$method($($args),*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => a.$method($($args),*),
             Series::List(a) => a.$method($($args),*),
             Series::Object(_) => panic!("not implemented for object type"),
@@ -258,7 +262,9 @@ macro_rules! apply_method_all_series {
             Series::TimestampMicrosecond(a) => a.$method($($args),*),
             Series::TimestampMillisecond(a) => a.$method($($args),*),
             Series::TimestampSecond(a) => a.$method($($args),*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => a.$method($($args),*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => a.$method($($args),*),
             Series::List(a) => a.$method($($args),*),
             Series::Object(a) => a.$method($($args),*),
@@ -295,7 +301,9 @@ macro_rules! apply_method_numeric_series {
             Series::TimestampMicrosecond(a) => a.$method($($args),*),
             Series::TimestampMillisecond(a) => a.$method($($args),*),
             Series::TimestampSecond(a) => a.$method($($args),*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => a.$method($($args),*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => a.$method($($args),*),
             _ => unimplemented!(),
         }
@@ -330,7 +338,9 @@ macro_rules! apply_method_numeric_series_and_return {
             Series::TimestampMicrosecond(a) => Series::TimestampMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
             Series::TimestampMillisecond(a) => Series::TimestampMillisecond(a.$method($($args),*)$($opt_question_mark)*),
             Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
             _ => unimplemented!()
         }
@@ -366,7 +376,9 @@ macro_rules! apply_method_all_series_and_return {
             Series::TimestampMicrosecond(a) => Series::TimestampMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
             Series::TimestampMillisecond(a) => Series::TimestampMillisecond(a.$method($($args),*)$($opt_question_mark)*),
             Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
             Series::List(a) => Series::List(a.$method($($args),*)$($opt_question_mark)*),
             Series::Object(a) => Series::Object(a.$method($($args),*)$($opt_question_mark)*),
@@ -403,7 +415,9 @@ macro_rules! apply_method_all_arrow_series_and_return {
             Series::TimestampMicrosecond(a) => Series::TimestampMicrosecond(a.$method($($args),*)$($opt_question_mark)*),
             Series::TimestampMillisecond(a) => Series::TimestampMillisecond(a.$method($($args),*)$($opt_question_mark)*),
             Series::TimestampSecond(a) => Series::TimestampSecond(a.$method($($args),*)$($opt_question_mark)*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => Series::IntervalDayTime(a.$method($($args),*)$($opt_question_mark)*),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => Series::IntervalYearMonth(a.$method($($args),*)$($opt_question_mark)*),
             Series::List(a) => Series::List(a.$method($($args),*)$($opt_question_mark)*),
             Series::Object(_) => panic!("not implemented for object type"),

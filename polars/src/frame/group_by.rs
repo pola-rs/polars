@@ -199,7 +199,9 @@ impl Series {
             Series::DurationMicrosecond(ca) => as_groupable_iter!(ca, Int64),
             Series::DurationMillisecond(ca) => as_groupable_iter!(ca, Int64),
             Series::DurationSecond(ca) => as_groupable_iter!(ca, Int64),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(ca) => as_groupable_iter!(ca, Int64),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(ca) => as_groupable_iter!(ca, Int32),
             Series::Utf8(ca) => as_groupable_iter!(ca, Utf8),
             Series::Float32(ca) => Ok(float_to_groupable_iter(ca)),

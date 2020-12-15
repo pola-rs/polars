@@ -95,14 +95,6 @@ class DurationSecond:
     pass
 
 
-class IntervalDayTime:
-    pass
-
-
-class IntervalYearMonth:
-    pass
-
-
 class TimestampNanosecond:
     pass
 
@@ -148,8 +140,6 @@ dtypes = [
     DurationMicrosecond,
     DurationMillisecond,
     DurationSecond,
-    IntervalDayTime,
-    IntervalYearMonth,
     TimestampNanosecond,
     TimestampMicrosecond,
     TimestampMillisecond,
@@ -180,8 +170,6 @@ DTYPE_TO_FFINAME = {
     DurationMicrosecond: "duration_microsecond",
     DurationMillisecond: "duration_millisecond",
     DurationSecond: "duration_second",
-    IntervalDayTime: "interval_daytime",
-    IntervalYearMonth: "interval_yearmonth",
     TimestampNanosecond: "timestamp_nanosecond",
     TimestampMicrosecond: "timestamp_microsecond",
     TimestampMillisecond: "timestamp_millisecond",

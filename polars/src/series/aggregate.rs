@@ -81,9 +81,11 @@ macro_rules! apply_agg_fn {
             Series::TimestampSecond(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast TimestampSecond to T")),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast IntervalDayTime to T")),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast IntervalYearMonth to T")),

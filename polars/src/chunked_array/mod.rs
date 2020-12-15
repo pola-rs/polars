@@ -45,11 +45,13 @@ pub mod upstream_traits;
 use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMicrosecondArray, DurationMillisecondArray,
-    DurationNanosecondArray, DurationSecondArray, IntervalDayTimeArray, IntervalYearMonthArray,
-    ListArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
-    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-    TimestampSecondArray,
+    DurationNanosecondArray, DurationSecondArray, ListArray, Time32MillisecondArray,
+    Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
+    TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
 };
+#[cfg(feature = "dtype-interval")]
+use arrow::array::{IntervalDayTimeArray, IntervalYearMonthArray};
+
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::fmt::Debug;
 use std::mem;
@@ -240,7 +242,9 @@ impl<T> ChunkedArray<T> {
             ArrowDataType::Time32(TimeUnit::Second) => unpack!(Time32Second),
             ArrowDataType::Time64(TimeUnit::Nanosecond) => unpack!(Time64Nanosecond),
             ArrowDataType::Time64(TimeUnit::Microsecond) => unpack!(Time64Microsecond),
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => unpack!(IntervalDayTime),
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => unpack!(IntervalYearMonth),
             ArrowDataType::Duration(TimeUnit::Nanosecond) => unpack!(DurationNanosecond),
             ArrowDataType::Duration(TimeUnit::Microsecond) => unpack!(DurationMicrosecond),
@@ -556,9 +560,11 @@ where
                 let v = downcast!(Time64MicrosecondArray);
                 AnyType::Time64(v, TimeUnit::Microsecond)
             }
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => {
                 downcast_and_pack!(IntervalDayTimeArray, IntervalDayTime)
             }
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => {
                 downcast_and_pack!(IntervalYearMonthArray, IntervalYearMonth)
             }
