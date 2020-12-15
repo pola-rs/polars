@@ -123,24 +123,15 @@ pub enum Series {
     Bool(ChunkedArray<BooleanType>),
     Date32(ChunkedArray<Date32Type>),
     Date64(ChunkedArray<Date64Type>),
-    Time32Millisecond(Time32MillisecondChunked),
-    Time32Second(Time32SecondChunked),
     Time64Nanosecond(ChunkedArray<Time64NanosecondType>),
-    Time64Microsecond(ChunkedArray<Time64MicrosecondType>),
     DurationNanosecond(ChunkedArray<DurationNanosecondType>),
-    DurationMicrosecond(DurationMicrosecondChunked),
     DurationMillisecond(DurationMillisecondChunked),
-    DurationSecond(DurationSecondChunked),
     #[cfg(feature = "dtype-interval")]
     #[doc(cfg(feature = "dtype-interval"))]
     IntervalDayTime(IntervalDayTimeChunked),
     #[cfg(feature = "dtype-interval")]
     #[doc(cfg(feature = "dtype-interval"))]
     IntervalYearMonth(IntervalYearMonthChunked),
-    TimestampNanosecond(TimestampNanosecondChunked),
-    TimestampMicrosecond(TimestampMicrosecondChunked),
-    TimestampMillisecond(TimestampMillisecondChunked),
-    TimestampSecond(TimestampSecondChunked),
     List(ListChunked),
     Object(Box<dyn SeriesOps>),
 }
@@ -300,23 +291,8 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray
-    pub fn time32_millisecond(&self) -> Result<&Time32MillisecondChunked> {
-        unpack_series!(self, Time32Millisecond, "time32millisecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn time32_second(&self) -> Result<&Time32SecondChunked> {
-        unpack_series!(self, Time32Second, "time32second")
-    }
-
-    /// Unpack to ChunkedArray
     pub fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
         unpack_series!(self, Time64Nanosecond, "time64nanosecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn time64_microsecond(&self) -> Result<&Time64MicrosecondChunked> {
-        unpack_series!(self, Time64Microsecond, "time64microsecond")
     }
 
     /// Unpack to ChunkedArray
@@ -325,38 +301,8 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray
-    pub fn duration_microsecond(&self) -> Result<&DurationMicrosecondChunked> {
-        unpack_series!(self, DurationMicrosecond, "durationmicrosecond")
-    }
-
-    /// Unpack to ChunkedArray
     pub fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
         unpack_series!(self, DurationMillisecond, "durationmillisecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn duration_second(&self) -> Result<&DurationSecondChunked> {
-        unpack_series!(self, DurationSecond, "durationsecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn timestamp_nanosecond(&self) -> Result<&TimestampNanosecondChunked> {
-        unpack_series!(self, TimestampNanosecond, "timestampnanosecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn timestamp_microsecond(&self) -> Result<&TimestampMicrosecondChunked> {
-        unpack_series!(self, TimestampMicrosecond, "timestampmicrosecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn timestamp_millisecond(&self) -> Result<&TimestampMillisecondChunked> {
-        unpack_series!(self, TimestampMillisecond, "timestampmillisecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn timestamp_second(&self) -> Result<&TimestampSecondChunked> {
-        unpack_series!(self, TimestampSecond, "timestampsecond")
     }
 
     /// Unpack to ChunkedArray
@@ -567,18 +513,9 @@ impl Series {
             Series::Float64(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Date32(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Date64(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Time32Millisecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Time32Second(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::Time64Nanosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Time64Microsecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::DurationNanosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::DurationMicrosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
             Series::DurationMillisecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::DurationSecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::TimestampNanosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::TimestampMicrosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::TimestampMillisecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::TimestampSecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
             #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(arr) => pack_ca_to_series(arr.cast::<N>()?),
             #[cfg(feature = "dtype-interval")]
@@ -670,18 +607,9 @@ impl Series {
             Series::Float64(arr) => unpack_if_match!(arr),
             Series::Date32(arr) => unpack_if_match!(arr),
             Series::Date64(arr) => unpack_if_match!(arr),
-            Series::Time32Millisecond(arr) => unpack_if_match!(arr),
-            Series::Time32Second(arr) => unpack_if_match!(arr),
             Series::Time64Nanosecond(arr) => unpack_if_match!(arr),
-            Series::Time64Microsecond(arr) => unpack_if_match!(arr),
             Series::DurationNanosecond(arr) => unpack_if_match!(arr),
-            Series::DurationMicrosecond(arr) => unpack_if_match!(arr),
             Series::DurationMillisecond(arr) => unpack_if_match!(arr),
-            Series::DurationSecond(arr) => unpack_if_match!(arr),
-            Series::TimestampNanosecond(arr) => unpack_if_match!(arr),
-            Series::TimestampMicrosecond(arr) => unpack_if_match!(arr),
-            Series::TimestampMillisecond(arr) => unpack_if_match!(arr),
-            Series::TimestampSecond(arr) => unpack_if_match!(arr),
             #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(arr) => unpack_if_match!(arr),
             #[cfg(feature = "dtype-interval")]
@@ -1071,41 +999,14 @@ fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
             ArrowDataType::Float64 => Series::Float64(mem::transmute(ca)),
             ArrowDataType::Date32(DateUnit::Day) => Series::Date32(mem::transmute(ca)),
             ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(mem::transmute(ca)),
-            ArrowDataType::Time64(datatypes::TimeUnit::Microsecond) => {
-                Series::Time64Microsecond(mem::transmute(ca))
-            }
             ArrowDataType::Time64(datatypes::TimeUnit::Nanosecond) => {
                 Series::Time64Nanosecond(mem::transmute(ca))
-            }
-            ArrowDataType::Time32(datatypes::TimeUnit::Millisecond) => {
-                Series::Time32Millisecond(mem::transmute(ca))
-            }
-            ArrowDataType::Time32(datatypes::TimeUnit::Second) => {
-                Series::Time32Second(mem::transmute(ca))
             }
             ArrowDataType::Duration(datatypes::TimeUnit::Nanosecond) => {
                 Series::DurationNanosecond(mem::transmute(ca))
             }
-            ArrowDataType::Duration(datatypes::TimeUnit::Microsecond) => {
-                Series::DurationMicrosecond(mem::transmute(ca))
-            }
             ArrowDataType::Duration(datatypes::TimeUnit::Millisecond) => {
                 Series::DurationMillisecond(mem::transmute(ca))
-            }
-            ArrowDataType::Duration(datatypes::TimeUnit::Second) => {
-                Series::DurationSecond(mem::transmute(ca))
-            }
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                Series::TimestampNanosecond(mem::transmute(ca))
-            }
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                Series::TimestampMicrosecond(mem::transmute(ca))
-            }
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-                Series::TimestampMillisecond(mem::transmute(ca))
-            }
-            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-                Series::TimestampSecond(mem::transmute(ca))
             }
             #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => {
@@ -1215,17 +1116,8 @@ impl_as_ref_ca!(Utf8Type, Utf8);
 impl_as_ref_ca!(Date32Type, Date32);
 impl_as_ref_ca!(Date64Type, Date64);
 impl_as_ref_ca!(Time64NanosecondType, Time64Nanosecond);
-impl_as_ref_ca!(Time64MicrosecondType, Time64Microsecond);
-impl_as_ref_ca!(Time32MillisecondType, Time32Millisecond);
-impl_as_ref_ca!(Time32SecondType, Time32Second);
 impl_as_ref_ca!(DurationNanosecondType, DurationNanosecond);
-impl_as_ref_ca!(DurationMicrosecondType, DurationMicrosecond);
 impl_as_ref_ca!(DurationMillisecondType, DurationMillisecond);
-impl_as_ref_ca!(DurationSecondType, DurationSecond);
-impl_as_ref_ca!(TimestampNanosecondType, TimestampNanosecond);
-impl_as_ref_ca!(TimestampMicrosecondType, TimestampMicrosecond);
-impl_as_ref_ca!(TimestampMillisecondType, TimestampMillisecond);
-impl_as_ref_ca!(TimestampSecondType, TimestampSecond);
 #[cfg(feature = "dtype-interval")]
 impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
 #[cfg(feature = "dtype-interval")]
@@ -1269,17 +1161,8 @@ impl_as_mut_ca!(Utf8Type, Utf8);
 impl_as_mut_ca!(Date32Type, Date32);
 impl_as_mut_ca!(Date64Type, Date64);
 impl_as_mut_ca!(Time64NanosecondType, Time64Nanosecond);
-impl_as_mut_ca!(Time64MicrosecondType, Time64Microsecond);
-impl_as_mut_ca!(Time32MillisecondType, Time32Millisecond);
-impl_as_mut_ca!(Time32SecondType, Time32Second);
 impl_as_mut_ca!(DurationNanosecondType, DurationNanosecond);
-impl_as_mut_ca!(DurationMicrosecondType, DurationMicrosecond);
 impl_as_mut_ca!(DurationMillisecondType, DurationMillisecond);
-impl_as_mut_ca!(DurationSecondType, DurationSecond);
-impl_as_mut_ca!(TimestampNanosecondType, TimestampNanosecond);
-impl_as_mut_ca!(TimestampMicrosecondType, TimestampMicrosecond);
-impl_as_mut_ca!(TimestampMillisecondType, TimestampMillisecond);
-impl_as_mut_ca!(TimestampSecondType, TimestampSecond);
 #[cfg(feature = "dtype-interval")]
 impl_as_mut_ca!(IntervalDayTimeType, IntervalDayTime);
 #[cfg(feature = "dtype-interval")]
@@ -1312,18 +1195,9 @@ from_series_to_ca!(Bool, BooleanChunked);
 from_series_to_ca!(Utf8, Utf8Chunked);
 from_series_to_ca!(Date32, Date32Chunked);
 from_series_to_ca!(Date64, Date64Chunked);
-from_series_to_ca!(Time32Millisecond, Time32MillisecondChunked);
-from_series_to_ca!(Time32Second, Time32SecondChunked);
-from_series_to_ca!(Time64Microsecond, Time64MicrosecondChunked);
 from_series_to_ca!(Time64Nanosecond, Time64NanosecondChunked);
 from_series_to_ca!(DurationMillisecond, DurationMillisecondChunked);
-from_series_to_ca!(DurationSecond, DurationSecondChunked);
-from_series_to_ca!(DurationMicrosecond, DurationMicrosecondChunked);
 from_series_to_ca!(DurationNanosecond, DurationNanosecondChunked);
-from_series_to_ca!(TimestampMillisecond, TimestampMillisecondChunked);
-from_series_to_ca!(TimestampSecond, TimestampSecondChunked);
-from_series_to_ca!(TimestampMicrosecond, TimestampMicrosecondChunked);
-from_series_to_ca!(TimestampNanosecond, TimestampNanosecondChunked);
 #[cfg(feature = "dtype-interval")]
 from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
 #[cfg(feature = "dtype-interval")]
@@ -1354,17 +1228,8 @@ impl From<(&str, ArrayRef)> for Series {
             ArrowDataType::Date64(DateUnit::Millisecond) => {
                 Date64Chunked::new_from_chunks(name, chunk).into_series()
             }
-            ArrowDataType::Time32(TimeUnit::Millisecond) => {
-                Time32MillisecondChunked::new_from_chunks(name, chunk).into_series()
-            }
-            ArrowDataType::Time32(TimeUnit::Second) => {
-                Time32SecondChunked::new_from_chunks(name, chunk).into_series()
-            }
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                 Time64NanosecondChunked::new_from_chunks(name, chunk).into_series()
-            }
-            ArrowDataType::Time64(TimeUnit::Microsecond) => {
-                Time64MicrosecondChunked::new_from_chunks(name, chunk).into_series()
             }
             #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => {
@@ -1377,26 +1242,8 @@ impl From<(&str, ArrayRef)> for Series {
             ArrowDataType::Duration(TimeUnit::Nanosecond) => {
                 DurationNanosecondChunked::new_from_chunks(name, chunk).into_series()
             }
-            ArrowDataType::Duration(TimeUnit::Microsecond) => {
-                DurationMicrosecondChunked::new_from_chunks(name, chunk).into_series()
-            }
             ArrowDataType::Duration(TimeUnit::Millisecond) => {
                 DurationMillisecondChunked::new_from_chunks(name, chunk).into_series()
-            }
-            ArrowDataType::Duration(TimeUnit::Second) => {
-                DurationSecondChunked::new_from_chunks(name, chunk).into_series()
-            }
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                TimestampNanosecondChunked::new_from_chunks(name, chunk).into_series()
-            }
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
-                TimestampMicrosecondChunked::new_from_chunks(name, chunk).into_series()
-            }
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
-                TimestampMillisecondChunked::new_from_chunks(name, chunk).into_series()
-            }
-            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
-                TimestampSecondChunked::new_from_chunks(name, chunk).into_series()
             }
             ArrowDataType::List(_) => ListChunked::new_from_chunks(name, chunk).into_series(),
             _ => unimplemented!(),

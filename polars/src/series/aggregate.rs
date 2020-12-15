@@ -45,42 +45,15 @@ macro_rules! apply_agg_fn {
             Series::Date64(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast Date64 to T")),
-            Series::Time32Millisecond(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast Time32Millisecond to T")),
-            Series::Time32Second(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast Time32Second to T")),
             Series::Time64Nanosecond(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast Time64Nanosecond to T")),
-            Series::Time64Microsecond(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast Time64Microsecond to T")),
             Series::DurationNanosecond(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast DurationNanosecond to T")),
-            Series::DurationMicrosecond(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast DurationMicrosecond to T")),
             Series::DurationMillisecond(a) => a
                 .$agg()
                 .map(|v| T::from(v).expect("could not cast DurationMillisecond to T")),
-            Series::DurationSecond(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast DurationSecond to T")),
-            Series::TimestampNanosecond(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast TimestampNanosecond to T")),
-            Series::TimestampMicrosecond(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast TimestampMicrosecond to T")),
-            Series::TimestampMillisecond(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast TimestampMillisecond to T")),
-            Series::TimestampSecond(a) => a
-                .$agg()
-                .map(|v| T::from(v).expect("could not cast TimestampSecond to T")),
             #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => a
                 .$agg()

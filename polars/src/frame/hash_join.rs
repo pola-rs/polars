@@ -44,33 +44,12 @@ macro_rules! apply_hash_join_on_series {
             Series::Utf8(ca_left) => $join_macro!($s_right, ca_left, utf8),
             Series::Date32(ca_left) => $join_macro!($s_right, ca_left, date32),
             Series::Date64(ca_left) => $join_macro!($s_right, ca_left, date64),
-            Series::Time32Millisecond(ca_left) => {
-                $join_macro!($s_right, ca_left, time32_millisecond)
-            }
-            Series::Time32Second(ca_left) => $join_macro!($s_right, ca_left, time32_second),
             Series::Time64Nanosecond(ca_left) => $join_macro!($s_right, ca_left, time64_nanosecond),
-            Series::Time64Microsecond(ca_left) => {
-                $join_macro!($s_right, ca_left, time64_microsecond)
-            }
             Series::DurationMillisecond(ca_left) => {
                 $join_macro!($s_right, ca_left, duration_millisecond)
             }
-            Series::DurationSecond(ca_left) => $join_macro!($s_right, ca_left, duration_second),
             Series::DurationNanosecond(ca_left) => {
                 $join_macro!($s_right, ca_left, duration_nanosecond)
-            }
-            Series::DurationMicrosecond(ca_left) => {
-                $join_macro!($s_right, ca_left, duration_microsecond)
-            }
-            Series::TimestampMillisecond(ca_left) => {
-                $join_macro!($s_right, ca_left, timestamp_millisecond)
-            }
-            Series::TimestampSecond(ca_left) => $join_macro!($s_right, ca_left, timestamp_second),
-            Series::TimestampNanosecond(ca_left) => {
-                $join_macro!($s_right, ca_left, timestamp_nanosecond)
-            }
-            Series::TimestampMicrosecond(ca_left) => {
-                $join_macro!($s_right, ca_left, timestamp_microsecond)
             }
             #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(ca_left) => $join_macro!($s_right, ca_left, interval_daytime),
