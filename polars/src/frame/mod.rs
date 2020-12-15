@@ -2,6 +2,8 @@
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
+use crate::series::implementations::Wrap;
+use crate::series::SeriesTrait;
 use crate::utils::{accumulate_dataframes_horizontal, Xob};
 use ahash::RandomState;
 use arrow::datatypes::{Field, Schema};
@@ -26,23 +28,46 @@ pub trait IntoSeries {
         Self: Sized;
 }
 
+impl IntoSeries for Arc<dyn SeriesTrait> {
+    fn into_series(self) -> Series {
+        Series(self)
+    }
+}
+
 impl IntoSeries for Series {
     fn into_series(self) -> Series {
         self
     }
 }
 
-impl<T: PolarsDataType> IntoSeries for ChunkedArray<T> {
-    fn into_series(self) -> Series {
-        Series::from_chunked_array(self)
-    }
+macro_rules! impl_into_series {
+    ($ca_type: ident) => {
+        impl IntoSeries for $ca_type {
+            fn into_series(self) -> Series {
+                Series(Arc::new(Wrap(self)))
+            }
+        }
+    };
 }
 
-impl Default for DataFrame {
-    fn default() -> Self {
-        DataFrame::new_no_checks(Vec::with_capacity(0))
-    }
-}
+impl_into_series!(Float32Chunked);
+impl_into_series!(Float64Chunked);
+impl_into_series!(Utf8Chunked);
+impl_into_series!(ListChunked);
+impl_into_series!(BooleanChunked);
+impl_into_series!(UInt8Chunked);
+impl_into_series!(UInt16Chunked);
+impl_into_series!(UInt32Chunked);
+impl_into_series!(UInt64Chunked);
+impl_into_series!(Int8Chunked);
+impl_into_series!(Int16Chunked);
+impl_into_series!(Int32Chunked);
+impl_into_series!(Int64Chunked);
+impl_into_series!(DurationNanosecondChunked);
+impl_into_series!(DurationMillisecondChunked);
+impl_into_series!(Date32Chunked);
+impl_into_series!(Date64Chunked);
+impl_into_series!(Time64NanosecondChunked);
 
 #[derive(Clone)]
 pub struct DataFrame {
@@ -1546,6 +1571,12 @@ impl<'a> Iterator for RecordBatchIter<'a> {
         let rb = RecordBatch::try_new(Arc::clone(&self.schema), rb_cols).unwrap();
         self.idx += length;
         Some(rb)
+    }
+}
+
+impl Default for DataFrame {
+    fn default() -> Self {
+        DataFrame::new_no_checks(vec![])
     }
 }
 

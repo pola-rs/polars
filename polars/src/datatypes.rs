@@ -6,8 +6,7 @@
 //! [See the AnyType variants](enum.AnyType.html#variants) for the data types that
 //! are currently supported.
 //!
-use crate::chunked_array::ChunkedArray;
-use crate::series::Series;
+use crate::prelude::*;
 pub use arrow::datatypes::DataType as ArrowDataType;
 pub use arrow::datatypes::{
     ArrowNumericType, ArrowPrimitiveType, BooleanType, Date32Type, Date64Type, DateUnit,
@@ -23,13 +22,13 @@ pub struct Utf8Type {}
 
 pub struct ListType {}
 
-pub trait PolarsDataType {
+pub trait PolarsDataType: Send + Sync {
     fn get_data_type() -> ArrowDataType;
 }
 
 impl<T> PolarsDataType for T
 where
-    T: PolarsPrimitiveType,
+    T: PolarsPrimitiveType + Sync + Send,
 {
     fn get_data_type() -> ArrowDataType {
         T::get_data_type()
@@ -52,7 +51,7 @@ impl PolarsDataType for ListType {
 pub struct ObjectType<T>(T);
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
-impl<T> PolarsDataType for ObjectType<T> {
+impl<T: Send + Sync> PolarsDataType for ObjectType<T> {
     fn get_data_type() -> ArrowDataType {
         // the best fit?
         ArrowDataType::Binary
@@ -82,25 +81,10 @@ pub type Utf8Chunked = ChunkedArray<Utf8Type>;
 pub type Date32Chunked = ChunkedArray<Date32Type>;
 pub type Date64Chunked = ChunkedArray<Date64Type>;
 pub type DurationNanosecondChunked = ChunkedArray<DurationNanosecondType>;
-pub type DurationMicrosecondChunked = ChunkedArray<DurationMicrosecondType>;
 pub type DurationMillisecondChunked = ChunkedArray<DurationMillisecondType>;
-pub type DurationSecondChunked = ChunkedArray<DurationSecondType>;
-
 pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
-pub type Time64MicrosecondChunked = ChunkedArray<Time64MicrosecondType>;
-pub type Time32MillisecondChunked = ChunkedArray<Time32MillisecondType>;
-pub type Time32SecondChunked = ChunkedArray<Time32SecondType>;
-#[cfg(feature = "dtype-interval")]
-pub type IntervalDayTimeChunked = ChunkedArray<IntervalDayTimeType>;
-#[cfg(feature = "dtype-interval")]
-pub type IntervalYearMonthChunked = ChunkedArray<IntervalYearMonthType>;
 
-pub type TimestampNanosecondChunked = ChunkedArray<TimestampNanosecondType>;
-pub type TimestampMicrosecondChunked = ChunkedArray<TimestampMicrosecondType>;
-pub type TimestampMillisecondChunked = ChunkedArray<TimestampMillisecondType>;
-pub type TimestampSecondChunked = ChunkedArray<TimestampSecondType>;
-
-pub trait PolarsPrimitiveType: ArrowPrimitiveType {}
+pub trait PolarsPrimitiveType: ArrowPrimitiveType + Send + Sync {}
 impl PolarsPrimitiveType for BooleanType {}
 impl PolarsPrimitiveType for UInt8Type {}
 impl PolarsPrimitiveType for UInt16Type {}
@@ -115,21 +99,8 @@ impl PolarsPrimitiveType for Float64Type {}
 impl PolarsPrimitiveType for Date32Type {}
 impl PolarsPrimitiveType for Date64Type {}
 impl PolarsPrimitiveType for Time64NanosecondType {}
-impl PolarsPrimitiveType for Time64MicrosecondType {}
-impl PolarsPrimitiveType for Time32MillisecondType {}
-impl PolarsPrimitiveType for Time32SecondType {}
 impl PolarsPrimitiveType for DurationNanosecondType {}
-impl PolarsPrimitiveType for DurationMicrosecondType {}
 impl PolarsPrimitiveType for DurationMillisecondType {}
-impl PolarsPrimitiveType for DurationSecondType {}
-#[cfg(feature = "dtype-interval")]
-impl PolarsPrimitiveType for IntervalYearMonthType {}
-#[cfg(feature = "dtype-interval")]
-impl PolarsPrimitiveType for IntervalDayTimeType {}
-impl PolarsPrimitiveType for TimestampNanosecondType {}
-impl PolarsPrimitiveType for TimestampMicrosecondType {}
-impl PolarsPrimitiveType for TimestampMillisecondType {}
-impl PolarsPrimitiveType for TimestampSecondType {}
 
 pub trait PolarsNumericType: PolarsPrimitiveType + ArrowNumericType {}
 impl PolarsNumericType for UInt8Type {}
@@ -145,21 +116,12 @@ impl PolarsNumericType for Float64Type {}
 impl PolarsNumericType for Date32Type {}
 impl PolarsNumericType for Date64Type {}
 impl PolarsNumericType for Time64NanosecondType {}
-impl PolarsNumericType for Time64MicrosecondType {}
-impl PolarsNumericType for Time32MillisecondType {}
-impl PolarsNumericType for Time32SecondType {}
 impl PolarsNumericType for DurationNanosecondType {}
-impl PolarsNumericType for DurationMicrosecondType {}
 impl PolarsNumericType for DurationMillisecondType {}
-impl PolarsNumericType for DurationSecondType {}
 #[cfg(feature = "dtype-interval")]
 impl PolarsNumericType for IntervalYearMonthType {}
 #[cfg(feature = "dtype-interval")]
 impl PolarsNumericType for IntervalDayTimeType {}
-impl PolarsNumericType for TimestampNanosecondType {}
-impl PolarsNumericType for TimestampMicrosecondType {}
-impl PolarsNumericType for TimestampMillisecondType {}
-impl PolarsNumericType for TimestampSecondType {}
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -173,21 +135,12 @@ impl PolarsIntegerType for Int64Type {}
 impl PolarsIntegerType for Date32Type {}
 impl PolarsIntegerType for Date64Type {}
 impl PolarsIntegerType for Time64NanosecondType {}
-impl PolarsIntegerType for Time64MicrosecondType {}
-impl PolarsIntegerType for Time32MillisecondType {}
-impl PolarsIntegerType for Time32SecondType {}
 impl PolarsIntegerType for DurationNanosecondType {}
-impl PolarsIntegerType for DurationMicrosecondType {}
 impl PolarsIntegerType for DurationMillisecondType {}
-impl PolarsIntegerType for DurationSecondType {}
 #[cfg(feature = "dtype-interval")]
 impl PolarsIntegerType for IntervalYearMonthType {}
 #[cfg(feature = "dtype-interval")]
 impl PolarsIntegerType for IntervalDayTimeType {}
-impl PolarsIntegerType for TimestampNanosecondType {}
-impl PolarsIntegerType for TimestampMicrosecondType {}
-impl PolarsIntegerType for TimestampMillisecondType {}
-impl PolarsIntegerType for TimestampSecondType {}
 
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}

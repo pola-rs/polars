@@ -152,7 +152,7 @@ impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq,
-    ChunkedArray<T>: ChunkOps,
+    ChunkedArray<T>: ChunkOps + IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
         let set = match self.null_count() {

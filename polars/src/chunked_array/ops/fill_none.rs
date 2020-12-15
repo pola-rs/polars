@@ -100,7 +100,7 @@ macro_rules! impl_fill_value {
     }};
 }
 
-impl<T> ChunkFillNone<T::Native> for ChunkedArray<T>
+impl<T> ChunkFillNone for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Add<Output = T::Native> + PartialOrd + Div<Output = T::Native> + Num + NumCast,
@@ -119,12 +119,19 @@ where
         };
         Ok(ca)
     }
+}
+
+impl<T> ChunkFillNoneValue<T::Native> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Add<Output = T::Native> + PartialOrd + Div<Output = T::Native> + Num + NumCast,
+{
     fn fill_none_with_value(&self, value: T::Native) -> Result<Self> {
         Ok(impl_fill_value!(self, Some(value)))
     }
 }
 
-impl ChunkFillNone<bool> for BooleanChunked {
+impl ChunkFillNone for BooleanChunked {
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         // nothing to fill
         if self.null_count() == 0 {
@@ -139,13 +146,15 @@ impl ChunkFillNone<bool> for BooleanChunked {
             FillNoneStrategy::Mean => Ok(impl_fill_value!(self, self.mean().map(|v| v != 0))),
         }
     }
+}
 
+impl ChunkFillNoneValue<bool> for BooleanChunked {
     fn fill_none_with_value(&self, value: bool) -> Result<Self> {
         Ok(impl_fill_value!(self, Some(value)))
     }
 }
 
-impl ChunkFillNone<&str> for Utf8Chunked {
+impl ChunkFillNone for Utf8Chunked {
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         // nothing to fill
         if self.null_count() == 0 {
@@ -160,30 +169,38 @@ impl ChunkFillNone<&str> for Utf8Chunked {
             )),
         }
     }
+}
 
+impl ChunkFillNoneValue<&str> for Utf8Chunked {
     fn fill_none_with_value(&self, value: &str) -> Result<Self> {
         Ok(impl_fill_value!(self, Some(value)))
     }
 }
 
-impl ChunkFillNone<&Series> for ListChunked {
+impl ChunkFillNone for ListChunked {
     fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_none not supported for List type".into(),
         ))
     }
+}
+
+impl ChunkFillNoneValue<&Series> for ListChunked {
     fn fill_none_with_value(&self, _value: &Series) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_none_with_value not supported for List type".into(),
         ))
     }
 }
-impl<T> ChunkFillNone<ObjectType<T>> for ObjectChunked<T> {
+impl<T> ChunkFillNone for ObjectChunked<T> {
     fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_none not supported for Object type".into(),
         ))
     }
+}
+
+impl<T> ChunkFillNoneValue<ObjectType<T>> for ObjectChunked<T> {
     fn fill_none_with_value(&self, _value: ObjectType<T>) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_none_with_value not supported for Object type".into(),

@@ -722,6 +722,7 @@ pub trait CompToSeries {
 impl<T> CompToSeries for ChunkedArray<T>
 where
     T: PolarsSingleType,
+    ChunkedArray<T>: IntoSeries,
 {
     fn lt_series(&self, rhs: &Series) -> BooleanChunked {
         ChunkCompare::<&Series>::lt(&self.clone().into_series(), rhs)

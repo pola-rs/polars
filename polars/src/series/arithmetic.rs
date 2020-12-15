@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::utils::get_supertype;
-use num::{Num, NumCast, ToPrimitive};
+use num::{Num, NumCast};
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops;
@@ -63,6 +63,7 @@ where
         + ops::Rem<Output = T::Native>
         + num::Zero
         + num::One,
+    ChunkedArray<T>: IntoSeries,
 {
     fn subtract(&self, rhs: &Series) -> Result<Series> {
         let rhs = self.unpack_series_matching_type(rhs)?;
@@ -101,48 +102,6 @@ impl NumOpsDispatch for Utf8Chunked {
 impl NumOpsDispatch for BooleanChunked {}
 impl NumOpsDispatch for ListChunked {}
 
-impl ops::Sub for Series {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        (&self).sub(&rhs)
-    }
-}
-
-impl ops::Add for Series {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        (&self).add(&rhs)
-    }
-}
-
-impl std::ops::Mul for Series {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        (&self).mul(&rhs)
-    }
-}
-
-impl std::ops::Div for Series {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        (&self).div(&rhs)
-    }
-}
-
-impl std::ops::Rem for Series {
-    type Output = Self;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        (&self).rem(&rhs)
-    }
-}
-
-// Same only now for referenced data types
-
 pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
@@ -166,8 +125,7 @@ impl ops::Sub for &Series {
 
     fn sub(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_arrow_series!(lhs.as_ref(), subtract, rhs.as_ref())
-            .expect("data types don't match")
+        lhs.subtract(rhs.as_ref()).expect("data types don't match")
     }
 }
 
@@ -176,8 +134,7 @@ impl ops::Add for &Series {
 
     fn add(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_arrow_series!(lhs.as_ref(), add_to, rhs.as_ref())
-            .expect("data types don't match")
+        lhs.add_to(rhs.as_ref()).expect("data types don't match")
     }
 }
 
@@ -191,8 +148,7 @@ impl std::ops::Mul for &Series {
     /// ```
     fn mul(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_arrow_series!(lhs.as_ref(), multiply, rhs.as_ref())
-            .expect("data types don't match")
+        lhs.multiply(rhs.as_ref()).expect("data types don't match")
     }
 }
 
@@ -206,8 +162,7 @@ impl std::ops::Div for &Series {
     /// ```
     fn div(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_arrow_series!(lhs.as_ref(), divide, rhs.as_ref())
-            .expect("data types don't match")
+        lhs.divide(rhs.as_ref()).expect("data types don't match")
     }
 }
 
@@ -221,8 +176,7 @@ impl std::ops::Rem for &Series {
     /// ```
     fn rem(self, rhs: Self) -> Self::Output {
         let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-        apply_method_all_arrow_series!(lhs.as_ref(), remainder, rhs.as_ref())
-            .expect("data types don't match")
+        lhs.remainder(rhs.as_ref()).expect("data types don't match")
     }
 }
 
@@ -257,6 +211,7 @@ where
         + ops::Sub<Output = T::Native>
         + ops::Mul<Output = T::Native>
         + ops::Div<Output = T::Native>,
+    ChunkedArray<T>: IntoSeries,
 {
     fn subtract_number<N: Num + NumCast>(&self, rhs: N) -> Series {
         let rhs: T::Native =
@@ -421,6 +376,7 @@ where
         + ops::Sub<Output = T::Native>
         + ops::Mul<Output = T::Native>
         + ops::Div<Output = T::Native>,
+    ChunkedArray<T>: IntoSeries,
 {
     fn lhs_subtract_number<N: Num + NumCast>(&self, lhs: N) -> Series {
         let lhs: T::Native =
@@ -491,31 +447,6 @@ where
     }
     fn mul(self, rhs: &Series) -> Self::Output {
         apply_method_all_arrow_series!(rhs, lhs_multiply_number, self)
-    }
-}
-
-impl Series {
-    fn pow<E: Num>(&self, exp: E) -> Series
-    where
-        E: ToPrimitive,
-    {
-        match self {
-            Series::UInt8(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
-            Series::UInt16(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
-            Series::UInt32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
-            Series::UInt64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
-            Series::Int8(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
-            Series::Int16(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
-            Series::Int32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
-            Series::Int64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
-            Series::Float32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
-            Series::Float64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
-            Series::Date32(ca) => Series::Float32(ca.pow_f32(exp.to_f32().unwrap())),
-            Series::Date64(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
-            Series::Time64Nanosecond(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
-            Series::DurationNanosecond(ca) => Series::Float64(ca.pow_f64(exp.to_f64().unwrap())),
-            _ => unimplemented!(),
-        }
     }
 }
 

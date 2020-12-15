@@ -13,9 +13,12 @@ pub fn date32_as_duration(arr: &PrimitiveArray<Date32Type>) -> ArrayRef {
     let vals = arr.value_slice(arr.offset(), arr.len());
     let (null_count, null_bit_buffer) = get_bitmap(arr);
 
-    let av = vals.iter().map(|days| (days * 3600 * 24) as i64).collect();
+    let av = vals
+        .iter()
+        .map(|days| (days * 3600 * 24 * 1000) as i64)
+        .collect();
 
-    Arc::new(aligned_vec_to_primitive_array::<DurationSecondType>(
+    Arc::new(aligned_vec_to_primitive_array::<DurationMillisecondType>(
         av,
         null_bit_buffer,
         Some(null_count),

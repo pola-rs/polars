@@ -24,12 +24,12 @@
 //! use polars::prelude::*;;
 //!
 //! // We can create a ChunkedArray from NaiveTime objects
-//! fn from_naive_time_to_time32(time_values: &[NaiveTime]) -> Time32SecondChunked {
-//!     Time32SecondChunked::new_from_naive_time("name", time_values)
+//! fn from_naive_time_to_time64(time_values: &[NaiveTime]) -> Time64NanosecondChunked {
+//!     Time64NanosecondChunked::new_from_naive_time("name", time_values)
 //! }
 //!
 //! // Or from a ChunkedArray to NaiveTime objects
-//! fn from_time32_to_naive_time(ca: &Time32SecondChunked) -> Vec<Option<NaiveTime>> {
+//! fn from_time64_to_naive_time(ca: &Time64NanosecondChunked) -> Vec<Option<NaiveTime>> {
 //!     ca.as_naive_time()
 //! }
 //! ```
@@ -78,49 +78,27 @@
 //! let fmt = "%Y-%m-%d %H:%M:%S";
 //!
 //! // Create the ChunkedArray
-//! let ca = TimestampSecondChunked::parse_from_str_slice("datetime as s since Epoch", datetime_values, fmt);
+//! let ca = Date64Chunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt);
 //!
 //! // Or collect into a Vec<NaiveDateTime>
 //! let vec = ca.as_naive_datetime();
 //!
-//! // We could also parse these datetime strings as the following data types:
-//!
-//! // date and time timestamps in different precisions
-//! let ca = TimestampNanosecondChunked::parse_from_str_slice("datetime as ns since Epoch", datetime_values, fmt);
-//! let ca = TimestampMicrosecondChunked::parse_from_str_slice("datetime as μs since Epoch", datetime_values, fmt);
-//! let ca = TimestampMillisecondChunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt);
-//!
-//! // or dates in different precisions (days and milliseconds)
+//! // or dates in different precision (days)
 //! let ca = Date32Chunked::parse_from_str_slice("date as days since Epoch", datetime_values, fmt);
-//! let ca = Date64Chunked::parse_from_str_slice("date as ms since Epoch", datetime_values, fmt);
 //! ```
 //!
 //! ## Temporal Data Types
-//! Polars supports all the time datatypes supported by Apache Arrow. These store the time values in
+//! Polars supports some of the time datatypes supported by Apache Arrow. These store the time values in
 //! different precisions and bytes:
 //!
 //! ### Time
 //! * **Time64NanosecondChunked**
 //!     - A ChunkedArray which stores time with nanosecond precision as 64 bit signed integer.
-//! * **Time64MicrosecondChunked**
-//!     - A ChunkedArray which stores time with microsecond precision as 64 bit signed integer.
-//! * **Time32MillisecondChunked**
-//!     - A ChunkedArray which stores time with millisecond precision as 32 bit signed integer.
-//! * **Time32SecondChunked**
-//!     - A ChunkedArray which stores time with second precision as 32 bit signed integer.
 //!
 //! ### Date
 //! * **Date32Chunked**
 //!     - A ChunkedArray storing the date as elapsed days since the Unix Epoch as 32 bit signed integer.
-//! * **Date64Chunked**
-//!     - A ChunkedArray storing the date as elapsed milliseconds since the Unix Epoch as 64 bit signed integer.
 //!
 //! ### DateTime
-//! * **TimestampNanosecondChunked**
-//!     - A ChunkedArray storing the date and time as elapsed nanoseconds since the Unix Epoch as 64 bit signed integer.
-//! * **TimestampMicrosecondChunked**
-//!     - A ChunkedArray storing the date and time as elapsed microseconds since the Unix Epoch as 64 bit signed integer.
-//! * **TimestampMillisecondChunked**
-//!     - A ChunkedArray storing the date and time as elapsed milliseconds since the Unix Epoch as 64 bit signed integer.
-//! * **TimestampSecondChunked**
-//!     - A ChunkedArray storing the date and time as elapsed seconds since the Unix Epoch as 64 bit signed integer.
+//! * **Date64Chunked**
+//!     - A ChunkedArray storing the date as elapsed milliseconds since the Unix Epoch as 64 bit signed integer.

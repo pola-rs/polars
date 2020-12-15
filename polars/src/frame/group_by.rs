@@ -99,12 +99,6 @@ impl IntoGroupTuples for Float32Chunked {
 impl IntoGroupTuples for ListChunked {}
 impl<T> IntoGroupTuples for ObjectChunked<T> {}
 
-impl IntoGroupTuples for Series {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        apply_method_all_arrow_series!(self, group_tuples,)
-    }
-}
-
 /// Utility enum used for grouping on multiple columns
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 enum Groupable<'a> {
@@ -167,7 +161,7 @@ where
     Box::new(iter)
 }
 
-impl Series {
+impl<'b> (dyn SeriesTrait + 'b) {
     fn as_groupable_iter<'a>(&'a self) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>> {
         macro_rules! as_groupable_iter {
             ($ca:expr, $variant:ident ) => {{
@@ -175,30 +169,45 @@ impl Series {
                 Ok(bx)
             }};
         }
-        match self {
-            Series::Bool(ca) => as_groupable_iter!(ca, Boolean),
-            Series::UInt8(ca) => as_groupable_iter!(ca, UInt8),
-            Series::UInt16(ca) => as_groupable_iter!(ca, UInt16),
-            Series::UInt32(ca) => as_groupable_iter!(ca, UInt32),
-            Series::UInt64(ca) => as_groupable_iter!(ca, UInt64),
-            Series::Int8(ca) => as_groupable_iter!(ca, Int8),
-            Series::Int16(ca) => as_groupable_iter!(ca, Int16),
-            Series::Int32(ca) => as_groupable_iter!(ca, Int32),
-            Series::Int64(ca) => as_groupable_iter!(ca, Int64),
-            Series::Date32(ca) => as_groupable_iter!(ca, Int32),
-            Series::Date64(ca) => as_groupable_iter!(ca, Int64),
-            Series::Time64Nanosecond(ca) => as_groupable_iter!(ca, Int64),
-            Series::DurationNanosecond(ca) => as_groupable_iter!(ca, Int64),
-            Series::DurationMillisecond(ca) => as_groupable_iter!(ca, Int64),
+
+        match self.dtype() {
+            ArrowDataType::Boolean => as_groupable_iter!(self.bool().unwrap(), Boolean),
+            ArrowDataType::UInt8 => as_groupable_iter!(self.u8().unwrap(), UInt8),
+            ArrowDataType::UInt16 => as_groupable_iter!(self.u16().unwrap(), UInt16),
+            ArrowDataType::UInt32 => as_groupable_iter!(self.u32().unwrap(), UInt32),
+            ArrowDataType::UInt64 => as_groupable_iter!(self.u64().unwrap(), UInt64),
+            ArrowDataType::Int8 => as_groupable_iter!(self.i8().unwrap(), Int8),
+            ArrowDataType::Int16 => as_groupable_iter!(self.i16().unwrap(), Int16),
+            ArrowDataType::Int32 => as_groupable_iter!(self.i32().unwrap(), Int32),
+            ArrowDataType::Int64 => as_groupable_iter!(self.i64().unwrap(), Int64),
+            ArrowDataType::Date32(DateUnit::Day) => {
+                as_groupable_iter!(self.date32().unwrap(), Int32)
+            }
+            ArrowDataType::Date64(DateUnit::Millisecond) => {
+                as_groupable_iter!(self.date64().unwrap(), Int64)
+            }
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+                as_groupable_iter!(self.time64_nanosecond().unwrap(), Int64)
+            }
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                as_groupable_iter!(self.duration_nanosecond().unwrap(), Int64)
+            }
+            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+                as_groupable_iter!(self.duration_millisecond().unwrap(), Int64)
+            }
             #[cfg(feature = "dtype-interval")]
-            Series::IntervalDayTime(ca) => as_groupable_iter!(ca, Int64),
+            ArrowDataType::Interval(IntervalUnit::DayTime) => {
+                as_groupable_iter!(self.interval_daytime().unwrap(), Int64)
+            }
             #[cfg(feature = "dtype-interval")]
-            Series::IntervalYearMonth(ca) => as_groupable_iter!(ca, Int32),
-            Series::Utf8(ca) => as_groupable_iter!(ca, Utf8),
-            Series::Float32(ca) => Ok(float_to_groupable_iter(ca)),
-            Series::Float64(ca) => Ok(float_to_groupable_iter(ca)),
-            s => Err(PolarsError::Other(
-                format!("Column with dtype {:?} is not groupable", s.dtype()).into(),
+            ArrowDataType::Interval(IntervalUnit::YearMonth) => {
+                as_groupable_iter!(self.interval_year_month().unwrap(), Int32)
+            }
+            ArrowDataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
+            ArrowDataType::Float32 => Ok(float_to_groupable_iter(self.f32().unwrap())),
+            ArrowDataType::Float64 => Ok(float_to_groupable_iter(self.f64().unwrap())),
+            dt => Err(PolarsError::Other(
+                format!("Column with dtype {:?} is not groupable", dt).into(),
             )),
         }
     }
@@ -378,28 +387,28 @@ impl<T> NumericAggSync for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
     T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
+    ChunkedArray<T>: IntoSeries,
 {
     fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
-        Some(Series::Float64(
-            groups
-                .par_iter()
-                .map(|(_first, idx)| {
-                    // Fast path
-                    if let Ok(slice) = self.cont_slice() {
-                        let mut sum = 0.;
-                        for i in idx {
-                            sum += slice[*i].to_f64().unwrap()
-                        }
-                        Some(sum / idx.len() as f64)
-                    } else {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
-                        let opt_sum: Option<T::Native> = take.sum();
-                        opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+        let ca: Float64Chunked = groups
+            .par_iter()
+            .map(|(_first, idx)| {
+                // Fast path
+                if let Ok(slice) = self.cont_slice() {
+                    let mut sum = 0.;
+                    for i in idx {
+                        sum += slice[*i].to_f64().unwrap()
                     }
-                })
-                .collect(),
-        ))
+                    Some(sum / idx.len() as f64)
+                } else {
+                    let take =
+                        unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
+                    let opt_sum: Option<T::Native> = take.sum();
+                    opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                }
+            })
+            .collect();
+        Some(ca.into_series())
     }
 
     fn agg_min(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
@@ -508,6 +517,7 @@ macro_rules! impl_agg_first {
 impl<T> AggFirst for ChunkedArray<T>
 where
     T: PolarsPrimitiveType + Send,
+    ChunkedArray<T>: IntoSeries,
 {
     fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, ChunkedArray<T>)
@@ -549,6 +559,7 @@ macro_rules! impl_agg_last {
 impl<T> AggLast for ChunkedArray<T>
 where
     T: PolarsPrimitiveType + Send,
+    ChunkedArray<T>: IntoSeries,
 {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, ChunkedArray<T>)
@@ -642,6 +653,7 @@ pub(crate) trait AggList {
 impl<T> AggList for ChunkedArray<T>
 where
     T: PolarsDataType,
+    ChunkedArray<T>: IntoSeries,
 {
     fn agg_list(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         macro_rules! impl_gb {
@@ -651,9 +663,9 @@ where
                     ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
-                        $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
                     };
-                    builder.append_opt_series(&Some(s))
+                    builder.append_opt_series(Some(&s))
                 }
                 builder.finish().into_series()
             }};
@@ -665,7 +677,7 @@ where
                 let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
-                        $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
                     };
                     builder.append_series(&s)
                 }
@@ -697,6 +709,7 @@ impl<T> AggQuantile for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
     T::Native: PartialEq,
+    ChunkedArray<T>: IntoSeries,
 {
     fn agg_quantile(&self, groups: &[(usize, Vec<usize>)], quantile: f64) -> Option<Series> {
         Some(
@@ -755,7 +768,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         unsafe {
             self.selected_keys.iter().for_each(|s| {
                 let key = s.take_iter_unchecked(
-                    self.groups.iter().map(|(idx, _)| *idx),
+                    &mut self.groups.iter().map(|(idx, _)| *idx),
                     Some(self.groups.len()),
                 );
                 keys.push(key)
@@ -812,7 +825,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Mean);
-            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_mean, &self.groups);
+            let opt_agg = agg_col.agg_mean(&self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -851,7 +864,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Sum);
-            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_sum, &self.groups);
+            let opt_agg = agg_col.agg_sum(&self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -889,7 +902,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Min);
-            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_min, &self.groups);
+            let opt_agg = agg_col.agg_min(&self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -927,7 +940,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Max);
-            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_max, &self.groups);
+            let opt_agg = agg_col.agg_max(&self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -965,7 +978,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::First);
-            let mut agg = apply_method_all_series!(agg_col, agg_first, &self.groups);
+            let mut agg = agg_col.agg_first(&self.groups);
             agg.rename(&new_name);
             cols.push(agg);
         }
@@ -1001,7 +1014,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Last);
-            let mut agg = apply_method_all_arrow_series!(agg_col, agg_last, &self.groups);
+            let mut agg = agg_col.agg_last(&self.groups);
             agg.rename(&new_name);
             cols.push(agg);
         }
@@ -1037,7 +1050,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::NUnique);
-            let opt_agg = apply_method_all_series!(agg_col, agg_n_unique, &self.groups);
+            let opt_agg = agg_col.agg_n_unique(&self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -1065,8 +1078,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile));
-            let opt_agg =
-                apply_method_all_arrow_series!(agg_col, agg_quantile, &self.groups, quantile);
+            let opt_agg = agg_col.agg_quantile(&self.groups, quantile);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -1089,7 +1101,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Median);
-            let opt_agg = apply_method_all_arrow_series!(agg_col, agg_median, &self.groups);
+            let opt_agg = agg_col.agg_median(&self.groups);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -1127,13 +1139,13 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Count);
-            let mut builder = PrimitiveChunkedBuilder::new(&new_name, self.groups.len());
+            let mut builder =
+                PrimitiveChunkedBuilder::<UInt32Type>::new(&new_name, self.groups.len());
             for (_first, idx) in &self.groups {
                 builder.append_value(idx.len() as u32);
             }
             let ca = builder.finish();
-            let agg = Series::UInt32(ca);
-            cols.push(agg);
+            cols.push(ca.into_series())
         }
         DataFrame::new(cols)
     }
@@ -1234,7 +1246,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         macro_rules! finish_agg_opt {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
                 let new_name = format![$name_fmt, $agg_col.name()];
-                let opt_agg = apply_method_all_arrow_series!($agg_col, $agg_fn, &$self.groups);
+                let opt_agg = $agg_col.$agg_fn(&$self.groups);
                 if let Some(mut agg) = opt_agg {
                     agg.rename(&new_name);
                     $cols.push(agg.into_series());
@@ -1244,7 +1256,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         macro_rules! finish_agg {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
                 let new_name = format![$name_fmt, $agg_col.name()];
-                let mut agg = apply_method_all_arrow_series!($agg_col, $agg_fn, &$self.groups);
+                let mut agg = $agg_col.$agg_fn(&$self.groups);
                 agg.rename(&new_name);
                 $cols.push(agg.into_series());
             }};
@@ -1267,14 +1279,15 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                         "median" => finish_agg_opt!(self, "{}_median", agg_n_unique, agg_col, cols),
                         "count" => {
                             let new_name = format!["{}_count", agg_col.name()];
-                            let mut builder =
-                                PrimitiveChunkedBuilder::new(&new_name, self.groups.len());
+                            let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new(
+                                &new_name,
+                                self.groups.len(),
+                            );
                             for (_first, idx) in &self.groups {
                                 builder.append_value(idx.len() as u32);
                             }
                             let ca = builder.finish();
-                            let agg = Series::UInt32(ca);
-                            cols.push(agg);
+                            cols.push(ca.into_series());
                         }
                         a => panic!(format!("aggregation: {:?} is not supported", a)),
                     }
@@ -1318,9 +1331,9 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                     ListPrimitiveChunkedBuilder::new("", values_builder, self.groups.len());
                 for (_first, idx) in &self.groups {
                     let s = unsafe {
-                        $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
                     };
-                    builder.append_opt_series(&Some(s))
+                    builder.append_opt_series(Some(&s))
                 }
                 builder.finish().into_series()
             }};
@@ -1333,7 +1346,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                     ListUtf8ChunkedBuilder::new("", values_builder, self.groups.len());
                 for (_first, idx) in &self.groups {
                     let s = unsafe {
-                        $agg_col.take_iter_unchecked(idx.into_iter().copied(), Some(idx.len()))
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
                     };
                     builder.append_series(&s)
                 }
@@ -1476,10 +1489,10 @@ pub struct Pivot<'df, 'selection_str> {
     values_column: &'selection_str str,
 }
 
-trait ChunkPivot {
-    fn pivot(
+pub(crate) trait ChunkPivot {
+    fn pivot<'a>(
         &self,
-        _pivot_series: &Series,
+        _pivot_series: &'a (dyn SeriesTrait + 'a),
         _keys: Vec<Series>,
         _groups: &[(usize, Vec<usize>)],
         _agg_type: PivotAgg,
@@ -1489,9 +1502,9 @@ trait ChunkPivot {
         ))
     }
 
-    fn pivot_count(
+    fn pivot_count<'a>(
         &self,
-        _pivot_series: &Series,
+        _pivot_series: &'a (dyn SeriesTrait + 'a),
         _keys: Vec<Series>,
         _groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
@@ -1541,10 +1554,11 @@ impl<T> ChunkPivot for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Copy + Num + NumCast,
+    ChunkedArray<T>: IntoSeries,
 {
-    fn pivot(
+    fn pivot<'a>(
         &self,
-        pivot_series: &Series,
+        pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
         groups: &[(usize, Vec<usize>)],
         agg_type: PivotAgg,
@@ -1604,9 +1618,9 @@ where
         DataFrame::new(cols)
     }
 
-    fn pivot_count(
+    fn pivot_count<'a>(
         &self,
-        pivot_series: &Series,
+        pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
         groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
@@ -1614,9 +1628,9 @@ where
     }
 }
 
-fn pivot_count_impl<CA: TakeRandom>(
+fn pivot_count_impl<'a, CA: TakeRandom>(
     ca: &CA,
-    pivot_series: &Series,
+    pivot_series: &'a (dyn SeriesTrait + 'a),
     keys: Vec<Series>,
     groups: &[(usize, Vec<usize>)],
 ) -> Result<DataFrame> {
@@ -1661,9 +1675,9 @@ fn pivot_count_impl<CA: TakeRandom>(
 }
 
 impl ChunkPivot for BooleanChunked {
-    fn pivot_count(
+    fn pivot_count<'a>(
         &self,
-        pivot_series: &Series,
+        pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
         groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
@@ -1671,9 +1685,9 @@ impl ChunkPivot for BooleanChunked {
     }
 }
 impl ChunkPivot for Utf8Chunked {
-    fn pivot_count(
+    fn pivot_count<'a>(
         &self,
-        pivot_series: &Series,
+        pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
         groups: &[(usize, Vec<usize>)],
     ) -> Result<DataFrame> {
@@ -1683,7 +1697,7 @@ impl ChunkPivot for Utf8Chunked {
 impl ChunkPivot for ListChunked {}
 impl<T> ChunkPivot for ObjectChunked<T> {}
 
-enum PivotAgg {
+pub enum PivotAgg {
     First,
     Sum,
     Min,
@@ -1778,26 +1792,18 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn count(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_arrow_series!(
-            values_series,
-            pivot_count,
-            pivot_series,
-            self.gb.keys(),
-            &self.gb.groups
-        )
+        values_series.pivot_count(&**pivot_series, self.gb.keys(), &self.gb.groups)
     }
 
     /// Aggregate the pivot results by taking the first occurring value.
     pub fn first(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_arrow_series!(
-            values_series,
-            pivot,
-            pivot_series,
+        values_series.pivot(
+            &**pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::First
+            PivotAgg::First,
         )
     }
 
@@ -1805,13 +1811,11 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn sum(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_arrow_series!(
-            values_series,
-            pivot,
-            pivot_series,
+        values_series.pivot(
+            &**pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::Sum
+            PivotAgg::Sum,
         )
     }
 
@@ -1819,13 +1823,11 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn min(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_arrow_series!(
-            values_series,
-            pivot,
-            pivot_series,
+        values_series.pivot(
+            &**pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::Min
+            PivotAgg::Min,
         )
     }
 
@@ -1833,13 +1835,11 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn max(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_arrow_series!(
-            values_series,
-            pivot,
-            pivot_series,
+        values_series.pivot(
+            &**pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::Max
+            PivotAgg::Max,
         )
     }
 
@@ -1847,26 +1847,22 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     pub fn mean(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_arrow_series!(
-            values_series,
-            pivot,
-            pivot_series,
+        values_series.pivot(
+            &**pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::Mean
+            PivotAgg::Mean,
         )
     }
     /// Aggregate the pivot results by taking the median value of all duplicates.
     pub fn median(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
-        apply_method_all_arrow_series!(
-            values_series,
-            pivot,
-            pivot_series,
+        values_series.pivot(
+            &**pivot_series,
             self.gb.keys(),
             &self.gb.groups,
-            PivotAgg::Median
+            PivotAgg::Median,
         )
     }
 }

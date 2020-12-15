@@ -46,9 +46,8 @@ use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray, ListArray,
 };
-#[cfg(feature = "dtype-interval")]
-use arrow::array::{IntervalDayTimeArray, IntervalYearMonthArray};
 
+use crate::series::implementations::Wrap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::fmt::Debug;
 use std::mem;
@@ -206,43 +205,16 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Series to ChunkedArray<T>
-    #[allow(clippy::transmute_ptr_to_ptr)]
     pub fn unpack_series_matching_type(&self, series: &Series) -> Result<&ChunkedArray<T>> {
-        macro_rules! unpack {
-            ($variant:ident) => {{
-                if let Series::$variant(ca) = series {
-                    let ca = unsafe { mem::transmute::<_, &ChunkedArray<T>>(ca) };
-                    Ok(ca)
-                } else {
-                    Err(PolarsError::DataTypeMisMatch(
-                        format!("cannot unpack series {:?} into matching type", series).into(),
-                    ))
-                }
-            }};
-        }
-        match self.field.data_type() {
-            ArrowDataType::Utf8 => unpack!(Utf8),
-            ArrowDataType::Boolean => unpack!(Bool),
-            ArrowDataType::UInt8 => unpack!(UInt8),
-            ArrowDataType::UInt16 => unpack!(UInt16),
-            ArrowDataType::UInt32 => unpack!(UInt32),
-            ArrowDataType::UInt64 => unpack!(UInt64),
-            ArrowDataType::Int8 => unpack!(Int8),
-            ArrowDataType::Int16 => unpack!(Int16),
-            ArrowDataType::Int32 => unpack!(Int32),
-            ArrowDataType::Int64 => unpack!(Int64),
-            ArrowDataType::Float32 => unpack!(Float32),
-            ArrowDataType::Float64 => unpack!(Float64),
-            ArrowDataType::Date32(DateUnit::Day) => unpack!(Date32),
-            ArrowDataType::Date64(DateUnit::Millisecond) => unpack!(Date64),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => unpack!(Time64Nanosecond),
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::DayTime) => unpack!(IntervalDayTime),
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => unpack!(IntervalYearMonth),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => unpack!(DurationNanosecond),
-            ArrowDataType::Duration(TimeUnit::Millisecond) => unpack!(DurationMillisecond),
-            _ => unimplemented!(),
+        let series_trait = &**series;
+        if self.dtype() == series.dtype() {
+            let ca =
+                unsafe { &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>) };
+            Ok(ca)
+        } else {
+            Err(PolarsError::DataTypeMisMatch(
+                format!("cannot unpack series {:?} into matching type", series).into(),
+            ))
         }
     }
 
@@ -554,7 +526,8 @@ where
             }
             ArrowDataType::List(_) => {
                 let v = downcast!(ListArray);
-                AnyType::List(("", v).into())
+                let s: Wrap<_> = ("", v).into();
+                AnyType::List(Series(s.0))
             }
             ArrowDataType::Binary => AnyType::Object(&"object"),
             _ => unimplemented!(),

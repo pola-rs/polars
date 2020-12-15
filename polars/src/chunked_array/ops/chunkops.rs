@@ -192,7 +192,7 @@ impl ChunkOps for ListChunked {
                 for &chunk_length in chunk_id {
                     let mut builder = get_list_builder(self.dtype(), chunk_length, self.name());
                     while let Some(v) = iter.next() {
-                        builder.append_opt_series(&v)
+                        builder.append_opt_series(v.as_ref())
                     }
                     let list = builder.finish();
                     // cheap clone of Arc

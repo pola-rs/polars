@@ -2,18 +2,772 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::{array::ArrayRef, buffer::Buffer};
-use std::mem;
-pub(crate) mod aggregate;
 pub(crate) mod arithmetic;
 mod comparison;
+pub mod implementations;
 pub(crate) mod iterator;
 #[allow(clippy::missing_safety_doc)]
 pub mod ops;
 
-use self::ops::SeriesOps;
 use crate::chunked_array::builder::get_list_builder;
-use crate::fmt::FmtList;
+use crate::series::implementations::Wrap;
 use arrow::array::ArrayDataRef;
+use num::NumCast;
+use std::ops::Deref;
+use std::sync::Arc;
+
+pub(crate) mod private {
+    use super::*;
+    use crate::frame::group_by::PivotAgg;
+
+    pub trait PrivateSeries {
+        fn agg_mean(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            unimplemented!()
+        }
+        fn agg_min(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            unimplemented!()
+        }
+        fn agg_max(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            unimplemented!()
+        }
+        fn agg_sum(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            unimplemented!()
+        }
+        fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+            unimplemented!()
+        }
+        fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+            unimplemented!()
+        }
+        fn agg_n_unique(&self, _groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+            unimplemented!()
+        }
+        fn agg_list(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            unimplemented!()
+        }
+        fn agg_quantile(&self, _groups: &[(usize, Vec<usize>)], _quantile: f64) -> Option<Series> {
+            unimplemented!()
+        }
+        fn agg_median(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            unimplemented!()
+        }
+        fn pivot<'a>(
+            &self,
+            _pivot_series: &'a (dyn SeriesTrait + 'a),
+            _keys: Vec<Series>,
+            _groups: &[(usize, Vec<usize>)],
+            _agg_type: PivotAgg,
+        ) -> Result<DataFrame> {
+            unimplemented!()
+        }
+
+        fn pivot_count<'a>(
+            &self,
+            _pivot_series: &'a (dyn SeriesTrait + 'a),
+            _keys: Vec<Series>,
+            _groups: &[(usize, Vec<usize>)],
+        ) -> Result<DataFrame> {
+            unimplemented!()
+        }
+
+        fn hash_join_inner(&self, _other: &Series) -> Vec<(usize, usize)> {
+            unimplemented!()
+        }
+        fn hash_join_left(&self, _other: &Series) -> Vec<(usize, Option<usize>)> {
+            unimplemented!()
+        }
+        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<usize>, Option<usize>)> {
+            unimplemented!()
+        }
+        fn zip_outer_join_column(
+            &self,
+            _right_column: &Series,
+            _opt_join_tuples: &[(Option<usize>, Option<usize>)],
+        ) -> Series {
+            unimplemented!()
+        }
+
+        fn subtract(&self, _rhs: &Series) -> Result<Series> {
+            unimplemented!()
+        }
+        fn add_to(&self, _rhs: &Series) -> Result<Series> {
+            unimplemented!()
+        }
+        fn multiply(&self, _rhs: &Series) -> Result<Series> {
+            unimplemented!()
+        }
+        fn divide(&self, _rhs: &Series) -> Result<Series> {
+            unimplemented!()
+        }
+        fn remainder(&self, _rhs: &Series) -> Result<Series> {
+            unimplemented!()
+        }
+        fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+            unimplemented!()
+        }
+    }
+}
+
+pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
+    fn rename(&mut self, name: &str);
+
+    /// Get Arrow ArrayData
+    fn array_data(&self) -> Vec<ArrayDataRef> {
+        unimplemented!()
+    }
+
+    /// Get the lengths of the underlying chunks
+    fn chunk_lengths(&self) -> &Vec<usize> {
+        unimplemented!()
+    }
+    /// Name of series.
+    fn name(&self) -> &str {
+        unimplemented!()
+    }
+
+    /// Get field (used in schema)
+    fn field(&self) -> &Field {
+        unimplemented!()
+    }
+
+    /// Get datatype of series.
+    fn dtype(&self) -> &ArrowDataType {
+        self.field().data_type()
+    }
+
+    /// Underlying chunks.
+    fn chunks(&self) -> &Vec<ArrayRef> {
+        unimplemented!()
+    }
+
+    /// No. of chunks
+    fn n_chunks(&self) -> usize {
+        self.chunks().len()
+    }
+
+    fn i8(&self) -> Result<&Int8Chunked> {
+        unimplemented!()
+    }
+
+    fn i16(&self) -> Result<&Int16Chunked> {
+        unimplemented!()
+    }
+
+    /// Unpack to ChunkedArray
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s: Series = [1, 2, 3].iter().collect();
+    /// let s_squared: Series = s.i32()
+    ///     .unwrap()
+    ///     .into_iter()
+    ///     .map(|opt_v| {
+    ///         match opt_v {
+    ///             Some(v) => Some(v * v),
+    ///             None => None, // null value
+    ///         }
+    /// }).collect();
+    /// ```
+    fn i32(&self) -> Result<&Int32Chunked> {
+        unimplemented!()
+    }
+
+    /// Unpack to ChunkedArray
+    fn i64(&self) -> Result<&Int64Chunked> {
+        unimplemented!()
+    }
+
+    /// Unpack to ChunkedArray
+    fn f32(&self) -> Result<&Float32Chunked> {
+        unimplemented!()
+    }
+
+    /// Unpack to ChunkedArray
+    fn f64(&self) -> Result<&Float64Chunked> {
+        unimplemented!()
+    }
+
+    /// Unpack to ChunkedArray
+    fn u8(&self) -> Result<&UInt8Chunked> {
+        unimplemented!()
+    }
+
+    /// Unpack to ChunkedArray
+    fn u16(&self) -> Result<&UInt16Chunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== u16", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn u32(&self) -> Result<&UInt32Chunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== u32", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn u64(&self) -> Result<&UInt64Chunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== u32", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn bool(&self) -> Result<&BooleanChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== bool", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn utf8(&self) -> Result<&Utf8Chunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== utf8", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn date32(&self) -> Result<&Date32Chunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== date32", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn date64(&self) -> Result<&Date64Chunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== date64", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== time64", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== duration_nanosecond", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== duration_millisecond", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    #[cfg(feature = "dtype-interval")]
+    fn interval_daytime(&self) -> Result<&IntervalDayTimeChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== interval_daytime", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    #[cfg(feature = "dtype-interval")]
+    fn interval_year_month(&self) -> Result<&IntervalYearMonthChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== interval_yearmonth", self.dtype()).into(),
+        ))
+    }
+
+    /// Unpack to ChunkedArray
+    fn list(&self) -> Result<&ListChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} !== list", self.dtype()).into(),
+        ))
+    }
+
+    fn append_array(&mut self, _other: ArrayRef) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Take `num_elements` from the top as a zero copy view.
+    fn limit(&self, _num_elements: usize) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Get a zero copy view of the data.
+    fn slice(&self, _offset: usize, _length: usize) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Append a Series of the same type in place.
+    fn append(&mut self, _other: &Series) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Filter by boolean mask. This operation clones data.
+    fn filter(&self, _filter: &BooleanChunked) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn take_iter(
+        &self,
+        _iter: &mut dyn Iterator<Item = usize>,
+        _capacity: Option<usize>,
+    ) -> Series {
+        unimplemented!()
+    }
+
+    /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't check any bounds or null validity.
+    unsafe fn take_iter_unchecked(
+        &self,
+        _iter: &mut dyn Iterator<Item = usize>,
+        _capacity: Option<usize>,
+    ) -> Series {
+        unimplemented!()
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    unsafe fn take_from_single_chunked(&self, _idx: &UInt32Chunked) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't check any bounds or null validity.
+    unsafe fn take_opt_iter_unchecked(
+        &self,
+        _iter: &mut dyn Iterator<Item = Option<usize>>,
+        _capacity: Option<usize>,
+    ) -> Series {
+        unimplemented!()
+    }
+
+    /// Take by index from an iterator. This operation clones the data.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn take_opt_iter(
+        &self,
+        _iter: &mut dyn Iterator<Item = Option<usize>>,
+        _capacity: Option<usize>,
+    ) -> Series {
+        unimplemented!()
+    }
+
+    /// Take by index. This operation is clone.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn take(&self, _indices: &dyn AsTakeIndex) -> Series {
+        unimplemented!()
+    }
+
+    /// Get length of series.
+    fn len(&self) -> usize {
+        unimplemented!()
+    }
+
+    /// Check if Series is empty.
+    fn is_empty(&self) -> bool {
+        unimplemented!()
+    }
+
+    /// Aggregate all chunks to a contiguous array of memory.
+    fn rechunk(&self, _chunk_lengths: Option<&[usize]>) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Get the head of the Series.
+    fn head(&self, _length: Option<usize>) -> Series {
+        unimplemented!()
+    }
+
+    /// Get the tail of the Series.
+    fn tail(&self, _length: Option<usize>) -> Series {
+        unimplemented!()
+    }
+
+    /// Drop all null values and return a new Series.
+    fn drop_nulls(&self) -> Series {
+        unimplemented!()
+    }
+
+    /// Create a new Series filled with values at that index.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// let s = Series::new("a", [0i32, 1, 8]);
+    /// let expanded = s.expand_at_index(2, 4);
+    /// assert_eq!(Vec::from(expanded.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
+    /// ```
+    fn expand_at_index(&self, _index: usize, _length: usize) -> Series {
+        unimplemented!()
+    }
+
+    fn cast_with_arrow_datatype(&self, _data_type: &ArrowDataType) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Create dummy variables. See [DataFrame](DataFrame::to_dummies)
+    fn to_dummies(&self) -> Result<DataFrame> {
+        unimplemented!()
+    }
+
+    fn value_counts(&self) -> Result<DataFrame> {
+        unimplemented!()
+    }
+
+    /// Get a single value by index. Don't use this operation for loops as a runtime cast is
+    /// needed for every iteration.
+    fn get(&self, _index: usize) -> AnyType {
+        unimplemented!()
+    }
+
+    /// Sort in place.
+    fn sort_in_place(&mut self, _reverse: bool) {
+        unimplemented!()
+    }
+
+    fn sort(&self, _reverse: bool) -> Series {
+        unimplemented!()
+    }
+
+    /// Retrieve the indexes needed for a sort.
+    fn argsort(&self, _reverse: bool) -> Vec<usize> {
+        unimplemented!()
+    }
+
+    /// Count the null values.
+    fn null_count(&self) -> usize {
+        unimplemented!()
+    }
+
+    /// Get unique values in the Series.
+    fn unique(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Get unique values in the Series.
+    fn n_unique(&self) -> Result<usize> {
+        unimplemented!()
+    }
+
+    /// Get first indexes of unique values.
+    fn arg_unique(&self) -> Result<Vec<usize>> {
+        unimplemented!()
+    }
+
+    /// Get indexes that evaluate true
+    fn arg_true(&self) -> Result<UInt32Chunked> {
+        unimplemented!()
+    }
+
+    /// Get a mask of the null values.
+    fn is_null(&self) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    /// Get a mask of the non-null values.
+    fn is_not_null(&self) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    /// Get a mask of all the unique values.
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
+
+    /// Get a mask of all the duplicated values.
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
+
+    /// Get the bits that represent the null values of the underlying ChunkedArray
+    fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+        unimplemented!()
+    }
+
+    /// return a Series in reversed order
+    fn reverse(&self) -> Series {
+        unimplemented!()
+    }
+
+    /// Rechunk and return a pointer to the start of the Series.
+    /// Only implemented for numeric types
+    fn as_single_ptr(&mut self) -> usize {
+        unimplemented!()
+    }
+
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with `Nones`.
+    ///
+    /// *NOTE: If you want to fill the Nones with a value use the
+    /// [`shift` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkShift.html).*
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example() -> Result<()> {
+    ///     let s = Series::new("series", &[1, 2, 3]);
+    ///
+    ///     let shifted = s.shift(1)?;
+    ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);
+    ///
+    ///     let shifted = s.shift(-1)?;
+    ///     assert_eq!(Vec::from(shifted.i32()?), &[Some(2), Some(3), None]);
+    ///
+    ///     let shifted = s.shift(2)?;
+    ///     assert_eq!(Vec::from(shifted.i32()?), &[None, None, Some(1)]);
+    ///
+    ///     Ok(())
+    /// }
+    /// example();
+    /// ```
+    fn shift(&self, _periods: i32) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Replace None values with one of the following strategies:
+    /// * Forward fill (replace None with the previous value)
+    /// * Backward fill (replace None with the next value)
+    /// * Mean fill (replace None with the mean of the whole array)
+    /// * Min fill (replace None with the minimum of the whole array)
+    /// * Max fill (replace None with the maximum of the whole array)
+    ///
+    /// *NOTE: If you want to fill the Nones with a value use the
+    /// [`fill_none` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkFillNone.html)*.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars::prelude::*;
+    /// fn example() -> Result<()> {
+    ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Forward)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Backward)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Min)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Max)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
+    ///
+    ///     let filled = s.fill_none(FillNoneStrategy::Mean)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
+    ///
+    ///     Ok(())
+    /// }
+    /// example();
+    /// ```
+    fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+    /// from `other` where the mask evaluates `false`
+    fn zip_with(&self, _mask: &BooleanChunked, _other: &dyn SeriesTrait) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Get the sum of the Series as a new Series of length 1.
+    fn sum_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the max of the Series as a new Series of length 1.
+    fn max_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the min of the Series as a new Series of length 1.
+    fn min_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the mean of the Series as a new Series of length 1.
+    fn mean_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the median of the Series as a new Series of length 1.
+    fn median_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the variance of the Series as a new Series of length 1.
+    fn var_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the standard deviation of the Series as a new Series of length 1.
+    fn std_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+        unimplemented!()
+    }
+    /// Apply a rolling mean to a Series. See:
+    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
+    fn rolling_mean(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Series> {
+        unimplemented!()
+    }
+    /// Apply a rolling sum to a Series. See:
+    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_sum).
+    fn rolling_sum(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Series> {
+        unimplemented!()
+    }
+    /// Apply a rolling min to a Series. See:
+    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_min).
+    fn rolling_min(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Series> {
+        unimplemented!()
+    }
+    /// Apply a rolling max to a Series. See:
+    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_max).
+    fn rolling_max(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn fmt_list(&self) -> String {
+        "fmt implemented".into()
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract hour from underlying NaiveDateTime representation.
+    /// Returns the hour number from 0 to 23.
+    fn hour(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract minute from underlying NaiveDateTime representation.
+    /// Returns the minute number from 0 to 59.
+    fn minute(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract second from underlying NaiveDateTime representation.
+    /// Returns the second number from 0 to 59.
+    fn second(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract second from underlying NaiveDateTime representation.
+    /// Returns the number of nanoseconds since the whole non-leap second.
+    /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
+    fn nanosecond(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract day from underlying NaiveDateTime representation.
+    /// Returns the day of month starting from 1.
+    ///
+    /// The return value ranges from 1 to 31. (The last day of month differs by months.)
+    fn day(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Returns the day of year starting from 1.
+    ///
+    /// The return value ranges from 1 to 366. (The last day of year differs by years.)
+    fn ordinal_day(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the month number starting from 1.
+    ///
+    /// The return value ranges from 1 to 12.
+    fn month(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
+    #[doc(cfg(feature = "temporal"))]
+    /// Extract month from underlying NaiveDateTime representation.
+    /// Returns the year number in the calendar date.
+    fn year(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    /// Clone inner ChunkedArray and wrap in a new Arc
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "random")]
+    #[doc(cfg(feature = "random"))]
+    /// Sample n datapoints from this Series.
+    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series>;
+
+    #[cfg(feature = "random")]
+    #[doc(cfg(feature = "random"))]
+    /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
+    fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series>;
+}
+
+impl<'a> (dyn SeriesTrait + 'a) {
+    pub fn unpack<N: 'static>(&self) -> Result<&ChunkedArray<N>>
+    where
+        N: PolarsDataType,
+    {
+        if &N::get_data_type() == self.dtype() {
+            Ok(self.as_ref())
+        } else {
+            Err(PolarsError::DataTypeMisMatch(
+                "cannot unpack Series; data types don't match".into(),
+            ))
+        }
+    }
+}
 
 /// # Series
 /// The columnar data type for a DataFrame. The [Series enum](enum.Series.html) consists
@@ -108,389 +862,39 @@ use arrow::array::ArrayDataRef;
 ///     .collect();
 ///
 /// ```
-pub enum Series {
-    UInt8(ChunkedArray<UInt8Type>),
-    UInt16(ChunkedArray<UInt16Type>),
-    UInt32(ChunkedArray<UInt32Type>),
-    UInt64(ChunkedArray<UInt64Type>),
-    Int8(ChunkedArray<Int8Type>),
-    Int16(ChunkedArray<Int16Type>),
-    Int32(ChunkedArray<Int32Type>),
-    Int64(ChunkedArray<Int64Type>),
-    Float32(ChunkedArray<Float32Type>),
-    Float64(ChunkedArray<Float64Type>),
-    Utf8(ChunkedArray<Utf8Type>),
-    Bool(ChunkedArray<BooleanType>),
-    Date32(ChunkedArray<Date32Type>),
-    Date64(ChunkedArray<Date64Type>),
-    Time64Nanosecond(ChunkedArray<Time64NanosecondType>),
-    DurationNanosecond(ChunkedArray<DurationNanosecondType>),
-    DurationMillisecond(DurationMillisecondChunked),
-    #[cfg(feature = "dtype-interval")]
-    #[doc(cfg(feature = "dtype-interval"))]
-    IntervalDayTime(IntervalDayTimeChunked),
-    #[cfg(feature = "dtype-interval")]
-    #[doc(cfg(feature = "dtype-interval"))]
-    IntervalYearMonth(IntervalYearMonthChunked),
-    List(ListChunked),
-    Object(Box<dyn SeriesOps>),
-}
-
-impl Clone for Series {
-    fn clone(&self) -> Self {
-        if let Series::Object(ca) = self {
-            Series::Object((*ca).clone())
-        } else {
-            apply_method_all_arrow_series_and_return!(self, clone, [],)
-        }
-    }
-}
-
-macro_rules! unpack_series {
-    ($self:ident, $variant:ident, $ty:expr) => {
-        if let Series::$variant(ca) = $self {
-            Ok(ca)
-        } else {
-            Err(PolarsError::DataTypeMisMatch(
-                format!(
-                    "cannot unpack Series: {:?} of type {:?} into {:?}",
-                    $self.name(),
-                    $self.dtype(),
-                    $ty
-                )
-                .into(),
-            ))
-        }
-    };
-}
+#[derive(Clone)]
+pub struct Series(pub Arc<dyn SeriesTrait>);
 
 impl Series {
-    /// Get Arrow ArrayData
-    pub fn array_data(&self) -> Vec<ArrayDataRef> {
-        apply_method_all_arrow_series!(self, array_data,)
-    }
-
-    pub fn from_chunked_array<T: PolarsDataType>(ca: ChunkedArray<T>) -> Self {
-        pack_ca_to_series(ca)
-    }
-
-    /// Get the lengths of the underlying chunks
-    pub fn chunk_lengths(&self) -> &Vec<usize> {
-        apply_method_all_series!(self, chunk_id,)
-    }
-    /// Name of series.
-    pub fn name(&self) -> &str {
-        apply_method_all_series!(self, name,)
+    fn get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
+        if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
+            self.0 = self.0.clone_inner();
+        }
+        Arc::get_mut(&mut self.0).expect("implementation error")
     }
 
     /// Rename series.
-    pub fn rename(&mut self, name: &str) -> &mut Self {
-        apply_method_all_series!(self, rename, name);
+    pub fn rename(&mut self, name: &str) -> &mut Series {
+        self.get_inner_mut().rename(name);
         self
     }
 
-    /// Get field (used in schema)
-    pub fn field(&self) -> &Field {
-        apply_method_all_series!(self, ref_field,)
-    }
-
-    /// Get datatype of series.
-    pub fn dtype(&self) -> &ArrowDataType {
-        self.field().data_type()
-    }
-
-    /// Underlying chunks.
-    pub fn chunks(&self) -> &Vec<ArrayRef> {
-        apply_method_all_series!(self, chunks,)
-    }
-
-    /// No. of chunks
-    pub fn n_chunks(&self) -> usize {
-        self.chunks().len()
-    }
-
-    pub fn i8(&self) -> Result<&Int8Chunked> {
-        unpack_series!(self, Int8, "i8")
-    }
-
-    pub fn i16(&self) -> Result<&Int16Chunked> {
-        unpack_series!(self, Int16, "i16")
-    }
-
-    /// Unpack to ChunkedArray
-    /// ```
-    /// # use polars::prelude::*;
-    /// let s: Series = [1, 2, 3].iter().collect();
-    /// let s_squared: Series = s.i32()
-    ///     .unwrap()
-    ///     .into_iter()
-    ///     .map(|opt_v| {
-    ///         match opt_v {
-    ///             Some(v) => Some(v * v),
-    ///             None => None, // null value
-    ///         }
-    /// }).collect();
-    /// ```
-    pub fn i32(&self) -> Result<&Int32Chunked> {
-        unpack_series!(self, Int32, "i32")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn i64(&self) -> Result<&Int64Chunked> {
-        unpack_series!(self, Int64, "i64")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn f32(&self) -> Result<&Float32Chunked> {
-        unpack_series!(self, Float32, "f32")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn f64(&self) -> Result<&Float64Chunked> {
-        unpack_series!(self, Float64, "f64")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn u8(&self) -> Result<&UInt8Chunked> {
-        unpack_series!(self, UInt8, "u8")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn u16(&self) -> Result<&UInt16Chunked> {
-        unpack_series!(self, UInt16, "u16")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn u32(&self) -> Result<&UInt32Chunked> {
-        unpack_series!(self, UInt32, "u32")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn u64(&self) -> Result<&UInt64Chunked> {
-        unpack_series!(self, UInt64, "u64")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn bool(&self) -> Result<&BooleanChunked> {
-        unpack_series!(self, Bool, "bool")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn utf8(&self) -> Result<&Utf8Chunked> {
-        unpack_series!(self, Utf8, "utf8")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn date32(&self) -> Result<&Date32Chunked> {
-        unpack_series!(self, Date32, "date32")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn date64(&self) -> Result<&Date64Chunked> {
-        unpack_series!(self, Date64, "date64")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
-        unpack_series!(self, Time64Nanosecond, "time64nanosecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
-        unpack_series!(self, DurationNanosecond, "durationnanosecond")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
-        unpack_series!(self, DurationMillisecond, "durationmillisecond")
-    }
-
-    /// Unpack to ChunkedArray
-    #[cfg(feature = "dtype-interval")]
-    #[doc(cfg(feature = "dtype-interval"))]
-    pub fn interval_daytime(&self) -> Result<&IntervalDayTimeChunked> {
-        unpack_series!(self, IntervalDayTime, "intervaldaytime")
-    }
-
-    /// Unpack to ChunkedArray
-    #[cfg(feature = "dtype-interval")]
-    #[doc(cfg(feature = "dtype-interval"))]
-    pub fn interval_year_month(&self) -> Result<&IntervalYearMonthChunked> {
-        unpack_series!(self, IntervalYearMonth, "intervalyearmonth")
-    }
-
-    /// Unpack to ChunkedArray
-    pub fn list(&self) -> Result<&ListChunked> {
-        unpack_series!(self, List, "list")
-    }
-
-    pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
-        apply_method_all_arrow_series!(self, append_array, other)?;
+    /// Append arrow array of same datatype.
+    fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
+        self.get_inner_mut().append_array(other)?;
         Ok(self)
     }
 
-    /// Take `num_elements` from the top as a zero copy view.
-    pub fn limit(&self, num_elements: usize) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, limit, [num_elements], ?))
-    }
-
-    /// Get a zero copy view of the data.
-    pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, slice, [offset, length], ?))
-    }
-
     /// Append a Series of the same type in place.
-    pub fn append(&mut self, other: &Self) -> Result<&mut Self> {
-        if self.dtype() == other.dtype() {
-            // todo! add object
-            apply_method_all_arrow_series!(self, append, other.as_ref());
-            Ok(self)
-        } else {
-            Err(PolarsError::DataTypeMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
-        }
+    pub fn append(&mut self, other: &Series) -> Result<&mut Self> {
+        self.get_inner_mut().append(other)?;
+        Ok(self)
     }
 
-    /// Filter by boolean mask. This operation clones data.
-    pub fn filter<T: AsRef<BooleanChunked>>(&self, filter: T) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, filter, [filter.as_ref()], ?))
-    }
-
-    /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_iter(
-        &self,
-        mut iter: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if let Series::Object(so) = self {
-            so.take(&mut iter, capacity).into()
-        } else {
-            apply_method_all_arrow_series_and_return!(self, take, [iter, capacity],)
-        }
-    }
-
-    /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// This doesn't check any bounds or null validity.
-    pub unsafe fn take_iter_unchecked(
-        &self,
-        mut iter: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if let Series::Object(so) = self {
-            so.take_unchecked(&mut iter, capacity).into()
-        } else {
-            apply_method_all_arrow_series_and_return!(self, take_unchecked, [iter, capacity],)
-        }
-    }
-
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
-        let s = apply_method_all_arrow_series_and_return!(self, take_from_single_chunked, [idx], ?);
-        Ok(s)
-    }
-
-    /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// This doesn't check any bounds or null validity.
-    pub unsafe fn take_opt_iter_unchecked(
-        &self,
-        mut iter: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if let Series::Object(so) = self {
-            so.take_opt_unchecked(&mut iter, capacity).into()
-        } else {
-            apply_method_all_arrow_series_and_return!(self, take_opt_unchecked, [iter, capacity],)
-        }
-    }
-
-    /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_opt_iter(
-        &self,
-        mut iter: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if let Series::Object(so) = self {
-            so.take_opt(&mut iter, capacity).into()
-        } else {
-            apply_method_all_arrow_series_and_return!(self, take_opt, [iter, capacity],)
-        }
-    }
-
-    /// Take by index. This operation is clone.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take<T: AsTakeIndex>(&self, indices: &T) -> Self {
-        let mut iter = indices.as_take_iter();
-        let capacity = indices.take_index_len();
-        self.take_iter(&mut iter, Some(capacity))
-    }
-
-    /// Get length of series.
-    pub fn len(&self) -> usize {
-        apply_method_all_series!(self, len,)
-    }
-
-    /// Check if Series is empty.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Aggregate all chunks to a contiguous array of memory.
-    pub fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, rechunk, [chunk_lengths], ?))
-    }
-
-    /// Get the head of the Series.
-    pub fn head(&self, length: Option<usize>) -> Self {
-        apply_method_all_series_and_return!(self, head, [length],)
-    }
-
-    /// Get the tail of the Series.
-    pub fn tail(&self, length: Option<usize>) -> Self {
-        apply_method_all_series_and_return!(self, tail, [length],)
-    }
-
-    /// Drop all null values and return a new Series.
-    pub fn drop_nulls(&self) -> Self {
-        if self.null_count() == 0 {
-            self.clone()
-        } else {
-            self.filter(&self.is_not_null()).unwrap()
-        }
-    }
-
-    /// Create a new Series filled with values at that index.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use polars::prelude::*;
-    /// let s = Series::new("a", [0i32, 1, 8]);
-    /// let expanded = s.expand_at_index(2, 4);
-    /// assert_eq!(Vec::from(expanded.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
-    /// ```
-    pub fn expand_at_index(&self, index: usize, length: usize) -> Self {
-        apply_method_all_series_and_return!(self, expand_at_index, [index, length],)
+    /// Sort in place.
+    pub fn sort_in_place(&mut self, reverse: bool) -> &mut Self {
+        self.get_inner_mut().sort_in_place(reverse);
+        self
     }
 
     /// Cast to some primitive type.
@@ -498,530 +902,82 @@ impl Series {
     where
         N: PolarsDataType,
     {
-        let s = match self {
-            Series::Bool(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Utf8(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::UInt8(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::UInt16(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::UInt32(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::UInt64(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Int8(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Int16(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Int32(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Int64(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Float32(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Float64(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Date32(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Date64(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Time64Nanosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::DurationNanosecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::DurationMillisecond(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalDayTime(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalYearMonth(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::List(arr) => pack_ca_to_series(arr.cast::<N>()?),
-            Series::Object(_) => return Err(PolarsError::Other("cannot cast object".into())),
-        };
-        Ok(s)
+        self.0.cast_with_arrow_datatype(&N::get_data_type())
     }
-
-    pub fn cast_with_arrow_datatype(&self, data_type: &ArrowDataType) -> Result<Self> {
-        use ArrowDataType::*;
-        match data_type {
-            Boolean => self.cast::<BooleanType>(),
-            Utf8 => self.cast::<Utf8Type>(),
-            UInt8 => self.cast::<UInt8Type>(),
-            UInt16 => self.cast::<UInt16Type>(),
-            UInt32 => self.cast::<UInt32Type>(),
-            UInt64 => self.cast::<UInt64Type>(),
-            Int8 => self.cast::<Int8Type>(),
-            Int16 => self.cast::<Int16Type>(),
-            Int32 => self.cast::<Int32Type>(),
-            Int64 => self.cast::<Int64Type>(),
-            Float32 => self.cast::<Float32Type>(),
-            Float64 => self.cast::<Float64Type>(),
-            Date32(_) => self.cast::<Date32Type>(),
-            Date64(_) => self.cast::<Date64Type>(),
-            Time32(TimeUnit::Second) => self.cast::<Time32SecondType>(),
-            Time32(TimeUnit::Millisecond) => self.cast::<Time32MillisecondType>(),
-            Time64(TimeUnit::Microsecond) => self.cast::<Time64MicrosecondType>(),
-            Time64(TimeUnit::Nanosecond) => self.cast::<Time64NanosecondType>(),
-            Duration(TimeUnit::Nanosecond) => self.cast::<DurationNanosecondType>(),
-            Duration(TimeUnit::Microsecond) => self.cast::<DurationMicrosecondType>(),
-            Duration(TimeUnit::Millisecond) => self.cast::<DurationMillisecondType>(),
-            Duration(TimeUnit::Second) => self.cast::<DurationSecondType>(),
-            Timestamp(TimeUnit::Nanosecond, _) => self.cast::<TimestampNanosecondType>(),
-            Timestamp(TimeUnit::Microsecond, _) => self.cast::<TimestampMicrosecondType>(),
-            Timestamp(TimeUnit::Millisecond, _) => self.cast::<TimestampMillisecondType>(),
-            Timestamp(TimeUnit::Second, _) => self.cast::<TimestampSecondType>(),
-            #[cfg(feature = "dtype-interval")]
-            Interval(IntervalUnit::DayTime) => self.cast::<IntervalDayTimeType>(),
-            #[cfg(feature = "dtype-interval")]
-            Interval(IntervalUnit::YearMonth) => self.cast::<IntervalYearMonthType>(),
-            List(_) => self.cast::<ListType>(),
-            dt => Err(PolarsError::Other(
-                format!("Casting to {:?} is not supported", dt).into(),
-            )),
-        }
-    }
-
-    /// Create dummy variables. See [DataFrame](DataFrame::to_dummies)
-    pub fn to_dummies(&self) -> Result<DataFrame> {
-        apply_method_all_arrow_series!(self, to_dummies,)
-    }
-
-    pub fn value_counts(&self) -> Result<DataFrame> {
-        apply_method_all_arrow_series!(self, value_counts,)
-    }
-
-    /// Get the `ChunkedArray` for some `PolarsDataType`
-    #[allow(clippy::transmute_ptr_to_ptr)]
-    pub fn unpack<N>(&self) -> Result<&ChunkedArray<N>>
+    /// Returns `None` if the array is empty or only contains null values.
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s = Series::new("days", [1, 2, 3].as_ref());
+    /// assert_eq!(s.sum(), Some(6));
+    /// ```
+    pub fn sum<T>(&self) -> Option<T>
     where
-        N: PolarsDataType,
+        T: NumCast,
     {
-        macro_rules! unpack_if_match {
-            ($ca:ident) => {{
-                if *$ca.dtype() == N::get_data_type() {
-                    unsafe { Ok(mem::transmute::<_, &ChunkedArray<N>>($ca)) }
-                } else {
-                    Err(PolarsError::DataTypeMisMatch(
-                        "cannot unpack Series; data types don't match".into(),
-                    ))
-                }
-            }};
-        }
-        match self {
-            Series::Bool(arr) => unpack_if_match!(arr),
-            Series::Utf8(arr) => unpack_if_match!(arr),
-            Series::UInt8(arr) => unpack_if_match!(arr),
-            Series::UInt16(arr) => unpack_if_match!(arr),
-            Series::UInt32(arr) => unpack_if_match!(arr),
-            Series::UInt64(arr) => unpack_if_match!(arr),
-            Series::Int8(arr) => unpack_if_match!(arr),
-            Series::Int16(arr) => unpack_if_match!(arr),
-            Series::Int32(arr) => unpack_if_match!(arr),
-            Series::Int64(arr) => unpack_if_match!(arr),
-            Series::Float32(arr) => unpack_if_match!(arr),
-            Series::Float64(arr) => unpack_if_match!(arr),
-            Series::Date32(arr) => unpack_if_match!(arr),
-            Series::Date64(arr) => unpack_if_match!(arr),
-            Series::Time64Nanosecond(arr) => unpack_if_match!(arr),
-            Series::DurationNanosecond(arr) => unpack_if_match!(arr),
-            Series::DurationMillisecond(arr) => unpack_if_match!(arr),
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalDayTime(arr) => unpack_if_match!(arr),
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalYearMonth(arr) => unpack_if_match!(arr),
-            Series::List(arr) => unpack_if_match!(arr),
-            Series::Object(arr) => unpack_if_match!(arr),
-        }
+        self.sum_as_series()
+            .cast::<Float64Type>()
+            .ok()
+            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 
-    /// Get a single value by index. Don't use this operation for loops as a runtime cast is
-    /// needed for every iteration.
-    pub fn get(&self, index: usize) -> AnyType {
-        apply_method_all_series!(self, get_any, index)
-    }
-
-    /// Sort in place.
-    pub fn sort_in_place(&mut self, reverse: bool) -> &mut Self {
-        apply_method_all_arrow_series!(self, sort_in_place, reverse);
-        self
-    }
-
-    pub fn sort(&self, reverse: bool) -> Self {
-        apply_method_all_arrow_series_and_return!(self, sort, [reverse],)
-    }
-
-    /// Retrieve the indexes needed for a sort.
-    pub fn argsort(&self, reverse: bool) -> Vec<usize> {
-        apply_method_all_arrow_series!(self, argsort, reverse)
-    }
-
-    /// Count the null values.
-    pub fn null_count(&self) -> usize {
-        apply_method_all_series!(self, null_count,)
-    }
-
-    /// Get unique values in the Series.
-    pub fn unique(&self) -> Result<Self> {
-        Ok(apply_method_all_arrow_series_and_return!(self, unique, [],?))
-    }
-
-    /// Get unique values in the Series.
-    pub fn n_unique(&self) -> Result<usize> {
-        apply_method_all_arrow_series!(self, n_unique,)
-    }
-
-    /// Get first indexes of unique values.
-    pub fn arg_unique(&self) -> Result<Vec<usize>> {
-        apply_method_all_arrow_series!(self, arg_unique,)
-    }
-
-    /// Get indexes that evaluate true
-    pub fn arg_true(&self) -> Result<UInt32Chunked> {
-        match self {
-            Series::Bool(ca) => Ok(ca.arg_true()),
-            _ => Err(PolarsError::DataTypeMisMatch(
-                format!("Expected Boolean, got {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    /// Get a mask of the null values.
-    pub fn is_null(&self) -> BooleanChunked {
-        apply_method_all_series!(self, is_null,)
-    }
-
-    /// Get a mask of the non-null values.
-    pub fn is_not_null(&self) -> BooleanChunked {
-        apply_method_all_series!(self, is_not_null,)
-    }
-
-    /// Get a mask of all the unique values.
-    pub fn is_unique(&self) -> Result<BooleanChunked> {
-        apply_method_all_arrow_series!(self, is_unique,)
-    }
-
-    /// Get a mask of all the duplicated values.
-    pub fn is_duplicated(&self) -> Result<BooleanChunked> {
-        apply_method_all_arrow_series!(self, is_duplicated,)
-    }
-
-    /// Get the bits that represent the null values of the underlying ChunkedArray
-    pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
-        apply_method_all_arrow_series!(self, null_bits,)
-    }
-
-    /// return a Series in reversed order
-    pub fn reverse(&self) -> Self {
-        apply_method_all_series_and_return!(self, reverse, [],)
-    }
-
-    /// Rechunk and return a pointer to the start of the Series.
-    /// Only implemented for numeric types
-    pub fn as_single_ptr(&mut self) -> usize {
-        apply_method_numeric_series!(self, as_single_ptr,)
-    }
-
-    /// Shift the values by a given period and fill the parts that will be empty due to this operation
-    /// with `Nones`.
-    ///
-    /// *NOTE: If you want to fill the Nones with a value use the
-    /// [`shift` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkShift.html).*
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars::prelude::*;
-    /// fn example() -> Result<()> {
-    ///     let s = Series::new("series", &[1, 2, 3]);
-    ///
-    ///     let shifted = s.shift(1)?;
-    ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);
-    ///
-    ///     let shifted = s.shift(-1)?;
-    ///     assert_eq!(Vec::from(shifted.i32()?), &[Some(2), Some(3), None]);
-    ///
-    ///     let shifted = s.shift(2)?;
-    ///     assert_eq!(Vec::from(shifted.i32()?), &[None, None, Some(1)]);
-    ///
-    ///     Ok(())
-    /// }
-    /// example();
+    /// Returns the minimum value in the array, according to the natural order.
+    /// Returns an option because the array is nullable.
     /// ```
-    pub fn shift(&self, periods: i32) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, shift, [periods, &None],?))
-    }
-
-    /// Replace None values with one of the following strategies:
-    /// * Forward fill (replace None with the previous value)
-    /// * Backward fill (replace None with the next value)
-    /// * Mean fill (replace None with the mean of the whole array)
-    /// * Min fill (replace None with the minimum of the whole array)
-    /// * Max fill (replace None with the maximum of the whole array)
-    ///
-    /// *NOTE: If you want to fill the Nones with a value use the
-    /// [`fill_none` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkFillNone.html)*.
-    ///
-    /// # Example
-    ///
-    /// ```rust
     /// # use polars::prelude::*;
-    /// fn example() -> Result<()> {
-    ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
-    ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Forward)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
-    ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Backward)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
-    ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Min)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
-    ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Max)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
-    ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Mean)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
-    ///
-    ///     Ok(())
-    /// }
-    /// example();
+    /// let s = Series::new("days", [1, 2, 3].as_ref());
+    /// assert_eq!(s.min(), Some(1));
     /// ```
-    pub fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, fill_none, [strategy],?))
+    pub fn min<T>(&self) -> Option<T>
+    where
+        T: NumCast,
+    {
+        self.min_as_series()
+            .cast::<Float64Type>()
+            .ok()
+            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 
-    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
-    /// from `other` where the mask evaluates `false`
-    pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, zip_with_series, [mask, other],?))
+    /// Returns the maximum value in the array, according to the natural order.
+    /// Returns an option because the array is nullable.
+    /// ```
+    /// # use polars::prelude::*;
+    /// let s = Series::new("days", [1, 2, 3].as_ref());
+    /// assert_eq!(s.max(), Some(3));
+    /// ```
+    pub fn max<T>(&self) -> Option<T>
+    where
+        T: NumCast,
+    {
+        self.max_as_series()
+            .cast::<Float64Type>()
+            .ok()
+            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 
-    /// Get the sum of the Series as a new Series of length 1.
-    pub fn sum_as_series(&self) -> Series {
-        apply_method_all_arrow_series!(self, sum_as_series,)
-    }
-    /// Get the max of the Series as a new Series of length 1.
-    pub fn max_as_series(&self) -> Series {
-        apply_method_all_arrow_series!(self, max_as_series,)
-    }
-    /// Get the min of the Series as a new Series of length 1.
-    pub fn min_as_series(&self) -> Series {
-        apply_method_all_arrow_series!(self, min_as_series,)
-    }
-    /// Get the mean of the Series as a new Series of length 1.
-    pub fn mean_as_series(&self) -> Series {
-        apply_method_all_arrow_series!(self, mean_as_series,)
-    }
-    /// Get the median of the Series as a new Series of length 1.
-    pub fn median_as_series(&self) -> Series {
-        apply_method_all_arrow_series!(self, median_as_series,)
-    }
-    /// Get the variance of the Series as a new Series of length 1.
-    pub fn var_as_series(&self) -> Series {
-        apply_method_all_arrow_series!(self, var_as_series,)
-    }
-    /// Get the standard deviation of the Series as a new Series of length 1.
-    pub fn std_as_series(&self) -> Series {
-        apply_method_all_arrow_series!(self, std_as_series,)
-    }
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    pub fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-        apply_method_all_arrow_series!(self, quantile_as_series, quantile)
-    }
-    /// Apply a rolling mean to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
-    pub fn rolling_mean(
-        &self,
-        window_size: usize,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-    ) -> Result<Self> {
-        let s = apply_method_all_arrow_series_and_return!(self, rolling_mean, [window_size, weight, ignore_null], ?);
-        Ok(s)
-    }
-    /// Apply a rolling sum to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_sum).
-    pub fn rolling_sum(
-        &self,
-        window_size: usize,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-    ) -> Result<Self> {
-        let s = apply_method_all_arrow_series_and_return!(self, rolling_sum, [window_size, weight, ignore_null], ?);
-        Ok(s)
-    }
-    /// Apply a rolling min to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_min).
-    pub fn rolling_min(
-        &self,
-        window_size: usize,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-    ) -> Result<Self> {
-        let s = apply_method_all_arrow_series_and_return!(self, rolling_min, [window_size, weight, ignore_null], ?);
-        Ok(s)
-    }
-    /// Apply a rolling max to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_max).
-    pub fn rolling_max(
-        &self,
-        window_size: usize,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-    ) -> Result<Self> {
-        let s = apply_method_all_arrow_series_and_return!(self, rolling_max, [window_size, weight, ignore_null], ?);
-        Ok(s)
-    }
-
-    pub(crate) fn fmt_list(&self) -> String {
-        apply_method_all_series!(self, fmt_list,)
-    }
-
-    #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
-    /// Extract hour from underlying NaiveDateTime representation.
-    /// Returns the hour number from 0 to 23.
-    pub fn hour(&self) -> Result<Self> {
-        if let Series::Date64(ca) = self {
-            Ok(Series::UInt32(ca.hour()))
-        } else {
-            Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            ))
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
-    /// Extract minute from underlying NaiveDateTime representation.
-    /// Returns the minute number from 0 to 59.
-    pub fn minute(&self) -> Result<Self> {
-        if let Series::Date64(ca) = self {
-            Ok(Series::UInt32(ca.minute()))
-        } else {
-            Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            ))
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
-    /// Extract second from underlying NaiveDateTime representation.
-    /// Returns the second number from 0 to 59.
-    pub fn second(&self) -> Result<Self> {
-        if let Series::Date64(ca) = self {
-            Ok(Series::UInt32(ca.second()))
-        } else {
-            Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            ))
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
-    /// Extract second from underlying NaiveDateTime representation.
-    /// Returns the number of nanoseconds since the whole non-leap second.
-    /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
-    pub fn nanosecond(&self) -> Result<Self> {
-        if let Series::Date64(ca) = self {
-            Ok(Series::UInt32(ca.nanosecond()))
-        } else {
-            Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            ))
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
-    /// Extract day from underlying NaiveDateTime representation.
-    /// Returns the day of month starting from 1.
-    ///
-    /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    pub fn day(&self) -> Result<Self> {
-        match self {
-            Series::Date32(ca) => Ok(Series::UInt32(ca.day())),
-            Series::Date64(ca) => Ok(Series::UInt32(ca.day())),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
-    /// Returns the day of year starting from 1.
-    ///
-    /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    pub fn ordinal_day(&self) -> Result<Self> {
-        match self {
-            Series::Date32(ca) => Ok(Series::UInt32(ca.ordinal())),
-            Series::Date64(ca) => Ok(Series::UInt32(ca.ordinal())),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
-    /// Extract month from underlying NaiveDateTime representation.
-    /// Returns the month number starting from 1.
-    ///
-    /// The return value ranges from 1 to 12.
-    pub fn month(&self) -> Result<Self> {
-        match self {
-            Series::Date32(ca) => Ok(Series::UInt32(ca.month())),
-            Series::Date64(ca) => Ok(Series::UInt32(ca.month())),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
-    /// Extract month from underlying NaiveDateTime representation.
-    /// Returns the year number in the calendar date.
-    pub fn year(&self) -> Result<Self> {
-        match self {
-            Series::Date32(ca) => Ok(Series::Int32(ca.year())),
-            Series::Date64(ca) => Ok(Series::Int32(ca.year())),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
+    /// Returns the mean value in the array
+    /// Returns an option because the array is nullable.
+    pub fn mean<T>(&self) -> Option<T>
+    where
+        T: NumCast,
+    {
+        self.mean_as_series()
+            .cast::<Float64Type>()
+            .ok()
+            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 }
 
-fn pack_ca_to_series<N: PolarsDataType>(ca: ChunkedArray<N>) -> Series {
-    unsafe {
-        match N::get_data_type() {
-            ArrowDataType::Boolean => Series::Bool(mem::transmute(ca)),
-            ArrowDataType::Utf8 => Series::Utf8(mem::transmute(ca)),
-            ArrowDataType::UInt8 => Series::UInt8(mem::transmute(ca)),
-            ArrowDataType::UInt16 => Series::UInt16(mem::transmute(ca)),
-            ArrowDataType::UInt32 => Series::UInt32(mem::transmute(ca)),
-            ArrowDataType::UInt64 => Series::UInt64(mem::transmute(ca)),
-            ArrowDataType::Int8 => Series::Int8(mem::transmute(ca)),
-            ArrowDataType::Int16 => Series::Int16(mem::transmute(ca)),
-            ArrowDataType::Int32 => Series::Int32(mem::transmute(ca)),
-            ArrowDataType::Int64 => Series::Int64(mem::transmute(ca)),
-            ArrowDataType::Float32 => Series::Float32(mem::transmute(ca)),
-            ArrowDataType::Float64 => Series::Float64(mem::transmute(ca)),
-            ArrowDataType::Date32(DateUnit::Day) => Series::Date32(mem::transmute(ca)),
-            ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(mem::transmute(ca)),
-            ArrowDataType::Time64(datatypes::TimeUnit::Nanosecond) => {
-                Series::Time64Nanosecond(mem::transmute(ca))
-            }
-            ArrowDataType::Duration(datatypes::TimeUnit::Nanosecond) => {
-                Series::DurationNanosecond(mem::transmute(ca))
-            }
-            ArrowDataType::Duration(datatypes::TimeUnit::Millisecond) => {
-                Series::DurationMillisecond(mem::transmute(ca))
-            }
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-                Series::IntervalYearMonth(mem::transmute(ca))
-            }
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::DayTime) => {
-                Series::IntervalDayTime(mem::transmute(ca))
-            }
-            ArrowDataType::List(_) => Series::List(mem::transmute(ca)),
-            _ => panic!(
-                "Not implemented or feature flag toggled off: {:?}",
-                N::get_data_type()
-            ),
-        }
+impl Deref for Series {
+    type Target = dyn SeriesTrait;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl<'a> AsRef<(dyn SeriesTrait + 'a)> for Series {
+    fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
+        &*self.0
     }
 }
 
@@ -1029,12 +985,12 @@ pub trait NamedFrom<T, Phantom: ?Sized> {
     /// Initialize by name and values.
     fn new(name: &str, _: T) -> Self;
 }
-
+//
 macro_rules! impl_named_from {
     ($type:ty, $series_var:ident, $method:ident) => {
         impl<T: AsRef<$type>> NamedFrom<T, $type> for Series {
             fn new(name: &str, v: T) -> Self {
-                Series::$series_var(ChunkedArray::$method(name, v.as_ref()))
+                ChunkedArray::<$series_var>::$method(name, v.as_ref()).into_series()
             }
         }
     };
@@ -1042,39 +998,39 @@ macro_rules! impl_named_from {
 
 impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Series::Utf8(ChunkedArray::new_from_slice(name, v.as_ref()))
+        Utf8Chunked::new_from_slice(name, v.as_ref()).into_series()
     }
 }
 impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Series::Utf8(ChunkedArray::new_from_opt_slice(name, v.as_ref()))
+        Utf8Chunked::new_from_opt_slice(name, v.as_ref()).into_series()
     }
 }
 
-impl_named_from!([String], Utf8, new_from_slice);
-impl_named_from!([bool], Bool, new_from_slice);
-impl_named_from!([u8], UInt8, new_from_slice);
-impl_named_from!([u16], UInt16, new_from_slice);
-impl_named_from!([u32], UInt32, new_from_slice);
-impl_named_from!([u64], UInt64, new_from_slice);
-impl_named_from!([i8], Int8, new_from_slice);
-impl_named_from!([i16], Int16, new_from_slice);
-impl_named_from!([i32], Int32, new_from_slice);
-impl_named_from!([i64], Int64, new_from_slice);
-impl_named_from!([f32], Float32, new_from_slice);
-impl_named_from!([f64], Float64, new_from_slice);
-impl_named_from!([Option<String>], Utf8, new_from_opt_slice);
-impl_named_from!([Option<bool>], Bool, new_from_opt_slice);
-impl_named_from!([Option<u8>], UInt8, new_from_opt_slice);
-impl_named_from!([Option<u16>], UInt16, new_from_opt_slice);
-impl_named_from!([Option<u32>], UInt32, new_from_opt_slice);
-impl_named_from!([Option<u64>], UInt64, new_from_opt_slice);
-impl_named_from!([Option<i8>], Int8, new_from_opt_slice);
-impl_named_from!([Option<i16>], Int16, new_from_opt_slice);
-impl_named_from!([Option<i32>], Int32, new_from_opt_slice);
-impl_named_from!([Option<i64>], Int64, new_from_opt_slice);
-impl_named_from!([Option<f32>], Float32, new_from_opt_slice);
-impl_named_from!([Option<f64>], Float64, new_from_opt_slice);
+impl_named_from!([String], Utf8Type, new_from_slice);
+impl_named_from!([bool], BooleanType, new_from_slice);
+impl_named_from!([u8], UInt8Type, new_from_slice);
+impl_named_from!([u16], UInt16Type, new_from_slice);
+impl_named_from!([u32], UInt32Type, new_from_slice);
+impl_named_from!([u64], UInt64Type, new_from_slice);
+impl_named_from!([i8], Int8Type, new_from_slice);
+impl_named_from!([i16], Int16Type, new_from_slice);
+impl_named_from!([i32], Int32Type, new_from_slice);
+impl_named_from!([i64], Int64Type, new_from_slice);
+impl_named_from!([f32], Float32Type, new_from_slice);
+impl_named_from!([f64], Float64Type, new_from_slice);
+impl_named_from!([Option<String>], Utf8Type, new_from_opt_slice);
+impl_named_from!([Option<bool>], BooleanType, new_from_opt_slice);
+impl_named_from!([Option<u8>], UInt8Type, new_from_opt_slice);
+impl_named_from!([Option<u16>], UInt16Type, new_from_opt_slice);
+impl_named_from!([Option<u32>], UInt32Type, new_from_opt_slice);
+impl_named_from!([Option<u64>], UInt64Type, new_from_opt_slice);
+impl_named_from!([Option<i8>], Int8Type, new_from_opt_slice);
+impl_named_from!([Option<i16>], Int16Type, new_from_opt_slice);
+impl_named_from!([Option<i32>], Int32Type, new_from_opt_slice);
+impl_named_from!([Option<i64>], Int64Type, new_from_opt_slice);
+impl_named_from!([Option<f32>], Float32Type, new_from_opt_slice);
+impl_named_from!([Option<f64>], Float64Type, new_from_opt_slice);
 
 impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
@@ -1087,129 +1043,129 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
         builder.finish().into_series()
     }
 }
-
-macro_rules! impl_as_ref_ca {
-    ($type:ident, $series_var:ident) => {
-        impl AsRef<ChunkedArray<datatypes::$type>> for Series {
-            fn as_ref(&self) -> &ChunkedArray<datatypes::$type> {
-                match self {
-                    Series::$series_var(a) => a,
-                    _ => unimplemented!(),
-                }
-            }
-        }
-    };
-}
-
-impl_as_ref_ca!(UInt8Type, UInt8);
-impl_as_ref_ca!(UInt16Type, UInt16);
-impl_as_ref_ca!(UInt32Type, UInt32);
-impl_as_ref_ca!(UInt64Type, UInt64);
-impl_as_ref_ca!(Int8Type, Int8);
-impl_as_ref_ca!(Int16Type, Int16);
-impl_as_ref_ca!(Int32Type, Int32);
-impl_as_ref_ca!(Int64Type, Int64);
-impl_as_ref_ca!(Float32Type, Float32);
-impl_as_ref_ca!(Float64Type, Float64);
-impl_as_ref_ca!(BooleanType, Bool);
-impl_as_ref_ca!(Utf8Type, Utf8);
-impl_as_ref_ca!(Date32Type, Date32);
-impl_as_ref_ca!(Date64Type, Date64);
-impl_as_ref_ca!(Time64NanosecondType, Time64Nanosecond);
-impl_as_ref_ca!(DurationNanosecondType, DurationNanosecond);
-impl_as_ref_ca!(DurationMillisecondType, DurationMillisecond);
-#[cfg(feature = "dtype-interval")]
-impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
-#[cfg(feature = "dtype-interval")]
-impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
-impl_as_ref_ca!(ListType, List);
-
-impl AsRef<Box<dyn SeriesOps>> for Series {
-    fn as_ref(&self) -> &Box<dyn SeriesOps> {
-        match self {
-            Series::Object(a) => a,
-            _ => unimplemented!(),
-        }
-    }
-}
-
-macro_rules! impl_as_mut_ca {
-    ($type:ident, $series_var:ident) => {
-        impl AsMut<ChunkedArray<datatypes::$type>> for Series {
-            fn as_mut(&mut self) -> &mut ChunkedArray<datatypes::$type> {
-                match self {
-                    Series::$series_var(a) => a,
-                    _ => unimplemented!(),
-                }
-            }
-        }
-    };
-}
-
-impl_as_mut_ca!(UInt8Type, UInt8);
-impl_as_mut_ca!(UInt16Type, UInt16);
-impl_as_mut_ca!(UInt32Type, UInt32);
-impl_as_mut_ca!(UInt64Type, UInt64);
-impl_as_mut_ca!(Int8Type, Int8);
-impl_as_mut_ca!(Int16Type, Int16);
-impl_as_mut_ca!(Int32Type, Int32);
-impl_as_mut_ca!(Int64Type, Int64);
-impl_as_mut_ca!(Float32Type, Float32);
-impl_as_mut_ca!(Float64Type, Float64);
-impl_as_mut_ca!(BooleanType, Bool);
-impl_as_mut_ca!(Utf8Type, Utf8);
-impl_as_mut_ca!(Date32Type, Date32);
-impl_as_mut_ca!(Date64Type, Date64);
-impl_as_mut_ca!(Time64NanosecondType, Time64Nanosecond);
-impl_as_mut_ca!(DurationNanosecondType, DurationNanosecond);
-impl_as_mut_ca!(DurationMillisecondType, DurationMillisecond);
-#[cfg(feature = "dtype-interval")]
-impl_as_mut_ca!(IntervalDayTimeType, IntervalDayTime);
-#[cfg(feature = "dtype-interval")]
-impl_as_mut_ca!(IntervalYearMonthType, IntervalYearMonth);
-impl_as_mut_ca!(ListType, List);
-
-macro_rules! from_series_to_ca {
-    ($variant:ident, $ca:ident) => {
-        impl<'a> From<&'a Series> for &'a $ca {
-            fn from(s: &'a Series) -> Self {
-                match s {
-                    Series::$variant(ca) => ca,
-                    _ => unimplemented!(),
-                }
-            }
-        }
-    };
-}
-from_series_to_ca!(UInt8, UInt8Chunked);
-from_series_to_ca!(UInt16, UInt16Chunked);
-from_series_to_ca!(UInt32, UInt32Chunked);
-from_series_to_ca!(UInt64, UInt64Chunked);
-from_series_to_ca!(Int8, Int8Chunked);
-from_series_to_ca!(Int16, Int16Chunked);
-from_series_to_ca!(Int32, Int32Chunked);
-from_series_to_ca!(Int64, Int64Chunked);
-from_series_to_ca!(Float32, Float32Chunked);
-from_series_to_ca!(Float64, Float64Chunked);
-from_series_to_ca!(Bool, BooleanChunked);
-from_series_to_ca!(Utf8, Utf8Chunked);
-from_series_to_ca!(Date32, Date32Chunked);
-from_series_to_ca!(Date64, Date64Chunked);
-from_series_to_ca!(Time64Nanosecond, Time64NanosecondChunked);
-from_series_to_ca!(DurationMillisecond, DurationMillisecondChunked);
-from_series_to_ca!(DurationNanosecond, DurationNanosecondChunked);
-#[cfg(feature = "dtype-interval")]
-from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
-#[cfg(feature = "dtype-interval")]
-from_series_to_ca!(IntervalYearMonth, IntervalYearMonthChunked);
-from_series_to_ca!(List, ListChunked);
-
+//
+// // macro_rules! impl_as_ref_ca {
+// //     ($type:ident, $series_var:ident) => {
+// //         impl AsRef<ChunkedArray<datatypes::$type>> for Series {
+// //             fn as_ref(&self) -> &ChunkedArray<datatypes::$type> {
+// //                 match self {
+// //                     Series::$series_var(a) => a,
+// //                     _ => unimplemented!(),
+// //                 }
+// //             }
+// //         }
+// //     };
+// // }
+//
+// // impl_as_ref_ca!(UInt8Type, UInt8);
+// // impl_as_ref_ca!(UInt16Type, UInt16);
+// // impl_as_ref_ca!(UInt32Type, UInt32);
+// // impl_as_ref_ca!(UInt64Type, UInt64);
+// // impl_as_ref_ca!(Int8Type, Int8);
+// // impl_as_ref_ca!(Int16Type, Int16);
+// // impl_as_ref_ca!(Int32Type, Int32);
+// // impl_as_ref_ca!(Int64Type, Int64);
+// // impl_as_ref_ca!(Float32Type, Float32);
+// // impl_as_ref_ca!(Float64Type, Float64);
+// // impl_as_ref_ca!(BooleanType, Bool);
+// // impl_as_ref_ca!(Utf8Type, Utf8);
+// // impl_as_ref_ca!(Date32Type, Date32);
+// // impl_as_ref_ca!(Date64Type, Date64);
+// // impl_as_ref_ca!(Time64NanosecondType, Time64Nanosecond);
+// // impl_as_ref_ca!(DurationNanosecondType, DurationNanosecond);
+// // impl_as_ref_ca!(DurationMillisecondType, DurationMillisecond);
+// // #[cfg(feature = "dtype-interval")]
+// // impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
+// // #[cfg(feature = "dtype-interval")]
+// // impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
+// // impl_as_ref_ca!(ListType, List);
+// //
+// // impl AsRef<Box<dyn SeriesOps>> for Series {
+// //     fn as_ref(&self) -> &Box<dyn SeriesOps> {
+// //         match self {
+// //             Series::Object(a) => a,
+// //             _ => unimplemented!(),
+// //         }
+// //     }
+// // }
+//
+// // macro_rules! impl_as_mut_ca {
+// //     ($type:ident, $series_var:ident) => {
+// //         impl AsMut<ChunkedArray<datatypes::$type>> for Series {
+// //             fn as_mut(&mut self) -> &mut ChunkedArray<datatypes::$type> {
+// //                 match self {
+// //                     Series::$series_var(a) => a,
+// //                     _ => unimplemented!(),
+// //                 }
+// //             }
+// //         }
+// //     };
+// // }
+//
+// // impl_as_mut_ca!(UInt8Type, UInt8);
+// // impl_as_mut_ca!(UInt16Type, UInt16);
+// // impl_as_mut_ca!(UInt32Type, UInt32);
+// // impl_as_mut_ca!(UInt64Type, UInt64);
+// // impl_as_mut_ca!(Int8Type, Int8);
+// // impl_as_mut_ca!(Int16Type, Int16);
+// // impl_as_mut_ca!(Int32Type, Int32);
+// // impl_as_mut_ca!(Int64Type, Int64);
+// // impl_as_mut_ca!(Float32Type, Float32);
+// // impl_as_mut_ca!(Float64Type, Float64);
+// // impl_as_mut_ca!(BooleanType, Bool);
+// // impl_as_mut_ca!(Utf8Type, Utf8);
+// // impl_as_mut_ca!(Date32Type, Date32);
+// // impl_as_mut_ca!(Date64Type, Date64);
+// // impl_as_mut_ca!(Time64NanosecondType, Time64Nanosecond);
+// // impl_as_mut_ca!(DurationNanosecondType, DurationNanosecond);
+// // impl_as_mut_ca!(DurationMillisecondType, DurationMillisecond);
+// // #[cfg(feature = "dtype-interval")]
+// // impl_as_mut_ca!(IntervalDayTimeType, IntervalDayTime);
+// // #[cfg(feature = "dtype-interval")]
+// // impl_as_mut_ca!(IntervalYearMonthType, IntervalYearMonth);
+// // impl_as_mut_ca!(ListType, List);
+// //
+// // macro_rules! from_series_to_ca {
+// //     ($variant:ident, $ca:ident) => {
+// //         impl<'a> From<&'a Series> for &'a $ca {
+// //             fn from(s: &'a Series) -> Self {
+// //                 match s {
+// //                     Series::$variant(ca) => ca,
+// //                     _ => unimplemented!(),
+// //                 }
+// //             }
+// //         }
+// //     };
+// // }
+// // from_series_to_ca!(UInt8, UInt8Chunked);
+// // from_series_to_ca!(UInt16, UInt16Chunked);
+// // from_series_to_ca!(UInt32, UInt32Chunked);
+// // from_series_to_ca!(UInt64, UInt64Chunked);
+// // from_series_to_ca!(Int8, Int8Chunked);
+// // from_series_to_ca!(Int16, Int16Chunked);
+// // from_series_to_ca!(Int32, Int32Chunked);
+// // from_series_to_ca!(Int64, Int64Chunked);
+// // from_series_to_ca!(Float32, Float32Chunked);
+// // from_series_to_ca!(Float64, Float64Chunked);
+// // from_series_to_ca!(Bool, BooleanChunked);
+// // from_series_to_ca!(Utf8, Utf8Chunked);
+// // from_series_to_ca!(Date32, Date32Chunked);
+// // from_series_to_ca!(Date64, Date64Chunked);
+// // from_series_to_ca!(Time64Nanosecond, Time64NanosecondChunked);
+// // from_series_to_ca!(DurationMillisecond, DurationMillisecondChunked);
+// // from_series_to_ca!(DurationNanosecond, DurationNanosecondChunked);
+// // #[cfg(feature = "dtype-interval")]
+// // from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
+// // #[cfg(feature = "dtype-interval")]
+// // from_series_to_ca!(IntervalYearMonth, IntervalYearMonthChunked);
+// // from_series_to_ca!(List, ListChunked);
+//
 // TODO: add types
-impl From<(&str, ArrayRef)> for Series {
+impl From<(&str, ArrayRef)> for Wrap<Arc<dyn SeriesTrait>> {
     fn from(name_arr: (&str, ArrayRef)) -> Self {
         let (name, arr) = name_arr;
         let chunk = vec![arr];
-        match chunk[0].data_type() {
+        let s = match chunk[0].data_type() {
             ArrowDataType::Utf8 => Utf8Chunked::new_from_chunks(name, chunk).into_series(),
             ArrowDataType::Boolean => BooleanChunked::new_from_chunks(name, chunk).into_series(),
             ArrowDataType::UInt8 => UInt8Chunked::new_from_chunks(name, chunk).into_series(),
@@ -1246,31 +1202,32 @@ impl From<(&str, ArrayRef)> for Series {
                 DurationMillisecondChunked::new_from_chunks(name, chunk).into_series()
             }
             ArrowDataType::List(_) => ListChunked::new_from_chunks(name, chunk).into_series(),
-            _ => unimplemented!(),
-        }
+            dt => panic!(format!("datatype {:?} not supported", dt)),
+        };
+        Wrap(s.0)
     }
 }
-
-impl Default for Series {
-    fn default() -> Self {
-        Series::Int8(ChunkedArray::default())
-    }
-}
-
-impl<T> From<ChunkedArray<T>> for Series
-where
-    T: PolarsDataType,
-{
-    fn from(ca: ChunkedArray<T>) -> Self {
-        Series::from_chunked_array(ca)
-    }
-}
-
-impl From<Box<dyn SeriesOps>> for Series {
-    fn from(ca: Box<dyn SeriesOps>) -> Self {
-        Series::Object(ca)
-    }
-}
+//
+// impl Default for Series {
+//     fn default() -> Self {
+//         Series::Int8(ChunkedArray::default())
+//     }
+// }
+//
+// impl<T> From<ChunkedArray<T>> for Series
+// where
+//     T: PolarsDataType,
+// {
+//     fn from(ca: ChunkedArray<T>) -> Self {
+//         Series::from_chunked_array(ca)
+//     }
+// }
+//
+// impl From<Box<dyn SeriesOps>> for Series {
+//     fn from(ca: Box<dyn SeriesOps>) -> Self {
+//         Series::Object(ca)
+//     }
+// }
 
 #[cfg(test)]
 mod test {
@@ -1278,18 +1235,13 @@ mod test {
 
     #[test]
     fn cast() {
-        let ar = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2]);
-        let s = Series::Int32(ar);
+        let ar = UInt32Chunked::new_from_slice("a", &[1, 2]);
+        let s = ar.into_series();
         let s2 = s.cast::<Int64Type>().unwrap();
-        match s2 {
-            Series::Int64(_) => assert!(true),
-            _ => assert!(false),
-        }
+
+        assert!(s2.i64().is_ok());
         let s2 = s.cast::<Float32Type>().unwrap();
-        match s2 {
-            Series::Float32(_) => assert!(true),
-            _ => assert!(false),
-        }
+        assert!(s2.f32().is_ok());
     }
 
     #[test]

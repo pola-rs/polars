@@ -9,6 +9,7 @@ pub mod parquet;
 #[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
+use crate::series::implementations::Wrap;
 use crate::utils::accumulate_dataframes_vertical;
 use arrow::array::ArrayRef;
 use arrow::{
@@ -83,33 +84,8 @@ where
 }
 
 fn arr_to_series(arr: &ArrayRef, field: &Field) -> Series {
-    match arr.data_type() {
-        ArrowDataType::UInt8 => Series::UInt8(init_ca(arr, field)),
-        ArrowDataType::UInt16 => Series::UInt16(init_ca(arr, field)),
-        ArrowDataType::UInt32 => Series::UInt32(init_ca(arr, field)),
-        ArrowDataType::UInt64 => Series::UInt64(init_ca(arr, field)),
-        ArrowDataType::Int8 => Series::Int8(init_ca(arr, field)),
-        ArrowDataType::Int16 => Series::Int16(init_ca(arr, field)),
-        ArrowDataType::Int32 => Series::Int32(init_ca(arr, field)),
-        ArrowDataType::Int64 => Series::Int64(init_ca(arr, field)),
-        ArrowDataType::Float32 => Series::Float32(init_ca(arr, field)),
-        ArrowDataType::Float64 => Series::Float64(init_ca(arr, field)),
-        ArrowDataType::Utf8 => Series::Utf8(init_ca(arr, field)),
-        ArrowDataType::Boolean => Series::Bool(init_ca(arr, field)),
-        ArrowDataType::Date32(DateUnit::Day) => Series::Date32(init_ca(arr, field)),
-        ArrowDataType::Date64(DateUnit::Millisecond) => Series::Date64(init_ca(arr, field)),
-        ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-            Series::DurationNanosecond(init_ca(arr, field))
-        }
-        ArrowDataType::Duration(TimeUnit::Millisecond) => {
-            Series::DurationMillisecond(init_ca(arr, field))
-        }
-        ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-            Series::Time64Nanosecond(init_ca(arr, field))
-        }
-        ArrowDataType::List(_) => Series::List(init_ca(arr, field)),
-        t => panic!(format!("Arrow datatype {:?} is not supported", t)),
-    }
+    let s: Wrap<_> = (field.name().as_str(), arr.clone()).into();
+    Series(s.0)
 }
 
 pub fn finish_reader<R: ArrowReader>(

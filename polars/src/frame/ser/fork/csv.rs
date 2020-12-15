@@ -1195,16 +1195,16 @@ impl Builder {
     fn into_series(self) -> Series {
         use Builder::*;
         match self {
-            Utf8(b) => b.finish().into(),
-            Int16(b) => b.finish().into(),
-            Int32(b) => b.finish().into(),
-            Int64(b) => b.finish().into(),
-            UInt16(b) => b.finish().into(),
-            UInt32(b) => b.finish().into(),
-            UInt64(b) => b.finish().into(),
-            Float32(b) => b.finish().into(),
-            Float64(b) => b.finish().into(),
-            Boolean(b) => b.finish().into(),
+            Utf8(b) => b.finish().into_series(),
+            Int16(b) => b.finish().into_series(),
+            Int32(b) => b.finish().into_series(),
+            Int64(b) => b.finish().into_series(),
+            UInt16(b) => b.finish().into_series(),
+            UInt32(b) => b.finish().into_series(),
+            UInt64(b) => b.finish().into_series(),
+            Float32(b) => b.finish().into_series(),
+            Float64(b) => b.finish().into_series(),
+            Boolean(b) => b.finish().into_series(),
         }
     }
 }

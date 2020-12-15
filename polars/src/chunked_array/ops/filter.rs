@@ -209,7 +209,7 @@ impl ChunkFilter<ListType> for ListChunked {
                     true => opt_series,
                     false => None,
                 };
-                builder.append_opt_series(&opt_val)
+                builder.append_opt_series(opt_val.as_ref())
             });
         Ok(builder.finish())
     }

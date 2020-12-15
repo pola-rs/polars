@@ -1,12 +1,8 @@
-use crate::frame::group_by::{fmt_groupby_column, GroupByMethod, NumericAggSync};
+use crate::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use crate::lazy::logical_plan::Context;
 use crate::lazy::physical_plan::AggPhysicalExpr;
 use crate::utils::Xob;
-use crate::{
-    frame::group_by::{AggFirst, AggLast, AggList, AggNUnique, AggQuantile},
-    lazy::prelude::*,
-    prelude::*,
-};
+use crate::{lazy::prelude::*, prelude::*};
 use std::sync::Arc;
 
 pub struct LiteralExpr(pub ScalarValue, Expr);
@@ -92,27 +88,28 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let left = self.left.evaluate(df)?;
-        let right = self.right.evaluate(df)?;
+        let lhs = self.left.evaluate(df)?;
+        let rhs = self.right.evaluate(df)?;
+        let left = &lhs;
+        let right = &rhs;
+
         match self.op {
-            Operator::Gt => Ok(ChunkCompare::<&Series>::gt(&left, &right).into()),
-            Operator::GtEq => Ok(ChunkCompare::<&Series>::gt_eq(&left, &right).into()),
-            Operator::Lt => Ok(ChunkCompare::<&Series>::lt(&left, &right).into()),
-            Operator::LtEq => Ok(ChunkCompare::<&Series>::lt_eq(&left, &right).into()),
-            Operator::Eq => Ok(ChunkCompare::<&Series>::eq(&left, &right).into()),
-            Operator::NotEq => Ok(ChunkCompare::<&Series>::neq(&left, &right).into()),
+            Operator::Gt => Ok(ChunkCompare::<&Series>::gt(left, right).into_series()),
+            Operator::GtEq => Ok(ChunkCompare::<&Series>::gt_eq(left, right).into_series()),
+            Operator::Lt => Ok(ChunkCompare::<&Series>::lt(left, right).into_series()),
+            Operator::LtEq => Ok(ChunkCompare::<&Series>::lt_eq(left, right).into_series()),
+            Operator::Eq => Ok(ChunkCompare::<&Series>::eq(left, right).into_series()),
+            Operator::NotEq => Ok(ChunkCompare::<&Series>::neq(left, right).into_series()),
             Operator::Plus => Ok(left + right),
             Operator::Minus => Ok(left - right),
             Operator::Multiply => Ok(left * right),
             Operator::Divide => Ok(left / right),
             Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
             Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
-            Operator::Not => Ok(ChunkCompare::<&Series>::eq(&left, &right).into()),
+            Operator::Not => Ok(ChunkCompare::<&Series>::eq(left, right).into_series()),
             Operator::Like => todo!(),
             Operator::NotLike => todo!(),
-            Operator::Modulus => {
-                apply_method_all_arrow_series!(left, remainder, &right).map(|ca| ca.into_series())
-            }
+            Operator::Modulus => Ok(left % right),
         }
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -186,7 +183,7 @@ impl PhysicalExpr for NotExpr {
 
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let series = self.0.evaluate(df)?;
-        if let Series::Bool(ca) = series {
+        if let Ok(ca) = series.bool() {
             Ok((!ca).into_series())
         } else {
             Err(PolarsError::InvalidOperation(
@@ -367,43 +364,43 @@ impl AggPhysicalExpr for AggExpr {
 
         match self.agg_type {
             GroupByMethod::Min => {
-                let agg_s = apply_method_all_arrow_series!(series, agg_min, groups);
+                let agg_s = series.agg_min(groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Max => {
-                let agg_s = apply_method_all_arrow_series!(series, agg_max, groups);
+                let agg_s = series.agg_max(groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Median => {
-                let agg_s = apply_method_all_arrow_series!(series, agg_median, groups);
+                let agg_s = series.agg_median(groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Mean => {
-                let agg_s = apply_method_all_arrow_series!(series, agg_mean, groups);
+                let agg_s = series.agg_mean(groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Sum => {
-                let agg_s = apply_method_all_arrow_series!(series, agg_sum, groups);
+                let agg_s = series.agg_sum(groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
                 let mut ca: Xob<UInt32Chunked> =
                     groups.iter().map(|(_, g)| g.len() as u32).collect();
                 ca.rename(&new_name);
-                Ok(Some(ca.into_inner().into()))
+                Ok(Some(ca.into_inner().into_series()))
             }
             GroupByMethod::First => {
-                let mut agg_s = apply_method_all_arrow_series!(series, agg_first, groups);
+                let mut agg_s = series.agg_first(groups);
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::Last => {
-                let mut agg_s = apply_method_all_arrow_series!(series, agg_last, groups);
+                let mut agg_s = series.agg_last(groups);
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::NUnique => {
-                let opt_agg = apply_method_all_arrow_series!(series, agg_n_unique, groups);
+                let opt_agg = series.agg_n_unique(groups);
                 let opt_agg = opt_agg.map(|mut agg| {
                     agg.rename(&new_name);
                     agg.into_series()
@@ -411,7 +408,7 @@ impl AggPhysicalExpr for AggExpr {
                 Ok(opt_agg)
             }
             GroupByMethod::List => {
-                let opt_agg = apply_method_all_arrow_series!(series, agg_list, groups);
+                let opt_agg = series.agg_list(groups);
                 Ok(rename_option_series(opt_agg, &new_name))
             }
             GroupByMethod::Groups => {
@@ -460,7 +457,7 @@ impl AggPhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
-        let opt_agg = apply_method_all_arrow_series!(series, agg_quantile, groups, self.quantile);
+        let opt_agg = series.agg_quantile(groups, self.quantile);
 
         let opt_agg = opt_agg.map(|mut agg| {
             agg.rename(&new_name);
@@ -513,7 +510,7 @@ impl PhysicalExpr for TernaryExpr {
         let mask = mask_series.bool()?;
         let truthy = self.truthy.evaluate(df)?;
         let falsy = self.falsy.evaluate(df)?;
-        truthy.zip_with(&mask, &falsy)
+        truthy.zip_with(&mask, &*falsy)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.truthy.to_field(input_schema)

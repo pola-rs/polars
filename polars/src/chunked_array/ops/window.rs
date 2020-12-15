@@ -192,7 +192,7 @@ pub enum InitFold {
     Min,
 }
 
-impl<T> ChunkWindow<T::Native> for ChunkedArray<T>
+impl<T> ChunkWindow for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Zero
@@ -275,7 +275,19 @@ where
             InitFold::Min,
         ))
     }
+}
 
+impl<T> ChunkWindowCustom<T::Native> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Zero
+        + Bounded
+        + NumCast
+        + Div<Output = T::Native>
+        + Mul<Output = T::Native>
+        + PartialOrd
+        + Copy,
+{
     fn rolling_custom<F>(
         &self,
         window_size: usize,
@@ -296,10 +308,10 @@ where
     }
 }
 
-impl ChunkWindow<u8> for ListChunked {}
-impl ChunkWindow<u8> for Utf8Chunked {}
-impl ChunkWindow<u8> for BooleanChunked {}
-impl<T> ChunkWindow<u8> for ObjectChunked<T> {}
+impl ChunkWindow for ListChunked {}
+impl ChunkWindow for Utf8Chunked {}
+impl ChunkWindow for BooleanChunked {}
+impl<T> ChunkWindow for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
