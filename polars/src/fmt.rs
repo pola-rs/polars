@@ -216,9 +216,11 @@ impl Debug for Series {
             Series::DurationSecond(a) => {
                 format_array!(limit, f, a, "duration(s)", a.name(), "Series")
             }
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => {
                 format_array!(limit, f, a, "interval(daytime)", a.name(), "Series")
             }
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => {
                 format_array!(limit, f, a, "interval(year-month)", a.name(), "Series")
             }
@@ -412,7 +414,9 @@ impl Display for AnyType<'_> {
             AnyType::TimeStamp(v, TimeUnit::Second) => {
                 write!(f, "{}", timestamp_seconds_as_datetime(*v))
             }
+            #[cfg(feature = "dtype-interval")]
             AnyType::IntervalDayTime(v) => write!(f, "{}", v),
+            #[cfg(feature = "dtype-interval")]
             AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
             AnyType::List(s) => write!(f, "{:?}", s.fmt_list()),
             AnyType::Object(_) => write!(f, "object"),

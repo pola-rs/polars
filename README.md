@@ -92,6 +92,8 @@ Additional cargo features:
     - Lazy api
 * `strings`
     - String utilities for `Utf8Chunked`
+* `dtype-interval`
+    - toggle Interval datatype
 
 ## Contribution
 Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).

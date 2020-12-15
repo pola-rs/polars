@@ -58,7 +58,9 @@ macro_rules! impl_compare {
                 compare!(Series::TimestampMillisecond, a, $rhs, $method)
             }
             Series::TimestampSecond(a) => compare!(Series::TimestampSecond, a, $rhs, $method),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, $rhs, $method),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, $rhs, $method),
             Series::List(a) => compare!(Series::List, a, $rhs, $method),
             Series::Object(_) => fill_bool(false, $self.len()),

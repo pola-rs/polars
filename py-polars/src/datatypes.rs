@@ -26,8 +26,6 @@ pub enum DataType {
     DurationMicrosecond,
     DurationMillisecond,
     DurationSecond,
-    IntervalDayTime,
-    IntervalYearMonth,
     TimestampNanosecond,
     TimestampMicrosecond,
     TimestampMillisecond,
@@ -58,8 +56,6 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Time32(TimeUnit::Second) => Time32Second,
             ArrowDataType::Time64(TimeUnit::Nanosecond) => Time64Nanosecond,
             ArrowDataType::Time64(TimeUnit::Microsecond) => Time64Microsecond,
-            ArrowDataType::Interval(IntervalUnit::DayTime) => IntervalDayTime,
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => IntervalYearMonth,
             ArrowDataType::Duration(TimeUnit::Nanosecond) => DurationNanosecond,
             ArrowDataType::Duration(TimeUnit::Microsecond) => DurationMicrosecond,
             ArrowDataType::Duration(TimeUnit::Millisecond) => DurationMillisecond,
@@ -95,8 +91,6 @@ impl PyPolarsPrimitiveType for DurationNanosecondType {}
 impl PyPolarsPrimitiveType for DurationMicrosecondType {}
 impl PyPolarsPrimitiveType for DurationMillisecondType {}
 impl PyPolarsPrimitiveType for DurationSecondType {}
-impl PyPolarsPrimitiveType for IntervalYearMonthType {}
-impl PyPolarsPrimitiveType for IntervalDayTimeType {}
 impl PyPolarsPrimitiveType for TimestampNanosecondType {}
 impl PyPolarsPrimitiveType for TimestampMicrosecondType {}
 impl PyPolarsPrimitiveType for TimestampMillisecondType {}

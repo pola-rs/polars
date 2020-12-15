@@ -26,8 +26,6 @@ impl PyArrowPrimitiveType for DurationNanosecondType {}
 impl PyArrowPrimitiveType for DurationMicrosecondType {}
 impl PyArrowPrimitiveType for DurationMillisecondType {}
 impl PyArrowPrimitiveType for DurationSecondType {}
-impl PyArrowPrimitiveType for IntervalYearMonthType {}
-impl PyArrowPrimitiveType for IntervalDayTimeType {}
 impl PyArrowPrimitiveType for TimestampNanosecondType {}
 impl PyArrowPrimitiveType for TimestampMicrosecondType {}
 impl PyArrowPrimitiveType for TimestampMillisecondType {}

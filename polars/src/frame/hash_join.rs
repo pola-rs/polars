@@ -72,7 +72,9 @@ macro_rules! apply_hash_join_on_series {
             Series::TimestampMicrosecond(ca_left) => {
                 $join_macro!($s_right, ca_left, timestamp_microsecond)
             }
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalDayTime(ca_left) => $join_macro!($s_right, ca_left, interval_daytime),
+            #[cfg(feature = "dtype-interval")]
             Series::IntervalYearMonth(ca_left) => {
                 $join_macro!($s_right, ca_left, interval_year_month)
             }

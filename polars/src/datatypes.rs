@@ -90,7 +90,9 @@ pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
 pub type Time64MicrosecondChunked = ChunkedArray<Time64MicrosecondType>;
 pub type Time32MillisecondChunked = ChunkedArray<Time32MillisecondType>;
 pub type Time32SecondChunked = ChunkedArray<Time32SecondType>;
+#[cfg(feature = "dtype-interval")]
 pub type IntervalDayTimeChunked = ChunkedArray<IntervalDayTimeType>;
+#[cfg(feature = "dtype-interval")]
 pub type IntervalYearMonthChunked = ChunkedArray<IntervalYearMonthType>;
 
 pub type TimestampNanosecondChunked = ChunkedArray<TimestampNanosecondType>;
@@ -120,7 +122,9 @@ impl PolarsPrimitiveType for DurationNanosecondType {}
 impl PolarsPrimitiveType for DurationMicrosecondType {}
 impl PolarsPrimitiveType for DurationMillisecondType {}
 impl PolarsPrimitiveType for DurationSecondType {}
+#[cfg(feature = "dtype-interval")]
 impl PolarsPrimitiveType for IntervalYearMonthType {}
+#[cfg(feature = "dtype-interval")]
 impl PolarsPrimitiveType for IntervalDayTimeType {}
 impl PolarsPrimitiveType for TimestampNanosecondType {}
 impl PolarsPrimitiveType for TimestampMicrosecondType {}
@@ -148,7 +152,9 @@ impl PolarsNumericType for DurationNanosecondType {}
 impl PolarsNumericType for DurationMicrosecondType {}
 impl PolarsNumericType for DurationMillisecondType {}
 impl PolarsNumericType for DurationSecondType {}
+#[cfg(feature = "dtype-interval")]
 impl PolarsNumericType for IntervalYearMonthType {}
+#[cfg(feature = "dtype-interval")]
 impl PolarsNumericType for IntervalDayTimeType {}
 impl PolarsNumericType for TimestampNanosecondType {}
 impl PolarsNumericType for TimestampMicrosecondType {}
@@ -174,7 +180,9 @@ impl PolarsIntegerType for DurationNanosecondType {}
 impl PolarsIntegerType for DurationMicrosecondType {}
 impl PolarsIntegerType for DurationMillisecondType {}
 impl PolarsIntegerType for DurationSecondType {}
+#[cfg(feature = "dtype-interval")]
 impl PolarsIntegerType for IntervalYearMonthType {}
+#[cfg(feature = "dtype-interval")]
 impl PolarsIntegerType for IntervalDayTimeType {}
 impl PolarsIntegerType for TimestampNanosecondType {}
 impl PolarsIntegerType for TimestampMicrosecondType {}
@@ -229,7 +237,9 @@ pub enum AnyType<'a> {
     TimeStamp(i64, TimeUnit),
     /// A "calendar" interval which models types that don't necessarily have a precise duration without the context of a base timestamp
     /// (e.g. days can differ in length during day light savings time transitions).
+    #[cfg(feature = "dtype-interval")]
     IntervalDayTime(i64),
+    #[cfg(feature = "dtype-interval")]
     IntervalYearMonth(i32),
     List(Series),
     /// Use as_any to get a dyn Any
@@ -272,7 +282,9 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Duration(TimeUnit::Microsecond) => "duration(μs)",
             ArrowDataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
             ArrowDataType::Duration(TimeUnit::Second) => "duration(s)",
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::DayTime) => "interval(daytime)",
+            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
             ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
             ArrowDataType::Binary => "object",

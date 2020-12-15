@@ -188,11 +188,13 @@
 //! * `ndarray`
 //!     - Convert from `DataFrame` to `ndarray`
 //! * `parallel`
-//!     - Parallel variants of operation
+//!     - Parallel variants of operations
 //! * `lazy`
 //!     - Lazy api
 //! * `strings`
 //!     - String utilities for `Utf8Chunked`
+//! * `dtype-interval`
+//!     - toggle Interval datatype
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]
