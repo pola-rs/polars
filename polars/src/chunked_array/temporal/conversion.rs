@@ -42,21 +42,6 @@ impl_from_naive_time!(
     Time64NanosecondChunked,
     naive_time_to_time64_nanoseconds
 );
-impl_from_naive_time!(
-    Time64MicrosecondType,
-    Time64MicrosecondChunked,
-    naive_time_to_time64_microseconds
-);
-impl_from_naive_time!(
-    Time32MillisecondType,
-    Time32MillisecondChunked,
-    naive_time_to_time32_milliseconds
-);
-impl_from_naive_time!(
-    Time32SecondType,
-    Time32SecondChunked,
-    naive_time_to_time32_seconds
-);
 
 pub trait AsNaiveTime {
     fn as_naive_time(&self) -> Vec<Option<NaiveTime>>;
@@ -92,26 +77,6 @@ macro_rules! impl_from_naive_datetime {
 }
 
 impl_from_naive_datetime!(Date64Type, Date64Chunked, naive_datetime_to_date64);
-impl_from_naive_datetime!(
-    TimestampNanosecondType,
-    TimestampNanosecondChunked,
-    naive_datetime_to_timestamp_nanoseconds
-);
-impl_from_naive_datetime!(
-    TimestampMicrosecondType,
-    TimestampMicrosecondChunked,
-    naive_datetime_to_timestamp_microseconds
-);
-impl_from_naive_datetime!(
-    TimestampMillisecondType,
-    TimestampMillisecondChunked,
-    naive_datetime_to_timestamp_milliseconds
-);
-impl_from_naive_datetime!(
-    TimestampSecondType,
-    TimestampSecondChunked,
-    naive_datetime_to_timestamp_seconds
-);
 
 pub trait FromNaiveDate<T, N> {
     fn new_from_naive_date(name: &str, v: &[N]) -> Self;
@@ -170,19 +135,6 @@ macro_rules! impl_as_naive_datetime {
 
 impl_as_naive_datetime!(Date32Chunked, date32_as_datetime);
 impl_as_naive_datetime!(Date64Chunked, date64_as_datetime);
-impl_as_naive_datetime!(
-    TimestampNanosecondChunked,
-    timestamp_nanoseconds_as_datetime
-);
-impl_as_naive_datetime!(
-    TimestampMicrosecondChunked,
-    timestamp_microseconds_as_datetime
-);
-impl_as_naive_datetime!(
-    TimestampMillisecondChunked,
-    timestamp_milliseconds_as_datetime
-);
-impl_as_naive_datetime!(TimestampSecondChunked, timestamp_seconds_as_datetime);
 
 pub trait AsNaiveDate {
     fn as_naive_date(&self) -> Vec<Option<NaiveDate>>;
@@ -205,8 +157,16 @@ pub trait AsDuration<T> {
     fn as_duration(&self) -> ChunkedArray<T>;
 }
 
-impl AsDuration<DurationSecondType> for Date32Chunked {
-    fn as_duration(&self) -> DurationSecondChunked {
+impl AsNaiveTime for Time64NanosecondChunked {
+    fn as_naive_time(&self) -> Vec<Option<NaiveTime>> {
+        self.into_iter()
+            .map(|opt_t| opt_t.map(time64_nanosecond_as_time))
+            .collect()
+    }
+}
+
+impl AsDuration<DurationMillisecondType> for Date32Chunked {
+    fn as_duration(&self) -> DurationMillisecondChunked {
         self.apply_kernel_cast(date32_as_duration)
     }
 }

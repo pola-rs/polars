@@ -415,9 +415,7 @@ impl PySeries {
             Series::Bool(ca) => PyList::new(python, ca),
             Series::Utf8(ca) => PyList::new(python, ca),
             Series::DurationNanosecond(ca) => PyList::new(python, ca),
-            Series::DurationMicrosecond(ca) => PyList::new(python, ca),
             Series::DurationMillisecond(ca) => PyList::new(python, ca),
-            Series::DurationSecond(ca) => PyList::new(python, ca),
             Series::Object(ca) => {
                 let v = PyList::empty(python);
                 for i in 0..ca.len() {
@@ -648,42 +646,6 @@ impl PySeries {
             }
             Some(ArrowDataType::Date64(_)) => {
                 let ca: Date64Chunked = apply_method_all_arrow_series!(
-                    series,
-                    apply_lambda_with_primitive_out_type,
-                    py,
-                    lambda
-                )?;
-                ca.into_series()
-            }
-            Some(ArrowDataType::Duration(TimeUnit::Nanosecond)) => {
-                let ca: DurationNanosecondChunked = apply_method_all_arrow_series!(
-                    series,
-                    apply_lambda_with_primitive_out_type,
-                    py,
-                    lambda
-                )?;
-                ca.into_series()
-            }
-            Some(ArrowDataType::Duration(TimeUnit::Millisecond)) => {
-                let ca: DurationMillisecondChunked = apply_method_all_arrow_series!(
-                    series,
-                    apply_lambda_with_primitive_out_type,
-                    py,
-                    lambda
-                )?;
-                ca.into_series()
-            }
-            Some(ArrowDataType::Duration(TimeUnit::Microsecond)) => {
-                let ca: DurationMicrosecondChunked = apply_method_all_arrow_series!(
-                    series,
-                    apply_lambda_with_primitive_out_type,
-                    py,
-                    lambda
-                )?;
-                ca.into_series()
-            }
-            Some(ArrowDataType::Duration(TimeUnit::Second)) => {
-                let ca: DurationSecondChunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,

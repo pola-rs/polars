@@ -19,17 +19,8 @@ impl PyArrowPrimitiveType for Float64Type {}
 impl PyArrowPrimitiveType for Date32Type {}
 impl PyArrowPrimitiveType for Date64Type {}
 impl PyArrowPrimitiveType for Time64NanosecondType {}
-impl PyArrowPrimitiveType for Time64MicrosecondType {}
-impl PyArrowPrimitiveType for Time32MillisecondType {}
-impl PyArrowPrimitiveType for Time32SecondType {}
 impl PyArrowPrimitiveType for DurationNanosecondType {}
-impl PyArrowPrimitiveType for DurationMicrosecondType {}
 impl PyArrowPrimitiveType for DurationMillisecondType {}
-impl PyArrowPrimitiveType for DurationSecondType {}
-impl PyArrowPrimitiveType for TimestampNanosecondType {}
-impl PyArrowPrimitiveType for TimestampMicrosecondType {}
-impl PyArrowPrimitiveType for TimestampMillisecondType {}
-impl PyArrowPrimitiveType for TimestampSecondType {}
 impl PyArrowPrimitiveType for BooleanType {}
 
 pub trait ApplyLambda<'a, 'b> {
