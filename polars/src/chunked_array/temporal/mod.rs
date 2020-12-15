@@ -26,12 +26,6 @@ mod test {
         let t = Time64NanosecondChunked::new_from_naive_time("times", &times);
         // NOTE: the values are checked and correct.
         assert_eq!([86164000000000, 0], t.cont_slice().unwrap());
-        let t = Time64MicrosecondChunked::new_from_naive_time("times", &times);
-        assert_eq!([86164000000, 0], t.cont_slice().unwrap());
-        let t = Time32MillisecondChunked::new_from_naive_time("times", &times);
-        assert_eq!([86164000, 0], t.cont_slice().unwrap());
-        let t = Time32SecondChunked::new_from_naive_time("times", &times);
-        assert_eq!([86164, 0], t.cont_slice().unwrap());
     }
 
     #[test]
@@ -49,26 +43,6 @@ mod test {
         let dt = Date64Chunked::new_from_naive_datetime("name", &datetimes);
         assert_eq!(
             [588470416000, 1441497364000, 1356048000000],
-            dt.cont_slice().unwrap()
-        );
-        let dt = TimestampNanosecondChunked::new_from_naive_datetime("name", &datetimes);
-        assert_eq!(
-            [588470416000000000, 1441497364000000000, 1356048000000000000],
-            dt.cont_slice().unwrap()
-        );
-        let dt = TimestampMicrosecondChunked::new_from_naive_datetime("name", &datetimes);
-        assert_eq!(
-            [588470416000000, 1441497364000000, 1356048000000000],
-            dt.cont_slice().unwrap()
-        );
-        let dt = TimestampMillisecondChunked::new_from_naive_datetime("name", &datetimes);
-        assert_eq!(
-            [588470416000, 1441497364000, 1356048000000],
-            dt.cont_slice().unwrap()
-        );
-        let dt = TimestampSecondChunked::new_from_naive_datetime("name", &datetimes);
-        assert_eq!(
-            [588470416, 1441497364, 1356048000],
             dt.cont_slice().unwrap()
         );
     }
