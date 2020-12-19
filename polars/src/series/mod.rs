@@ -6,13 +6,12 @@ pub(crate) mod arithmetic;
 mod comparison;
 pub mod implementations;
 pub(crate) mod iterator;
-#[allow(clippy::missing_safety_doc)]
-pub mod ops;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::series::implementations::Wrap;
 use arrow::array::ArrayDataRef;
 use num::NumCast;
+use std::any::Any;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -146,11 +145,15 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     fn i8(&self) -> Result<&Int8Chunked> {
-        unimplemented!()
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != i8", self.dtype()).into(),
+        ))
     }
 
     fn i16(&self) -> Result<&Int16Chunked> {
-        unimplemented!()
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != i16", self.dtype()).into(),
+        ))
     }
 
     /// Unpack to ChunkedArray
@@ -168,89 +171,99 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// }).collect();
     /// ```
     fn i32(&self) -> Result<&Int32Chunked> {
-        unimplemented!()
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != i32", self.dtype()).into(),
+        ))
     }
 
     /// Unpack to ChunkedArray
     fn i64(&self) -> Result<&Int64Chunked> {
-        unimplemented!()
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != i64", self.dtype()).into(),
+        ))
     }
 
     /// Unpack to ChunkedArray
     fn f32(&self) -> Result<&Float32Chunked> {
-        unimplemented!()
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != f32", self.dtype()).into(),
+        ))
     }
 
     /// Unpack to ChunkedArray
     fn f64(&self) -> Result<&Float64Chunked> {
-        unimplemented!()
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != f64", self.dtype()).into(),
+        ))
     }
 
     /// Unpack to ChunkedArray
     fn u8(&self) -> Result<&UInt8Chunked> {
-        unimplemented!()
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != u8", self.dtype()).into(),
+        ))
     }
 
     /// Unpack to ChunkedArray
     fn u16(&self) -> Result<&UInt16Chunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== u16", self.dtype()).into(),
+            format!("{:?} != u16", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray
     fn u32(&self) -> Result<&UInt32Chunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== u32", self.dtype()).into(),
+            format!("{:?} != u32", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray
     fn u64(&self) -> Result<&UInt64Chunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== u32", self.dtype()).into(),
+            format!("{:?} != u32", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray
     fn bool(&self) -> Result<&BooleanChunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== bool", self.dtype()).into(),
+            format!("{:?} != bool", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray
     fn utf8(&self) -> Result<&Utf8Chunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== utf8", self.dtype()).into(),
+            format!("{:?} != utf8", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray
     fn date32(&self) -> Result<&Date32Chunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== date32", self.dtype()).into(),
+            format!("{:?} != date32", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray
     fn date64(&self) -> Result<&Date64Chunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== date64", self.dtype()).into(),
+            format!("{:?} != date64", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray
     fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== time64", self.dtype()).into(),
+            format!("{:?} != time64", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray
     fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== duration_nanosecond", self.dtype()).into(),
+            format!("{:?} != duration_nanosecond", self.dtype()).into(),
         ))
     }
 
@@ -262,25 +275,9 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Unpack to ChunkedArray
-    #[cfg(feature = "dtype-interval")]
-    fn interval_daytime(&self) -> Result<&IntervalDayTimeChunked> {
-        Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== interval_daytime", self.dtype()).into(),
-        ))
-    }
-
-    /// Unpack to ChunkedArray
-    #[cfg(feature = "dtype-interval")]
-    fn interval_year_month(&self) -> Result<&IntervalYearMonthChunked> {
-        Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== interval_yearmonth", self.dtype()).into(),
-        ))
-    }
-
-    /// Unpack to ChunkedArray
     fn list(&self) -> Result<&ListChunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== list", self.dtype()).into(),
+            format!("{:?} != list", self.dtype()).into(),
         ))
     }
 
@@ -289,8 +286,8 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Take `num_elements` from the top as a zero copy view.
-    fn limit(&self, _num_elements: usize) -> Result<Series> {
-        unimplemented!()
+    fn limit(&self, num_elements: usize) -> Result<Series> {
+        self.slice(0, num_elements)
     }
 
     /// Get a zero copy view of the data.
@@ -373,8 +370,10 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    fn take(&self, _indices: &dyn AsTakeIndex) -> Series {
-        unimplemented!()
+    fn take(&self, indices: &dyn AsTakeIndex) -> Series {
+        let mut iter = indices.as_take_iter();
+        let capacity = indices.take_index_len();
+        self.take_iter(&mut iter, Some(capacity))
     }
 
     /// Get length of series.
@@ -384,7 +383,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
 
     /// Check if Series is empty.
     fn is_empty(&self) -> bool {
-        unimplemented!()
+        self.len() == 0
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
@@ -404,7 +403,11 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
-        unimplemented!()
+        if self.null_count() == 0 {
+            Series(self.clone_inner())
+        } else {
+            self.filter(&self.is_not_null()).unwrap()
+        }
     }
 
     /// Create a new Series filled with values at that index.
@@ -476,7 +479,9 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
 
     /// Get indexes that evaluate true
     fn arg_true(&self) -> Result<UInt32Chunked> {
-        unimplemented!()
+        Err(PolarsError::InvalidOperation(
+            "arg_true can only be called for boolean dtype".into(),
+        ))
     }
 
     /// Get a mask of the null values.
@@ -754,6 +759,10 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     #[doc(cfg(feature = "random"))]
     /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series>;
+
+    fn get_as_any(&self, _index: usize) -> &dyn Any {
+        unimplemented!()
+    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {

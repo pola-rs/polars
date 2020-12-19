@@ -9,8 +9,12 @@ use crate::fmt::FmtList;
 use crate::frame::group_by::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
+use crate::series::private::PrivateSeries;
 use arrow::array::{ArrayDataRef, ArrayRef};
 use arrow::buffer::Buffer;
+use arrow::datatypes::DataType;
+use std::any::Any;
+use std::fmt::Debug;
 use std::ops::Deref;
 
 pub(crate) struct Wrap<T>(pub T);
@@ -169,10 +173,6 @@ macro_rules! impl_dyn_series {
 
             fn chunks(&self) -> &Vec<ArrayRef> {
                 self.0.chunks()
-            }
-
-            fn n_chunks(&self) -> usize {
-                self.0.chunks().len()
             }
 
             fn i8(&self) -> Result<&Int8Chunked> {
@@ -461,10 +461,6 @@ macro_rules! impl_dyn_series {
                 self.0.append_array(other)
             }
 
-            fn limit(&self, num_elements: usize) -> Result<Series> {
-                self.0.limit(num_elements).map(|ca| ca.into_series())
-            }
-
             fn slice(&self, offset: usize, length: usize) -> Result<Series> {
                 self.0.slice(offset, length).map(|ca| ca.into_series())
             }
@@ -521,18 +517,8 @@ macro_rules! impl_dyn_series {
                 ChunkTake::take_opt(&self.0, iter, capacity).into_series()
             }
 
-            fn take(&self, indices: &dyn AsTakeIndex) -> Series {
-                let mut iter = indices.as_take_iter();
-                let capacity = indices.take_index_len();
-                self.0.take(&mut iter, Some(capacity)).into_series()
-            }
-
             fn len(&self) -> usize {
                 self.0.len()
-            }
-
-            fn is_empty(&self) -> bool {
-                self.0.is_empty()
             }
 
             fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Series> {
@@ -545,16 +531,6 @@ macro_rules! impl_dyn_series {
 
             fn tail(&self, length: Option<usize>) -> Series {
                 self.0.tail(length).into_series()
-            }
-
-            fn drop_nulls(&self) -> Series {
-                if self.null_count() == 0 {
-                    self.0.clone().into_series()
-                } else {
-                    ChunkFilter::filter(&self.0, &self.is_not_null())
-                        .unwrap()
-                        .into_series()
-                }
             }
 
             fn expand_at_index(&self, index: usize, length: usize) -> Series {
@@ -588,14 +564,6 @@ macro_rules! impl_dyn_series {
                     Duration(TimeUnit::Millisecond) => {
                         ChunkCast::cast::<DurationMillisecondType>(&self.0)
                             .map(|ca| ca.into_series())
-                    }
-                    #[cfg(feature = "dtype-interval")]
-                    Interval(IntervalUnit::DayTime) => {
-                        ChunkCast::cast::<IntervalDayTimeType>(&self.0).map(|ca| ca.into_series())
-                    }
-                    #[cfg(feature = "dtype-interval")]
-                    Interval(IntervalUnit::YearMonth) => {
-                        ChunkCast::cast::<IntervalYearMonthType>(&self.0).map(|ca| ca.into_series())
                     }
                     List(_) => ChunkCast::cast::<ListType>(&self.0).map(|ca| ca.into_series()),
                     dt => Err(PolarsError::Other(
@@ -867,3 +835,218 @@ impl_dyn_series!(DurationMillisecondChunked);
 impl_dyn_series!(Date32Chunked);
 impl_dyn_series!(Date64Chunked);
 impl_dyn_series!(Time64NanosecondChunked);
+
+impl<T> PrivateSeries for ObjectChunked<T> where T: 'static + Debug + Clone + Send + Sync + Default {}
+impl<T> SeriesTrait for ObjectChunked<T>
+where
+    T: 'static + Debug + Clone + Send + Sync + Default,
+{
+    fn rename(&mut self, name: &str) {
+        ObjectChunked::rename(self, name)
+    }
+
+    fn array_data(&self) -> Vec<ArrayDataRef> {
+        ObjectChunked::array_data(self)
+    }
+
+    fn chunk_lengths(&self) -> &Vec<usize> {
+        ObjectChunked::chunk_id(self)
+    }
+
+    fn name(&self) -> &str {
+        ObjectChunked::name(self)
+    }
+
+    fn field(&self) -> &Field {
+        ObjectChunked::ref_field(self)
+    }
+
+    fn dtype(&self) -> &DataType {
+        ObjectChunked::dtype(self)
+    }
+
+    fn chunks(&self) -> &Vec<ArrayRef> {
+        ObjectChunked::chunks(self)
+    }
+
+    fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+        ObjectChunked::append_array(self, other)
+    }
+
+    fn slice(&self, offset: usize, length: usize) -> Result<Series> {
+        ObjectChunked::slice(self, offset, length).map(|ca| ca.into_series())
+    }
+
+    fn append(&mut self, other: &Series) -> Result<()> {
+        if self.dtype() == other.dtype() {
+            ObjectChunked::append(self, other.as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::DataTypeMisMatch(
+                "cannot append Series; data types don't match".into(),
+            ))
+        }
+    }
+
+    fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
+        ChunkFilter::filter(self, filter).map(|ca| ca.into_series())
+    }
+
+    fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>, capacity: Option<usize>) -> Series {
+        ChunkTake::take(self, iter, capacity).into_series()
+    }
+
+    unsafe fn take_iter_unchecked(
+        &self,
+        iter: &mut dyn Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Series {
+        ChunkTake::take_unchecked(self, iter, capacity).into_series()
+    }
+
+    unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Series> {
+        ChunkTake::take_from_single_chunked(self, idx).map(|ca| ca.into_series())
+    }
+
+    unsafe fn take_opt_iter_unchecked(
+        &self,
+        iter: &mut dyn Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Series {
+        ChunkTake::take_opt_unchecked(self, iter, capacity).into_series()
+    }
+
+    fn take_opt_iter(
+        &self,
+        iter: &mut dyn Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Series {
+        ChunkTake::take_opt(self, iter, capacity).into_series()
+    }
+
+    fn len(&self) -> usize {
+        ObjectChunked::len(self)
+    }
+
+    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Series> {
+        ChunkOps::rechunk(self, chunk_lengths).map(|ca| ca.into_series())
+    }
+
+    fn head(&self, length: Option<usize>) -> Series {
+        ObjectChunked::head(self, length).into_series()
+    }
+
+    fn tail(&self, length: Option<usize>) -> Series {
+        ObjectChunked::tail(self, length).into_series()
+    }
+
+    fn expand_at_index(&self, index: usize, length: usize) -> Series {
+        ChunkExpandAtIndex::expand_at_index(self, index, length).into_series()
+    }
+
+    fn cast_with_arrow_datatype(&self, _data_type: &DataType) -> Result<Series> {
+        Err(PolarsError::InvalidOperation(
+            "cannot cast array of type ObjectChunked to arrow datatype".into(),
+        ))
+    }
+
+    fn to_dummies(&self) -> Result<DataFrame> {
+        ToDummies::to_dummies(self)
+    }
+
+    fn value_counts(&self) -> Result<DataFrame> {
+        ChunkUnique::value_counts(self)
+    }
+
+    fn get(&self, index: usize) -> AnyType {
+        ObjectChunked::get_any(self, index)
+    }
+
+    fn sort_in_place(&mut self, reverse: bool) {
+        ChunkSort::sort_in_place(self, reverse)
+    }
+
+    fn sort(&self, reverse: bool) -> Series {
+        ChunkSort::sort(self, reverse).into_series()
+    }
+
+    fn argsort(&self, reverse: bool) -> Vec<usize> {
+        ChunkSort::argsort(self, reverse)
+    }
+
+    fn null_count(&self) -> usize {
+        ObjectChunked::null_count(self)
+    }
+
+    fn unique(&self) -> Result<Series> {
+        ChunkUnique::unique(self).map(|ca| ca.into_series())
+    }
+
+    fn n_unique(&self) -> Result<usize> {
+        ChunkUnique::n_unique(self)
+    }
+
+    fn arg_unique(&self) -> Result<Vec<usize>> {
+        ChunkUnique::arg_unique(self)
+    }
+
+    fn is_null(&self) -> BooleanChunked {
+        ObjectChunked::is_null(self)
+    }
+
+    fn is_not_null(&self) -> BooleanChunked {
+        ObjectChunked::is_not_null(self)
+    }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        ChunkUnique::is_unique(self)
+    }
+
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        ChunkUnique::is_duplicated(self)
+    }
+
+    fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+        ObjectChunked::null_bits(self)
+    }
+
+    fn reverse(&self) -> Series {
+        ChunkReverse::reverse(self).into_series()
+    }
+
+    fn shift(&self, periods: i32) -> Result<Series> {
+        ChunkShift::shift(self, periods).map(|ca| ca.into_series())
+    }
+
+    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
+        ChunkFillNone::fill_none(self, strategy).map(|ca| ca.into_series())
+    }
+
+    fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+        ChunkZip::zip_with(self, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
+    }
+
+    fn fmt_list(&self) -> String {
+        FmtList::fmt_list(self)
+    }
+
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
+        Arc::new(Clone::clone(self))
+    }
+
+    #[cfg(feature = "random")]
+    #[doc(cfg(feature = "random"))]
+    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
+        todo!()
+    }
+
+    #[cfg(feature = "random")]
+    #[doc(cfg(feature = "random"))]
+    fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
+        todo!()
+    }
+
+    fn get_as_any(&self, index: usize) -> &dyn Any {
+        ObjectChunked::get_as_any(self, index)
+    }
+}

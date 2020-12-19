@@ -193,3 +193,8 @@ impl<T> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T
         todo!()
     }
 }
+impl<T> ChunkShift<ObjectType<T>> for ObjectChunked<T> {
+    fn shift(&self, periods: i32) -> Result<Self> {
+        self.shift_and_fill(periods, None)
+    }
+}

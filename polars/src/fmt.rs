@@ -62,7 +62,6 @@ mod temporal {
         v
     }
 }
-use crate::series::ops::SeriesOps;
 #[cfg(not(feature = "temporal"))]
 use temporal::*;
 
@@ -113,13 +112,16 @@ macro_rules! format_list_array {
     }};
 }
 
-fn format_object_array(
+fn format_object_array<T>(
     limit: usize,
     f: &mut Formatter<'_>,
-    ca: &dyn SeriesOps,
+    ca: &ObjectChunked<T>,
     name: &str,
     array_type: &str,
-) -> fmt::Result {
+) -> fmt::Result
+where
+    ObjectType<T>: PolarsDataType,
+{
     write![f, "{}: '{}' [object]\n[\n", array_type, name]?;
 
     for i in 0..limit {
@@ -163,15 +165,15 @@ impl Debug for ListChunked {
     }
 }
 
-// impl<T> Debug for ObjectChunked<T>
-// where
-//     T: 'static + Debug + Clone + Send + Sync + Default,
-// {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-//         let limit = set_limit!(self);
-//         format_object_array(limit, f, self, self.name(), "ChunkedArray")
-//     }
-// }
+impl<T> Debug for ObjectChunked<T>
+where
+    T: 'static + Debug + Clone + Send + Sync + Default,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+        format_object_array(limit, f, self, self.name(), "ChunkedArray")
+    }
+}
 
 impl Debug for Series {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

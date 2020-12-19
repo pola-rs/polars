@@ -10,6 +10,7 @@ use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::marker::Sized;
 use std::mem;
 use std::sync::Arc;
@@ -37,6 +38,15 @@ impl IntoSeries for Arc<dyn SeriesTrait> {
 impl IntoSeries for Series {
     fn into_series(self) -> Series {
         self
+    }
+}
+
+impl<T> IntoSeries for ObjectChunked<T>
+where
+    T: 'static + Debug + Clone + Send + Sync + Default,
+{
+    fn into_series(self) -> Series {
+        Series(Arc::new(self))
     }
 }
 
