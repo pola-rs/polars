@@ -511,8 +511,10 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
 
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
-    fn as_single_ptr(&mut self) -> usize {
-        unimplemented!()
+    fn as_single_ptr(&mut self) -> Result<usize> {
+        Err(PolarsError::InvalidOperation(
+            "operation 'as_single_ptr' not supported".into(),
+        ))
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -587,7 +589,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
 
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
     /// from `other` where the mask evaluates `false`
-    fn zip_with(&self, _mask: &BooleanChunked, _other: &dyn SeriesTrait) -> Result<Series> {
+    fn zip_with(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
         unimplemented!()
     }
 
@@ -897,6 +899,12 @@ impl Series {
         self
     }
 
+    /// Rechunk and return a pointer to the start of the Series.
+    /// Only implemented for numeric types
+    pub fn as_single_ptr(&mut self) -> Result<usize> {
+        self.get_inner_mut().as_single_ptr()
+    }
+
     /// Cast to some primitive type.
     pub fn cast<N>(&self) -> Result<Self>
     where
@@ -1187,14 +1195,6 @@ impl From<(&str, ArrayRef)> for Wrap<Arc<dyn SeriesTrait>> {
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                 Time64NanosecondChunked::new_from_chunks(name, chunk).into_series()
             }
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::DayTime) => {
-                IntervalDayTimeChunked::new_from_chunks(name, chunk).into_series()
-            }
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-                IntervalYearMonthChunked::new_from_chunks(name, chunk).into_series()
-            }
             ArrowDataType::Duration(TimeUnit::Nanosecond) => {
                 DurationNanosecondChunked::new_from_chunks(name, chunk).into_series()
             }
@@ -1207,27 +1207,22 @@ impl From<(&str, ArrayRef)> for Wrap<Arc<dyn SeriesTrait>> {
         Wrap(s.0)
     }
 }
-//
-// impl Default for Series {
-//     fn default() -> Self {
-//         Series::Int8(ChunkedArray::default())
-//     }
-// }
-//
-// impl<T> From<ChunkedArray<T>> for Series
-// where
-//     T: PolarsDataType,
-// {
-//     fn from(ca: ChunkedArray<T>) -> Self {
-//         Series::from_chunked_array(ca)
-//     }
-// }
-//
-// impl From<Box<dyn SeriesOps>> for Series {
-//     fn from(ca: Box<dyn SeriesOps>) -> Self {
-//         Series::Object(ca)
-//     }
-// }
+
+impl Default for Series {
+    fn default() -> Self {
+        UInt8Chunked::default().into_series()
+    }
+}
+
+impl<T> From<ChunkedArray<T>> for Series
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: IntoSeries,
+{
+    fn from(ca: ChunkedArray<T>) -> Self {
+        ca.into_series()
+    }
+}
 
 #[cfg(test)]
 mod test {

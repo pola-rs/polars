@@ -159,25 +159,27 @@ impl PySeries {
 
     #[staticmethod]
     pub fn new_object(name: &str, val: Vec<ObjectValue>) -> Self {
-        let s = Series::Object(Box::new(ObjectChunked::<ObjectValue>::new_from_vec(
-            name, val,
-        )));
-        s.into()
+        // let s = Series::Object(Box::new(ObjectChunked::<ObjectValue>::new_from_vec(
+        //     name, val,
+        // )));
+        // s.into()
+        todo!()
     }
 
     pub fn get_object(&self, index: usize) -> PyObject {
         let gil = Python::acquire_gil();
         let python = gil.python();
-        if let Series::Object(ca) = &self.series {
-            // we don't use the null bitmap in this context as T::default is pyobject None
-            let any = ca.get_as_any(index);
-            let obj: &ObjectValue = any.into();
-            let gil = Python::acquire_gil();
-            let python = gil.python();
-            obj.to_object(python)
-        } else {
-            python.None()
-        }
+        todo!()
+        // if let Series::Object(ca) = &self.series {
+        //     // we don't use the null bitmap in this context as T::default is pyobject None
+        //     let any = ca.get_as_any(index);
+        //     let obj: &ObjectValue = any.into();
+        //     let gil = Python::acquire_gil();
+        //     let python = gil.python();
+        //     obj.to_object(python)
+        // } else {
+        //     python.None()
+        // }
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
@@ -233,7 +235,7 @@ impl PySeries {
 
     pub fn filter(&self, filter: &PySeries) -> PyResult<Self> {
         let filter_series = &filter.series;
-        if let Series::Bool(ca) = filter_series {
+        if let Ok(ca) = filter_series.bool() {
             let series = self.series.filter(ca).map_err(PyPolarsEr::from)?;
             Ok(PySeries { series })
         } else {
@@ -312,21 +314,21 @@ impl PySeries {
     }
 
     pub fn is_null(&self) -> PySeries {
-        Self::new(Series::Bool(self.series.is_null()))
+        Self::new(self.series.is_null().into_series())
     }
 
     pub fn is_not_null(&self) -> PySeries {
-        Self::new(Series::Bool(self.series.is_not_null()))
+        Self::new(self.series.is_not_null().into_series())
     }
 
     pub fn is_unique(&self) -> PyResult<Self> {
         let ca = self.series.is_unique().map_err(PyPolarsEr::from)?;
-        Ok(Series::Bool(ca).into())
+        Ok(ca.into_series().into())
     }
 
     pub fn arg_true(&self) -> PyResult<Self> {
         let ca = self.series.arg_true().map_err(PyPolarsEr::from)?;
-        Ok(Series::UInt32(ca).into())
+        Ok(ca.into_series().into())
     }
 
     pub fn sample_n(&self, n: usize, with_replacement: bool) -> PyResult<Self> {
@@ -347,7 +349,7 @@ impl PySeries {
 
     pub fn is_duplicated(&self) -> PyResult<Self> {
         let ca = self.series.is_duplicated().map_err(PyPolarsEr::from)?;
-        Ok(Series::Bool(ca).into())
+        Ok(ca.into_series().into())
     }
 
     pub fn series_equal(&self, other: &PySeries, null_equal: bool) -> bool {
@@ -358,27 +360,27 @@ impl PySeries {
         }
     }
     pub fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(Series::Bool(self.series.eq(&rhs.series))))
+        Ok(Self::new(self.series.eq(&rhs.series).into_series()))
     }
 
     pub fn neq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(Series::Bool(self.series.neq(&rhs.series))))
+        Ok(Self::new(self.series.neq(&rhs.series).into_series()))
     }
 
     pub fn gt(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(Series::Bool(self.series.gt(&rhs.series))))
+        Ok(Self::new(self.series.gt(&rhs.series).into_series()))
     }
 
     pub fn gt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(Series::Bool(self.series.gt_eq(&rhs.series))))
+        Ok(Self::new(self.series.gt_eq(&rhs.series).into_series()))
     }
 
     pub fn lt(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(Series::Bool(self.series.lt(&rhs.series))))
+        Ok(Self::new(self.series.lt(&rhs.series).into_series()))
     }
 
     pub fn lt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(Series::Bool(self.series.lt_eq(&rhs.series))))
+        Ok(Self::new(self.series.lt_eq(&rhs.series).into_series()))
     }
 
     pub fn _not(&self) -> PyResult<Self> {
@@ -398,46 +400,56 @@ impl PySeries {
         let gil = Python::acquire_gil();
         let python = gil.python();
 
-        let pylist = match &self.series {
-            Series::UInt8(ca) => PyList::new(python, ca),
-            Series::UInt16(ca) => PyList::new(python, ca),
-            Series::UInt32(ca) => PyList::new(python, ca),
-            Series::UInt64(ca) => PyList::new(python, ca),
-            Series::Int8(ca) => PyList::new(python, ca),
-            Series::Int16(ca) => PyList::new(python, ca),
-            Series::Int32(ca) => PyList::new(python, ca),
-            Series::Int64(ca) => PyList::new(python, ca),
-            Series::Float32(ca) => PyList::new(python, ca),
-            Series::Float64(ca) => PyList::new(python, ca),
-            Series::Date32(ca) => PyList::new(python, ca),
-            Series::Date64(ca) => PyList::new(python, ca),
-            Series::Time64Nanosecond(ca) => PyList::new(python, ca),
-            Series::Bool(ca) => PyList::new(python, ca),
-            Series::Utf8(ca) => PyList::new(python, ca),
-            Series::DurationNanosecond(ca) => PyList::new(python, ca),
-            Series::DurationMillisecond(ca) => PyList::new(python, ca),
-            Series::Object(ca) => {
-                let v = PyList::empty(python);
-                for i in 0..ca.len() {
-                    let val = ca
-                        .get_as_any(i)
-                        .downcast_ref::<ObjectValue>()
-                        .map(|obj| obj.inner.clone())
-                        .unwrap_or(python.None());
+        let series = &self.series;
 
-                    v.append(val).unwrap();
-                }
-                v
+        let pylist = match series.dtype() {
+            ArrowDataType::UInt8 => PyList::new(python, series.u8().unwrap()),
+            ArrowDataType::UInt16 => PyList::new(python, series.u16().unwrap()),
+            ArrowDataType::UInt32 => PyList::new(python, series.u32().unwrap()),
+            ArrowDataType::UInt64 => PyList::new(python, series.u64().unwrap()),
+            ArrowDataType::Int8 => PyList::new(python, series.i8().unwrap()),
+            ArrowDataType::Int16 => PyList::new(python, series.i16().unwrap()),
+            ArrowDataType::Int32 => PyList::new(python, series.i32().unwrap()),
+            ArrowDataType::Int64 => PyList::new(python, series.i64().unwrap()),
+            ArrowDataType::Float32 => PyList::new(python, series.f32().unwrap()),
+            ArrowDataType::Float64 => PyList::new(python, series.f64().unwrap()),
+            ArrowDataType::Date32(DateUnit::Day) => PyList::new(python, series.date32().unwrap()),
+            ArrowDataType::Date64(DateUnit::Millisecond) => {
+                PyList::new(python, series.date64().unwrap())
             }
-            _ => todo!(),
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+                PyList::new(python, series.time64_nanosecond().unwrap())
+            }
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                PyList::new(python, series.duration_nanosecond().unwrap())
+            }
+            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+                PyList::new(python, series.duration_millisecond().unwrap())
+            }
+            ArrowDataType::Binary => {
+                todo!()
+                // let v = PyList::empty(python);
+                // for i in 0..ca.len() {
+                //     let val = ca
+                //         .get_as_any(i)
+                //         .downcast_ref::<ObjectValue>()
+                //         .map(|obj| obj.inner.clone())
+                //         .unwrap_or(python.None());
+                //
+                //     v.append(val).unwrap();
+                // }
+                // v
+            }
+            _ => unimplemented!(),
         };
         pylist.to_object(python)
     }
 
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
-    pub fn as_single_ptr(&mut self) -> usize {
-        self.series.as_single_ptr()
+    pub fn as_single_ptr(&mut self) -> PyResult<usize> {
+        let ptr = self.series.as_single_ptr().map_err(PyPolarsEr::from)?;
+        Ok(ptr)
     }
 
     pub fn drop_nulls(&self) -> Self {
@@ -468,7 +480,7 @@ impl PySeries {
 
         // if has null values we use floats and np.nan to represent missing values
         macro_rules! impl_to_np_array {
-            ($ca:ident, $float_type:ty) => {{
+            ($ca:expr, $float_type:ty) => {{
                 match $ca.cont_slice() {
                     Ok(slice) => PyArray1::from_slice(py, slice).to_object(py),
                     Err(_) => {
@@ -490,20 +502,30 @@ impl PySeries {
             }};
         }
 
-        match series {
-            Series::UInt8(ca) => impl_to_np_array!(ca, f32),
-            Series::UInt16(ca) => impl_to_np_array!(ca, f32),
-            Series::UInt32(ca) => impl_to_np_array!(ca, f32),
-            Series::UInt64(ca) => impl_to_np_array!(ca, f64),
-            Series::Int8(ca) => impl_to_np_array!(ca, f32),
-            Series::Int16(ca) => impl_to_np_array!(ca, f32),
-            Series::Int32(ca) => impl_to_np_array!(ca, f32),
-            Series::Int64(ca) => impl_to_np_array!(ca, f64),
-            Series::Float32(ca) => impl_to_np_array!(ca, f32),
-            Series::Float64(ca) => impl_to_np_array!(ca, f64),
-            Series::Date32(ca) => impl_to_np_array!(ca, f32),
-            Series::Date64(ca) => impl_to_np_array!(ca, f64),
-            Series::Bool(ca) => {
+        // we use floating types only if null values
+        match series.dtype() {
+            ArrowDataType::Utf8 => self.to_list(),
+            ArrowDataType::List(_) => self.to_list(),
+            // hack for objet
+            ArrowDataType::Binary => self.to_list(),
+            ArrowDataType::UInt8 => impl_to_np_array!(series.u8().unwrap(), f32),
+            ArrowDataType::UInt16 => impl_to_np_array!(series.u16().unwrap(), f32),
+            ArrowDataType::UInt32 => impl_to_np_array!(series.u32().unwrap(), f32),
+            ArrowDataType::UInt64 => impl_to_np_array!(series.u64().unwrap(), f64),
+            ArrowDataType::Int8 => impl_to_np_array!(series.i8().unwrap(), f32),
+            ArrowDataType::Int16 => impl_to_np_array!(series.i16().unwrap(), f32),
+            ArrowDataType::Int32 => impl_to_np_array!(series.i32().unwrap(), f32),
+            ArrowDataType::Int64 => impl_to_np_array!(series.i64().unwrap(), f64),
+            ArrowDataType::Float32 => impl_to_np_array!(series.f32().unwrap(), f32),
+            ArrowDataType::Float64 => impl_to_np_array!(series.f64().unwrap(), f64),
+            ArrowDataType::Date32(DateUnit::Day) => {
+                impl_to_np_array!(series.date32().unwrap(), f32)
+            }
+            ArrowDataType::Date64(DateUnit::Millisecond) => {
+                impl_to_np_array!(series.date64().unwrap(), f64)
+            }
+            ArrowDataType::Boolean => {
+                let ca = series.bool().unwrap();
                 if ca.null_count() == 0 {
                     let v = ca.into_no_null_iter().collect::<Vec<_>>();
                     PyArray1::from_vec(py, v).to_object(py)
@@ -511,10 +533,7 @@ impl PySeries {
                     self.to_list()
                 }
             }
-            Series::Utf8(_) => self.to_list(),
-            Series::List(_) => self.to_list(),
-            Series::Object(_) => self.to_list(),
-            _ => todo!(),
+            _ => unimplemented!(),
         }
     }
 
@@ -727,7 +746,7 @@ impl PySeries {
     }
 
     pub fn str_parse_date32(&self, fmt: Option<&str>) -> PyResult<Self> {
-        if let Series::Utf8(ca) = &self.series {
+        if let Ok(ca) = &self.series.utf8() {
             let ca = ca.as_date32(fmt).map_err(PyPolarsEr::from)?;
             Ok(PySeries::new(ca.into_series()))
         } else {
@@ -736,7 +755,7 @@ impl PySeries {
     }
 
     pub fn str_parse_date64(&self, fmt: Option<&str>) -> PyResult<Self> {
-        if let Series::Utf8(ca) = &self.series {
+        if let Ok(ca) = &self.series.utf8() {
             let ca = ca.as_date64(fmt).map_err(PyPolarsEr::from)?;
             Ok(ca.into_series().into())
         } else {
@@ -767,7 +786,7 @@ impl PySeries {
     }
 
     pub fn get_list(&self, index: usize) -> Option<Self> {
-        if let Series::List(ca) = &self.series {
+        if let Ok(ca) = &self.series.list() {
             let s = ca.get(index);
             s.map(|s| s.into())
         } else {
@@ -925,7 +944,7 @@ macro_rules! impl_set_with_mask {
             let mask = filter.series.bool()?;
             let ca = series.$cast()?;
             let new = ca.set(mask, value)?;
-            Ok(Series::$variant(new))
+            Ok(new.into_series())
         }
 
         #[pymethods]
@@ -955,7 +974,7 @@ macro_rules! impl_set_at_idx {
         fn $name(series: &Series, idx: &[usize], value: Option<$native>) -> Result<Series> {
             let ca = series.$cast()?;
             let new = ca.set_at_idx(&idx, value)?;
-            Ok(Series::$variant(new))
+            Ok(new.into_series())
         }
 
         #[pymethods]
@@ -986,7 +1005,7 @@ macro_rules! impl_get {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, index: usize) -> Option<$type> {
-                if let Series::$series_variant(ca) = &self.series {
+                if let Ok(ca) = self.series.$series_variant() {
                     ca.get(index)
                 } else {
                     None
@@ -996,49 +1015,49 @@ macro_rules! impl_get {
     };
 }
 
-impl_get!(get_f32, Float32, f32);
-impl_get!(get_f64, Float64, f64);
-impl_get!(get_u8, UInt8, u8);
-impl_get!(get_u16, UInt16, u16);
-impl_get!(get_u32, UInt32, u32);
-impl_get!(get_u64, UInt64, u64);
-impl_get!(get_i8, Int8, i8);
-impl_get!(get_i16, Int16, i16);
-impl_get!(get_i32, Int32, i32);
-impl_get!(get_i64, Int64, i64);
-impl_get!(get_str, Utf8, &str);
-impl_get!(get_date32, Date32, i32);
-impl_get!(get_date64, Date64, i64);
+impl_get!(get_f32, f32, f32);
+impl_get!(get_f64, f64, f64);
+impl_get!(get_u8, u8, u8);
+impl_get!(get_u16, u16, u16);
+impl_get!(get_u32, u32, u32);
+impl_get!(get_u64, u64, u64);
+impl_get!(get_i8, i8, i8);
+impl_get!(get_i16, i16, i16);
+impl_get!(get_i32, i32, i32);
+impl_get!(get_i64, i64, i64);
+impl_get!(get_str, utf8, &str);
+impl_get!(get_date32, date32, i32);
+impl_get!(get_date64, date64, i64);
 
 // Not public methods.
 macro_rules! impl_unsafe_from_ptr {
-    ($name:ident, $series_variant:ident) => {
+    ($name:ident, $ca_type:ident) => {
         impl PySeries {
             fn $name(&self, ptr: usize, len: usize) -> Self {
                 let av = unsafe { AlignedVec::from_ptr(ptr, len, len) };
                 let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
-                let ca = ChunkedArray::new_from_owned_with_null_bitmap(
+                let ca = ChunkedArray::<$ca_type>::new_from_owned_with_null_bitmap(
                     self.name(),
                     av,
                     null_bitmap,
                     null_count,
                 );
-                Self::new(Series::$series_variant(ca))
+                Self::new(ca.into_series())
             }
         }
     };
 }
 
-impl_unsafe_from_ptr!(unsafe_from_ptr_f32, Float32);
-impl_unsafe_from_ptr!(unsafe_from_ptr_f64, Float64);
-impl_unsafe_from_ptr!(unsafe_from_ptr_u8, UInt8);
-impl_unsafe_from_ptr!(unsafe_from_ptr_u16, UInt16);
-impl_unsafe_from_ptr!(unsafe_from_ptr_u32, UInt32);
-impl_unsafe_from_ptr!(unsafe_from_ptr_u64, UInt64);
-impl_unsafe_from_ptr!(unsafe_from_ptr_i8, Int8);
-impl_unsafe_from_ptr!(unsafe_from_ptr_i16, Int16);
-impl_unsafe_from_ptr!(unsafe_from_ptr_i32, Int32);
-impl_unsafe_from_ptr!(unsafe_from_ptr_i64, Int64);
+impl_unsafe_from_ptr!(unsafe_from_ptr_f32, Float32Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_f64, Float64Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_u8, UInt8Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_u16, UInt16Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_u32, UInt32Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_u64, UInt64Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_i8, Int8Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_i16, Int16Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_i32, Int32Type);
+impl_unsafe_from_ptr!(unsafe_from_ptr_i64, Int64Type);
 
 macro_rules! impl_cast {
     ($name:ident, $type:ty) => {
@@ -1265,7 +1284,7 @@ macro_rules! impl_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(Series::Bool(self.series.eq(rhs))))
+                Ok(PySeries::new(self.series.eq(rhs).into_series()))
             }
         }
     };
@@ -1288,7 +1307,7 @@ macro_rules! impl_neq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(Series::Bool(self.series.neq(rhs))))
+                Ok(PySeries::new(self.series.neq(rhs).into_series()))
             }
         }
     };
@@ -1311,7 +1330,7 @@ macro_rules! impl_gt_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(Series::Bool(self.series.gt(rhs))))
+                Ok(PySeries::new(self.series.gt(rhs).into_series()))
             }
         }
     };
@@ -1334,7 +1353,7 @@ macro_rules! impl_gt_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(Series::Bool(self.series.gt_eq(rhs))))
+                Ok(PySeries::new(self.series.gt_eq(rhs).into_series()))
             }
         }
     };
@@ -1357,7 +1376,7 @@ macro_rules! impl_lt_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(Series::Bool(self.series.lt(rhs))))
+                Ok(PySeries::new(self.series.lt(rhs).into_series()))
             }
         }
     };
@@ -1380,7 +1399,7 @@ macro_rules! impl_lt_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(Series::Bool(self.series.lt_eq(rhs))))
+                Ok(PySeries::new(self.series.lt_eq(rhs).into_series()))
             }
         }
     };

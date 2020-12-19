@@ -1,6 +1,9 @@
 use super::private;
 use super::SeriesTrait;
-use crate::chunked_array::ops::aggregate::{ChunkAggSeries, VarAggSeries};
+use crate::chunked_array::{
+    ops::aggregate::{ChunkAggSeries, VarAggSeries},
+    AsSinglePtr,
+};
 use crate::datatypes::ArrowDataType;
 use crate::fmt::FmtList;
 use crate::frame::group_by::*;
@@ -670,8 +673,8 @@ macro_rules! impl_dyn_series {
                 ChunkReverse::reverse(&self.0).into_series()
             }
 
-            fn as_single_ptr(&mut self) -> usize {
-                unimplemented!()
+            fn as_single_ptr(&mut self) -> Result<usize> {
+                self.0.as_single_ptr()
             }
 
             fn shift(&self, periods: i32) -> Result<Series> {
@@ -682,8 +685,9 @@ macro_rules! impl_dyn_series {
                 ChunkFillNone::fill_none(&self.0, strategy).map(|ca| ca.into_series())
             }
 
-            fn zip_with(&self, mask: &BooleanChunked, other: &dyn SeriesTrait) -> Result<Series> {
-                ChunkZip::zip_with(&self.0, mask, other.as_ref()).map(|ca| ca.into_series())
+            fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+                ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
+                    .map(|ca| ca.into_series())
             }
 
             fn sum_as_series(&self) -> Series {

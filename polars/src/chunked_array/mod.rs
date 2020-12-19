@@ -586,6 +586,33 @@ where
     }
 }
 
+pub(crate) trait AsSinglePtr {
+    /// Rechunk and return a ptr to the start of the array
+    fn as_single_ptr(&mut self) -> Result<usize> {
+        Err(PolarsError::InvalidOperation(
+            "operation as_single_ptr not supported for this dtype".into(),
+        ))
+    }
+}
+
+impl<T> AsSinglePtr for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    fn as_single_ptr(&mut self) -> Result<usize> {
+        let mut ca = self.rechunk(None).expect("should not fail");
+        mem::swap(&mut ca, self);
+        let a = self.data_views()[0];
+        let ptr = a.as_ptr();
+        Ok(ptr as usize)
+    }
+}
+
+impl AsSinglePtr for BooleanChunked {}
+impl AsSinglePtr for ListChunked {}
+impl AsSinglePtr for Utf8Chunked {}
+impl<T> AsSinglePtr for ObjectChunked<T> {}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -607,15 +634,6 @@ where
             .iter()
             .map(|arr| arr.value_slice(0, arr.len()))
             .collect()
-    }
-
-    /// Rechunk and return a ptr to the start of the array
-    pub fn as_single_ptr(&mut self) -> usize {
-        let mut ca = self.rechunk(None).expect("should not fail");
-        mem::swap(&mut ca, self);
-        let a = self.data_views()[0];
-        let ptr = a.as_ptr();
-        ptr as usize
     }
 
     /// If [cont_slice](#method.cont_slice) is successful a closure is mapped over the elements.

@@ -132,6 +132,7 @@ impl<'a, 'b, T> ApplyLambda<'a, 'b> for ChunkedArray<T>
 where
     T: PyArrowPrimitiveType,
     T::Native: ToPyObject + FromPyObject<'a>,
+    ChunkedArray<T>: IntoSeries,
     &'b ChunkedArray<T>:
         IntoIterator<Item = Option<T::Native>> + IntoNoNullIterator<Item = T::Native>,
 {
@@ -206,7 +207,7 @@ fn append_series(
             builder.append_series(&pyseries.series);
         }
         Err(_) => {
-            builder.append_opt_series(&None);
+            builder.append_opt_series(None);
         }
     };
     Ok(())
@@ -253,7 +254,7 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for ListChunked {
                         if let Some(series) = opt_series {
                             append_series(pypolars, &mut *builder, lambda, series)?;
                         } else {
-                            builder.append_opt_series(&None)
+                            builder.append_opt_series(None)
                         }
                     }
                     builder.finish()

@@ -210,37 +210,6 @@ macro_rules! apply_method_all_arrow_series {
     }
 }
 
-#[macro_export]
-macro_rules! apply_method_all_series {
-    ($self:expr, $method:ident, $($args:expr),*) => {
-        match $self {
-            Series::Utf8(a) => a.$method($($args),*),
-            Series::Bool(a) => a.$method($($args),*),
-            Series::UInt8(a) => a.$method($($args),*),
-            Series::UInt16(a) => a.$method($($args),*),
-            Series::UInt32(a) => a.$method($($args),*),
-            Series::UInt64(a) => a.$method($($args),*),
-            Series::Int8(a) => a.$method($($args),*),
-            Series::Int16(a) => a.$method($($args),*),
-            Series::Int32(a) => a.$method($($args),*),
-            Series::Int64(a) => a.$method($($args),*),
-            Series::Float32(a) => a.$method($($args),*),
-            Series::Float64(a) => a.$method($($args),*),
-            Series::Date32(a) => a.$method($($args),*),
-            Series::Date64(a) => a.$method($($args),*),
-            Series::Time64Nanosecond(a) => a.$method($($args),*),
-            Series::DurationNanosecond(a) => a.$method($($args),*),
-            Series::DurationMillisecond(a) => a.$method($($args),*),
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalDayTime(a) => a.$method($($args),*),
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalYearMonth(a) => a.$method($($args),*),
-            Series::List(a) => a.$method($($args),*),
-            Series::Object(a) => a.$method($($args),*),
-        }
-    }
-}
-
 // doesn't include Bool and Utf8
 #[macro_export]
 macro_rules! apply_method_numeric_series {
