@@ -132,6 +132,22 @@ fn format_object_array(
     write![f, "]"]
 }
 
+macro_rules! format_object_array {
+    ($limit:expr, $f:expr, $object:expr, $name:expr, $array_type: expr) => {{
+        write![$f, "{}: '{}' [object]\n[\n", $array_type, $name]?;
+
+        for i in 0..$limit {
+            let v = $object.get_any(i);
+            match v {
+                AnyType::Null => writeln!($f, "\tnull")?,
+                _ => writeln!($f, "\tobject")?,
+            }
+        }
+
+        write![$f, "]"]
+    }};
+}
+
 macro_rules! set_limit {
     ($self:ident) => {
         std::cmp::min($self.len(), LIMIT)
@@ -168,7 +184,7 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
-        format_object_array(limit, f, self, self.name(), "ChunkedArray")
+        format_object_array!(limit, f, self, self.name(), "ChunkedArray")
     }
 }
 

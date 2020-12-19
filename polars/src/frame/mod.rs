@@ -46,7 +46,7 @@ where
     T: 'static + Debug + Clone + Send + Sync + Default,
 {
     fn into_series(self) -> Series {
-        Series(Arc::new(self))
+        Series(Arc::new(Wrap(self)))
     }
 }
 

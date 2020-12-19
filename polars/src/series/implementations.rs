@@ -836,50 +836,53 @@ impl_dyn_series!(Date32Chunked);
 impl_dyn_series!(Date64Chunked);
 impl_dyn_series!(Time64NanosecondChunked);
 
-impl<T> PrivateSeries for ObjectChunked<T> where T: 'static + Debug + Clone + Send + Sync + Default {}
-impl<T> SeriesTrait for ObjectChunked<T>
+impl<T> PrivateSeries for Wrap<ObjectChunked<T>> where
+    T: 'static + Debug + Clone + Send + Sync + Default
+{
+}
+impl<T> SeriesTrait for Wrap<ObjectChunked<T>>
 where
     T: 'static + Debug + Clone + Send + Sync + Default,
 {
     fn rename(&mut self, name: &str) {
-        ObjectChunked::rename(self, name)
+        ObjectChunked::rename(&mut self.0, name)
     }
 
     fn array_data(&self) -> Vec<ArrayDataRef> {
-        ObjectChunked::array_data(self)
+        ObjectChunked::array_data(&self.0)
     }
 
     fn chunk_lengths(&self) -> &Vec<usize> {
-        ObjectChunked::chunk_id(self)
+        ObjectChunked::chunk_id(&self.0)
     }
 
     fn name(&self) -> &str {
-        ObjectChunked::name(self)
+        ObjectChunked::name(&self.0)
     }
 
     fn field(&self) -> &Field {
-        ObjectChunked::ref_field(self)
+        ObjectChunked::ref_field(&self.0)
     }
 
     fn dtype(&self) -> &DataType {
-        ObjectChunked::dtype(self)
+        ObjectChunked::dtype(&self.0)
     }
 
     fn chunks(&self) -> &Vec<ArrayRef> {
-        ObjectChunked::chunks(self)
+        ObjectChunked::chunks(&self.0)
     }
 
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        ObjectChunked::append_array(self, other)
+        ObjectChunked::append_array(&mut self.0, other)
     }
 
     fn slice(&self, offset: usize, length: usize) -> Result<Series> {
-        ObjectChunked::slice(self, offset, length).map(|ca| ca.into_series())
+        ObjectChunked::slice(&self.0, offset, length).map(|ca| ca.into_series())
     }
 
     fn append(&mut self, other: &Series) -> Result<()> {
         if self.dtype() == other.dtype() {
-            ObjectChunked::append(self, other.as_ref().as_ref());
+            ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
             Ok(())
         } else {
             Err(PolarsError::DataTypeMisMatch(
@@ -889,11 +892,11 @@ where
     }
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
-        ChunkFilter::filter(self, filter).map(|ca| ca.into_series())
+        ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>, capacity: Option<usize>) -> Series {
-        ChunkTake::take(self, iter, capacity).into_series()
+        ChunkTake::take(&self.0, iter, capacity).into_series()
     }
 
     unsafe fn take_iter_unchecked(
@@ -901,11 +904,11 @@ where
         iter: &mut dyn Iterator<Item = usize>,
         capacity: Option<usize>,
     ) -> Series {
-        ChunkTake::take_unchecked(self, iter, capacity).into_series()
+        ChunkTake::take_unchecked(&self.0, iter, capacity).into_series()
     }
 
     unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Series> {
-        ChunkTake::take_from_single_chunked(self, idx).map(|ca| ca.into_series())
+        ChunkTake::take_from_single_chunked(&self.0, idx).map(|ca| ca.into_series())
     }
 
     unsafe fn take_opt_iter_unchecked(
@@ -913,7 +916,7 @@ where
         iter: &mut dyn Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Series {
-        ChunkTake::take_opt_unchecked(self, iter, capacity).into_series()
+        ChunkTake::take_opt_unchecked(&self.0, iter, capacity).into_series()
     }
 
     fn take_opt_iter(
@@ -921,27 +924,27 @@ where
         iter: &mut dyn Iterator<Item = Option<usize>>,
         capacity: Option<usize>,
     ) -> Series {
-        ChunkTake::take_opt(self, iter, capacity).into_series()
+        ChunkTake::take_opt(&self.0, iter, capacity).into_series()
     }
 
     fn len(&self) -> usize {
-        ObjectChunked::len(self)
+        ObjectChunked::len(&self.0)
     }
 
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Series> {
-        ChunkOps::rechunk(self, chunk_lengths).map(|ca| ca.into_series())
+        ChunkOps::rechunk(&self.0, chunk_lengths).map(|ca| ca.into_series())
     }
 
     fn head(&self, length: Option<usize>) -> Series {
-        ObjectChunked::head(self, length).into_series()
+        ObjectChunked::head(&self.0, length).into_series()
     }
 
     fn tail(&self, length: Option<usize>) -> Series {
-        ObjectChunked::tail(self, length).into_series()
+        ObjectChunked::tail(&self.0, length).into_series()
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Series {
-        ChunkExpandAtIndex::expand_at_index(self, index, length).into_series()
+        ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
     }
 
     fn cast_with_arrow_datatype(&self, _data_type: &DataType) -> Result<Series> {
@@ -951,102 +954,102 @@ where
     }
 
     fn to_dummies(&self) -> Result<DataFrame> {
-        ToDummies::to_dummies(self)
+        ToDummies::to_dummies(&self.0)
     }
 
     fn value_counts(&self) -> Result<DataFrame> {
-        ChunkUnique::value_counts(self)
+        ChunkUnique::value_counts(&self.0)
     }
 
     fn get(&self, index: usize) -> AnyType {
-        ObjectChunked::get_any(self, index)
+        ObjectChunked::get_any(&self.0, index)
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
-        ChunkSort::sort_in_place(self, reverse)
+        ChunkSort::sort_in_place(&mut self.0, reverse)
     }
 
     fn sort(&self, reverse: bool) -> Series {
-        ChunkSort::sort(self, reverse).into_series()
+        ChunkSort::sort(&self.0, reverse).into_series()
     }
 
     fn argsort(&self, reverse: bool) -> Vec<usize> {
-        ChunkSort::argsort(self, reverse)
+        ChunkSort::argsort(&self.0, reverse)
     }
 
     fn null_count(&self) -> usize {
-        ObjectChunked::null_count(self)
+        ObjectChunked::null_count(&self.0)
     }
 
     fn unique(&self) -> Result<Series> {
-        ChunkUnique::unique(self).map(|ca| ca.into_series())
+        ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
     }
 
     fn n_unique(&self) -> Result<usize> {
-        ChunkUnique::n_unique(self)
+        ChunkUnique::n_unique(&self.0)
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {
-        ChunkUnique::arg_unique(self)
+        ChunkUnique::arg_unique(&self.0)
     }
 
     fn is_null(&self) -> BooleanChunked {
-        ObjectChunked::is_null(self)
+        ObjectChunked::is_null(&self.0)
     }
 
     fn is_not_null(&self) -> BooleanChunked {
-        ObjectChunked::is_not_null(self)
+        ObjectChunked::is_not_null(&self.0)
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        ChunkUnique::is_unique(self)
+        ChunkUnique::is_unique(&self.0)
     }
 
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        ChunkUnique::is_duplicated(self)
+        ChunkUnique::is_duplicated(&self.0)
     }
 
     fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
-        ObjectChunked::null_bits(self)
+        ObjectChunked::null_bits(&self.0)
     }
 
     fn reverse(&self) -> Series {
-        ChunkReverse::reverse(self).into_series()
+        ChunkReverse::reverse(&self.0).into_series()
     }
 
     fn shift(&self, periods: i32) -> Result<Series> {
-        ChunkShift::shift(self, periods).map(|ca| ca.into_series())
+        ChunkShift::shift(&self.0, periods).map(|ca| ca.into_series())
     }
 
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
-        ChunkFillNone::fill_none(self, strategy).map(|ca| ca.into_series())
+        ChunkFillNone::fill_none(&self.0, strategy).map(|ca| ca.into_series())
     }
 
     fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-        ChunkZip::zip_with(self, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
+        ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
 
     fn fmt_list(&self) -> String {
-        FmtList::fmt_list(self)
+        FmtList::fmt_list(&self.0)
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
-        Arc::new(Clone::clone(self))
+        Arc::new(Wrap(Clone::clone(&self.0)))
     }
 
     #[cfg(feature = "random")]
     #[doc(cfg(feature = "random"))]
     fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
-        ObjectChunked::sample_n(self, n, with_replacement).map(|ca| ca.into_series())
+        ObjectChunked::sample_n(&self.0, n, with_replacement).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "random")]
     #[doc(cfg(feature = "random"))]
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
-        ObjectChunked::sample_frac(self, frac, with_replacement).map(|ca| ca.into_series())
+        ObjectChunked::sample_frac(&self.0, frac, with_replacement).map(|ca| ca.into_series())
     }
 
     fn get_as_any(&self, index: usize) -> &dyn Any {
-        ObjectChunked::get_as_any(self, index)
+        ObjectChunked::get_as_any(&self.0, index)
     }
 }
