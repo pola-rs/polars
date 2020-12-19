@@ -1037,13 +1037,13 @@ where
     #[cfg(feature = "random")]
     #[doc(cfg(feature = "random"))]
     fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
-        todo!()
+        ObjectChunked::sample_n(self, n, with_replacement).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "random")]
     #[doc(cfg(feature = "random"))]
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
-        todo!()
+        ObjectChunked::sample_frac(self, frac, with_replacement).map(|ca| ca.into_series())
     }
 
     fn get_as_any(&self, index: usize) -> &dyn Any {

@@ -112,20 +112,17 @@ macro_rules! format_list_array {
     }};
 }
 
-fn format_object_array<T>(
+fn format_object_array(
     limit: usize,
     f: &mut Formatter<'_>,
-    ca: &ObjectChunked<T>,
+    object: &dyn SeriesTrait,
     name: &str,
     array_type: &str,
-) -> fmt::Result
-where
-    ObjectType<T>: PolarsDataType,
-{
+) -> fmt::Result {
     write![f, "{}: '{}' [object]\n[\n", array_type, name]?;
 
     for i in 0..limit {
-        let v = ca.get_any(i);
+        let v = object.get(i);
         match v {
             AnyType::Null => writeln!(f, "\tnull")?,
             _ => writeln!(f, "\tobject")?,
@@ -264,7 +261,9 @@ impl Debug for Series {
             ArrowDataType::List(_) => {
                 format_list_array!(limit, f, self.list().unwrap(), self.name(), "Series")
             }
-            ArrowDataType::Binary => todo!(),
+            ArrowDataType::Binary => {
+                format_object_array(limit, f, self.as_ref(), self.name(), "Series")
+            }
             _ => unimplemented!(),
         }
     }

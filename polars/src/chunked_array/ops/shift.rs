@@ -164,7 +164,7 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
             self.into_iter()
                 .take(amount)
                 .for_each(|opt| append_fn(&mut builder, opt.as_ref()));
-            // Fill the back of the array
+        // Fill the back of the array
         } else {
             self.into_iter()
                 .skip(skip)

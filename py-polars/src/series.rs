@@ -159,27 +159,23 @@ impl PySeries {
 
     #[staticmethod]
     pub fn new_object(name: &str, val: Vec<ObjectValue>) -> Self {
-        // let s = Series::Object(Box::new(ObjectChunked::<ObjectValue>::new_from_vec(
-        //     name, val,
-        // )));
-        // s.into()
-        todo!()
+        let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
+        s.into()
     }
 
     pub fn get_object(&self, index: usize) -> PyObject {
         let gil = Python::acquire_gil();
         let python = gil.python();
-        todo!()
-        // if let Series::Object(ca) = &self.series {
-        //     // we don't use the null bitmap in this context as T::default is pyobject None
-        //     let any = ca.get_as_any(index);
-        //     let obj: &ObjectValue = any.into();
-        //     let gil = Python::acquire_gil();
-        //     let python = gil.python();
-        //     obj.to_object(python)
-        // } else {
-        //     python.None()
-        // }
+        if self.series.dtype() == &ArrowDataType::Binary {
+            // we don't use the null bitmap in this context as T::default is pyobject None
+            let any = self.series.get_as_any(index);
+            let obj: &ObjectValue = any.into();
+            let gil = Python::acquire_gil();
+            let python = gil.python();
+            obj.to_object(python)
+        } else {
+            python.None()
+        }
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
@@ -403,6 +399,8 @@ impl PySeries {
         let series = &self.series;
 
         let pylist = match series.dtype() {
+            ArrowDataType::Boolean => PyList::new(python, series.bool().unwrap()),
+            ArrowDataType::Utf8 => PyList::new(python, series.utf8().unwrap()),
             ArrowDataType::UInt8 => PyList::new(python, series.u8().unwrap()),
             ArrowDataType::UInt16 => PyList::new(python, series.u16().unwrap()),
             ArrowDataType::UInt32 => PyList::new(python, series.u32().unwrap()),
@@ -427,20 +425,19 @@ impl PySeries {
                 PyList::new(python, series.duration_millisecond().unwrap())
             }
             ArrowDataType::Binary => {
-                todo!()
-                // let v = PyList::empty(python);
-                // for i in 0..ca.len() {
-                //     let val = ca
-                //         .get_as_any(i)
-                //         .downcast_ref::<ObjectValue>()
-                //         .map(|obj| obj.inner.clone())
-                //         .unwrap_or(python.None());
-                //
-                //     v.append(val).unwrap();
-                // }
-                // v
+                let v = PyList::empty(python);
+                for i in 0..series.len() {
+                    let val = series
+                        .get_as_any(i)
+                        .downcast_ref::<ObjectValue>()
+                        .map(|obj| obj.inner.clone())
+                        .unwrap_or(python.None());
+
+                    v.append(val).unwrap();
+                }
+                v
             }
-            _ => unimplemented!(),
+            dt => panic!(format!("to_list() not implemented for {:?}", dt)),
         };
         pylist.to_object(python)
     }
@@ -506,7 +503,7 @@ impl PySeries {
         match series.dtype() {
             ArrowDataType::Utf8 => self.to_list(),
             ArrowDataType::List(_) => self.to_list(),
-            // hack for objet
+            // hack for object
             ArrowDataType::Binary => self.to_list(),
             ArrowDataType::UInt8 => impl_to_np_array!(series.u8().unwrap(), f32),
             ArrowDataType::UInt16 => impl_to_np_array!(series.u16().unwrap(), f32),

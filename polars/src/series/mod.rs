@@ -977,9 +977,9 @@ impl Series {
     where
         T: NumCast,
     {
-        self.mean_as_series()
-            .cast::<Float64Type>()
+        self.cast::<Float64Type>()
             .ok()
+            .map(|s| s.mean_as_series())
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 }
@@ -1060,123 +1060,7 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
         builder.finish().into_series()
     }
 }
-//
-// // macro_rules! impl_as_ref_ca {
-// //     ($type:ident, $series_var:ident) => {
-// //         impl AsRef<ChunkedArray<datatypes::$type>> for Series {
-// //             fn as_ref(&self) -> &ChunkedArray<datatypes::$type> {
-// //                 match self {
-// //                     Series::$series_var(a) => a,
-// //                     _ => unimplemented!(),
-// //                 }
-// //             }
-// //         }
-// //     };
-// // }
-//
-// // impl_as_ref_ca!(UInt8Type, UInt8);
-// // impl_as_ref_ca!(UInt16Type, UInt16);
-// // impl_as_ref_ca!(UInt32Type, UInt32);
-// // impl_as_ref_ca!(UInt64Type, UInt64);
-// // impl_as_ref_ca!(Int8Type, Int8);
-// // impl_as_ref_ca!(Int16Type, Int16);
-// // impl_as_ref_ca!(Int32Type, Int32);
-// // impl_as_ref_ca!(Int64Type, Int64);
-// // impl_as_ref_ca!(Float32Type, Float32);
-// // impl_as_ref_ca!(Float64Type, Float64);
-// // impl_as_ref_ca!(BooleanType, Bool);
-// // impl_as_ref_ca!(Utf8Type, Utf8);
-// // impl_as_ref_ca!(Date32Type, Date32);
-// // impl_as_ref_ca!(Date64Type, Date64);
-// // impl_as_ref_ca!(Time64NanosecondType, Time64Nanosecond);
-// // impl_as_ref_ca!(DurationNanosecondType, DurationNanosecond);
-// // impl_as_ref_ca!(DurationMillisecondType, DurationMillisecond);
-// // #[cfg(feature = "dtype-interval")]
-// // impl_as_ref_ca!(IntervalDayTimeType, IntervalDayTime);
-// // #[cfg(feature = "dtype-interval")]
-// // impl_as_ref_ca!(IntervalYearMonthType, IntervalYearMonth);
-// // impl_as_ref_ca!(ListType, List);
-// //
-// // impl AsRef<Box<dyn SeriesOps>> for Series {
-// //     fn as_ref(&self) -> &Box<dyn SeriesOps> {
-// //         match self {
-// //             Series::Object(a) => a,
-// //             _ => unimplemented!(),
-// //         }
-// //     }
-// // }
-//
-// // macro_rules! impl_as_mut_ca {
-// //     ($type:ident, $series_var:ident) => {
-// //         impl AsMut<ChunkedArray<datatypes::$type>> for Series {
-// //             fn as_mut(&mut self) -> &mut ChunkedArray<datatypes::$type> {
-// //                 match self {
-// //                     Series::$series_var(a) => a,
-// //                     _ => unimplemented!(),
-// //                 }
-// //             }
-// //         }
-// //     };
-// // }
-//
-// // impl_as_mut_ca!(UInt8Type, UInt8);
-// // impl_as_mut_ca!(UInt16Type, UInt16);
-// // impl_as_mut_ca!(UInt32Type, UInt32);
-// // impl_as_mut_ca!(UInt64Type, UInt64);
-// // impl_as_mut_ca!(Int8Type, Int8);
-// // impl_as_mut_ca!(Int16Type, Int16);
-// // impl_as_mut_ca!(Int32Type, Int32);
-// // impl_as_mut_ca!(Int64Type, Int64);
-// // impl_as_mut_ca!(Float32Type, Float32);
-// // impl_as_mut_ca!(Float64Type, Float64);
-// // impl_as_mut_ca!(BooleanType, Bool);
-// // impl_as_mut_ca!(Utf8Type, Utf8);
-// // impl_as_mut_ca!(Date32Type, Date32);
-// // impl_as_mut_ca!(Date64Type, Date64);
-// // impl_as_mut_ca!(Time64NanosecondType, Time64Nanosecond);
-// // impl_as_mut_ca!(DurationNanosecondType, DurationNanosecond);
-// // impl_as_mut_ca!(DurationMillisecondType, DurationMillisecond);
-// // #[cfg(feature = "dtype-interval")]
-// // impl_as_mut_ca!(IntervalDayTimeType, IntervalDayTime);
-// // #[cfg(feature = "dtype-interval")]
-// // impl_as_mut_ca!(IntervalYearMonthType, IntervalYearMonth);
-// // impl_as_mut_ca!(ListType, List);
-// //
-// // macro_rules! from_series_to_ca {
-// //     ($variant:ident, $ca:ident) => {
-// //         impl<'a> From<&'a Series> for &'a $ca {
-// //             fn from(s: &'a Series) -> Self {
-// //                 match s {
-// //                     Series::$variant(ca) => ca,
-// //                     _ => unimplemented!(),
-// //                 }
-// //             }
-// //         }
-// //     };
-// // }
-// // from_series_to_ca!(UInt8, UInt8Chunked);
-// // from_series_to_ca!(UInt16, UInt16Chunked);
-// // from_series_to_ca!(UInt32, UInt32Chunked);
-// // from_series_to_ca!(UInt64, UInt64Chunked);
-// // from_series_to_ca!(Int8, Int8Chunked);
-// // from_series_to_ca!(Int16, Int16Chunked);
-// // from_series_to_ca!(Int32, Int32Chunked);
-// // from_series_to_ca!(Int64, Int64Chunked);
-// // from_series_to_ca!(Float32, Float32Chunked);
-// // from_series_to_ca!(Float64, Float64Chunked);
-// // from_series_to_ca!(Bool, BooleanChunked);
-// // from_series_to_ca!(Utf8, Utf8Chunked);
-// // from_series_to_ca!(Date32, Date32Chunked);
-// // from_series_to_ca!(Date64, Date64Chunked);
-// // from_series_to_ca!(Time64Nanosecond, Time64NanosecondChunked);
-// // from_series_to_ca!(DurationMillisecond, DurationMillisecondChunked);
-// // from_series_to_ca!(DurationNanosecond, DurationNanosecondChunked);
-// // #[cfg(feature = "dtype-interval")]
-// // from_series_to_ca!(IntervalDayTime, IntervalDayTimeChunked);
-// // #[cfg(feature = "dtype-interval")]
-// // from_series_to_ca!(IntervalYearMonth, IntervalYearMonthChunked);
-// // from_series_to_ca!(List, ListChunked);
-//
+
 // TODO: add types
 impl From<(&str, ArrayRef)> for Wrap<Arc<dyn SeriesTrait>> {
     fn from(name_arr: (&str, ArrayRef)) -> Self {
