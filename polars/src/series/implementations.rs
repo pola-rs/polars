@@ -9,11 +9,15 @@ use crate::fmt::FmtList;
 use crate::frame::group_by::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
+#[cfg(feature = "object")]
 use crate::series::private::PrivateSeries;
 use arrow::array::{ArrayDataRef, ArrayRef};
 use arrow::buffer::Buffer;
+#[cfg(feature = "object")]
 use arrow::datatypes::DataType;
+#[cfg(feature = "object")]
 use std::any::Any;
+#[cfg(feature = "object")]
 use std::fmt::Debug;
 use std::ops::Deref;
 
@@ -836,10 +840,14 @@ impl_dyn_series!(Date32Chunked);
 impl_dyn_series!(Date64Chunked);
 impl_dyn_series!(Time64NanosecondChunked);
 
+#[cfg(feature = "object")]
+#[doc(cfg(feature = "object"))]
 impl<T> PrivateSeries for Wrap<ObjectChunked<T>> where
     T: 'static + Debug + Clone + Send + Sync + Default
 {
 }
+#[cfg(feature = "object")]
+#[doc(cfg(feature = "object"))]
 impl<T> SeriesTrait for Wrap<ObjectChunked<T>>
 where
     T: 'static + Debug + Clone + Send + Sync + Default,

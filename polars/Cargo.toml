@@ -20,6 +20,8 @@ lazy = []
 parallel = []
 # extra utilities for Utf8Chunked
 strings = []
+# support for ObjectChunked<T> (downcastable Series of any type)
+object = []
 
 [dependencies]
 arrow = {version = "2", default_features = false}

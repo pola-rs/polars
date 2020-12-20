@@ -194,6 +194,7 @@ impl ChunkZip<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
     fn zip_with(
         &self,

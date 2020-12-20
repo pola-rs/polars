@@ -112,6 +112,7 @@ macro_rules! format_list_array {
     }};
 }
 
+#[cfg(feature = "object")]
 fn format_object_array(
     limit: usize,
     f: &mut Formatter<'_>,
@@ -132,6 +133,7 @@ fn format_object_array(
     write![f, "]"]
 }
 
+#[cfg(feature = "object")]
 macro_rules! format_object_array {
     ($limit:expr, $f:expr, $object:expr, $name:expr, $array_type: expr) => {{
         write![$f, "{}: '{}' [object]\n[\n", $array_type, $name]?;
@@ -178,6 +180,7 @@ impl Debug for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> Debug for ObjectChunked<T>
 where
     T: 'static + Debug + Clone + Send + Sync + Default,
@@ -277,6 +280,7 @@ impl Debug for Series {
             ArrowDataType::List(_) => {
                 format_list_array!(limit, f, self.list().unwrap(), self.name(), "Series")
             }
+            #[cfg(feature = "object")]
             ArrowDataType::Binary => {
                 format_object_array(limit, f, self.as_ref(), self.name(), "Series")
             }
@@ -435,11 +439,8 @@ impl Display for AnyType<'_> {
             }
             AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
             AnyType::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
-            #[cfg(feature = "dtype-interval")]
-            AnyType::IntervalDayTime(v) => write!(f, "{}", v),
-            #[cfg(feature = "dtype-interval")]
-            AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
             AnyType::List(s) => write!(f, "{:?}", s.fmt_list()),
+            #[cfg(feature = "object")]
             AnyType::Object(_) => write!(f, "object"),
             _ => unimplemented!(),
         }
@@ -505,6 +506,7 @@ impl FmtList for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> FmtList for ObjectChunked<T> {
     fn fmt_list(&self) -> String {
         todo!()

@@ -1,4 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
+#[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use crate::utils::Xob;
@@ -597,6 +598,7 @@ impl ChunkSort<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkSort<ObjectType<T>> for ObjectChunked<T> {
     fn sort(&self, _reverse: bool) -> Self {
         println!("An object cannot be sorted. Doing nothing");
@@ -767,6 +769,7 @@ macro_rules! impl_reverse {
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
 impl_reverse!(ListType, ListChunked);
+#[cfg(feature = "object")]
 impl<T> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
     fn reverse(&self) -> Self {
         self.take((0..self.len()).rev(), None)
@@ -828,6 +831,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
     fn expand_at_index(&self, _index: usize, _length: usize) -> ObjectChunked<T> {
         todo!()

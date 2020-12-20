@@ -97,6 +97,7 @@ impl IntoGroupTuples for Float32Chunked {
     }
 }
 impl IntoGroupTuples for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> IntoGroupTuples for ObjectChunked<T> {}
 
 /// Utility enum used for grouping on multiple columns
@@ -381,6 +382,7 @@ pub(crate) trait NumericAggSync {
 impl NumericAggSync for BooleanChunked {}
 impl NumericAggSync for Utf8Chunked {}
 impl NumericAggSync for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> NumericAggSync for ObjectChunked<T> {}
 
 impl<T> NumericAggSync for ChunkedArray<T>
@@ -536,6 +538,7 @@ impl AggFirst for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> AggFirst for ObjectChunked<T> {
     fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
         todo!()
@@ -578,6 +581,7 @@ impl AggLast for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> AggLast for ObjectChunked<T> {
     fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
         todo!()
@@ -630,6 +634,7 @@ where
 impl AggNUnique for Float32Chunked {}
 impl AggNUnique for Float64Chunked {}
 impl AggNUnique for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> AggNUnique for ObjectChunked<T> {}
 
 // TODO: could be faster as it can only be null, true, or false
@@ -732,6 +737,7 @@ where
 impl AggQuantile for Utf8Chunked {}
 impl AggQuantile for BooleanChunked {}
 impl AggQuantile for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> AggQuantile for ObjectChunked<T> {}
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
@@ -1695,6 +1701,7 @@ impl ChunkPivot for Utf8Chunked {
     }
 }
 impl ChunkPivot for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> ChunkPivot for ObjectChunked<T> {}
 
 pub enum PivotAgg {

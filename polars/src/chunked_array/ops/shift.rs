@@ -184,6 +184,7 @@ impl ChunkShift<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T> {
     fn shift_and_fill(
         &self,
@@ -193,6 +194,7 @@ impl<T> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T
         todo!()
     }
 }
+#[cfg(feature = "object")]
 impl<T> ChunkShift<ObjectType<T>> for ObjectChunked<T> {
     fn shift(&self, periods: i32) -> Result<Self> {
         self.shift_and_fill(periods, None)

@@ -193,8 +193,9 @@
 //!     - Lazy api
 //! * `strings`
 //!     - String utilities for `Utf8Chunked`
-//! * `dtype-interval`
-//!     - toggle Interval datatype
+//! * `object`
+//!     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
+//!       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 #![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]

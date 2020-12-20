@@ -200,6 +200,7 @@ pub(super) trait NumOpsDispatchSeriesSingleNumber {
 impl NumOpsDispatchSeriesSingleNumber for BooleanChunked {}
 impl NumOpsDispatchSeriesSingleNumber for Utf8Chunked {}
 impl NumOpsDispatchSeriesSingleNumber for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> NumOpsDispatchSeriesSingleNumber for ObjectChunked<T> {}
 
 impl<T> NumOpsDispatchSeriesSingleNumber for ChunkedArray<T>
@@ -365,6 +366,7 @@ pub(super) trait LhsNumOpsDispatch {
 impl LhsNumOpsDispatch for BooleanChunked {}
 impl LhsNumOpsDispatch for Utf8Chunked {}
 impl LhsNumOpsDispatch for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> LhsNumOpsDispatch for ObjectChunked<T> {}
 
 impl<T> LhsNumOpsDispatch for ChunkedArray<T>

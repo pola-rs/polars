@@ -30,6 +30,9 @@ pub mod kernels;
 #[cfg(feature = "ndarray")]
 #[doc(cfg(feature = "ndarray"))]
 mod ndarray;
+
+#[cfg(feature = "object")]
+#[doc(cfg(feature = "object"))]
 pub mod object;
 #[cfg(feature = "random")]
 #[doc(cfg(feature = "random"))]
@@ -42,6 +45,7 @@ pub mod strings;
 pub mod temporal;
 pub mod upstream_traits;
 
+#[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray, ListArray,
@@ -49,7 +53,6 @@ use arrow::array::{
 
 use crate::series::implementations::Wrap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
-use std::fmt::Debug;
 use std::mem;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
@@ -508,14 +511,6 @@ where
                 let v = downcast!(Time64NanosecondArray);
                 AnyType::Time64(v, TimeUnit::Nanosecond)
             }
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::DayTime) => {
-                downcast_and_pack!(IntervalDayTimeArray, IntervalDayTime)
-            }
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-                downcast_and_pack!(IntervalYearMonthArray, IntervalYearMonth)
-            }
             ArrowDataType::Duration(TimeUnit::Nanosecond) => {
                 let v = downcast!(DurationNanosecondArray);
                 AnyType::Duration(v, TimeUnit::Nanosecond)
@@ -529,6 +524,7 @@ where
                 let s: Wrap<_> = ("", v).into();
                 AnyType::List(Series(s.0))
             }
+            #[cfg(feature = "object")]
             ArrowDataType::Binary => AnyType::Object(&"object"),
             _ => unimplemented!(),
         }
@@ -611,6 +607,7 @@ where
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
 impl AsSinglePtr for Utf8Chunked {}
+#[cfg(feature = "object")]
 impl<T> AsSinglePtr for ObjectChunked<T> {}
 
 impl<T> ChunkedArray<T>
@@ -794,9 +791,10 @@ impl Downcast<ListArray> for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> Downcast<ObjectArray<T>> for ObjectChunked<T>
 where
-    T: 'static + Debug + Clone + Send + Sync + Default,
+    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
 {
     fn downcast_chunks(&self) -> Vec<&ObjectArray<T>> {
         self.chunks

@@ -750,6 +750,7 @@ where
 }
 
 impl CompToSeries for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> CompToSeries for ObjectChunked<T> {}
 
 impl BooleanChunked {

@@ -531,6 +531,7 @@ impl ChunkTake for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkTake for ObjectChunked<T> {
     fn take_from_single_chunked(&self, _idx: &UInt32Chunked) -> Result<Self> {
         todo!()

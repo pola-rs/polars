@@ -192,6 +192,7 @@ impl ChunkFillNoneValue<&Series> for ListChunked {
         ))
     }
 }
+#[cfg(feature = "object")]
 impl<T> ChunkFillNone for ObjectChunked<T> {
     fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
@@ -200,6 +201,7 @@ impl<T> ChunkFillNone for ObjectChunked<T> {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkFillNoneValue<ObjectType<T>> for ObjectChunked<T> {
     fn fill_none_with_value(&self, _value: ObjectType<T>) -> Result<Self> {
         Err(PolarsError::InvalidOperation(

@@ -348,6 +348,7 @@ where
 impl ZipOuterJoinColumn for Float32Chunked {}
 impl ZipOuterJoinColumn for Float64Chunked {}
 impl ZipOuterJoinColumn for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> ZipOuterJoinColumn for ObjectChunked<T> {}
 
 macro_rules! impl_zip_outer_join {

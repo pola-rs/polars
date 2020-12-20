@@ -200,6 +200,7 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}
 
@@ -362,6 +363,7 @@ impl VarAggSeries for Float64Chunked {
 
 impl VarAggSeries for BooleanChunked {}
 impl VarAggSeries for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> VarAggSeries for ObjectChunked<T> {}
 impl VarAggSeries for Utf8Chunked {}
 
@@ -462,6 +464,7 @@ impl ChunkAggSeries for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]

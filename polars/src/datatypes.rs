@@ -48,9 +48,14 @@ impl PolarsDataType for ListType {
     }
 }
 
+#[cfg(feature = "object")]
+#[doc(cfg(feature = "object"))]
 pub struct ObjectType<T>(T);
+#[cfg(feature = "object")]
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
+#[cfg(feature = "object")]
+#[doc(cfg(feature = "object"))]
 impl<T: Send + Sync> PolarsDataType for ObjectType<T> {
     fn get_data_type() -> ArrowDataType {
         // the best fit?
@@ -118,10 +123,6 @@ impl PolarsNumericType for Date64Type {}
 impl PolarsNumericType for Time64NanosecondType {}
 impl PolarsNumericType for DurationNanosecondType {}
 impl PolarsNumericType for DurationMillisecondType {}
-#[cfg(feature = "dtype-interval")]
-impl PolarsNumericType for IntervalYearMonthType {}
-#[cfg(feature = "dtype-interval")]
-impl PolarsNumericType for IntervalDayTimeType {}
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -137,10 +138,6 @@ impl PolarsIntegerType for Date64Type {}
 impl PolarsIntegerType for Time64NanosecondType {}
 impl PolarsIntegerType for DurationNanosecondType {}
 impl PolarsIntegerType for DurationMillisecondType {}
-#[cfg(feature = "dtype-interval")]
-impl PolarsIntegerType for IntervalYearMonthType {}
-#[cfg(feature = "dtype-interval")]
-impl PolarsIntegerType for IntervalDayTimeType {}
 
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
@@ -185,11 +182,8 @@ pub enum AnyType<'a> {
     Duration(i64, TimeUnit),
     /// Naive Time elapsed from the Unix epoch, 00:00:00.000 on 1 January 1970, excluding leap seconds, as a 64-bit integer.
     /// Note that UNIX time does not include leap seconds.
-    #[cfg(feature = "dtype-interval")]
-    IntervalDayTime(i64),
-    #[cfg(feature = "dtype-interval")]
-    IntervalYearMonth(i32),
     List(Series),
+    #[cfg(feature = "object")]
     /// Use as_any to get a dyn Any
     Object(&'a str),
 }
@@ -230,11 +224,9 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Duration(TimeUnit::Microsecond) => "duration(μs)",
             ArrowDataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
             ArrowDataType::Duration(TimeUnit::Second) => "duration(s)",
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::DayTime) => "interval(daytime)",
-            #[cfg(feature = "dtype-interval")]
             ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
             ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
+            #[cfg(feature = "object")]
             ArrowDataType::Binary => "object",
             _ => panic!(format!("{:?} not implemented", self)),
         };
