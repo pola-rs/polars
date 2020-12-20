@@ -511,6 +511,9 @@ class Expr:
             return other
         return lit(other)
 
+    def __invert__(self) -> "Expr":
+        return self.is_not()
+
     def __and__(self, other):
         return wrap_expr(self._pyexpr._and(other._pyexpr))
 
