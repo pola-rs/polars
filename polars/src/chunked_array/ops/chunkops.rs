@@ -1,9 +1,12 @@
 use crate::chunked_array::builder::get_list_builder;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
 use arrow::compute::concat;
+#[cfg(feature = "object")]
 use std::any::Any;
+#[cfg(feature = "object")]
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -192,7 +195,7 @@ impl ChunkOps for ListChunked {
                 for &chunk_length in chunk_id {
                     let mut builder = get_list_builder(self.dtype(), chunk_length, self.name());
                     while let Some(v) = iter.next() {
-                        builder.append_opt_series(&v)
+                        builder.append_opt_series(v.as_ref())
                     }
                     let list = builder.finish();
                     // cheap clone of Arc
@@ -208,6 +211,7 @@ impl ChunkOps for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkOps for ObjectChunked<T>
 where
     T: Any + Debug + Clone + Send + Sync + Default,

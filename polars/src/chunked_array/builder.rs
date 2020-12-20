@@ -629,7 +629,7 @@ where
 }
 
 pub trait ListBuilderTrait {
-    fn append_opt_series(&mut self, opt_s: &Option<Series>);
+    fn append_opt_series(&mut self, opt_s: Option<&Series>);
     fn append_series(&mut self, s: &Series);
     fn finish(&mut self) -> ListChunked;
 }
@@ -741,7 +741,7 @@ impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    fn append_opt_series(&mut self, opt_s: &Option<Series>) {
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         append_opt_series!(self, opt_s)
     }
 
@@ -773,7 +773,7 @@ impl ListUtf8ChunkedBuilder {
 }
 
 impl ListBuilderTrait for ListUtf8ChunkedBuilder {
-    fn append_opt_series(&mut self, opt_s: &Option<Series>) {
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         append_opt_series!(self, opt_s)
     }
 

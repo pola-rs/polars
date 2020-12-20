@@ -7,6 +7,45 @@ use arrow::compute;
 use num::{Num, NumCast, ToPrimitive};
 use std::cmp::{Ordering, PartialOrd};
 
+/// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
+pub trait ChunkAggSeries {
+    /// Get the sum of the ChunkedArray as a new Series of length 1.
+    fn sum_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the max of the ChunkedArray as a new Series of length 1.
+    fn max_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the min of the ChunkedArray as a new Series of length 1.
+    fn min_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the mean of the ChunkedArray as a new Series of length 1.
+    fn mean_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the median of the ChunkedArray as a new Series of length 1.
+    fn median_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+        unimplemented!()
+    }
+}
+
+pub trait VarAggSeries {
+    /// Get the variance of the ChunkedArray as a new Series of length 1.
+    fn var_as_series(&self) -> Series {
+        unimplemented!()
+    }
+    /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
+    fn std_as_series(&self) -> Series {
+        unimplemented!()
+    }
+}
+
 macro_rules! cmp_float_with_nans {
     ($a:expr, $b:expr, $precision:ty) => {{
         let a: $precision = NumCast::from($a).unwrap();
@@ -39,8 +78,7 @@ macro_rules! agg_float_with_nans {
 macro_rules! impl_quantile {
     ($self:expr, $quantile:expr) => {{
         let null_count = $self.null_count();
-        let opt = $self
-            .sort(false)
+        let opt = ChunkSort::sort($self, false)
             .slice(
                 ((($self.len() - null_count) as f64) * $quantile + null_count as f64) as usize,
                 1,
@@ -162,6 +200,7 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}
 
@@ -234,46 +273,48 @@ impl ChunkAgg<u32> for BooleanChunked {
     }
 }
 
+// Needs the same trait bounds as the implementation of ChunkedArray<T> of dyn Series
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: PartialOrd + Num + NumCast,
+    ChunkedArray<T>: IntoSeries,
 {
     fn sum_as_series(&self) -> Series {
         let v = self.sum();
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn max_as_series(&self) -> Series {
         let v = self.max();
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn min_as_series(&self) -> Series {
         let v = self.min();
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn mean_as_series(&self) -> Series {
         let v = self.mean();
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn median_as_series(&self) -> Series {
         let v = self.median();
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
         let v = self.quantile(quantile)?;
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
-        Ok(ca.into())
+        Ok(ca.into_series())
     }
 }
 
@@ -282,7 +323,7 @@ macro_rules! impl_as_series {
         let v = $self.$agg();
         let mut ca: $ty = [v].iter().copied().collect();
         ca.rename($self.name());
-        ca.into()
+        ca.into_series()
     }};
 }
 
@@ -322,6 +363,7 @@ impl VarAggSeries for Float64Chunked {
 
 impl VarAggSeries for BooleanChunked {}
 impl VarAggSeries for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> VarAggSeries for ObjectChunked<T> {}
 impl VarAggSeries for Utf8Chunked {}
 
@@ -330,37 +372,37 @@ impl ChunkAggSeries for BooleanChunked {
         let v = ChunkAgg::sum(self);
         let mut ca: UInt32Chunked = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn max_as_series(&self) -> Series {
         let v = ChunkAgg::max(self);
         let mut ca: UInt32Chunked = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn min_as_series(&self) -> Series {
         let v = ChunkAgg::min(self);
         let mut ca: UInt32Chunked = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn mean_as_series(&self) -> Series {
         let v = ChunkAgg::mean(self);
         let mut ca: UInt32Chunked = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn median_as_series(&self) -> Series {
         let v = ChunkAgg::median(self);
         let mut ca: UInt32Chunked = [v].iter().copied().collect();
         ca.rename(self.name());
-        ca.into()
+        ca.into_series()
     }
     fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
         let v = ChunkAgg::quantile(self, quantile)?;
         let mut ca: UInt32Chunked = [v].iter().copied().collect();
         ca.rename(self.name());
-        Ok(ca.into())
+        Ok(ca.into_series())
     }
 }
 
@@ -396,7 +438,7 @@ impl ChunkAggSeries for Utf8Chunked {
 macro_rules! one_null_list {
     ($self:ident) => {{
         let mut builder = get_list_builder(&ArrowDataType::Null, 1, $self.name());
-        builder.append_opt_series(&None);
+        builder.append_opt_series(None);
         builder.finish().into_series()
     }};
 }
@@ -422,6 +464,7 @@ impl ChunkAggSeries for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]

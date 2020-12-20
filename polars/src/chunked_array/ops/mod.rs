@@ -1,4 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
+#[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use crate::utils::Xob;
@@ -23,7 +24,7 @@ pub trait ChunkBytes {
     fn to_byte_slices(&self) -> Vec<&[u8]>;
 }
 
-pub trait ChunkWindow<T> {
+pub trait ChunkWindow {
     /// Apply a rolling sum (moving sum) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
@@ -130,7 +131,9 @@ pub trait ChunkWindow<T> {
             "rolling mean not supported for this datatype".into(),
         ))
     }
+}
 
+pub trait ChunkWindowCustom<T> {
     /// Apply a rolling aggregation over the values in this array.
     ///
     /// A window of length `window_size` will traverse the array. The values that fill this window
@@ -595,6 +598,7 @@ impl ChunkSort<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkSort<ObjectType<T>> for ObjectChunked<T> {
     fn sort(&self, _reverse: bool) -> Self {
         println!("An object cannot be sorted. Doing nothing");
@@ -640,7 +644,7 @@ pub enum FillNoneStrategy {
 }
 
 /// Replace None values with various strategies
-pub trait ChunkFillNone<T> {
+pub trait ChunkFillNone {
     /// Replace None values with one of the following strategies:
     /// * Forward fill (replace None with the previous value)
     /// * Backward fill (replace None with the next value)
@@ -650,7 +654,9 @@ pub trait ChunkFillNone<T> {
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self>
     where
         Self: Sized;
-
+}
+/// Replace None values with a value
+pub trait ChunkFillNoneValue<T> {
     /// Replace None values with a give value `T`.
     fn fill_none_with_value(&self, value: T) -> Result<Self>
     where
@@ -717,8 +723,8 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     }
 }
 
-impl ChunkFull<Series> for ListChunked {
-    fn full(_name: &str, _value: Series, _length: usize) -> ListChunked {
+impl ChunkFull<&dyn SeriesTrait> for ListChunked {
+    fn full(_name: &str, _value: &dyn SeriesTrait, _length: usize) -> ListChunked {
         unimplemented!()
     }
 
@@ -763,6 +769,7 @@ macro_rules! impl_reverse {
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
 impl_reverse!(ListType, ListChunked);
+#[cfg(feature = "object")]
 impl<T> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
     fn reverse(&self) -> Self {
         self.take((0..self.len()).rev(), None)
@@ -819,11 +826,12 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
 }
 
 impl ChunkExpandAtIndex<ListType> for ListChunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> ListChunked {
-        impl_chunk_expand!(self, length, index)
+    fn expand_at_index(&self, _index: usize, _length: usize) -> ListChunked {
+        unimplemented!()
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
     fn expand_at_index(&self, _index: usize, _length: usize) -> ObjectChunked<T> {
         todo!()
@@ -831,10 +839,14 @@ impl<T> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
 }
 
 /// Shift the values of a ChunkedArray by a number of periods.
-pub trait ChunkShift<T, V> {
+pub trait ChunkShiftFill<T, V> {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `fill_value`.
-    fn shift(&self, periods: i32, fill_value: &Option<V>) -> Result<ChunkedArray<T>>;
+    fn shift_and_fill(&self, periods: i32, fill_value: V) -> Result<ChunkedArray<T>>;
+}
+
+pub trait ChunkShift<T> {
+    fn shift(&self, periods: i32) -> Result<ChunkedArray<T>>;
 }
 
 /// Combine 2 ChunkedArrays based on some predicate.
@@ -846,45 +858,6 @@ pub trait ChunkZip<T> {
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
     /// from `other` where the mask evaluates `false`
     fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>>;
-}
-
-/// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
-pub trait ChunkAggSeries {
-    /// Get the sum of the ChunkedArray as a new Series of length 1.
-    fn sum_as_series(&self) -> Series {
-        unimplemented!()
-    }
-    /// Get the max of the ChunkedArray as a new Series of length 1.
-    fn max_as_series(&self) -> Series {
-        unimplemented!()
-    }
-    /// Get the min of the ChunkedArray as a new Series of length 1.
-    fn min_as_series(&self) -> Series {
-        unimplemented!()
-    }
-    /// Get the mean of the ChunkedArray as a new Series of length 1.
-    fn mean_as_series(&self) -> Series {
-        unimplemented!()
-    }
-    /// Get the median of the ChunkedArray as a new Series of length 1.
-    fn median_as_series(&self) -> Series {
-        unimplemented!()
-    }
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
-        unimplemented!()
-    }
-}
-
-pub trait VarAggSeries {
-    /// Get the variance of the ChunkedArray as a new Series of length 1.
-    fn var_as_series(&self) -> Series {
-        unimplemented!()
-    }
-    /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
-    fn std_as_series(&self) -> Series {
-        unimplemented!()
-    }
 }
 
 /// Apply kernels on the arrow array chunks in a ChunkedArray.
@@ -906,13 +879,13 @@ mod test {
     #[test]
     fn test_shift() {
         let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
-        let shifted = ca.shift(1, &Some(0)).unwrap();
+        let shifted = ca.shift_and_fill(1, Some(0)).unwrap();
         assert_eq!(shifted.cont_slice().unwrap(), &[0, 1, 2]);
-        let shifted = ca.shift(1, &None).unwrap();
+        let shifted = ca.shift_and_fill(1, None).unwrap();
         assert_eq!(Vec::from(&shifted), &[None, Some(1), Some(2)]);
-        let shifted = ca.shift(-1, &None).unwrap();
+        let shifted = ca.shift_and_fill(-1, None).unwrap();
         assert_eq!(Vec::from(&shifted), &[Some(2), Some(3), None]);
-        assert!(ca.shift(3, &None).is_err());
+        assert!(ca.shift_and_fill(3, None).is_err());
 
         let s = Series::new("a", ["a", "b", "c"]);
         let shifted = s.shift(-1).unwrap();

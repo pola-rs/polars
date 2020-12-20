@@ -9,44 +9,37 @@ fn fill_bool(val: bool, len: usize) -> BooleanChunked {
     std::iter::repeat(val).take(len).collect()
 }
 
-macro_rules! compare {
-    ($variant:path, $lhs:expr, $rhs:expr, $cmp_method:ident) => {{
-        if let $variant(rhs_) = $rhs {
-            $lhs.$cmp_method(rhs_)
-        } else {
-            fill_bool(false, $lhs.len())
-        }
-    }};
-}
-
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
-        match $self {
-            Series::Bool(a) => compare!(Series::Bool, a, $rhs, $method),
-            Series::UInt8(a) => compare!(Series::UInt8, a, $rhs, $method),
-            Series::UInt16(a) => compare!(Series::UInt16, a, $rhs, $method),
-            Series::UInt32(a) => compare!(Series::UInt32, a, $rhs, $method),
-            Series::UInt64(a) => compare!(Series::UInt64, a, $rhs, $method),
-            Series::Int8(a) => compare!(Series::Int8, a, $rhs, $method),
-            Series::Int16(a) => compare!(Series::Int16, a, $rhs, $method),
-            Series::Int32(a) => compare!(Series::Int32, a, $rhs, $method),
-            Series::Int64(a) => compare!(Series::Int64, a, $rhs, $method),
-            Series::Float32(a) => compare!(Series::Float32, a, $rhs, $method),
-            Series::Float64(a) => compare!(Series::Float64, a, $rhs, $method),
-            Series::Utf8(a) => compare!(Series::Utf8, a, $rhs, $method),
-            Series::Date32(a) => compare!(Series::Date32, a, $rhs, $method),
-            Series::Date64(a) => compare!(Series::Date64, a, $rhs, $method),
-            Series::Time64Nanosecond(a) => compare!(Series::Time64Nanosecond, a, $rhs, $method),
-            Series::DurationNanosecond(a) => compare!(Series::DurationNanosecond, a, $rhs, $method),
-            Series::DurationMillisecond(a) => {
-                compare!(Series::DurationMillisecond, a, $rhs, $method)
-            }
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalDayTime(a) => compare!(Series::IntervalDayTime, a, $rhs, $method),
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalYearMonth(a) => compare!(Series::IntervalYearMonth, a, $rhs, $method),
-            Series::List(a) => compare!(Series::List, a, $rhs, $method),
-            Series::Object(_) => fill_bool(false, $self.len()),
+        match $self.dtype() {
+            ArrowDataType::Boolean => $self.bool().unwrap().$method($rhs.bool().unwrap()),
+            ArrowDataType::Utf8 => $self.utf8().unwrap().$method($rhs.utf8().unwrap()),
+            ArrowDataType::UInt8 => $self.u8().unwrap().$method($rhs.u8().unwrap()),
+            ArrowDataType::UInt16 => $self.u16().unwrap().$method($rhs.u16().unwrap()),
+            ArrowDataType::UInt32 => $self.u32().unwrap().$method($rhs.u32().unwrap()),
+            ArrowDataType::UInt64 => $self.u64().unwrap().$method($rhs.u64().unwrap()),
+            ArrowDataType::Int8 => $self.i8().unwrap().$method($rhs.i8().unwrap()),
+            ArrowDataType::Int16 => $self.i16().unwrap().$method($rhs.i16().unwrap()),
+            ArrowDataType::Int32 => $self.i32().unwrap().$method($rhs.i32().unwrap()),
+            ArrowDataType::Int64 => $self.i64().unwrap().$method($rhs.i64().unwrap()),
+            ArrowDataType::Float32 => $self.f32().unwrap().$method($rhs.f32().unwrap()),
+            ArrowDataType::Float64 => $self.f64().unwrap().$method($rhs.f64().unwrap()),
+            ArrowDataType::Date32(_) => $self.date32().unwrap().$method($rhs.date32().unwrap()),
+            ArrowDataType::Date64(_) => $self.date64().unwrap().$method($rhs.date64().unwrap()),
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => $self
+                .time64_nanosecond()
+                .unwrap()
+                .$method($rhs.time64_nanosecond().unwrap()),
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => $self
+                .duration_nanosecond()
+                .unwrap()
+                .$method($rhs.duration_nanosecond().unwrap()),
+            ArrowDataType::Duration(TimeUnit::Millisecond) => $self
+                .duration_millisecond()
+                .unwrap()
+                .$method($rhs.duration_millisecond().unwrap()),
+            ArrowDataType::List(_) => $self.list().unwrap().$method($rhs.list().unwrap()),
+            _ => unimplemented!(),
         }
     }};
 }
@@ -133,44 +126,50 @@ impl ChunkCompare<&str> for Series {
     }
 
     fn eq(&self, rhs: &str) -> BooleanChunked {
-        match self {
-            Series::Utf8(a) => a.eq(rhs),
-            _ => std::iter::repeat(false).take(self.len()).collect(),
+        if let Ok(a) = self.utf8() {
+            a.eq(rhs)
+        } else {
+            std::iter::repeat(false).take(self.len()).collect()
         }
     }
 
     fn neq(&self, rhs: &str) -> BooleanChunked {
-        match self {
-            Series::Utf8(a) => a.neq(rhs),
-            _ => std::iter::repeat(false).take(self.len()).collect(),
+        if let Ok(a) = self.utf8() {
+            a.neq(rhs)
+        } else {
+            std::iter::repeat(false).take(self.len()).collect()
         }
     }
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
-        match self {
-            Series::Utf8(a) => a.gt(rhs),
-            _ => std::iter::repeat(false).take(self.len()).collect(),
+        if let Ok(a) = self.utf8() {
+            a.gt(rhs)
+        } else {
+            std::iter::repeat(false).take(self.len()).collect()
         }
     }
 
     fn gt_eq(&self, rhs: &str) -> BooleanChunked {
-        match self {
-            Series::Utf8(a) => a.gt_eq(rhs),
-            _ => std::iter::repeat(false).take(self.len()).collect(),
+        if let Ok(a) = self.utf8() {
+            a.gt_eq(rhs)
+        } else {
+            std::iter::repeat(false).take(self.len()).collect()
         }
     }
 
     fn lt(&self, rhs: &str) -> BooleanChunked {
-        match self {
-            Series::Utf8(a) => a.lt(rhs),
-            _ => std::iter::repeat(false).take(self.len()).collect(),
+        if let Ok(a) = self.utf8() {
+            a.lt(rhs)
+        } else {
+            std::iter::repeat(false).take(self.len()).collect()
         }
     }
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
-        match self {
-            Series::Utf8(a) => a.lt_eq(rhs),
-            _ => std::iter::repeat(false).take(self.len()).collect(),
+        if let Ok(a) = self.utf8() {
+            a.lt_eq(rhs)
+        } else {
+            std::iter::repeat(false).take(self.len()).collect()
         }
     }
 }

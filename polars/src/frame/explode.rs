@@ -116,7 +116,7 @@ impl DataFrame {
     /// ```
     pub fn explode(&self, column: &str) -> Result<DataFrame> {
         let s = self.column(column)?;
-        if let Series::List(ca) = s {
+        if let Ok(ca) = s.list() {
             let (exploded, row_idx) = ca.explode()?;
             let col_idx = self.name_to_idx(column)?;
             let df = self.drop(column)?;

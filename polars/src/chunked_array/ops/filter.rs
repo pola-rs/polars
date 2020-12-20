@@ -1,11 +1,12 @@
 use crate::chunked_array::builder::get_list_builder;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
 use crate::utils::Xob;
+#[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::array::ArrayRef;
 use arrow::compute::filter_primitive_array;
-use std::fmt::Debug;
 use std::sync::Arc;
 
 macro_rules! impl_filter_with_nulls_in_both {
@@ -209,15 +210,16 @@ impl ChunkFilter<ListType> for ListChunked {
                     true => opt_series,
                     false => None,
                 };
-                builder.append_opt_series(&opt_val)
+                builder.append_opt_series(opt_val.as_ref())
             });
         Ok(builder.finish())
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> ChunkFilter<ObjectType<T>> for ObjectChunked<T>
 where
-    T: 'static + Debug + Clone + Send + Sync + Default,
+    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
 {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<ObjectType<T>>>
     where
@@ -257,6 +259,7 @@ where
 }
 
 #[cfg(test)]
+#[cfg(feature = "object")]
 mod test {
     use super::*;
 

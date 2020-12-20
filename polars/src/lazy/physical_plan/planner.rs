@@ -387,8 +387,10 @@ impl DefaultPlanner {
                     }
                     Context::Other => {
                         let function = Arc::new(move |s: Series| {
-                            s.n_unique()
-                                .map(|count| Series::new(s.name(), &[count as u32]))
+                            s.n_unique().map(|count| {
+                                UInt32Chunked::new_from_slice(s.name(), &[count as u32])
+                                    .into_series()
+                            })
                         });
                         Ok(Arc::new(ApplyExpr {
                             input,
@@ -429,7 +431,8 @@ impl DefaultPlanner {
                     Context::Other => {
                         let function = Arc::new(move |s: Series| {
                             let count = s.len();
-                            Ok(Series::new(s.name(), &[count as u32]))
+                            Ok(UInt32Chunked::new_from_slice(s.name(), &[count as u32])
+                                .into_series())
                         });
                         Ok(Arc::new(ApplyExpr {
                             input,
@@ -484,12 +487,13 @@ impl DefaultPlanner {
             }
             Expr::Duplicated(expr) => {
                 let input = self.create_physical_expr(*expr, ctxt)?;
-                let function = Arc::new(move |s: Series| s.is_duplicated().map(|ca| ca.into()));
+                let function =
+                    Arc::new(move |s: Series| s.is_duplicated().map(|ca| ca.into_series()));
                 Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Unique(expr) => {
                 let input = self.create_physical_expr(*expr, ctxt)?;
-                let function = Arc::new(move |s: Series| s.is_unique().map(|ca| ca.into()));
+                let function = Arc::new(move |s: Series| s.is_unique().map(|ca| ca.into_series()));
                 Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Wildcard => panic!("should be no wildcard at this point"),

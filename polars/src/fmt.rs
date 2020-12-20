@@ -62,12 +62,11 @@ mod temporal {
         v
     }
 }
-use crate::series::ops::SeriesOps;
 #[cfg(not(feature = "temporal"))]
 use temporal::*;
 
 macro_rules! format_array {
-    ($limit:ident, $f:ident, $a:ident, $dtype:expr, $name:expr, $array_type:expr) => {{
+    ($limit:ident, $f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
         write![$f, "{}: '{}' [{}]\n[\n", $array_type, $name, $dtype]?;
 
         for i in 0..$limit {
@@ -80,7 +79,7 @@ macro_rules! format_array {
 }
 
 macro_rules! format_utf8_array {
-    ($limit:expr, $f:expr, $a:ident, $name:expr, $array_type:expr) => {{
+    ($limit:expr, $f:expr, $a:expr, $name:expr, $array_type:expr) => {{
         write![$f, "{}: '{}' [str]\n[\n", $array_type, $name]?;
         $a.into_iter().take($limit).for_each(|opt_s| match opt_s {
             None => {
@@ -98,7 +97,7 @@ macro_rules! format_utf8_array {
     }};
 }
 macro_rules! format_list_array {
-    ($limit:ident, $f:ident, $a:ident, $name:expr, $array_type:expr) => {{
+    ($limit:ident, $f:ident, $a:expr, $name:expr, $array_type:expr) => {{
         write![$f, "{}: '{}' [list]\n[\n", $array_type, $name]?;
 
         for i in 0..$limit {
@@ -113,17 +112,18 @@ macro_rules! format_list_array {
     }};
 }
 
+#[cfg(feature = "object")]
 fn format_object_array(
     limit: usize,
     f: &mut Formatter<'_>,
-    ca: &dyn SeriesOps,
+    object: &dyn SeriesTrait,
     name: &str,
     array_type: &str,
 ) -> fmt::Result {
     write![f, "{}: '{}' [object]\n[\n", array_type, name]?;
 
     for i in 0..limit {
-        let v = ca.get_any(i);
+        let v = object.get(i);
         match v {
             AnyType::Null => writeln!(f, "\tnull")?,
             _ => writeln!(f, "\tobject")?,
@@ -131,6 +131,23 @@ fn format_object_array(
     }
 
     write![f, "]"]
+}
+
+#[cfg(feature = "object")]
+macro_rules! format_object_array {
+    ($limit:expr, $f:expr, $object:expr, $name:expr, $array_type: expr) => {{
+        write![$f, "{}: '{}' [object]\n[\n", $array_type, $name]?;
+
+        for i in 0..$limit {
+            let v = $object.get_any(i);
+            match v {
+                AnyType::Null => writeln!($f, "\tnull")?,
+                _ => writeln!($f, "\tobject")?,
+            }
+        }
+
+        write![$f, "]"]
+    }};
 }
 
 macro_rules! set_limit {
@@ -163,13 +180,14 @@ impl Debug for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> Debug for ObjectChunked<T>
 where
     T: 'static + Debug + Clone + Send + Sync + Default,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
-        format_object_array(limit, f, self, self.name(), "ChunkedArray")
+        format_object_array!(limit, f, self, self.name(), "ChunkedArray")
     }
 }
 
@@ -177,40 +195,96 @@ impl Debug for Series {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
 
-        match self {
-            Series::UInt8(a) => format_array!(limit, f, a, "u8", a.name(), "Series"),
-            Series::UInt16(a) => format_array!(limit, f, a, "u16", a.name(), "Series"),
-            Series::UInt32(a) => format_array!(limit, f, a, "u32", a.name(), "Series"),
-            Series::UInt64(a) => format_array!(limit, f, a, "u64", a.name(), "Series"),
-            Series::Int8(a) => format_array!(limit, f, a, "i8", a.name(), "Series"),
-            Series::Int16(a) => format_array!(limit, f, a, "i16", a.name(), "Series"),
-            Series::Int32(a) => format_array!(limit, f, a, "i32", a.name(), "Series"),
-            Series::Int64(a) => format_array!(limit, f, a, "i64", a.name(), "Series"),
-            Series::Bool(a) => format_array!(limit, f, a, "bool", a.name(), "Series"),
-            Series::Float32(a) => format_array!(limit, f, a, "f32", a.name(), "Series"),
-            Series::Float64(a) => format_array!(limit, f, a, "f64", a.name(), "Series"),
-            Series::Date32(a) => format_array!(limit, f, a, "date32(day)", a.name(), "Series"),
-            Series::Date64(a) => format_array!(limit, f, a, "date64(ms)", a.name(), "Series"),
-            Series::Time64Nanosecond(a) => {
-                format_array!(limit, f, a, "time64(ns)", a.name(), "Series")
+        match self.dtype() {
+            ArrowDataType::Boolean => format_array!(
+                limit,
+                f,
+                self.bool().unwrap(),
+                "bool",
+                self.name(),
+                "Series"
+            ),
+            ArrowDataType::Utf8 => {
+                format_utf8_array!(limit, f, self.utf8().unwrap(), self.name(), "Series")
             }
-            Series::DurationNanosecond(a) => {
-                format_array!(limit, f, a, "duration(ns)", a.name(), "Series")
+            ArrowDataType::UInt8 => {
+                format_array!(limit, f, self.u8().unwrap(), "u8", self.name(), "Series")
             }
-            Series::DurationMillisecond(a) => {
-                format_array!(limit, f, a, "duration(ms)", a.name(), "Series")
+            ArrowDataType::UInt16 => {
+                format_array!(limit, f, self.u16().unwrap(), "u6", self.name(), "Series")
             }
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalDayTime(a) => {
-                format_array!(limit, f, a, "interval(daytime)", a.name(), "Series")
+            ArrowDataType::UInt32 => {
+                format_array!(limit, f, self.u32().unwrap(), "u32", self.name(), "Series")
             }
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalYearMonth(a) => {
-                format_array!(limit, f, a, "interval(year-month)", a.name(), "Series")
+            ArrowDataType::UInt64 => {
+                format_array!(limit, f, self.u64().unwrap(), "u64", self.name(), "Series")
             }
-            Series::Utf8(a) => format_utf8_array!(80, f, a, a.name(), "Series"),
-            Series::List(a) => format_list_array!(limit, f, a, a.name(), "Series"),
-            Series::Object(a) => format_object_array(limit, f, &**a, a.name(), "Series"),
+            ArrowDataType::Int8 => {
+                format_array!(limit, f, self.i8().unwrap(), "i8", self.name(), "Series")
+            }
+            ArrowDataType::Int16 => {
+                format_array!(limit, f, self.i16().unwrap(), "i16", self.name(), "Series")
+            }
+            ArrowDataType::Int32 => {
+                format_array!(limit, f, self.i32().unwrap(), "i32", self.name(), "Series")
+            }
+            ArrowDataType::Int64 => {
+                format_array!(limit, f, self.i64().unwrap(), "i64", self.name(), "Series")
+            }
+            ArrowDataType::Float32 => {
+                format_array!(limit, f, self.f32().unwrap(), "f32", self.name(), "Series")
+            }
+            ArrowDataType::Float64 => {
+                format_array!(limit, f, self.f64().unwrap(), "f64", self.name(), "Series")
+            }
+            ArrowDataType::Date32(DateUnit::Day) => format_array!(
+                limit,
+                f,
+                self.date32().unwrap(),
+                "date32",
+                self.name(),
+                "Series"
+            ),
+            ArrowDataType::Date64(DateUnit::Millisecond) => format_array!(
+                limit,
+                f,
+                self.date64().unwrap(),
+                "date64",
+                self.name(),
+                "Series"
+            ),
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => format_array!(
+                limit,
+                f,
+                self.time64_nanosecond().unwrap(),
+                "time64(ns)",
+                self.name(),
+                "Series"
+            ),
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => format_array!(
+                limit,
+                f,
+                self.duration_nanosecond().unwrap(),
+                "duration(ns)",
+                self.name(),
+                "Series"
+            ),
+            ArrowDataType::Duration(TimeUnit::Millisecond) => format_array!(
+                limit,
+                f,
+                self.duration_millisecond().unwrap(),
+                "duration(ms)",
+                self.name(),
+                "Series"
+            ),
+            ArrowDataType::List(_) => {
+                format_list_array!(limit, f, self.list().unwrap(), self.name(), "Series")
+            }
+            #[cfg(feature = "object")]
+            ArrowDataType::Binary => {
+                format_object_array(limit, f, self.as_ref(), self.name(), "Series")
+            }
+            _ => unimplemented!(),
         }
     }
 }
@@ -365,11 +439,8 @@ impl Display for AnyType<'_> {
             }
             AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
             AnyType::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
-            #[cfg(feature = "dtype-interval")]
-            AnyType::IntervalDayTime(v) => write!(f, "{}", v),
-            #[cfg(feature = "dtype-interval")]
-            AnyType::IntervalYearMonth(v) => write!(f, "{}", v),
             AnyType::List(s) => write!(f, "{:?}", s.fmt_list()),
+            #[cfg(feature = "object")]
             AnyType::Object(_) => write!(f, "object"),
             _ => unimplemented!(),
         }
@@ -435,6 +506,7 @@ impl FmtList for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
 impl<T> FmtList for ObjectChunked<T> {
     fn fmt_list(&self) -> String {
         todo!()
@@ -469,7 +541,7 @@ mod test {
     fn temporal() {
         let s = Date32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
         assert_eq!(
-            r#"Series: 'date32' [date32(day)]
+            r#"Series: 'date32' [date32]
 [
 	1970-01-02
 	null
@@ -480,7 +552,7 @@ mod test {
 
         let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)]);
         assert_eq!(
-            r#"Series: '' [date64(ms)]
+            r#"Series: '' [date64]
 [
 	1970-01-01
 	null

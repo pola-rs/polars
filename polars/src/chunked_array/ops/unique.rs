@@ -1,3 +1,4 @@
+#[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode_f64, Xob};
@@ -76,6 +77,7 @@ impl ChunkUnique<ListType> for ListChunked {
         ))
     }
 }
+#[cfg(feature = "object")]
 impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     fn unique(&self) -> Result<ChunkedArray<ObjectType<T>>> {
         Err(PolarsError::InvalidOperation(
@@ -152,7 +154,7 @@ impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq,
-    ChunkedArray<T>: ChunkOps,
+    ChunkedArray<T>: ChunkOps + IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
         let set = match self.null_count() {
@@ -272,6 +274,7 @@ where
 }
 
 impl ToDummies<ListType> for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> ToDummies<ObjectType<T>> for ObjectChunked<T> {}
 impl ToDummies<Float32Type> for Float32Chunked {}
 impl ToDummies<Float64Type> for Float64Chunked {}

@@ -5,63 +5,6 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use unsafe_unwrap::UnsafeUnwrap;
 
-macro_rules! hash_join_inner {
-    ($s_right:ident, $ca_left:ident, $type_:ident) => {{
-        // call the type method series.i32()
-        let ca_right = $s_right.$type_()?;
-        $ca_left.hash_join_inner(ca_right)
-    }};
-}
-
-macro_rules! hash_join_left {
-    ($s_right:ident, $ca_left:ident, $type_:ident) => {{
-        // call the type method series.i32()
-        let ca_right = $s_right.$type_()?;
-        $ca_left.hash_join_left(ca_right)
-    }};
-}
-
-macro_rules! hash_join_outer {
-    ($s_right:ident, $ca_left:ident, $type_:ident) => {{
-        // call the type method series.i32()
-        let ca_right = $s_right.$type_()?;
-        $ca_left.hash_join_outer(ca_right)
-    }};
-}
-
-macro_rules! apply_hash_join_on_series {
-    ($s_left:ident, $s_right:ident, $join_macro:ident) => {{
-        match $s_left {
-            Series::UInt8(ca_left) => $join_macro!($s_right, ca_left, u8),
-            Series::UInt16(ca_left) => $join_macro!($s_right, ca_left, u16),
-            Series::UInt32(ca_left) => $join_macro!($s_right, ca_left, u32),
-            Series::UInt64(ca_left) => $join_macro!($s_right, ca_left, u64),
-            Series::Int8(ca_left) => $join_macro!($s_right, ca_left, i8),
-            Series::Int16(ca_left) => $join_macro!($s_right, ca_left, i16),
-            Series::Int32(ca_left) => $join_macro!($s_right, ca_left, i32),
-            Series::Int64(ca_left) => $join_macro!($s_right, ca_left, i64),
-            Series::Bool(ca_left) => $join_macro!($s_right, ca_left, bool),
-            Series::Utf8(ca_left) => $join_macro!($s_right, ca_left, utf8),
-            Series::Date32(ca_left) => $join_macro!($s_right, ca_left, date32),
-            Series::Date64(ca_left) => $join_macro!($s_right, ca_left, date64),
-            Series::Time64Nanosecond(ca_left) => $join_macro!($s_right, ca_left, time64_nanosecond),
-            Series::DurationMillisecond(ca_left) => {
-                $join_macro!($s_right, ca_left, duration_millisecond)
-            }
-            Series::DurationNanosecond(ca_left) => {
-                $join_macro!($s_right, ca_left, duration_nanosecond)
-            }
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalDayTime(ca_left) => $join_macro!($s_right, ca_left, interval_daytime),
-            #[cfg(feature = "dtype-interval")]
-            Series::IntervalYearMonth(ca_left) => {
-                $join_macro!($s_right, ca_left, interval_year_month)
-            }
-            _ => unimplemented!(),
-        }
-    }};
-}
-
 pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = T>,
 ) -> HashMap<T, Vec<usize>, RandomState>
@@ -194,11 +137,21 @@ where
     results
 }
 
-pub trait HashJoin<T> {
-    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)>;
-    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)>;
-    fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<usize>, Option<usize>)>;
+pub(crate) trait HashJoin<T> {
+    fn hash_join_inner(&self, _other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
+        unimplemented!()
+    }
+    fn hash_join_left(&self, _other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
+        unimplemented!()
+    }
+    fn hash_join_outer(&self, _other: &ChunkedArray<T>) -> Vec<(Option<usize>, Option<usize>)> {
+        unimplemented!()
+    }
 }
+
+impl HashJoin<Float64Type> for Float64Chunked {}
+impl HashJoin<Float32Type> for Float32Chunked {}
+impl HashJoin<ListType> for ListChunked {}
 
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{
@@ -220,7 +173,7 @@ macro_rules! det_hash_prone_order {
 
 impl<T> HashJoin<T> for ChunkedArray<T>
 where
-    T: PolarsNumericType + Sync,
+    T: PolarsIntegerType + Sync,
     T::Native: Eq + Hash,
 {
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
@@ -362,6 +315,7 @@ pub trait ZipOuterJoinColumn {
 impl<T> ZipOuterJoinColumn for ChunkedArray<T>
 where
     T: PolarsIntegerType,
+    ChunkedArray<T>: IntoSeries,
 {
     fn zip_outer_join_column(
         &self,
@@ -394,6 +348,7 @@ where
 impl ZipOuterJoinColumn for Float32Chunked {}
 impl ZipOuterJoinColumn for Float64Chunked {}
 impl ZipOuterJoinColumn for ListChunked {}
+#[cfg(feature = "object")]
 impl<T> ZipOuterJoinColumn for ObjectChunked<T> {}
 
 macro_rules! impl_zip_outer_join {
@@ -491,7 +446,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
-        let join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_inner);
+        let join_tuples = s_left.hash_join_inner(s_right);
 
         let (df_left, df_right) = rayon::join(
             || self.create_left_df(&join_tuples),
@@ -529,7 +484,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
-        let opt_join_tuples = apply_hash_join_on_series!(s_left, s_right, hash_join_left);
+        let opt_join_tuples = s_left.hash_join_left(s_right);
 
         let (df_left, df_right) = rayon::join(
             || self.create_left_df(&opt_join_tuples),
@@ -572,8 +527,7 @@ impl DataFrame {
         s_right: &Series,
     ) -> Result<DataFrame> {
         // Get the indexes of the joined relations
-        let opt_join_tuples: Vec<(Option<usize>, Option<usize>)> =
-            apply_hash_join_on_series!(s_left, s_right, hash_join_outer);
+        let opt_join_tuples = s_left.hash_join_outer(s_right);
 
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = rayon::join(
@@ -595,8 +549,7 @@ impl DataFrame {
                     )
             },
         );
-        let mut s =
-            apply_method_all_series!(s_left, zip_outer_join_column, s_right, &opt_join_tuples);
+        let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
         s.rename(s_left.name());
         df_left.hstack_mut(&[s])?;
         self.finish_join(df_left, df_right)

@@ -1,8 +1,6 @@
 use crate::prelude::*;
 use std::iter::FromIterator;
-use std::ops::{
-    Index, IndexMut, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive,
-};
+use std::ops::{Index, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
 impl FromIterator<Series> for DataFrame {
     /// # Panics
@@ -19,15 +17,6 @@ impl Index<usize> for DataFrame {
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.columns[index]
-    }
-}
-
-/// Gives mutable access to a DataFrame.
-/// Warning: Use with care, if you modify the Series by replacing it with a different lengthed
-/// Series you've invalidated the DataFrame.
-impl IndexMut<usize> for DataFrame {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.columns[index]
     }
 }
 

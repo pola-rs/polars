@@ -40,19 +40,6 @@ where
     }
 }
 
-impl Series {
-    /// Sample n datapoints from this Series.
-    pub fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Self> {
-        Ok(apply_method_all_series_and_return!(self, sample_n, [n, with_replacement],?))
-    }
-
-    /// Sample a fraction between 0.0-1.0 of this Series.
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Self> {
-        let n = (self.len() as f64 * frac) as usize;
-        self.sample_n(n, with_replacement)
-    }
-}
-
 impl DataFrame {
     /// Sample n datapoints from this DataFrame.
     pub fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Self> {

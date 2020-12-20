@@ -343,7 +343,7 @@ impl PyDataFrame {
 
     pub fn filter(&self, mask: &PySeries) -> PyResult<Self> {
         let filter_series = &mask.series;
-        if let Series::Bool(ca) = filter_series {
+        if let Ok(ca) = filter_series.bool() {
             let df = self.df.filter(ca).map_err(PyPolarsEr::from)?;
             Ok(PyDataFrame::new(df))
         } else {

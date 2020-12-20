@@ -6,64 +6,43 @@ macro_rules! from_iterator {
     ($native:ty, $variant:ident) => {
         impl FromIterator<Option<$native>> for Series {
             fn from_iter<I: IntoIterator<Item = Option<$native>>>(iter: I) -> Self {
-                let ca = iter.into_iter().collect();
-                Series::$variant(ca)
+                let ca: ChunkedArray<$variant> = iter.into_iter().collect();
+                ca.into_series()
             }
         }
 
         impl FromIterator<$native> for Series {
             fn from_iter<I: IntoIterator<Item = $native>>(iter: I) -> Self {
-                let ca: Xob<ChunkedArray<_>> = iter.into_iter().collect();
-                Series::$variant(ca.into_inner())
+                let ca: Xob<ChunkedArray<$variant>> = iter.into_iter().collect();
+                ca.into_inner().into_series()
             }
         }
 
         impl<'a> FromIterator<&'a $native> for Series {
             fn from_iter<I: IntoIterator<Item = &'a $native>>(iter: I) -> Self {
-                let ca = iter.into_iter().map(|v| Some(*v)).collect();
-                Series::$variant(ca)
+                let ca: ChunkedArray<$variant> = iter.into_iter().map(|v| Some(*v)).collect();
+                ca.into_series()
             }
         }
     };
 }
 
-from_iterator!(u8, UInt8);
-from_iterator!(u16, UInt16);
-from_iterator!(u32, UInt32);
-from_iterator!(u64, UInt64);
-from_iterator!(i8, Int8);
-from_iterator!(i16, Int16);
-from_iterator!(i32, Int32);
-from_iterator!(i64, Int64);
-from_iterator!(f32, Float32);
-from_iterator!(f64, Float64);
-from_iterator!(bool, Bool);
+from_iterator!(u8, UInt8Type);
+from_iterator!(u16, UInt16Type);
+from_iterator!(u32, UInt32Type);
+from_iterator!(u64, UInt64Type);
+from_iterator!(i8, Int8Type);
+from_iterator!(i16, Int16Type);
+from_iterator!(i32, Int32Type);
+from_iterator!(i64, Int64Type);
+from_iterator!(f32, Float32Type);
+from_iterator!(f64, Float64Type);
+from_iterator!(bool, BooleanType);
 
 impl<'a> FromIterator<&'a str> for Series {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
-        let ca = iter.into_iter().collect();
-        Series::Utf8(ca)
-    }
-}
-
-impl<'a> FromIterator<&'a Series> for Series {
-    fn from_iter<I: IntoIterator<Item = &'a Series>>(iter: I) -> Self {
-        let ca = iter.into_iter().collect();
-        Series::List(ca)
-    }
-}
-
-impl FromIterator<Series> for Series {
-    fn from_iter<I: IntoIterator<Item = Series>>(iter: I) -> Self {
-        let ca = iter.into_iter().collect();
-        Series::List(ca)
-    }
-}
-
-impl FromIterator<Option<Series>> for Series {
-    fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
-        let ca = iter.into_iter().collect();
-        Series::List(ca)
+        let ca: Utf8Chunked = iter.into_iter().collect();
+        ca.into_series()
     }
 }
 
