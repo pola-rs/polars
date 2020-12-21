@@ -2,7 +2,7 @@ use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::expr_to_root_column_expr;
 use crate::prelude::*;
-use crate::utils::{Arena, Node};
+use crate::utils::{get_supertype, Arena, Node};
 use ahash::RandomState;
 use arrow::datatypes::SchemaRef;
 use std::collections::HashMap;
@@ -46,6 +46,8 @@ impl StackOptimizer {
         let lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
 
         let mut plans = Vec::new();
+
+        // nodes of expressions and lp node from which the expressions are a member of
         let mut exprs = Vec::new();
 
         // run loop until reaching fixed point
@@ -53,17 +55,17 @@ impl StackOptimizer {
             // recurse into sub plans and expressions and apply rules
             changed = false;
             plans.push(lp_top);
-            while let Some(node) = plans.pop() {
+            while let Some(current_node) = plans.pop() {
                 // apply rules
                 for rule in rules.iter() {
                     // keep iterating over same rule
-                    while let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(node)) {
-                        lp_arena.assign(node, x);
+                    while let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(current_node)) {
+                        lp_arena.assign(current_node, x);
                         changed = true;
                     }
                 }
 
-                let plan = lp_arena.get(node);
+                let plan = lp_arena.get(current_node);
 
                 // traverse subplans and expressions and add to the stack
                 match plan {
@@ -72,15 +74,15 @@ impl StackOptimizer {
                     }
                     ALogicalPlan::Selection { input, predicate } => {
                         plans.push(*input);
-                        exprs.push(*predicate);
+                        exprs.push((*predicate, *input));
                     }
                     ALogicalPlan::Projection { expr, input, .. } => {
                         plans.push(*input);
-                        exprs.extend(expr);
+                        exprs.extend(expr.iter().map(|e| (*e, *input)));
                     }
                     ALogicalPlan::LocalProjection { expr, input, .. } => {
                         plans.push(*input);
-                        exprs.extend(expr);
+                        exprs.extend(expr.iter().map(|e| (*e, *input)));
                     }
                     ALogicalPlan::Sort { input, .. } => {
                         plans.push(*input);
@@ -93,7 +95,7 @@ impl StackOptimizer {
                     }
                     ALogicalPlan::Aggregate { input, aggs, .. } => {
                         plans.push(*input);
-                        exprs.extend(aggs);
+                        exprs.extend(aggs.iter().map(|e| (*e, *input)));
                     }
                     ALogicalPlan::Join {
                         input_left,
@@ -107,132 +109,137 @@ impl StackOptimizer {
                         input, exprs: e2, ..
                     } => {
                         plans.push(*input);
-                        exprs.extend(e2);
+                        exprs.extend(e2.iter().map(|e| (*e, *input)));
                     }
                     ALogicalPlan::Distinct { input, .. } => plans.push(*input),
                     ALogicalPlan::DataFrameScan { selection, .. } => {
                         if let Some(selection) = *selection {
-                            exprs.push(selection)
+                            exprs.push((selection, current_node))
                         }
                     }
                     ALogicalPlan::CsvScan { predicate, .. } => {
                         if let Some(predicate) = *predicate {
-                            exprs.push(predicate)
+                            exprs.push((predicate, current_node))
                         }
                     }
                     #[cfg(feature = "parquet")]
                     ALogicalPlan::ParquetScan { predicate, .. } => {
                         if let Some(predicate) = *predicate {
-                            exprs.push(predicate)
+                            exprs.push((predicate, current_node))
                         }
                     }
                 }
 
                 // process the expressions on the stack and apply optimizations.
-                while let Some(node) = exprs.pop() {
+                while let Some((current_expr_node, current_lp_node)) = exprs.pop() {
                     for rule in rules.iter() {
                         // keep iterating over same rule
-                        while let Some(x) = rule.optimize_expr(&expr_arena, &expr_arena.get(node)) {
-                            expr_arena.assign(node, x);
+                        while let Some(x) = rule.optimize_expr(
+                            &mut expr_arena,
+                            current_expr_node,
+                            &lp_arena,
+                            current_lp_node,
+                        ) {
+                            expr_arena.assign(current_expr_node, x);
                             changed = true;
                         }
                     }
 
                     // traverse subexpressions and add to the stack
-                    let expr = expr_arena.get(node);
+                    let expr = expr_arena.get(current_expr_node);
 
                     match expr {
                         AExpr::Duplicated(expr) => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::Unique(expr) => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::Reverse(expr) => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::BinaryExpr { left, right, .. } => {
-                            exprs.push(*left);
-                            exprs.push(*right);
+                            exprs.push((*left, current_lp_node));
+                            exprs.push((*right, current_lp_node));
                         }
                         AExpr::Alias(expr, ..) => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::Not(expr) => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::IsNotNull(expr) => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::IsNull(expr) => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::Cast { expr, .. } => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::Sort { expr, .. } => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggMin(expr) => {
-                            exprs.push(*expr);
+                        AExpr::Min(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggMax(expr) => {
-                            exprs.push(*expr);
+                        AExpr::Max(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggMedian(expr) => {
-                            exprs.push(*expr);
+                        AExpr::Median(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggNUnique(expr) => {
-                            exprs.push(*expr);
+                        AExpr::NUnique(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggFirst(expr) => {
-                            exprs.push(*expr);
+                        AExpr::First(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggLast(expr) => {
-                            exprs.push(*expr);
+                        AExpr::Last(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggList(expr) => {
-                            exprs.push(*expr);
+                        AExpr::List(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggMean(expr) => {
-                            exprs.push(*expr);
+                        AExpr::Mean(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggQuantile { expr, .. } => {
-                            exprs.push(*expr);
+                        AExpr::Quantile { expr, .. } => {
+                            exprs.push((*expr, current_lp_node));
                         }
-                        AExpr::AggSum(expr) => {
-                            exprs.push(*expr);
+                        AExpr::Sum(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::AggGroups(expr) => {
-                            exprs.push(*expr);
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::Shift { input, .. } => {
-                            exprs.push(*input);
+                            exprs.push((*input, current_lp_node));
                         }
-                        AExpr::AggCount(expr) => {
-                            exprs.push(*expr);
+                        AExpr::Count(expr) => {
+                            exprs.push((*expr, current_lp_node));
                         }
                         AExpr::Ternary {
                             predicate,
                             truthy,
                             falsy,
                         } => {
-                            exprs.push(*predicate);
-                            exprs.push(*truthy);
-                            exprs.push(*falsy);
+                            exprs.push((*predicate, current_lp_node));
+                            exprs.push((*truthy, current_lp_node));
+                            exprs.push((*falsy, current_lp_node));
                         }
                         AExpr::Apply { input, .. } => {
-                            exprs.push(*input);
+                            exprs.push((*input, current_lp_node));
                         }
                         AExpr::Window {
                             function,
                             partition_by,
                             order_by,
                         } => {
-                            exprs.push(*function);
-                            exprs.push(*partition_by);
+                            exprs.push((*function, current_lp_node));
+                            exprs.push((*partition_by, current_lp_node));
                             if let Some(order_by) = order_by {
-                                exprs.push(*order_by)
+                                exprs.push((*order_by, current_lp_node))
                             }
                         }
                         AExpr::Literal { .. } | AExpr::Column { .. } | AExpr::Wildcard => {}
@@ -270,20 +277,20 @@ pub enum AExpr {
         expr: Node,
         reverse: bool,
     },
-    AggMin(Node),
-    AggMax(Node),
-    AggMedian(Node),
-    AggNUnique(Node),
-    AggFirst(Node),
-    AggLast(Node),
-    AggMean(Node),
-    AggList(Node),
-    AggQuantile {
+    Min(Node),
+    Max(Node),
+    Median(Node),
+    NUnique(Node),
+    First(Node),
+    Last(Node),
+    Mean(Node),
+    List(Node),
+    Quantile {
         expr: Node,
         quantile: f64,
     },
-    AggSum(Node),
-    AggCount(Node),
+    Sum(Node),
+    Count(Node),
     AggGroups(Node),
     Ternary {
         predicate: Node,
@@ -310,6 +317,68 @@ pub enum AExpr {
 impl Default for AExpr {
     fn default() -> Self {
         AExpr::Wildcard
+    }
+}
+
+impl AExpr {
+    /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
+    pub(crate) fn get_type(&self, schema: &Schema, arena: &Arena<AExpr>) -> Result<ArrowDataType> {
+        use AExpr::*;
+        match self {
+            Window { function, .. } => arena.get(*function).get_type(schema, arena),
+            Unique(_) => Ok(ArrowDataType::Boolean),
+            Duplicated(_) => Ok(ArrowDataType::Boolean),
+            Reverse(expr) => arena.get(*expr).get_type(schema, arena),
+            Alias(expr, ..) => arena.get(*expr).get_type(schema, arena),
+            Column(name) => Ok(schema.field_with_name(name)?.data_type().clone()),
+            Literal(sv) => Ok(sv.get_datatype()),
+            BinaryExpr { left, op, right } => match op {
+                Operator::Not
+                | Operator::Lt
+                | Operator::Gt
+                | Operator::Eq
+                | Operator::NotEq
+                | Operator::And
+                | Operator::LtEq
+                | Operator::GtEq
+                | Operator::Or
+                | Operator::NotLike
+                | Operator::Like => Ok(ArrowDataType::Boolean),
+                _ => {
+                    let left_type = arena.get(*left).get_type(schema, arena)?;
+                    let right_type = arena.get(*right).get_type(schema, arena)?;
+                    get_supertype(&left_type, &right_type)
+                }
+            },
+            Not(_) => Ok(ArrowDataType::Boolean),
+            IsNull(_) => Ok(ArrowDataType::Boolean),
+            IsNotNull(_) => Ok(ArrowDataType::Boolean),
+            Sort { expr, .. } => arena.get(*expr).get_type(schema, arena),
+            Min(expr) => arena.get(*expr).get_type(schema, arena),
+            Max(expr) => arena.get(*expr).get_type(schema, arena),
+            Sum(expr) => arena.get(*expr).get_type(schema, arena),
+            First(expr) => arena.get(*expr).get_type(schema, arena),
+            Last(expr) => arena.get(*expr).get_type(schema, arena),
+            Count(expr) => arena.get(*expr).get_type(schema, arena),
+            List(expr) => Ok(ArrowDataType::List(Box::new(
+                arena.get(*expr).get_type(schema, arena)?,
+            ))),
+            Mean(expr) => arena.get(*expr).get_type(schema, arena),
+            Median(expr) => arena.get(*expr).get_type(schema, arena),
+            AggGroups(_) => Ok(ArrowDataType::List(Box::new(ArrowDataType::UInt32))),
+            NUnique(_) => Ok(ArrowDataType::UInt32),
+            Quantile { expr, .. } => arena.get(*expr).get_type(schema, arena),
+            Cast { data_type, .. } => Ok(data_type.clone()),
+            Ternary { truthy, .. } => arena.get(*truthy).get_type(schema, arena),
+            Apply {
+                input, output_type, ..
+            } => match output_type {
+                Some(output_type) => Ok(output_type.clone()),
+                None => arena.get(*input).get_type(schema, arena),
+            },
+            Shift { input, .. } => arena.get(*input).get_type(schema, arena),
+            Wildcard => panic!("should be no wildcard at this point"),
+        }
     }
 }
 
@@ -409,6 +478,30 @@ impl Default for ALogicalPlan {
         }
     }
 }
+
+impl ALogicalPlan {
+    pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> &'a Schema {
+        use ALogicalPlan::*;
+        match self {
+            Cache { input } => arena.get(*input).schema(arena),
+            Sort { input, .. } => arena.get(*input).schema(arena),
+            Explode { input, .. } => arena.get(*input).schema(arena),
+            #[cfg(feature = "parquet")]
+            ParquetScan { schema, .. } => schema,
+            DataFrameScan { schema, .. } => schema,
+            Selection { input, .. } => arena.get(*input).schema(arena),
+            CsvScan { schema, .. } => schema,
+            Projection { schema, .. } => schema,
+            LocalProjection { schema, .. } => schema,
+            Aggregate { schema, .. } => schema,
+            Join { schema, .. } => schema,
+            HStack { schema, .. } => schema,
+            Distinct { input, .. } => arena.get(*input).schema(arena),
+            Slice { input, .. } => arena.get(*input).schema(arena),
+        }
+    }
+}
+
 // converts expression to AExpr, which uses an arena (Vec) for allocation
 fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
@@ -439,20 +532,20 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             expr: to_aexpr(*expr, arena),
             reverse,
         },
-        Expr::Min(expr) => AExpr::AggMin(to_aexpr(*expr, arena)),
-        Expr::Max(expr) => AExpr::AggMax(to_aexpr(*expr, arena)),
-        Expr::Median(expr) => AExpr::AggMedian(to_aexpr(*expr, arena)),
-        Expr::NUnique(expr) => AExpr::AggNUnique(to_aexpr(*expr, arena)),
-        Expr::First(expr) => AExpr::AggFirst(to_aexpr(*expr, arena)),
-        Expr::Last(expr) => AExpr::AggLast(to_aexpr(*expr, arena)),
-        Expr::Mean(expr) => AExpr::AggMean(to_aexpr(*expr, arena)),
-        Expr::List(expr) => AExpr::AggList(to_aexpr(*expr, arena)),
-        Expr::Count(expr) => AExpr::AggCount(to_aexpr(*expr, arena)),
-        Expr::Quantile { expr, quantile } => AExpr::AggQuantile {
+        Expr::Min(expr) => AExpr::Min(to_aexpr(*expr, arena)),
+        Expr::Max(expr) => AExpr::Max(to_aexpr(*expr, arena)),
+        Expr::Median(expr) => AExpr::Median(to_aexpr(*expr, arena)),
+        Expr::NUnique(expr) => AExpr::NUnique(to_aexpr(*expr, arena)),
+        Expr::First(expr) => AExpr::First(to_aexpr(*expr, arena)),
+        Expr::Last(expr) => AExpr::Last(to_aexpr(*expr, arena)),
+        Expr::Mean(expr) => AExpr::Mean(to_aexpr(*expr, arena)),
+        Expr::List(expr) => AExpr::List(to_aexpr(*expr, arena)),
+        Expr::Count(expr) => AExpr::Count(to_aexpr(*expr, arena)),
+        Expr::Quantile { expr, quantile } => AExpr::Quantile {
             expr: to_aexpr(*expr, arena),
             quantile,
         },
-        Expr::Sum(expr) => AExpr::AggSum(to_aexpr(*expr, arena)),
+        Expr::Sum(expr) => AExpr::Sum(to_aexpr(*expr, arena)),
         Expr::AggGroups(expr) => AExpr::AggGroups(to_aexpr(*expr, arena)),
         Expr::Ternary {
             predicate,
@@ -732,47 +825,47 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
                 reverse,
             }
         }
-        AExpr::AggMin(expr) => {
+        AExpr::Min(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Min(Box::new(exp))
         }
-        AExpr::AggMax(expr) => {
+        AExpr::Max(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Max(Box::new(exp))
         }
 
-        AExpr::AggMedian(expr) => {
+        AExpr::Median(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Median(Box::new(exp))
         }
-        AExpr::AggNUnique(expr) => {
+        AExpr::NUnique(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::NUnique(Box::new(exp))
         }
-        AExpr::AggFirst(expr) => {
+        AExpr::First(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::First(Box::new(exp))
         }
-        AExpr::AggLast(expr) => {
+        AExpr::Last(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Last(Box::new(exp))
         }
-        AExpr::AggMean(expr) => {
+        AExpr::Mean(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Mean(Box::new(exp))
         }
-        AExpr::AggList(expr) => {
+        AExpr::List(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::List(Box::new(exp))
         }
-        AExpr::AggQuantile { expr, quantile } => {
+        AExpr::Quantile { expr, quantile } => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Quantile {
                 expr: Box::new(exp),
                 quantile,
             }
         }
-        AExpr::AggSum(expr) => {
+        AExpr::Sum(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Sum(Box::new(exp))
         }
@@ -814,7 +907,7 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
                 output_type,
             }
         }
-        AExpr::AggCount(expr) => {
+        AExpr::Count(expr) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Count(Box::new(exp))
         }
@@ -1041,7 +1134,13 @@ pub trait Rule {
     ) -> Option<ALogicalPlan> {
         None
     }
-    fn optimize_expr(&self, _arena: &Arena<AExpr>, _expr: &AExpr) -> Option<AExpr> {
+    fn optimize_expr(
+        &self,
+        _expr_arena: &mut Arena<AExpr>,
+        _expr_node: Node,
+        _lp_arena: &Arena<ALogicalPlan>,
+        _lp_node: Node,
+    ) -> Option<AExpr> {
         None
     }
 }

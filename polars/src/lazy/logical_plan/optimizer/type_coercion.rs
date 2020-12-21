@@ -4,6 +4,44 @@ use crate::utils::get_supertype;
 
 pub struct TypeCoercion {}
 
+// impl Rule for TypeCoercion {
+//     fn optimize_expr(&self, arena: &mut Arena<AExpr>, node: Node) -> Option<AExpr> {
+//         let expr = arena.get(node);
+//         match expr {
+//             // Null propagation
+//             AExpr::BinaryExpr { left, right, .. }
+//             if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Null))
+//                 || matches!(arena.get(*right), AExpr::Literal(ScalarValue::Null)) =>
+//                 {
+//                     Some(AExpr::Literal(ScalarValue::Null))
+//                 }
+//
+//             // lit(left) + lit(right) => lit(left = right)
+//             AExpr::BinaryExpr { left: node_left, op, right: node_right } => {
+//                 let left = arena.get(*node_left);
+//                 let right = arena.get(*node_right);
+//
+//                 let type_left = left.get_type(input_schema, arena)?;
+//                 let type_right = right.get_type(input_schema, arena)?;
+//                 if type_left == type_right {
+//                     Ok(AExpr::BinaryExpr {
+//                         left: *node_left,
+//                         op: *op,
+//                         right: *node_right
+//                     })
+//                 } else {
+//                     let st = get_supertype(&type_left, &type_right)?;
+//
+//
+//                     // Ok(binary_expr(left.cast(st.clone()), op, right.cast(st)))
+//                     None
+//                 }
+//             }
+//             _ => None,
+//         }
+//     }
+// }
+
 impl TypeCoercion {
     /// Traverse the expressions from a level in the logical plan and maybe cast them.
     fn rewrite_expressions(&self, exprs: Vec<Expr>, input_schema: &Schema) -> Result<Vec<Expr>> {

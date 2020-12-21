@@ -95,15 +95,26 @@ pub struct SimplifyExpr {}
 struct SimplifyBooleanRule {}
 
 impl Rule for SimplifyBooleanRule {
-    fn optimize_expr(&self, arena: &Arena<AExpr>, expr: &AExpr) -> Option<AExpr> {
+    fn optimize_expr(
+        &self,
+        expr_arena: &mut Arena<AExpr>,
+        expr_node: Node,
+        _: &Arena<ALogicalPlan>,
+        _: Node,
+    ) -> Option<AExpr> {
+        let expr = expr_arena.get(expr_node);
         match expr {
             // true AND x => x
             AExpr::BinaryExpr {
                 left,
                 op: Operator::And,
                 right,
-            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
-                Some(arena.get(*right).clone())
+            } if matches!(
+                expr_arena.get(*left),
+                AExpr::Literal(ScalarValue::Boolean(true))
+            ) =>
+            {
+                Some(expr_arena.get(*right).clone())
             }
             // x AND true => x
             AExpr::BinaryExpr {
@@ -111,11 +122,11 @@ impl Rule for SimplifyBooleanRule {
                 op: Operator::And,
                 right,
             } if matches!(
-                arena.get(*right),
+                expr_arena.get(*right),
                 AExpr::Literal(ScalarValue::Boolean(true))
             ) =>
             {
-                Some(arena.get(*left).clone())
+                Some(expr_arena.get(*left).clone())
             }
             // x AND false -> false
             AExpr::BinaryExpr {
@@ -123,7 +134,7 @@ impl Rule for SimplifyBooleanRule {
                 right,
                 ..
             } if matches!(
-                arena.get(*right),
+                expr_arena.get(*right),
                 AExpr::Literal(ScalarValue::Boolean(false))
             ) =>
             {
@@ -135,7 +146,7 @@ impl Rule for SimplifyBooleanRule {
                 op: Operator::And,
                 ..
             } if matches!(
-                arena.get(*left),
+                expr_arena.get(*left),
                 AExpr::Literal(ScalarValue::Boolean(false))
             ) =>
             {
@@ -147,11 +158,11 @@ impl Rule for SimplifyBooleanRule {
                 op: Operator::Or,
                 right,
             } if matches!(
-                arena.get(*left),
+                expr_arena.get(*left),
                 AExpr::Literal(ScalarValue::Boolean(false))
             ) =>
             {
-                Some(arena.get(*right).clone())
+                Some(expr_arena.get(*right).clone())
             }
             // x or false => x
             AExpr::BinaryExpr {
@@ -159,11 +170,11 @@ impl Rule for SimplifyBooleanRule {
                 right,
                 ..
             } if matches!(
-                arena.get(*right),
+                expr_arena.get(*right),
                 AExpr::Literal(ScalarValue::Boolean(false))
             ) =>
             {
-                Some(arena.get(*right).clone())
+                Some(expr_arena.get(*right).clone())
             }
 
             // false OR x => x
@@ -172,11 +183,11 @@ impl Rule for SimplifyBooleanRule {
                 op: Operator::Or,
                 right,
             } if matches!(
-                arena.get(*left),
+                expr_arena.get(*left),
                 AExpr::Literal(ScalarValue::Boolean(false))
             ) =>
             {
-                Some(arena.get(*right).clone())
+                Some(expr_arena.get(*right).clone())
             }
 
             // true OR x => true
@@ -185,7 +196,7 @@ impl Rule for SimplifyBooleanRule {
                 right,
                 ..
             } if matches!(
-                arena.get(*right),
+                expr_arena.get(*right),
                 AExpr::Literal(ScalarValue::Boolean(true))
             ) =>
             {
@@ -197,16 +208,20 @@ impl Rule for SimplifyBooleanRule {
                 op: Operator::Or,
                 left,
                 ..
-            } if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Boolean(true))) => {
+            } if matches!(
+                expr_arena.get(*left),
+                AExpr::Literal(ScalarValue::Boolean(true))
+            ) =>
+            {
                 Some(AExpr::Literal(ScalarValue::Boolean(false)))
             }
 
             AExpr::Not(x) => {
-                let y = arena.get(*x);
+                let y = expr_arena.get(*x);
 
                 match y {
                     // not(not x) => x
-                    AExpr::Not(expr) => Some(arena.get(*expr).clone()),
+                    AExpr::Not(expr) => Some(expr_arena.get(*expr).clone()),
                     // not(lit x) => !x
                     AExpr::Literal(ScalarValue::Boolean(b)) => {
                         Some(AExpr::Literal(ScalarValue::Boolean(!b)))
@@ -247,20 +262,27 @@ pub struct SimplifyExprRule {}
 
 impl Rule for SimplifyExprRule {
     #[allow(clippy::float_cmp)]
-    fn optimize_expr(&self, arena: &Arena<AExpr>, expr: &AExpr) -> Option<AExpr> {
+    fn optimize_expr(
+        &self,
+        expr_arena: &mut Arena<AExpr>,
+        expr_node: Node,
+        _: &Arena<ALogicalPlan>,
+        _: Node,
+    ) -> Option<AExpr> {
+        let expr = expr_arena.get(expr_node);
         match expr {
             // Null propagation
             AExpr::BinaryExpr { left, right, .. }
-                if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Null))
-                    || matches!(arena.get(*right), AExpr::Literal(ScalarValue::Null)) =>
+                if matches!(expr_arena.get(*left), AExpr::Literal(ScalarValue::Null))
+                    || matches!(expr_arena.get(*right), AExpr::Literal(ScalarValue::Null)) =>
             {
                 Some(AExpr::Literal(ScalarValue::Null))
             }
 
             // lit(left) + lit(right) => lit(left = right)
             AExpr::BinaryExpr { left, op, right } => {
-                let left = arena.get(*left);
-                let right = arena.get(*right);
+                let left = expr_arena.get(*left);
+                let right = expr_arena.get(*right);
 
                 match op {
                     Operator::Plus => eval_binary_same_type!(left, +, right),
