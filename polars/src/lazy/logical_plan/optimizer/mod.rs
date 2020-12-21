@@ -37,13 +37,14 @@ fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
 pub struct StackOptimizer {}
 
 impl StackOptimizer {
-    fn optimize_loop(&self, logical_plan: LogicalPlan, rules: &[Box<dyn Rule>]) -> LogicalPlan {
+    fn optimize_loop(
+        &self,
+        rules: &[Box<dyn Rule>],
+        expr_arena: &mut Arena<AExpr>,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_top: Node,
+    ) -> Node {
         let mut changed = true;
-
-        // initialize arena
-        let mut expr_arena = Arena::new();
-        let mut lp_arena = Arena::new();
-        let lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
 
         let mut plans = Vec::new();
 
@@ -135,7 +136,7 @@ impl StackOptimizer {
                     for rule in rules.iter() {
                         // keep iterating over same rule
                         while let Some(x) = rule.optimize_expr(
-                            &mut expr_arena,
+                            expr_arena,
                             current_expr_node,
                             &lp_arena,
                             current_lp_node,
@@ -247,8 +248,7 @@ impl StackOptimizer {
                 }
             }
         }
-
-        node_to_lp(lp_top, &mut expr_arena, &mut lp_arena)
+        lp_top
     }
 }
 
@@ -588,7 +588,7 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     arena.add(v)
 }
 
-fn to_alp(
+pub(crate) fn to_alp(
     lp: LogicalPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -929,7 +929,7 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
     }
 }
 
-fn node_to_lp(
+pub(crate) fn node_to_lp(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,

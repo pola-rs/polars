@@ -90,9 +90,9 @@ macro_rules! eval_binary_bool_type {
     }}
 }
 
-pub struct SimplifyExpr {}
+pub struct StatelessOptimizer {}
 
-struct SimplifyBooleanRule {}
+pub(crate) struct SimplifyBooleanRule {}
 
 impl Rule for SimplifyBooleanRule {
     fn optimize_expr(
@@ -306,22 +306,23 @@ impl Rule for SimplifyExprRule {
     }
 }
 
-impl Optimize for SimplifyExpr {
-    fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
+impl StatelessOptimizer {
+    pub fn optimize(
+        &self,
+        expr_arena: &mut Arena<AExpr>,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_top: Node,
+        rules: &[Box<dyn Rule>],
+    ) -> Result<Node> {
         let opt = StackOptimizer {};
 
-        let rules: &[Box<dyn Rule>] = &[
-            Box::new(SimplifyBooleanRule {}),
-            Box::new(SimplifyExprRule {}),
-        ];
-
-        Ok(opt.optimize_loop(logical_plan, &rules))
+        Ok(opt.optimize_loop(&rules, expr_arena, lp_arena, lp_top))
     }
 }
 
 #[test]
 fn test_expr_to_aexp() {
-    use crate::utils::Node;
+    use super::*;
 
     let expr = Expr::Literal(ScalarValue::Int8(0));
     let mut arena = Arena::new();

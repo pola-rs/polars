@@ -2,6 +2,8 @@
 use crate::frame::select::Selection;
 use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
+use crate::lazy::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
+use crate::lazy::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::{
     lazy::{logical_plan::FETCH_ROWS, prelude::*},
     prelude::*,
@@ -195,18 +197,7 @@ impl LazyFrame {
 
         let mut logical_plan = self.clone().get_plan_builder().build();
         if optimized {
-            if self.predicate_pushdown {
-                let predicate_pushdown_opt = PredicatePushDown::default();
-                logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
-            }
-            if self.projection_pushdown {
-                let projection_pushdown_opt = ProjectionPushDown {};
-                logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
-            }
-            if self.simplify_expr {
-                let simplify_expr_opt = SimplifyExpr {};
-                logical_plan = simplify_expr_opt.optimize(logical_plan)?;
-            }
+            logical_plan = self.clone().optimize()?;
         }
 
         logical_plan.dot(&mut s, 0, "").expect("io error");
@@ -270,20 +261,7 @@ impl LazyFrame {
 
     /// Describe the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> Result<String> {
-        let mut logical_plan = self.clone().get_plan_builder().build();
-
-        if self.predicate_pushdown {
-            let predicate_pushdown_opt = PredicatePushDown::default();
-            logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
-        }
-        if self.projection_pushdown {
-            let projection_pushdown_opt = ProjectionPushDown {};
-            logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
-        }
-        if self.simplify_expr {
-            let simplify_expr_opt = SimplifyExpr {};
-            logical_plan = simplify_expr_opt.optimize(logical_plan)?;
-        }
+        let logical_plan = self.clone().optimize()?;
         Ok(logical_plan.describe())
     }
 
@@ -366,24 +344,7 @@ impl LazyFrame {
         res
     }
 
-    /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).
-    /// Before execution the query is being optimized.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use polars::prelude::*;
-    /// use polars::lazy::dsl::*;
-    ///
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///       df.lazy()
-    ///         .groupby("foo")
-    ///         .agg(vec!(col("bar").sum(),
-    ///                   col("ham").mean().alias("avg_ham")))
-    ///         .collect()
-    /// }
-    /// ```
-    pub fn collect(self) -> Result<DataFrame> {
+    fn optimize(self) -> Result<LogicalPlan> {
         let predicate_pushdown = self.predicate_pushdown;
         let projection_pushdown = self.projection_pushdown;
         let type_coercion = self.type_coercion;
@@ -422,22 +383,57 @@ impl LazyFrame {
             }
         };
 
-        if type_coercion {
-            let opt = TypeCoercion {};
-            logical_plan = opt.optimize(logical_plan).expect("type coercion failed");
-        }
         if agg_scan_projection {
             let opt = AggScanProjection {};
             logical_plan = opt
                 .optimize(logical_plan)
                 .expect("scan projection aggregation failed");
         }
-        if simplify_expr {
-            let opt = SimplifyExpr {};
-            logical_plan = opt
-                .optimize(logical_plan)
-                .expect("simplify expression optimization failed");
+
+        // initialize arena
+        let mut expr_arena = Arena::new();
+        let mut lp_arena = Arena::new();
+        let mut lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
+        let mut rules: Vec<Box<dyn Rule>> = Vec::with_capacity(8);
+
+        if type_coercion {
+            rules.push(Box::new(TypeCoercionRule {}))
         }
+
+        if simplify_expr {
+            rules.push(Box::new(SimplifyExprRule {}));
+            rules.push(Box::new(SimplifyBooleanRule {}));
+        }
+
+        let opt = StatelessOptimizer {};
+        lp_top = opt
+            .optimize(&mut expr_arena, &mut lp_arena, lp_top, &rules)
+            .expect("simplify expression or type coercion optimization failed");
+
+        let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+        dbg!(&lp);
+        Ok(lp)
+    }
+
+    /// Execute all the lazy operations and collect them into a [DataFrame](crate::prelude::DataFrame).
+    /// Before execution the query is being optimized.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars::prelude::*;
+    /// use polars::lazy::dsl::*;
+    ///
+    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    ///       df.lazy()
+    ///         .groupby("foo")
+    ///         .agg(vec!(col("bar").sum(),
+    ///                   col("ham").mean().alias("avg_ham")))
+    ///         .collect()
+    /// }
+    /// ```
+    pub fn collect(self) -> Result<DataFrame> {
+        let logical_plan = self.optimize()?;
 
         let planner = DefaultPlanner::default();
         let mut physical_plan = planner.create_physical_plan(logical_plan)?;
@@ -809,9 +805,8 @@ impl LazyGroupBy {
 
 #[cfg(test)]
 mod test {
-    use crate::lazy::prelude::*;
+    use super::*;
     use crate::lazy::tests::get_df;
-    use crate::prelude::*;
 
     #[test]
     fn test_lazy_ternary() {
@@ -1089,12 +1084,22 @@ mod test {
     fn test_simplify_expr() {
         // Test if expression containing literals is simplified
         let df = get_df();
-        let optimizer = SimplifyExpr {};
+
         let plan = df
             .lazy()
             .select(&[lit(1.0f32) + lit(1.0f32) + col("sepal.width")])
             .logical_plan;
-        let plan = optimizer.optimize(plan).unwrap();
+
+        let mut expr_arena = Arena::new();
+        let mut lp_arena = Arena::new();
+        let rules: &[Box<dyn Rule>] = &[Box::new(SimplifyExprRule {})];
+
+        let optimizer = StatelessOptimizer {};
+        let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena);
+        lp_top = optimizer
+            .optimize(&mut expr_arena, &mut lp_arena, lp_top, rules)
+            .unwrap();
+        let plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         assert!(
             matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(ScalarValue::Float32(2.0))))
         );
@@ -1255,5 +1260,36 @@ mod test {
             .select(&[col("bar")])
             .collect()
             .unwrap();
+    }
+
+    #[test]
+    fn test_type_coercion() {
+        let df = df! {
+            "foo" => &[1, 2, 3],
+            "bar" => &[1.0, 2.0, 3.0]
+        }
+        .unwrap();
+
+        let lp = df.lazy().select(&[col("foo") * col("bar")]).logical_plan;
+
+        let mut expr_arena = Arena::new();
+        let mut lp_arena = Arena::new();
+        let rules: &[Box<dyn Rule>] = &[Box::new(TypeCoercionRule {})];
+
+        let optimizer = StatelessOptimizer {};
+        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena);
+        lp_top = optimizer
+            .optimize(&mut expr_arena, &mut lp_arena, lp_top, rules)
+            .unwrap();
+        let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+
+        if let LogicalPlan::Projection { expr, .. } = lp {
+            if let Expr::BinaryExpr { left, right, .. } = &expr[0] {
+                assert!(matches!(&**left, Expr::Cast{..}));
+                assert!(matches!(&**right, Expr::Cast{..}));
+            } else {
+                assert!(false)
+            }
+        };
     }
 }

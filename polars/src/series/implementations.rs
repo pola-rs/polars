@@ -45,7 +45,11 @@ where
         if &T::get_data_type() == self.dtype() {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {
-            panic!("implementation error")
+            panic!(format!(
+                "implementation error, cannot get ref {:?} from {:?}",
+                T::get_data_type(),
+                self.dtype()
+            ))
         }
     }
 }

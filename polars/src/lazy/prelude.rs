@@ -3,7 +3,7 @@ pub use crate::lazy::{
     logical_plan::{
         optimizer::{
             predicate::PredicatePushDown, projection::ProjectionPushDown,
-            simplify_expr::SimplifyExpr, type_coercion::TypeCoercion, Optimize, *,
+            simplify_expr::StatelessOptimizer, type_coercion::TypeCoercionRule, Optimize, *,
         },
         JoinType, LogicalPlan, LogicalPlanBuilder, ScalarValue,
     },

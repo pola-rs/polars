@@ -1,345 +1,90 @@
 use crate::lazy::prelude::*;
-use crate::prelude::*;
 use crate::utils::get_supertype;
 
-pub struct TypeCoercion {}
+pub struct TypeCoercionRule {}
 
-// impl Rule for TypeCoercion {
-//     fn optimize_expr(&self, arena: &mut Arena<AExpr>, node: Node) -> Option<AExpr> {
-//         let expr = arena.get(node);
-//         match expr {
-//             // Null propagation
-//             AExpr::BinaryExpr { left, right, .. }
-//             if matches!(arena.get(*left), AExpr::Literal(ScalarValue::Null))
-//                 || matches!(arena.get(*right), AExpr::Literal(ScalarValue::Null)) =>
-//                 {
-//                     Some(AExpr::Literal(ScalarValue::Null))
-//                 }
-//
-//             // lit(left) + lit(right) => lit(left = right)
-//             AExpr::BinaryExpr { left: node_left, op, right: node_right } => {
-//                 let left = arena.get(*node_left);
-//                 let right = arena.get(*node_right);
-//
-//                 let type_left = left.get_type(input_schema, arena)?;
-//                 let type_right = right.get_type(input_schema, arena)?;
-//                 if type_left == type_right {
-//                     Ok(AExpr::BinaryExpr {
-//                         left: *node_left,
-//                         op: *op,
-//                         right: *node_right
-//                     })
-//                 } else {
-//                     let st = get_supertype(&type_left, &type_right)?;
-//
-//
-//                     // Ok(binary_expr(left.cast(st.clone()), op, right.cast(st)))
-//                     None
-//                 }
-//             }
-//             _ => None,
-//         }
-//     }
-// }
-
-impl TypeCoercion {
-    /// Traverse the expressions from a level in the logical plan and maybe cast them.
-    fn rewrite_expressions(&self, exprs: Vec<Expr>, input_schema: &Schema) -> Result<Vec<Expr>> {
-        exprs
-            .into_iter()
-            .map(|expr| self.rewrite_expr(expr, input_schema))
-            .collect()
-    }
-
-    fn rewrite_expr(&self, expr: Expr, input_schema: &Schema) -> Result<Expr> {
-        // the important expression is BinaryExpr. The rest just traverses the tree.
-        use Expr::*;
-        match expr {
-            Window {
-                function,
-                partition_by,
-                order_by,
-            } => {
-                let order_by = order_by.map(|ob| {
-                    Box::new(
-                        self.rewrite_expr(*ob, input_schema)
-                            .expect("could type coerce ORDER BY"),
-                    )
-                });
-                Ok(Window {
-                    function: Box::new(self.rewrite_expr(*function, input_schema)?),
-                    partition_by: Box::new(self.rewrite_expr(*partition_by, input_schema)?),
-                    order_by,
-                })
-            }
-            Reverse(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.reverse())
-            }
-            Unique(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.is_unique())
-            }
-            Duplicated(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.is_duplicated())
-            }
-            Alias(expr, name) => Ok(Expr::Alias(
-                Box::new(self.rewrite_expr(*expr, input_schema)?),
-                name,
-            )),
-            Column(_) => Ok(expr.clone()),
-            Literal(_) => Ok(expr.clone()),
-            BinaryExpr { left, op, right } => {
-                let left = self.rewrite_expr(*left, input_schema)?;
-                let right = self.rewrite_expr(*right, input_schema)?;
-
-                let type_left = left.get_type(input_schema)?;
-                let type_right = right.get_type(input_schema)?;
-                if type_left == type_right {
-                    Ok(binary_expr(left, op, right))
-                } else {
-                    let st = get_supertype(&type_left, &type_right)?;
-                    Ok(binary_expr(left.cast(st.clone()), op, right.cast(st)))
-                }
-            }
-            Not(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.not())
-            }
-            IsNotNull(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.is_not_null())
-            }
-            IsNull(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.is_null())
-            }
-            Cast { expr, data_type } => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.cast(data_type))
-            }
-            Sort { expr, reverse } => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.sort(reverse))
-            }
-            Min(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.min())
-            }
-            Max(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.max())
-            }
-            Median(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.median())
-            }
-            NUnique(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.n_unique())
-            }
-            First(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.first())
-            }
-            Last(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.last())
-            }
-            List(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.list())
-            }
-            Mean(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.mean())
-            }
-            Quantile { expr, quantile } => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.quantile(quantile))
-            }
-            Sum(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.sum())
-            }
-            AggGroups(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.agg_groups())
-            }
-            Count(expr) => {
-                let expr = self.rewrite_expr(*expr, input_schema)?;
-                Ok(expr.count())
-            }
-            Ternary {
+impl Rule for TypeCoercionRule {
+    fn optimize_expr(
+        &self,
+        expr_arena: &mut Arena<AExpr>,
+        expr_node: Node,
+        lp_arena: &Arena<ALogicalPlan>,
+        lp_node: Node,
+    ) -> Option<AExpr> {
+        let expr = expr_arena.get(expr_node);
+        match *expr {
+            AExpr::Ternary {
+                truthy: truthy_node,
+                falsy: falsy_node,
                 predicate,
-                truthy,
-                falsy,
             } => {
-                let predicate = self.rewrite_expr(*predicate, input_schema)?;
-                let truthy = self.rewrite_expr(*truthy, input_schema)?;
-                let falsy = self.rewrite_expr(*falsy, input_schema)?;
-                let type_true = truthy.get_type(input_schema)?;
-                let type_false = falsy.get_type(input_schema)?;
+                let input_schema = lp_arena.get(lp_node).schema(lp_arena);
+                let truthy = expr_arena.get(truthy_node);
+                let falsy = expr_arena.get(falsy_node);
+                let type_true = truthy
+                    .get_type(input_schema, expr_arena)
+                    .expect("could not dtype");
+                let type_false = falsy
+                    .get_type(input_schema, expr_arena)
+                    .expect("could not dtype");
 
                 if type_true == type_false {
-                    Ok(ternary_expr(predicate, truthy, falsy))
+                    None
                 } else {
-                    let st = get_supertype(&type_true, &type_false)?;
-                    Ok(ternary_expr(
+                    let st = get_supertype(&type_true, &type_false).expect("supertype");
+                    let new_node_truthy = expr_arena.add(AExpr::Cast {
+                        expr: truthy_node,
+                        data_type: st.clone(),
+                    });
+                    let new_node_falsy = expr_arena.add(AExpr::Cast {
+                        expr: falsy_node,
+                        data_type: st,
+                    });
+                    Some(AExpr::Ternary {
+                        truthy: new_node_truthy,
+                        falsy: new_node_falsy,
                         predicate,
-                        truthy.cast(st.clone()),
-                        falsy.cast(st),
-                    ))
+                    })
                 }
             }
-            Apply {
-                input,
-                function,
-                output_type,
+            AExpr::BinaryExpr {
+                left: node_left,
+                op,
+                right: node_right,
             } => {
-                // todo Maybe don't coerce these types, as it may interfere with the function types.
-                let input = self.rewrite_expr(*input, input_schema)?;
-                Ok(Apply {
-                    input: Box::new(input),
-                    function,
-                    output_type,
-                })
-            }
-            Shift { input, periods } => {
-                let input = self.rewrite_expr(*input, input_schema)?;
-                Ok(Shift {
-                    input: Box::new(input),
-                    periods,
-                })
-            }
-            Wildcard => panic!("should be no wildcard at this point"),
-        }
-    }
+                let input_schema = lp_arena.get(lp_node).schema(lp_arena);
 
-    fn coerce(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        use LogicalPlan::*;
-        match logical_plan {
-            Slice { input, offset, len } => {
-                let input = Box::new(self.coerce(*input)?);
-                Ok(Slice { input, offset, len })
-            }
-            Selection { input, predicate } => {
-                let predicate = self.rewrite_expr(predicate, input.schema())?;
-                let input = Box::new(self.coerce(*input)?);
-                Ok(Selection { input, predicate })
-            }
-            #[cfg(feature = "parquet")]
-            ParquetScan { .. } => Ok(logical_plan),
-            CsvScan { .. } => Ok(logical_plan),
-            DataFrameScan { .. } => Ok(logical_plan),
-            Projection {
-                expr,
-                input,
-                schema,
-            } => {
-                let input = Box::new(self.coerce(*input)?);
-                let expr = self.rewrite_expressions(expr, input.schema())?;
-                Ok(Projection {
-                    expr,
-                    input,
-                    schema,
-                })
-            }
-            LocalProjection {
-                expr,
-                input,
-                schema,
-            } => {
-                let input = Box::new(self.coerce(*input)?);
-                let expr = self.rewrite_expressions(expr, input.schema())?;
-                Ok(LocalProjection {
-                    expr,
-                    input,
-                    schema,
-                })
-            }
-            Sort {
-                input,
-                by_column,
-                reverse,
-            } => {
-                let input = Box::new(self.coerce(*input)?);
-                Ok(Sort {
-                    input,
-                    by_column,
-                    reverse,
-                })
-            }
-            Explode { input, column } => {
-                let input = Box::new(self.coerce(*input)?);
-                Ok(Explode { input, column })
-            }
-            Cache { input } => {
-                let input = Box::new(self.coerce(*input)?);
-                Ok(Cache { input })
-            }
-            Distinct {
-                input,
-                maintain_order,
-                subset,
-            } => {
-                let input = self.coerce(*input)?;
-                Ok(Distinct {
-                    input: Box::new(input),
-                    maintain_order,
-                    subset,
-                })
-            }
-            Aggregate {
-                input,
-                keys,
-                aggs,
-                schema,
-            } => {
-                let input = Box::new(self.coerce(*input)?);
-                let aggs = self.rewrite_expressions(aggs, input.schema())?;
-                Ok(Aggregate {
-                    input,
-                    keys,
-                    aggs,
-                    schema,
-                })
-            }
-            Join {
-                input_left,
-                input_right,
-                schema,
-                how,
-                left_on,
-                right_on,
-                allow_par,
-                force_par,
-            } => {
-                let input_left = Box::new(self.coerce(*input_left)?);
-                let input_right = Box::new(self.coerce(*input_right)?);
-                Ok(Join {
-                    input_left,
-                    input_right,
-                    schema,
-                    how,
-                    left_on,
-                    right_on,
-                    allow_par,
-                    force_par,
-                })
-            }
-            HStack { input, exprs, .. } => {
-                let input = self.coerce(*input)?;
-                let exprs = self.rewrite_expressions(exprs, input.schema())?;
-                Ok(LogicalPlanBuilder::from(input).with_columns(exprs).build())
-            }
-        }
-    }
-}
+                let left = expr_arena.get(node_left);
+                let right = expr_arena.get(node_right);
 
-impl Optimize for TypeCoercion {
-    fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan> {
-        self.coerce(logical_plan)
+                let type_left = left
+                    .get_type(input_schema, expr_arena)
+                    .expect("could not get dtype");
+                let type_right = right
+                    .get_type(input_schema, expr_arena)
+                    .expect("could not get dtype");
+                if type_left == type_right {
+                    None
+                } else {
+                    let st = get_supertype(&type_left, &type_right)
+                        .expect("could not find supertype of binary expr");
+                    let new_node_left = expr_arena.add(AExpr::Cast {
+                        expr: node_left,
+                        data_type: st.clone(),
+                    });
+                    let new_node_right = expr_arena.add(AExpr::Cast {
+                        expr: node_right,
+                        data_type: st,
+                    });
+
+                    Some(AExpr::BinaryExpr {
+                        left: new_node_left,
+                        op,
+                        right: new_node_right,
+                    })
+                }
+            }
+            _ => None,
+        }
     }
 }
