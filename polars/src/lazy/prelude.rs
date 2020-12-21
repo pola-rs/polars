@@ -16,3 +16,5 @@ pub use crate::lazy::{
         Executor, PhysicalExpr, PhysicalPlanner,
     },
 };
+
+pub use crate::utils::{Arena, Node};
