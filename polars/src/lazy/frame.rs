@@ -1,6 +1,8 @@
 //! Lazy variant of a [DataFrame](crate::prelude::DataFrame).
 use crate::frame::select::Selection;
-use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
+use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::{
+    agg_projection, AggScanProjection,
+};
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::lazy::prelude::simplify_expr::SimplifyBooleanRule;
@@ -351,6 +353,7 @@ impl LazyFrame {
         let simplify_expr = self.simplify_expr;
         let agg_scan_projection = self.agg_scan_projection;
         let mut logical_plan = self.get_plan_builder().build();
+        let mut rules: Vec<Box<dyn Rule>> = Vec::with_capacity(8);
 
         let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
@@ -384,17 +387,17 @@ impl LazyFrame {
         };
 
         if agg_scan_projection {
-            let opt = AggScanProjection {};
-            logical_plan = opt
-                .optimize(logical_plan)
-                .expect("scan projection aggregation failed");
+            let mut columns = HashMap::with_capacity_and_hasher(32, RandomState::default());
+            agg_projection(&logical_plan, &mut columns);
+
+            let opt = AggScanProjection { columns };
+            rules.push(Box::new(opt));
         }
 
         // initialize arena
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
         let mut lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
-        let mut rules: Vec<Box<dyn Rule>> = Vec::with_capacity(8);
 
         if type_coercion {
             rules.push(Box::new(TypeCoercionRule {}))
@@ -411,7 +414,6 @@ impl LazyFrame {
             .expect("simplify expression or type coercion optimization failed");
 
         let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
-        dbg!(&lp);
         Ok(lp)
     }
 

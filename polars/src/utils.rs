@@ -112,6 +112,12 @@ impl<T> Arena<T> {
     }
 }
 
+impl<T: Default> Arena<T> {
+    pub fn take(&mut self, idx: Node) -> T {
+        std::mem::take(self.get_mut(idx))
+    }
+}
+
 /// An iterator that iterates an unknown at compile time number
 /// of iterators simultaneously.
 ///

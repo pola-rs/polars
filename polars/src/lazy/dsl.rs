@@ -4,6 +4,7 @@ use crate::lazy::logical_plan::Context;
 use crate::lazy::utils::{output_name, rename_field};
 use crate::{lazy::prelude::*, prelude::*, utils::get_supertype};
 use arrow::datatypes::{Field, Schema};
+use std::fmt::{Debug, Formatter};
 use std::{
     fmt,
     ops::{Add, Div, Mul, Rem, Sub},
@@ -20,6 +21,12 @@ where
 {
     fn call_udf(&self, s: Series) -> Result<Series> {
         self(s)
+    }
+}
+
+impl Debug for dyn Udf {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "udf")
     }
 }
 

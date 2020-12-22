@@ -1,4 +1,4 @@
-use crate::lazy::logical_plan::Context;
+use crate::lazy::logical_plan::{prepare_projection, Context};
 use crate::lazy::prelude::*;
 use crate::lazy::utils::expr_to_root_column_expr;
 use crate::prelude::*;
@@ -60,7 +60,7 @@ impl StackOptimizer {
                 // apply rules
                 for rule in rules.iter() {
                     // keep iterating over same rule
-                    while let Some(x) = rule.optimize_plan(&lp_arena, &lp_arena.get(current_node)) {
+                    while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node) {
                         lp_arena.assign(current_node, x);
                         changed = true;
                     }
@@ -253,7 +253,7 @@ impl StackOptimizer {
 }
 
 // AExpr representation of Nodes which are allocated in an Arena
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum AExpr {
     Unique(Node),
     Duplicated(Node),
@@ -472,9 +472,11 @@ pub enum ALogicalPlan {
 
 impl Default for ALogicalPlan {
     fn default() -> Self {
+        // the lp is should not be valid. By choosing a max value we'll likely panic indicating
+        // a programming error early.
         ALogicalPlan::Selection {
-            input: Node(0),
-            predicate: Node(0),
+            input: Node(usize::max_value()),
+            predicate: Node(usize::max_value()),
         }
     }
 }
@@ -1129,8 +1131,9 @@ pub(crate) fn node_to_lp(
 pub trait Rule {
     fn optimize_plan(
         &self,
-        _arena: &Arena<ALogicalPlan>,
-        _logical_plan: &ALogicalPlan,
+        _lp_arena: &mut Arena<ALogicalPlan>,
+        _expr_arena: &mut Arena<AExpr>,
+        _node: Node,
     ) -> Option<ALogicalPlan> {
         None
     }
@@ -1142,5 +1145,55 @@ pub trait Rule {
         _lp_node: Node,
     ) -> Option<AExpr> {
         None
+    }
+}
+
+pub struct ALogicalPlanBuilder<'a> {
+    root: Node,
+    expr_arena: &'a mut Arena<AExpr>,
+    lp_arena: &'a mut Arena<ALogicalPlan>,
+}
+
+impl<'a> ALogicalPlanBuilder<'a> {
+    fn new(
+        root: Node,
+        expr_arena: &'a mut Arena<AExpr>,
+        lp_arena: &'a mut Arena<ALogicalPlan>,
+    ) -> Self {
+        ALogicalPlanBuilder {
+            root,
+            expr_arena,
+            lp_arena,
+        }
+    }
+
+    pub fn project(mut self, exprs: Vec<Expr>) -> Self {
+        let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
+        let (exprs, schema) = prepare_projection(exprs, input_schema);
+
+        let exprs = exprs
+            .into_iter()
+            .map(|e| to_aexpr(e, &mut self.expr_arena))
+            .collect::<Vec<_>>();
+
+        // if len == 0, no projection has to be done. This is a select all operation.
+        if !exprs.is_empty() {
+            let lp = ALogicalPlan::Projection {
+                expr: exprs,
+                input: self.root,
+                schema,
+            };
+            let node = self.lp_arena.add(lp);
+            ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
+        } else {
+            self
+        }
+    }
+    pub fn into_node(self) -> Node {
+        self.root
+    }
+
+    pub fn into_lp(self) -> ALogicalPlan {
+        self.lp_arena.take(self.root)
     }
 }
