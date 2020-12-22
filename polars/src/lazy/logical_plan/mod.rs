@@ -662,7 +662,7 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
     }
 }
 
-fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
+pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
     let exprs = rewrite_projections(exprs, schema);
     let schema = utils::expressions_to_schema(&exprs, schema, Context::Other);
     (exprs, schema)
