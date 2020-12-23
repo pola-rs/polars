@@ -1,6 +1,5 @@
 use crate::lazy::logical_plan::*;
 use crate::lazy::prelude::*;
-use crate::prelude::*;
 use crate::utils::Arena;
 
 macro_rules! eval_binary_same_type {
@@ -89,8 +88,6 @@ macro_rules! eval_binary_bool_type {
 
     }}
 }
-
-pub struct StatelessOptimizer {}
 
 pub(crate) struct SimplifyBooleanRule {}
 
@@ -303,20 +300,6 @@ impl Rule for SimplifyExprRule {
             }
             _ => None,
         }
-    }
-}
-
-impl StatelessOptimizer {
-    pub fn optimize(
-        &self,
-        expr_arena: &mut Arena<AExpr>,
-        lp_arena: &mut Arena<ALogicalPlan>,
-        lp_top: Node,
-        rules: &[Box<dyn Rule>],
-    ) -> Result<Node> {
-        let opt = StackOptimizer {};
-
-        Ok(opt.optimize_loop(&rules, expr_arena, lp_arena, lp_top))
     }
 }
 
