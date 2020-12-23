@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::frame::ser::csv::CsvEncoding;
+use crate::frame::ser::csv::{CsvEncoding, ScanAggregation};
 #[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
@@ -37,6 +37,16 @@ use std::sync::Arc;
 pub trait PhysicalExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series>;
 }
+
+#[cfg(not(feature = "lazy"))]
+pub fn evaluate_physical_expressions(
+    df: &DataFrame,
+    exprs: &[Arc<dyn PhysicalExpr>],
+) -> Result<DataFrame> {
+    Ok(df.clone())
+}
+#[cfg(feature = "lazy")]
+use crate::lazy::physical_plan::executors::evaluate_physical_expressions;
 
 /// Is multiplied with batch_size to determine capacity of builders
 const CAPACITY_MULTIPLIER: usize = 512;
@@ -569,7 +579,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
         csv_reader: &mut Reader<R>,
-        predicate: &Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<&Arc<dyn PhysicalExpr>>,
+        aggregate: Option<&[ScanAggregation]>,
         capacity: usize,
     ) -> Result<()> {
         self.batch_size = std::cmp::max(self.batch_size, 128);
@@ -615,7 +626,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             if count % CAPACITY_MULTIPLIER == 0 {
                 let mut builders_tmp = init_builders(&projection, capacity, &self.schema)?;
                 std::mem::swap(&mut builders_tmp, &mut builders);
-                finish_builder(builders_tmp, parsed_dfs, predicate)?;
+                finish_builder(builders_tmp, parsed_dfs, predicate, aggregate)?;
             }
 
             self.add_to_builders(&mut builders, &projection, &rows, bp)?;
@@ -627,7 +638,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 }
             }
         }
-        finish_builder(builders, parsed_dfs, predicate)?;
+        finish_builder(builders, parsed_dfs, predicate, aggregate)?;
         Ok(())
     }
 
@@ -635,7 +646,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         &mut self,
         projection: &[usize],
         parsed_dfs: &mut Vec<DataFrame>,
-        predicate: &Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<&Arc<dyn PhysicalExpr>>,
+        aggregate: Option<&[ScanAggregation]>,
         capacity: usize,
         n_threads: usize,
     ) -> Result<()> {
@@ -727,10 +739,16 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             let mut builders_tmp =
                                 init_builders(&projection, capacity, &schema).unwrap();
                             std::mem::swap(&mut builders_tmp, &mut builders);
-                            finish_builder(builders_tmp, &mut local_parsed_dfs, predicate).unwrap();
+                            finish_builder(
+                                builders_tmp,
+                                &mut local_parsed_dfs,
+                                predicate,
+                                aggregate,
+                            )
+                            .unwrap();
                         }
                     }
-                    finish_builder(builders, &mut local_parsed_dfs, predicate)?;
+                    finish_builder(builders, &mut local_parsed_dfs, predicate, aggregate)?;
                     Ok(local_parsed_dfs)
                 });
                 handlers.push(h)
@@ -749,7 +767,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
-    pub fn as_df(&mut self, predicate: Option<Arc<dyn PhysicalExpr>>) -> Result<DataFrame> {
+    pub fn as_df(
+        &mut self,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
+        aggregate: Option<&[ScanAggregation]>,
+    ) -> Result<DataFrame> {
         let mut record_iter = self.record_iter.take().unwrap();
 
         // only take projections once
@@ -775,13 +797,15 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 &projection,
                 &mut parsed_dfs,
                 record_iter.reader_mut(),
-                &predicate,
+                predicate.as_ref(),
+                aggregate,
                 capacity,
             )?,
             _ => self.n_threads(
                 &projection,
                 &mut parsed_dfs,
-                &predicate,
+                predicate.as_ref(),
+                aggregate,
                 capacity,
                 n_threads,
             )?,
@@ -1018,16 +1042,20 @@ fn next_rows_core(
 fn finish_builder(
     builders: Vec<Builder>,
     parsed_dfs: &mut Vec<DataFrame>,
-    predicate: &Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<&Arc<dyn PhysicalExpr>>,
+    aggregate: Option<&[ScanAggregation]>,
 ) -> Result<()> {
     let mut df = builders_to_df(builders);
-    if let Some(predicate) = &predicate {
+    if let Some(predicate) = predicate {
         let s = predicate.evaluate(&df)?;
         let mask = s.bool().expect("filter predicates was not of type boolean");
         let local_df = df.filter(mask)?;
         if df.height() > 0 {
             df = local_df;
         }
+    }
+    if let Some(_aggregate) = aggregate {
+        todo!()
     }
     parsed_dfs.push(df);
     Ok(())

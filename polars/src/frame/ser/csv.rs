@@ -60,6 +60,33 @@ use std::sync::Arc;
 #[cfg(not(feature = "lazy"))]
 pub trait PhysicalExpr {}
 
+pub enum ScanAggregation {
+    Sum {
+        column: String,
+        alias: Option<String>,
+    },
+    Min {
+        column: String,
+        alias: Option<String>,
+    },
+    Max {
+        column: String,
+        alias: Option<String>,
+    },
+    First {
+        column: String,
+        alias: Option<String>,
+    },
+    Last {
+        column: String,
+        alias: Option<String>,
+    },
+    Mean {
+        column: String,
+        alias: Option<String>,
+    },
+}
+
 /// Write a DataFrame to csv.
 pub struct CsvWriter<'a, W: Write> {
     /// File or Stream handler
@@ -303,13 +330,14 @@ where
     }
     /// Read the file and create the DataFrame. Used from lazy execution
     #[cfg(feature = "lazy")]
-    pub(crate) fn finish_with_predicate(
+    pub(crate) fn finish_with_scan_ops(
         self,
-        predicate: Arc<dyn PhysicalExpr>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
+        aggregate: Option<&[ScanAggregation]>,
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let mut csv_reader = self.build_inner_reader()?;
-        let df = csv_reader.as_df(Some(predicate))?;
+        let df = csv_reader.as_df(predicate, aggregate)?;
         match rechunk {
             true => Ok(df.agg_chunks()),
             false => Ok(df),
@@ -355,7 +383,7 @@ where
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let mut csv_reader = self.build_inner_reader()?;
-        let df = csv_reader.as_df(None)?;
+        let df = csv_reader.as_df(None, None)?;
         match rechunk {
             true => Ok(df.agg_chunks()),
             false => Ok(df),

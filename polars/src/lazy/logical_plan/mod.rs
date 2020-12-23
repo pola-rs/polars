@@ -105,7 +105,10 @@ pub enum LogicalPlan {
         skip_rows: usize,
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
+        /// Filters at the scan level
         predicate: Option<Expr>,
+        /// Aggregations at the scan level
+        aggregate: Vec<Expr>,
         cache: bool,
     },
     #[cfg(feature = "parquet")]
@@ -115,6 +118,7 @@ pub enum LogicalPlan {
         schema: Schema,
         with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
+        aggregate: Vec<Expr>,
         stop_after_n_rows: Option<usize>,
         cache: bool,
     },
@@ -192,6 +196,7 @@ impl Default for LogicalPlan {
             stop_after_n_rows: None,
             with_columns: None,
             predicate: None,
+            aggregate: vec![],
             cache: true,
         }
     }
@@ -716,6 +721,7 @@ impl LogicalPlanBuilder {
             stop_after_n_rows,
             with_columns: None,
             predicate: None,
+            aggregate: vec![],
             cache,
         }
         .into()
@@ -756,6 +762,7 @@ impl LogicalPlanBuilder {
             stop_after_n_rows,
             with_columns: None,
             predicate: None,
+            aggregate: vec![],
             cache,
         }
         .into()

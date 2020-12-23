@@ -416,7 +416,7 @@ impl LazyFrame {
         }
 
         let opt = StackOptimizer {};
-        lp_top = opt.optimize_loop(&rules, &mut expr_arena, &mut lp_arena, lp_top);
+        lp_top = opt.optimize_loop(&mut rules, &mut expr_arena, &mut lp_arena, lp_top);
         let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         Ok(lp)
     }
