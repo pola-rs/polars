@@ -10,16 +10,23 @@ pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
         Expr::Column(name) => Ok(Expr::Column(name.clone())),
         Expr::Alias(_, name) => Ok(Expr::Column(name.clone())),
         Expr::Sort { expr, .. } => projected_name(expr),
-        Expr::First(expr) => projected_name(expr),
-        Expr::Last(expr) => projected_name(expr),
-        Expr::Quantile { expr, .. } => projected_name(expr),
-        Expr::Sum(expr) => projected_name(expr),
-        Expr::Min(expr) => projected_name(expr),
-        Expr::List(expr) => projected_name(expr),
-        Expr::Max(expr) => projected_name(expr),
-        Expr::Median(expr) => projected_name(expr),
-        Expr::Mean(expr) => projected_name(expr),
-        Expr::Count(expr) => projected_name(expr),
+        Expr::Agg(agg) => {
+            use AggExpr::*;
+            match agg {
+                First(expr) => projected_name(expr),
+                Last(expr) => projected_name(expr),
+                Quantile { expr, .. } => projected_name(expr),
+                Sum(expr) => projected_name(expr),
+                Min(expr) => projected_name(expr),
+                List(expr) => projected_name(expr),
+                Max(expr) => projected_name(expr),
+                Median(expr) => projected_name(expr),
+                Mean(expr) => projected_name(expr),
+                Count(expr) => projected_name(expr),
+                AggGroups(expr) => projected_name(expr),
+                NUnique(expr) => projected_name(expr),
+            }
+        }
         Expr::Cast { expr, .. } => projected_name(expr),
         Expr::Apply { input, .. } => projected_name(input),
         Expr::Shift { input, .. } => projected_name(input),
@@ -32,6 +39,226 @@ pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
             )
             .into(),
         )),
+    }
+}
+
+pub(crate) fn has_aexpr(current_node: Node, arena: &Arena<AExpr>, matching_expr: &AExpr) -> bool {
+    let current_expr = arena.get(current_node);
+
+    match current_expr {
+        AExpr::Window {
+            function,
+            partition_by,
+            order_by,
+        } => {
+            if matches!(matching_expr, AExpr::Window {..}) {
+                true
+            } else {
+                has_aexpr(*function, arena, matching_expr)
+                    || has_aexpr(*partition_by, arena, matching_expr)
+                    || order_by
+                        .map(|ob| has_aexpr(ob, arena, matching_expr))
+                        .unwrap_or(false)
+            }
+        }
+        AExpr::Duplicated(node) => {
+            if matches!(matching_expr, AExpr::Duplicated(_)) {
+                true
+            } else {
+                has_aexpr(*node, arena, matching_expr)
+            }
+        }
+        AExpr::Unique(node) => {
+            if matches!(matching_expr, AExpr::Unique(_)) {
+                true
+            } else {
+                has_aexpr(*node, arena, matching_expr)
+            }
+        }
+        AExpr::Reverse(node) => {
+            if matches!(matching_expr, AExpr::Reverse(_)) {
+                true
+            } else {
+                has_aexpr(*node, arena, matching_expr)
+            }
+        }
+        AExpr::Alias(node, _) => {
+            if matches!(matching_expr, AExpr::Alias(_, _)) {
+                true
+            } else {
+                has_aexpr(*node, arena, matching_expr)
+            }
+        }
+        AExpr::Column(_) => {
+            matches!(matching_expr, AExpr::Column(_))
+        }
+        AExpr::Literal(_) => {
+            matches!(matching_expr, AExpr::Literal(_))
+        }
+        AExpr::BinaryExpr { left, right, .. } => {
+            if matches!(matching_expr, AExpr::BinaryExpr{..}) {
+                true
+            } else {
+                has_aexpr(*left, arena, matching_expr) | has_aexpr(*right, arena, matching_expr)
+            }
+        }
+        AExpr::Not(e) => {
+            if matches!(matching_expr, AExpr::Not(_)) {
+                true
+            } else {
+                has_aexpr(*e, arena, matching_expr)
+            }
+        }
+        AExpr::IsNotNull(e) => {
+            if matches!(matching_expr, AExpr::IsNotNull(_)) {
+                true
+            } else {
+                has_aexpr(*e, arena, matching_expr)
+            }
+        }
+        AExpr::IsNull(e) => {
+            if matches!(matching_expr, AExpr::IsNull(_)) {
+                true
+            } else {
+                has_aexpr(*e, arena, matching_expr)
+            }
+        }
+        AExpr::Cast { expr, .. } => {
+            if matches!(matching_expr, AExpr::Cast{..}) {
+                true
+            } else {
+                has_aexpr(*expr, arena, matching_expr)
+            }
+        }
+        AExpr::Sort { expr, .. } => {
+            if matches!(matching_expr, AExpr::Sort{..}) {
+                true
+            } else {
+                has_aexpr(*expr, arena, matching_expr)
+            }
+        }
+        AExpr::Agg(agg) => {
+            if let AExpr::Agg(tmp_matching_expr) = matching_expr {
+                match agg {
+                    AAggExpr::Min(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Min(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::Max(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Max(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::Median(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Median(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::NUnique(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::NUnique(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::First(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::First(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::Last(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Last(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::Mean(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Mean(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::List(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::List(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::Count(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Count(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::Quantile { expr, .. } => {
+                        if matches!(tmp_matching_expr, AAggExpr::Quantile{..}) {
+                            true
+                        } else {
+                            has_aexpr(*expr, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::Sum(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Sum(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                    AAggExpr::AggGroups(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::AggGroups(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr)
+                        }
+                    }
+                }
+            } else {
+                false
+            }
+        }
+        AExpr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            if matches!(matching_expr, AExpr::Ternary{..}) {
+                true
+            } else {
+                has_aexpr(*predicate, arena, matching_expr)
+                    | has_aexpr(*truthy, arena, matching_expr)
+                    | has_aexpr(*falsy, arena, matching_expr)
+            }
+        }
+        AExpr::Apply { input, .. } => {
+            if matches!(matching_expr, AExpr::Apply{..}) {
+                true
+            } else {
+                has_aexpr(*input, arena, matching_expr)
+            }
+        }
+        AExpr::Shift { input, .. } => {
+            if matches!(matching_expr, AExpr::Shift{..}) {
+                true
+            } else {
+                has_aexpr(*input, arena, matching_expr)
+            }
+        }
+        AExpr::Wildcard => {
+            matches!(matching_expr, AExpr::Wildcard)
+        }
     }
 }
 
@@ -133,88 +360,96 @@ pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
                 has_expr(expr, matching_expr)
             }
         }
-        Expr::Min(e) => {
-            if matches!(matching_expr, Expr::Min(_)) {
-                true
+        Expr::Agg(agg) => {
+            if let Expr::Agg(tmp_matching_expr) = matching_expr {
+                match agg {
+                    AggExpr::Min(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Min(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::Max(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Max(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::Median(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Median(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::NUnique(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::NUnique(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::First(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::First(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::Last(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Last(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::Mean(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Mean(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::List(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::List(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::Count(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Count(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::Quantile { expr, .. } => {
+                        if matches!(tmp_matching_expr, AggExpr::Quantile{..}) {
+                            true
+                        } else {
+                            has_expr(expr, matching_expr)
+                        }
+                    }
+                    AggExpr::Sum(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Sum(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::AggGroups(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::AggGroups(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                }
             } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Max(e) => {
-            if matches!(matching_expr, Expr::Max(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Median(e) => {
-            if matches!(matching_expr, Expr::Median(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::NUnique(e) => {
-            if matches!(matching_expr, Expr::NUnique(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::First(e) => {
-            if matches!(matching_expr, Expr::First(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Last(e) => {
-            if matches!(matching_expr, Expr::Last(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Mean(e) => {
-            if matches!(matching_expr, Expr::Mean(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::List(e) => {
-            if matches!(matching_expr, Expr::List(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Count(e) => {
-            if matches!(matching_expr, Expr::Count(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Quantile { expr, .. } => {
-            if matches!(**expr, Expr::Quantile{..}) {
-                true
-            } else {
-                has_expr(expr, matching_expr)
-            }
-        }
-        Expr::Sum(e) => {
-            if matches!(matching_expr, Expr::Sum(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::AggGroups(e) => {
-            if matches!(matching_expr, Expr::AggGroups(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
+                false
             }
         }
         Expr::Ternary {
@@ -337,18 +572,20 @@ pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<String>> {
             }
         }
         Expr::Sort { expr, .. } => expr_to_root_column_name(expr),
-        Expr::First(expr) => expr_to_root_column_name(expr),
-        Expr::Last(expr) => expr_to_root_column_name(expr),
-        Expr::AggGroups(expr) => expr_to_root_column_name(expr),
-        Expr::NUnique(expr) => expr_to_root_column_name(expr),
-        Expr::Quantile { expr, .. } => expr_to_root_column_name(expr),
-        Expr::Sum(expr) => expr_to_root_column_name(expr),
-        Expr::Min(expr) => expr_to_root_column_name(expr),
-        Expr::Max(expr) => expr_to_root_column_name(expr),
-        Expr::Median(expr) => expr_to_root_column_name(expr),
-        Expr::List(expr) => expr_to_root_column_name(expr),
-        Expr::Mean(expr) => expr_to_root_column_name(expr),
-        Expr::Count(expr) => expr_to_root_column_name(expr),
+        Expr::Agg(agg) => match agg {
+            AggExpr::First(expr) => expr_to_root_column_name(expr),
+            AggExpr::Last(expr) => expr_to_root_column_name(expr),
+            AggExpr::AggGroups(expr) => expr_to_root_column_name(expr),
+            AggExpr::NUnique(expr) => expr_to_root_column_name(expr),
+            AggExpr::Quantile { expr, .. } => expr_to_root_column_name(expr),
+            AggExpr::Sum(expr) => expr_to_root_column_name(expr),
+            AggExpr::Min(expr) => expr_to_root_column_name(expr),
+            AggExpr::Max(expr) => expr_to_root_column_name(expr),
+            AggExpr::Median(expr) => expr_to_root_column_name(expr),
+            AggExpr::List(expr) => expr_to_root_column_name(expr),
+            AggExpr::Mean(expr) => expr_to_root_column_name(expr),
+            AggExpr::Count(expr) => expr_to_root_column_name(expr),
+        },
         Expr::Cast { expr, .. } => expr_to_root_column_name(expr),
         Expr::Apply { input, .. } => expr_to_root_column_name(input),
         Expr::Shift { input, .. } => expr_to_root_column_name(input),
@@ -370,18 +607,20 @@ pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
         Expr::Not(expr) => unpack_binary_exprs(expr),
         Expr::IsNull(expr) => unpack_binary_exprs(expr),
         Expr::IsNotNull(expr) => unpack_binary_exprs(expr),
-        Expr::First(expr) => unpack_binary_exprs(expr),
-        Expr::Last(expr) => unpack_binary_exprs(expr),
-        Expr::AggGroups(expr) => unpack_binary_exprs(expr),
-        Expr::NUnique(expr) => unpack_binary_exprs(expr),
-        Expr::Quantile { expr, .. } => unpack_binary_exprs(expr),
-        Expr::Sum(expr) => unpack_binary_exprs(expr),
-        Expr::Min(expr) => unpack_binary_exprs(expr),
-        Expr::Max(expr) => unpack_binary_exprs(expr),
-        Expr::Median(expr) => unpack_binary_exprs(expr),
-        Expr::List(expr) => unpack_binary_exprs(expr),
-        Expr::Mean(expr) => unpack_binary_exprs(expr),
-        Expr::Count(expr) => unpack_binary_exprs(expr),
+        Expr::Agg(agg) => match agg {
+            AggExpr::First(expr) => unpack_binary_exprs(expr),
+            AggExpr::Last(expr) => unpack_binary_exprs(expr),
+            AggExpr::AggGroups(expr) => unpack_binary_exprs(expr),
+            AggExpr::NUnique(expr) => unpack_binary_exprs(expr),
+            AggExpr::Quantile { expr, .. } => unpack_binary_exprs(expr),
+            AggExpr::Sum(expr) => unpack_binary_exprs(expr),
+            AggExpr::Min(expr) => unpack_binary_exprs(expr),
+            AggExpr::Max(expr) => unpack_binary_exprs(expr),
+            AggExpr::Median(expr) => unpack_binary_exprs(expr),
+            AggExpr::List(expr) => unpack_binary_exprs(expr),
+            AggExpr::Mean(expr) => unpack_binary_exprs(expr),
+            AggExpr::Count(expr) => unpack_binary_exprs(expr),
+        },
         Expr::BinaryExpr { left, right, .. } => Ok((&**left, &**right)),
         Expr::Sort { expr, .. } => unpack_binary_exprs(expr),
         Expr::Shift { input, .. } => unpack_binary_exprs(input),
@@ -389,58 +628,6 @@ pub(crate) fn unpack_binary_exprs(expr: &Expr) -> Result<(&Expr, &Expr)> {
         Expr::Cast { expr, .. } => unpack_binary_exprs(expr),
         a => Err(PolarsError::Other(
             format!("No binary expression could be found for {:?}", a).into(),
-        )),
-    }
-}
-
-// Find the first apply expression somewhere in the tree.
-pub(crate) fn unpack_apply_expr(expr: &Expr) -> Result<&Expr> {
-    match expr {
-        Expr::Unique(expr) => unpack_apply_expr(expr),
-        Expr::Duplicated(expr) => unpack_apply_expr(expr),
-        Expr::Reverse(expr) => unpack_apply_expr(expr),
-        Expr::Alias(expr, _) => unpack_apply_expr(expr),
-        Expr::Not(expr) => unpack_apply_expr(expr),
-        Expr::IsNull(expr) => unpack_apply_expr(expr),
-        Expr::IsNotNull(expr) => unpack_apply_expr(expr),
-        Expr::First(expr) => unpack_apply_expr(expr),
-        Expr::Last(expr) => unpack_apply_expr(expr),
-        Expr::AggGroups(expr) => unpack_apply_expr(expr),
-        Expr::NUnique(expr) => unpack_apply_expr(expr),
-        Expr::Quantile { expr, .. } => unpack_apply_expr(expr),
-        Expr::Sum(expr) => unpack_apply_expr(expr),
-        Expr::Min(expr) => unpack_apply_expr(expr),
-        Expr::Max(expr) => unpack_apply_expr(expr),
-        Expr::Median(expr) => unpack_apply_expr(expr),
-        Expr::Mean(expr) => unpack_apply_expr(expr),
-        Expr::Count(expr) => unpack_apply_expr(expr),
-        Expr::Sort { expr, .. } => unpack_apply_expr(expr),
-        Expr::Shift { input, .. } => unpack_apply_expr(input),
-        Expr::Apply { .. } => Ok(expr),
-        Expr::Cast { expr, .. } => unpack_apply_expr(expr),
-        Expr::BinaryExpr { left, right, .. } => {
-            let left_result = unpack_apply_expr(left);
-            let right_result = unpack_apply_expr(right);
-
-            let err = || {
-                Err(PolarsError::Other(
-                    format!(
-                        "cannot find apply expr for binary expression {:?}, {:?}",
-                        left, right
-                    )
-                    .into(),
-                ))
-            };
-
-            match (left_result, right_result) {
-                (Ok(left), Err(_)) => Ok(left),
-                (Err(_), Ok(right)) => Ok(right),
-                _ => err(),
-            }
-        }
-        Expr::Ternary { predicate, .. } => unpack_apply_expr(predicate),
-        a => Err(PolarsError::Other(
-            format!("No apply expression could be found for {:?}", a).into(),
         )),
     }
 }
@@ -456,17 +643,20 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
         Expr::Not(expr) => expr_to_root_column_exprs(expr),
         Expr::IsNull(expr) => expr_to_root_column_exprs(expr),
         Expr::IsNotNull(expr) => expr_to_root_column_exprs(expr),
-        Expr::First(expr) => expr_to_root_column_exprs(expr),
-        Expr::Last(expr) => expr_to_root_column_exprs(expr),
-        Expr::AggGroups(expr) => expr_to_root_column_exprs(expr),
-        Expr::NUnique(expr) => expr_to_root_column_exprs(expr),
-        Expr::Quantile { expr, .. } => expr_to_root_column_exprs(expr),
-        Expr::Sum(expr) => expr_to_root_column_exprs(expr),
-        Expr::Min(expr) => expr_to_root_column_exprs(expr),
-        Expr::Max(expr) => expr_to_root_column_exprs(expr),
-        Expr::Median(expr) => expr_to_root_column_exprs(expr),
-        Expr::Mean(expr) => expr_to_root_column_exprs(expr),
-        Expr::Count(expr) => expr_to_root_column_exprs(expr),
+        Expr::Agg(agg) => match agg {
+            AggExpr::First(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Last(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::AggGroups(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::NUnique(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Quantile { expr, .. } => expr_to_root_column_exprs(expr),
+            AggExpr::Sum(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Min(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Max(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Median(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Mean(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Count(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::List(expr) => expr_to_root_column_exprs(expr),
+        },
         Expr::BinaryExpr { left, right, .. } => {
             let mut results = Vec::with_capacity(16);
             results.extend(expr_to_root_column_exprs(left).into_iter());
@@ -503,71 +693,8 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
             }
             results
         }
-        Expr::Wildcard => vec![],
+        Expr::Wildcard => vec![Expr::Wildcard],
         Expr::Literal(_) => vec![],
-        Expr::List(expr) => expr_to_root_column_exprs(expr),
-    }
-}
-
-/// unpack alias(col) to name of the root column name
-pub(crate) fn expr_to_root_column_expr(expr: &Expr) -> Result<&Expr> {
-    match expr {
-        Expr::Column(_) => Ok(expr),
-        Expr::Duplicated(expr) => expr_to_root_column_expr(expr),
-        Expr::Unique(expr) => expr_to_root_column_expr(expr),
-        Expr::Reverse(expr) => expr_to_root_column_expr(expr),
-        Expr::Alias(expr, _) => expr_to_root_column_expr(expr),
-        Expr::Not(expr) => expr_to_root_column_expr(expr),
-        Expr::IsNull(expr) => expr_to_root_column_expr(expr),
-        Expr::IsNotNull(expr) => expr_to_root_column_expr(expr),
-        Expr::First(expr) => expr_to_root_column_expr(expr),
-        Expr::Last(expr) => expr_to_root_column_expr(expr),
-        Expr::AggGroups(expr) => expr_to_root_column_expr(expr),
-        Expr::NUnique(expr) => expr_to_root_column_expr(expr),
-        Expr::Quantile { expr, .. } => expr_to_root_column_expr(expr),
-        Expr::Sum(expr) => expr_to_root_column_expr(expr),
-        Expr::Min(expr) => expr_to_root_column_expr(expr),
-        Expr::Max(expr) => expr_to_root_column_expr(expr),
-        Expr::Median(expr) => expr_to_root_column_expr(expr),
-        Expr::Mean(expr) => expr_to_root_column_expr(expr),
-        Expr::Count(expr) => expr_to_root_column_expr(expr),
-        Expr::BinaryExpr { left, right, .. } => {
-            let left_result = expr_to_root_column_expr(left);
-            let right_result = expr_to_root_column_expr(right);
-
-            let root_col_err = || {
-                Err(PolarsError::Other(
-                    format!(
-                        "cannot find root column expr for binary expression {:?}, {:?}",
-                        left, right
-                    )
-                    .into(),
-                ))
-            };
-
-            match (left_result, right_result) {
-                (Ok(left), Err(_)) => match &**right {
-                    Expr::BinaryExpr { .. } => root_col_err(),
-                    _ => Ok(left),
-                },
-                (Err(_), Ok(right)) => match &**left {
-                    Expr::BinaryExpr { .. } => root_col_err(),
-                    _ => Ok(right),
-                },
-                (Ok(_), Ok(_)) => root_col_err(),
-                _ => root_col_err(),
-            }
-        }
-        Expr::Sort { expr, .. } => expr_to_root_column_expr(expr),
-        Expr::Shift { input, .. } => expr_to_root_column_expr(input),
-        Expr::Apply { input, .. } => expr_to_root_column_expr(input),
-        Expr::Cast { expr, .. } => expr_to_root_column_expr(expr),
-        Expr::Ternary { predicate, .. } => expr_to_root_column_expr(predicate),
-        Expr::Window { function, .. } => expr_to_root_column_expr(function),
-        Expr::Wildcard => Ok(expr),
-        a => Err(PolarsError::Other(
-            format!("No root column expr could be found for {:?}", a).into(),
-        )),
     }
 }
 

@@ -278,168 +278,197 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(*expr, ctxt)?;
                 Ok(Arc::new(IsNotNullExpr::new(phys_expr, expression)))
             }
-            Expr::Min(expr) => {
-                // todo! Output type is dependent on schema.
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Min))),
-                    Context::Other => {
-                        let function = Arc::new(move |s: Series| Ok(s.min_as_series()));
-                        Ok(Arc::new(ApplyExpr {
-                            input,
-                            function,
-                            output_type: None,
-                            expr: expression,
-                        }))
+            Expr::Agg(agg) => {
+                match agg {
+                    AggExpr::Min(expr) => {
+                        // todo! Output type is dependent on schema.
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Min)))
+                            }
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.min_as_series()));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
+                        }
                     }
-                }
-            }
-            Expr::Max(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Max))),
-                    Context::Other => {
-                        let function = Arc::new(move |s: Series| Ok(s.max_as_series()));
-                        Ok(Arc::new(ApplyExpr {
-                            input,
-                            function,
-                            output_type: None,
-                            expr: expression,
-                        }))
+                    AggExpr::Max(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Max)))
+                            }
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.max_as_series()));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
+                        }
                     }
-                }
-            }
-            Expr::Sum(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Sum))),
-                    Context::Other => {
-                        let function = Arc::new(move |s: Series| Ok(s.sum_as_series()));
-                        Ok(Arc::new(ApplyExpr {
-                            input,
-                            function,
-                            output_type: None,
-                            expr: expression,
-                        }))
+                    AggExpr::Sum(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Sum)))
+                            }
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.sum_as_series()));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
+                        }
                     }
-                }
-            }
-            Expr::Mean(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Mean))),
-                    Context::Other => {
-                        let function = Arc::new(move |s: Series| Ok(s.mean_as_series()));
-                        Ok(Arc::new(ApplyExpr {
-                            input,
-                            function,
-                            output_type: None,
-                            expr: expression,
-                        }))
+                    AggExpr::Mean(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Mean)))
+                            }
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.mean_as_series()));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
+                        }
                     }
-                }
-            }
-            Expr::Median(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => {
-                        Ok(Arc::new(AggExpr::new(input, GroupByMethod::Median)))
+                    AggExpr::Median(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Median)))
+                            }
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.median_as_series()));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
+                        }
                     }
-                    Context::Other => {
-                        let function = Arc::new(move |s: Series| Ok(s.median_as_series()));
-                        Ok(Arc::new(ApplyExpr {
-                            input,
-                            function,
-                            output_type: None,
-                            expr: expression,
-                        }))
+                    AggExpr::First(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::First)))
+                            }
+                            Context::Other => todo!(),
+                        }
                     }
-                }
-            }
-            Expr::First(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::First))),
-                    Context::Other => todo!(),
-                }
-            }
-            Expr::Last(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Last))),
-                    Context::Other => todo!(),
-                }
-            }
-            Expr::List(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Last))),
-                    Context::Other => {
-                        panic!("list expression is only supported in the aggregation context")
+                    AggExpr::Last(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Last)))
+                            }
+                            Context::Other => todo!(),
+                        }
                     }
-                }
-            }
-            Expr::NUnique(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => {
-                        Ok(Arc::new(AggExpr::new(input, GroupByMethod::NUnique)))
+                    AggExpr::List(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Last)))
+                            }
+                            Context::Other => {
+                                panic!(
+                                    "list expression is only supported in the aggregation context"
+                                )
+                            }
+                        }
                     }
-                    Context::Other => {
-                        let function = Arc::new(move |s: Series| {
-                            s.n_unique().map(|count| {
-                                UInt32Chunked::new_from_slice(s.name(), &[count as u32])
-                                    .into_series()
-                            })
-                        });
-                        Ok(Arc::new(ApplyExpr {
-                            input,
-                            function,
-                            output_type: Some(ArrowDataType::UInt32),
-                            expr: expression,
-                        }))
+                    AggExpr::NUnique(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => Ok(Arc::new(PhysicalAggExpr::new(
+                                input,
+                                GroupByMethod::NUnique,
+                            ))),
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| {
+                                    s.n_unique().map(|count| {
+                                        UInt32Chunked::new_from_slice(s.name(), &[count as u32])
+                                            .into_series()
+                                    })
+                                });
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: Some(ArrowDataType::UInt32),
+                                    expr: expression,
+                                }))
+                            }
+                        }
                     }
-                }
-            }
-            Expr::Quantile { expr, quantile } => {
-                // todo! add schema to get correct output type
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggQuantileExpr::new(input, quantile))),
-                    Context::Other => {
-                        let function = Arc::new(move |s: Series| s.quantile_as_series(quantile));
-                        Ok(Arc::new(ApplyExpr {
-                            input,
-                            function,
-                            output_type: None,
-                            expr: expression,
-                        }))
+                    AggExpr::Quantile { expr, quantile } => {
+                        // todo! add schema to get correct output type
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(AggQuantileExpr::new(input, quantile)))
+                            }
+                            Context::Other => {
+                                let function =
+                                    Arc::new(move |s: Series| s.quantile_as_series(quantile));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
+                        }
                     }
-                }
-            }
-            Expr::AggGroups(expr) => {
-                if let Context::Other = ctxt {
-                    panic!("agg groups expression only supported in aggregation context")
-                }
-                let phys_expr = self.create_physical_expr(*expr, ctxt)?;
-                Ok(Arc::new(AggExpr::new(phys_expr, GroupByMethod::Groups)))
-            }
-            Expr::Count(expr) => {
-                let input = self.create_physical_expr(*expr, ctxt)?;
-                match ctxt {
-                    Context::Aggregation => Ok(Arc::new(AggExpr::new(input, GroupByMethod::Count))),
-                    Context::Other => {
-                        let function = Arc::new(move |s: Series| {
-                            let count = s.len();
-                            Ok(UInt32Chunked::new_from_slice(s.name(), &[count as u32])
-                                .into_series())
-                        });
-                        Ok(Arc::new(ApplyExpr {
-                            input,
-                            function,
-                            output_type: Some(ArrowDataType::UInt32),
-                            expr: expression,
-                        }))
+                    AggExpr::AggGroups(expr) => {
+                        if let Context::Other = ctxt {
+                            panic!("agg groups expression only supported in aggregation context")
+                        }
+                        let phys_expr = self.create_physical_expr(*expr, ctxt)?;
+                        Ok(Arc::new(PhysicalAggExpr::new(
+                            phys_expr,
+                            GroupByMethod::Groups,
+                        )))
+                    }
+                    AggExpr::Count(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Count)))
+                            }
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| {
+                                    let count = s.len();
+                                    Ok(UInt32Chunked::new_from_slice(s.name(), &[count as u32])
+                                        .into_series())
+                                });
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: Some(ArrowDataType::UInt32),
+                                    expr: expression,
+                                }))
+                            }
+                        }
                     }
                 }
             }

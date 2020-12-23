@@ -91,7 +91,7 @@ macro_rules! eval_binary_bool_type {
 
 pub(crate) struct SimplifyBooleanRule {}
 
-impl Rule for SimplifyBooleanRule {
+impl OptimizationRule for SimplifyBooleanRule {
     fn optimize_expr(
         &self,
         expr_arena: &mut Arena<AExpr>,
@@ -257,7 +257,7 @@ fn eval_or(left: &AExpr, right: &AExpr) -> Option<AExpr> {
 
 pub struct SimplifyExprRule {}
 
-impl Rule for SimplifyExprRule {
+impl OptimizationRule for SimplifyExprRule {
     #[allow(clippy::float_cmp)]
     fn optimize_expr(
         &self,

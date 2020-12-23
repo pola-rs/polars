@@ -3,7 +3,7 @@ use crate::utils::get_supertype;
 
 pub struct TypeCoercionRule {}
 
-impl Rule for TypeCoercionRule {
+impl OptimizationRule for TypeCoercionRule {
     fn optimize_expr(
         &self,
         expr_arena: &mut Arena<AExpr>,

@@ -2,7 +2,7 @@ use crate::lazy::logical_plan::optimizer::check_down_node;
 use crate::lazy::logical_plan::Context;
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{
-    expr_to_root_column_expr, expr_to_root_column_exprs, expr_to_root_column_name, has_expr,
+    expr_to_root_column_exprs, expr_to_root_column_name, expr_to_root_column_names, has_expr,
 };
 use crate::prelude::*;
 use ahash::RandomState;
@@ -103,17 +103,20 @@ impl ProjectionPushDown {
         names_right: &mut HashSet<Arc<String>, RandomState>,
     ) -> Result<bool> {
         let mut pushed_at_least_one = false;
-        let name = expr_to_root_column_name(&proj)?;
-        let root_projection = expr_to_root_column_expr(proj)?;
+        let names = expr_to_root_column_names(&proj);
+        let root_projections = expr_to_root_column_exprs(proj);
 
-        if check_down_node(&root_projection, schema_left) && names_left.insert(name.clone()) {
-            pushdown_left.push(proj.clone());
-            pushed_at_least_one = true;
+        for (name, root_projection) in names.into_iter().zip(root_projections) {
+            if check_down_node(&root_projection, schema_left) && names_left.insert(name.clone()) {
+                pushdown_left.push(proj.clone());
+                pushed_at_least_one = true;
+            }
+            if check_down_node(&root_projection, schema_right) && names_right.insert(name) {
+                pushdown_right.push(proj.clone());
+                pushed_at_least_one = true;
+            }
         }
-        if check_down_node(&root_projection, schema_right) && names_right.insert(name) {
-            pushdown_right.push(proj.clone());
-            pushed_at_least_one = true;
-        }
+
         Ok(pushed_at_least_one)
     }
 

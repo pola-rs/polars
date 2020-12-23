@@ -112,7 +112,7 @@ impl AggScanProjection {
     }
 }
 
-impl Rule for AggScanProjection {
+impl OptimizationRule for AggScanProjection {
     fn optimize_plan(
         &self,
         lp_arena: &mut Arena<ALogicalPlan>,

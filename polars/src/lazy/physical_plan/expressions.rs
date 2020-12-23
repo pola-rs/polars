@@ -319,18 +319,18 @@ macro_rules! impl_to_field_for_agg {
     }};
 }
 
-pub(crate) struct AggExpr {
+pub(crate) struct PhysicalAggExpr {
     expr: Arc<dyn PhysicalExpr>,
     agg_type: GroupByMethod,
 }
 
-impl AggExpr {
+impl PhysicalAggExpr {
     pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod) -> Self {
         Self { expr, agg_type }
     }
 }
 
-impl PhysicalExpr for AggExpr {
+impl PhysicalExpr for PhysicalAggExpr {
     fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
         unimplemented!()
     }
@@ -357,7 +357,7 @@ fn rename_option_series(opt: Option<Series>, name: &str) -> Option<Series> {
     })
 }
 
-impl AggPhysicalExpr for AggExpr {
+impl AggPhysicalExpr for PhysicalAggExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), self.agg_type);
@@ -586,21 +586,25 @@ impl PhysicalExpr for WindowExpr {
         let gb = df
             .groupby(self.group_column.as_str())?
             .select(self.apply_column.as_str());
-        let out = match self.function {
-            Expr::Median(_) => gb.median(),
-            Expr::Mean(_) => gb.mean(),
-            Expr::Max(_) => gb.max(),
-            Expr::Min(_) => gb.min(),
-            Expr::Sum(_) => gb.sum(),
-            Expr::First(_) => gb.first(),
-            Expr::Last(_) => gb.last(),
-            Expr::Count(_) => gb.count(),
-            Expr::NUnique(_) => gb.n_unique(),
-            Expr::Quantile { quantile, .. } => gb.quantile(quantile),
-            Expr::List(_) => gb.agg_list(),
-            _ => Err(PolarsError::Other(
-                format!("{:?} function not supported", self.function).into(),
-            )),
+        let out = if let Expr::Agg(agg) = &self.function {
+            match agg {
+                AggExpr::Median(_) => gb.median(),
+                AggExpr::Mean(_) => gb.mean(),
+                AggExpr::Max(_) => gb.max(),
+                AggExpr::Min(_) => gb.min(),
+                AggExpr::Sum(_) => gb.sum(),
+                AggExpr::First(_) => gb.first(),
+                AggExpr::Last(_) => gb.last(),
+                AggExpr::Count(_) => gb.count(),
+                AggExpr::NUnique(_) => gb.n_unique(),
+                AggExpr::Quantile { quantile, .. } => gb.quantile(*quantile),
+                AggExpr::List(_) => gb.agg_list(),
+                _ => Err(PolarsError::Other(
+                    format!("{:?} function not supported", self.function).into(),
+                )),
+            }
+        } else {
+            panic!("implementation error")
         }?;
         let mut out = df
             .select(self.group_column.as_str())?
