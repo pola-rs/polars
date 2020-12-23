@@ -347,17 +347,22 @@ impl LazyFrame {
     }
 
     fn optimize(self) -> Result<LogicalPlan> {
+        // get toggle values
         let predicate_pushdown = self.predicate_pushdown;
         let projection_pushdown = self.projection_pushdown;
         let type_coercion = self.type_coercion;
         let simplify_expr = self.simplify_expr;
         let agg_scan_projection = self.agg_scan_projection;
+
         let mut logical_plan = self.get_plan_builder().build();
+
+        // gradually fill the rules passed to the optimizer
         let mut rules: Vec<Box<dyn Rule>> = Vec::with_capacity(8);
 
         let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
 
+        // during debug we check if the projection/predicate pushdown have not modified the final schema
         if cfg!(debug_assertions) {
             // check that the optimization don't interfere with the schema result.
             let prev_schema = logical_plan.schema().clone();
@@ -387,6 +392,8 @@ impl LazyFrame {
         };
 
         if agg_scan_projection {
+            // scan the LP to aggregate all the column used in scans
+            // these columns will be added to the state of the AggScanProjection rule
             let mut columns = HashMap::with_capacity_and_hasher(32, RandomState::default());
             agg_projection(&logical_plan, &mut columns);
 
@@ -394,7 +401,7 @@ impl LazyFrame {
             rules.push(Box::new(opt));
         }
 
-        // initialize arena
+        // initialize arena's
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
         let mut lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
@@ -408,11 +415,9 @@ impl LazyFrame {
             rules.push(Box::new(SimplifyBooleanRule {}));
         }
 
-        let opt = StatelessOptimizer {};
+        let opt = StackOptimizer {};
         lp_top = opt
-            .optimize(&mut expr_arena, &mut lp_arena, lp_top, &rules)
-            .expect("simplify expression or type coercion optimization failed");
-
+            .optimize_loop(&rules, &mut expr_arena, &mut lp_arena, lp_top);
         let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         Ok(lp)
     }

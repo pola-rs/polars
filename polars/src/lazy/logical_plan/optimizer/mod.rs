@@ -37,7 +37,7 @@ fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
 pub struct StackOptimizer {}
 
 impl StackOptimizer {
-    fn optimize_loop(
+    pub fn optimize_loop(
         &self,
         rules: &[Box<dyn Rule>],
         expr_arena: &mut Arena<AExpr>,
