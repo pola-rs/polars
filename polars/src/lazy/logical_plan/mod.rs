@@ -2,7 +2,7 @@ pub(crate) mod optimizer;
 use crate::frame::ser::fork::csv::infer_file_schema;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
-use crate::lazy::utils::{expr_to_root_column_expr, expr_to_root_column_names, has_expr};
+use crate::lazy::utils::{expr_to_root_column_exprs, expr_to_root_column_names, has_expr};
 use crate::{
     lazy::{prelude::*, utils},
     prelude::*,
@@ -576,23 +576,46 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             Box::new(replace_wildcard_with_column(*e, column_name)),
             name,
         ),
-        Expr::Mean(e) => Expr::Mean(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::Median(e) => Expr::Median(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::Max(e) => Expr::Max(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::Min(e) => Expr::Min(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::Sum(e) => Expr::Sum(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::Count(e) => Expr::Count(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::Last(e) => Expr::Last(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::First(e) => Expr::First(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::NUnique(e) => Expr::NUnique(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::AggGroups(e) => {
-            Expr::AggGroups(Box::new(replace_wildcard_with_column(*e, column_name)))
+        Expr::Agg(agg) => match agg {
+            AggExpr::Mean(e) => {
+                AggExpr::Mean(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::Median(e) => {
+                AggExpr::Median(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::Max(e) => {
+                AggExpr::Max(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::Min(e) => {
+                AggExpr::Min(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::Sum(e) => {
+                AggExpr::Sum(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::Count(e) => {
+                AggExpr::Count(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::Last(e) => {
+                AggExpr::Last(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::First(e) => {
+                AggExpr::First(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::NUnique(e) => {
+                AggExpr::NUnique(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::AggGroups(e) => {
+                AggExpr::AggGroups(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::Quantile { expr, quantile } => AggExpr::Quantile {
+                expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
+                quantile,
+            },
+            AggExpr::List(e) => {
+                AggExpr::List(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
         }
-        Expr::Quantile { expr, quantile } => Expr::Quantile {
-            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
-            quantile,
-        },
-        Expr::List(e) => Expr::List(Box::new(replace_wildcard_with_column(*e, column_name))),
+        .into(),
         Expr::Shift { input, periods } => Expr::Shift {
             input: Box::new(replace_wildcard_with_column(*input, column_name)),
             periods,
@@ -615,7 +638,17 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
 fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
     for expr in exprs {
-        if let Ok(Expr::Wildcard) = expr_to_root_column_expr(&expr) {
+        let mut has_wildcard = false;
+
+        let roots = expr_to_root_column_exprs(&expr);
+        for e in roots {
+            if matches!(e, Expr::Wildcard) {
+                has_wildcard = true;
+                break;
+            }
+        }
+
+        if has_wildcard {
             for field in schema.fields() {
                 let name = field.name();
                 let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));

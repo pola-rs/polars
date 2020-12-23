@@ -357,7 +357,7 @@ impl LazyFrame {
         let mut logical_plan = self.get_plan_builder().build();
 
         // gradually fill the rules passed to the optimizer
-        let mut rules: Vec<Box<dyn Rule>> = Vec::with_capacity(8);
+        let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
         let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
@@ -1098,7 +1098,7 @@ mod test {
 
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
-        let rules: &[Box<dyn Rule>] = &[Box::new(SimplifyExprRule {})];
+        let rules: &[Box<dyn OptimizationRule>] = &[Box::new(SimplifyExprRule {})];
 
         let optimizer = StackOptimizer {};
         let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena);
@@ -1278,7 +1278,7 @@ mod test {
 
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
-        let rules: &[Box<dyn Rule>] = &[Box::new(TypeCoercionRule {})];
+        let rules: &[Box<dyn OptimizationRule>] = &[Box::new(TypeCoercionRule {})];
 
         let optimizer = StackOptimizer {};
         let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena);

@@ -30,6 +30,48 @@ impl Debug for dyn Udf {
     }
 }
 
+#[derive(PartialEq, Clone)]
+pub enum AggExpr {
+    Min(Box<Expr>),
+    Max(Box<Expr>),
+    Median(Box<Expr>),
+    NUnique(Box<Expr>),
+    First(Box<Expr>),
+    Last(Box<Expr>),
+    Mean(Box<Expr>),
+    List(Box<Expr>),
+    Count(Box<Expr>),
+    Quantile { expr: Box<Expr>, quantile: f64 },
+    Sum(Box<Expr>),
+    AggGroups(Box<Expr>),
+}
+
+impl AsRef<Expr> for AggExpr {
+    fn as_ref(&self) -> &Expr {
+        use AggExpr::*;
+        match self {
+            Min(e) => e,
+            Max(e) => e,
+            Median(e) => e,
+            NUnique(e) => e,
+            First(e) => e,
+            Last(e) => e,
+            Mean(e) => e,
+            List(e) => e,
+            Count(e) => e,
+            Quantile { expr, .. } => expr,
+            Sum(e) => e,
+            AggGroups(e) => e,
+        }
+    }
+}
+
+impl From<AggExpr> for Expr {
+    fn from(agg: AggExpr) -> Self {
+        Expr::Agg(agg)
+    }
+}
+
 /// Queries consists of multiple expressions.
 #[derive(Clone)]
 pub enum Expr {
@@ -53,21 +95,7 @@ pub enum Expr {
         expr: Box<Expr>,
         reverse: bool,
     },
-    Min(Box<Expr>),
-    Max(Box<Expr>),
-    Median(Box<Expr>),
-    NUnique(Box<Expr>),
-    First(Box<Expr>),
-    Last(Box<Expr>),
-    Mean(Box<Expr>),
-    List(Box<Expr>),
-    Count(Box<Expr>),
-    Quantile {
-        expr: Box<Expr>,
-        quantile: f64,
-    },
-    Sum(Box<Expr>),
-    AggGroups(Box<Expr>),
+    Agg(AggExpr),
     Ternary {
         predicate: Box<Expr>,
         truthy: Box<Expr>,
@@ -104,6 +132,15 @@ macro_rules! impl_partial_eq {
         }
     }};
 }
+macro_rules! impl_partial_eq_agg {
+    ($variant:ident, $left:expr, $other:expr) => {{
+        if let AggExpr::$variant(right) = $other {
+            $left.eq(right)
+        } else {
+            false
+        }
+    }};
+}
 
 impl PartialEq for Expr {
     fn eq(&self, other: &Self) -> bool {
@@ -111,33 +148,41 @@ impl PartialEq for Expr {
             Expr::Duplicated(left) => impl_partial_eq!(Duplicated, left, other),
             Expr::Unique(left) => impl_partial_eq!(Unique, left, other),
             Expr::Reverse(left) => impl_partial_eq!(Reverse, left, other),
-            Expr::Mean(left) => impl_partial_eq!(Mean, left, other),
-            Expr::Median(left) => impl_partial_eq!(Median, left, other),
-            Expr::First(left) => impl_partial_eq!(First, left, other),
-            Expr::Last(left) => impl_partial_eq!(Last, left, other),
-            Expr::AggGroups(left) => impl_partial_eq!(AggGroups, left, other),
-            Expr::NUnique(left) => impl_partial_eq!(NUnique, left, other),
-            Expr::Min(left) => impl_partial_eq!(Min, left, other),
-            Expr::Max(left) => impl_partial_eq!(Max, left, other),
-            Expr::Sum(left) => impl_partial_eq!(Sum, left, other),
-            Expr::List(left) => impl_partial_eq!(List, left, other),
-            Expr::Count(left) => impl_partial_eq!(Count, left, other),
-            Expr::Column(left) => impl_partial_eq!(Column, left, other),
-            Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
-            Expr::Wildcard => matches!(other, Expr::Wildcard),
-            Expr::Quantile { expr, quantile } => {
-                let left = expr;
-                let left_q = quantile;
-                if let Expr::Quantile { expr, quantile } = other {
-                    if left_q == quantile {
-                        left.eq(expr)
-                    } else {
-                        false
+            Expr::Agg(agg) => {
+                if let Expr::Agg(other) = other {
+                    match agg {
+                        AggExpr::Mean(left) => impl_partial_eq_agg!(Mean, left, other),
+                        AggExpr::Median(left) => impl_partial_eq_agg!(Median, left, other),
+                        AggExpr::First(left) => impl_partial_eq_agg!(First, left, other),
+                        AggExpr::Last(left) => impl_partial_eq_agg!(Last, left, other),
+                        AggExpr::AggGroups(left) => impl_partial_eq_agg!(AggGroups, left, other),
+                        AggExpr::NUnique(left) => impl_partial_eq_agg!(NUnique, left, other),
+                        AggExpr::Min(left) => impl_partial_eq_agg!(Min, left, other),
+                        AggExpr::Max(left) => impl_partial_eq_agg!(Max, left, other),
+                        AggExpr::Sum(left) => impl_partial_eq_agg!(Sum, left, other),
+                        AggExpr::List(left) => impl_partial_eq_agg!(List, left, other),
+                        AggExpr::Count(left) => impl_partial_eq_agg!(Count, left, other),
+                        AggExpr::Quantile { expr, quantile } => {
+                            let left = expr;
+                            let left_q = quantile;
+                            if let AggExpr::Quantile { expr, quantile } = other {
+                                if left_q == quantile {
+                                    left.eq(expr)
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        }
                     }
                 } else {
                     false
                 }
             }
+            Expr::Column(left) => impl_partial_eq!(Column, left, other),
+            Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
+            Expr::Wildcard => matches!(other, Expr::Wildcard),
             Expr::Apply { .. } => false,
             Expr::BinaryExpr { .. } => false, // todo: should it?
             Expr::Ternary { .. } => false,
@@ -279,18 +324,23 @@ impl Expr {
             IsNull(_) => Ok(ArrowDataType::Boolean),
             IsNotNull(_) => Ok(ArrowDataType::Boolean),
             Sort { expr, .. } => expr.get_type(schema),
-            Min(expr) => expr.get_type(schema),
-            Max(expr) => expr.get_type(schema),
-            Sum(expr) => expr.get_type(schema),
-            First(expr) => expr.get_type(schema),
-            Last(expr) => expr.get_type(schema),
-            Count(expr) => expr.get_type(schema),
-            List(expr) => Ok(ArrowDataType::List(Box::new(expr.get_type(schema)?))),
-            Mean(expr) => expr.get_type(schema),
-            Median(expr) => expr.get_type(schema),
-            AggGroups(_) => Ok(ArrowDataType::List(Box::new(ArrowDataType::UInt32))),
-            NUnique(_) => Ok(ArrowDataType::UInt32),
-            Quantile { expr, .. } => expr.get_type(schema),
+            Agg(agg) => {
+                use AggExpr::*;
+                match agg {
+                    Min(expr) => expr.get_type(schema),
+                    Max(expr) => expr.get_type(schema),
+                    Sum(expr) => expr.get_type(schema),
+                    First(expr) => expr.get_type(schema),
+                    Last(expr) => expr.get_type(schema),
+                    Count(expr) => expr.get_type(schema),
+                    List(expr) => Ok(ArrowDataType::List(Box::new(expr.get_type(schema)?))),
+                    Mean(expr) => expr.get_type(schema),
+                    Median(expr) => expr.get_type(schema),
+                    AggGroups(_) => Ok(ArrowDataType::List(Box::new(ArrowDataType::UInt32))),
+                    NUnique(_) => Ok(ArrowDataType::UInt32),
+                    Quantile { expr, .. } => expr.get_type(schema),
+                }
+            }
             Cast { data_type, .. } => Ok(data_type.clone()),
             Ternary { truthy, .. } => truthy.get_type(schema),
             Apply {
@@ -346,48 +396,57 @@ impl Expr {
             IsNull(_) => Ok(Field::new("is_null", ArrowDataType::Boolean, true)),
             IsNotNull(_) => Ok(Field::new("is_not_null", ArrowDataType::Boolean, true)),
             Sort { expr, .. } => expr.to_field(schema, ctxt),
-            Min(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Min),
-            Max(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Max),
-            Median(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Median),
-            Mean(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Mean),
-            First(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::First),
-            Last(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Last),
-            List(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::List),
-            NUnique(expr) => {
-                let field = expr.to_field(schema, ctxt)?;
-                let field = Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
-                match ctxt {
-                    Context::Other => Ok(field),
-                    Context::Aggregation => {
-                        let new_name = fmt_groupby_column(field.name(), GroupByMethod::NUnique);
-                        Ok(rename_field(&field, &new_name))
+            Agg(agg) => {
+                use AggExpr::*;
+                match agg {
+                    Min(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Min),
+                    Max(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Max),
+                    Median(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Median),
+                    Mean(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Mean),
+                    First(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::First),
+                    Last(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Last),
+                    List(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::List),
+                    NUnique(expr) => {
+                        let field = expr.to_field(schema, ctxt)?;
+                        let field =
+                            Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
+                        match ctxt {
+                            Context::Other => Ok(field),
+                            Context::Aggregation => {
+                                let new_name =
+                                    fmt_groupby_column(field.name(), GroupByMethod::NUnique);
+                                Ok(rename_field(&field, &new_name))
+                            }
+                        }
+                    }
+                    Sum(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Sum),
+                    Count(expr) => {
+                        let field = expr.to_field(schema, ctxt)?;
+                        let field =
+                            Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
+                        match ctxt {
+                            Context::Other => Ok(field),
+                            Context::Aggregation => {
+                                let new_name =
+                                    fmt_groupby_column(field.name(), GroupByMethod::Count);
+                                Ok(rename_field(&field, &new_name))
+                            }
+                        }
+                    }
+                    AggGroups(expr) => {
+                        let field = expr.to_field(schema, ctxt)?;
+                        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
+                        let new_field = Field::new(
+                            &new_name,
+                            ArrowDataType::List(Box::new(ArrowDataType::UInt32)),
+                            field.is_nullable(),
+                        );
+                        Ok(new_field)
+                    }
+                    Quantile { expr, quantile } => {
+                        get_field_by_context(expr, schema, ctxt, GroupByMethod::Quantile(*quantile))
                     }
                 }
-            }
-            Sum(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Sum),
-            Count(expr) => {
-                let field = expr.to_field(schema, ctxt)?;
-                let field = Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
-                match ctxt {
-                    Context::Other => Ok(field),
-                    Context::Aggregation => {
-                        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Count);
-                        Ok(rename_field(&field, &new_name))
-                    }
-                }
-            }
-            AggGroups(expr) => {
-                let field = expr.to_field(schema, ctxt)?;
-                let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-                let new_field = Field::new(
-                    &new_name,
-                    ArrowDataType::List(Box::new(ArrowDataType::UInt32)),
-                    field.is_nullable(),
-                );
-                Ok(new_field)
-            }
-            Quantile { expr, quantile } => {
-                get_field_by_context(expr, schema, ctxt, GroupByMethod::Quantile(*quantile))
             }
             Cast { expr, data_type } => {
                 let field = expr.to_field(schema, ctxt)?;
@@ -444,18 +503,23 @@ impl fmt::Debug for Expr {
                 true => write!(f, "{:?} DESC", expr),
                 false => write!(f, "{:?} ASC", expr),
             },
-            Min(expr) => write!(f, "AGG MIN {:?}", expr),
-            Max(expr) => write!(f, "AGG MAX {:?}", expr),
-            Median(expr) => write!(f, "AGG MEDIAN {:?}", expr),
-            Mean(expr) => write!(f, "AGG MEAN {:?}", expr),
-            First(expr) => write!(f, "AGG FIRST {:?}", expr),
-            Last(expr) => write!(f, "AGG LAST {:?}", expr),
-            List(expr) => write!(f, "AGG LIST {:?}", expr),
-            NUnique(expr) => write!(f, "AGG N UNIQUE {:?}", expr),
-            Sum(expr) => write!(f, "AGG SUM {:?}", expr),
-            AggGroups(expr) => write!(f, "AGG GROUPS {:?}", expr),
-            Count(expr) => write!(f, "AGG COUNT {:?}", expr),
-            Quantile { expr, .. } => write!(f, "AGG QUANTILE {:?}", expr),
+            Agg(agg) => {
+                use AggExpr::*;
+                match agg {
+                    Min(expr) => write!(f, "AGG MIN {:?}", expr),
+                    Max(expr) => write!(f, "AGG MAX {:?}", expr),
+                    Median(expr) => write!(f, "AGG MEDIAN {:?}", expr),
+                    Mean(expr) => write!(f, "AGG MEAN {:?}", expr),
+                    First(expr) => write!(f, "AGG FIRST {:?}", expr),
+                    Last(expr) => write!(f, "AGG LAST {:?}", expr),
+                    List(expr) => write!(f, "AGG LIST {:?}", expr),
+                    NUnique(expr) => write!(f, "AGG N UNIQUE {:?}", expr),
+                    Sum(expr) => write!(f, "AGG SUM {:?}", expr),
+                    AggGroups(expr) => write!(f, "AGG GROUPS {:?}", expr),
+                    Count(expr) => write!(f, "AGG COUNT {:?}", expr),
+                    Quantile { expr, .. } => write!(f, "AGG QUANTILE {:?}", expr),
+                }
+            }
             Cast { expr, data_type } => write!(f, "CAST {:?} TO {:?}", expr, data_type),
             Ternary {
                 predicate,
@@ -622,60 +686,61 @@ impl Expr {
 
     /// Reduce groups to minimal value.
     pub fn min(self) -> Self {
-        Expr::Min(Box::new(self))
+        AggExpr::Min(Box::new(self)).into()
     }
 
     /// Reduce groups to maximum value.
     pub fn max(self) -> Self {
-        Expr::Max(Box::new(self))
+        AggExpr::Max(Box::new(self)).into()
     }
 
     /// Reduce groups to the mean value.
     pub fn mean(self) -> Self {
-        Expr::Mean(Box::new(self))
+        AggExpr::Mean(Box::new(self)).into()
     }
 
     /// Reduce groups to the median value.
     pub fn median(self) -> Self {
-        Expr::Median(Box::new(self))
+        AggExpr::Median(Box::new(self)).into()
     }
 
     /// Reduce groups to the sum of all the values.
     pub fn sum(self) -> Self {
-        Expr::Sum(Box::new(self))
+        AggExpr::Sum(Box::new(self)).into()
     }
 
     /// Get the number of unique values in the groups.
     pub fn n_unique(self) -> Self {
-        Expr::NUnique(Box::new(self))
+        AggExpr::NUnique(Box::new(self)).into()
     }
 
     /// Get the first value in the group.
     pub fn first(self) -> Self {
-        Expr::First(Box::new(self))
+        AggExpr::First(Box::new(self)).into()
     }
 
     /// Get the last value in the group.
     pub fn last(self) -> Self {
-        Expr::Last(Box::new(self))
+        AggExpr::Last(Box::new(self)).into()
     }
 
     /// Aggregate the group to a Series
     pub fn list(self) -> Self {
-        Expr::List(Box::new(self))
+        AggExpr::List(Box::new(self)).into()
     }
 
     /// Compute the quantile per group.
     pub fn quantile(self, quantile: f64) -> Self {
-        Expr::Quantile {
+        AggExpr::Quantile {
             expr: Box::new(self),
             quantile,
         }
+        .into()
     }
 
     /// Get the group indexes of the group by operation.
     pub fn agg_groups(self) -> Self {
-        Expr::AggGroups(Box::new(self))
+        AggExpr::AggGroups(Box::new(self)).into()
     }
 
     /// Cast expression to another data type.
@@ -801,7 +866,7 @@ impl Expr {
     /// or
     /// Get counts of the group by operation.
     pub fn count(self) -> Self {
-        Expr::Count(Box::new(self))
+        AggExpr::Count(Box::new(self)).into()
     }
 
     /// Standard deviation of the values of the Series
