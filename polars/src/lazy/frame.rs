@@ -416,8 +416,7 @@ impl LazyFrame {
         }
 
         let opt = StackOptimizer {};
-        lp_top = opt
-            .optimize_loop(&rules, &mut expr_arena, &mut lp_arena, lp_top);
+        lp_top = opt.optimize_loop(&rules, &mut expr_arena, &mut lp_arena, lp_top);
         let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         Ok(lp)
     }
@@ -1101,11 +1100,9 @@ mod test {
         let mut lp_arena = Arena::new();
         let rules: &[Box<dyn Rule>] = &[Box::new(SimplifyExprRule {})];
 
-        let optimizer = StatelessOptimizer {};
+        let optimizer = StackOptimizer {};
         let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena);
-        lp_top = optimizer
-            .optimize(&mut expr_arena, &mut lp_arena, lp_top, rules)
-            .unwrap();
+        lp_top = optimizer.optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top);
         let plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         assert!(
             matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(ScalarValue::Float32(2.0))))
@@ -1283,11 +1280,9 @@ mod test {
         let mut lp_arena = Arena::new();
         let rules: &[Box<dyn Rule>] = &[Box::new(TypeCoercionRule {})];
 
-        let optimizer = StatelessOptimizer {};
+        let optimizer = StackOptimizer {};
         let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena);
-        lp_top = optimizer
-            .optimize(&mut expr_arena, &mut lp_arena, lp_top, rules)
-            .unwrap();
+        lp_top = optimizer.optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top);
         let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
 
         if let LogicalPlan::Projection { expr, .. } = lp {

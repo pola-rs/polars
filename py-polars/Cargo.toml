@@ -10,7 +10,7 @@ edition = "2018"
 polars = {path = "../polars", features = ["parquet", "simd", "lazy", "strings", "temporal", "random", "object"]}
 pyo3 = {version = "0.12", features = ["extension-module"] }
 thiserror = "1.0.20"
-numpy = "0.12"
+numpy = "0.12.1"
 ndarray = "0.14.0"
 parquet = "2"
 
