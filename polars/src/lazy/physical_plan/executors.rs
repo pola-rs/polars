@@ -1,5 +1,5 @@
 use super::*;
-use crate::frame::ser::csv::CsvEncoding;
+use crate::frame::ser::csv::{CsvEncoding, ScanAggregation};
 use crate::lazy::logical_plan::{DataFrameOperation, FETCH_ROWS};
 use arrow::datatypes::SchemaRef;
 use itertools::Itertools;
@@ -62,6 +62,7 @@ impl ParquetExec {
         schema: Schema,
         with_columns: Option<Vec<String>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
+        aggregate: Vec<ScanAggregation>,
         stop_after_n_rows: Option<usize>,
         cache: bool,
     ) -> Self {
@@ -141,6 +142,7 @@ pub struct CsvExec {
     stop_after_n_rows: Option<usize>,
     with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
+    aggregate: Vec<ScanAggregation>,
     cache: bool,
 }
 
@@ -156,6 +158,7 @@ impl CsvExec {
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
+        aggregate: Vec<ScanAggregation>,
         cache: bool,
     ) -> Self {
         CsvExec {
@@ -168,6 +171,7 @@ impl CsvExec {
             stop_after_n_rows,
             with_columns,
             predicate,
+            aggregate,
             cache,
         }
     }
@@ -213,10 +217,7 @@ impl Executor for CsvExec {
             .with_columns(with_columns)
             .with_encoding(CsvEncoding::LossyUtf8);
 
-        let df = match &self.predicate {
-            Some(predicate) => reader.finish_with_predicate(predicate.clone()),
-            None => reader.finish(),
-        }?;
+        let df = reader.finish_with_scan_ops(self.predicate.clone(), Some(&self.aggregate))?;
 
         if self.cache {
             let mut guard = cache.lock().unwrap();
@@ -321,7 +322,7 @@ impl StandardExec {
     }
 }
 
-fn evaluate_physical_expressions(
+pub(crate) fn evaluate_physical_expressions(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
 ) -> Result<DataFrame> {

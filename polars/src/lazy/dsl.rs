@@ -270,88 +270,11 @@ impl PartialEq for Expr {
     }
 }
 
-fn get_field_by_context(
-    expr: &Expr,
-    schema: &Schema,
-    ctxt: Context,
-    groupby_method: GroupByMethod,
-) -> Result<Field> {
-    let mut field = expr.to_field(schema, ctxt)?;
-    if &ArrowDataType::Boolean == field.data_type() {
-        field = Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable())
-    }
-
-    match ctxt {
-        Context::Other => Ok(field),
-        Context::Aggregation => {
-            let new_name = fmt_groupby_column(field.name(), groupby_method);
-            Ok(rename_field(&field, &new_name))
-        }
-    }
-}
-
 impl Expr {
     /// Get DataType result of the expression. The schema is the input data.
-    pub fn get_type(&self, schema: &Schema) -> Result<ArrowDataType> {
-        use Expr::*;
-        match self {
-            Window { function, .. } => function.get_type(schema),
-            Unique(_) => Ok(ArrowDataType::Boolean),
-            Duplicated(_) => Ok(ArrowDataType::Boolean),
-            Reverse(expr) => expr.get_type(schema),
-            Alias(expr, ..) => expr.get_type(schema),
-            Column(name) => Ok(schema.field_with_name(name)?.data_type().clone()),
-            Literal(sv) => Ok(sv.get_datatype()),
-            BinaryExpr { left, op, right } => match op {
-                Operator::Not
-                | Operator::Lt
-                | Operator::Gt
-                | Operator::Eq
-                | Operator::NotEq
-                | Operator::And
-                | Operator::LtEq
-                | Operator::GtEq
-                | Operator::Or
-                | Operator::NotLike
-                | Operator::Like => Ok(ArrowDataType::Boolean),
-                _ => {
-                    let left_type = left.get_type(schema)?;
-                    let right_type = right.get_type(schema)?;
-                    get_supertype(&left_type, &right_type)
-                }
-            },
-            Not(_) => Ok(ArrowDataType::Boolean),
-            IsNull(_) => Ok(ArrowDataType::Boolean),
-            IsNotNull(_) => Ok(ArrowDataType::Boolean),
-            Sort { expr, .. } => expr.get_type(schema),
-            Agg(agg) => {
-                use AggExpr::*;
-                match agg {
-                    Min(expr) => expr.get_type(schema),
-                    Max(expr) => expr.get_type(schema),
-                    Sum(expr) => expr.get_type(schema),
-                    First(expr) => expr.get_type(schema),
-                    Last(expr) => expr.get_type(schema),
-                    Count(expr) => expr.get_type(schema),
-                    List(expr) => Ok(ArrowDataType::List(Box::new(expr.get_type(schema)?))),
-                    Mean(expr) => expr.get_type(schema),
-                    Median(expr) => expr.get_type(schema),
-                    AggGroups(_) => Ok(ArrowDataType::List(Box::new(ArrowDataType::UInt32))),
-                    NUnique(_) => Ok(ArrowDataType::UInt32),
-                    Quantile { expr, .. } => expr.get_type(schema),
-                }
-            }
-            Cast { data_type, .. } => Ok(data_type.clone()),
-            Ternary { truthy, .. } => truthy.get_type(schema),
-            Apply {
-                input, output_type, ..
-            } => match output_type {
-                Some(output_type) => Ok(output_type.clone()),
-                None => input.get_type(schema),
-            },
-            Shift { input, .. } => input.get_type(schema),
-            Wildcard => panic!("should be no wildcard at this point"),
-        }
+    pub fn get_type(&self, schema: &Schema, context: Context) -> Result<ArrowDataType> {
+        self.to_field(schema, context)
+            .map(|f| f.data_type().clone())
     }
 
     /// Get Field result of the expression. The schema is the input data.
@@ -368,15 +291,15 @@ impl Expr {
                 Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
             }
             Reverse(expr) => expr.to_field(&schema, ctxt),
-            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema)?, true)),
+            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema, ctxt)?, true)),
             Column(name) => {
                 let field = schema.field_with_name(name).map(|f| f.clone())?;
                 Ok(field)
             }
             Literal(sv) => Ok(Field::new("lit", sv.get_datatype(), true)),
             BinaryExpr { left, right, op } => {
-                let left_type = left.get_type(schema)?;
-                let right_type = right.get_type(schema)?;
+                let left_type = left.get_type(schema, ctxt)?;
+                let right_type = right.get_type(schema, ctxt)?;
                 let expr_type = get_supertype(&left_type, &right_type)?;
 
                 use Operator::*;
@@ -399,13 +322,27 @@ impl Expr {
             Agg(agg) => {
                 use AggExpr::*;
                 match agg {
-                    Min(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Min),
-                    Max(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Max),
-                    Median(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Median),
-                    Mean(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Mean),
-                    First(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::First),
-                    Last(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Last),
-                    List(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::List),
+                    Min(expr) => {
+                        field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::Min)
+                    }
+                    Max(expr) => {
+                        field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::Max)
+                    }
+                    Median(expr) => {
+                        field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::Median)
+                    }
+                    Mean(expr) => {
+                        field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::Mean)
+                    }
+                    First(expr) => {
+                        field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::First)
+                    }
+                    Last(expr) => {
+                        field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::Last)
+                    }
+                    List(expr) => {
+                        field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::List)
+                    }
                     NUnique(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
                         let field =
@@ -419,7 +356,9 @@ impl Expr {
                             }
                         }
                     }
-                    Sum(expr) => get_field_by_context(expr, schema, ctxt, GroupByMethod::Sum),
+                    Sum(expr) => {
+                        field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::Sum)
+                    }
                     Count(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
                         let field =
@@ -443,9 +382,11 @@ impl Expr {
                         );
                         Ok(new_field)
                     }
-                    Quantile { expr, quantile } => {
-                        get_field_by_context(expr, schema, ctxt, GroupByMethod::Quantile(*quantile))
-                    }
+                    Quantile { expr, quantile } => field_by_context(
+                        expr.to_field(schema, ctxt)?,
+                        ctxt,
+                        GroupByMethod::Quantile(*quantile),
+                    ),
                 }
             }
             Cast { expr, data_type } => {

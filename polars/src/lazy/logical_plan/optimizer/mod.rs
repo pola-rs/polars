@@ -1,6 +1,7 @@
+use crate::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use crate::lazy::logical_plan::{prepare_projection, Context};
 use crate::lazy::prelude::*;
-use crate::lazy::utils::expr_to_root_column_exprs;
+use crate::lazy::utils::{expr_to_root_column_exprs, rename_field};
 use crate::prelude::*;
 use crate::utils::{get_supertype, Arena, Node};
 use ahash::RandomState;
@@ -44,7 +45,7 @@ pub struct StackOptimizer {}
 impl StackOptimizer {
     pub fn optimize_loop(
         &self,
-        rules: &[Box<dyn OptimizationRule>],
+        rules: &mut [Box<dyn OptimizationRule>],
         expr_arena: &mut Arena<AExpr>,
         lp_arena: &mut Arena<ALogicalPlan>,
         lp_top: Node,
@@ -63,7 +64,7 @@ impl StackOptimizer {
             plans.push(lp_top);
             while let Some(current_node) = plans.pop() {
                 // apply rules
-                for rule in rules.iter() {
+                for rule in rules.iter_mut() {
                     // keep iterating over same rule
                     while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node) {
                         lp_arena.assign(current_node, x);
@@ -329,68 +330,196 @@ impl Default for AExpr {
     }
 }
 
+pub(crate) fn field_by_context(
+    mut field: Field,
+    ctxt: Context,
+    groupby_method: GroupByMethod,
+) -> Result<Field> {
+    if &ArrowDataType::Boolean == field.data_type() {
+        field = Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable())
+    }
+
+    match ctxt {
+        Context::Other => Ok(field),
+        Context::Aggregation => {
+            let new_name = fmt_groupby_column(field.name(), groupby_method);
+            Ok(rename_field(&field, &new_name))
+        }
+    }
+}
+
 impl AExpr {
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
-    pub(crate) fn get_type(&self, schema: &Schema, arena: &Arena<AExpr>) -> Result<ArrowDataType> {
+    pub(crate) fn get_type(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        arena: &Arena<AExpr>,
+    ) -> Result<ArrowDataType> {
+        self.to_field(schema, ctxt, arena)
+            .map(|f| f.data_type().clone())
+    }
+
+    /// Get Field result of the expression. The schema is the input data.
+    pub(crate) fn to_field(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        arena: &Arena<AExpr>,
+    ) -> Result<Field> {
         use AExpr::*;
         match self {
-            Window { function, .. } => arena.get(*function).get_type(schema, arena),
-            Unique(_) => Ok(ArrowDataType::Boolean),
-            Duplicated(_) => Ok(ArrowDataType::Boolean),
-            Reverse(expr) => arena.get(*expr).get_type(schema, arena),
-            Alias(expr, ..) => arena.get(*expr).get_type(schema, arena),
-            Column(name) => Ok(schema.field_with_name(name)?.data_type().clone()),
-            Literal(sv) => Ok(sv.get_datatype()),
-            BinaryExpr { left, op, right } => match op {
-                Operator::Not
-                | Operator::Lt
-                | Operator::Gt
-                | Operator::Eq
-                | Operator::NotEq
-                | Operator::And
-                | Operator::LtEq
-                | Operator::GtEq
-                | Operator::Or
-                | Operator::NotLike
-                | Operator::Like => Ok(ArrowDataType::Boolean),
-                _ => {
-                    let left_type = arena.get(*left).get_type(schema, arena)?;
-                    let right_type = arena.get(*right).get_type(schema, arena)?;
-                    get_supertype(&left_type, &right_type)
-                }
-            },
-            Not(_) => Ok(ArrowDataType::Boolean),
-            IsNull(_) => Ok(ArrowDataType::Boolean),
-            IsNotNull(_) => Ok(ArrowDataType::Boolean),
-            Sort { expr, .. } => arena.get(*expr).get_type(schema, arena),
+            Window { function, .. } => arena.get(*function).to_field(schema, ctxt, arena),
+            Unique(expr) => {
+                let field = arena.get(*expr).to_field(&schema, ctxt, arena)?;
+                Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
+            }
+            Duplicated(expr) => {
+                let field = arena.get(*expr).to_field(&schema, ctxt, arena)?;
+                Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
+            }
+            Reverse(expr) => arena.get(*expr).to_field(&schema, ctxt, arena),
+            Alias(expr, name) => Ok(Field::new(
+                name,
+                arena.get(*expr).get_type(schema, ctxt, arena)?,
+                true,
+            )),
+            Column(name) => {
+                let field = schema.field_with_name(name).map(|f| f.clone())?;
+                Ok(field)
+            }
+            Literal(sv) => Ok(Field::new("lit", sv.get_datatype(), true)),
+            BinaryExpr { left, right, op } => {
+                let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
+                let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
+                let expr_type = get_supertype(&left_type, &right_type)?;
+
+                use Operator::*;
+                let out_field;
+                let out_name = match op {
+                    Plus | Minus | Multiply | Divide | Modulus => {
+                        out_field = arena.get(*left).to_field(schema, ctxt, arena)?;
+                        out_field.name().as_str()
+                    }
+                    Eq | Lt | GtEq | LtEq => "",
+                    _ => "binary_expr",
+                };
+
+                Ok(Field::new(out_name, expr_type, true))
+            }
+            Not(_) => Ok(Field::new("not", ArrowDataType::Boolean, true)),
+            IsNull(_) => Ok(Field::new("is_null", ArrowDataType::Boolean, true)),
+            IsNotNull(_) => Ok(Field::new("is_not_null", ArrowDataType::Boolean, true)),
+            Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Agg(agg) => {
                 use AAggExpr::*;
                 match agg {
-                    Min(expr) => arena.get(*expr).get_type(schema, arena),
-                    Max(expr) => arena.get(*expr).get_type(schema, arena),
-                    Sum(expr) => arena.get(*expr).get_type(schema, arena),
-                    First(expr) => arena.get(*expr).get_type(schema, arena),
-                    Last(expr) => arena.get(*expr).get_type(schema, arena),
-                    Count(expr) => arena.get(*expr).get_type(schema, arena),
-                    List(expr) => Ok(ArrowDataType::List(Box::new(
-                        arena.get(*expr).get_type(schema, arena)?,
-                    ))),
-                    Mean(expr) => arena.get(*expr).get_type(schema, arena),
-                    Median(expr) => arena.get(*expr).get_type(schema, arena),
-                    AggGroups(_) => Ok(ArrowDataType::List(Box::new(ArrowDataType::UInt32))),
-                    NUnique(_) => Ok(ArrowDataType::UInt32),
-                    Quantile { expr, .. } => arena.get(*expr).get_type(schema, arena),
+                    Min(expr) => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::Min,
+                    ),
+                    Max(expr) => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::Max,
+                    ),
+                    Median(expr) => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::Median,
+                    ),
+                    Mean(expr) => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::Mean,
+                    ),
+                    First(expr) => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::First,
+                    ),
+                    Last(expr) => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::Last,
+                    ),
+                    List(expr) => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::List,
+                    ),
+                    NUnique(expr) => {
+                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let field =
+                            Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
+                        match ctxt {
+                            Context::Other => Ok(field),
+                            Context::Aggregation => {
+                                let new_name =
+                                    fmt_groupby_column(field.name(), GroupByMethod::NUnique);
+                                Ok(rename_field(&field, &new_name))
+                            }
+                        }
+                    }
+                    Sum(expr) => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::Sum,
+                    ),
+                    Count(expr) => {
+                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let field =
+                            Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
+                        match ctxt {
+                            Context::Other => Ok(field),
+                            Context::Aggregation => {
+                                let new_name =
+                                    fmt_groupby_column(field.name(), GroupByMethod::Count);
+                                Ok(rename_field(&field, &new_name))
+                            }
+                        }
+                    }
+                    AggGroups(expr) => {
+                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
+                        let new_field = Field::new(
+                            &new_name,
+                            ArrowDataType::List(Box::new(ArrowDataType::UInt32)),
+                            field.is_nullable(),
+                        );
+                        Ok(new_field)
+                    }
+                    Quantile { expr, quantile } => field_by_context(
+                        arena.get(*expr).to_field(schema, ctxt, arena)?,
+                        ctxt,
+                        GroupByMethod::Quantile(*quantile),
+                    ),
                 }
             }
-            Cast { data_type, .. } => Ok(data_type.clone()),
-            Ternary { truthy, .. } => arena.get(*truthy).get_type(schema, arena),
+            Cast { expr, data_type } => {
+                let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                Ok(Field::new(
+                    field.name(),
+                    data_type.clone(),
+                    field.is_nullable(),
+                ))
+            }
+            Ternary { truthy, .. } => arena.get(*truthy).to_field(schema, ctxt, arena),
             Apply {
-                input, output_type, ..
+                output_type, input, ..
             } => match output_type {
-                Some(output_type) => Ok(output_type.clone()),
-                None => arena.get(*input).get_type(schema, arena),
+                None => arena.get(*input).to_field(schema, ctxt, arena),
+                Some(output_type) => {
+                    let input_field = arena.get(*input).to_field(schema, ctxt, arena)?;
+                    Ok(Field::new(
+                        input_field.name(),
+                        output_type.clone(),
+                        input_field.is_nullable(),
+                    ))
+                }
             },
-            Shift { input, .. } => arena.get(*input).get_type(schema, arena),
+            Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
         }
     }
@@ -417,6 +546,7 @@ pub enum ALogicalPlan {
         stop_after_n_rows: Option<usize>,
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
+        aggregate: Vec<Node>,
         cache: bool,
     },
     #[cfg(feature = "parquet")]
@@ -425,6 +555,7 @@ pub enum ALogicalPlan {
         schema: Schema,
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
+        aggregate: Vec<Node>,
         stop_after_n_rows: Option<usize>,
         cache: bool,
     },
@@ -637,6 +768,7 @@ pub(crate) fn to_alp(
             stop_after_n_rows,
             with_columns,
             predicate,
+            aggregate,
             cache,
         } => ALogicalPlan::CsvScan {
             path,
@@ -648,6 +780,10 @@ pub(crate) fn to_alp(
             stop_after_n_rows,
             with_columns,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            aggregate: aggregate
+                .into_iter()
+                .map(|expr| to_aexpr(expr, expr_arena))
+                .collect(),
             cache,
         },
         #[cfg(feature = "parquet")]
@@ -656,6 +792,7 @@ pub(crate) fn to_alp(
             schema,
             with_columns,
             predicate,
+            aggregate,
             stop_after_n_rows,
             cache,
         } => ALogicalPlan::ParquetScan {
@@ -663,6 +800,10 @@ pub(crate) fn to_alp(
             schema,
             with_columns,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            aggregate: aggregate
+                .into_iter()
+                .map(|expr| to_aexpr(expr, expr_arena))
+                .collect(),
             stop_after_n_rows,
             cache,
         },
@@ -988,6 +1129,7 @@ pub(crate) fn node_to_lp(
             stop_after_n_rows,
             with_columns,
             predicate,
+            aggregate,
             cache,
         } => LogicalPlan::CsvScan {
             path,
@@ -999,6 +1141,10 @@ pub(crate) fn node_to_lp(
             stop_after_n_rows,
             with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            aggregate: aggregate
+                .into_iter()
+                .map(|n| node_to_exp(n, expr_arena))
+                .collect(),
             cache,
         },
         #[cfg(feature = "parquet")]
@@ -1007,6 +1153,7 @@ pub(crate) fn node_to_lp(
             schema,
             with_columns,
             predicate,
+            aggregate,
             stop_after_n_rows,
             cache,
         } => LogicalPlan::ParquetScan {
@@ -1014,6 +1161,10 @@ pub(crate) fn node_to_lp(
             schema,
             with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            aggregate: aggregate
+                .into_iter()
+                .map(|n| node_to_exp(n, expr_arena))
+                .collect(),
             stop_after_n_rows,
             cache,
         },
@@ -1151,8 +1302,13 @@ pub(crate) fn node_to_lp(
 }
 
 pub trait OptimizationRule {
+    ///  Optimize (subplan) in LogicalPlan
+    ///
+    /// * node - node of the (sub) logicalplan root/ node
+    /// * lp_arena - LogicalPlan memory arena
+    /// * expr_arena - Expression memory arena
     fn optimize_plan(
-        &self,
+        &mut self,
         _lp_arena: &mut Arena<ALogicalPlan>,
         _expr_arena: &mut Arena<AExpr>,
         _node: Node,

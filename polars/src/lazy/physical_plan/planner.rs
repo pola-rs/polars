@@ -1,4 +1,5 @@
 use crate::frame::group_by::GroupByMethod;
+use crate::frame::ser::csv::ScanAggregation;
 use crate::lazy::logical_plan::{Context, DataFrameOperation};
 use crate::lazy::physical_plan::executors::*;
 use crate::lazy::utils::{agg_source_paths, expr_to_root_column_name};
@@ -7,6 +8,43 @@ use ahash::RandomState;
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::sync::Arc;
+
+fn aggregate_expr_to_scan_agg(aggregate: Vec<Expr>) -> Vec<ScanAggregation> {
+    aggregate
+        .into_iter()
+        .map(|e| {
+            let mut alias = None;
+            let mut expr = e;
+            if let Expr::Alias(e, name) = expr {
+                expr = *e;
+                alias = Some((*name).clone())
+            };
+            if let Expr::Agg(agg) = expr {
+                match agg {
+                    AggExpr::Min(e) => ScanAggregation::Min {
+                        column: (*expr_to_root_column_name(&e).unwrap()).clone(),
+                        alias,
+                    },
+                    AggExpr::Max(e) => ScanAggregation::Max {
+                        column: (*expr_to_root_column_name(&e).unwrap()).clone(),
+                        alias,
+                    },
+                    AggExpr::Sum(e) => ScanAggregation::Sum {
+                        column: (*expr_to_root_column_name(&e).unwrap()).clone(),
+                        alias,
+                    },
+                    AggExpr::Mean(e) => ScanAggregation::Mean {
+                        column: (*expr_to_root_column_name(&e).unwrap()).clone(),
+                        alias,
+                    },
+                    _ => todo!(),
+                }
+            } else {
+                unreachable!()
+            }
+        })
+        .collect()
+}
 
 pub struct DefaultPlanner {}
 impl Default for DefaultPlanner {
@@ -56,11 +94,13 @@ impl DefaultPlanner {
                 stop_after_n_rows,
                 with_columns,
                 predicate,
+                aggregate,
                 cache,
             } => {
                 let predicate = predicate
                     .map(|pred| self.create_physical_expr(pred, Context::Other))
                     .map_or(Ok(None), |v| v.map(Some))?;
+                let aggregate = aggregate_expr_to_scan_agg(aggregate);
                 Ok(Box::new(CsvExec::new(
                     path,
                     schema,
@@ -71,6 +111,7 @@ impl DefaultPlanner {
                     stop_after_n_rows,
                     with_columns,
                     predicate,
+                    aggregate,
                     cache,
                 )))
             }
@@ -80,17 +121,21 @@ impl DefaultPlanner {
                 schema,
                 with_columns,
                 predicate,
+                aggregate,
                 stop_after_n_rows,
                 cache,
             } => {
                 let predicate = predicate
                     .map(|pred| self.create_physical_expr(pred, Context::Other))
                     .map_or(Ok(None), |v| v.map(Some))?;
+
+                let aggregate = aggregate_expr_to_scan_agg(aggregate);
                 Ok(Box::new(ParquetExec::new(
                     path,
                     schema,
                     with_columns,
                     predicate,
+                    aggregate,
                     stop_after_n_rows,
                     cache,
                 )))

@@ -114,7 +114,7 @@ impl AggScanProjection {
 
 impl OptimizationRule for AggScanProjection {
     fn optimize_plan(
-        &self,
+        &mut self,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
@@ -129,6 +129,7 @@ impl OptimizationRule for AggScanProjection {
                     path,
                     schema,
                     predicate,
+                    aggregate,
                     with_columns,
                     stop_after_n_rows,
                     cache,
@@ -144,6 +145,7 @@ impl OptimizationRule for AggScanProjection {
                             path,
                             schema,
                             predicate,
+                            aggregate,
                             with_columns,
                             stop_after_n_rows,
                             cache,
@@ -157,6 +159,7 @@ impl OptimizationRule for AggScanProjection {
                         schema,
                         with_columns: new_with_columns,
                         predicate,
+                        aggregate,
                         stop_after_n_rows,
                         cache,
                     };
@@ -176,6 +179,7 @@ impl OptimizationRule for AggScanProjection {
                     skip_rows,
                     stop_after_n_rows,
                     predicate,
+                    aggregate,
                     with_columns,
                     cache,
                 } = lp
@@ -194,6 +198,7 @@ impl OptimizationRule for AggScanProjection {
                             skip_rows,
                             stop_after_n_rows,
                             predicate,
+                            aggregate,
                             with_columns,
                             cache,
                         };
@@ -210,6 +215,7 @@ impl OptimizationRule for AggScanProjection {
                         stop_after_n_rows,
                         with_columns: new_with_columns,
                         predicate,
+                        aggregate,
                         cache,
                     };
                     Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))

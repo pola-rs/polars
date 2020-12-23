@@ -218,18 +218,27 @@ impl ProjectionPushDown {
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
-                schema,
+                mut schema,
                 predicate,
+                aggregate,
                 stop_after_n_rows,
                 cache,
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections);
+                if let Some(cols) = &with_columns {
+                    schema = Schema::new(
+                        cols.iter()
+                            .map(|name| schema.field_with_name(name).unwrap().clone())
+                            .collect(),
+                    );
+                }
                 let lp = ParquetScan {
                     path,
                     schema,
                     with_columns,
                     predicate,
+                    aggregate,
                     stop_after_n_rows,
                     cache,
                 };
@@ -237,17 +246,25 @@ impl ProjectionPushDown {
             }
             CsvScan {
                 path,
-                schema,
+                mut schema,
                 has_header,
                 delimiter,
                 ignore_errors,
                 skip_rows,
                 stop_after_n_rows,
                 predicate,
+                aggregate,
                 cache,
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections);
+                if let Some(cols) = &with_columns {
+                    schema = Arc::new(Schema::new(
+                        cols.iter()
+                            .map(|name| schema.field_with_name(name).unwrap().clone())
+                            .collect(),
+                    ));
+                }
                 let lp = CsvScan {
                     path,
                     schema,
@@ -258,6 +275,7 @@ impl ProjectionPushDown {
                     skip_rows,
                     stop_after_n_rows,
                     predicate,
+                    aggregate,
                     cache,
                 };
                 Ok(lp)
