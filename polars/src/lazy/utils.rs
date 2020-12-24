@@ -547,10 +547,7 @@ pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<String>> {
     let mut roots = expr_to_root_column_exprs(expr);
     match roots.len() {
         0 => Err(PolarsError::Other("no root column name found".into())),
-        1 => Err(PolarsError::Other(
-            "found more than one root column name".into(),
-        )),
-        _ => match roots.pop().unwrap() {
+        1 => match roots.pop().unwrap() {
             Expr::Wildcard => Err(PolarsError::Other(
                 "wildcard has not root column name".into(),
             )),
@@ -559,6 +556,9 @@ pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<String>> {
                 unreachable!();
             }
         },
+        _ => Err(PolarsError::Other(
+            "found more than one root column name".into(),
+        )),
     }
 }
 

@@ -1,5 +1,6 @@
 //! Lazy variant of a [DataFrame](crate::prelude::DataFrame).
 use crate::frame::select::Selection;
+use crate::lazy::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::{
     agg_projection, AggScanProjection,
 };
@@ -108,7 +109,7 @@ impl<'a> LazyCsvReader<'a> {
         )
         .build()
         .into();
-        lf.agg_scan_projection = true;
+        lf.opt_state.agg_scan_projection = true;
         lf
     }
 }
@@ -141,22 +142,14 @@ impl DataFrame {
 #[derive(Clone)]
 pub struct LazyFrame {
     pub(crate) logical_plan: LogicalPlan,
-    projection_pushdown: bool,
-    predicate_pushdown: bool,
-    type_coercion: bool,
-    simplify_expr: bool,
-    agg_scan_projection: bool,
+    opt_state: OptState,
 }
 
 impl Default for LazyFrame {
     fn default() -> Self {
         LazyFrame {
             logical_plan: LogicalPlan::default(),
-            projection_pushdown: false,
-            predicate_pushdown: false,
-            type_coercion: false,
-            simplify_expr: false,
-            agg_scan_projection: false,
+            opt_state: Default::default(),
         }
     }
 }
@@ -165,21 +158,32 @@ impl From<LogicalPlan> for LazyFrame {
     fn from(plan: LogicalPlan) -> Self {
         Self {
             logical_plan: plan,
-            projection_pushdown: true,
-            predicate_pushdown: true,
-            type_coercion: true,
-            simplify_expr: true,
-            agg_scan_projection: false,
+            opt_state: Default::default(),
         }
     }
 }
 
+#[derive(Copy, Clone)]
 struct OptState {
     projection_pushdown: bool,
     predicate_pushdown: bool,
     type_coercion: bool,
     simplify_expr: bool,
     agg_scan_projection: bool,
+    aggregate_pushdown: bool,
+}
+
+impl Default for OptState {
+    fn default() -> Self {
+        OptState {
+            projection_pushdown: true,
+            predicate_pushdown: true,
+            type_coercion: true,
+            simplify_expr: true,
+            agg_scan_projection: true,
+            aggregate_pushdown: true,
+        }
+    }
 }
 
 impl LazyFrame {
@@ -189,7 +193,7 @@ impl LazyFrame {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, stop_after_n_rows, cache)
             .build()
             .into();
-        lf.agg_scan_projection = true;
+        lf.opt_state.agg_scan_projection = true;
         lf
     }
 
@@ -212,47 +216,43 @@ impl LazyFrame {
     }
 
     fn get_opt_state(&self) -> OptState {
-        OptState {
-            projection_pushdown: self.projection_pushdown,
-            predicate_pushdown: self.predicate_pushdown,
-            type_coercion: self.type_coercion,
-            simplify_expr: self.simplify_expr,
-            agg_scan_projection: self.agg_scan_projection,
-        }
+        self.opt_state
     }
 
     fn from_logical_plan(logical_plan: LogicalPlan, opt_state: OptState) -> Self {
         LazyFrame {
             logical_plan,
-            projection_pushdown: opt_state.projection_pushdown,
-            predicate_pushdown: opt_state.predicate_pushdown,
-            type_coercion: opt_state.type_coercion,
-            simplify_expr: opt_state.simplify_expr,
-            agg_scan_projection: opt_state.agg_scan_projection,
+            opt_state,
         }
     }
 
-    /// Toggle projection pushdown optimization on or off.
+    /// Toggle projection pushdown optimization.
     pub fn with_projection_pushdown(mut self, toggle: bool) -> Self {
-        self.projection_pushdown = toggle;
+        self.opt_state.projection_pushdown = toggle;
         self
     }
 
-    /// Toggle predicate pushdown optimization on or off.
+    /// Toggle predicate pushdown optimization.
     pub fn with_predicate_pushdown(mut self, toggle: bool) -> Self {
-        self.predicate_pushdown = toggle;
+        self.opt_state.predicate_pushdown = toggle;
         self
     }
 
-    /// Toggle type coercion optimization on or off.
+    /// Toggle type coercion optimization.
     pub fn with_type_coercion(mut self, toggle: bool) -> Self {
-        self.type_coercion = toggle;
+        self.opt_state.type_coercion = toggle;
         self
     }
 
     /// Toggle expression simplification optimization on or off
     pub fn with_simplify_expr(mut self, toggle: bool) -> Self {
-        self.simplify_expr = toggle;
+        self.opt_state.simplify_expr = toggle;
+        self
+    }
+
+    /// Toggle aggregate pushdown.
+    pub fn with_aggregate_pushdown(mut self, toggle: bool) -> Self {
+        self.opt_state.aggregate_pushdown = toggle;
         self
     }
 
@@ -348,11 +348,12 @@ impl LazyFrame {
 
     fn optimize(self) -> Result<LogicalPlan> {
         // get toggle values
-        let predicate_pushdown = self.predicate_pushdown;
-        let projection_pushdown = self.projection_pushdown;
-        let type_coercion = self.type_coercion;
-        let simplify_expr = self.simplify_expr;
-        let agg_scan_projection = self.agg_scan_projection;
+        let predicate_pushdown = self.opt_state.predicate_pushdown;
+        let projection_pushdown = self.opt_state.projection_pushdown;
+        let type_coercion = self.opt_state.type_coercion;
+        let simplify_expr = self.opt_state.simplify_expr;
+        let agg_scan_projection = self.opt_state.agg_scan_projection;
+        let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
         let mut logical_plan = self.get_plan_builder().build();
 
@@ -415,9 +416,14 @@ impl LazyFrame {
             rules.push(Box::new(SimplifyBooleanRule {}));
         }
 
+        if aggregate_pushdown {
+            rules.push(Box::new(AggregatePushdown::new()))
+        }
+
         let opt = StackOptimizer {};
         lp_top = opt.optimize_loop(&mut rules, &mut expr_arena, &mut lp_arena, lp_top);
         let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+
         Ok(lp)
     }
 
@@ -1098,7 +1104,7 @@ mod test {
 
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
-        let rules: &[Box<dyn OptimizationRule>] = &[Box::new(SimplifyExprRule {})];
+        let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(SimplifyExprRule {})];
 
         let optimizer = StackOptimizer {};
         let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena);
@@ -1278,7 +1284,7 @@ mod test {
 
         let mut expr_arena = Arena::new();
         let mut lp_arena = Arena::new();
-        let rules: &[Box<dyn OptimizationRule>] = &[Box::new(TypeCoercionRule {})];
+        let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
         let optimizer = StackOptimizer {};
         let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena);

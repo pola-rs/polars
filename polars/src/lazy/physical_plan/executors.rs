@@ -1,5 +1,5 @@
 use super::*;
-use crate::frame::ser::csv::{CsvEncoding, ScanAggregation};
+use crate::frame::ser::{csv::CsvEncoding, ScanAggregation};
 use crate::lazy::logical_plan::{DataFrameOperation, FETCH_ROWS};
 use arrow::datatypes::SchemaRef;
 use itertools::Itertools;
@@ -51,13 +51,14 @@ pub struct ParquetExec {
     schema: Schema,
     with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
+    aggregate: Vec<ScanAggregation>,
     stop_after_n_rows: Option<usize>,
     cache: bool,
 }
 
 #[cfg(feature = "parquet")]
 impl ParquetExec {
-    pub fn new(
+    pub(crate) fn new(
         path: String,
         schema: Schema,
         with_columns: Option<Vec<String>>,
@@ -71,6 +72,7 @@ impl ParquetExec {
             schema,
             with_columns,
             predicate,
+            aggregate,
             stop_after_n_rows,
             cache,
         }
@@ -148,7 +150,7 @@ pub struct CsvExec {
 
 impl CsvExec {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         path: String,
         schema: SchemaRef,
         has_header: bool,

@@ -127,3 +127,95 @@ pub fn finish_reader<R: ArrowReader>(
         false => Ok(df),
     }
 }
+
+pub(crate) enum ScanAggregation {
+    Sum {
+        column: String,
+        alias: Option<String>,
+    },
+    Min {
+        column: String,
+        alias: Option<String>,
+    },
+    Max {
+        column: String,
+        alias: Option<String>,
+    },
+    First {
+        column: String,
+        alias: Option<String>,
+    },
+    Last {
+        column: String,
+        alias: Option<String>,
+    },
+    Mean {
+        column: String,
+        alias: Option<String>,
+    },
+}
+
+impl ScanAggregation {
+    /// Evaluate the aggregations per batch.
+    pub(crate) fn evaluate_batch(&self, df: &DataFrame) -> Result<Series> {
+        use ScanAggregation::*;
+        let s = match self {
+            Sum { column, .. } => df.column(column)?.sum_as_series(),
+            Min { column, .. } => df.column(column)?.min_as_series(),
+            Max { column, .. } => df.column(column)?.max_as_series(),
+            Mean { column, .. } => df.column(column)?.mean_as_series(),
+            First { column, .. } => df.column(column)?.head(Some(1)),
+            Last { column, .. } => df.column(column)?.tail(Some(1)),
+        };
+        Ok(s)
+    }
+
+    /// After all batches are concatenated the aggregation is determined for the whole set.
+    pub(crate) fn finish(&self, df: &DataFrame) -> Result<Series> {
+        use ScanAggregation::*;
+        match self {
+            Sum { column, alias } => {
+                let mut s = df.column(column)?.sum_as_series();
+                if let Some(alias) = alias {
+                    s.rename(alias);
+                }
+                Ok(s)
+            }
+            Min { column, alias } => {
+                let mut s = df.column(column)?.min_as_series();
+                if let Some(alias) = alias {
+                    s.rename(alias);
+                }
+                Ok(s)
+            }
+            Max { column, alias } => {
+                let mut s = df.column(column)?.max_as_series();
+                if let Some(alias) = alias {
+                    s.rename(alias);
+                }
+                Ok(s)
+            }
+            Mean { column, alias } => {
+                let mut s = df.column(column)?.mean_as_series();
+                if let Some(alias) = alias {
+                    s.rename(alias);
+                }
+                Ok(s)
+            }
+            First { column, alias } => {
+                let mut s = df.column(column)?.head(Some(1));
+                if let Some(alias) = alias {
+                    s.rename(alias);
+                }
+                Ok(s)
+            }
+            Last { column, alias } => {
+                let mut s = df.column(column)?.tail(Some(1));
+                if let Some(alias) = alias {
+                    s.rename(alias);
+                }
+                Ok(s)
+            }
+        }
+    }
+}

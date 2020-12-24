@@ -300,7 +300,21 @@ impl Expr {
             BinaryExpr { left, right, op } => {
                 let left_type = left.get_type(schema, ctxt)?;
                 let right_type = right.get_type(schema, ctxt)?;
-                let expr_type = get_supertype(&left_type, &right_type)?;
+
+                let expr_type = match op {
+                    Operator::Not
+                    | Operator::Lt
+                    | Operator::Gt
+                    | Operator::Eq
+                    | Operator::NotEq
+                    | Operator::And
+                    | Operator::LtEq
+                    | Operator::GtEq
+                    | Operator::Or
+                    | Operator::NotLike
+                    | Operator::Like => ArrowDataType::Boolean,
+                    _ => get_supertype(&left_type, &right_type)?,
+                };
 
                 use Operator::*;
                 let out_field;
@@ -321,7 +335,7 @@ impl Expr {
             Sort { expr, .. } => expr.to_field(schema, ctxt),
             Agg(agg) => {
                 use AggExpr::*;
-                match agg {
+                let field = match agg {
                     Min(expr) => {
                         field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::Min)
                     }
@@ -348,11 +362,11 @@ impl Expr {
                         let field =
                             Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
                         match ctxt {
-                            Context::Other => Ok(field),
+                            Context::Other => field,
                             Context::Aggregation => {
                                 let new_name =
                                     fmt_groupby_column(field.name(), GroupByMethod::NUnique);
-                                Ok(rename_field(&field, &new_name))
+                                rename_field(&field, &new_name)
                             }
                         }
                     }
@@ -364,30 +378,30 @@ impl Expr {
                         let field =
                             Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
                         match ctxt {
-                            Context::Other => Ok(field),
+                            Context::Other => field,
                             Context::Aggregation => {
                                 let new_name =
                                     fmt_groupby_column(field.name(), GroupByMethod::Count);
-                                Ok(rename_field(&field, &new_name))
+                                rename_field(&field, &new_name)
                             }
                         }
                     }
                     AggGroups(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
                         let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-                        let new_field = Field::new(
+                        Field::new(
                             &new_name,
                             ArrowDataType::List(Box::new(ArrowDataType::UInt32)),
                             field.is_nullable(),
-                        );
-                        Ok(new_field)
+                        )
                     }
                     Quantile { expr, quantile } => field_by_context(
                         expr.to_field(schema, ctxt)?,
                         ctxt,
                         GroupByMethod::Quantile(*quantile),
                     ),
-                }
+                };
+                Ok(field)
             }
             Cast { expr, data_type } => {
                 let field = expr.to_field(schema, ctxt)?;

@@ -101,7 +101,7 @@ impl ProjectionPushDown {
         pushdown_right: &mut Vec<Expr>,
         names_left: &mut HashSet<Arc<String>, RandomState>,
         names_right: &mut HashSet<Arc<String>, RandomState>,
-    ) -> Result<bool> {
+    ) -> bool {
         let mut pushed_at_least_one = false;
         let names = expr_to_root_column_names(&proj);
         let root_projections = expr_to_root_column_exprs(proj);
@@ -117,7 +117,7 @@ impl ProjectionPushDown {
             }
         }
 
-        Ok(pushed_at_least_one)
+        pushed_at_least_one
     }
 
     // We recurrently traverse the logical plan and every projection we encounter we add to the accumulated
@@ -412,7 +412,7 @@ impl ProjectionPushDown {
                             &mut pushdown_right,
                             &mut names_left,
                             &mut names_right,
-                        )? {
+                        ) {
                             // Column name of the projection without any alias.
                             let root_column_name = expr_to_root_column_name(&proj).unwrap();
 
