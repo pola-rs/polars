@@ -49,6 +49,7 @@
 //! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
 use crate::frame::ser::fork::csv::{build_csv_reader, SequentialReader};
+use crate::frame::ser::ScanAggregation;
 #[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
@@ -59,33 +60,6 @@ use std::sync::Arc;
 
 #[cfg(not(feature = "lazy"))]
 pub trait PhysicalExpr {}
-
-pub enum ScanAggregation {
-    Sum {
-        column: String,
-        alias: Option<String>,
-    },
-    Min {
-        column: String,
-        alias: Option<String>,
-    },
-    Max {
-        column: String,
-        alias: Option<String>,
-    },
-    First {
-        column: String,
-        alias: Option<String>,
-    },
-    Last {
-        column: String,
-        alias: Option<String>,
-    },
-    Mean {
-        column: String,
-        alias: Option<String>,
-    },
-}
 
 /// Write a DataFrame to csv.
 pub struct CsvWriter<'a, W: Write> {

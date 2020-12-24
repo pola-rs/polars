@@ -1086,6 +1086,7 @@ impl DataFrame {
         F: FnOnce(&Series) -> S,
         S: IntoSeries,
     {
+        let df_height = self.height();
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
             PolarsError::OutOfBounds(
@@ -1097,7 +1098,26 @@ impl DataFrame {
             )
         })?;
         let name = col.name().to_string();
-        let _ = mem::replace(col, f(col).into_series());
+        let new_col = f(col).into_series();
+        match new_col.len() {
+            1 => {
+                let new_col = new_col.expand_at_index(0, df_height);
+                let _ = mem::replace(col, new_col);
+            }
+            len if (len == df_height) => {
+                let _ = mem::replace(col, new_col);
+            }
+            len => {
+                return Err(PolarsError::ShapeMisMatch(
+                    format!(
+                        "Result Series has shape {} where the DataFrame has height {}",
+                        len,
+                        self.height()
+                    )
+                    .into(),
+                ));
+            }
+        }
 
         // make sure the name remains the same after applying the closure
         unsafe {

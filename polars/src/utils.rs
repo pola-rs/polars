@@ -98,14 +98,19 @@ impl<T> Arena<T> {
         Arena { items: vec![] }
     }
 
+    #[inline]
     pub fn get(&self, idx: Node) -> &T {
+        debug_assert!(idx.0 < self.items.len());
         unsafe { self.items.get_unchecked(idx.0) }
     }
 
+    #[inline]
     pub fn get_mut(&mut self, idx: Node) -> &mut T {
+        debug_assert!(idx.0 < self.items.len());
         unsafe { self.items.get_unchecked_mut(idx.0) }
     }
 
+    #[inline]
     pub fn assign(&mut self, idx: Node, val: T) {
         let x = self.get_mut(idx);
         *x = val;

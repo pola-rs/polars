@@ -334,16 +334,16 @@ pub(crate) fn field_by_context(
     mut field: Field,
     ctxt: Context,
     groupby_method: GroupByMethod,
-) -> Result<Field> {
+) -> Field {
     if &ArrowDataType::Boolean == field.data_type() {
         field = Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable())
     }
 
     match ctxt {
-        Context::Other => Ok(field),
+        Context::Other => field,
         Context::Aggregation => {
             let new_name = fmt_groupby_column(field.name(), groupby_method);
-            Ok(rename_field(&field, &new_name))
+            rename_field(&field, &new_name)
         }
     }
 }
@@ -392,7 +392,21 @@ impl AExpr {
             BinaryExpr { left, right, op } => {
                 let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
                 let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
-                let expr_type = get_supertype(&left_type, &right_type)?;
+
+                let expr_type = match op {
+                    Operator::Not
+                    | Operator::Lt
+                    | Operator::Gt
+                    | Operator::Eq
+                    | Operator::NotEq
+                    | Operator::And
+                    | Operator::LtEq
+                    | Operator::GtEq
+                    | Operator::Or
+                    | Operator::NotLike
+                    | Operator::Like => ArrowDataType::Boolean,
+                    _ => get_supertype(&left_type, &right_type)?,
+                };
 
                 use Operator::*;
                 let out_field;
@@ -413,7 +427,7 @@ impl AExpr {
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Agg(agg) => {
                 use AAggExpr::*;
-                match agg {
+                let field = match agg {
                     Min(expr) => field_by_context(
                         arena.get(*expr).to_field(schema, ctxt, arena)?,
                         ctxt,
@@ -454,11 +468,11 @@ impl AExpr {
                         let field =
                             Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
                         match ctxt {
-                            Context::Other => Ok(field),
+                            Context::Other => field,
                             Context::Aggregation => {
                                 let new_name =
                                     fmt_groupby_column(field.name(), GroupByMethod::NUnique);
-                                Ok(rename_field(&field, &new_name))
+                                rename_field(&field, &new_name)
                             }
                         }
                     }
@@ -472,30 +486,30 @@ impl AExpr {
                         let field =
                             Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
                         match ctxt {
-                            Context::Other => Ok(field),
+                            Context::Other => field,
                             Context::Aggregation => {
                                 let new_name =
                                     fmt_groupby_column(field.name(), GroupByMethod::Count);
-                                Ok(rename_field(&field, &new_name))
+                                rename_field(&field, &new_name)
                             }
                         }
                     }
                     AggGroups(expr) => {
                         let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-                        let new_field = Field::new(
+                        Field::new(
                             &new_name,
                             ArrowDataType::List(Box::new(ArrowDataType::UInt32)),
                             field.is_nullable(),
-                        );
-                        Ok(new_field)
+                        )
                     }
                     Quantile { expr, quantile } => field_by_context(
                         arena.get(*expr).to_field(schema, ctxt, arena)?,
                         ctxt,
                         GroupByMethod::Quantile(*quantile),
                     ),
-                }
+                };
+                Ok(field)
             }
             Cast { expr, data_type } => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
@@ -526,6 +540,7 @@ impl AExpr {
 }
 
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
+#[derive(Clone)]
 pub enum ALogicalPlan {
     Slice {
         input: Node,

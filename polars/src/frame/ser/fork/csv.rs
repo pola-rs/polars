@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::frame::ser::csv::{CsvEncoding, ScanAggregation};
+use crate::frame::ser::csv::CsvEncoding;
+use crate::frame::ser::ScanAggregation;
 #[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
@@ -37,16 +38,6 @@ use std::sync::Arc;
 pub trait PhysicalExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series>;
 }
-
-#[cfg(not(feature = "lazy"))]
-pub fn evaluate_physical_expressions(
-    df: &DataFrame,
-    exprs: &[Arc<dyn PhysicalExpr>],
-) -> Result<DataFrame> {
-    Ok(df.clone())
-}
-#[cfg(feature = "lazy")]
-use crate::lazy::physical_plan::executors::evaluate_physical_expressions;
 
 /// Is multiplied with batch_size to determine capacity of builders
 const CAPACITY_MULTIPLIER: usize = 512;
@@ -767,7 +758,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
-    pub fn as_df(
+    pub(crate) fn as_df(
         &mut self,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         aggregate: Option<&[ScanAggregation]>,
@@ -810,22 +801,25 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 n_threads,
             )?,
         }
-        let df = utils::accumulate_dataframes_vertical(parsed_dfs);
+        let mut df = utils::accumulate_dataframes_vertical(parsed_dfs)?;
+        if let Some(aggregate) = aggregate {
+            let cols = aggregate
+                .iter()
+                .map(|scan_agg| scan_agg.finish(&df).unwrap())
+                .collect();
+            df = DataFrame::new_no_checks(cols)
+        }
 
         // if multi-threaded the n_rows was probabilistically determined.
         // Let's slice to correct number of rows if possible.
         if n_threads > 1 {
             if let Some(n_rows) = self.n_rows {
-                return df.map(|df| {
-                    if n_rows < df.height() {
-                        df.slice(0, n_rows).unwrap()
-                    } else {
-                        df
-                    }
-                });
+                if n_rows < df.height() {
+                    df = df.slice(0, n_rows).unwrap()
+                }
             }
         }
-        df
+        Ok(df)
     }
 }
 
@@ -1054,8 +1048,18 @@ fn finish_builder(
             df = local_df;
         }
     }
-    if let Some(_aggregate) = aggregate {
-        todo!()
+    // IMPORTANT the assumption of the aggregations is that all column are aggregated.
+    // If that assumption is incorrect, aggregation should be None
+    if let Some(aggregate) = aggregate {
+        let cols = aggregate
+            .iter()
+            .map(|scan_agg| scan_agg.evaluate_batch(&df).unwrap())
+            .collect();
+        if cfg!(debug_assertions) {
+            df = DataFrame::new(cols).unwrap();
+        } else {
+            df = DataFrame::new_no_checks(cols)
+        }
     }
     parsed_dfs.push(df);
     Ok(())
