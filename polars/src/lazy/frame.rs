@@ -1162,6 +1162,19 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_agg_scan() {
+        let path = "../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let lf = || LazyCsvReader::new(path.to_string()).finish();
+        let df = lf().min().collect().unwrap();
+        assert!(df.frame_equal_missing(&lf().collect().unwrap().min()));
+        let df = lf().max().collect().unwrap();
+        assert!(df.frame_equal_missing(&lf().collect().unwrap().max()));
+        // mean is not yet aggregated at scan.
+        let df = lf().mean().collect().unwrap();
+        assert!(df.frame_equal_missing(&lf().collect().unwrap().mean()));
+    }
+
+    #[test]
     fn test_lazy_df_aggregations() {
         let df = load_df();
 

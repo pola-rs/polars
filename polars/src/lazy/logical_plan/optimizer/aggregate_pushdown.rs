@@ -33,7 +33,6 @@ impl AggregatePushdown {
         let dummy_node = usize::max_value();
         let dummy_min = AExpr::Agg(AAggExpr::Min(Node(dummy_node)));
         let dummy_max = AExpr::Agg(AAggExpr::Max(Node(dummy_node)));
-        let dummy_mean = AExpr::Agg(AAggExpr::Mean(Node(dummy_node)));
         let dummy_first = AExpr::Agg(AAggExpr::First(Node(dummy_node)));
         let dummy_last = AExpr::Agg(AAggExpr::First(Node(dummy_node)));
         let dummy_sum = AExpr::Agg(AAggExpr::Sum(Node(dummy_node)));
@@ -44,7 +43,6 @@ impl AggregatePushdown {
             && expr.iter().all(|node| {
                 (has_aexpr(*node, expr_arena, &dummy_min, true)
                     || has_aexpr(*node, expr_arena, &dummy_max, true)
-                    || has_aexpr(*node, expr_arena, &dummy_mean, true)
                     || has_aexpr(*node, expr_arena, &dummy_first, true)
                     || has_aexpr(*node, expr_arena, &dummy_sum, true)
                     || has_aexpr(*node, expr_arena, &dummy_last, true))
