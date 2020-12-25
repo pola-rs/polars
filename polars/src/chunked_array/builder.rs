@@ -417,7 +417,7 @@ impl<T> AlignedVec<T> {
     /// Create a new Vec where first bytes memory address has an alignment of 64 bytes, as described
     /// by arrow spec.
     /// Read more:
-    /// https://github.com/rust-ndarray/ndarray/issues/771
+    /// <https://github.com/rust-ndarray/ndarray/issues/771>
     pub fn with_capacity_aligned(size: usize) -> Self {
         // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
         let t_size = std::mem::size_of::<T>();

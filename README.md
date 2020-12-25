@@ -86,6 +86,10 @@ Additional cargo features:
     - SIMD operations
 * `parquet`
     - Read Apache Parquet format
+* `json`
+    - Json serialization
+* `ipc`
+    - Arrow's IPC format serialization
 * `random`
     - Generate array's with randomly sampled values
 * `ndarray`

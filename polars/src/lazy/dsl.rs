@@ -706,7 +706,7 @@ impl Expr {
         }
     }
 
-    /// Sort expression. See [the eager implementation](Series::sort).
+    /// Sort expression. See [the eager implementation](crate::series::SeriesTrait::sort).
     pub fn sort(self, reverse: bool) -> Self {
         Expr::Sort {
             expr: Box::new(self),
@@ -733,7 +733,7 @@ impl Expr {
         }
     }
 
-    /// Shift the values in the array by some period. See [the eager implementation](Series::shift).
+    /// Shift the values in the array by some period. See [the eager implementation](crate::series::SeriesTrait::shift).
     pub fn shift(self, periods: i32) -> Self {
         Expr::Shift {
             input: Box::new(self),
@@ -808,7 +808,7 @@ impl Expr {
         }
     }
 
-    /// Shift the values in the array by some period. See [the eager implementation](Series::fill_none).
+    /// Shift the values in the array by some period. See [the eager implementation](crate::series::SeriesTrait::fill_none).
     pub fn fill_none(self, fill_value: Expr) -> Self {
         let name = output_name(&self).unwrap();
         when(self.is_null())
