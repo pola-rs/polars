@@ -313,7 +313,7 @@ impl LazyFrame {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `Nones`.
     ///
-    /// See the method on [Series](Series::shift) for more info on the `shift` operation.
+    /// See the method on [Series](crate::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift(self, periods: i32) -> Self {
         self.select_local(vec![col("*").shift(periods)])
     }

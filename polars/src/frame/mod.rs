@@ -392,7 +392,6 @@ impl DataFrame {
 
     /// Add multiple Series to a DataFrame
     /// The added Series are required to have the same length.
-    /// ```
     pub fn hstack(&self, columns: &[Series]) -> Result<Self> {
         let mut new_cols = self.columns.clone();
         new_cols.extend_from_slice(columns);

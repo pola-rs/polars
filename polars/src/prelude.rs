@@ -23,8 +23,6 @@ pub use crate::{
     frame::{
         ser::{
             csv::{CsvReader, CsvWriter},
-            ipc::{IPCReader, IPCWriter},
-            json::JsonReader,
             SerReader, SerWriter,
         },
         DataFrame, IntoSeries,
@@ -49,6 +47,12 @@ pub(crate) fn create_df() -> DataFrame {
 }
 #[cfg(feature = "parquet")]
 pub use crate::frame::ser::parquet::ParquetReader;
+
+#[cfg(feature = "ipc")]
+pub use crate::frame::ser::ipc::{IPCReader, IPCWriter};
+
+#[cfg(feature = "json")]
+pub use crate::frame::ser::json::JsonReader;
 
 #[cfg(feature = "lazy")]
 pub use crate::lazy::frame::*;

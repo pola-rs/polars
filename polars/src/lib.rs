@@ -9,8 +9,12 @@
 //! the lazy api is similar to [Spark](https://spark.apache.org/).
 //!
 //! ### Eager
-//! Read more in the pages of the [DataFrame](frame/struct.DataFrame.html), [Series](series/enum.Series.html), and
-//! [ChunkedArray](chunked_array/struct.ChunkedArray.html) data structures.
+//! Read more in the pages of the following data structures /traits.
+//!
+//! * [DataFrame struct](crate::frame::DataFrame)
+//! * [Series struct](crate::series::Series)
+//! * [Series trait](crate::series::SeriesTrait)
+//! * [ChunkedArray struct](crate::chunked_array::ChunkedArray)
 //!
 //! ### Lazy
 //! Read more in the [lazy](lazy/index.html) module
@@ -183,6 +187,10 @@
 //!     - SIMD operations
 //! * `parquet`
 //!     - Read Apache Parquet format
+//! * `json`
+//!     - Json serialization
+//! * `ipc`
+//!     - Arrow's IPC format serialization
 //! * `random`
 //!     - Generate array's with randomly sampled values
 //! * `ndarray`

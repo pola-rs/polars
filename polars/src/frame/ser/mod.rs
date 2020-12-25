@@ -1,6 +1,10 @@
 pub mod csv;
 pub(crate) mod fork;
+#[cfg(feature = "ipc")]
+#[doc(cfg(feature = "ipc"))]
 pub mod ipc;
+#[cfg(feature = "json")]
+#[doc(cfg(feature = "json"))]
 pub mod json;
 #[cfg(feature = "parquet")]
 #[doc(cfg(feature = "parquet"))]
