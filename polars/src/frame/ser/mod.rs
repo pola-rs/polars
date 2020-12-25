@@ -149,10 +149,6 @@ pub(crate) enum ScanAggregation {
         column: String,
         alias: Option<String>,
     },
-    Mean {
-        column: String,
-        alias: Option<String>,
-    },
 }
 
 impl ScanAggregation {
@@ -163,7 +159,6 @@ impl ScanAggregation {
             Sum { column, .. } => df.column(column)?.sum_as_series(),
             Min { column, .. } => df.column(column)?.min_as_series(),
             Max { column, .. } => df.column(column)?.max_as_series(),
-            Mean { column, .. } => df.column(column)?.mean_as_series(),
             First { column, .. } => df.column(column)?.head(Some(1)),
             Last { column, .. } => df.column(column)?.tail(Some(1)),
         };
@@ -190,13 +185,6 @@ impl ScanAggregation {
             }
             Max { column, alias } => {
                 let mut s = df.column(column)?.max_as_series();
-                if let Some(alias) = alias {
-                    s.rename(alias);
-                }
-                Ok(s)
-            }
-            Mean { column, alias } => {
-                let mut s = df.column(column)?.mean_as_series();
                 if let Some(alias) = alias {
                     s.rename(alias);
                 }

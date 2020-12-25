@@ -33,10 +33,6 @@ fn aggregate_expr_to_scan_agg(aggregate: Vec<Expr>) -> Vec<ScanAggregation> {
                         column: (*expr_to_root_column_name(&e).unwrap()).clone(),
                         alias,
                     },
-                    AggExpr::Mean(e) => ScanAggregation::Mean {
-                        column: (*expr_to_root_column_name(&e).unwrap()).clone(),
-                        alias,
-                    },
                     AggExpr::First(e) => ScanAggregation::First {
                         column: (*expr_to_root_column_name(&e).unwrap()).clone(),
                         alias,

@@ -219,7 +219,13 @@ impl Executor for CsvExec {
             .with_columns(with_columns)
             .with_encoding(CsvEncoding::LossyUtf8);
 
-        let df = reader.finish_with_scan_ops(self.predicate.clone(), Some(&self.aggregate))?;
+        let aggregate = if self.aggregate.is_empty() {
+            None
+        } else {
+            Some(self.aggregate.as_slice())
+        };
+
+        let df = reader.finish_with_scan_ops(self.predicate.clone(), aggregate)?;
 
         if self.cache {
             let mut guard = cache.lock().unwrap();
