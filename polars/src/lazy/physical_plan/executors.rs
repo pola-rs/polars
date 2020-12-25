@@ -114,11 +114,17 @@ impl Executor for ParquetExec {
         };
 
         let stop_after_n_rows = set_n_rows(self.stop_after_n_rows);
+        let aggregate = if self.aggregate.is_empty() {
+            None
+        } else {
+            Some(self.aggregate.as_slice())
+        };
 
         let df = ParquetReader::new(file)
             .with_stop_after_n_rows(stop_after_n_rows)
-            .finish_with_predicate(
+            .finish_with_can_ops(
                 self.predicate.clone(),
+                aggregate,
                 projection.as_ref().map(|v| v.as_ref()),
             )?;
 

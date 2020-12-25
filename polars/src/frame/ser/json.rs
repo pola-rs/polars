@@ -95,7 +95,13 @@ where
 
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        finish_reader(self.reader_builder.build(self.reader)?, rechunk, None, None)
+        finish_reader(
+            self.reader_builder.build(self.reader)?,
+            rechunk,
+            None,
+            None,
+            None,
+        )
     }
 }
 
