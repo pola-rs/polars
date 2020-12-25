@@ -180,8 +180,8 @@ impl Default for OptState {
             predicate_pushdown: true,
             type_coercion: true,
             simplify_expr: true,
-            agg_scan_projection: true,
-            aggregate_pushdown: true,
+            agg_scan_projection: false,
+            aggregate_pushdown: false,
         }
     }
 }
