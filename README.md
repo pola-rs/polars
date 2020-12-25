@@ -37,6 +37,8 @@ To learn more about the inner workings of Polars read the [WIP book](https://rit
 | Query optimization: (predicate pushdown)          | ✗     | ✔                |               |
 | Query optimization: (projection pushdown)         | ✗     | ✔                |               |
 | Query optimization: (type coercion)               | ✗     | ✔                |               |
+| Query optimization: (simplify expressions)        | ✗     | ✔                |               |
+| Query optimization: (aggregate pushdown)          | ✗     | ✔                |               |
 
 **Note that almost all eager operations supported by Eager on `Series`/`ChunkedArrays` can be used in Lazy via UDF's**
 
