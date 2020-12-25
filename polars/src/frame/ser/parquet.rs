@@ -14,6 +14,7 @@
 //! ```
 //!
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
+use crate::frame::ser::ScanAggregation;
 #[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
@@ -49,9 +50,10 @@ where
     R: 'static + Read + Seek + parquet::file::reader::Length + parquet::file::reader::TryClone,
 {
     #[cfg(feature = "lazy")]
-    pub(crate) fn finish_with_predicate(
+    pub(crate) fn finish_with_can_ops(
         mut self,
         predicate: Option<Arc<dyn PhysicalExpr>>,
+        aggregate: Option<&[ScanAggregation]>,
         projection: Option<&[usize]>,
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
@@ -78,7 +80,13 @@ where
             }
             None => arrow_reader.get_record_reader(batch_size),
         }?;
-        finish_reader(record_reader, rechunk, self.stop_after_n_rows, predicate)
+        finish_reader(
+            record_reader,
+            rechunk,
+            self.stop_after_n_rows,
+            predicate,
+            aggregate,
+        )
     }
 
     /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
@@ -132,7 +140,7 @@ where
         let batch_size = set_batch_size(n_rows, self.stop_after_n_rows);
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
         let record_reader = arrow_reader.get_record_reader(batch_size)?;
-        finish_reader(record_reader, rechunk, None, None)
+        finish_reader(record_reader, rechunk, None, None, None)
     }
 }
 

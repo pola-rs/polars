@@ -88,11 +88,12 @@ fn arr_to_series(arr: &ArrayRef, field: &Field) -> Series {
     Series(s.0)
 }
 
-pub fn finish_reader<R: ArrowReader>(
+pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
     stop_after_n_rows: Option<usize>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
+    aggregate: Option<&[ScanAggregation]>,
 ) -> Result<DataFrame> {
     let mut n_rows = 0;
     let mut parsed_dfs = Vec::with_capacity(1024);
@@ -114,6 +115,19 @@ pub fn finish_reader<R: ArrowReader>(
             let mask = s.bool().expect("filter predicates was not of type boolean");
             df = df.filter(mask)?;
         }
+
+        if let Some(aggregate) = aggregate {
+            let cols = aggregate
+                .iter()
+                .map(|scan_agg| scan_agg.evaluate_batch(&df).unwrap())
+                .collect();
+            if cfg!(debug_assertions) {
+                df = DataFrame::new(cols).unwrap();
+            } else {
+                df = DataFrame::new_no_checks(cols)
+            }
+        }
+
         parsed_dfs.push(df);
         if let Some(n) = stop_after_n_rows {
             if n_rows >= n {
@@ -121,7 +135,16 @@ pub fn finish_reader<R: ArrowReader>(
             }
         }
     }
-    let df = accumulate_dataframes_vertical(parsed_dfs)?;
+    let mut df = accumulate_dataframes_vertical(parsed_dfs)?;
+
+    if let Some(aggregate) = aggregate {
+        let cols = aggregate
+            .iter()
+            .map(|scan_agg| scan_agg.finish(&df).unwrap())
+            .collect();
+        df = DataFrame::new_no_checks(cols)
+    }
+
     match rechunk {
         true => Ok(df.agg_chunks()),
         false => Ok(df),
