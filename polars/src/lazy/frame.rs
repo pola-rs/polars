@@ -1,4 +1,5 @@
 //! Lazy variant of a [DataFrame](crate::prelude::DataFrame).
+use crate::frame::hash_join::JoinType;
 use crate::frame::select::Selection;
 use crate::lazy::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 use crate::lazy::logical_plan::optimizer::aggregate_scan_projections::{

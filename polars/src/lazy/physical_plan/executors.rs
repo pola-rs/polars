@@ -1,4 +1,5 @@
 use super::*;
+use crate::frame::hash_join::JoinType;
 use crate::frame::ser::{csv::CsvEncoding, ScanAggregation};
 use crate::lazy::logical_plan::{DataFrameOperation, FETCH_ROWS};
 use arrow::datatypes::SchemaRef;
@@ -506,7 +507,7 @@ impl Executor for JoinExec {
         let s_left = self.left_on.evaluate(&df_left)?;
         let s_right = self.right_on.evaluate(&df_right)?;
 
-        use JoinType::*;
+        use crate::frame::hash_join::JoinType::*;
         let df = match self.how {
             Left => df_left.left_join_from_series(&df_right, &s_left, &s_right),
             Inner => df_left.inner_join_from_series(&df_right, &s_left, &s_right),

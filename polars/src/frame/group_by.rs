@@ -196,14 +196,6 @@ impl<'b> (dyn SeriesTrait + 'b) {
             ArrowDataType::Duration(TimeUnit::Millisecond) => {
                 as_groupable_iter!(self.duration_millisecond().unwrap(), Int64)
             }
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::DayTime) => {
-                as_groupable_iter!(self.interval_daytime().unwrap(), Int64)
-            }
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => {
-                as_groupable_iter!(self.interval_year_month().unwrap(), Int32)
-            }
             ArrowDataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
             ArrowDataType::Float32 => Ok(float_to_groupable_iter(self.f32().unwrap())),
             ArrowDataType::Float64 => Ok(float_to_groupable_iter(self.f64().unwrap())),
