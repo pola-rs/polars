@@ -106,10 +106,10 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
                     let index = indices.value(idx) as usize;
                     let s = arr.value(index);
                     length_so_far += s.len() as i32;
-                    *offset = length_so_far;
 
                     values_buf.extend_from_slice(s.as_bytes())
                 }
+                *offset = length_so_far;
             });
         nulls = indices.data_ref().null_buffer().cloned();
     } else {

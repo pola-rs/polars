@@ -395,7 +395,7 @@ class DataFrame:
     @property
     def columns(self) -> "List[str]":
         """
-        get column names
+        get or set column names
         """
         return self._df.columns()
 

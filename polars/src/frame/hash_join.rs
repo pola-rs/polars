@@ -660,4 +660,58 @@ mod test {
             None
         );
     }
+
+    #[test]
+    fn test_join_query() {
+        let df_a = df! {
+            "a" => &[1, 2, 1, 1],
+            "b" => &["a", "b", "c", "c"],
+            "c" => &[0, 1, 2, 3]
+        }
+        .unwrap();
+
+        let df_b = df! {
+            "foo" => &[1, 1, 1],
+            "bar" => &["a", "c", "c"],
+            "ham" => &["let", "var", "const"]
+        }
+        .unwrap();
+
+        let mut s = df_a
+            .column("a")
+            .unwrap()
+            .cast::<Utf8Type>()
+            .unwrap()
+            .utf8()
+            .unwrap()
+            + df_a.column("b").unwrap().utf8().unwrap();
+        s.rename("dummy");
+
+        let df_a = df_a.with_column(s).unwrap();
+        let mut s = df_b
+            .column("foo")
+            .unwrap()
+            .cast::<Utf8Type>()
+            .unwrap()
+            .utf8()
+            .unwrap()
+            + df_b.column("bar").unwrap().utf8().unwrap();
+        s.rename("dummy");
+        let df_b = df_b.with_column(s).unwrap();
+
+        let joined = df_a.left_join(&df_b, "dummy", "dummy").unwrap();
+        let ham_col = joined.column("ham").unwrap();
+        let ca = ham_col.utf8().unwrap();
+        assert_eq!(
+            Vec::from(ca),
+            &[
+                Some("let"),
+                None,
+                Some("var"),
+                Some("const"),
+                Some("var"),
+                Some("const")
+            ]
+        );
+    }
 }
