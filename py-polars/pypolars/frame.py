@@ -1123,3 +1123,24 @@ class GBSelection:
         Aggregate the groups into Series.
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))
+
+    def apply(
+        self,
+        func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
+        dtype_out: "Optional['DataType']" = None,
+        sniff_dtype: bool = True,
+    ) -> "DataFrame":
+        """
+        Apply a function over the groups
+        """
+        df = self.agg_list()
+        if isinstance(self.selection, str):
+            selection = [self.selection]
+        else:
+            selection = self.selection
+        for name in selection:
+            s = df.drop_in_place(name + "_agg_list").apply(func, dtype_out, sniff_dtype)
+            s.rename(name)
+            df[name] = s
+
+        return df
