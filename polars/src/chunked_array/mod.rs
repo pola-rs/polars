@@ -1,4 +1,5 @@
 //! The typed heart of every Series column.
+//! o
 use crate::chunked_array::builder::{
     aligned_vec_to_primitive_array, build_with_existing_null_bitmap_and_slice, get_bitmap,
 };
@@ -521,8 +522,8 @@ where
             }
             ArrowDataType::List(_) => {
                 let v = downcast!(ListArray);
-                let s: Wrap<_> = ("", v).into();
-                AnyType::List(Series(s.0))
+                let s: Series = ("", v).into();
+                AnyType::List(s)
             }
             #[cfg(feature = "object")]
             ArrowDataType::Binary => AnyType::Object(&"object"),

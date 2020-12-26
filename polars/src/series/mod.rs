@@ -8,6 +8,7 @@ pub mod implementations;
 pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
+use crate::datatypes::*;
 use crate::series::implementations::Wrap;
 use arrow::array::ArrayDataRef;
 use num::NumCast;
@@ -1067,7 +1068,7 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
 }
 
 // TODO: add types
-impl From<(&str, ArrayRef)> for Wrap<Arc<dyn SeriesTrait>> {
+impl From<(&str, ArrayRef)> for Series {
     fn from(name_arr: (&str, ArrayRef)) -> Self {
         let (name, arr) = name_arr;
         let chunk = vec![arr];
@@ -1102,7 +1103,8 @@ impl From<(&str, ArrayRef)> for Wrap<Arc<dyn SeriesTrait>> {
             ArrowDataType::List(_) => ListChunked::new_from_chunks(name, chunk).into_series(),
             dt => panic!(format!("datatype {:?} not supported", dt)),
         };
-        Wrap(s.0)
+
+        return s;
     }
 }
 
@@ -1122,9 +1124,12 @@ where
     }
 }
 
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use arrow::array::*;
+    use crate::series::*;
 
     #[test]
     fn cast() {
@@ -1137,12 +1142,22 @@ mod test {
         assert!(s2.f32().is_ok());
     }
 
+
     #[test]
     fn new_series() {
         Series::new("boolean series", &vec![true, false, true]);
         Series::new("int series", &[1, 2, 3]);
         let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
         ca.into_series();
+    }
+
+    #[test]
+    fn new_series_from_arrow_primitive_array() {
+        let array = UInt64Array::from(vec![1,2,3,4,5]);
+        let array_ref : ArrayRef = Arc::new(array);
+
+        let wrapped : Series = ("temp", array_ref).into();
+
     }
 
     #[test]

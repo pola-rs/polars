@@ -88,8 +88,7 @@ where
 }
 
 fn arr_to_series(arr: &ArrayRef, field: &Field) -> Series {
-    let s: Wrap<_> = (field.name().as_str(), arr.clone()).into();
-    Series(s.0)
+    (field.name().as_str(), arr.clone()).into()
 }
 
 pub(crate) fn finish_reader<R: ArrowReader>(

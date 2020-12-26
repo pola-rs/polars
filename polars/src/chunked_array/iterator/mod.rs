@@ -1255,8 +1255,8 @@ impl_all_iterators!(
 
 // used for macro
 fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
-    let s: Wrap<_> = (method_name, v).into();
-    Series(s.0)
+    let s: Series  = (method_name, v).into();
+    s
 }
 
 impl_all_iterators!(
