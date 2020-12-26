@@ -30,6 +30,7 @@ jobs:
             pip install maturin pytest pandas
         - name: Run tests
           run: |
+            cp README.md py-polars/README.md
             cd py-polars
             ./tasks.sh build-run-tests
             rm wheels/*
@@ -62,6 +63,7 @@ jobs:
           env:
             MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           run: |
+            cp README.md py-polars/README.md
             cd py-polars
             maturin publish \
             -o wheels \
