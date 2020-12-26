@@ -842,7 +842,7 @@ checksum = "c5d65c4d95931acda4498f675e332fcbdc9a06705cd07086c510e9b6009cd1c1"
 
 [[package]]
 name = "polars"
-version = "0.9.0"
+version = "0.10.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -884,7 +884,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ndarray",
  "numpy",

@@ -543,9 +543,9 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: "Optional[str]" = None,
-        right_on: "Optional[str]" = None,
-        on: "Optional[str]" = None,
+        left_on: "Optional[Union[str, List[str]]]" = None,
+        right_on: "Optional[Union[str, List[str]]]" = None,
+        on: "Optional[Union[str, List[str]]]" = None,
         how="inner",
     ) -> "DataFrame":
         """
@@ -556,11 +556,11 @@ class DataFrame:
         df
             DataFrame to join with
         left_on
-            Name of the left join column
+            Name(s) of the left join column
         right_on
-            Name of the right join column
+            Name(s) of the right join column
         on
-            Name of the join columns in both DataFrames
+            Name(s) of the join columns in both DataFrames
         how
             Join strategy
                 - "inner"
@@ -573,20 +573,17 @@ class DataFrame:
         """
 
         if isinstance(on, str):
+            left_on = [on]
+            right_on = [on]
+        elif isinstance(on, list):
             left_on = on
             right_on = on
         if left_on is None or right_on is None:
             raise ValueError("you should pass the column to join on as an argument")
 
-        if how == "inner":
-            inner = self._df.inner_join(df._df, left_on, right_on)
-        elif how == "left":
-            inner = self._df.left_join(df._df, left_on, right_on)
-        elif how == "outer":
-            inner = self._df.outer_join(df._df, left_on, right_on)
-        else:
-            return NotImplemented
-        return wrap_df(inner)
+        out = self._df.join(df._df, left_on, right_on, how)
+
+        return wrap_df(out)
 
     def hstack(
         self, columns: "Union[List[Series], DataFrame]", in_place=False

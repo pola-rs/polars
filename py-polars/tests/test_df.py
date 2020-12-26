@@ -157,6 +157,11 @@ def test_join():
     assert joined["c"].null_count() == 2
     assert joined["b"].null_count() == 2
 
+    df_a = DataFrame({"a": [1,  2,  1,  1], "b": ["a", "b", "c", "c"]})
+    df_b = DataFrame({"foo": [1, 1, 1], "bar": ["a", "c", "c"], "ham": ["let", "var", "const"]})
+
+    df_a.join(df_b, left_on=["a", "b"], right_on=["foo", "bar"])
+
 
 def test_hstack():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
