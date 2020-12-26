@@ -1,4 +1,5 @@
 use crate::frame::group_by::{fmt_groupby_column, GroupByMethod};
+use crate::frame::hash_join::JoinType;
 use crate::lazy::logical_plan::{prepare_projection, Context};
 use crate::lazy::prelude::*;
 use crate::lazy::utils::{expr_to_root_column_exprs, rename_field};

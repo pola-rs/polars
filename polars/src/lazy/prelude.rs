@@ -5,7 +5,7 @@ pub use crate::lazy::{
             predicate::PredicatePushDown, projection::ProjectionPushDown,
             type_coercion::TypeCoercionRule, Optimize, *,
         },
-        JoinType, LogicalPlan, LogicalPlanBuilder, ScalarValue,
+        LogicalPlan, LogicalPlanBuilder, ScalarValue,
     },
     physical_plan::{
         executors::{

@@ -21,6 +21,7 @@ pub use crate::{
     datatypes::*,
     error::{PolarsError, Result},
     frame::{
+        hash_join::JoinType,
         ser::{
             csv::{CsvReader, CsvWriter},
             SerReader, SerWriter,
