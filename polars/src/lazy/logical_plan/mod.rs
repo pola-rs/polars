@@ -1,4 +1,5 @@
 pub(crate) mod optimizer;
+use crate::frame::hash_join::JoinType;
 use crate::frame::ser::fork::csv::infer_file_schema;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
@@ -989,13 +990,6 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum JoinType {
-    Left,
-    Inner,
-    Outer,
 }
 
 #[cfg(test)]
