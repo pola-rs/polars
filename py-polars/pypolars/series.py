@@ -1174,4 +1174,6 @@ def out_to_dtype(out: Any) -> "Datatype":
         return Boolean
     if isinstance(out, Series):
         return List
-    return NotImplemented
+    if isinstance(out, np.ndarray):
+        return List
+    raise NotImplementedError
