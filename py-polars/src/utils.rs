@@ -16,6 +16,7 @@ pub fn str_to_arrow_type(s: &str) -> ArrowDataType {
         "<class 'pypolars.datatypes.Utf8'>" => ArrowDataType::Utf8,
         "<class 'pypolars.datatypes.Date32'>" => ArrowDataType::Date32(DateUnit::Day),
         "<class 'pypolars.datatypes.Date64'>" => ArrowDataType::Date64(DateUnit::Millisecond),
+        "<class 'pypolars.datatypes.List'>" => ArrowDataType::List(Box::new(ArrowDataType::Null)),
         tp => panic!(format!("Type {} not implemented in str_to_arrow_type", tp)),
     }
 }
