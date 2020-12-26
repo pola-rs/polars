@@ -102,7 +102,7 @@ impl<T> IntoGroupTuples for ObjectChunked<T> {}
 
 /// Utility enum used for grouping on multiple columns
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
-enum Groupable<'a> {
+pub(crate) enum Groupable<'a> {
     Boolean(bool),
     Utf8(&'a str),
     UInt8(u8),
@@ -163,7 +163,9 @@ where
 }
 
 impl<'b> (dyn SeriesTrait + 'b) {
-    fn as_groupable_iter<'a>(&'a self) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>> {
+    pub(crate) fn as_groupable_iter<'a>(
+        &'a self,
+    ) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>> {
         macro_rules! as_groupable_iter {
             ($ca:expr, $variant:ident ) => {{
                 let bx = Box::new($ca.into_iter().map(|opt_b| opt_b.map(Groupable::$variant)));
@@ -220,45 +222,6 @@ impl DataFrame {
     /// }
     /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
-        macro_rules! static_zip {
-            ($selected_keys:ident, 0) => {
-                $selected_keys[0].as_groupable_iter()?
-            };
-            ($selected_keys:ident, 1) => {
-                static_zip!($selected_keys, 0).zip($selected_keys[1].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 2) => {
-                static_zip!($selected_keys, 1).zip($selected_keys[2].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 3) => {
-                static_zip!($selected_keys, 2).zip($selected_keys[3].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 4) => {
-                static_zip!($selected_keys, 3).zip($selected_keys[4].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 5) => {
-                static_zip!($selected_keys, 4).zip($selected_keys[5].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 6) => {
-                static_zip!($selected_keys, 5).zip($selected_keys[6].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 7) => {
-                static_zip!($selected_keys, 6).zip($selected_keys[7].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 8) => {
-                static_zip!($selected_keys, 7).zip($selected_keys[8].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 9) => {
-                static_zip!($selected_keys, 8).zip($selected_keys[9].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 10) => {
-                static_zip!($selected_keys, 9).zip($selected_keys[10].as_groupable_iter()?)
-            };
-            ($selected_keys:ident, 11) => {
-                static_zip!($selected_keys, 10).zip($selected_keys[11].as_groupable_iter()?)
-            };
-        }
-
         let selected_keys = self.select_series(by)?;
 
         let groups = match selected_keys.len() {

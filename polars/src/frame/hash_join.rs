@@ -1,3 +1,4 @@
+use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::Xob;
 use ahash::RandomState;
@@ -426,6 +427,211 @@ impl DataFrame {
         }
     }
 
+    /// Generic join method. Can be used to join on multiple columns.
+    pub fn join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
+        &self,
+        other: &DataFrame,
+        left_on: S1,
+        right_on: S2,
+        how: JoinType,
+    ) -> Result<DataFrame> {
+        let selected_left = self.select_series(left_on)?;
+        let selected_right = other.select_series(right_on)?;
+        assert_eq!(selected_right.len(), selected_left.len());
+
+        if selected_left.len() == 1 {
+            return match how {
+                JoinType::Inner => {
+                    self.inner_join(other, selected_left[0].name(), selected_right[0].name())
+                }
+                JoinType::Left => {
+                    self.left_join(other, selected_left[0].name(), selected_right[0].name())
+                }
+                JoinType::Outer => {
+                    self.outer_join(other, selected_left[0].name(), selected_right[0].name())
+                }
+            };
+        }
+
+        macro_rules! det_hash_prone_order2 {
+            ($self:expr, $other:expr) => {{
+                // The shortest relation will be used to create a hash table.
+                let left_first = $self.size_hint().0 > $other.size_hint().0;
+                let a;
+                let b;
+                if left_first {
+                    a = $self;
+                    b = $other;
+                } else {
+                    b = $self;
+                    a = $other;
+                }
+
+                (a, b, !left_first)
+            }};
+        }
+
+        fn remove_selected(df: &DataFrame, selected: &[Series]) -> DataFrame {
+            let mut new = None;
+            for s in selected {
+                new = match new {
+                    None => Some(df.drop(s.name()).unwrap()),
+                    Some(new) => Some(new.drop(s.name()).unwrap()),
+                }
+            }
+            new.unwrap()
+        }
+
+        match how {
+            JoinType::Inner => {
+                let join_tuples = match selected_left.len() {
+                    2 => {
+                        let a = static_zip!(selected_left, 1);
+                        let b = static_zip!(selected_right, 1);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_inner(a, b, swap)
+                    }
+                    3 => {
+                        let a = static_zip!(selected_left, 2);
+                        let b = static_zip!(selected_right, 2);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_inner(a, b, swap)
+                    }
+                    4 => {
+                        let a = static_zip!(selected_left, 3);
+                        let b = static_zip!(selected_right, 3);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_inner(a, b, swap)
+                    }
+                    5 => {
+                        let a = static_zip!(selected_left, 4);
+                        let b = static_zip!(selected_right, 4);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_inner(a, b, swap)
+                    }
+                    6 => {
+                        let a = static_zip!(selected_left, 5);
+                        let b = static_zip!(selected_right, 5);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_inner(a, b, swap)
+                    }
+                    _ => todo!(),
+                };
+
+                let (df_left, df_right) = rayon::join(
+                    || self.create_left_df(&join_tuples),
+                    || unsafe {
+                        // remove join columns
+                        remove_selected(other, &selected_right).take_iter_unchecked_bounds(
+                            join_tuples.iter().map(|(_left, right)| *right),
+                            Some(join_tuples.len()),
+                        )
+                    },
+                );
+                self.finish_join(df_left, df_right)
+            }
+            JoinType::Left => {
+                let join_tuples = match selected_left.len() {
+                    2 => {
+                        let a = static_zip!(selected_left, 1);
+                        let b = static_zip!(selected_right, 1);
+                        hash_join_tuples_left(a, b)
+                    }
+                    3 => {
+                        let a = static_zip!(selected_left, 2);
+                        let b = static_zip!(selected_right, 2);
+                        hash_join_tuples_left(a, b)
+                    }
+                    4 => {
+                        let a = static_zip!(selected_left, 3);
+                        let b = static_zip!(selected_right, 3);
+                        hash_join_tuples_left(a, b)
+                    }
+                    5 => {
+                        let a = static_zip!(selected_left, 4);
+                        let b = static_zip!(selected_right, 4);
+                        hash_join_tuples_left(a, b)
+                    }
+                    6 => {
+                        let a = static_zip!(selected_left, 5);
+                        let b = static_zip!(selected_right, 5);
+                        hash_join_tuples_left(a, b)
+                    }
+                    _ => todo!(),
+                };
+
+                let (df_left, df_right) = rayon::join(
+                    || self.create_left_df(&join_tuples),
+                    || unsafe {
+                        // remove join columns
+                        remove_selected(other, &selected_right).take_opt_iter_unchecked_bounds(
+                            join_tuples.iter().map(|(_left, right)| *right),
+                            Some(join_tuples.len()),
+                        )
+                    },
+                );
+                self.finish_join(df_left, df_right)
+            }
+            JoinType::Outer => {
+                let opt_join_tuples = match selected_left.len() {
+                    2 => {
+                        let a = static_zip!(selected_left, 1);
+                        let b = static_zip!(selected_right, 1);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_outer(a, b, swap)
+                    }
+                    3 => {
+                        let a = static_zip!(selected_left, 2);
+                        let b = static_zip!(selected_right, 2);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_outer(a, b, swap)
+                    }
+                    4 => {
+                        let a = static_zip!(selected_left, 3);
+                        let b = static_zip!(selected_right, 3);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_outer(a, b, swap)
+                    }
+                    5 => {
+                        let a = static_zip!(selected_left, 4);
+                        let b = static_zip!(selected_right, 4);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_outer(a, b, swap)
+                    }
+                    6 => {
+                        let a = static_zip!(selected_left, 5);
+                        let b = static_zip!(selected_right, 5);
+                        let (a, b, swap) = det_hash_prone_order2!(a, b);
+                        hash_join_tuples_outer(a, b, swap)
+                    }
+                    _ => todo!(),
+                };
+
+                // Take the left and right dataframes by join tuples
+                let (mut df_left, df_right) = rayon::join(
+                    || unsafe {
+                        remove_selected(self, &selected_left).take_opt_iter_unchecked_bounds(
+                            opt_join_tuples.iter().map(|(left, _right)| *left),
+                            Some(opt_join_tuples.len()),
+                        )
+                    },
+                    || unsafe {
+                        remove_selected(other, &selected_right).take_opt_iter_unchecked_bounds(
+                            opt_join_tuples.iter().map(|(_left, right)| *right),
+                            Some(opt_join_tuples.len()),
+                        )
+                    },
+                );
+                for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
+                    let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
+                    s.rename(s_left.name());
+                    df_left.hstack_mut(&[s])?;
+                }
+                self.finish_join(df_left, df_right)
+            }
+        }
+    }
+
     /// Perform an inner join on two DataFrames.
     ///
     /// # Example
@@ -669,7 +875,7 @@ mod test {
     }
 
     #[test]
-    fn test_join_query() {
+    fn test_join_multiple_columns() {
         let df_a = df! {
             "a" => &[1, 2, 1, 1],
             "b" => &["a", "b", "c", "c"],
@@ -684,6 +890,7 @@ mod test {
         }
         .unwrap();
 
+        // First do a hack with concatenated string dummy column
         let mut s = df_a
             .column("a")
             .unwrap()
@@ -709,16 +916,40 @@ mod test {
         let joined = df_a.left_join(&df_b, "dummy", "dummy").unwrap();
         let ham_col = joined.column("ham").unwrap();
         let ca = ham_col.utf8().unwrap();
-        assert_eq!(
-            Vec::from(ca),
-            &[
-                Some("let"),
-                None,
-                Some("var"),
-                Some("const"),
-                Some("var"),
-                Some("const")
-            ]
-        );
+
+        let correct_ham = &[
+            Some("let"),
+            None,
+            Some("var"),
+            Some("const"),
+            Some("var"),
+            Some("const"),
+        ];
+
+        assert_eq!(Vec::from(ca), correct_ham);
+
+        // now check the join with multiple columns
+        let joined = df_a
+            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Left)
+            .unwrap();
+        let ca = joined.column("ham").unwrap().utf8().unwrap();
+        assert_eq!(Vec::from(ca), correct_ham);
+        let joined_inner_hack = df_a.inner_join(&df_b, "dummy", "dummy").unwrap();
+        let joined_inner = df_a
+            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Inner)
+            .unwrap();
+        assert!(joined_inner_hack
+            .column("ham")
+            .unwrap()
+            .series_equal_missing(joined_inner.column("ham").unwrap()));
+
+        let joined_outer_hack = df_a.outer_join(&df_b, "dummy", "dummy").unwrap();
+        let joined_outer = df_a
+            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Outer)
+            .unwrap();
+        assert!(joined_outer_hack
+            .column("ham")
+            .unwrap()
+            .series_equal_missing(joined_outer.column("ham").unwrap()));
     }
 }

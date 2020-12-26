@@ -249,6 +249,46 @@ macro_rules! apply_method_numeric_series {
 }
 
 #[macro_export]
+macro_rules! static_zip {
+    ($selected_keys:ident, 0) => {
+        $selected_keys[0].as_groupable_iter()?
+    };
+    ($selected_keys:ident, 1) => {
+        static_zip!($selected_keys, 0).zip($selected_keys[1].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 2) => {
+        static_zip!($selected_keys, 1).zip($selected_keys[2].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 3) => {
+        static_zip!($selected_keys, 2).zip($selected_keys[3].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 4) => {
+        static_zip!($selected_keys, 3).zip($selected_keys[4].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 5) => {
+        static_zip!($selected_keys, 4).zip($selected_keys[5].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 6) => {
+        static_zip!($selected_keys, 5).zip($selected_keys[6].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 7) => {
+        static_zip!($selected_keys, 6).zip($selected_keys[7].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 8) => {
+        static_zip!($selected_keys, 7).zip($selected_keys[8].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 9) => {
+        static_zip!($selected_keys, 8).zip($selected_keys[9].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 10) => {
+        static_zip!($selected_keys, 9).zip($selected_keys[10].as_groupable_iter()?)
+    };
+    ($selected_keys:ident, 11) => {
+        static_zip!($selected_keys, 10).zip($selected_keys[11].as_groupable_iter()?)
+    };
+}
+
+#[macro_export]
 macro_rules! df {
     ($($col_name:expr => $slice:expr), +) => {
         {
