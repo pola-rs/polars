@@ -833,6 +833,18 @@ class Expr:
         f: "Union[UDF, Callable[[Series], Series]]",
         dtype_out: Optional["DataType"] = None,
     ) -> "Expr":
+        """
+        Apply a custom UDF. It is important that the UDF returns a Polars Series.
+
+        [read more in the book](https://ritchie46.github.io/polars-book/how_can_i/use_custom_functions.html#lazy)
+
+        Parameters
+        ----------
+        f
+            lambda/ function to apply
+        dtype_out
+            dtype of the output Series
+        """
         if isinstance(f, UDF):
             dtype_out = f.output_type
             f = f.f
@@ -845,6 +857,60 @@ class Expr:
         elif dtype_out == bool:
             dtype_out = datatypes.Boolean
         return wrap_expr(self._pyexpr.apply(f, dtype_out))
+
+    def apply_groups(
+        self,
+        f: "Union[UDF, Callable[[Series], Series]]",
+        dtype_out: Optional["DataType"] = None,
+    ) -> "Expr":
+        """
+        Apply a custom UDF in a GroupBy context. This is syntactic sugar for the `apply` method which operates on all
+        groups at once. The UDF passed to this expression will operate on a single group.
+
+        Parameters
+        ----------
+        f
+            lambda/ function to apply
+        dtype_out
+            dtype of the output Series
+
+        # Example
+
+        ```python
+        df = pl.DataFrame({"a": [1,  2,  1,  1],
+                   "b": ["a", "b", "c", "c"]})
+
+        (df
+         .lazy()
+         .groupby("b")
+         .agg([col("a").apply_groups(lambda x: x.sum())])
+         .collect()
+        )
+        ```
+
+        > returns
+
+        ```text
+        shape: (3, 2)
+        ╭─────┬─────╮
+        │ b   ┆ a   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ c   ┆ 2   │
+        ╰─────┴─────╯
+        ```
+        """
+
+        # input x: Series of type list containing the group values
+        def wrap_f(x: "Series") -> "Series":
+            return x.apply(f, dtype_out=dtype_out)
+
+        return self.apply(wrap_f)
 
 
 def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":

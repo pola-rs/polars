@@ -567,6 +567,25 @@ impl PhysicalExpr for ApplyExpr {
             None => self.input.to_field(input_schema),
         }
     }
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+impl AggPhysicalExpr for ApplyExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
+        let series = self.input.evaluate(df)?;
+        series
+            .agg_list(groups)
+            .map(|s| {
+                let s = self.function.call_udf(s);
+                s.map(|mut s| {
+                    s.rename(series.name());
+                    s
+                })
+            })
+            .map_or(Ok(None), |v| v.map(Some))
+    }
 }
 
 pub struct WindowExpr {
@@ -586,8 +605,14 @@ impl PhysicalExpr for WindowExpr {
         let gb = df
             .groupby(self.group_column.as_str())?
             .select(self.apply_column.as_str());
-        let out = if let Expr::Agg(agg) = &self.function {
-            match agg {
+
+        let out = match &self.function {
+            Expr::Apply { function, .. } => {
+                let mut df = gb.agg_list()?;
+                df.may_apply(&*self.apply_column, |s| function.call_udf(s.clone()))?;
+                Ok(df)
+            }
+            Expr::Agg(agg) => match agg {
                 AggExpr::Median(_) => gb.median(),
                 AggExpr::Mean(_) => gb.mean(),
                 AggExpr::Max(_) => gb.max(),
@@ -599,12 +624,11 @@ impl PhysicalExpr for WindowExpr {
                 AggExpr::NUnique(_) => gb.n_unique(),
                 AggExpr::Quantile { quantile, .. } => gb.quantile(*quantile),
                 AggExpr::List(_) => gb.agg_list(),
-                _ => Err(PolarsError::Other(
-                    format!("{:?} function not supported", self.function).into(),
-                )),
-            }
-        } else {
-            panic!("implementation error")
+                AggExpr::AggGroups(_) => gb.groups(),
+            },
+            _ => Err(PolarsError::Other(
+                format!("{:?} function not supported", self.function).into(),
+            )),
         }?;
         let mut out = df
             .select(self.group_column.as_str())?
