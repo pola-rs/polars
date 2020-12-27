@@ -563,7 +563,13 @@ impl LazyFrame {
         right_on: Expr,
         options: Option<JoinOptions>,
     ) -> LazyFrame {
-        self.join(other, vec![left_on], vec![right_on], options, JoinType::Left,)
+        self.join(
+            other,
+            vec![left_on],
+            vec![right_on],
+            options,
+            JoinType::Left,
+        )
     }
 
     /// Join query with other lazy query.
@@ -585,7 +591,13 @@ impl LazyFrame {
         right_on: Expr,
         options: Option<JoinOptions>,
     ) -> LazyFrame {
-        self.join(other, vec![left_on], vec![right_on], options, JoinType::Outer,)
+        self.join(
+            other,
+            vec![left_on],
+            vec![right_on],
+            options,
+            JoinType::Outer,
+        )
     }
 
     /// Join query with other lazy query.
@@ -607,7 +619,13 @@ impl LazyFrame {
         right_on: Expr,
         options: Option<JoinOptions>,
     ) -> LazyFrame {
-        self.join(other, vec![left_on], vec![right_on], options, JoinType::Inner,)
+        self.join(
+            other,
+            vec![left_on],
+            vec![right_on],
+            options,
+            JoinType::Inner,
+        )
     }
 
     /// Generic join function that can join on multiple columns.
@@ -617,7 +635,7 @@ impl LazyFrame {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         options: Option<JoinOptions>,
-        how: JoinType
+        how: JoinType,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let opts = options.unwrap_or_default();
@@ -625,7 +643,7 @@ impl LazyFrame {
             .get_plan_builder()
             .join(
                 other.logical_plan,
-                    how,
+                how,
                 left_on,
                 right_on,
                 opts.allow_parallel,
@@ -633,7 +651,6 @@ impl LazyFrame {
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
-
     }
 
     /// Add a column to a DataFrame
