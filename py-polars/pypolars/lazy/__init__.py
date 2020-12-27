@@ -304,31 +304,31 @@ class LazyFrame:
             Force the physical plan evaluate the computation of both DataFrames up to the join in parallel.
         """
         if isinstance(left_on, str):
-            left_on = col(left_on)
+            left_on = [left_on]
         if isinstance(right_on, str):
-            right_on = col(right_on)
+            right_on = [right_on]
         if isinstance(on, str):
-            left_on = col(on)
-            right_on = col(on)
+            left_on = [on]
+            right_on = [on]
         if left_on is None or right_on is None:
             raise ValueError("you should pass the column to join on as an argument")
-        left_on = left_on._pyexpr
-        right_on = right_on._pyexpr
-        if how == "inner":
-            inner = self._ldf.inner_join(
-                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
-            )
-        elif how == "left":
-            inner = self._ldf.left_join(
-                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
-            )
-        elif how == "outer":
-            inner = self._ldf.outer_join(
-                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
-            )
-        else:
-            return NotImplemented
-        return wrap_ldf(inner)
+
+        new_left_on = []
+        for column in left_on:
+            if isinstance(column, str):
+                column = col(column)
+            new_left_on.append(column._pyexpr)
+        new_right_on = []
+        for column in right_on:
+            if isinstance(column, str):
+                column = col(column)
+            new_right_on.append(column._pyexpr)
+
+        out = self._ldf.join(
+            ldf._ldf, new_left_on, new_right_on, allow_parallel, force_parallel, how
+        )
+
+        return wrap_ldf(out)
 
     def with_columns(self, exprs: "List[Expr]") -> "LazyFrame":
         """
@@ -833,6 +833,18 @@ class Expr:
         f: "Union[UDF, Callable[[Series], Series]]",
         dtype_out: Optional["DataType"] = None,
     ) -> "Expr":
+        """
+        Apply a custom UDF. It is important that the UDF returns a Polars Series.
+
+        [read more in the book](https://ritchie46.github.io/polars-book/how_can_i/use_custom_functions.html#lazy)
+
+        Parameters
+        ----------
+        f
+            lambda/ function to apply
+        dtype_out
+            dtype of the output Series
+        """
         if isinstance(f, UDF):
             dtype_out = f.output_type
             f = f.f
@@ -845,6 +857,60 @@ class Expr:
         elif dtype_out == bool:
             dtype_out = datatypes.Boolean
         return wrap_expr(self._pyexpr.apply(f, dtype_out))
+
+    def apply_groups(
+        self,
+        f: "Union[UDF, Callable[[Series], Series]]",
+        dtype_out: Optional["DataType"] = None,
+    ) -> "Expr":
+        """
+        Apply a custom UDF in a GroupBy context. This is syntactic sugar for the `apply` method which operates on all
+        groups at once. The UDF passed to this expression will operate on a single group.
+
+        Parameters
+        ----------
+        f
+            lambda/ function to apply
+        dtype_out
+            dtype of the output Series
+
+        # Example
+
+        ```python
+        df = pl.DataFrame({"a": [1,  2,  1,  1],
+                   "b": ["a", "b", "c", "c"]})
+
+        (df
+         .lazy()
+         .groupby("b")
+         .agg([col("a").apply_groups(lambda x: x.sum())])
+         .collect()
+        )
+        ```
+
+        > returns
+
+        ```text
+        shape: (3, 2)
+        ╭─────┬─────╮
+        │ b   ┆ a   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ c   ┆ 2   │
+        ╰─────┴─────╯
+        ```
+        """
+
+        # input x: Series of type list containing the group values
+        def wrap_f(x: "Series") -> "Series":
+            return x.apply(f, dtype_out=dtype_out)
+
+        return self.apply(wrap_f)
 
 
 def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":

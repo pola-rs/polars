@@ -881,6 +881,11 @@ class Series:
                 # try a numeric input for temporal data
                 dtype_out = out_to_dtype(func(1))
 
+            # make sure that output is a Series
+            if dtype_out == np.ndarray:
+                func = lambda x: Series(func(x))
+                dtype_out = List
+
         if dtype_out is None:
             return wrap_s(self._s.apply_lambda(func))
         else:
@@ -1163,7 +1168,7 @@ class Series:
         return wrap_s(self._s.sample_frac(frac, with_replacement))
 
 
-def out_to_dtype(out: Any) -> "Datatype":
+def out_to_dtype(out: Any) -> "Union[Datatype, np.ndarray]":
     if isinstance(out, float):
         return Float64
     if isinstance(out, int):
@@ -1174,4 +1179,6 @@ def out_to_dtype(out: Any) -> "Datatype":
         return Boolean
     if isinstance(out, Series):
         return List
-    return NotImplemented
+    if isinstance(out, np.ndarray):
+        return np.ndarray
+    raise NotImplementedError

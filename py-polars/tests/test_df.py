@@ -1,5 +1,6 @@
 from pypolars import DataFrame, Series
 from pypolars.datatypes import *
+from pypolars.lazy import *
 import pytest
 from io import BytesIO
 import numpy as np
@@ -157,6 +158,19 @@ def test_join():
     assert joined["c"].null_count() == 2
     assert joined["b"].null_count() == 2
 
+    df_a = DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
+    df_b = DataFrame(
+        {"foo": [1, 1, 1], "bar": ["a", "c", "c"], "ham": ["let", "var", "const"]}
+    )
+
+    # just check if join on multiple columns runs
+    df_a.join(df_b, left_on=["a", "b"], right_on=["foo", "bar"])
+
+    eager_join = df_a.join(df_b, left_on="a", right_on="foo")
+
+    lazy_join = df_a.lazy().join(df_b.lazy(), left_on="a", right_on="foo").collect()
+    assert lazy_join.shape == eager_join.shape
+
 
 def test_hstack():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
@@ -221,3 +235,16 @@ def test_from_pandas():
 
     df = pd.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
     DataFrame(df)
+
+
+def test_custom_groupby():
+    df = DataFrame({"A": ["a", "a", "c", "c"], "B": [1, 3, 5, 2]})
+    assert df.groupby("A").select("B").apply(lambda x: x.sum()).shape == (2, 2)
+    assert df.groupby("A").select("B").apply(lambda x: np.array(x)).shape == (2, 2)
+
+    df = DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
+
+    out = (
+        df.lazy().groupby("b").agg([col("a").apply_groups(lambda x: x.sum())]).collect()
+    )
+    assert out.shape == (3, 2)

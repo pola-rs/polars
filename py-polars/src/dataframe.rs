@@ -215,26 +215,23 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn inner_join(&self, other: &PyDataFrame, left_on: &str, right_on: &str) -> PyResult<Self> {
-        let df = self
-            .df
-            .inner_join(&other.df, left_on, right_on)
-            .map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
+    pub fn join(
+        &self,
+        other: &PyDataFrame,
+        left_on: Vec<&str>,
+        right_on: Vec<&str>,
+        how: &str,
+    ) -> PyResult<Self> {
+        let how = match how {
+            "left" => JoinType::Left,
+            "inner" => JoinType::Inner,
+            "outer" => JoinType::Outer,
+            _ => panic!("not supported"),
+        };
 
-    pub fn left_join(&self, other: &PyDataFrame, left_on: &str, right_on: &str) -> PyResult<Self> {
         let df = self
             .df
-            .left_join(&other.df, left_on, right_on)
-            .map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
-    pub fn outer_join(&self, other: &PyDataFrame, left_on: &str, right_on: &str) -> PyResult<Self> {
-        let df = self
-            .df
-            .outer_join(&other.df, left_on, right_on)
+            .join(&other.df, left_on, right_on, how)
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }

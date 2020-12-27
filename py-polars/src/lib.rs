@@ -44,6 +44,12 @@ fn when(predicate: PyExpr) -> dsl::When {
     dsl::when(predicate)
 }
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+#[pyfunction]
+fn version() -> &'static str {
+    VERSION
+}
+
 #[pymodule]
 fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -55,5 +61,6 @@ fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(version)).unwrap();
     Ok(())
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::frame::hash_join::JoinType;
 use crate::frame::ser::{csv::CsvEncoding, ScanAggregation};
 use crate::lazy::logical_plan::{DataFrameOperation, FETCH_ROWS};
 use arrow::datatypes::SchemaRef;
@@ -436,6 +437,13 @@ impl Executor for GroupByExec {
             let agg_expr = expr.as_agg_expr()?;
             let opt_agg = agg_expr.evaluate(&df, groups)?;
             if let Some(agg) = opt_agg {
+                if agg.len() != groups.len() {
+                    panic!(format!(
+                        "returned aggregation is a different length: {} than the group lengths: {}",
+                        agg.len(),
+                        groups.len()
+                    ))
+                }
                 columns.push(agg)
             }
         }
@@ -451,8 +459,8 @@ pub struct JoinExec {
     input_left: Option<Box<dyn Executor>>,
     input_right: Option<Box<dyn Executor>>,
     how: JoinType,
-    left_on: Arc<dyn PhysicalExpr>,
-    right_on: Arc<dyn PhysicalExpr>,
+    left_on: Vec<Arc<dyn PhysicalExpr>>,
+    right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
 }
 
@@ -461,8 +469,8 @@ impl JoinExec {
         input_left: Box<dyn Executor>,
         input_right: Box<dyn Executor>,
         how: JoinType,
-        left_on: Arc<dyn PhysicalExpr>,
-        right_on: Arc<dyn PhysicalExpr>,
+        left_on: Vec<Arc<dyn PhysicalExpr>>,
+        right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
     ) -> Self {
         JoinExec {
@@ -503,15 +511,19 @@ impl Executor for JoinExec {
         let df_left = df_left?;
         let df_right = df_right?;
 
-        let s_left = self.left_on.evaluate(&df_left)?;
-        let s_right = self.right_on.evaluate(&df_right)?;
+        let left_names = self
+            .left_on
+            .iter()
+            .map(|e| e.evaluate(&df_left).map(|s| s.name().to_string()))
+            .collect::<Result<Vec<_>>>()?;
 
-        use JoinType::*;
-        let df = match self.how {
-            Left => df_left.left_join_from_series(&df_right, &s_left, &s_right),
-            Inner => df_left.inner_join_from_series(&df_right, &s_left, &s_right),
-            Outer => df_left.outer_join_from_series(&df_right, &s_left, &s_right),
-        };
+        let right_names = self
+            .right_on
+            .iter()
+            .map(|e| e.evaluate(&df_right).map(|s| s.name().to_string()))
+            .collect::<Result<Vec<_>>>()?;
+
+        let df = df_left.join(&df_right, &left_names, &right_names, self.how);
         if std::env::var(POLARS_VERBOSE).is_ok() {
             println!("{:?} join dataframes finished", self.how);
         };

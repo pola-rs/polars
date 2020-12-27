@@ -1,4 +1,5 @@
 pub(crate) mod optimizer;
+use crate::frame::hash_join::JoinType;
 use crate::frame::ser::fork::csv::infer_file_schema;
 use crate::lazy::logical_plan::optimizer::predicate::combine_predicates;
 use crate::lazy::logical_plan::LogicalPlan::CsvScan;
@@ -153,8 +154,8 @@ pub enum LogicalPlan {
         input_right: Box<LogicalPlan>,
         schema: Schema,
         how: JoinType,
-        left_on: Expr,
-        right_on: Expr,
+        left_on: Vec<Expr>,
+        right_on: Vec<Expr>,
         allow_par: bool,
         force_par: bool,
     },
@@ -942,8 +943,8 @@ impl LogicalPlanBuilder {
         self,
         other: LogicalPlan,
         how: JoinType,
-        left_on: Expr,
-        right_on: Expr,
+        left_on: Vec<Expr>,
+        right_on: Vec<Expr>,
         allow_par: bool,
         force_par: bool,
     ) -> Self {
@@ -960,12 +961,15 @@ impl LogicalPlanBuilder {
             fields.push(f.clone());
         }
 
-        let right_name = utils::output_name(&right_on).expect("could not find name");
+        let right_names: HashSet<_, RandomState> = right_on
+            .iter()
+            .map(|e| utils::output_name(e).expect("could not find name"))
+            .collect();
 
         for f in schema_right.fields() {
             let name = f.name();
 
-            if name != &*right_name {
+            if !right_names.contains(name) {
                 if names.contains(name) {
                     let new_name = format!("{}_right", name);
                     let field = Field::new(&new_name, f.data_type().clone(), f.is_nullable());
@@ -975,6 +979,7 @@ impl LogicalPlanBuilder {
                 }
             }
         }
+
         let schema = Schema::new(fields);
 
         LogicalPlan::Join {
@@ -989,13 +994,6 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum JoinType {
-    Left,
-    Inner,
-    Outer,
 }
 
 #[cfg(test)]
