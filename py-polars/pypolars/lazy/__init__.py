@@ -908,7 +908,7 @@ class Expr:
 
         # input x: Series of type list containing the group values
         def wrap_f(x: "Series") -> "Series":
-            return x.apply(f, dtype_out=dtype_out)
+            return x.apply(f, dtype_out=dtype_out, sniff_dtype=False)
 
         return self.apply(wrap_f)
 
