@@ -437,6 +437,13 @@ impl Executor for GroupByExec {
             let agg_expr = expr.as_agg_expr()?;
             let opt_agg = agg_expr.evaluate(&df, groups)?;
             if let Some(agg) = opt_agg {
+                if agg.len() != groups.len() {
+                    panic!(format!(
+                        "returned aggregation is a different length: {} than the group lengths: {}",
+                        agg.len(),
+                        groups.len()
+                    ))
+                }
                 columns.push(agg)
             }
         }
