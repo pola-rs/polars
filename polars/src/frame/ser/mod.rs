@@ -13,7 +13,6 @@ pub mod parquet;
 #[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
-use crate::series::implementations::Wrap;
 use crate::utils::accumulate_dataframes_vertical;
 use arrow::array::ArrayRef;
 use arrow::{

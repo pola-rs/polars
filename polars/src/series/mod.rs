@@ -8,14 +8,12 @@ pub mod implementations;
 pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
-use crate::datatypes::*;
-use crate::series::implementations::Wrap;
 use arrow::array::ArrayDataRef;
 use num::NumCast;
 use std::any::Any;
+use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::convert::TryFrom;
 
 pub(crate) mod private {
     use super::*;
@@ -1072,21 +1070,28 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
 impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
     type Error = PolarsError;
 
-    fn try_from(name_arr : (&str, Vec<ArrayRef>)) -> Result<Self> {
+    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> Result<Self> {
         let (name, chunks) = name_arr;
 
         let mut chunks_iter = chunks.iter();
-        let data_type : &ArrowDataType = chunks_iter.next().ok_or(PolarsError::NoData("Expected at least on ArrayRef".into()))?.data_type();
+        let data_type: &ArrowDataType = chunks_iter
+            .next()
+            .ok_or(PolarsError::NoData("Expected at least on ArrayRef".into()))?
+            .data_type();
 
         for chunk in chunks_iter {
             if chunk.data_type() != data_type {
-                return Err(PolarsError::InvalidOperation("Cannot create series from multiple arrays with different types".into()));
+                return Err(PolarsError::InvalidOperation(
+                    "Cannot create series from multiple arrays with different types".into(),
+                ));
             }
         }
 
         let s = match data_type {
             ArrowDataType::Utf8 => Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series()),
-            ArrowDataType::Boolean => Ok(BooleanChunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Boolean => {
+                Ok(BooleanChunked::new_from_chunks(name, chunks).into_series())
+            }
             ArrowDataType::UInt8 => Ok(UInt8Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt16 => Ok(UInt16Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt32 => Ok(UInt32Chunked::new_from_chunks(name, chunks).into_series()),
@@ -1095,8 +1100,12 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Int16 => Ok(Int16Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::Int32 => Ok(Int32Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::Int64 => Ok(Int64Chunked::new_from_chunks(name, chunks).into_series()),
-            ArrowDataType::Float32 => Ok(Float32Chunked::new_from_chunks(name, chunks).into_series()),
-            ArrowDataType::Float64 => Ok(Float64Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Float32 => {
+                Ok(Float32Chunked::new_from_chunks(name, chunks).into_series())
+            }
+            ArrowDataType::Float64 => {
+                Ok(Float64Chunked::new_from_chunks(name, chunks).into_series())
+            }
             ArrowDataType::Date32(DateUnit::Day) => {
                 Ok(Date32Chunked::new_from_chunks(name, chunks).into_series())
             }
@@ -1113,7 +1122,9 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 Ok(DurationMillisecondChunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::List(_) => Ok(ListChunked::new_from_chunks(name, chunks).into_series()),
-            dt => Err(PolarsError::InvalidOperation(format!("Cannot create polars series from {:?}", dt).into())),
+            dt => Err(PolarsError::InvalidOperation(
+                format!("Cannot create polars series from {:?}", dt).into(),
+            )),
         };
 
         s
@@ -1122,12 +1133,10 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
 
 impl From<(&str, ArrayRef)> for Series {
     fn from(name_arr: (&str, ArrayRef)) -> Self {
-
-        let (name, chunk) = name_arr;
-        let result = Series::try_from((name, vec![chunk])); 
+        let (name, arr) = name_arr;
+        let result = Series::try_from((name, vec![arr]));
 
         result.unwrap()
-
     }
 }
 
@@ -1147,12 +1156,11 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use arrow::array::*;
     use crate::series::*;
+    use arrow::array::*;
 
     #[test]
     fn cast() {
@@ -1165,7 +1173,6 @@ mod test {
         assert!(s2.f32().is_ok());
     }
 
-
     #[test]
     fn new_series() {
         Series::new("boolean series", &vec![true, false, true]);
@@ -1176,8 +1183,8 @@ mod test {
 
     #[test]
     fn new_series_from_arrow_primitive_array() {
-        let array = UInt64Array::from(vec![1,2,3,4,5]);
-        let array_ref : ArrayRef = Arc::new(array);
+        let array = UInt64Array::from(vec![1, 2, 3, 4, 5]);
+        let _array_ref: ArrayRef = Arc::new(array);
     }
 
     #[test]

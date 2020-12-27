@@ -52,7 +52,6 @@ use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray, ListArray,
 };
 
-use crate::series::implementations::Wrap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
 

@@ -10,7 +10,6 @@ use crate::chunked_array::kernels::take::{
     take_no_null_boolean, take_no_null_primitive, take_utf8,
 };
 use crate::prelude::*;
-use crate::series::implementations::Wrap;
 use crate::utils::Xob;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps, StringArray,
@@ -113,7 +112,7 @@ impl TakeRandom for ListChunked {
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         let arr = impl_take_random_get_unchecked!(self, index, ListArray);
-        let s : Series = (self.name(), arr).into();
+        let s: Series = (self.name(), arr).into();
         s
     }
 }
