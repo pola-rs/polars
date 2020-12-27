@@ -382,8 +382,8 @@ impl ProjectionPushDown {
                     let schema_right = input_right.schema();
 
                     // We need the join columns so we push the projection downwards
-                    pushdown_left.push(left_on.clone());
-                    pushdown_right.push(right_on.clone());
+                    pushdown_left.extend_from_slice(&left_on);
+                    pushdown_right.extend_from_slice(&right_on);
 
                     for mut proj in acc_projections {
                         let mut add_local = true;

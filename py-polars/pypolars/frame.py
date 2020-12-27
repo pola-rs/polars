@@ -571,6 +571,10 @@ class DataFrame:
         -------
             Joined DataFrame
         """
+        if isinstance(left_on, str):
+            left_on = [left_on]
+        if isinstance(right_on, str):
+            right_on = [right_on]
 
         if isinstance(on, str):
             left_on = [on]

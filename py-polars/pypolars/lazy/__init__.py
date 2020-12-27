@@ -304,31 +304,31 @@ class LazyFrame:
             Force the physical plan evaluate the computation of both DataFrames up to the join in parallel.
         """
         if isinstance(left_on, str):
-            left_on = col(left_on)
+            left_on = [left_on]
         if isinstance(right_on, str):
-            right_on = col(right_on)
+            right_on = [right_on]
         if isinstance(on, str):
-            left_on = col(on)
-            right_on = col(on)
+            left_on = [on]
+            right_on = [on]
         if left_on is None or right_on is None:
             raise ValueError("you should pass the column to join on as an argument")
-        left_on = left_on._pyexpr
-        right_on = right_on._pyexpr
-        if how == "inner":
-            inner = self._ldf.inner_join(
-                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
-            )
-        elif how == "left":
-            inner = self._ldf.left_join(
-                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
-            )
-        elif how == "outer":
-            inner = self._ldf.outer_join(
-                ldf._ldf, left_on, right_on, allow_parallel, force_parallel
-            )
-        else:
-            return NotImplemented
-        return wrap_ldf(inner)
+
+        new_left_on = []
+        for column in left_on:
+            if isinstance(column, str):
+                column = col(column)
+            new_left_on.append(column._pyexpr)
+        new_right_on = []
+        for column in right_on:
+            if isinstance(column, str):
+                column = col(column)
+            new_right_on.append(column._pyexpr)
+
+        out = self._ldf.join(
+            ldf._ldf, new_left_on, new_right_on, allow_parallel, force_parallel, how
+        )
+
+        return wrap_ldf(out)
 
     def with_columns(self, exprs: "List[Expr]") -> "LazyFrame":
         """
