@@ -563,20 +563,7 @@ impl LazyFrame {
         right_on: Expr,
         options: Option<JoinOptions>,
     ) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let opts = options.unwrap_or_default();
-        let lp = self
-            .get_plan_builder()
-            .join(
-                other.logical_plan,
-                JoinType::Left,
-                left_on,
-                right_on,
-                opts.allow_parallel,
-                opts.force_parallel,
-            )
-            .build();
-        Self::from_logical_plan(lp, opt_state)
+        self.join(other, vec![left_on], vec![right_on], options, JoinType::Left,)
     }
 
     /// Join query with other lazy query.
@@ -598,20 +585,7 @@ impl LazyFrame {
         right_on: Expr,
         options: Option<JoinOptions>,
     ) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let opts = options.unwrap_or_default();
-        let lp = self
-            .get_plan_builder()
-            .join(
-                other.logical_plan,
-                JoinType::Outer,
-                left_on,
-                right_on,
-                opts.allow_parallel,
-                opts.force_parallel,
-            )
-            .build();
-        Self::from_logical_plan(lp, opt_state)
+        self.join(other, vec![left_on], vec![right_on], options, JoinType::Outer,)
     }
 
     /// Join query with other lazy query.
@@ -633,13 +607,25 @@ impl LazyFrame {
         right_on: Expr,
         options: Option<JoinOptions>,
     ) -> LazyFrame {
+        self.join(other, vec![left_on], vec![right_on], options, JoinType::Inner,)
+    }
+
+    /// Generic join function that can join on multiple columns.
+    pub fn join(
+        self,
+        other: LazyFrame,
+        left_on: Vec<Expr>,
+        right_on: Vec<Expr>,
+        options: Option<JoinOptions>,
+        how: JoinType
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let opts = options.unwrap_or_default();
         let lp = self
             .get_plan_builder()
             .join(
                 other.logical_plan,
-                JoinType::Inner,
+                    how,
                 left_on,
                 right_on,
                 opts.allow_parallel,
@@ -647,6 +633,7 @@ impl LazyFrame {
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
+
     }
 
     /// Add a column to a DataFrame

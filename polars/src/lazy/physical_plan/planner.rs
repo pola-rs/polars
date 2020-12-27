@@ -248,8 +248,8 @@ impl DefaultPlanner {
 
                 let input_left = self.create_initial_physical_plan(*input_left)?;
                 let input_right = self.create_initial_physical_plan(*input_right)?;
-                let left_on = self.create_physical_expr(left_on, Context::Other)?;
-                let right_on = self.create_physical_expr(right_on, Context::Other)?;
+                let left_on = self.create_physical_expressions(left_on, Context::Other)?;
+                let right_on = self.create_physical_expressions(right_on, Context::Other)?;
                 Ok(Box::new(JoinExec::new(
                     input_left,
                     input_right,

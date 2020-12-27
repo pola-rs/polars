@@ -163,7 +163,13 @@ def test_join():
         {"foo": [1, 1, 1], "bar": ["a", "c", "c"], "ham": ["let", "var", "const"]}
     )
 
+    # just check if join on multiple columns runs
     df_a.join(df_b, left_on=["a", "b"], right_on=["foo", "bar"])
+
+    eager_join = df_a.join(df_b, left_on="a", right_on="foo")
+
+    lazy_join = df_a.lazy().join(df_b.lazy(), left_on="a", right_on="foo").collect()
+    assert lazy_join.shape == eager_join.shape
 
 
 def test_hstack():
