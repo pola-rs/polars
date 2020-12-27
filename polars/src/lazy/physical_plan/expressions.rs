@@ -609,7 +609,7 @@ impl PhysicalExpr for WindowExpr {
         let out = match &self.function {
             Expr::Apply { function, .. } => {
                 let mut df = gb.agg_list()?;
-                df.may_apply(&*self.apply_column, |s| function.call_udf(s.clone()))?;
+                df.may_apply_at_idx(1, |s| function.call_udf(s.clone()))?;
                 Ok(df)
             }
             Expr::Agg(agg) => match agg {

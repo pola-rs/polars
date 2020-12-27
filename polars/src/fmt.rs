@@ -459,6 +459,7 @@ macro_rules! fmt_option {
 macro_rules! impl_fmt_list {
     ($self:ident) => {{
         match $self.len() {
+            0 => format!("[]"),
             1 => format!("[{}]", fmt_option!($self.get(0))),
             2 => format!(
                 "[{}, {}]",
