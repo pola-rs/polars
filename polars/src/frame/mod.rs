@@ -8,8 +8,10 @@ use crate::utils::{accumulate_dataframes_horizontal, Xob};
 use ahash::RandomState;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
+use arrow::array::{ArrayRef};
 use rayon::prelude::*;
 use std::collections::HashSet;
+use std::iter::Iterator::enumerate;
 use std::marker::Sized;
 use std::mem;
 use std::sync::Arc;
@@ -1603,9 +1605,40 @@ impl<'a> Iterator for RecordBatchIter<'a> {
     }
 }
 
+
 impl Default for DataFrame {
     fn default() -> Self {
         DataFrame::new_no_checks(vec![])
+    }
+}
+
+impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
+    type Error = PolarsError;
+
+    fn try_from(batches : Vec<RecordBatch>) -> Result<DataFrame> {
+        // Validate that all record batches have the same schema
+        let mut batch_iter = batches.iter();
+
+        let first_batch = batch_iter.next().ok_or(PolarsError::NoData("At least one record batch is needed to create a dataframe".into()))?;
+        let schema = first_batch.schema();
+        let fields = schema.fields();
+
+        for batch in batch_iter {
+            if batch.schema() != schema {
+                return Err(PolarsError::DataTypeMisMatch("All record batches must have the same schema".into()));
+            }
+        }
+
+        // Create a vector of series objects from record batches
+        let mut series_vec = Vec::with_capacity(fields.len());
+
+        for (field_idx, field) in enumerate(schema.fields().iter()) {
+            let chunks : Vec<ArrayRef> = batches.iter().map(|batch| batch.column(field_idx).clone()).collect();
+            let series = Series::try_from((field.name().as_ref(), chunks))?;
+            series_vec[field_idx] = series;
+        }
+
+        DataFrame::new(series_vec)   
     }
 }
 
