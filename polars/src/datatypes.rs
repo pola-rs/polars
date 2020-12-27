@@ -223,8 +223,6 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
             ArrowDataType::Duration(TimeUnit::Microsecond) => "duration(μs)",
             ArrowDataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
-            ArrowDataType::Duration(TimeUnit::Second) => "duration(s)",
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => "interval(year-month)",
             ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
             #[cfg(feature = "object")]
             ArrowDataType::Binary => "object",
