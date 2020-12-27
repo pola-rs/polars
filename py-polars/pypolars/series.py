@@ -70,7 +70,7 @@ class Series:
     def __init__(
         self,
         name: str,
-        values: "Union[np.array, List[Optional[Any]]]",
+        values: "Union[np.array, List[Optional[Any]]]" = None,
         nullable: bool = False,
     ):
         """
@@ -84,6 +84,10 @@ class Series:
         nullable
             If nullable. List[Optional[Any]] will remain lists where None values will be interpreted as nulls
         """
+        # assume the first input were the values
+        if values is None and not isinstance(name, str):
+            values = name
+            name = ""
         if values.__class__ == self.__class__:
             values.rename(name)
             self._s = values._s
@@ -342,7 +346,10 @@ class Series:
         f = get_ffi_func("get_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
-        return f(item)
+        out = f(item)
+        if self.dtype == pypolars.datatypes.List:
+            return wrap_s(out)
+        return out
 
     def __setitem__(self, key, value):
         if isinstance(key, Series):
@@ -886,10 +893,7 @@ class Series:
                 func = lambda x: Series(func(x))
                 dtype_out = List
 
-        if dtype_out is None:
-            return wrap_s(self._s.apply_lambda(func))
-        else:
-            return wrap_s(self._s.apply_lambda(func, dtype_out))
+        return wrap_s(self._s.apply_lambda(func, dtype_out))
 
     def shift(self, periods: int) -> "Series":
         """

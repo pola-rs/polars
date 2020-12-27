@@ -240,11 +240,16 @@ def test_from_pandas():
 def test_custom_groupby():
     df = DataFrame({"A": ["a", "a", "c", "c"], "B": [1, 3, 5, 2]})
     assert df.groupby("A").select("B").apply(lambda x: x.sum()).shape == (2, 2)
-    assert df.groupby("A").select("B").apply(lambda x: np.array(x)).shape == (2, 2)
+    assert df.groupby("A").select("B").apply(
+        lambda x: Series("", np.array(x))
+    ).shape == (2, 2)
 
     df = DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
 
     out = (
-        df.lazy().groupby("b").agg([col("a").apply_groups(lambda x: x.sum())]).collect()
+        df.lazy()
+        .groupby("b")
+        .agg([col("a").apply_groups(lambda x: x.sum(), dtype_out=int)])
+        .collect()
     )
     assert out.shape == (3, 2)

@@ -634,7 +634,12 @@ impl PhysicalExpr for WindowExpr {
             .select(self.group_column.as_str())?
             .left_join(&out, self.group_column.as_str(), &self.group_column)?
             .select_at_idx(1)
-            .unwrap()
+            .unwrap_or_else(|| {
+                panic!(format!(
+                    "the aggregation function did not succeed on {}",
+                    self.apply_column
+                ))
+            })
             .clone();
         out.rename(self.out_name.as_str());
         Ok(out)
