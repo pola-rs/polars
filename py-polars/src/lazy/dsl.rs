@@ -289,9 +289,9 @@ impl PyExpr {
                 Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
             };
             // unpack the wrapper in a PySeries
-            let py_pyseries = result_series_wrapper
-                .getattr(py, "_s")
-                .expect("could net get series attribute '_s'");
+            let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
+                "Could net get series attribute '_s'. Make sure that you return a Series object.",
+            );
             // Downcast to Rust
             let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
             // Finally get the actual Series
