@@ -62,6 +62,8 @@ jobs:
           env:
             MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           run: |
+            rm py-polars/README.md
+            cp README.md py-polars/README.md
             cd py-polars
             maturin publish \
             -o wheels \

@@ -1,5 +1,5 @@
 try:
-    from .pypolars import PyDataFrame, PySeries, PyLazyFrame
+    from .pypolars import PyDataFrame, PySeries, PyLazyFrame, version
 except:
     import warnings
 
