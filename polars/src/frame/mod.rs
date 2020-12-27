@@ -1612,6 +1612,8 @@ impl Default for DataFrame {
 }
 
 /// Conversion from Vec<RecordBatch> into DataFrame
+
+/// Conversion from Vec<RecordBatch> into DataFrame
 ///
 /// If batch-size is small it might be advisable to call rechunk
 /// to ensure predictable performance
@@ -1677,10 +1679,10 @@ mod test {
         // | 4.0    | 4      |
         // | 5.0    | 5      |
         // -------------------
-        let field0 = Field::new("foo", DataType::Float64, false);
-        let field1 = Field::new("bar", DataType::Int64, false);
-
-        let schema = Arc::new(Schema::new(vec![field0, field1]));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("foo", DataType::Float64, false),
+            Field::new("bar", DataType::Int64, false),
+        ]));
 
         let field0_arr0 = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
         let field0_arr1 = Arc::new(Float64Array::from(vec![4.0, 5.0]));
