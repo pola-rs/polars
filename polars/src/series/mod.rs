@@ -1076,7 +1076,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
         let mut chunks_iter = chunks.iter();
         let data_type: &ArrowDataType = chunks_iter
             .next()
-            .ok_or(PolarsError::NoData("Expected at least on ArrayRef".into()))?
+            .ok_or_else(|| PolarsError::NoData("Expected at least on ArrayRef".into()))?
             .data_type();
 
         for chunk in chunks_iter {
@@ -1087,7 +1087,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             }
         }
 
-        let s = match data_type {
+        match data_type {
             ArrowDataType::Utf8 => Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::Boolean => {
                 Ok(BooleanChunked::new_from_chunks(name, chunks).into_series())
@@ -1125,9 +1125,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?}", dt).into(),
             )),
-        };
-
-        s
+        }
     }
 }
 
