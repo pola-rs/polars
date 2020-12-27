@@ -236,30 +236,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn inner_join(&self, other: &PyDataFrame, left_on: &str, right_on: &str) -> PyResult<Self> {
-        let df = self
-            .df
-            .inner_join(&other.df, left_on, right_on)
-            .map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
-    pub fn left_join(&self, other: &PyDataFrame, left_on: &str, right_on: &str) -> PyResult<Self> {
-        let df = self
-            .df
-            .left_join(&other.df, left_on, right_on)
-            .map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
-    pub fn outer_join(&self, other: &PyDataFrame, left_on: &str, right_on: &str) -> PyResult<Self> {
-        let df = self
-            .df
-            .outer_join(&other.df, left_on, right_on)
-            .map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn get_columns(&self) -> Vec<PySeries> {
         let cols = self.df.get_columns().clone();
         to_pyseries_collection(cols)

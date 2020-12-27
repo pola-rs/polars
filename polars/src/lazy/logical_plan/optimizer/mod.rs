@@ -614,8 +614,8 @@ pub enum ALogicalPlan {
         input_right: Node,
         schema: Schema,
         how: JoinType,
-        left_on: Node,
-        right_on: Node,
+        left_on: Vec<Node>,
+        right_on: Vec<Node>,
         allow_par: bool,
         force_par: bool,
     },
@@ -910,9 +910,14 @@ pub(crate) fn to_alp(
             let i_l = to_alp(*input_left, expr_arena, lp_arena);
             let i_r = to_alp(*input_right, expr_arena, lp_arena);
 
-            let l_on = to_aexpr(left_on, expr_arena);
-
-            let r_on = to_aexpr(right_on, expr_arena);
+            let l_on = left_on
+                .into_iter()
+                .map(|x| to_aexpr(x, expr_arena))
+                .collect();
+            let r_on = right_on
+                .into_iter()
+                .map(|x| to_aexpr(x, expr_arena))
+                .collect();
 
             ALogicalPlan::Join {
                 input_left: i_l,
@@ -1274,8 +1279,14 @@ pub(crate) fn node_to_lp(
             let i_l = node_to_lp(input_left, expr_arena, lp_arena);
             let i_r = node_to_lp(input_right, expr_arena, lp_arena);
 
-            let l_on = node_to_exp(left_on, expr_arena);
-            let r_on = node_to_exp(right_on, expr_arena);
+            let l_on = left_on
+                .into_iter()
+                .map(|n| node_to_exp(n, expr_arena))
+                .collect();
+            let r_on = right_on
+                .into_iter()
+                .map(|n| node_to_exp(n, expr_arena))
+                .collect();
 
             LogicalPlan::Join {
                 input_left: Box::new(i_l),
