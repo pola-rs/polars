@@ -1622,7 +1622,7 @@ impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
         // Validate that all record batches have the same schema
         let mut batch_iter = batches.iter();
 
-        let first_batch = batch_iter.next().ok_or(PolarsError::NoData(
+        let first_batch = batch_iter.next().ok_or_else(|| PolarsError::NoData(
             "At least one record batch is needed to create a dataframe".into(),
         ))?;
         let schema = first_batch.schema();
