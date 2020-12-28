@@ -1,8 +1,10 @@
+use crate::error::PyPolarsEr;
 use crate::series::PySeries;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
+use pyo3::types::{PyBool, PyFloat, PyInt, PyTuple};
+use pyo3::PyClass;
 
 pub trait PyArrowPrimitiveType: PolarsPrimitiveType {}
 
@@ -24,6 +26,10 @@ impl PyArrowPrimitiveType for DurationMillisecondType {}
 impl PyArrowPrimitiveType for BooleanType {}
 
 pub trait ApplyLambda<'a, 'b> {
+    fn apply_lambda_unknown(&'b self, _py: Python, _lambda: &'a PyAny) -> PyResult<PySeries> {
+        unimplemented!()
+    }
+
     /// Apply a lambda that doesn't change output types
     fn apply_lambda(&'b self, _py: Python, _lambda: &'a PyAny) -> PyResult<PySeries> {
         unimplemented!()
@@ -34,6 +40,8 @@ pub trait ApplyLambda<'a, 'b> {
         &'b self,
         _py: Python,
         _lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
@@ -128,6 +136,42 @@ macro_rules! impl_lambda_with_utf8_out_type {
     }};
 }
 
+fn iterator_to_primitive<T>(
+    mut it: impl Iterator<Item = Option<T::Native>>,
+    init_null_count: usize,
+    first_value: Option<T::Native>,
+    name: &str,
+    capacity: usize,
+) -> ChunkedArray<T>
+where
+    T: PyArrowPrimitiveType,
+{
+    let mut builder = PrimitiveChunkedBuilder::<T>::new(name, capacity);
+    for _ in 0..init_null_count {
+        builder.append_null();
+    }
+    if let Some(val) = first_value {
+        builder.append_value(val)
+    }
+    for opt_val in it {
+        match opt_val {
+            Some(val) => builder.append_value(val),
+            None => builder.append_null(),
+        }
+    }
+    builder.finish()
+}
+
+fn call_lambda_with_primitive<'a, T, S>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<S>
+where
+    T: ToPyObject,
+    S: FromPyObject<'a>,
+{
+    let arg = PyTuple::new(py, &[in_val]);
+    let out = lambda.call1(arg).expect("lambda failed");
+    out.extract::<S>()
+}
+
 impl<'a, 'b, T> ApplyLambda<'a, 'b> for ChunkedArray<T>
 where
     T: PyArrowPrimitiveType,
@@ -136,8 +180,60 @@ where
     &'b ChunkedArray<T>:
         IntoIterator<Item = Option<T::Native>> + IntoNoNullIterator<Item = T::Native>,
 {
+    fn apply_lambda_unknown(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        let mut null_count = 0;
+        let mut it = self.into_iter();
+        while let Some(opt_v) = it.next() {
+            if let Some(v) = opt_v {
+                let arg = PyTuple::new(py, &[v]);
+                let out = lambda.call1(arg)?;
+                if out.is_none() {
+                    null_count += 1;
+                    continue;
+                } else if out.is_instance::<PyInt>().unwrap() {
+                    let first_value = out.extract::<i64>().unwrap();
+                    return self
+                        .apply_lambda_with_primitive_out_type::<Int64Type>(
+                            py,
+                            lambda,
+                            null_count,
+                            Some(first_value),
+                        )
+                        .map(|ca| ca.into_series().into());
+                } else if out.is_instance::<PyFloat>().unwrap() {
+                    let first_value = out.extract::<f64>().unwrap();
+                    return self
+                        .apply_lambda_with_primitive_out_type::<Float64Type>(
+                            py,
+                            lambda,
+                            null_count,
+                            Some(first_value),
+                        )
+                        .map(|ca| ca.into_series().into());
+                } else if out.is_instance::<PyBool>().unwrap() {
+                    let first_value = out.extract::<bool>().unwrap();
+                    return self
+                        .apply_lambda_with_primitive_out_type::<BooleanType>(
+                            py,
+                            lambda,
+                            null_count,
+                            Some(first_value),
+                        )
+                        .map(|ca| ca.into_series().into());
+                } else {
+                    return Err(PyPolarsEr::Other("Could not determine output type".into()).into());
+                }
+            } else {
+                null_count += 1
+            }
+        }
+        Ok(Self::full_null(self.name(), self.len())
+            .into_series()
+            .into())
+    }
+
     fn apply_lambda(&'b self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
-        self.apply_lambda_with_primitive_out_type::<T>(py, lambda)
+        self.apply_lambda_with_primitive_out_type::<T>(py, lambda, 0, None)
             .map(|ca| PySeries::new(ca.into_series()))
     }
 
@@ -145,12 +241,39 @@ where
         &'b self,
         py: Python,
         lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
-        impl_lambda_with_primitive_type!(self, D, py, lambda)
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count)
+                .map(|val| call_lambda_with_primitive(py, lambda, val).ok());
+            Ok(iterator_to_primitive(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self.into_iter().skip(init_null_count).map(|opt_val| {
+                opt_val.and_then(|val| call_lambda_with_primitive(py, lambda, val).ok())
+            });
+            Ok(iterator_to_primitive(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        }
     }
 
     fn apply_lambda_with_utf8_out_type(
@@ -172,6 +295,8 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for Utf8Chunked {
         &'b self,
         py: Python,
         lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,
@@ -340,6 +465,8 @@ impl<'a, 'b> ApplyLambda<'a, 'b> for ListChunked {
         &'b self,
         py: Python,
         lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
         D: PyArrowPrimitiveType,

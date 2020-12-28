@@ -33,7 +33,5 @@ codegen-units = 1
 target-cpu = "native"
 lto = "fat"
 
-[profile.dev]
-opt-level = 1
-
-[workspace]
+#[profile.dev]
+#opt-level = 1
