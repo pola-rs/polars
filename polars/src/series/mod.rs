@@ -1129,12 +1129,12 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
     }
 }
 
-impl From<(&str, ArrayRef)> for Series {
-    fn from(name_arr: (&str, ArrayRef)) -> Self {
-        let (name, arr) = name_arr;
-        let result = Series::try_from((name, vec![arr]));
+impl TryFrom<(&str, ArrayRef)> for Series {
+    type Error = PolarsError;
 
-        result.unwrap()
+    fn try_from(name_arr: (&str, ArrayRef)) -> Result<Self> {
+        let (name, arr) = name_arr;
+        Series::try_from((name, vec![arr]))
     }
 }
 
@@ -1184,7 +1184,7 @@ mod test {
         let array = UInt64Array::from(vec![1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Arc::new(array);
 
-        Series::from(("foo", array_ref));
+        Series::try_from(("foo", array_ref)).unwrap();
     }
 
     #[test]

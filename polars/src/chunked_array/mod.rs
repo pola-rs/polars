@@ -14,6 +14,7 @@ use arrow::{
     datatypes::{DateUnit, Field, TimeUnit},
 };
 use itertools::Itertools;
+use std::convert::TryFrom;
 use std::iter::{Copied, Map};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -521,8 +522,8 @@ where
             }
             ArrowDataType::List(_) => {
                 let v = downcast!(ListArray);
-                let s: Series = ("", v).into();
-                AnyType::List(s)
+                let s = Series::try_from(("", v));
+                AnyType::List(s.unwrap())
             }
             #[cfg(feature = "object")]
             ArrowDataType::Binary => AnyType::Object(&"object"),

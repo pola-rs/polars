@@ -4,9 +4,8 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::series::implementations::Wrap;
 use crate::series::SeriesTrait;
-use crate::utils::{accumulate_dataframes_horizontal, Xob};
+use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, Xob};
 use ahash::RandomState;
-use arrow::array::ArrayRef;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
@@ -1612,6 +1611,22 @@ impl Default for DataFrame {
 }
 
 /// Conversion from Vec<RecordBatch> into DataFrame
+///
+///
+impl std::convert::TryFrom<RecordBatch> for DataFrame {
+    type Error = PolarsError;
+
+    fn try_from(batch: RecordBatch) -> Result<DataFrame> {
+        let columns: Result<Vec<Series>> = batch
+            .columns()
+            .iter()
+            .zip(batch.schema().fields())
+            .map(|(arr, field)| Series::try_from((field.name().as_ref(), arr.clone())))
+            .collect();
+
+        DataFrame::new(columns?)
+    }
+}
 
 /// Conversion from Vec<RecordBatch> into DataFrame
 ///
@@ -1621,15 +1636,15 @@ impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
     type Error = PolarsError;
 
     fn try_from(batches: Vec<RecordBatch>) -> Result<DataFrame> {
-        // Validate that all record batches have the same schema
         let mut batch_iter = batches.iter();
 
+        // Non empty array
         let first_batch = batch_iter.next().ok_or_else(|| {
             PolarsError::NoData("At least one record batch is needed to create a dataframe".into())
         })?;
-        let schema = first_batch.schema();
-        let fields = schema.fields();
 
+        // Validate all record batches have the same schema
+        let schema = first_batch.schema();
         for batch in batch_iter {
             if batch.schema() != schema {
                 return Err(PolarsError::DataTypeMisMatch(
@@ -1638,19 +1653,12 @@ impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
             }
         }
 
-        // Create a vector of series objects from record batches
-        let mut series_vec = Vec::with_capacity(fields.len());
+        let dfs: Result<Vec<DataFrame>> = batches
+            .iter()
+            .map(|batch| DataFrame::try_from(batch.clone()))
+            .collect();
 
-        for (field_idx, field) in Iterator::enumerate(schema.fields().iter()) {
-            let chunks: Vec<ArrayRef> = batches
-                .iter()
-                .map(|batch| batch.column(field_idx).clone())
-                .collect();
-            let series = Series::try_from((field.name().as_ref(), chunks))?;
-            series_vec.push(series);
-        }
-
-        DataFrame::new(series_vec)
+        accumulate_dataframes_vertical(dfs?)
     }
 }
 
@@ -1684,20 +1692,21 @@ mod test {
             Field::new("bar", DataType::Int64, false),
         ]));
 
-        let field0_arr0 = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
-        let field0_arr1 = Arc::new(Float64Array::from(vec![4.0, 5.0]));
-
-        let field1_arr0 = Arc::new(Int64Array::from(vec![1, 2, 3]));
-        let field1_arr1 = Arc::new(Int64Array::from(vec![4, 5]));
-
         let batch0 = RecordBatch::try_new(
             schema.clone(),
-            vec![field0_arr0.clone(), field1_arr0.clone()],
+            vec![
+                Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0])),
+                Arc::new(Int64Array::from(vec![1, 2, 3])),
+            ],
         )
         .unwrap();
+
         let batch1 = RecordBatch::try_new(
             schema.clone(),
-            vec![field0_arr1.clone(), field1_arr1.clone()],
+            vec![
+                Arc::new(Float64Array::from(vec![4.0, 5.0])),
+                Arc::new(Int64Array::from(vec![4, 5])),
+            ],
         )
         .unwrap();
 

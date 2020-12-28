@@ -15,6 +15,7 @@ use arrow::array::{
     Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps, StringArray,
 };
 use arrow::compute::kernels::take::take;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 macro_rules! impl_take_random_get {
@@ -105,15 +106,15 @@ impl TakeRandom for ListChunked {
     fn get(&self, index: usize) -> Option<Self::Item> {
         let opt_arr = impl_take_random_get!(self, index, ListArray);
         opt_arr.map(|arr| {
-            let s: Series = (self.name(), arr).into();
-            s
+            let s = Series::try_from((self.name(), arr));
+            s.unwrap()
         })
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         let arr = impl_take_random_get_unchecked!(self, index, ListArray);
-        let s: Series = (self.name(), arr).into();
-        s
+        let s = Series::try_from((self.name(), arr));
+        s.unwrap()
     }
 }
 
@@ -880,15 +881,15 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get!(self, index);
         v.map(|v| {
-            let s: Series = (self.ca.name(), v).into();
-            s
+            let s = Series::try_from((self.ca.name(), v));
+            s.unwrap()
         })
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         let v = take_random_get_unchecked!(self, index);
-        let s: Series = (self.ca.name(), v).into();
-        s
+        let s = Series::try_from((self.ca.name(), v));
+        s.unwrap()
     }
 }
 
@@ -903,14 +904,14 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get_single!(self, index);
         v.map(|v| {
-            let s: Series = (self.name, v).into();
-            s
+            let s = Series::try_from((self.name, v));
+            s.unwrap()
         })
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let s: Series = (self.name, self.arr.value(index)).into();
-        s
+        let s = Series::try_from((self.name, self.arr.value(index)));
+        s.unwrap()
     }
 }
 
