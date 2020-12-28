@@ -53,28 +53,63 @@ where
     where
         N: PolarsDataType,
     {
-        // Duration cast is not implemented in Arrow
-        if let ArrowDataType::Duration(_) = T::get_data_type() {
-            // underlying type: i64
-            match N::get_data_type() {
-                ArrowDataType::UInt64 => {
-                    return cast_from_dtype!(self, cast_numeric_from_dtype, UInt64);
+        match T::get_data_type() {
+            // Duration cast is not implemented in Arrow
+            ArrowDataType::Duration(_) => {
+                // underlying type: i64
+                match N::get_data_type() {
+                    ArrowDataType::UInt64 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, UInt64)
+                    }
+                    // the underlying datatype is i64 so we transmute array
+                    ArrowDataType::Int64 => unsafe {
+                        cast_from_dtype!(self, transmute_array_from_dtype, Int64)
+                    },
+                    ArrowDataType::Float32 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
+                    }
+                    ArrowDataType::Float64 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
+                    }
+                    _ => cast_ca(self),
                 }
-                // the underlying datatype is i64 so we transmute array
-                ArrowDataType::Int64 => unsafe {
-                    return cast_from_dtype!(self, transmute_array_from_dtype, Int64);
-                },
-                ArrowDataType::Float32 => {
-                    return cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
-                }
-                ArrowDataType::Float64 => {
-                    return cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
-                }
-                _ => (),
             }
+            ArrowDataType::Date32(_) => {
+                match N::get_data_type() {
+                    // underlying type: i32
+                    ArrowDataType::Int32 => cast_ca(self),
+                    ArrowDataType::Int64 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, Int64)
+                    }
+                    ArrowDataType::Float32 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
+                    }
+                    ArrowDataType::Float64 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
+                    }
+                    ArrowDataType::Utf8 => self.cast::<Int32Type>()?.cast(),
+                    _ => cast_ca(self),
+                }
+            }
+            ArrowDataType::Date64(_) => {
+                match N::get_data_type() {
+                    // underlying type: i32
+                    ArrowDataType::Int32 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, Int32)
+                    }
+                    ArrowDataType::Int64 => cast_ca(self),
+                    ArrowDataType::Float32 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
+                    }
+                    ArrowDataType::Float64 => {
+                        cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
+                    }
+                    ArrowDataType::Utf8 => self.cast::<Int64Type>()?.cast(),
+                    _ => cast_ca(self),
+                }
+            }
+            _ => cast_ca(self),
         }
-
-        cast_ca(self)
     }
 }
 
