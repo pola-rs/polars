@@ -87,7 +87,12 @@ where
                     ArrowDataType::Float64 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
                     }
-                    ArrowDataType::Utf8 => self.cast::<Int32Type>()?.cast(),
+                    ArrowDataType::Utf8 => {
+                        let ca: ChunkedArray<N> = unsafe {
+                            std::mem::transmute(self.cast::<Date32Type>().unwrap().str_fmt("%F"))
+                        };
+                        Ok(ca)
+                    }
                     _ => cast_ca(self),
                 }
             }
@@ -104,7 +109,12 @@ where
                     ArrowDataType::Float64 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
                     }
-                    ArrowDataType::Utf8 => self.cast::<Int64Type>()?.cast(),
+                    ArrowDataType::Utf8 => {
+                        let ca: ChunkedArray<N> = unsafe {
+                            std::mem::transmute(self.cast::<Date64Type>().unwrap().str_fmt("%+"))
+                        };
+                        Ok(ca)
+                    }
                     _ => cast_ca(self),
                 }
             }
