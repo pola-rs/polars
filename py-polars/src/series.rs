@@ -557,7 +557,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -566,7 +568,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -575,7 +579,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -584,7 +590,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -593,7 +601,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -602,7 +612,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -611,7 +623,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -620,7 +634,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -629,7 +645,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -638,7 +656,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -647,7 +667,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -656,7 +678,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -665,7 +689,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
@@ -678,7 +704,9 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            None => return apply_method_all_arrow_series!(series, apply_lambda, py, lambda),
+            None => {
+                return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda)
+            }
 
             _ => return apply_method_all_arrow_series!(series, apply_lambda, py, lambda),
         };

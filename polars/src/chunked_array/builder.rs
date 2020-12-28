@@ -65,6 +65,7 @@ where
     }
 
     /// Appends a value of type `T::Native` into the builder
+    #[inline]
     pub fn append_value(&mut self, v: T::Native) {
         if matches!(T::get_data_type(), ArrowDataType::Boolean) {
             self.boolean_builder.append_value(v).unwrap();
@@ -75,6 +76,7 @@ where
     }
 
     /// Appends a null slot into the builder
+    #[inline]
     pub fn append_null(&mut self) {
         if matches!(T::get_data_type(), ArrowDataType::Boolean) {
             self.boolean_builder.append_null().unwrap();
