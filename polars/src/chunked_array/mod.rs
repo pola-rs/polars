@@ -459,7 +459,17 @@ where
 {
     /// Create a new ChunkedArray from existing chunks.
     pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
-        let field = Arc::new(Field::new(name, T::get_data_type(), true));
+        // prevent List<Box<Null>> if the inner list type is known.
+        let datatype = if matches!(T::get_data_type(), ArrowDataType::List(_)) {
+            if let Some(arr) = chunks.get(0) {
+                arr.data_type().clone()
+            } else {
+                T::get_data_type()
+            }
+        } else {
+            T::get_data_type()
+        };
+        let field = Arc::new(Field::new(name, datatype, true));
         let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
             field,
