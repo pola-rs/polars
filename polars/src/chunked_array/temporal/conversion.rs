@@ -120,14 +120,17 @@ impl FromNaiveDate<Date32Type, NaiveDate> for Date32Chunked {
 }
 
 pub trait AsNaiveDateTime {
-    fn as_naive_datetime(&self) -> Vec<Option<NaiveDateTime>>;
+    fn as_naive_datetime_iter<'a>(&'a self)
+        -> Box<dyn Iterator<Item = Option<NaiveDateTime>> + 'a>;
 }
 
 macro_rules! impl_as_naive_datetime {
     ($ca:ty, $fun:ident) => {
         impl AsNaiveDateTime for $ca {
-            fn as_naive_datetime(&self) -> Vec<Option<NaiveDateTime>> {
-                self.into_iter().map(|opt_t| opt_t.map($fun)).collect()
+            fn as_naive_datetime_iter<'a>(
+                &'a self,
+            ) -> Box<dyn Iterator<Item = Option<NaiveDateTime>> + 'a> {
+                Box::new(self.into_iter().map(|opt_t| opt_t.map($fun)))
             }
         }
     };
@@ -137,19 +140,17 @@ impl_as_naive_datetime!(Date32Chunked, date32_as_datetime);
 impl_as_naive_datetime!(Date64Chunked, date64_as_datetime);
 
 pub trait AsNaiveDate {
-    fn as_naive_date(&self) -> Vec<Option<NaiveDate>>;
+    fn as_naive_date_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<NaiveDate>> + 'a>;
 }
 
 impl AsNaiveDate for Date32Chunked {
-    fn as_naive_date(&self) -> Vec<Option<NaiveDate>> {
-        self.into_iter()
-            .map(|opt_t| {
-                opt_t.map(|v| {
-                    let dt = date32_as_datetime(v);
-                    NaiveDate::from_ymd(dt.year(), dt.month(), dt.day())
-                })
+    fn as_naive_date_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<NaiveDate>> + 'a> {
+        Box::new(self.into_iter().map(|opt_t| {
+            opt_t.map(|v| {
+                let dt = date32_as_datetime(v);
+                NaiveDate::from_ymd(dt.year(), dt.month(), dt.day())
             })
-            .collect()
+        }))
     }
 }
 
@@ -346,6 +347,13 @@ impl Date64Chunked {
     pub fn ordinal(&self) -> UInt32Chunked {
         self.apply_kernel_cast::<_, UInt32Type>(date64_to_ordinal)
     }
+
+    /// Format Date64 with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    pub fn str_fmt(&self, fmt: &str) -> Utf8Chunked {
+        self.as_naive_datetime_iter()
+            .map(|opt_dt| opt_dt.map(|dt| format!("{}", dt.format(fmt))))
+            .collect()
+    }
 }
 
 impl Date32Chunked {
@@ -376,5 +384,12 @@ impl Date32Chunked {
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     pub fn ordinal(&self) -> UInt32Chunked {
         self.apply_kernel_cast::<_, UInt32Type>(date32_to_ordinal)
+    }
+
+    /// Format Date32 with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    pub fn str_fmt(&self, fmt: &str) -> Utf8Chunked {
+        self.as_naive_datetime_iter()
+            .map(|opt_dt| opt_dt.map(|dt| format!("{}", dt.format(fmt))))
+            .collect()
     }
 }

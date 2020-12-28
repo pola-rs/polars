@@ -265,6 +265,17 @@ impl PyExpr {
             .into()
     }
 
+    pub fn datetime_str_fmt(&self, fmt: String) -> PyExpr {
+        let function = move |s: Series| {
+            let out = s.datetime_str_fmt(&fmt)?;
+            Ok(out)
+        };
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::Utf8))
+            .into()
+    }
+
     pub fn apply(&self, lambda: PyObject, output_type: &PyAny) -> PyExpr {
         let output_type = match output_type.is_none() {
             true => None,
