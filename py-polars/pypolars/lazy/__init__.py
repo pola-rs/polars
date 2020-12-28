@@ -834,6 +834,114 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.datetime_fmt_str(fmt))
 
+    def year(self):
+        """
+        Extract year from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the year number in the calendar date.
+
+        Returns
+        -------
+        Year as Int32
+        """
+        return wrap_expr(self._pyexpr.year())
+
+    def month(self):
+        """
+        Extract month from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the month number starting from 1.
+        The return value ranges from 1 to 12.
+
+        Returns
+        -------
+        Month as UInt32
+        """
+        return wrap_expr(self._pyexpr.month())
+
+    def day(self):
+        """
+        Extract day from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the day of month starting from 1.
+        The return value ranges from 1 to 31. (The last day of month differs by months.)
+
+        Returns
+        -------
+        Day as UInt32
+        """
+        return wrap_expr(self._pyexpr.day())
+
+    def ordinal_day(self):
+        """
+        Extract ordinal day from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the day of year starting from 1.
+        The return value ranges from 1 to 366. (The last day of year differs by years.)
+
+        Returns
+        -------
+        Day as UInt32
+        """
+        return wrap_expr(self._pyexpr.ordinal_day())
+
+    def hour(self):
+        """
+        Extract day from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns the hour number from 0 to 23.
+
+        Returns
+        -------
+        Hour as UInt32
+        """
+        return wrap_expr(self._pyexpr.hour())
+
+    def minute(self):
+        """
+        Extract minutes from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns the minute number from 0 to 59.
+
+        Returns
+        -------
+        Minute as UInt32
+        """
+        return wrap_expr(self._pyexpr.minute())
+
+    def second(self):
+        """
+        Extract seconds from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns the second number from 0 to 59.
+
+        Returns
+        -------
+        Second as UInt32
+        """
+        return wrap_expr(self._pyexpr.second())
+
+    def nanosecond(self):
+        """
+        Extract seconds from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns the number of nanoseconds since the whole non-leap second.
+        The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
+
+        Returns
+        -------
+        Nanosecond as UInt32
+        """
+        return wrap_expr(self._pyexpr.nanosecond())
+
     def apply(
         self,
         f: "Union[UDF, Callable[[Series], Series]]",
