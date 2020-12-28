@@ -266,13 +266,67 @@ impl PyExpr {
     }
 
     pub fn datetime_str_fmt(&self, fmt: String) -> PyExpr {
-        let function = move |s: Series| {
-            let out = s.datetime_str_fmt(&fmt)?;
-            Ok(out)
-        };
+        let function = move |s: Series| s.datetime_str_fmt(&fmt);
         self.clone()
             .inner
             .apply(function, Some(ArrowDataType::Utf8))
+            .into()
+    }
+
+    pub fn year(&self) -> PyExpr {
+        let function = move |s: Series| s.year();
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+    pub fn month(&self) -> PyExpr {
+        let function = move |s: Series| s.month();
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+    pub fn day(&self) -> PyExpr {
+        let function = move |s: Series| s.day();
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+    pub fn ordinal_day(&self) -> PyExpr {
+        let function = move |s: Series| s.ordinal_day();
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+    pub fn hour(&self) -> PyExpr {
+        let function = move |s: Series| s.hour();
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+    pub fn minute(&self) -> PyExpr {
+        let function = move |s: Series| s.minute();
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+    pub fn second(&self) -> PyExpr {
+        let function = move |s: Series| s.second();
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
+            .into()
+    }
+    pub fn nanosecond(&self) -> PyExpr {
+        let function = move |s: Series| s.nanosecond();
+        self.clone()
+            .inner
+            .apply(function, Some(ArrowDataType::UInt32))
             .into()
     }
 
