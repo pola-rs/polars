@@ -790,6 +790,14 @@ impl PySeries {
         }
     }
 
+    pub fn datetime_str_fmt(&self, fmt: &str) -> PyResult<Self> {
+        let s = self
+            .series
+            .datetime_str_fmt(fmt)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
     pub fn as_duration(&self) -> PyResult<Self> {
         match self.series.dtype() {
             ArrowDataType::Date64(_) => {

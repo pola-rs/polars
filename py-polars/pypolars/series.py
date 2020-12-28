@@ -1123,6 +1123,16 @@ class Series:
         """
         return wrap_s(self._s.nanosecond())
 
+    def datetime_str_fmt(self, fmt):
+        """
+        Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+
+        Returns
+        -------
+        Utf8 Series
+        """
+        return wrap_s(self._s.date_str_fmt(fmt))
+
     @staticmethod
     def parse_date(
         name: str, values: Sequence[str], dtype: "DataType", fmt: str

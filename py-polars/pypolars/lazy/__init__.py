@@ -828,6 +828,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
+    def datetime_str_fmt(self, fmt: str) -> "Expr":
+        """
+        Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+        """
+        return wrap_expr(self._pyexpr.datetime_fmt_str(fmt))
+
     def apply(
         self,
         f: "Union[UDF, Callable[[Series], Series]]",
