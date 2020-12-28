@@ -1,4 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
+use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
@@ -669,7 +670,9 @@ pub trait ChunkFull<T> {
     fn full(name: &str, value: T, length: usize) -> Self
     where
         Self: std::marker::Sized;
+}
 
+pub trait ChunkFullNull {
     fn full_null(_name: &str, _length: usize) -> Self
     where
         Self: std::marker::Sized;
@@ -690,7 +693,12 @@ where
         }
         builder.finish()
     }
+}
 
+impl<T> ChunkFullNull for ChunkedArray<T>
+where
+    T: PolarsPrimitiveType,
+{
     fn full_null(name: &str, length: usize) -> Self {
         let mut builder = PrimitiveChunkedBuilder::new(name, length);
 
@@ -711,7 +719,9 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
         }
         builder.finish()
     }
+}
 
+impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
         // todo: faster with null arrays or in one go allocation
         let mut builder = Utf8ChunkedBuilder::new(name, length);
@@ -727,9 +737,15 @@ impl ChunkFull<&dyn SeriesTrait> for ListChunked {
     fn full(_name: &str, _value: &dyn SeriesTrait, _length: usize) -> ListChunked {
         unimplemented!()
     }
+}
 
-    fn full_null(_name: &str, _length: usize) -> ListChunked {
-        unimplemented!()
+impl ChunkFullNull for ListChunked {
+    fn full_null(name: &str, length: usize) -> ListChunked {
+        let mut builder = get_list_builder(&ArrowDataType::Null, length, name);
+        for _ in 0..length {
+            builder.append_opt_series(None)
+        }
+        builder.finish()
     }
 }
 

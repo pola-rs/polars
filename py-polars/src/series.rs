@@ -700,7 +700,9 @@ impl PySeries {
                     series,
                     apply_lambda_with_utf8_out_type,
                     py,
-                    lambda
+                    lambda,
+                    0,
+                    None
                 )?;
                 ca.into_series()
             }
