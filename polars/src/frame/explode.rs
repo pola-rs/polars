@@ -114,18 +114,34 @@ impl DataFrame {
     ///  | 2   | 3   | 1   |
     ///  +-----+-----+-----+
     /// ```
-    pub fn explode(&self, column: &str) -> Result<DataFrame> {
-        let s = self.column(column)?;
-        if let Ok(ca) = s.list() {
-            let (exploded, row_idx) = ca.explode()?;
-            let col_idx = self.name_to_idx(column)?;
-            let df = self.drop(column)?;
-            let mut df = unsafe { df.take_iter_unchecked(row_idx.into_iter(), None) };
-            df.columns.insert(col_idx, exploded);
-            Ok(df)
-        } else {
-            Ok(self.clone())
+    pub fn explode<'a, J, S: Selection<'a, J>>(&self, columns: S) -> Result<DataFrame> {
+        let columns = self.select_series(columns)?;
+        let mut df = self.clone();
+
+        for (i, s) in columns.iter().enumerate() {
+            if let Ok(ca) = s.list() {
+                let (exploded, row_idx) = ca.explode()?;
+                let col_idx = self.name_to_idx(s.name())?;
+                df = df.drop(s.name())?;
+
+                // expand all the other columns based the exploded first column
+                if i == 0 {
+                    df = unsafe { df.take_iter_unchecked(row_idx.into_iter(), None) };
+                }
+                if exploded.len() == df.height() {
+                    df.columns.insert(col_idx, exploded);
+                } else {
+                    return Err(PolarsError::ShapeMisMatch(
+                        format!("The exploded columns don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
+                    ));
+                }
+            } else {
+                return Err(PolarsError::InvalidOperation(
+                    format!("cannot explode dtype: {:?}", s.dtype()).into(),
+                ));
+            }
         }
+        Ok(df)
     }
 
     ///

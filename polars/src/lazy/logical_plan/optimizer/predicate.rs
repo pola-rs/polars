@@ -244,9 +244,9 @@ impl PredicatePushDown {
                     reverse,
                 })
             }
-            Explode { input, column } => {
+            Explode { input, columns } => {
                 let input = Box::new(self.push_down(*input, acc_predicates)?);
-                Ok(Explode { input, column })
+                Ok(Explode { input, columns })
             }
             Cache { input } => {
                 let input = Box::new(self.push_down(*input, acc_predicates)?);

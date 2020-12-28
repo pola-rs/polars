@@ -80,9 +80,6 @@
 //! // Create the ChunkedArray
 //! let ca = Date64Chunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt);
 //!
-//! // Or collect into a Vec<NaiveDateTime>
-//! let vec = ca.as_naive_datetime();
-//!
 //! // or dates in different precision (days)
 //! let ca = Date32Chunked::parse_from_str_slice("date as days since Epoch", datetime_values, fmt);
 //! ```

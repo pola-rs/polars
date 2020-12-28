@@ -297,13 +297,15 @@ impl ProjectionPushDown {
                     reverse,
                 })
             }
-            Explode { input, column } => {
+            Explode { input, columns } => {
                 if !acc_projections.is_empty() {
-                    add_to_accumulated(&col(&column), &mut acc_projections, &mut names).unwrap();
+                    for column in &columns {
+                        add_to_accumulated(&col(column), &mut acc_projections, &mut names).unwrap();
+                    }
                 }
                 let input =
                     Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
-                Ok(Explode { input, column })
+                Ok(Explode { input, columns })
             }
             Cache { input } => {
                 let input =

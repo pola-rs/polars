@@ -503,8 +503,8 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
-    pub fn explode(&self, column: &str) -> PyResult<Self> {
-        let df = self.df.explode(column);
+    pub fn explode(&self, columns: Vec<String>) -> PyResult<Self> {
+        let df = self.df.explode(&columns);
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }

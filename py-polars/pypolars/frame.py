@@ -684,20 +684,22 @@ class DataFrame:
         """
         return wrap_df(self._df.fill_none(strategy))
 
-    def explode(self, column: str) -> "DataFrame":
+    def explode(self, columns: "Union[str, List[str]]") -> "DataFrame":
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
 
         Parameters
         ----------
-        column
+        columns
             Column of LargeList type
 
         Returns
         -------
         DataFrame
         """
-        return wrap_df(self._df.explode(column))
+        if isinstance(columns, str):
+            columns = [columns]
+        return wrap_df(self._df.explode(columns))
 
     def melt(
         self, id_vars: "Union[List[str], str]", value_vars: "Union[List[str], str]"
