@@ -79,7 +79,7 @@ pub enum DataFrameOperation {
         by_column: String,
         reverse: bool,
     },
-    Explode(String),
+    Explode(Vec<String>),
     DropDuplicates {
         maintain_order: bool,
         subset: Option<Vec<String>>,
@@ -176,7 +176,7 @@ pub enum LogicalPlan {
     },
     Explode {
         input: Box<LogicalPlan>,
-        column: String,
+        columns: Vec<String>,
     },
     Slice {
         input: Box<LogicalPlan>,
@@ -288,7 +288,9 @@ impl fmt::Debug for LogicalPlan {
             Sort {
                 input, by_column, ..
             } => write!(f, "SORT {:?} BY COLUMN {}", input, by_column),
-            Explode { input, column, .. } => write!(f, "EXPLODE COLUMN {} OF {:?}", column, input),
+            Explode { input, columns, .. } => {
+                write!(f, "EXPLODE COLUMN(S) {:?} OF {:?}", columns, input)
+            }
             Aggregate {
                 input, keys, aggs, ..
             } => write!(f, "Aggregate\n\t{:?} BY {:?} FROM {:?}", aggs, keys, input),
@@ -435,8 +437,8 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, id + 1, &current_node)
             }
-            Explode { input, column, .. } => {
-                let current_node = format!("EXPLODE {} [{}]", column, id);
+            Explode { input, columns, .. } => {
+                let current_node = format!("EXPLODE {:?} [{}]", columns, id);
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, id + 1, &current_node)
             }
@@ -913,10 +915,10 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn explode(self, column: String) -> Self {
+    pub fn explode(self, columns: Vec<String>) -> Self {
         LogicalPlan::Explode {
             input: Box::new(self.0),
-            column,
+            columns,
         }
         .into()
     }

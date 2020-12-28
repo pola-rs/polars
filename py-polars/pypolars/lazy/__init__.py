@@ -310,6 +310,9 @@ class LazyFrame:
         if isinstance(on, str):
             left_on = [on]
             right_on = [on]
+        elif isinstance(on, List):
+            left_on = on
+            right_on = on
         if left_on is None or right_on is None:
             raise ValueError("you should pass the column to join on as an argument")
 
@@ -455,11 +458,13 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.quantile(quantile))
 
-    def explode(self, column: str) -> "LazyFrame":
+    def explode(self, columns: "Union[str, List[str]]") -> "LazyFrame":
         """
         Explode lists to long format
         """
-        return wrap_ldf(self._ldf.explode(column))
+        if isinstance(columns, str):
+            columns = [columns]
+        return wrap_ldf(self._ldf.explode(columns))
 
     def drop_duplicates(
         self,

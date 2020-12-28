@@ -256,7 +256,7 @@ impl PyLazyFrame {
         ldf.quantile(quantile).into()
     }
 
-    pub fn explode(&self, column: &str) -> Self {
+    pub fn explode(&self, column: Vec<String>) -> Self {
         let ldf = self.ldf.clone();
         ldf.explode(column).into()
     }

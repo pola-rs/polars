@@ -598,7 +598,7 @@ pub enum ALogicalPlan {
     },
     Explode {
         input: Node,
-        column: String,
+        columns: Vec<String>,
     },
     Cache {
         input: Node,
@@ -873,9 +873,9 @@ pub(crate) fn to_alp(
                 reverse,
             }
         }
-        LogicalPlan::Explode { input, column } => {
+        LogicalPlan::Explode { input, columns } => {
             let input = to_alp(*input, expr_arena, lp_arena);
-            ALogicalPlan::Explode { input, column }
+            ALogicalPlan::Explode { input, columns }
         }
         LogicalPlan::Cache { input } => {
             let input = to_alp(*input, expr_arena, lp_arena);
@@ -1242,9 +1242,9 @@ pub(crate) fn node_to_lp(
                 reverse,
             }
         }
-        ALogicalPlan::Explode { input, column } => {
+        ALogicalPlan::Explode { input, columns } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Explode { input, column }
+            LogicalPlan::Explode { input, columns }
         }
         ALogicalPlan::Cache { input } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));

@@ -737,10 +737,10 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](crate::prelude::DataFrame::explode).
-    pub fn explode(self, column: &str) -> LazyFrame {
+    pub fn explode(self, columns: Vec<String>) -> LazyFrame {
         // Note: this operation affects multiple columns. Therefore it isn't implemented as expression.
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().explode(column.to_string()).build();
+        let lp = self.get_plan_builder().explode(columns).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

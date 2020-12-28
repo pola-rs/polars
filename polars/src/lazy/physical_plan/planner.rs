@@ -177,9 +177,9 @@ impl DefaultPlanner {
                 let operation = DataFrameOperation::Sort { by_column, reverse };
                 Ok(Box::new(DataFrameOpsExec::new(input, operation)))
             }
-            LogicalPlan::Explode { input, column } => {
+            LogicalPlan::Explode { input, columns } => {
                 let input = self.create_initial_physical_plan(*input)?;
-                let operation = DataFrameOperation::Explode(column);
+                let operation = DataFrameOperation::Explode(columns);
                 Ok(Box::new(DataFrameOpsExec::new(input, operation)))
             }
             LogicalPlan::Cache { input } => {
@@ -437,7 +437,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(*expr, ctxt)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Last)))
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::List)))
                             }
                             Context::Other => {
                                 panic!(
