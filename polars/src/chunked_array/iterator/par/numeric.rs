@@ -92,7 +92,7 @@ macro_rules! impl_numeric_producer_body {
                 },
             )
         }
-
+        
     };
 }
 
@@ -127,18 +127,17 @@ where
         let idx_right = offset + len;
         let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
 
+
         let (current_array_left_len, current_iter_right) = if chunk_idx_left == chunk_idx_right {
             // If both iterators belong to the same chunk, then, only the left chunk is goin to be used
             // and iterate from both sides. This iterator will be the left one and will go from
             // `current_array_idx_left` to `current_array_idx_right`.
-            let current_array_left_len = current_array_idx_right;
-
-            (current_array_left_len, None)
+            (len, None)
         } else {
             // If the iterators belong to different chunks, then, an iterator for chunk is needed.
             // The left iterator will go from `current_array_idx_left` to the end of the chunk, and
             // the right one will go from the beginning of the chunk to `current_array_idx_right`.
-            let current_array_left_len = current_array_left.len();
+            let current_array_left_len = current_array_left.len() - current_array_idx_left;
 
             let current_array_right = chunks[chunk_idx_right];
             let current_iter_right = Some(
@@ -147,6 +146,7 @@ where
                     .iter()
                     .copied(),
             );
+
 
             (current_array_left_len, current_iter_right)
         };
@@ -417,12 +417,12 @@ where
             // If both iterators belong to the same chunk, then, only the left chunk is goin to be used
             // and iterate from both sides. This iterator will be the left one and will go from
             // `current_array_idx_left` to `current_array_idx_right`.
-            (current_array_idx_right, None)
+            (prod.len, None)
         } else {
             // If the iterators belong to different chunks, then, an iterator for chunk is needed.
             // The left iterator will go from `current_array_idx_left` to the end of the chunk, and
             // the right one will go from the beginning of the chunk to `current_array_idx_right`.
-            let current_array_left_len = current_array_left.len();
+            let current_array_left_len = current_array_left.len() - current_array_idx_left;
 
             let current_iter_right = Some(
                 current_array_right
@@ -614,7 +614,7 @@ where
 /// Static dispatching structure to allow static polymorphism of chunked parallel iterators.
 ///
 /// All the iterators of the dispatcher returns `Option<PolarsNumericType::Native>`.
-pub enum NumParIterDispatcher<'a, T>
+pub enum NumParIterDispatcher<'a, T> 
 where
     T: PolarsNumericType + Send + Sync
 {
@@ -631,7 +631,7 @@ where
 /// - If `ChunkedArray<T>` has only a chunk and does have null values, it uses `NumParIterSingleChunkNullCheckReturnOption`.
 /// - If `ChunkedArray<T>` has many chunks and has no null values, it uses `NumParIterManyChunkReturnOption`.
 /// - If `ChunkedArray<T>` has many chunks and does have null values, it uses `NumParIterManyChunkNullCheckReturnOption`.
-impl<'a, T> IntoParallelIterator for &'a ChunkedArray<T>
+impl<'a, T> IntoParallelIterator for &'a ChunkedArray<T> 
 where
     T: PolarsNumericType + Send + Sync
 {
@@ -667,7 +667,7 @@ where
     }
 }
 
-impl<'a, T> ParallelIterator for NumParIterDispatcher<'a, T>
+impl<'a, T> ParallelIterator for NumParIterDispatcher<'a, T> 
 where
     T: PolarsNumericType + Send + Sync
 {
@@ -695,7 +695,7 @@ where
     }
 }
 
-impl<'a, T> IndexedParallelIterator for NumParIterDispatcher<'a, T>
+impl<'a, T> IndexedParallelIterator for NumParIterDispatcher<'a, T> 
 where
     T: PolarsNumericType + Send + Sync
 {
@@ -736,7 +736,7 @@ where
 /// Static dispatching structure to allow static polymorphism of non-nullable chunked parallel iterators.
 ///
 /// All the iterators of the dispatcher returns `PolarsNumericType::Native`, as there are no nulls in the chunked array.
-pub enum NumNoNullParIterDispatcher<'a, T>
+pub enum NumNoNullParIterDispatcher<'a, T> 
 where
     T: PolarsNumericType + Send + Sync
 {
@@ -770,7 +770,7 @@ where
     }
 }
 
-impl<'a, T> ParallelIterator for NumNoNullParIterDispatcher<'a, T>
+impl<'a, T> ParallelIterator for NumNoNullParIterDispatcher<'a, T> 
 where
     T: PolarsNumericType + Send + Sync
 {
@@ -794,7 +794,7 @@ where
     }
 }
 
-impl<'a, T> IndexedParallelIterator for NumNoNullParIterDispatcher<'a, T>
+impl<'a, T> IndexedParallelIterator for NumNoNullParIterDispatcher<'a, T> 
 where
     T: PolarsNumericType + Send + Sync
 {
@@ -824,4 +824,373 @@ where
             NumNoNullParIterDispatcher::ManyChunk(a) => a.with_producer(callback),
         }
     }
+}
+
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+    use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+
+    /// The size of the chunked array used in tests.
+    const UINT32_CHUNKED_ARRAY_SIZE: usize = 10;
+
+    /// Generates a `Vec` of `u32`, where every position is the `u32` representation of its index.
+    fn generate_uint32_vec(size: usize) -> Vec<u32> {
+        (0..size)
+            .map(|n| n as u32)
+            .collect()
+    }
+
+    /// Generate a `Vec` of `Option<u32>`, where even indexes are `Some(idx)` and odd indexes are `None`.
+    fn generate_opt_uint32_vec(size: usize) -> Vec<Option<u32>> {
+        (0..size)
+            .map(|n| {
+                let n = n as u32;
+                if n % 2 == 0 {
+                    Some(n)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Implement a test which performs a map over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// Option<u32>.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_return_option_map_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel maping.
+                let par_result = a
+                    .into_par_iter()
+                    .map(|opt_u| opt_u.map(|u| u + 10))
+                    .collect::<Vec<_>>();
+
+                // Perform a sequetial maping.
+                let seq_result = a
+                    .into_iter()
+                    .map(|opt_u| opt_u.map(|u| u + 10))
+                    .collect::<Vec<_>>();
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// Option<u32>.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_return_option_filter_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel filter.
+                let par_result = a
+                    .into_par_iter()
+                    .filter(|opt_u| {
+                        let opt_u = opt_u.map(|u| u % 10 == 0);
+
+                        opt_u.unwrap_or(false)
+                    })
+                    .collect::<Vec<_>>();
+
+                // Perform a sequetial filter.
+                let seq_result = a
+                    .into_iter()
+                    .filter(|opt_u| {
+                        let opt_u = opt_u.map(|u| u % 10 == 0);
+
+                        opt_u.unwrap_or(false)
+                    })
+                    .collect::<Vec<_>>();
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// Option<u32>.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_return_option_fold_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel sum of values.
+                let par_result = a
+                    .into_par_iter()
+                    .fold(
+                        || 0u64,
+                        |acc, opt_u| {
+                            let val = opt_u.unwrap_or(0) as u64;
+                            acc + val
+                        },
+                    )
+                    .reduce(|| 0u64, |left, right| left + right);
+
+                // Perform a sequential sum of values.
+                let seq_result = a.into_iter().fold(0u64, |acc, opt_u| {
+                    let val = opt_u.unwrap_or(0) as u64;
+                    acc + val
+                });
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    // Single Chunk Parallel Iterator Tests.
+    impl_par_iter_return_option_map_test!(uint32_par_iter_single_chunk_return_option_map, {
+        UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_return_option_filter_test!(uint32_par_iter_single_chunk_return_option_filter, {
+        UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_return_option_fold_test!(uint32_par_iter_single_chunk_return_option_fold, {
+        UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE))
+    });
+
+    // Single Chunk Null Check Parallel Iterator Tests.
+    impl_par_iter_return_option_map_test!(
+        uint32_par_iter_single_chunk_null_check_return_option_map,
+        { UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
+    );
+
+    impl_par_iter_return_option_filter_test!(
+        uint32_par_iter_single_chunk_null_check_return_option_filter,
+        { UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
+    );
+
+    impl_par_iter_return_option_fold_test!(
+        uint32_par_iter_single_chunk_null_check_return_option_fold,
+        { UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
+    );
+
+    // Many Chunk Parallel Iterator Tests.
+    impl_par_iter_return_option_map_test!(uint32_par_iter_many_chunk_return_option_map, {
+        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_return_option_filter_test!(uint32_par_iter_many_chunk_return_option_filter, {
+        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_return_option_fold_test!(uint32_par_iter_many_chunk_return_option_fold, {
+        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    // Many Chunk Null Check Parallel Iterator Tests.
+    impl_par_iter_return_option_map_test!(uint32_par_iter_many_chunk_null_check_return_option_map, {
+        let mut a =
+            UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_return_option_filter_test!(
+        uint32_par_iter_many_chunk_null_check_return_option_filter,
+        {
+            let mut a = UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            );
+            a.append(&a_b);
+            a
+        }
+    );
+
+    impl_par_iter_return_option_fold_test!(
+        uint32_par_iter_many_chunk_null_check_return_option_fold,
+        {
+            let mut a = UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            );
+            a.append(&a_b);
+            a
+        }
+    );
+
+    /// Implement a test which performs a map over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// u32.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_return_unwrapped_map_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel maping.
+                let par_result = NoNull(&a)
+                    .into_par_iter()
+                    .map(|u| u + 10)
+                    .collect::<Vec<_>>();
+
+                // Perform a sequetial maping.
+                let seq_result = a
+                    .into_no_null_iter()
+                    .map(|u| u + 10)
+                    .collect::<Vec<_>>();
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// u32.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_return_unwrapped_filter_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel filter.
+                let par_result = NoNull(&a)
+                    .into_par_iter()
+                    .filter(|u| u % 10 == 0)
+                    .collect::<Vec<_>>();
+
+                // Perform a sequetial filter.
+                let seq_result = a
+                    .into_no_null_iter()
+                    .filter(|u| u % 10 == 0)
+                    .collect::<Vec<_>>();
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// and compares that the result of both iterators is the same. It performs over iterators which return
+    /// u32.
+    ///
+    /// # Input
+    ///
+    /// test_name: The name of the test to implement, it is a function name so it shall be unique.
+    /// ca_init_block: The block which initialize the chunked array. It shall return the chunked array.
+    macro_rules! impl_par_iter_return_unwrapped_fold_test {
+        ($test_name:ident, $ca_init_block:block) => {
+            #[test]
+            fn $test_name() {
+                let a = $ca_init_block;
+
+                // Perform a parallel sum of length.
+                let par_result = NoNull(&a)
+                    .into_par_iter()
+                    .fold(|| 0u64, |acc, u| acc + u as u64)
+                    .reduce(|| 0u64, |left, right| left + right);
+
+                // Perform a sequential sum of length.
+                let seq_result = a
+                    .into_no_null_iter()
+                    .fold(0u64, |acc, u| acc + u as u64);
+
+                // Check sequetial and parallel results are equal.
+                assert_eq!(par_result, seq_result);
+            }
+        };
+    }
+
+    // Single Chunk Return Unwrapped
+    impl_par_iter_return_unwrapped_map_test!(uint32_par_iter_single_chunk_return_unwrapped_map, {
+        UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE))
+    });
+
+    impl_par_iter_return_unwrapped_filter_test!(
+        uint32_par_iter_single_chunk_return_unwrapped_filter,
+        { UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
+    );
+
+    impl_par_iter_return_unwrapped_fold_test!(uint32_par_iter_single_chunk_return_unwrapped_fold, {
+        UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE))
+    });
+
+    // Many Chunk Return Unwrapped
+    impl_par_iter_return_unwrapped_map_test!(uint32_par_iter_many_chunk_return_unwrapped_map, {
+        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
+
+    impl_par_iter_return_unwrapped_filter_test!(
+        uint32_par_iter_many_chunk_return_unwrapped_filter,
+        {
+            let mut a =
+                UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+            let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+            a.append(&a_b);
+            a
+        }
+    );
+
+    impl_par_iter_return_unwrapped_fold_test!(uint32_par_iter_many_chunk_return_unwrapped_fold, {
+        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        a.append(&a_b);
+        a
+    });
 }
