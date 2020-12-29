@@ -8,9 +8,7 @@ pub use crate::lazy::{
         LogicalPlan, LogicalPlanBuilder, ScalarValue,
     },
     physical_plan::{
-        executors::{
-            CsvExec, DataFrameExec, DataFrameOpsExec, FilterExec, GroupByExec, StandardExec,
-        },
+        executors::{CsvExec, DataFrameExec, FilterExec, GroupByExec, StandardExec},
         expressions::*,
         planner::DefaultPlanner,
         Executor, PhysicalExpr, PhysicalPlanner,

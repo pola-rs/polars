@@ -73,19 +73,6 @@ impl ScalarValue {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum DataFrameOperation {
-    Sort {
-        by_column: String,
-        reverse: bool,
-    },
-    Explode(Vec<String>),
-    DropDuplicates {
-        maintain_order: bool,
-        subset: Option<Vec<String>>,
-    },
-}
-
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 pub enum LogicalPlan {

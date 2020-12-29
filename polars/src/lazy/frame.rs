@@ -1105,11 +1105,59 @@ mod test {
     #[test]
     fn test_lazy_query_3() {
         // query checks if schema of scanning is not changed by aggregation
-        let out = scan_foods_csv()
+        let _ = scan_foods_csv()
             .groupby("calories")
             .agg(vec![col("fats_g").max()])
             .collect()
             .unwrap();
+    }
+
+    #[test]
+    fn test_lazy_query_4() {
+        let df = df! {
+            "uid" => [0, 0, 0, 1, 1, 1],
+            "day" => [1, 2, 3, 1, 2, 3],
+            "cumcases" => [10, 12, 15, 25, 30, 41]
+        }
+        .unwrap();
+
+        let base_df = df.lazy();
+
+        let out = base_df
+            .clone()
+            .groupby("uid")
+            .agg(vec![
+                col("day").list().alias("day"),
+                col("cumcases")
+                    .apply(
+                        |s: Series| {
+                            // determine the diff per column
+                            let a: ListChunked = s
+                                .list()
+                                .unwrap()
+                                .into_iter()
+                                .map(|opt_s| opt_s.map(|s| &s - &(s.shift(1).unwrap())))
+                                .collect();
+                            Ok(a.into_series())
+                        },
+                        None,
+                    )
+                    .alias("diff_cases"),
+            ])
+            .explode(vec!["day".to_string(), "diff_cases".to_string()])
+            .join(
+                base_df,
+                vec![col("uid"), col("day")],
+                vec![col("uid"), col("day")],
+                None,
+                JoinType::Inner,
+            )
+            .collect()
+            .unwrap();
+        assert_eq!(
+            Vec::from(out.column("diff_cases").unwrap().i32().unwrap()),
+            &[None, Some(2), Some(3), None, Some(5), Some(11)]
+        );
     }
 
     #[test]
