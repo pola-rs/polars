@@ -213,16 +213,28 @@ where
     T: PolarsNumericType,
 {
     fn set_current_iter_left(&mut self) {
-        let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
-        self.current_iter_left = current_chunk
-            .value_slice(0, current_chunk.len())
-            .iter()
-            .copied();
+        if self.chunk_idx_left == self.chunk_idx_right {
+            // If the left and the right chunk are the same iterator, then, use the
+            // the same iterator. The right iterator is kept to maintain the right index
+            // in the iterator, as the left index will be the first index in the chunk.
+            if let Some(current_iter_right) = self.current_iter_right.take() {
+                self.current_iter_left = current_iter_right;
+            }
+        } else {
+            let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
+
+            self.current_iter_left = current_chunk
+                .value_slice(0, current_chunk.len())
+                .iter()
+                .copied();
+        }
     }
 
     fn set_current_iter_right(&mut self) {
         if self.chunk_idx_left == self.chunk_idx_right {
-            // from left and right we use the same iterator
+            // If the left and the right chunk are the same iterator, then, use the
+            // the same iterator. The left iterator is kept to maintain the left index
+            // in the iterator, as the right index will be the last index in the chunk.
             self.current_iter_right = None
         } else {
             let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
@@ -362,17 +374,30 @@ where
     fn set_current_iter_left(&mut self) {
         let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
         self.current_data_left = current_chunk.data();
-        self.current_iter_left = current_chunk
-            .value_slice(0, current_chunk.len())
-            .iter()
-            .copied();
+
+        if self.chunk_idx_left == self.chunk_idx_right {
+            // If the left and the right chunk are the same iterator, then, use the
+            // the same iterator. The right iterator is kept to maintain the right index
+            // in the iterator, as the left index will be the first index in the chunk.
+            if let Some(current_iter_right) = self.current_iter_right.take() {
+                self.current_iter_left = current_iter_right;
+            }
+        } else {
+            self.current_iter_left = current_chunk
+                .value_slice(0, current_chunk.len())
+                .iter()
+                .copied();
+        }
     }
 
     fn set_current_iter_right(&mut self) {
         let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
         self.current_data_right = current_chunk.data();
+
         if self.chunk_idx_left == self.chunk_idx_right {
-            // from left and right we use the same iterator
+            // If the left and the right chunk are the same iterator, then, use the
+            // the same iterator. The left iterator is kept to maintain the left index
+            // in the iterator, as the right index will be the last index in the chunk.
             self.current_iter_right = None
         } else {
             self.current_iter_right = Some(
