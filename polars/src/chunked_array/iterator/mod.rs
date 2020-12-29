@@ -3,7 +3,6 @@ use arrow::array::{
     Array, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps,
     StringArray,
 };
-use std::convert::TryFrom;
 use std::iter::Copied;
 use std::slice::Iter;
 
@@ -1255,8 +1254,7 @@ impl_all_iterators!(
 
 // used for macro
 fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
-    let s = Series::try_from((method_name, v));
-    s.unwrap()
+    (method_name, v).into()
 }
 
 impl_all_iterators!(
@@ -1310,6 +1308,8 @@ mod test {
                 assert_eq!(it.next(), Some(Some($second_val)));
                 assert_eq!(it.next(), Some(Some($third_val)));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_iter();
@@ -1317,6 +1317,8 @@ mod test {
                 assert_eq!(it.next_back(), Some(Some($second_val)));
                 assert_eq!(it.next_back(), Some(Some($first_val)));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_iter();
@@ -1325,6 +1327,8 @@ mod test {
                 assert_eq!(it.next(), Some(Some($second_val)));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_iter();
@@ -1332,6 +1336,8 @@ mod test {
                 assert_eq!(it.next_back(), Some(Some($third_val)));
                 assert_eq!(it.next_back(), Some(Some($second_val)));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
@@ -1364,6 +1370,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 assert_eq!(it.next(), Some($third_val));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_iter();
@@ -1371,6 +1379,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), Some($first_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_iter();
@@ -1379,6 +1389,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_iter();
@@ -1386,6 +1398,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($third_val));
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
@@ -1437,6 +1451,8 @@ mod test {
                 assert_eq!(it.next(), Some(Some($second_val)));
                 assert_eq!(it.next(), Some(Some($third_val)));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_iter();
@@ -1444,6 +1460,8 @@ mod test {
                 assert_eq!(it.next_back(), Some(Some($second_val)));
                 assert_eq!(it.next_back(), Some(Some($first_val)));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_iter();
@@ -1452,6 +1470,8 @@ mod test {
                 assert_eq!(it.next(), Some(Some($second_val)));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_iter();
@@ -1459,6 +1479,8 @@ mod test {
                 assert_eq!(it.next_back(), Some(Some($third_val)));
                 assert_eq!(it.next_back(), Some(Some($second_val)));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
@@ -1492,6 +1514,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 assert_eq!(it.next(), Some($third_val));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_iter();
@@ -1499,6 +1523,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), Some($first_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_iter();
@@ -1507,6 +1533,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_iter();
@@ -1514,6 +1542,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($third_val));
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
@@ -1563,6 +1593,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 assert_eq!(it.next(), Some($third_val));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_no_null_iter();
@@ -1570,6 +1602,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), Some($first_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_no_null_iter();
@@ -1578,6 +1612,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_no_null_iter();
@@ -1585,26 +1621,22 @@ mod test {
                 assert_eq!(it.next_back(), Some($third_val));
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
 
+    impl_test_no_null_iter_single_chunk!(num_no_null_iter_single_chunk, UInt32Chunked, 1, 2, 3);
     impl_test_no_null_iter_single_chunk!(
-        num_no_null_iter_single_chunk_null_check,
-        UInt32Chunked,
-        1,
-        2,
-        3
-    );
-    impl_test_no_null_iter_single_chunk!(
-        utf8_no_null_iter_single_chunk_null_check,
+        utf8_no_null_iter_single_chunk,
         Utf8Chunked,
         "a",
         "b",
         "c"
     );
     impl_test_no_null_iter_single_chunk!(
-        bool_no_null_iter_single_chunk_null_check,
+        bool_no_null_iter_single_chunk,
         BooleanChunked,
         true,
         true,
@@ -1636,6 +1668,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 assert_eq!(it.next(), Some($third_val));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_no_null_iter();
@@ -1643,6 +1677,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), Some($first_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_no_null_iter();
@@ -1651,6 +1687,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_no_null_iter();
@@ -1658,26 +1696,16 @@ mod test {
                 assert_eq!(it.next_back(), Some($third_val));
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
 
+    impl_test_no_null_iter_many_chunk!(num_no_null_iter_many_chunk, UInt32Chunked, 1, 2, 3);
+    impl_test_no_null_iter_many_chunk!(utf8_no_null_iter_many_chunk, Utf8Chunked, "a", "b", "c");
     impl_test_no_null_iter_many_chunk!(
-        num_no_null_iter_many_chunk_null_check,
-        UInt32Chunked,
-        1,
-        2,
-        3
-    );
-    impl_test_no_null_iter_many_chunk!(
-        utf8_no_null_iter_many_chunk_null_check,
-        Utf8Chunked,
-        "a",
-        "b",
-        "c"
-    );
-    impl_test_no_null_iter_many_chunk!(
-        bool_no_null_iter_many_chunk_null_check,
+        bool_no_null_iter_many_chunk,
         BooleanChunked,
         true,
         true,
