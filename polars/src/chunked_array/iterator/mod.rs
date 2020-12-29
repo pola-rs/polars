@@ -37,7 +37,7 @@ pub trait IntoNoNullIterator {
 
 /// Wrapper strunct to convert an iterator of type `T` into one of type `Option<T>`.  It is useful to make the
 /// `IntoIterator` trait, in which every iterator shall return an `Option<T>`.
-struct SomeIterator<I>(I)
+pub struct SomeIterator<I>(I)
 where
     I: Iterator;
 
@@ -125,8 +125,8 @@ where
     T: PolarsNumericType,
 {
     arr: &'a PrimitiveArray<T>,
-    idx: usize,
-    back_idx: usize,
+    idx_left: usize,
+    idx_right: usize,
 }
 
 impl<'a, T> NumIterSingleChunkNullCheck<'a, T>
@@ -136,10 +136,14 @@ where
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         let chunks = ca.downcast_chunks();
         let arr = chunks[0];
-        let idx = 0;
-        let back_idx = arr.len();
+        let idx_left = 0;
+        let idx_right = arr.len();
 
-        NumIterSingleChunkNullCheck { arr, idx, back_idx }
+        NumIterSingleChunkNullCheck {
+            arr,
+            idx_left,
+            idx_right,
+        }
     }
 
     fn return_opt_val(&self, index: usize) -> Option<T::Native> {
@@ -158,11 +162,11 @@ where
     type Item = Option<T::Native>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx == self.back_idx {
+        if self.idx_left == self.idx_right {
             None
         } else {
-            let ret = self.return_opt_val(self.idx);
-            self.idx += 1;
+            let ret = self.return_opt_val(self.idx_left);
+            self.idx_left += 1;
 
             Some(ret)
         }
@@ -179,11 +183,11 @@ where
     T: PolarsNumericType,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.idx == self.back_idx {
+        if self.idx_left == self.idx_right {
             None
         } else {
-            self.back_idx -= 1;
-            Some(self.return_opt_val(self.back_idx))
+            self.idx_right -= 1;
+            Some(self.return_opt_val(self.idx_right))
         }
     }
 }
@@ -214,16 +218,28 @@ where
     T: PolarsNumericType,
 {
     fn set_current_iter_left(&mut self) {
-        let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
-        self.current_iter_left = current_chunk
-            .value_slice(0, current_chunk.len())
-            .iter()
-            .copied();
+        if self.chunk_idx_left == self.chunk_idx_right {
+            // If the left and the right chunk are the same iterator, then, use the
+            // the same iterator. The right iterator is kept to maintain the right index
+            // in the iterator, as the left index will be the first index in the chunk.
+            if let Some(current_iter_right) = self.current_iter_right.take() {
+                self.current_iter_left = current_iter_right;
+            }
+        } else {
+            let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
+
+            self.current_iter_left = current_chunk
+                .value_slice(0, current_chunk.len())
+                .iter()
+                .copied();
+        }
     }
 
     fn set_current_iter_right(&mut self) {
         if self.chunk_idx_left == self.chunk_idx_right {
-            // from left and right we use the same iterator
+            // If the left and the right chunk are the same iterator, then, use the
+            // the same iterator. The left iterator is kept to maintain the left index
+            // in the iterator, as the right index will be the last index in the chunk.
             self.current_iter_right = None
         } else {
             let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
@@ -344,12 +360,12 @@ where
     current_iter_left: Copied<Iter<'a, T::Native>>,
     current_data_left: ArrayDataRef,
     // index in the current iterator from left
-    current_array_i_left: usize,
+    current_array_idx_left: usize,
     // If iter_left and iter_right are the same, this is None and we need to use iter left
     // This is done because we can only have one owner
     current_iter_right: Option<Copied<Iter<'a, T::Native>>>,
     current_data_right: ArrayDataRef,
-    current_array_i_right: usize,
+    current_array_idx_right: usize,
     chunk_idx_left: usize,
     idx_left: usize,
     idx_right: usize,
@@ -361,21 +377,36 @@ where
     T: PolarsNumericType,
 {
     fn set_current_iter_left(&mut self) {
-        let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
-        self.current_data_left = current_chunk.data();
-        self.current_iter_left = current_chunk
-            .value_slice(0, current_chunk.len())
-            .iter()
-            .copied();
+        if self.chunk_idx_left == self.chunk_idx_right {
+            // If the left and the right chunk are the same iterator, then, use the
+            // the same iterator. The right iterator is kept to maintain the right index
+            // in the iterator, as the left index will be the first index in the chunk.
+            self.current_data_left = self.current_data_right.clone();
+            if let Some(current_iter_right) = self.current_iter_right.take() {
+                self.current_iter_left = current_iter_right;
+            }
+        } else {
+            let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
+            self.current_data_left = current_chunk.data();
+
+            self.current_iter_left = current_chunk
+                .value_slice(0, current_chunk.len())
+                .iter()
+                .copied();
+        }
     }
 
     fn set_current_iter_right(&mut self) {
-        let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
-        self.current_data_right = current_chunk.data();
         if self.chunk_idx_left == self.chunk_idx_right {
-            // from left and right we use the same iterator
+            // If the left and the right chunk are the same iterator, then, use the
+            // the same iterator. The left iterator is kept to maintain the left index
+            // in the iterator, as the right index will be the last index in the chunk.
+            self.current_data_right = self.current_data_left.clone();
             self.current_iter_right = None
         } else {
+            let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
+            self.current_data_right = current_chunk.data();
+
             self.current_iter_right = Some(
                 current_chunk
                     .value_slice(0, current_chunk.len())
@@ -405,17 +436,17 @@ where
         } else {
             current_iter_right = Some(arr.value_slice(0, arr.len()).iter().copied())
         }
-        let current_array_i_right = arr.len();
+        let current_array_idx_right = arr.len();
 
         NumIterManyChunkNullCheck {
             ca,
             current_iter_left,
             current_data_left,
-            current_array_i_left: 0,
+            current_array_idx_left: 0,
             chunks,
             current_iter_right,
             current_data_right,
-            current_array_i_right,
+            current_array_idx_right,
             idx_left,
             chunk_idx_left,
             idx_right,
@@ -441,7 +472,7 @@ where
             } else {
                 self.chunk_idx_left += 1;
                 // reset the index
-                self.current_array_i_left = 0;
+                self.current_array_idx_left = 0;
                 self.set_current_iter_left();
             }
             // so we return the first value of the next chunk
@@ -451,10 +482,10 @@ where
             opt_val
         };
         self.idx_left += 1;
-        self.current_array_i_left += 1;
+        self.current_array_idx_left += 1;
         if self
             .current_data_left
-            .is_null(self.current_array_i_left - 1)
+            .is_null(self.current_array_idx_left - 1)
         {
             Some(None)
         } else {
@@ -487,7 +518,7 @@ where
                 self.chunk_idx_right -= 1;
                 self.set_current_iter_right();
                 // reset the index accumulator
-                self.current_array_i_right = self.current_data_right.len()
+                self.current_array_idx_right = self.current_data_right.len()
             }
             // so we return the first value of the next chunk from the back
             self.current_iter_left.next_back()
@@ -496,9 +527,12 @@ where
             opt_val
         };
         self.idx_right -= 1;
-        self.current_array_i_right -= 1;
+        self.current_array_idx_right -= 1;
 
-        if self.current_data_right.is_null(self.current_array_i_right) {
+        if self
+            .current_data_right
+            .is_null(self.current_array_idx_right)
+        {
             Some(None)
         } else {
             opt_val.map(Some)
@@ -1310,6 +1344,8 @@ mod test {
                 assert_eq!(it.next(), Some(Some($second_val)));
                 assert_eq!(it.next(), Some(Some($third_val)));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_iter();
@@ -1317,6 +1353,8 @@ mod test {
                 assert_eq!(it.next_back(), Some(Some($second_val)));
                 assert_eq!(it.next_back(), Some(Some($first_val)));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_iter();
@@ -1325,6 +1363,8 @@ mod test {
                 assert_eq!(it.next(), Some(Some($second_val)));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_iter();
@@ -1332,6 +1372,8 @@ mod test {
                 assert_eq!(it.next_back(), Some(Some($third_val)));
                 assert_eq!(it.next_back(), Some(Some($second_val)));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
@@ -1364,6 +1406,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 assert_eq!(it.next(), Some($third_val));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_iter();
@@ -1371,6 +1415,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), Some($first_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_iter();
@@ -1379,6 +1425,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_iter();
@@ -1386,6 +1434,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($third_val));
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
@@ -1437,6 +1487,8 @@ mod test {
                 assert_eq!(it.next(), Some(Some($second_val)));
                 assert_eq!(it.next(), Some(Some($third_val)));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_iter();
@@ -1444,6 +1496,8 @@ mod test {
                 assert_eq!(it.next_back(), Some(Some($second_val)));
                 assert_eq!(it.next_back(), Some(Some($first_val)));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_iter();
@@ -1452,6 +1506,8 @@ mod test {
                 assert_eq!(it.next(), Some(Some($second_val)));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_iter();
@@ -1459,6 +1515,8 @@ mod test {
                 assert_eq!(it.next_back(), Some(Some($third_val)));
                 assert_eq!(it.next_back(), Some(Some($second_val)));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
@@ -1492,6 +1550,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 assert_eq!(it.next(), Some($third_val));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_iter();
@@ -1499,6 +1559,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), Some($first_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_iter();
@@ -1507,6 +1569,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_iter();
@@ -1514,6 +1578,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($third_val));
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
@@ -1563,6 +1629,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 assert_eq!(it.next(), Some($third_val));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_no_null_iter();
@@ -1570,6 +1638,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), Some($first_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_no_null_iter();
@@ -1578,6 +1648,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_no_null_iter();
@@ -1585,26 +1657,22 @@ mod test {
                 assert_eq!(it.next_back(), Some($third_val));
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
 
+    impl_test_no_null_iter_single_chunk!(num_no_null_iter_single_chunk, UInt32Chunked, 1, 2, 3);
     impl_test_no_null_iter_single_chunk!(
-        num_no_null_iter_single_chunk_null_check,
-        UInt32Chunked,
-        1,
-        2,
-        3
-    );
-    impl_test_no_null_iter_single_chunk!(
-        utf8_no_null_iter_single_chunk_null_check,
+        utf8_no_null_iter_single_chunk,
         Utf8Chunked,
         "a",
         "b",
         "c"
     );
     impl_test_no_null_iter_single_chunk!(
-        bool_no_null_iter_single_chunk_null_check,
+        bool_no_null_iter_single_chunk,
         BooleanChunked,
         true,
         true,
@@ -1636,6 +1704,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 assert_eq!(it.next(), Some($third_val));
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // reverse iterator
                 let mut it = a.into_no_null_iter();
@@ -1643,6 +1713,8 @@ mod test {
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), Some($first_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
 
                 // iterators should not cross
                 let mut it = a.into_no_null_iter();
@@ -1651,6 +1723,8 @@ mod test {
                 assert_eq!(it.next(), Some($second_val));
                 // should stop here as we took this one from the back
                 assert_eq!(it.next(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next_back(), None);
 
                 // do the same from the right side
                 let mut it = a.into_no_null_iter();
@@ -1658,26 +1732,16 @@ mod test {
                 assert_eq!(it.next_back(), Some($third_val));
                 assert_eq!(it.next_back(), Some($second_val));
                 assert_eq!(it.next_back(), None);
+                // ensure both sides are consumes.
+                assert_eq!(it.next(), None);
             }
         };
     }
 
+    impl_test_no_null_iter_many_chunk!(num_no_null_iter_many_chunk, UInt32Chunked, 1, 2, 3);
+    impl_test_no_null_iter_many_chunk!(utf8_no_null_iter_many_chunk, Utf8Chunked, "a", "b", "c");
     impl_test_no_null_iter_many_chunk!(
-        num_no_null_iter_many_chunk_null_check,
-        UInt32Chunked,
-        1,
-        2,
-        3
-    );
-    impl_test_no_null_iter_many_chunk!(
-        utf8_no_null_iter_many_chunk_null_check,
-        Utf8Chunked,
-        "a",
-        "b",
-        "c"
-    );
-    impl_test_no_null_iter_many_chunk!(
-        bool_no_null_iter_many_chunk_null_check,
+        bool_no_null_iter_many_chunk,
         BooleanChunked,
         true,
         true,

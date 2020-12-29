@@ -62,7 +62,7 @@ mod test {
         (0..size).map(|n| n.to_string()).collect()
     }
 
-    /// Generate a `Vec` of `Option<String>`, where even indexes are `None` and odd indexes are `Some("{idx}")`.
+    /// Generate a `Vec` of `Option<String>`, where even indexes are `Some("{idx}")` and odd indexes are `None`.
     fn generate_opt_utf8_vec(size: usize) -> Vec<Option<String>> {
         (0..size)
             .map(|n| {

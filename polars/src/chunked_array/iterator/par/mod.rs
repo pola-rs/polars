@@ -4,6 +4,7 @@ use crate::chunked_array::ChunkedArray;
 mod macros;
 pub mod boolean;
 pub mod list;
+pub mod numeric;
 pub mod utf8;
 
 impl<T> ChunkedArray<T> {
