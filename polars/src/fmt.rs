@@ -380,7 +380,7 @@ impl Display for DataFrame {
                 table.add_row(row);
             }
         } else {
-            for i in 0..10 {
+            for i in 0..max_n_rows {
                 let opt = self.get(i);
                 if let Some(row) = opt {
                     table.add_row(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
