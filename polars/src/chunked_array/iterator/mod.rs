@@ -36,7 +36,7 @@ pub trait IntoNoNullIterator {
 
 /// Wrapper strunct to convert an iterator of type `T` into one of type `Option<T>`.  It is useful to make the
 /// `IntoIterator` trait, in which every iterator shall return an `Option<T>`.
-struct SomeIterator<I>(I)
+pub struct SomeIterator<I>(I)
 where
     I: Iterator;
 
@@ -124,8 +124,8 @@ where
     T: PolarsNumericType,
 {
     arr: &'a PrimitiveArray<T>,
-    idx: usize,
-    back_idx: usize,
+    idx_left: usize,
+    idx_right: usize,
 }
 
 impl<'a, T> NumIterSingleChunkNullCheck<'a, T>
@@ -135,10 +135,10 @@ where
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         let chunks = ca.downcast_chunks();
         let arr = chunks[0];
-        let idx = 0;
-        let back_idx = arr.len();
+        let idx_left = 0;
+        let idx_right = arr.len();
 
-        NumIterSingleChunkNullCheck { arr, idx, back_idx }
+        NumIterSingleChunkNullCheck { arr, idx_left, idx_right }
     }
 
     fn return_opt_val(&self, index: usize) -> Option<T::Native> {
@@ -157,11 +157,11 @@ where
     type Item = Option<T::Native>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx == self.back_idx {
+        if self.idx_left == self.idx_right {
             None
         } else {
-            let ret = self.return_opt_val(self.idx);
-            self.idx += 1;
+            let ret = self.return_opt_val(self.idx_left);
+            self.idx_left += 1;
 
             Some(ret)
         }
@@ -178,11 +178,11 @@ where
     T: PolarsNumericType,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.idx == self.back_idx {
+        if self.idx_left == self.idx_right {
             None
         } else {
-            self.back_idx -= 1;
-            Some(self.return_opt_val(self.back_idx))
+            self.idx_right -= 1;
+            Some(self.return_opt_val(self.idx_right))
         }
     }
 }
@@ -355,12 +355,12 @@ where
     current_iter_left: Copied<Iter<'a, T::Native>>,
     current_data_left: ArrayDataRef,
     // index in the current iterator from left
-    current_array_i_left: usize,
+    current_array_idx_left: usize,
     // If iter_left and iter_right are the same, this is None and we need to use iter left
     // This is done because we can only have one owner
     current_iter_right: Option<Copied<Iter<'a, T::Native>>>,
     current_data_right: ArrayDataRef,
-    current_array_i_right: usize,
+    current_array_idx_right: usize,
     chunk_idx_left: usize,
     idx_left: usize,
     idx_right: usize,
@@ -429,17 +429,17 @@ where
         } else {
             current_iter_right = Some(arr.value_slice(0, arr.len()).iter().copied())
         }
-        let current_array_i_right = arr.len();
+        let current_array_idx_right = arr.len();
 
         NumIterManyChunkNullCheck {
             ca,
             current_iter_left,
             current_data_left,
-            current_array_i_left: 0,
+            current_array_idx_left: 0,
             chunks,
             current_iter_right,
             current_data_right,
-            current_array_i_right,
+            current_array_idx_right,
             idx_left,
             chunk_idx_left,
             idx_right,
@@ -465,7 +465,7 @@ where
             } else {
                 self.chunk_idx_left += 1;
                 // reset the index
-                self.current_array_i_left = 0;
+                self.current_array_idx_left = 0;
                 self.set_current_iter_left();
             }
             // so we return the first value of the next chunk
@@ -475,10 +475,10 @@ where
             opt_val
         };
         self.idx_left += 1;
-        self.current_array_i_left += 1;
+        self.current_array_idx_left += 1;
         if self
             .current_data_left
-            .is_null(self.current_array_i_left - 1)
+            .is_null(self.current_array_idx_left - 1)
         {
             Some(None)
         } else {
@@ -511,7 +511,7 @@ where
                 self.chunk_idx_right -= 1;
                 self.set_current_iter_right();
                 // reset the index accumulator
-                self.current_array_i_right = self.current_data_right.len()
+                self.current_array_idx_right = self.current_data_right.len()
             }
             // so we return the first value of the next chunk from the back
             self.current_iter_left.next_back()
@@ -520,9 +520,9 @@ where
             opt_val
         };
         self.idx_right -= 1;
-        self.current_array_i_right -= 1;
+        self.current_array_idx_right -= 1;
 
-        if self.current_data_right.is_null(self.current_array_i_right) {
+        if self.current_data_right.is_null(self.current_array_idx_right) {
             Some(None)
         } else {
             opt_val.map(Some)
