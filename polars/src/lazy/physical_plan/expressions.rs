@@ -625,6 +625,8 @@ impl PhysicalExpr for WindowExpr {
                 AggExpr::Quantile { quantile, .. } => gb.quantile(*quantile),
                 AggExpr::List(_) => gb.agg_list(),
                 AggExpr::AggGroups(_) => gb.groups(),
+                AggExpr::Std(_) => gb.std(),
+                AggExpr::Var(_) => gb.var(),
             },
             _ => Err(PolarsError::Other(
                 format!("{:?} function not supported", self.function).into(),

@@ -44,6 +44,8 @@ pub enum AggExpr {
     Quantile { expr: Box<Expr>, quantile: f64 },
     Sum(Box<Expr>),
     AggGroups(Box<Expr>),
+    Std(Box<Expr>),
+    Var(Box<Expr>),
 }
 
 impl AsRef<Expr> for AggExpr {
@@ -62,6 +64,8 @@ impl AsRef<Expr> for AggExpr {
             Quantile { expr, .. } => expr,
             Sum(e) => e,
             AggGroups(e) => e,
+            Std(e) => e,
+            Var(e) => e,
         }
     }
 }
@@ -162,6 +166,8 @@ impl PartialEq for Expr {
                         AggExpr::Sum(left) => impl_partial_eq_agg!(Sum, left, other),
                         AggExpr::List(left) => impl_partial_eq_agg!(List, left, other),
                         AggExpr::Count(left) => impl_partial_eq_agg!(Count, left, other),
+                        AggExpr::Std(left) => impl_partial_eq_agg!(Std, left, other),
+                        AggExpr::Var(left) => impl_partial_eq_agg!(Var, left, other),
                         AggExpr::Quantile { expr, quantile } => {
                             let left = expr;
                             let left_q = quantile;
@@ -373,6 +379,18 @@ impl Expr {
                     Sum(expr) => {
                         field_by_context(expr.to_field(schema, ctxt)?, ctxt, GroupByMethod::Sum)
                     }
+                    Std(expr) => {
+                        let field = expr.to_field(schema, ctxt)?;
+                        let field =
+                            Field::new(field.name(), ArrowDataType::Float64, field.is_nullable());
+                        field_by_context(field, ctxt, GroupByMethod::Std)
+                    }
+                    Var(expr) => {
+                        let field = expr.to_field(schema, ctxt)?;
+                        let field =
+                            Field::new(field.name(), ArrowDataType::Float64, field.is_nullable());
+                        field_by_context(field, ctxt, GroupByMethod::Var)
+                    }
                     Count(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
                         let field =
@@ -472,6 +490,8 @@ impl fmt::Debug for Expr {
                     Sum(expr) => write!(f, "AGG SUM {:?}", expr),
                     AggGroups(expr) => write!(f, "AGG GROUPS {:?}", expr),
                     Count(expr) => write!(f, "AGG COUNT {:?}", expr),
+                    Var(expr) => write!(f, "AGG VAR {:?}", expr),
+                    Std(expr) => write!(f, "AGG STD {:?}", expr),
                     Quantile { expr, .. } => write!(f, "AGG QUANTILE {:?}", expr),
                 }
             }
@@ -826,20 +846,12 @@ impl Expr {
 
     /// Standard deviation of the values of the Series
     pub fn std(self) -> Self {
-        let function = move |s: Series| {
-            s.std_as_series()
-                .cast_with_arrow_datatype(&ArrowDataType::Float64)
-        };
-        self.apply(function, Some(ArrowDataType::Float64))
+        AggExpr::Std(Box::new(self)).into()
     }
 
     /// Variance of the values of the Series
     pub fn var(self) -> Self {
-        let function = move |s: Series| {
-            s.var_as_series()
-                .cast_with_arrow_datatype(&ArrowDataType::Float64)
-        };
-        self.apply(function, Some(ArrowDataType::Float64))
+        AggExpr::Var(Box::new(self)).into()
     }
 
     /// Get a mask of duplicated values

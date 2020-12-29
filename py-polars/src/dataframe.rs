@@ -443,6 +443,8 @@ impl PyDataFrame {
             "median" => selection.median(),
             "agg_list" => selection.agg_list(),
             "groups" => selection.groups(),
+            "std" => selection.std(),
+            "var" => selection.var(),
             a => Err(PolarsError::Other(
                 format!("agg fn {} does not exists", a).into(),
             )),

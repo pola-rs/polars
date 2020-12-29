@@ -332,6 +332,12 @@ pub(crate) trait NumericAggSync {
     fn agg_sum(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         None
     }
+    fn agg_std(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        None
+    }
+    fn agg_var(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        None
+    }
 }
 
 impl NumericAggSync for BooleanChunked {}
@@ -358,8 +364,7 @@ where
                     }
                     Some(sum / idx.len() as f64)
                 } else {
-                    let take =
-                        unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
+                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
                     let opt_sum: Option<T::Native> = take.sum();
                     opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                 }
@@ -392,7 +397,7 @@ where
                         min
                     } else {
                         let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
                         take.min()
                     }
                 })
@@ -425,7 +430,7 @@ where
                         max
                     } else {
                         let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
                         take.max()
                     }
                 })
@@ -447,9 +452,41 @@ where
                         Some(sum)
                     } else {
                         let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(self.len())) };
+                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
                         take.sum()
                     }
+                })
+                .collect::<ChunkedArray<T>>()
+                .into_series(),
+        )
+    }
+    fn agg_var(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        Some(
+            groups
+                .par_iter()
+                .map(|(_first, idx)| {
+                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    take.into_series()
+                        .var_as_series()
+                        .unpack::<T>()
+                        .unwrap()
+                        .get(0)
+                })
+                .collect::<ChunkedArray<T>>()
+                .into_series(),
+        )
+    }
+    fn agg_std(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        Some(
+            groups
+                .par_iter()
+                .map(|(_first, idx)| {
+                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    take.into_series()
+                        .std_as_series()
+                        .unpack::<T>()
+                        .unwrap()
+                        .get(0)
                 })
                 .collect::<ChunkedArray<T>>()
                 .into_series(),
@@ -1071,6 +1108,34 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         DataFrame::new(cols)
     }
 
+    /// Aggregate grouped `Series` and determine the variance per group.
+    pub fn var(&self) -> Result<DataFrame> {
+        let (mut cols, agg_cols) = self.prepare_agg()?;
+        for agg_col in agg_cols {
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Var);
+            let opt_agg = agg_col.agg_var(&self.groups);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg.into_series());
+            }
+        }
+        DataFrame::new(cols)
+    }
+
+    /// Aggregate grouped `Series` and determine the standard deviation per group.
+    pub fn std(&self) -> Result<DataFrame> {
+        let (mut cols, agg_cols) = self.prepare_agg()?;
+        for agg_col in agg_cols {
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Std);
+            let opt_agg = agg_col.agg_std(&self.groups);
+            if let Some(mut agg) = opt_agg {
+                agg.rename(&new_name);
+                cols.push(agg.into_series());
+            }
+        }
+        DataFrame::new(cols)
+    }
+
     /// Aggregate grouped series and compute the number of values per group.
     ///
     /// # Example
@@ -1238,6 +1303,8 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                             finish_agg_opt!(self, "{}_n_unique", agg_n_unique, agg_col, cols)
                         }
                         "median" => finish_agg_opt!(self, "{}_median", agg_n_unique, agg_col, cols),
+                        "std" => finish_agg_opt!(self, "{}_std", agg_std, agg_col, cols),
+                        "var" => finish_agg_opt!(self, "{}_var", agg_var, agg_col, cols),
                         "count" => {
                             let new_name = format!["{}_count", agg_col.name()];
                             let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new(
@@ -1421,6 +1488,8 @@ pub(crate) enum GroupByMethod {
     Quantile(f64),
     Count,
     List,
+    Std,
+    Var,
 }
 
 // Formatting functions used in eager and lazy code for renaming grouped columns
@@ -1439,6 +1508,8 @@ pub(crate) fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
         Count => format!["{}_count", name],
         List => format!["{}_agg_list", name],
         Quantile(quantile) => format!["{}_quantile_{:.2}", name, quantile],
+        Std => format!["{}_agg_std", name],
+        Var => format!["{}_agg_var", name],
     }
 }
 

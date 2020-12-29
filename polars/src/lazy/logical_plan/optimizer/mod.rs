@@ -225,6 +225,12 @@ impl StackOptimizer {
                             AAggExpr::Count(expr) => {
                                 exprs.push((*expr, current_lp_node));
                             }
+                            AAggExpr::Std(expr) => {
+                                exprs.push((*expr, current_lp_node));
+                            }
+                            AAggExpr::Var(expr) => {
+                                exprs.push((*expr, current_lp_node));
+                            }
                         },
                         AExpr::Shift { input, .. } => {
                             exprs.push((*input, current_lp_node));
@@ -274,6 +280,8 @@ pub enum AAggExpr {
     Quantile { expr: Node, quantile: f64 },
     Sum(Node),
     Count(Node),
+    Std(Node),
+    Var(Node),
     AggGroups(Node),
 }
 
@@ -464,6 +472,18 @@ impl AExpr {
                         ctxt,
                         GroupByMethod::List,
                     ),
+                    Std(expr) => {
+                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let field =
+                            Field::new(field.name(), ArrowDataType::Float64, field.is_nullable());
+                        field_by_context(field, ctxt, GroupByMethod::Std)
+                    }
+                    Var(expr) => {
+                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        let field =
+                            Field::new(field.name(), ArrowDataType::Float64, field.is_nullable());
+                        field_by_context(field, ctxt, GroupByMethod::Var)
+                    }
                     NUnique(expr) => {
                         let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         let field =
@@ -711,6 +731,8 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                     quantile,
                 },
                 AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr(*expr, arena)),
+                AggExpr::Std(expr) => AAggExpr::Std(to_aexpr(*expr, arena)),
+                AggExpr::Var(expr) => AAggExpr::Var(to_aexpr(*expr, arena)),
                 AggExpr::AggGroups(expr) => AAggExpr::AggGroups(to_aexpr(*expr, arena)),
             };
             AExpr::Agg(a_agg)
@@ -1053,6 +1075,14 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
             AAggExpr::Sum(expr) => {
                 let exp = node_to_exp(expr, expr_arena);
                 AggExpr::Sum(Box::new(exp)).into()
+            }
+            AAggExpr::Std(expr) => {
+                let exp = node_to_exp(expr, expr_arena);
+                AggExpr::Std(Box::new(exp)).into()
+            }
+            AAggExpr::Var(expr) => {
+                let exp = node_to_exp(expr, expr_arena);
+                AggExpr::Var(Box::new(exp)).into()
             }
             AAggExpr::AggGroups(expr) => {
                 let exp = node_to_exp(expr, expr_arena);

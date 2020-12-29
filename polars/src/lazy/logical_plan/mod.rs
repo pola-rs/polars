@@ -609,6 +609,12 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             AggExpr::List(e) => {
                 AggExpr::List(Box::new(replace_wildcard_with_column(*e, column_name)))
             }
+            AggExpr::Var(e) => {
+                AggExpr::Var(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
+            AggExpr::Std(e) => {
+                AggExpr::Std(Box::new(replace_wildcard_with_column(*e, column_name)))
+            }
         }
         .into(),
         Expr::Shift { input, periods } => Expr::Shift {
