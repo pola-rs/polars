@@ -1,7 +1,7 @@
 use super::*;
 use crate::frame::hash_join::JoinType;
 use crate::frame::ser::{csv::CsvEncoding, ScanAggregation};
-use crate::lazy::logical_plan::{DataFrameOperation, FETCH_ROWS};
+use crate::lazy::logical_plan::FETCH_ROWS;
 use arrow::datatypes::SchemaRef;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -379,32 +379,44 @@ impl Executor for StandardExec {
     }
 }
 
-pub struct DataFrameOpsExec {
-    input: Box<dyn Executor>,
-    operation: DataFrameOperation,
+pub(crate) struct ExplodeExec {
+    pub(crate) input: Box<dyn Executor>,
+    pub(crate) columns: Vec<String>,
 }
 
-impl DataFrameOpsExec {
-    pub(crate) fn new(input: Box<dyn Executor>, operation: DataFrameOperation) -> Self {
-        Self { input, operation }
+impl Executor for ExplodeExec {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
+        df.explode(&self.columns)
     }
 }
 
-impl Executor for DataFrameOpsExec {
+pub(crate) struct SortExec {
+    pub(crate) input: Box<dyn Executor>,
+    pub(crate) by_column: String,
+    pub(crate) reverse: bool,
+}
+
+impl Executor for SortExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let df = self.input.execute(cache)?;
-        let df = match &self.operation {
-            DataFrameOperation::Sort { by_column, reverse } => df.sort(&by_column, *reverse),
-            DataFrameOperation::Explode(columns) => df.explode(columns),
-            DataFrameOperation::DropDuplicates {
-                maintain_order,
-                subset,
-            } => df.drop_duplicates(*maintain_order, subset.as_ref().map(|v| v.as_ref())),
-        };
-        if std::env::var(POLARS_VERBOSE).is_ok() {
-            println!("{:?} on dataframe finished", self.operation);
-        }
-        df
+        df.sort(&self.by_column, self.reverse)
+    }
+}
+
+pub(crate) struct DropDuplicatesExec {
+    pub(crate) input: Box<dyn Executor>,
+    pub(crate) maintain_order: bool,
+    pub(crate) subset: Option<Vec<String>>,
+}
+
+impl Executor for DropDuplicatesExec {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
+        df.drop_duplicates(
+            self.maintain_order,
+            self.subset.as_ref().map(|v| v.as_ref()),
+        )
     }
 }
 

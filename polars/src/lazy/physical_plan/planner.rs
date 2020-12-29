@@ -1,6 +1,6 @@
 use crate::frame::group_by::GroupByMethod;
 use crate::frame::ser::ScanAggregation;
-use crate::lazy::logical_plan::{Context, DataFrameOperation};
+use crate::lazy::logical_plan::Context;
 use crate::lazy::physical_plan::executors::*;
 use crate::lazy::utils::{agg_source_paths, expr_to_root_column_name};
 use crate::{lazy::prelude::*, prelude::*};
@@ -174,13 +174,15 @@ impl DefaultPlanner {
                 reverse,
             } => {
                 let input = self.create_initial_physical_plan(*input)?;
-                let operation = DataFrameOperation::Sort { by_column, reverse };
-                Ok(Box::new(DataFrameOpsExec::new(input, operation)))
+                Ok(Box::new(SortExec {
+                    input,
+                    by_column,
+                    reverse,
+                }))
             }
             LogicalPlan::Explode { input, columns } => {
                 let input = self.create_initial_physical_plan(*input)?;
-                let operation = DataFrameOperation::Explode(columns);
-                Ok(Box::new(DataFrameOpsExec::new(input, operation)))
+                Ok(Box::new(ExplodeExec { input, columns }))
             }
             LogicalPlan::Cache { input } => {
                 let fields = input.schema().fields();
@@ -204,12 +206,11 @@ impl DefaultPlanner {
             } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let subset = Arc::try_unwrap(subset).unwrap_or_else(|subset| (*subset).clone());
-                let operation = DataFrameOperation::DropDuplicates {
+                Ok(Box::new(DropDuplicatesExec {
+                    input,
                     maintain_order,
                     subset,
-                };
-
-                Ok(Box::new(DataFrameOpsExec::new(input, operation)))
+                }))
             }
             LogicalPlan::Aggregate {
                 input, keys, aggs, ..
