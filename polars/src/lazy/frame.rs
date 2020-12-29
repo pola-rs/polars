@@ -825,6 +825,11 @@ mod test {
     use super::*;
     use crate::lazy::tests::get_df;
 
+    fn scan_foods_csv() -> LazyFrame {
+        let path = "../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        LazyCsvReader::new(path.to_string()).finish()
+    }
+
     #[test]
     fn test_lazy_ternary() {
         let df = get_df()
@@ -1098,6 +1103,16 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_query_3() {
+        // query checks if schema of scanning is not changed by aggregation
+        let out = scan_foods_csv()
+            .groupby("calories")
+            .agg(vec![col("fats_g").max()])
+            .collect()
+            .unwrap();
+    }
+
+    #[test]
     fn test_simplify_expr() {
         // Test if expression containing literals is simplified
         let df = get_df();
@@ -1168,8 +1183,7 @@ mod test {
 
     #[test]
     fn test_lazy_agg_scan() {
-        let path = "../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-        let lf = || LazyCsvReader::new(path.to_string()).finish();
+        let lf = scan_foods_csv;
         let df = lf().min().collect().unwrap();
         assert!(df.frame_equal_missing(&lf().collect().unwrap().min()));
         let df = lf().max().collect().unwrap();
