@@ -81,6 +81,14 @@ macro_rules! impl_dyn_series {
                 self.0.agg_last(groups)
             }
 
+            fn agg_std(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+                self.0.agg_std(groups)
+            }
+
+            fn agg_var(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+                self.0.agg_var(groups)
+            }
+
             fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
                 self.0.agg_n_unique(groups)
             }

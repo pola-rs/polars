@@ -382,6 +382,40 @@ impl DefaultPlanner {
                             }
                         }
                     }
+                    AggExpr::Std(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Std)))
+                            }
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.std_as_series()));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
+                        }
+                    }
+                    AggExpr::Var(expr) => {
+                        let input = self.create_physical_expr(*expr, ctxt)?;
+                        match ctxt {
+                            Context::Aggregation => {
+                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Var)))
+                            }
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.var_as_series()));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
+                        }
+                    }
                     AggExpr::Mean(expr) => {
                         let input = self.create_physical_expr(*expr, ctxt)?;
                         match ctxt {

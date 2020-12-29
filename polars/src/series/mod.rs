@@ -32,6 +32,12 @@ pub(crate) mod private {
         fn agg_sum(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
             unimplemented!()
         }
+        fn agg_std(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            unimplemented!()
+        }
+        fn agg_var(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            unimplemented!()
+        }
         fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
             unimplemented!()
         }

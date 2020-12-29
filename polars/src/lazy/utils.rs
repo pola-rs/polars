@@ -23,6 +23,8 @@ pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
                 Median(expr) => projected_name(expr),
                 Mean(expr) => projected_name(expr),
                 Count(expr) => projected_name(expr),
+                Std(expr) => projected_name(expr),
+                Var(expr) => projected_name(expr),
                 AggGroups(expr) => projected_name(expr),
                 NUnique(expr) => projected_name(expr),
             }
@@ -221,6 +223,20 @@ pub(crate) fn has_aexpr(
                     }
                     AAggExpr::Sum(e) => {
                         if matches!(tmp_matching_expr, AAggExpr::Sum(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr, follow_agg)
+                        }
+                    }
+                    AAggExpr::Std(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Std(_)) {
+                            true
+                        } else {
+                            has_aexpr(*e, arena, matching_expr, follow_agg)
+                        }
+                    }
+                    AAggExpr::Var(e) => {
+                        if matches!(tmp_matching_expr, AAggExpr::Var(_)) {
                             true
                         } else {
                             has_aexpr(*e, arena, matching_expr, follow_agg)
@@ -449,6 +465,20 @@ pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
                             has_expr(e, matching_expr)
                         }
                     }
+                    AggExpr::Var(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Var(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
+                    AggExpr::Std(e) => {
+                        if matches!(tmp_matching_expr, AggExpr::Std(_)) {
+                            true
+                        } else {
+                            has_expr(e, matching_expr)
+                        }
+                    }
                     AggExpr::AggGroups(e) => {
                         if matches!(tmp_matching_expr, AggExpr::AggGroups(_)) {
                             true
@@ -586,6 +616,8 @@ pub(crate) fn aexpr_to_root_nodes(node: Node, arena: &Arena<AExpr>) -> Vec<Node>
             AAggExpr::Mean(expr) => aexpr_to_root_nodes(*expr, arena),
             AAggExpr::Count(expr) => aexpr_to_root_nodes(*expr, arena),
             AAggExpr::List(expr) => aexpr_to_root_nodes(*expr, arena),
+            AAggExpr::Std(expr) => aexpr_to_root_nodes(*expr, arena),
+            AAggExpr::Var(expr) => aexpr_to_root_nodes(*expr, arena),
         },
         AExpr::BinaryExpr { left, right, .. } => {
             let mut results = Vec::with_capacity(16);
@@ -652,6 +684,8 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
             AggExpr::Mean(expr) => expr_to_root_column_exprs(expr),
             AggExpr::Count(expr) => expr_to_root_column_exprs(expr),
             AggExpr::List(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Std(expr) => expr_to_root_column_exprs(expr),
+            AggExpr::Var(expr) => expr_to_root_column_exprs(expr),
         },
         Expr::BinaryExpr { left, right, .. } => {
             let mut results = Vec::with_capacity(16);
