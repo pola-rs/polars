@@ -218,7 +218,7 @@ impl ProjectionPushDown {
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
-                mut schema,
+                schema,
                 predicate,
                 aggregate,
                 stop_after_n_rows,
@@ -226,13 +226,6 @@ impl ProjectionPushDown {
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections);
-                if let Some(cols) = &with_columns {
-                    schema = Schema::new(
-                        cols.iter()
-                            .map(|name| schema.field_with_name(name).unwrap().clone())
-                            .collect(),
-                    );
-                }
                 let lp = ParquetScan {
                     path,
                     schema,
@@ -246,7 +239,7 @@ impl ProjectionPushDown {
             }
             CsvScan {
                 path,
-                mut schema,
+                schema,
                 has_header,
                 delimiter,
                 ignore_errors,
@@ -258,13 +251,6 @@ impl ProjectionPushDown {
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections);
-                if let Some(cols) = &with_columns {
-                    schema = Arc::new(Schema::new(
-                        cols.iter()
-                            .map(|name| schema.field_with_name(name).unwrap().clone())
-                            .collect(),
-                    ));
-                }
                 let lp = CsvScan {
                     path,
                     schema,
