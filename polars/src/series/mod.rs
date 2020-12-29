@@ -8,10 +8,10 @@ pub mod implementations;
 pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
-use crate::series::implementations::Wrap;
 use arrow::array::ArrayDataRef;
 use num::NumCast;
 use std::any::Any;
+use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -1080,42 +1080,74 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
 }
 
 // TODO: add types
-impl From<(&str, ArrayRef)> for Wrap<Arc<dyn SeriesTrait>> {
-    fn from(name_arr: (&str, ArrayRef)) -> Self {
-        let (name, arr) = name_arr;
-        let chunk = vec![arr];
-        let s = match chunk[0].data_type() {
-            ArrowDataType::Utf8 => Utf8Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::Boolean => BooleanChunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::UInt8 => UInt8Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::UInt16 => UInt16Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::UInt32 => UInt32Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::UInt64 => UInt64Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::Int8 => Int8Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::Int16 => Int16Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::Int32 => Int32Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::Int64 => Int64Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::Float32 => Float32Chunked::new_from_chunks(name, chunk).into_series(),
-            ArrowDataType::Float64 => Float64Chunked::new_from_chunks(name, chunk).into_series(),
+impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
+    type Error = PolarsError;
+
+    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> Result<Self> {
+        let (name, chunks) = name_arr;
+
+        let mut chunks_iter = chunks.iter();
+        let data_type: &ArrowDataType = chunks_iter
+            .next()
+            .ok_or_else(|| PolarsError::NoData("Expected at least on ArrayRef".into()))?
+            .data_type();
+
+        for chunk in chunks_iter {
+            if chunk.data_type() != data_type {
+                return Err(PolarsError::InvalidOperation(
+                    "Cannot create series from multiple arrays with different types".into(),
+                ));
+            }
+        }
+
+        match data_type {
+            ArrowDataType::Utf8 => Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Boolean => {
+                Ok(BooleanChunked::new_from_chunks(name, chunks).into_series())
+            }
+            ArrowDataType::UInt8 => Ok(UInt8Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::UInt16 => Ok(UInt16Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::UInt32 => Ok(UInt32Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::UInt64 => Ok(UInt64Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Int8 => Ok(Int8Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Int16 => Ok(Int16Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Int32 => Ok(Int32Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Int64 => Ok(Int64Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Float32 => {
+                Ok(Float32Chunked::new_from_chunks(name, chunks).into_series())
+            }
+            ArrowDataType::Float64 => {
+                Ok(Float64Chunked::new_from_chunks(name, chunks).into_series())
+            }
             ArrowDataType::Date32(DateUnit::Day) => {
-                Date32Chunked::new_from_chunks(name, chunk).into_series()
+                Ok(Date32Chunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Date64(DateUnit::Millisecond) => {
-                Date64Chunked::new_from_chunks(name, chunk).into_series()
+                Ok(Date64Chunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                Time64NanosecondChunked::new_from_chunks(name, chunk).into_series()
+                Ok(Time64NanosecondChunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                DurationNanosecondChunked::new_from_chunks(name, chunk).into_series()
+                Ok(DurationNanosecondChunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Duration(TimeUnit::Millisecond) => {
-                DurationMillisecondChunked::new_from_chunks(name, chunk).into_series()
+                Ok(DurationMillisecondChunked::new_from_chunks(name, chunks).into_series())
             }
-            ArrowDataType::List(_) => ListChunked::new_from_chunks(name, chunk).into_series(),
-            dt => panic!(format!("datatype {:?} not supported", dt)),
-        };
-        Wrap(s.0)
+            ArrowDataType::List(_) => Ok(ListChunked::new_from_chunks(name, chunks).into_series()),
+            dt => Err(PolarsError::InvalidOperation(
+                format!("Cannot create polars series from {:?}", dt).into(),
+            )),
+        }
+    }
+}
+
+impl TryFrom<(&str, ArrayRef)> for Series {
+    type Error = PolarsError;
+
+    fn try_from(name_arr: (&str, ArrayRef)) -> Result<Self> {
+        let (name, arr) = name_arr;
+        Series::try_from((name, vec![arr]))
     }
 }
 
@@ -1138,6 +1170,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use crate::series::*;
+    use arrow::array::*;
 
     #[test]
     fn cast() {
@@ -1156,6 +1190,14 @@ mod test {
         Series::new("int series", &[1, 2, 3]);
         let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
         ca.into_series();
+    }
+
+    #[test]
+    fn new_series_from_arrow_primitive_array() {
+        let array = UInt64Array::from(vec![1, 2, 3, 4, 5]);
+        let array_ref: ArrayRef = Arc::new(array);
+
+        Series::try_from(("foo", array_ref)).unwrap();
     }
 
     #[test]

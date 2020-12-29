@@ -1,9 +1,9 @@
 use crate::prelude::*;
-use crate::series::implementations::Wrap;
 use arrow::array::{
     Array, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps,
     StringArray,
 };
+use std::convert::TryFrom;
 use std::iter::Copied;
 use std::slice::Iter;
 
@@ -1255,8 +1255,8 @@ impl_all_iterators!(
 
 // used for macro
 fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
-    let s: Wrap<_> = (method_name, v).into();
-    Series(s.0)
+    let s = Series::try_from((method_name, v));
+    s.unwrap()
 }
 
 impl_all_iterators!(

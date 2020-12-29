@@ -4,12 +4,13 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::series::implementations::Wrap;
 use crate::series::SeriesTrait;
-use crate::utils::{accumulate_dataframes_horizontal, Xob};
+use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, Xob};
 use ahash::RandomState;
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 use std::collections::HashSet;
+use std::iter::Iterator;
 use std::marker::Sized;
 use std::mem;
 use std::sync::Arc;
@@ -1609,14 +1610,107 @@ impl Default for DataFrame {
     }
 }
 
+/// Conversion from Vec<RecordBatch> into DataFrame
+///
+///
+impl std::convert::TryFrom<RecordBatch> for DataFrame {
+    type Error = PolarsError;
+
+    fn try_from(batch: RecordBatch) -> Result<DataFrame> {
+        let columns: Result<Vec<Series>> = batch
+            .columns()
+            .iter()
+            .zip(batch.schema().fields())
+            .map(|(arr, field)| Series::try_from((field.name().as_ref(), arr.clone())))
+            .collect();
+
+        DataFrame::new(columns?)
+    }
+}
+
+/// Conversion from Vec<RecordBatch> into DataFrame
+///
+/// If batch-size is small it might be advisable to call rechunk
+/// to ensure predictable performance
+impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
+    type Error = PolarsError;
+
+    fn try_from(batches: Vec<RecordBatch>) -> Result<DataFrame> {
+        let mut batch_iter = batches.iter();
+
+        // Non empty array
+        let first_batch = batch_iter.next().ok_or_else(|| {
+            PolarsError::NoData("At least one record batch is needed to create a dataframe".into())
+        })?;
+
+        // Validate all record batches have the same schema
+        let schema = first_batch.schema();
+        for batch in batch_iter {
+            if batch.schema() != schema {
+                return Err(PolarsError::DataTypeMisMatch(
+                    "All record batches must have the same schema".into(),
+                ));
+            }
+        }
+
+        let dfs: Result<Vec<DataFrame>> = batches
+            .iter()
+            .map(|batch| DataFrame::try_from(batch.clone()))
+            .collect();
+
+        accumulate_dataframes_vertical(dfs?)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use arrow::array::{Float64Array, Int64Array};
+    use arrow::datatypes::DataType;
+    use arrow::record_batch::RecordBatch;
+    use std::convert::TryFrom;
 
     fn create_frame() -> DataFrame {
         let s0 = Series::new("days", [0, 1, 2].as_ref());
         let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
         DataFrame::new(vec![s0, s1]).unwrap()
+    }
+
+    fn create_record_batches() -> Vec<RecordBatch> {
+        // Creates a dataframe using 2 record-batches
+        //
+        // | foo    | bar    |
+        // -------------------
+        // | 1.0    | 1      |
+        // | 2.0    | 2      |
+        // | 3.0    | 3      |
+        // | 4.0    | 4      |
+        // | 5.0    | 5      |
+        // -------------------
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("foo", DataType::Float64, false),
+            Field::new("bar", DataType::Int64, false),
+        ]));
+
+        let batch0 = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0])),
+                Arc::new(Int64Array::from(vec![1, 2, 3])),
+            ],
+        )
+        .unwrap();
+
+        let batch1 = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Float64Array::from(vec![4.0, 5.0])),
+                Arc::new(Int64Array::from(vec![4, 5])),
+            ],
+        )
+        .unwrap();
+
+        return vec![batch0, batch1];
     }
 
     #[test]
@@ -1630,6 +1724,18 @@ mod test {
         assert_eq!(2, iter.next().unwrap().num_rows());
         assert_eq!(1, iter.next().unwrap().num_rows());
         assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_frame_from_recordbatch() {
+        let record_batches: Vec<RecordBatch> = create_record_batches();
+
+        let df = DataFrame::try_from(record_batches).expect("frame can be initialized");
+
+        assert_eq!(
+            Vec::from(df.column("bar").unwrap().i64().unwrap()),
+            &[Some(1), Some(2), Some(3), Some(4), Some(5)]
+        );
     }
 
     #[test]

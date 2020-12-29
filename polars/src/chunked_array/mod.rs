@@ -1,4 +1,5 @@
 //! The typed heart of every Series column.
+//! o
 use crate::chunked_array::builder::{
     aligned_vec_to_primitive_array, build_with_existing_null_bitmap_and_slice, get_bitmap,
 };
@@ -13,6 +14,7 @@ use arrow::{
     datatypes::{DateUnit, Field, TimeUnit},
 };
 use itertools::Itertools;
+use std::convert::TryFrom;
 use std::iter::{Copied, Map};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -51,7 +53,6 @@ use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray, ListArray,
 };
 
-use crate::series::implementations::Wrap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
 
@@ -531,8 +532,8 @@ where
             }
             ArrowDataType::List(_) => {
                 let v = downcast!(ListArray);
-                let s: Wrap<_> = ("", v).into();
-                AnyType::List(Series(s.0))
+                let s = Series::try_from(("", v));
+                AnyType::List(s.unwrap())
             }
             #[cfg(feature = "object")]
             ArrowDataType::Binary => AnyType::Object(&"object"),

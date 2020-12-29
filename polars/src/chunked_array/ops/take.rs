@@ -10,12 +10,12 @@ use crate::chunked_array::kernels::take::{
     take_no_null_boolean, take_no_null_primitive, take_utf8,
 };
 use crate::prelude::*;
-use crate::series::implementations::Wrap;
 use crate::utils::Xob;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps, StringArray,
 };
 use arrow::compute::kernels::take::take;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 macro_rules! impl_take_random_get {
@@ -106,15 +106,15 @@ impl TakeRandom for ListChunked {
     fn get(&self, index: usize) -> Option<Self::Item> {
         let opt_arr = impl_take_random_get!(self, index, ListArray);
         opt_arr.map(|arr| {
-            let s: Wrap<_> = (self.name(), arr).into();
-            Series(s.0)
+            let s = Series::try_from((self.name(), arr));
+            s.unwrap()
         })
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         let arr = impl_take_random_get_unchecked!(self, index, ListArray);
-        let s: Wrap<_> = (self.name(), arr).into();
-        Series(s.0)
+        let s = Series::try_from((self.name(), arr));
+        s.unwrap()
     }
 }
 
@@ -881,15 +881,15 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get!(self, index);
         v.map(|v| {
-            let s: Wrap<_> = (self.ca.name(), v).into();
-            Series(s.0)
+            let s = Series::try_from((self.ca.name(), v));
+            s.unwrap()
         })
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         let v = take_random_get_unchecked!(self, index);
-        let s: Wrap<_> = (self.ca.name(), v).into();
-        Series(s.0)
+        let s = Series::try_from((self.ca.name(), v));
+        s.unwrap()
     }
 }
 
@@ -904,14 +904,14 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get_single!(self, index);
         v.map(|v| {
-            let s: Wrap<_> = (self.name, v).into();
-            Series(s.0)
+            let s = Series::try_from((self.name, v));
+            s.unwrap()
         })
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let s: Wrap<_> = (self.name, self.arr.value(index)).into();
-        Series(s.0)
+        let s = Series::try_from((self.name, self.arr.value(index)));
+        s.unwrap()
     }
 }
 

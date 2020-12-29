@@ -13,13 +13,13 @@ pub mod parquet;
 #[cfg(feature = "lazy")]
 use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
-use crate::series::implementations::Wrap;
 use crate::utils::accumulate_dataframes_vertical;
 use arrow::array::ArrayRef;
 use arrow::{
     csv::Reader as ArrowCsvReader, error::Result as ArrowResult, json::Reader as ArrowJsonReader,
     record_batch::RecordBatch,
 };
+use std::convert::TryFrom;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -87,9 +87,8 @@ where
     ChunkedArray::new_from_chunks(field.name(), vec![arr.clone()])
 }
 
-fn arr_to_series(arr: &ArrayRef, field: &Field) -> Series {
-    let s: Wrap<_> = (field.name().as_str(), arr.clone()).into();
-    Series(s.0)
+fn arr_to_series(arr: &ArrayRef, field: &Field) -> Result<Series> {
+    Series::try_from((field.name().as_str(), arr.clone()))
 }
 
 pub(crate) fn finish_reader<R: ArrowReader>(
@@ -105,14 +104,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     while let Some(batch) = reader.next_record_batch()? {
         n_rows += batch.num_rows();
 
-        let columns = batch
-            .columns()
-            .iter()
-            .zip(reader.schema().fields())
-            .map(|(arr, field)| arr_to_series(arr, field))
-            .collect();
-
-        let mut df = DataFrame::new_no_checks(columns);
+        let mut df = DataFrame::try_from(batch)?;
 
         if let Some(predicate) = &predicate {
             let s = predicate.evaluate(&df)?;

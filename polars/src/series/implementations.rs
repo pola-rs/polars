@@ -198,6 +198,7 @@ macro_rules! impl_dyn_series {
                 }
             }
 
+            // For each column create a series
             fn i16(&self) -> Result<&Int16Chunked> {
                 if matches!(self.0.dtype(), ArrowDataType::Int16) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int16Chunked)) }
