@@ -31,7 +31,6 @@ macro_rules! impl_numeric_parallel_iterator_body {
     };
 }
 
-
 /// Generate the code for body of an unindexed parallel iterator. It implements the trait methods.
 ///
 /// # Input
@@ -63,7 +62,6 @@ macro_rules! impl_numeric_indexed_parallel_iterator_body {
     };
 }
 
-
 /// Generate the code for body of a producer. It implements the trait methods.
 ///
 /// # Input
@@ -71,7 +69,7 @@ macro_rules! impl_numeric_indexed_parallel_iterator_body {
 /// seq_iter: The sequential iterator this producer cast after spliting.
 macro_rules! impl_numeric_producer_body {
     ($seq_iter:ty) => {
-        type Item =  <$seq_iter as Iterator>::Item;
+        type Item = <$seq_iter as Iterator>::Item;
         type IntoIter = $seq_iter;
 
         fn into_iter(self) -> Self::IntoIter {
@@ -92,7 +90,6 @@ macro_rules! impl_numeric_producer_body {
                 },
             )
         }
-        
     };
 }
 
@@ -100,7 +97,7 @@ macro_rules! impl_numeric_producer_body {
 // The methods are the same for the `ReturnOption` and `ReturnUnwrap` variant.
 impl<'a, T> NumIterSingleChunk<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn from_parts(ca: &'a ChunkedArray<T>, offset: usize, len: usize) -> Self {
         let chunk = ca.downcast_chunks()[0];
@@ -113,7 +110,7 @@ where
 
 impl<'a, T> NumIterManyChunk<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn from_parts(ca: &'a ChunkedArray<T>, offset: usize, len: usize) -> Self {
         let chunks = ca.downcast_chunks();
@@ -126,7 +123,6 @@ where
         // Compute right array indexes.
         let idx_right = offset + len;
         let (chunk_idx_right, current_array_idx_right) = ca.right_index_to_chunked_index(idx_right);
-
 
         let (current_array_left_len, current_iter_right) = if chunk_idx_left == chunk_idx_right {
             // If both iterators belong to the same chunk, then, only the left chunk is goin to be used
@@ -146,7 +142,6 @@ where
                     .iter()
                     .copied(),
             );
-
 
             (current_array_left_len, current_iter_right)
         };
@@ -176,14 +171,14 @@ where
 #[derive(Debug, Clone)]
 pub struct NumParIterSingleChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
 }
 
 impl<'a, T> NumParIterSingleChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         Self { ca }
@@ -193,7 +188,7 @@ where
 impl<'a, T> From<NumProducerSingleChunkReturnOption<'a, T>>
     for SomeIterator<NumIterSingleChunk<'a, T>>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn from(prod: NumProducerSingleChunkReturnOption<'a, T>) -> Self {
         SomeIterator(<NumIterSingleChunk<'a, T>>::from_parts(
@@ -207,14 +202,14 @@ where
 // Implement parallel iterator for NumParIterSingleChunkReturnOption.
 impl<'a, T> ParallelIterator for NumParIterSingleChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_parallel_iterator_body!(SomeIterator<NumIterSingleChunk<'a, T>>);
 }
 
 struct NumProducerSingleChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
     offset: usize,
@@ -223,18 +218,17 @@ where
 
 impl<'a, T> IndexedParallelIterator for NumParIterSingleChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_indexed_parallel_iterator_body!(NumProducerSingleChunkReturnOption);
 }
 
 impl<'a, T> Producer for NumProducerSingleChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_producer_body!(SomeIterator<NumIterSingleChunk<'a, T>>);
 }
-
 
 /// Parallel Iterator for chunked arrays with just one chunk.
 /// It DOES perform null check, then, it is appropriated for chunks whose contents can be null.
@@ -243,23 +237,24 @@ where
 #[derive(Debug, Clone)]
 pub struct NumParIterSingleChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
 }
 
 impl<'a, T> NumParIterSingleChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         Self { ca }
     }
 }
 
-impl<'a, T> From<NumProducerSingleChunkNullCheckReturnOption<'a, T>> for NumIterSingleChunkNullCheck<'a, T>
+impl<'a, T> From<NumProducerSingleChunkNullCheckReturnOption<'a, T>>
+    for NumIterSingleChunkNullCheck<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn from(prod: NumProducerSingleChunkNullCheckReturnOption<'a, T>) -> Self {
         let chunks = prod.ca.downcast_chunks();
@@ -278,14 +273,14 @@ where
 // Implement parallel iterator for NumParIterSingleChunkNullCheckReturnOption.
 impl<'a, T> ParallelIterator for NumParIterSingleChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_parallel_iterator_body!(NumIterSingleChunkNullCheck<'a, T>);
 }
 
 struct NumProducerSingleChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
     offset: usize,
@@ -294,14 +289,14 @@ where
 
 impl<'a, T> IndexedParallelIterator for NumParIterSingleChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_indexed_parallel_iterator_body!(NumProducerSingleChunkNullCheckReturnOption);
 }
 
 impl<'a, T> Producer for NumProducerSingleChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_producer_body!(NumIterSingleChunkNullCheck<'a, T>);
 }
@@ -313,14 +308,14 @@ where
 #[derive(Debug, Clone)]
 pub struct NumParIterManyChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
 }
 
 impl<'a, T> NumParIterManyChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         Self { ca }
@@ -329,7 +324,7 @@ where
 
 impl<'a, T> From<NumProducerManyChunkReturnOption<'a, T>> for SomeIterator<NumIterManyChunk<'a, T>>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn from(prod: NumProducerManyChunkReturnOption<'a, T>) -> Self {
         SomeIterator(<NumIterManyChunk<'a, T>>::from_parts(
@@ -343,14 +338,14 @@ where
 // Implement parallel iterator for NumParIterManyChunkReturnOption.
 impl<'a, T> ParallelIterator for NumParIterManyChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_parallel_iterator_body!(SomeIterator<NumIterManyChunk<'a, T>>);
 }
 
 struct NumProducerManyChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
     offset: usize,
@@ -359,14 +354,14 @@ where
 
 impl<'a, T> IndexedParallelIterator for NumParIterManyChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_indexed_parallel_iterator_body!(NumProducerManyChunkReturnOption);
 }
 
 impl<'a, T> Producer for NumProducerManyChunkReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_producer_body!(SomeIterator<NumIterManyChunk<'a, T>>);
 }
@@ -378,14 +373,14 @@ where
 #[derive(Debug, Clone)]
 pub struct NumParIterManyChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
 }
 
 impl<'a, T> NumParIterManyChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         Self { ca }
@@ -395,7 +390,7 @@ where
 impl<'a, T> From<NumProducerManyChunkNullCheckReturnOption<'a, T>>
     for NumIterManyChunkNullCheck<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn from(prod: NumProducerManyChunkNullCheckReturnOption<'a, T>) -> Self {
         let ca = prod.ca;
@@ -459,14 +454,14 @@ where
 // Implement parallel iterator for NumParIterManyChunkNullCheckReturnOption.
 impl<'a, T> ParallelIterator for NumParIterManyChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_parallel_iterator_body!(NumIterManyChunkNullCheck<'a, T>);
 }
 
 struct NumProducerManyChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
     offset: usize,
@@ -475,14 +470,14 @@ where
 
 impl<'a, T> IndexedParallelIterator for NumParIterManyChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_indexed_parallel_iterator_body!(NumProducerManyChunkNullCheckReturnOption);
 }
 
 impl<'a, T> Producer for NumProducerManyChunkNullCheckReturnOption<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_producer_body!(NumIterManyChunkNullCheck<'a, T>);
 }
@@ -495,14 +490,14 @@ where
 #[derive(Debug, Clone)]
 pub struct NumParIterSingleChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
 }
 
 impl<'a, T> NumParIterSingleChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         Self { ca }
@@ -511,7 +506,7 @@ where
 
 impl<'a, T> From<NumProducerSingleChunkReturnUnwrapped<'a, T>> for NumIterSingleChunk<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn from(prod: NumProducerSingleChunkReturnUnwrapped<'a, T>) -> Self {
         Self::from_parts(prod.ca, prod.offset, prod.len)
@@ -521,14 +516,14 @@ where
 // Implement parallel iterator for NumParIterSingleChunkReturnUnwrapped.
 impl<'a, T> ParallelIterator for NumParIterSingleChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_parallel_iterator_body!(NumIterSingleChunk<'a, T>);
 }
 
 struct NumProducerSingleChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
     offset: usize,
@@ -537,14 +532,14 @@ where
 
 impl<'a, T> IndexedParallelIterator for NumParIterSingleChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_indexed_parallel_iterator_body!(NumProducerSingleChunkReturnUnwrapped);
 }
 
 impl<'a, T> Producer for NumProducerSingleChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_producer_body!(NumIterSingleChunk<'a, T>);
 }
@@ -557,14 +552,14 @@ where
 #[derive(Debug, Clone)]
 pub struct NumParIterManyChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
 }
 
 impl<'a, T> NumParIterManyChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         Self { ca }
@@ -573,7 +568,7 @@ where
 
 impl<'a, T> From<NumProducerManyChunkReturnUnwrapped<'a, T>> for NumIterManyChunk<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn from(prod: NumProducerManyChunkReturnUnwrapped<'a, T>) -> Self {
         Self::from_parts(prod.ca, prod.offset, prod.len)
@@ -583,14 +578,14 @@ where
 // Implement parallel iterator for NumParIterManyChunkReturnUnwrapped.
 impl<'a, T> ParallelIterator for NumParIterManyChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_parallel_iterator_body!(NumIterManyChunk<'a, T>);
 }
 
 struct NumProducerManyChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     ca: &'a ChunkedArray<T>,
     offset: usize,
@@ -599,14 +594,14 @@ where
 
 impl<'a, T> IndexedParallelIterator for NumParIterManyChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_indexed_parallel_iterator_body!(NumProducerManyChunkReturnUnwrapped);
 }
 
 impl<'a, T> Producer for NumProducerManyChunkReturnUnwrapped<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     impl_numeric_producer_body!(NumIterManyChunk<'a, T>);
 }
@@ -614,9 +609,9 @@ where
 /// Static dispatching structure to allow static polymorphism of chunked parallel iterators.
 ///
 /// All the iterators of the dispatcher returns `Option<PolarsNumericType::Native>`.
-pub enum NumParIterDispatcher<'a, T> 
+pub enum NumParIterDispatcher<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     SingleChunk(NumParIterSingleChunkReturnOption<'a, T>),
     SingleChunkNullCheck(NumParIterSingleChunkNullCheckReturnOption<'a, T>),
@@ -631,9 +626,9 @@ where
 /// - If `ChunkedArray<T>` has only a chunk and does have null values, it uses `NumParIterSingleChunkNullCheckReturnOption`.
 /// - If `ChunkedArray<T>` has many chunks and has no null values, it uses `NumParIterManyChunkReturnOption`.
 /// - If `ChunkedArray<T>` has many chunks and does have null values, it uses `NumParIterManyChunkNullCheckReturnOption`.
-impl<'a, T> IntoParallelIterator for &'a ChunkedArray<T> 
+impl<'a, T> IntoParallelIterator for &'a ChunkedArray<T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     type Iter = NumParIterDispatcher<'a, T>;
     type Item = Option<T::Native>;
@@ -643,9 +638,7 @@ where
         match chunks.len() {
             1 => {
                 if self.null_count() == 0 {
-                    NumParIterDispatcher::SingleChunk(
-                        NumParIterSingleChunkReturnOption::new(self),
-                    )
+                    NumParIterDispatcher::SingleChunk(NumParIterSingleChunkReturnOption::new(self))
                 } else {
                     NumParIterDispatcher::SingleChunkNullCheck(
                         NumParIterSingleChunkNullCheckReturnOption::new(self),
@@ -654,9 +647,7 @@ where
             }
             _ => {
                 if self.null_count() == 0 {
-                    NumParIterDispatcher::ManyChunk(
-                        NumParIterManyChunkReturnOption::new(self),
-                    )
+                    NumParIterDispatcher::ManyChunk(NumParIterManyChunkReturnOption::new(self))
                 } else {
                     NumParIterDispatcher::ManyChunkNullCheck(
                         NumParIterManyChunkNullCheckReturnOption::new(self),
@@ -667,9 +658,9 @@ where
     }
 }
 
-impl<'a, T> ParallelIterator for NumParIterDispatcher<'a, T> 
+impl<'a, T> ParallelIterator for NumParIterDispatcher<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     type Item = Option<T::Native>;
 
@@ -695,9 +686,9 @@ where
     }
 }
 
-impl<'a, T> IndexedParallelIterator for NumParIterDispatcher<'a, T> 
+impl<'a, T> IndexedParallelIterator for NumParIterDispatcher<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn len(&self) -> usize {
         match self {
@@ -736,11 +727,11 @@ where
 /// Static dispatching structure to allow static polymorphism of non-nullable chunked parallel iterators.
 ///
 /// All the iterators of the dispatcher returns `PolarsNumericType::Native`, as there are no nulls in the chunked array.
-pub enum NumNoNullParIterDispatcher<'a, T> 
+pub enum NumNoNullParIterDispatcher<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
-    SingleChunk(NumParIterSingleChunkReturnUnwrapped<'a,T>),
+    SingleChunk(NumParIterSingleChunkReturnUnwrapped<'a, T>),
     ManyChunk(NumParIterManyChunkReturnUnwrapped<'a, T>),
 }
 
@@ -751,7 +742,7 @@ where
 /// - If `ChunkeArray<T>` has many chunks, it uses `NumParIterManyChunkReturnUnwrapped`.
 impl<'a, T> IntoParallelIterator for NoNull<&'a ChunkedArray<T>>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     type Iter = NumNoNullParIterDispatcher<'a, T>;
     type Item = T::Native;
@@ -763,16 +754,14 @@ where
             1 => NumNoNullParIterDispatcher::SingleChunk(
                 NumParIterSingleChunkReturnUnwrapped::new(ca),
             ),
-            _ => NumNoNullParIterDispatcher::ManyChunk(
-                NumParIterManyChunkReturnUnwrapped::new(ca),
-            ),
+            _ => NumNoNullParIterDispatcher::ManyChunk(NumParIterManyChunkReturnUnwrapped::new(ca)),
         }
     }
 }
 
-impl<'a, T> ParallelIterator for NumNoNullParIterDispatcher<'a, T> 
+impl<'a, T> ParallelIterator for NumNoNullParIterDispatcher<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     type Item = T::Native;
 
@@ -794,9 +783,9 @@ where
     }
 }
 
-impl<'a, T> IndexedParallelIterator for NumNoNullParIterDispatcher<'a, T> 
+impl<'a, T> IndexedParallelIterator for NumNoNullParIterDispatcher<'a, T>
 where
-    T: PolarsNumericType + Send + Sync
+    T: PolarsNumericType + Send + Sync,
 {
     fn len(&self) -> usize {
         match self {
@@ -826,7 +815,6 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -837,9 +825,7 @@ mod test {
 
     /// Generates a `Vec` of `u32`, where every position is the `u32` representation of its index.
     fn generate_uint32_vec(size: usize) -> Vec<u32> {
-        (0..size)
-            .map(|n| n as u32)
-            .collect()
+        (0..size).map(|n| n as u32).collect()
     }
 
     /// Generate a `Vec` of `Option<u32>`, where even indexes are `Some(idx)` and odd indexes are `None`.
@@ -982,50 +968,78 @@ mod test {
     // Single Chunk Null Check Parallel Iterator Tests.
     impl_par_iter_return_option_map_test!(
         uint32_par_iter_single_chunk_null_check_return_option_map,
-        { UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
+        {
+            UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     impl_par_iter_return_option_filter_test!(
         uint32_par_iter_single_chunk_null_check_return_option_filter,
-        { UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
+        {
+            UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     impl_par_iter_return_option_fold_test!(
         uint32_par_iter_single_chunk_null_check_return_option_fold,
-        { UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
+        {
+            UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            )
+        }
     );
 
     // Many Chunk Parallel Iterator Tests.
     impl_par_iter_return_option_map_test!(uint32_par_iter_many_chunk_return_option_map, {
-        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     impl_par_iter_return_option_filter_test!(uint32_par_iter_many_chunk_return_option_filter, {
-        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     impl_par_iter_return_option_fold_test!(uint32_par_iter_many_chunk_return_option_fold, {
-        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     // Many Chunk Null Check Parallel Iterator Tests.
-    impl_par_iter_return_option_map_test!(uint32_par_iter_many_chunk_null_check_return_option_map, {
-        let mut a =
-            UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            UInt32Chunked::new_from_opt_slice("a", &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        a.append(&a_b);
-        a
-    });
+    impl_par_iter_return_option_map_test!(
+        uint32_par_iter_many_chunk_null_check_return_option_map,
+        {
+            let mut a = UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            );
+            let a_b = UInt32Chunked::new_from_opt_slice(
+                "a",
+                &generate_opt_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE),
+            );
+            a.append(&a_b);
+            a
+        }
+    );
 
     impl_par_iter_return_option_filter_test!(
         uint32_par_iter_many_chunk_null_check_return_option_filter,
@@ -1080,10 +1094,7 @@ mod test {
                     .collect::<Vec<_>>();
 
                 // Perform a sequetial maping.
-                let seq_result = a
-                    .into_no_null_iter()
-                    .map(|u| u + 10)
-                    .collect::<Vec<_>>();
+                let seq_result = a.into_no_null_iter().map(|u| u + 10).collect::<Vec<_>>();
 
                 // Check sequetial and parallel results are equal.
                 assert_eq!(par_result, seq_result);
@@ -1144,9 +1155,7 @@ mod test {
                     .reduce(|| 0u64, |left, right| left + right);
 
                 // Perform a sequential sum of length.
-                let seq_result = a
-                    .into_no_null_iter()
-                    .fold(0u64, |acc, u| acc + u as u64);
+                let seq_result = a.into_no_null_iter().fold(0u64, |acc, u| acc + u as u64);
 
                 // Check sequetial and parallel results are equal.
                 assert_eq!(par_result, seq_result);
@@ -1164,14 +1173,17 @@ mod test {
         { UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
     );
 
-    impl_par_iter_return_unwrapped_fold_test!(uint32_par_iter_single_chunk_return_unwrapped_fold, {
-        UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE))
-    });
+    impl_par_iter_return_unwrapped_fold_test!(
+        uint32_par_iter_single_chunk_return_unwrapped_fold,
+        { UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE)) }
+    );
 
     // Many Chunk Return Unwrapped
     impl_par_iter_return_unwrapped_map_test!(uint32_par_iter_many_chunk_return_unwrapped_map, {
-        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
@@ -1181,15 +1193,18 @@ mod test {
         {
             let mut a =
                 UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-            let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+            let a_b =
+                UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
             a.append(&a_b);
             a
         }
     );
 
     impl_par_iter_return_unwrapped_fold_test!(uint32_par_iter_many_chunk_return_unwrapped_fold, {
-        let mut a = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b = UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b =
+            UInt32Chunked::new_from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });

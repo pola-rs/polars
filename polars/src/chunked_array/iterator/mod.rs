@@ -138,7 +138,11 @@ where
         let idx_left = 0;
         let idx_right = arr.len();
 
-        NumIterSingleChunkNullCheck { arr, idx_left, idx_right }
+        NumIterSingleChunkNullCheck {
+            arr,
+            idx_left,
+            idx_right,
+        }
     }
 
     fn return_opt_val(&self, index: usize) -> Option<T::Native> {
@@ -392,7 +396,6 @@ where
     }
 
     fn set_current_iter_right(&mut self) {
-
         if self.chunk_idx_left == self.chunk_idx_right {
             // If the left and the right chunk are the same iterator, then, use the
             // the same iterator. The left iterator is kept to maintain the left index
@@ -525,7 +528,10 @@ where
         self.idx_right -= 1;
         self.current_array_idx_right -= 1;
 
-        if self.current_data_right.is_null(self.current_array_idx_right) {
+        if self
+            .current_data_right
+            .is_null(self.current_array_idx_right)
+        {
             Some(None)
         } else {
             opt_val.map(Some)
