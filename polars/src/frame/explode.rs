@@ -1,57 +1,43 @@
 use crate::frame::select::Selection;
 use crate::prelude::*;
+use arrow::array::{Array, ListArray};
 use std::collections::VecDeque;
+use std::convert::TryFrom;
+
+/// Convert Arrow array offsets to indexes of the original list
+fn offsets_to_indexes(offsets: &[i32], capacity: usize) -> Vec<usize> {
+    let mut idx = Vec::with_capacity(capacity);
+
+    let mut count = 0;
+    let mut last_idx = 0;
+    for &offset in offsets.iter().skip(1) {
+        while count < offset {
+            count += 1;
+            idx.push(last_idx)
+        }
+        last_idx += 1;
+    }
+    for _ in 0..(capacity - count as usize) {
+        idx.push(last_idx);
+    }
+    idx
+}
 
 impl ListChunked {
-    pub fn explode(&self) -> Result<(Series, Vec<usize>)> {
-        macro_rules! impl_with_builder {
-            ($self:expr, $builder:expr, $dtype:ty) => {{
-                let mut row_idx = Vec::with_capacity($self.len() * 10);
+    pub fn explode(&self) -> Result<(Series, &[i32])> {
+        // A list array's memory layout is actually already 'exploded', so we can just take the values array
+        // of the list. And we also return a slice of the offsets. This slice can be used to find the old
+        // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
+        let ca = self.rechunk(Some(&[1])).unwrap();
+        let listarr: &ListArray = ca.downcast_chunks()[0];
+        let list_data = listarr.data();
+        let values = listarr.values();
+        let offset_ptr = list_data.buffers()[0].raw_data() as *const i32;
+        // offsets in the list array. These indicate where a new list starts
+        let offsets = unsafe { std::slice::from_raw_parts(offset_ptr, self.len()) };
 
-                for i in 0..$self.len() {
-                    match $self.get(i) {
-                        Some(series) => {
-                            let ca = series.unpack::<$dtype>()?;
-                            if ca.null_count() == 0 {
-                                ca.into_no_null_iter().for_each(|v| {
-                                    $builder.append_value(v);
-                                    row_idx.push(i)
-                                })
-                            } else {
-                                ca.into_iter().for_each(|opt_v| {
-                                    $builder.append_option(opt_v);
-                                    row_idx.push(i)
-                                })
-                            }
-                        }
-                        None => {
-                            $builder.append_null();
-                            row_idx.push(i)
-                        }
-                    }
-                }
-                let exploded = $builder.finish().into_series();
-                Ok((exploded, row_idx))
-            }};
-        }
-
-        macro_rules! impl_primitive {
-            ($dtype:ty, $self:expr) => {{
-                // the 10 is an avg length of 10 elements in every Series.
-                // A better alternative?
-                let mut builder =
-                    PrimitiveChunkedBuilder::<$dtype>::new($self.name(), $self.len() * 10);
-                impl_with_builder!(self, builder, $dtype)
-            }};
-        }
-        macro_rules! impl_utf8 {
-            ($self:expr) => {{
-                let mut builder = Utf8ChunkedBuilder::new($self.name(), $self.len() * 10);
-                impl_with_builder!(self, builder, Utf8Type)
-            }};
-        }
-
-        match_arrow_data_type_apply_macro!(*self.get_inner_dtype(), impl_primitive, impl_utf8, self)
+        let s = Series::try_from((self.name(), values)).unwrap();
+        Ok((s, offsets))
     }
 }
 
@@ -116,16 +102,21 @@ impl DataFrame {
     /// ```
     pub fn explode<'a, J, S: Selection<'a, J>>(&self, columns: S) -> Result<DataFrame> {
         let columns = self.select_series(columns)?;
+
+        // first remove all the exploded columns
         let mut df = self.clone();
+        for s in &columns {
+            df = df.drop(s.name())?;
+        }
 
         for (i, s) in columns.iter().enumerate() {
             if let Ok(ca) = s.list() {
-                let (exploded, row_idx) = ca.explode()?;
+                let (exploded, offsets) = ca.explode()?;
                 let col_idx = self.name_to_idx(s.name())?;
-                df = df.drop(s.name())?;
 
                 // expand all the other columns based the exploded first column
                 if i == 0 {
+                    let row_idx = offsets_to_indexes(offsets, exploded.len());
                     df = unsafe { df.take_iter_unchecked(row_idx.into_iter(), None) };
                 }
                 if exploded.len() == df.height() {
