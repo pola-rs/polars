@@ -353,6 +353,11 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn take_every(&self, n: usize) -> Self {
+        let s = self.series.take_every(n);
+        s.into()
+    }
+
     pub fn series_equal(&self, other: &PySeries, null_equal: bool) -> bool {
         if null_equal {
             self.series.series_equal_missing(&other.series)

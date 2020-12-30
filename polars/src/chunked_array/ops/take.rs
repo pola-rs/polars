@@ -915,6 +915,57 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
     }
 }
 
+impl<T> ChunkTakeEvery<T> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    fn take_every(&self, n: usize) -> ChunkedArray<T> {
+        if self.null_count() == 0 {
+            let a: Xob<_> = self.into_no_null_iter().step_by(n).collect();
+            a.into_inner()
+        } else {
+            self.into_iter().step_by(n).collect()
+        }
+    }
+}
+
+impl ChunkTakeEvery<BooleanType> for BooleanChunked {
+    fn take_every(&self, n: usize) -> BooleanChunked {
+        if self.null_count() == 0 {
+            let a: Xob<_> = self.into_no_null_iter().step_by(n).collect();
+            a.into_inner()
+        } else {
+            self.into_iter().step_by(n).collect()
+        }
+    }
+}
+
+impl ChunkTakeEvery<Utf8Type> for Utf8Chunked {
+    fn take_every(&self, n: usize) -> Utf8Chunked {
+        if self.null_count() == 0 {
+            self.into_no_null_iter().step_by(n).collect()
+        } else {
+            self.into_iter().step_by(n).collect()
+        }
+    }
+}
+
+impl ChunkTakeEvery<ListType> for ListChunked {
+    fn take_every(&self, n: usize) -> ListChunked {
+        if self.null_count() == 0 {
+            self.into_no_null_iter().step_by(n).collect()
+        } else {
+            self.into_iter().step_by(n).collect()
+        }
+    }
+}
+#[cfg(feature = "object")]
+impl<T> ChunkTakeEvery<ObjectType<T>> for ObjectChunked<T> {
+    fn take_every(&self, _n: usize) -> ObjectChunked<T> {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

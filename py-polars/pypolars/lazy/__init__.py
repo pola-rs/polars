@@ -1061,6 +1061,24 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.explode())
 
+    def take_every(self, n: int) -> "Expr":
+        """
+        Take every nth value in the Series and return as a new Series
+        """
+        return wrap_expr(self._pyexpr.take_every(n))
+
+    def head(self, n: "Optional[int]" = None):
+        """
+        Take the first n values
+        """
+        return wrap_expr(self._pyexpr.head(n))
+
+    def tail(self, n: "Optional[int]" = None):
+        """
+        Take the last n values
+        """
+        return wrap_expr(self._pyexpr.tail(n))
+
 
 def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":
     if isinstance(expr, (int, float, str)):
