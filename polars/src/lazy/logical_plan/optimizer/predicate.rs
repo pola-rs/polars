@@ -41,6 +41,7 @@ pub struct PredicatePushDown {
     binary_dummy: Expr,
     is_null_dummy: Expr,
     is_not_null_dummy: Expr,
+    explode_dummy: Expr,
 }
 
 impl Default for PredicatePushDown {
@@ -51,7 +52,20 @@ impl Default for PredicatePushDown {
             binary_dummy: lit("_").eq(lit("_")),
             is_null_dummy: lit("_").is_null(),
             is_not_null_dummy: lit("_").is_null(),
+            explode_dummy: Expr::Explode(Box::new(Expr::Wildcard)),
         }
+    }
+}
+
+fn roots_to_key(roots: &[Arc<String>]) -> Arc<String> {
+    if roots.len() == 1 {
+        roots[0].clone()
+    } else {
+        let mut new = String::with_capacity(32 * roots.len());
+        for name in roots {
+            new.push_str(name);
+        }
+        Arc::new(new)
     }
 }
 
@@ -116,20 +130,12 @@ impl PredicatePushDown {
                 Ok(Slice { input, offset, len })
             }
             Selection { predicate, input } => {
-                match expr_to_root_column_name(&predicate) {
-                    Ok(name) => insert_and_combine_predicate(&mut acc_predicates, name, predicate),
-                    Err(e) => {
-                        if let Expr::BinaryExpr { .. } = &predicate {
-                            let name = Arc::new(format!("{:?}", &predicate));
-                            insert_and_combine_predicate(&mut acc_predicates, name, predicate);
-                        } else {
-                            panic!(format!("{:?}", e))
-                        }
-                    }
-                }
+                let name = roots_to_key(&expr_to_root_column_names(&predicate));
+                insert_and_combine_predicate(&mut acc_predicates, name, predicate);
                 self.push_down(*input, acc_predicates)
             }
             Projection { expr, input, .. } => {
+                let mut local_predicates = Vec::with_capacity(acc_predicates.len());
                 // maybe update predicate name if a projection is an alias
                 for e in &expr {
                     // check if there is an alias
@@ -147,12 +153,37 @@ impl PredicatePushDown {
                             );
                         }
                     }
+
+                    // remove filters based on the exploded column. Aliased predicates
+                    if has_expr(e, &self.explode_dummy) {
+                        let columns = expr_to_root_column_names(e);
+                        assert_eq!(columns.len(), 1);
+
+                        let mut remove_keys = Vec::with_capacity(acc_predicates.len());
+
+                        for (key, predicate) in &acc_predicates {
+                            let root_names = expr_to_root_column_names(predicate);
+                            for name in root_names {
+                                if columns.contains(&name) {
+                                    remove_keys.push(key.clone());
+                                    continue;
+                                }
+                            }
+                        }
+                        for key in remove_keys {
+                            let pred = acc_predicates.remove(&*key).unwrap();
+                            local_predicates.push(pred)
+                        }
+                    }
                 }
-                Ok(
-                    LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?)
-                        .project(expr)
-                        .build(),
-                )
+
+                let mut builder =
+                    LogicalPlanBuilder::from(self.push_down(*input, acc_predicates)?).project(expr);
+                if !local_predicates.is_empty() {
+                    let predicate = combine_predicates(local_predicates.into_iter());
+                    builder = builder.filter(predicate)
+                }
+                Ok(builder.build())
             }
             LocalProjection { expr, input, .. } => {
                 let input = self.push_down(*input, acc_predicates)?;
@@ -245,8 +276,34 @@ impl PredicatePushDown {
                 })
             }
             Explode { input, columns } => {
+                // we remove predicates that are done in one of the exploded columns.
+
+                let columns_set: HashSet<_, RandomState> = columns.iter().collect();
+                let mut remove_keys = Vec::with_capacity(acc_predicates.len());
+
+                for (key, predicate) in &acc_predicates {
+                    let root_names = expr_to_root_column_names(predicate);
+                    for name in root_names {
+                        if columns_set.contains(&*name) {
+                            remove_keys.push(key.clone());
+                            continue;
+                        }
+                    }
+                }
+                let mut local_predicates = Vec::with_capacity(remove_keys.len());
+                for key in remove_keys {
+                    let pred = acc_predicates.remove(&*key).unwrap();
+                    local_predicates.push(pred)
+                }
+
                 let input = Box::new(self.push_down(*input, acc_predicates)?);
-                Ok(Explode { input, columns })
+                let lp = Explode { input, columns };
+                let mut builder = LogicalPlanBuilder::from(lp);
+                if !local_predicates.is_empty() {
+                    let predicate = combine_predicates(local_predicates.into_iter());
+                    builder = builder.filter(predicate)
+                }
+                Ok(builder.build())
             }
             Cache { input } => {
                 let input = Box::new(self.push_down(*input, acc_predicates)?);
