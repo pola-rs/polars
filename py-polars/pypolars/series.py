@@ -340,9 +340,11 @@ class Series:
         # slice
         if type(item) == slice:
             start, stop, stride = item.indices(self.len())
+            out = self.slice(start, stop - start)
             if stride != 1:
-                return NotImplemented
-            return self.slice(start, stop - start)
+                return out.take_every(stride)
+            else:
+                return out
         f = get_ffi_func("get_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -534,6 +536,12 @@ class Series:
             Length of the tail
         """
         return Series._from_pyseries(self._s.tail(length))
+
+    def take_every(self, n: int) -> "Series":
+        """
+        Take every nth value in the Series and return as new Series.
+        """
+        return wrap_s(self._s.take_every(n))
 
     def sort(self, in_place: bool = False, reverse: bool = False) -> Optional["Series"]:
         """

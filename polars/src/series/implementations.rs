@@ -506,6 +506,10 @@ macro_rules! impl_dyn_series {
                 ChunkTake::take(&self.0, iter, capacity).into_series()
             }
 
+            fn take_every(&self, n: usize) -> Series {
+                self.0.take_every(n).into_series()
+            }
+
             unsafe fn take_iter_unchecked(
                 &self,
                 iter: &mut dyn Iterator<Item = usize>,
@@ -962,6 +966,10 @@ where
 
     fn tail(&self, length: Option<usize>) -> Series {
         ObjectChunked::tail(&self.0, length).into_series()
+    }
+
+    fn take_every(&self, n: usize) -> Series {
+        self.0.take_every(n).into_series()
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Series {

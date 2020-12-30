@@ -22,6 +22,10 @@ pub(crate) mod unique;
 pub(crate) mod window;
 pub(crate) mod zip;
 
+pub trait ChunkTakeEvery<T> {
+    fn take_every(&self, n: usize) -> ChunkedArray<T>;
+}
+
 pub trait ChunkExplode {
     fn explode(&self) -> Result<Series> {
         self.explode_and_offsets().map(|t| t.0)

@@ -165,6 +165,25 @@ impl PyExpr {
         self.clone().inner.explode().into()
     }
 
+    pub fn take_every(&self, n: usize) -> PyExpr {
+        self.clone()
+            .inner
+            .apply(move |s: Series| Ok(s.take_every(n)), None)
+            .into()
+    }
+    pub fn tail(&self, n: Option<usize>) -> PyExpr {
+        self.clone()
+            .inner
+            .apply(move |s: Series| Ok(s.tail(n)), None)
+            .into()
+    }
+    pub fn head(&self, n: Option<usize>) -> PyExpr {
+        self.clone()
+            .inner
+            .apply(move |s: Series| Ok(s.head(n)), None)
+            .into()
+    }
+
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }
