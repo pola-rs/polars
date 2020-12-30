@@ -1,43 +1,13 @@
+use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use arrow::array::{Array, ListArray};
 use std::collections::VecDeque;
-use std::convert::TryFrom;
 
-/// Convert Arrow array offsets to indexes of the original list
-fn offsets_to_indexes(offsets: &[i32], capacity: usize) -> Vec<usize> {
-    let mut idx = Vec::with_capacity(capacity);
-
-    let mut count = 0;
-    let mut last_idx = 0;
-    for &offset in offsets.iter().skip(1) {
-        while count < offset {
-            count += 1;
-            idx.push(last_idx)
-        }
-        last_idx += 1;
-    }
-    for _ in 0..(capacity - count as usize) {
-        idx.push(last_idx);
-    }
-    idx
-}
-
-impl ListChunked {
-    pub fn explode(&self) -> Result<(Series, &[i32])> {
-        // A list array's memory layout is actually already 'exploded', so we can just take the values array
-        // of the list. And we also return a slice of the offsets. This slice can be used to find the old
-        // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
-        let ca = self.rechunk(Some(&[1])).unwrap();
-        let listarr: &ListArray = ca.downcast_chunks()[0];
-        let list_data = listarr.data();
-        let values = listarr.values();
-        let offset_ptr = list_data.buffers()[0].raw_data() as *const i32;
-        // offsets in the list array. These indicate where a new list starts
-        let offsets = unsafe { std::slice::from_raw_parts(offset_ptr, self.len()) };
-
-        let s = Series::try_from((self.name(), values)).unwrap();
-        Ok((s, offsets))
+fn get_exploded(series: &Series) -> Result<(Series, &[i32])> {
+    match series.dtype() {
+        ArrowDataType::List(_) => series.list().unwrap().explode_and_offsets(),
+        ArrowDataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
+        _ => Err(PolarsError::InvalidOperation("".into())),
     }
 }
 
@@ -110,8 +80,7 @@ impl DataFrame {
         }
 
         for (i, s) in columns.iter().enumerate() {
-            if let Ok(ca) = s.list() {
-                let (exploded, offsets) = ca.explode()?;
+            if let Ok((exploded, offsets)) = get_exploded(s) {
                 let col_idx = self.name_to_idx(s.name())?;
 
                 // expand all the other columns based the exploded first column
@@ -237,11 +206,29 @@ mod test {
 
         let s0 = Series::new("B", [1, 2, 3]);
         let s1 = Series::new("C", [1, 1, 1]);
-        let df = DataFrame::new(vec![list, s0, s1]).unwrap();
+        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
         let exploded = df.explode("foo").unwrap();
         println!("{:?}", df);
         println!("{:?}", exploded);
         assert_eq!(exploded.shape(), (9, 3));
+        assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(8), Some(1));
+        assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(8), Some(3));
+        assert_eq!(
+            exploded.column("foo").unwrap().i8().unwrap().get(8),
+            Some(2)
+        );
+
+        let str = Series::new("foo", &["abc", "de", "fg"]);
+        let df = DataFrame::new(vec![str, s0, s1]).unwrap();
+        let exploded = df.explode("foo").unwrap();
+        println!("{:?}", df);
+        println!("{:?}", exploded);
+        assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(6), Some(1));
+        assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(6), Some(3));
+        assert_eq!(
+            exploded.column("foo").unwrap().utf8().unwrap().get(6),
+            Some("g")
+        );
     }
 
     #[test]
