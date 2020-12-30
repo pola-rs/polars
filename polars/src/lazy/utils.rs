@@ -82,6 +82,13 @@ pub(crate) fn has_aexpr(
                 has_aexpr(*node, arena, matching_expr, follow_agg)
             }
         }
+        AExpr::Explode(node) => {
+            if matches!(matching_expr, AExpr::Explode(_)) {
+                true
+            } else {
+                has_aexpr(*node, arena, matching_expr, follow_agg)
+            }
+        }
         AExpr::Reverse(node) => {
             if matches!(matching_expr, AExpr::Reverse(_)) {
                 true
@@ -318,6 +325,13 @@ pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
         }
         Expr::Unique(e) => {
             if matches!(matching_expr, Expr::Unique(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
+        Expr::Explode(e) => {
+            if matches!(matching_expr, Expr::Explode(_)) {
                 true
             } else {
                 has_expr(e, matching_expr)
@@ -599,6 +613,7 @@ pub(crate) fn aexpr_to_root_nodes(node: Node, arena: &Arena<AExpr>) -> Vec<Node>
         AExpr::Duplicated(expr) => aexpr_to_root_nodes(*expr, arena),
         AExpr::Unique(expr) => aexpr_to_root_nodes(*expr, arena),
         AExpr::Reverse(expr) => aexpr_to_root_nodes(*expr, arena),
+        AExpr::Explode(expr) => aexpr_to_root_nodes(*expr, arena),
         AExpr::Alias(expr, _) => aexpr_to_root_nodes(*expr, arena),
         AExpr::Not(expr) => aexpr_to_root_nodes(*expr, arena),
         AExpr::IsNull(expr) => aexpr_to_root_nodes(*expr, arena),
@@ -667,6 +682,7 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
         Expr::Duplicated(expr) => expr_to_root_column_exprs(expr),
         Expr::Unique(expr) => expr_to_root_column_exprs(expr),
         Expr::Reverse(expr) => expr_to_root_column_exprs(expr),
+        Expr::Explode(expr) => expr_to_root_column_exprs(expr),
         Expr::Alias(expr, _) => expr_to_root_column_exprs(expr),
         Expr::Not(expr) => expr_to_root_column_exprs(expr),
         Expr::IsNull(expr) => expr_to_root_column_exprs(expr),

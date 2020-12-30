@@ -609,6 +609,11 @@ impl DefaultPlanner {
                 let function = Arc::new(move |s: Series| s.is_unique().map(|ca| ca.into_series()));
                 Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
+            Expr::Explode(expr) => {
+                let input = self.create_physical_expr(*expr, ctxt)?;
+                let function = Arc::new(move |s: Series| s.explode());
+                Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
+            }
             Expr::Wildcard => panic!("should be no wildcard at this point"),
         }
     }
