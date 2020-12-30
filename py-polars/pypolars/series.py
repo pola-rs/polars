@@ -648,6 +648,16 @@ class Series:
         """
         return wrap_s(self._s.is_duplicated())
 
+    def explode(self) -> "Series":
+        """
+        Explode a list or utf8 Series. This means that every item is expanded to a new row.
+
+        Returns
+        -------
+        Exploded Series of same dtype
+        """
+        return wrap_s(self._s.explode())
+
     def series_equal(self, other: "Series", null_equal: bool = False) -> bool:
         """
         Check if series equal with another Series.

@@ -1031,6 +1031,16 @@ class Expr:
 
         return self.apply(wrap_f)
 
+    def explode(self):
+        """
+        Explode a list or utf8 Series. This means that every item is expanded to a new row.
+
+        Returns
+        -------
+        Exploded Series of same dtype
+        """
+        return wrap_expr(self._pyexpr.explode())
+
 
 def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":
     if isinstance(expr, (int, float, str)):

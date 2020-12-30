@@ -117,6 +117,7 @@ pub enum Expr {
     Reverse(Box<Expr>),
     Duplicated(Box<Expr>),
     Unique(Box<Expr>),
+    Explode(Box<Expr>),
     /// See postgres window functions
     Window {
         /// Also has the input. i.e. avg("foo")
@@ -152,6 +153,7 @@ impl PartialEq for Expr {
             Expr::Duplicated(left) => impl_partial_eq!(Duplicated, left, other),
             Expr::Unique(left) => impl_partial_eq!(Unique, left, other),
             Expr::Reverse(left) => impl_partial_eq!(Reverse, left, other),
+            Expr::Explode(left) => impl_partial_eq!(Explode, left, other),
             Expr::Agg(agg) => {
                 if let Expr::Agg(other) = other {
                     match agg {
@@ -297,6 +299,7 @@ impl Expr {
                 Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
             }
             Reverse(expr) => expr.to_field(&schema, ctxt),
+            Explode(expr) => expr.to_field(&schema, ctxt),
             Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema, ctxt)?, true)),
             Column(name) => {
                 let field = schema.field_with_name(name).map(|f| f.clone())?;
@@ -463,6 +466,7 @@ impl fmt::Debug for Expr {
                 function, partition_by, order_by
             ),
             Unique(expr) => write!(f, "UNIQUE {:?}", expr),
+            Explode(expr) => write!(f, "EXPLODE {:?}", expr),
             Duplicated(expr) => write!(f, "DUPLICATED {:?}", expr),
             Reverse(expr) => write!(f, "REVERSE {:?}", expr),
             Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
@@ -702,6 +706,11 @@ impl Expr {
     /// Aggregate the group to a Series
     pub fn list(self) -> Self {
         AggExpr::List(Box::new(self)).into()
+    }
+
+    /// Explode the utf8/ list column
+    pub fn explode(self) -> Self {
+        Expr::Explode(Box::new(self))
     }
 
     /// Compute the quantile per group.
