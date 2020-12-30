@@ -160,6 +160,11 @@ impl PyExpr {
     pub fn is_unique(&self) -> PyExpr {
         self.clone().inner.is_unique().into()
     }
+
+    pub fn explode(&self) -> PyExpr {
+        self.clone().inner.explode().into()
+    }
+
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }

@@ -538,6 +538,9 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
         Expr::Reverse(expr) => {
             Expr::Reverse(Box::new(replace_wildcard_with_column(*expr, column_name)))
         }
+        Expr::Explode(expr) => {
+            Expr::Explode(Box::new(replace_wildcard_with_column(*expr, column_name)))
+        }
         Expr::Ternary {
             predicate,
             truthy,

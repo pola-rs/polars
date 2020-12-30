@@ -166,6 +166,9 @@ impl StackOptimizer {
                         AExpr::Reverse(expr) => {
                             exprs.push((*expr, current_lp_node));
                         }
+                        AExpr::Explode(expr) => {
+                            exprs.push((*expr, current_lp_node));
+                        }
                         AExpr::BinaryExpr { left, right, .. } => {
                             exprs.push((*left, current_lp_node));
                             exprs.push((*right, current_lp_node));
@@ -291,6 +294,7 @@ pub enum AExpr {
     Unique(Node),
     Duplicated(Node),
     Reverse(Node),
+    Explode(Node),
     Alias(Node, Arc<String>),
     Column(Arc<String>),
     Literal(ScalarValue),
@@ -388,6 +392,7 @@ impl AExpr {
                 Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
             }
             Reverse(expr) => arena.get(*expr).to_field(&schema, ctxt, arena),
+            Explode(expr) => arena.get(*expr).to_field(&schema, ctxt, arena),
             Alias(expr, name) => Ok(Field::new(
                 name,
                 arena.get(*expr).get_type(schema, ctxt, arena)?,
@@ -691,6 +696,7 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Unique(expr) => AExpr::Unique(to_aexpr(*expr, arena)),
         Expr::Duplicated(expr) => AExpr::Duplicated(to_aexpr(*expr, arena)),
         Expr::Reverse(expr) => AExpr::Reverse(to_aexpr(*expr, arena)),
+        Expr::Explode(expr) => AExpr::Explode(to_aexpr(*expr, arena)),
         Expr::Alias(e, name) => AExpr::Alias(to_aexpr(*e, arena), name),
         Expr::Literal(value) => AExpr::Literal(value),
         Expr::Column(s) => AExpr::Column(s),
@@ -989,6 +995,7 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
         AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_exp(node, expr_arena))),
         AExpr::Unique(node) => Expr::Unique(Box::new(node_to_exp(node, expr_arena))),
         AExpr::Reverse(node) => Expr::Reverse(Box::new(node_to_exp(node, expr_arena))),
+        AExpr::Explode(node) => Expr::Explode(Box::new(node_to_exp(node, expr_arena))),
         AExpr::Alias(expr, name) => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Alias(Box::new(exp), name)

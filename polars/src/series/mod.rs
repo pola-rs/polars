@@ -1006,6 +1006,21 @@ impl Series {
             .map(|s| s.mean_as_series())
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
+
+    /// Explode a list or utf8 Series. This expands every item to a new row..
+    pub fn explode(&self) -> Result<Series> {
+        match self.dtype() {
+            ArrowDataType::List(_) => self.list().unwrap().explode(),
+            ArrowDataType::Utf8 => self.utf8().unwrap().explode(),
+            _ => Err(PolarsError::InvalidOperation(
+                format!(
+                    "explode not supported for Series with dtype {:?}",
+                    self.dtype()
+                )
+                .into(),
+            )),
+        }
+    }
 }
 
 impl Deref for Series {
