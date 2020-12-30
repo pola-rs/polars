@@ -12,6 +12,7 @@ use std::marker::Sized;
 pub(crate) mod aggregate;
 pub(crate) mod apply;
 pub(crate) mod chunkops;
+pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
 pub(crate) mod set;
@@ -20,6 +21,13 @@ pub(crate) mod take;
 pub(crate) mod unique;
 pub(crate) mod window;
 pub(crate) mod zip;
+
+pub trait ChunkExplode {
+    fn explode(&self) -> Result<Series> {
+        self.explode_and_offsets().map(|t| t.0)
+    }
+    fn explode_and_offsets(&self) -> Result<(Series, &[i32])>;
+}
 
 pub trait ChunkBytes {
     fn to_byte_slices(&self) -> Vec<&[u8]>;
