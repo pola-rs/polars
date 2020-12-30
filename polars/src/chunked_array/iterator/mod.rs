@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::prelude::{Series, BooleanChunked, Utf8Chunked, ListChunked, ChunkedArray, PolarsNumericType, Downcast};
 use arrow::array::{
     Array, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps,
     StringArray,
@@ -629,6 +629,25 @@ macro_rules! impl_single_chunk_iterator {
                     idx_right,
                 }
             }
+
+            // TODO: Move this function to `impl Iterator` when the feature is stabilized.
+            /// Advance the iterator by `n` positions in constant time *O(n)*. It is an eager function.
+            fn advance_by(&mut self, n: usize) -> Result<(), usize> {
+                // Compute the total available elements in the iterator.
+                let total_elements = self.idx_right - self.idx_left;
+
+                // If skip more than the total number of elements in the iterator, then, move the iterator to
+                // the last element and return an error with the number of elements in the iterator.
+                if n > total_elements {
+                    self.idx_left = self.idx_right;
+                    return Err(total_elements)
+                }
+
+                // If n is less than the total number of elements then advance the left index by n elements
+                // and return success.
+                self.idx_left += n;
+                Ok(())
+            }
         }
 
         impl<'a> Iterator for $iterator_name<'a> {
@@ -652,10 +671,19 @@ macro_rules! impl_single_chunk_iterator {
                 Some(v)
             }
 
+            // TODO: Remove this method once `advance_by` is stable method and it is implemented
+            // as an `Iterator` method.
+            /// Return the `nth` element in the iterator.
+            fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                self.advance_by(n).ok()?;
+                self.next()
+            }
+
             fn size_hint(&self) -> (usize, Option<usize>) {
                 let len = self.current_array.len();
                 (len, Some(len))
             }
+
         }
 
         impl<'a> DoubleEndedIterator for $iterator_name<'a> {
@@ -728,6 +756,25 @@ macro_rules! impl_single_chunk_null_check_iterator {
                     idx_right,
                 }
             }
+
+            // TODO: Move this function to `impl Iterator` when the feature is stabilized.
+            /// Advance the iterator by `n` positions in constant time *O(n)*. It is an eager function.
+            fn advance_by(&mut self, n: usize) -> Result<(), usize> {
+                // Compute the total available elements in the iterator.
+                let total_elements = self.idx_right - self.idx_left;
+
+                // If skip more than the total number of elements in the iterator, then, move the iterator to
+                // the last element and return an error with the number of elements in the iterator.
+                if n > total_elements {
+                    self.idx_left = self.idx_right;
+                    return Err(total_elements)
+                }
+
+                // If n is less than the total number of elements then advance the left index by n elements
+                // and return success.
+                self.idx_left += n;
+                Ok(())
+            }
         }
 
         impl<'a> Iterator for $iterator_name<'a> {
@@ -753,6 +800,14 @@ macro_rules! impl_single_chunk_null_check_iterator {
                 };
                 self.idx_left += 1;
                 ret
+            }
+
+            // TODO: Remove this method once `advance_by` is stable method and it is implemented
+            // as an `Iterator` method.
+            /// Return the `nth` element in the iterator.
+            fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                self.advance_by(n).ok()?;
+                self.next()
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -854,6 +909,38 @@ macro_rules! impl_many_chunk_iterator {
                     chunk_idx_right,
                 }
             }
+
+            /// Update the left index as well as the data regarding the left chunk.
+            fn update_left_index(&mut self, idx_left: usize) {
+                self.idx_left = idx_left;
+                let (chunk_idx_left, current_array_idx_left) = self.ca.index_to_chunked_index(idx_left);
+                self.chunk_idx_left = chunk_idx_left;
+                self.current_array_idx_left = current_array_idx_left;
+                self.current_array_left = self.chunks[chunk_idx_left];
+                self.current_array_left_len = self.current_array_left.len();
+            }
+
+            // TODO: Move this function to `impl Iterator` when the feature is stabilized.
+            /// Advance the iterator by `n` positions in constant time *O(n)*. It is an eager function.
+            fn advance_by(&mut self, n: usize) -> Result<(), usize> {
+                // Compute the total available elements in the iterator.
+                let total_elements = self.idx_right - self.idx_left;
+
+                // If skip more than the total number of elements in the iterator, then, move the iterator to
+                // the last element and return an error with the number of elements in the iterator.
+                if n > total_elements {
+                    let new_idx_left = self.idx_right;
+                    self.update_left_index(new_idx_left);
+                    return Err(total_elements)
+                }
+
+                // If n is less than the total number of elements then advance the left index by n elements
+                // and return success.
+                let new_idx_left = self.idx_left + n;
+                self.update_left_index(new_idx_left);
+
+                Ok(())
+            }
         }
 
         impl<'a> Iterator for $iterator_name<'a> {
@@ -893,6 +980,14 @@ macro_rules! impl_many_chunk_iterator {
                 )?
 
                 Some(ret)
+            }
+
+            // TODO: Remove this method once `advance_by` is stable method and it is implemented
+            // as an `Iterator` method.
+            /// Return the `nth` element in the iterator.
+            fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                self.advance_by(n).ok()?;
+                self.next()
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -1008,6 +1103,39 @@ macro_rules! impl_many_chunk_null_check_iterator {
                     chunk_idx_right,
                 }
             }
+
+            /// Update the left index as well as the data regarding the left chunk.
+            fn update_left_index(&mut self, idx_left: usize) {
+                self.idx_left = idx_left;
+                let (chunk_idx_left, current_array_idx_left) = self.ca.index_to_chunked_index(idx_left);
+                self.chunk_idx_left = chunk_idx_left;
+                self.current_array_idx_left = current_array_idx_left;
+                self.current_array_left = self.chunks[chunk_idx_left];
+                self.current_array_left_len = self.current_array_left.len();
+                self.current_data_left = self.current_array_left.data();
+            }
+
+            // TODO: Move this function to `impl Iterator` when the feature is stabilized.
+            /// Advance the iterator by `n` positions in constant time *O(n)*. It is an eager function.
+            fn advance_by(&mut self, n: usize) -> Result<(), usize> {
+                // Compute the total available elements in the iterator.
+                let total_elements = self.idx_right - self.idx_left;
+
+                // If skip more than the total number of elements in the iterator, then, move the iterator to
+                // the last element and return an error with the number of elements in the iterator.
+                if n > total_elements {
+                    let new_idx_left = self.idx_right;
+                    self.update_left_index(new_idx_left);
+                    return Err(total_elements)
+                }
+
+                // If n is less than the total number of elements then advance the left index by n elements
+                // and return success.
+                let new_idx_left = self.idx_left + n;
+                self.update_left_index(new_idx_left);
+
+                Ok(())
+            }
         }
 
         impl<'a> Iterator for $iterator_name<'a> {
@@ -1055,6 +1183,14 @@ macro_rules! impl_many_chunk_null_check_iterator {
                 }
 
                 Some(ret)
+            }
+
+            // TODO: Remove this method once `advance_by` is stable method and it is implemented
+            // as an `Iterator` method.
+            /// Return the `nth` element in the iterator.
+            fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                self.advance_by(n).ok()?;
+                self.next()
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
