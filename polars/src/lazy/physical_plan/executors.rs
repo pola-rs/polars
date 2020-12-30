@@ -307,7 +307,12 @@ impl Executor for DataFrameExec {
             })?;
             df = df.filter(mask)?;
         }
-        Ok(df)
+
+        if let Some(limit) = set_n_rows(None) {
+            Ok(df.head(Some(limit)))
+        } else {
+            Ok(df)
+        }
     }
 }
 
