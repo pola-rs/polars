@@ -775,6 +775,16 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Melt the DataFrame from wide to long format
+    pub fn melt(self, id_vars: Vec<String>, value_vars: Vec<String>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .melt(Arc::new(id_vars), Arc::new(value_vars), None)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
     /// use [fetch](LazyFrame::fetch).
     pub fn limit(self, n: usize) -> LazyFrame {
@@ -896,6 +906,23 @@ mod test {
             .collect()
             .unwrap();
         assert_eq!(new.get_column_names(), &["petals", "sepal.width"]);
+    }
+
+    #[test]
+    fn test_lazy_melt() {
+        let df = get_df();
+        let out = df
+            .lazy()
+            .melt(
+                vec!["petal.width".to_string(), "petal.length".to_string()],
+                vec!["sepal.length".to_string(), "sepal.width".to_string()],
+            )
+            .filter(col("variable").eq(lit("sepal.length")))
+            .select(vec![col("variable"), col("petal.width"), col("value")])
+            .collect()
+            .unwrap();
+        assert_eq!(out.shape(), (7, 3));
+        dbg!(out);
     }
 
     #[test]

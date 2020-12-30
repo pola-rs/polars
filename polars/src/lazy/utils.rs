@@ -886,6 +886,9 @@ pub(crate) fn agg_source_paths(
         HStack { input, .. } => {
             agg_source_paths(input, paths);
         }
+        Melt { input, .. } => {
+            agg_source_paths(input, paths);
+        }
     }
 }
 

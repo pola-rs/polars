@@ -327,6 +327,38 @@ impl ProjectionPushDown {
                     Box::new(self.push_down(*input, acc_projections, names, projections_seen)?);
                 Ok(Selection { predicate, input })
             }
+            Melt {
+                input,
+                id_vars,
+                value_vars,
+                ..
+            } => {
+                let (mut acc_projections, mut local_projections, names) =
+                    self.split_acc_projections(acc_projections, input.schema());
+
+                if !local_projections.is_empty() {
+                    local_projections.extend_from_slice(&acc_projections);
+                }
+
+                // make sure that the requested columns are projected
+                if !acc_projections.is_empty() {
+                    for name in id_vars.iter() {
+                        acc_projections.push(col(name));
+                    }
+                    for name in value_vars.iter() {
+                        acc_projections.push(col(name));
+                    }
+                }
+
+                let input = self.push_down(*input, acc_projections, names, projections_seen)?;
+                let mut builder = LogicalPlanBuilder::from(input).melt(id_vars, value_vars, None);
+
+                if !local_projections.is_empty() {
+                    builder = builder.project(local_projections)
+                }
+
+                Ok(builder.build())
+            }
             Aggregate {
                 input, keys, aggs, ..
             } => {

@@ -10,6 +10,7 @@ use crate::{
 };
 use ahash::RandomState;
 use arrow::datatypes::{DataType, SchemaRef};
+use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt::Write;
 use std::{cell::Cell, fmt, sync::Arc};
@@ -170,6 +171,12 @@ pub enum LogicalPlan {
         offset: usize,
         len: usize,
     },
+    Melt {
+        input: Box<LogicalPlan>,
+        id_vars: Arc<Vec<String>>,
+        value_vars: Arc<Vec<String>>,
+        schema: SchemaRef,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -216,6 +223,9 @@ impl fmt::Debug for LogicalPlan {
             }
             Selection { predicate, input } => {
                 write!(f, "FILTER\n\t{:?}\nFROM\n\t{:?}", predicate, input)
+            }
+            Melt { input, .. } => {
+                write!(f, "MELT\n\t{:?}", input)
             }
             CsvScan {
                 path,
@@ -426,6 +436,11 @@ impl LogicalPlan {
             }
             Explode { input, columns, .. } => {
                 let current_node = format!("EXPLODE {:?} [{}]", columns, id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
+            Melt { input, .. } => {
+                let current_node = format!("MELT [{}]", id);
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, id + 1, &current_node)
             }
@@ -686,6 +701,7 @@ impl LogicalPlan {
             HStack { schema, .. } => schema,
             Distinct { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
+            Melt { schema, .. } => schema,
         }
     }
     pub fn describe(&self) -> String {
@@ -915,6 +931,46 @@ impl LogicalPlanBuilder {
         LogicalPlan::Explode {
             input: Box::new(self.0),
             columns,
+        }
+        .into()
+    }
+
+    pub fn melt(
+        self,
+        id_vars: Arc<Vec<String>>,
+        value_vars: Arc<Vec<String>>,
+        schema: Option<Arc<Schema>>,
+    ) -> Self {
+        let schema = schema.unwrap_or_else(|| {
+            let mut fields = self
+                .0
+                .schema()
+                .fields()
+                .iter()
+                .filter(|field| !value_vars.contains(field.name()))
+                .cloned()
+                .collect_vec();
+
+            fields.reserve(2);
+
+            let value_dtype = self
+                .0
+                .schema()
+                .field_with_name(&value_vars[0])
+                .expect("field not found")
+                .data_type();
+
+            fields.push(Field::new("variable", ArrowDataType::Utf8, true));
+            fields.push(Field::new("value", value_dtype.clone(), true));
+
+            Arc::new(Schema::new(fields))
+        });
+
+        LogicalPlan::Melt {
+            input: Box::new(self.0),
+            id_vars,
+            value_vars,
+            schema,
         }
         .into()
     }

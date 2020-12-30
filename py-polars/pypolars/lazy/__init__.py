@@ -489,6 +489,26 @@ class LazyFrame:
             subset = [subset]
         return wrap_ldf(self._ldf.drop_nulls(subset))
 
+    def melt(
+        self, id_vars: "Union[List[str], str]", value_vars: "Union[List[str], str]"
+    ) -> "DataFrame":
+        """
+        Unpivot DataFrame to long format.
+
+        Parameters
+        ----------
+        id_vars
+            Columns to use as identifier variables
+
+        value_vars
+            Values to use as identifier variables
+        """
+        if isinstance(value_vars, str):
+            value_vars = [value_vars]
+        if isinstance(id_vars, str):
+            id_vars = [id_vars]
+        return wrap_ldf(self._ldf.melt(id_vars, value_vars))
+
 
 def wrap_expr(pyexpr: "PyExpr") -> "Expr":
     return Expr.from_pyexpr(pyexpr)

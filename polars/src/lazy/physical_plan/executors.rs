@@ -592,3 +592,15 @@ impl Executor for SliceExec {
         df.slice(self.offset, self.len)
     }
 }
+pub struct MeltExec {
+    pub input: Box<dyn Executor>,
+    pub id_vars: Arc<Vec<String>>,
+    pub value_vars: Arc<Vec<String>>,
+}
+
+impl Executor for MeltExec {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
+        df.melt(&self.id_vars.as_slice(), &self.value_vars.as_slice())
+    }
+}

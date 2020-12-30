@@ -136,6 +136,7 @@ impl StackOptimizer {
                             exprs.push((predicate, current_node))
                         }
                     }
+                    ALogicalPlan::Melt { input, .. } => plans.push(*input),
                 }
 
                 // process the expressions on the stack and apply optimizations.
@@ -568,6 +569,12 @@ impl AExpr {
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone)]
 pub enum ALogicalPlan {
+    Melt {
+        input: Node,
+        id_vars: Arc<Vec<String>>,
+        value_vars: Arc<Vec<String>>,
+        schema: SchemaRef,
+    },
     Slice {
         input: Node,
         offset: usize,
@@ -686,6 +693,7 @@ impl ALogicalPlan {
             HStack { schema, .. } => schema,
             Distinct { input, .. } => arena.get(*input).schema(arena),
             Slice { input, .. } => arena.get(*input).schema(arena),
+            Melt { schema, .. } => schema,
         }
     }
 }
@@ -801,6 +809,20 @@ pub(crate) fn to_alp(
         LogicalPlan::Slice { input, offset, len } => {
             let input = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::Slice { input, offset, len }
+        }
+        LogicalPlan::Melt {
+            input,
+            id_vars,
+            value_vars,
+            schema,
+        } => {
+            let input = to_alp(*input, expr_arena, lp_arena);
+            ALogicalPlan::Melt {
+                input,
+                id_vars,
+                value_vars,
+                schema,
+            }
         }
         LogicalPlan::CsvScan {
             path,
@@ -1360,6 +1382,20 @@ pub(crate) fn node_to_lp(
                 input: Box::new(i),
                 maintain_order,
                 subset,
+            }
+        }
+        ALogicalPlan::Melt {
+            input,
+            id_vars,
+            value_vars,
+            schema,
+        } => {
+            let input = node_to_lp(input, expr_arena, lp_arena);
+            LogicalPlan::Melt {
+                input: Box::new(input),
+                id_vars,
+                value_vars,
+                schema,
             }
         }
     }
