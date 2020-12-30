@@ -185,6 +185,41 @@ impl PredicatePushDown {
                 }
                 Ok(builder.build())
             }
+            Melt {
+                input,
+                id_vars,
+                value_vars,
+                schema,
+            } => {
+                let mut remove_keys = Vec::with_capacity(acc_predicates.len());
+                let value_columns_set: HashSet<_, RandomState> = value_vars.iter().collect();
+
+                for (key, predicate) in &acc_predicates {
+                    let root_names = expr_to_root_column_names(predicate);
+                    for name in root_names {
+                        if (&*name == "variable")
+                            || (&*name == "value")
+                            || value_columns_set.contains(&*name)
+                        {
+                            remove_keys.push(key.clone());
+                        }
+                    }
+                }
+                let mut local_predicates = Vec::with_capacity(remove_keys.len());
+                for key in remove_keys {
+                    let pred = acc_predicates.remove(&*key).unwrap();
+                    local_predicates.push(pred)
+                }
+                let input = self.push_down(*input, acc_predicates)?;
+                let mut builder =
+                    LogicalPlanBuilder::from(input).melt(id_vars, value_vars, Some(schema));
+
+                if !local_predicates.is_empty() {
+                    let predicate = combine_predicates(local_predicates.into_iter());
+                    builder = builder.filter(predicate)
+                }
+                Ok(builder.build())
+            }
             LocalProjection { expr, input, .. } => {
                 let input = self.push_down(*input, acc_predicates)?;
                 let schema = input.schema();
@@ -277,7 +312,6 @@ impl PredicatePushDown {
             }
             Explode { input, columns } => {
                 // we remove predicates that are done in one of the exploded columns.
-
                 let columns_set: HashSet<_, RandomState> = columns.iter().collect();
                 let mut remove_keys = Vec::with_capacity(acc_predicates.len());
 

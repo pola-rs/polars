@@ -74,6 +74,9 @@ pub(crate) fn agg_projection(
         HStack { input, .. } => {
             agg_projection(input, columns);
         }
+        Melt { input, .. } => {
+            agg_projection(input, columns);
+        }
     }
 }
 

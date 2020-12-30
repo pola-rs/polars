@@ -276,6 +276,11 @@ impl PyLazyFrame {
         ldf.slice(offset, len).into()
     }
 
+    pub fn melt(&self, id_vars: Vec<String>, value_vars: Vec<String>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.melt(id_vars, value_vars).into()
+    }
+
     pub fn clone(&self) -> PyLazyFrame {
         self.ldf.clone().into()
     }

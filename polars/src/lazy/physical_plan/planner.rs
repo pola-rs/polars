@@ -79,6 +79,19 @@ impl DefaultPlanner {
         logical_plan: LogicalPlan,
     ) -> Result<Box<dyn Executor>> {
         match logical_plan {
+            LogicalPlan::Melt {
+                input,
+                id_vars,
+                value_vars,
+                ..
+            } => {
+                let input = self.create_initial_physical_plan(*input)?;
+                Ok(Box::new(MeltExec {
+                    input,
+                    id_vars,
+                    value_vars,
+                }))
+            }
             LogicalPlan::Slice { input, offset, len } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 Ok(Box::new(SliceExec { input, offset, len }))
