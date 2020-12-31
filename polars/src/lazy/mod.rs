@@ -143,7 +143,7 @@
 //!     .with_column(
 //!         col("column_a")
 //!         // apply a custom closure Series => Result<Series>
-//!         .apply(|_s| {
+//!         .map(|_s| {
 //!             Ok(Series::new("", &[6.0f32, 6.0, 6.0, 6.0, 6.0]))
 //!         },
 //!         // return type of the closure
