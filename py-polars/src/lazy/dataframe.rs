@@ -2,8 +2,10 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use crate::utils::str_to_arrow_type;
-use polars::lazy::frame::{JoinOptions, LazyCsvReader, LazyFrame, LazyGroupBy};
-use polars::prelude::{Field, JoinType, Schema};
+use polars::lazy::frame::{
+    AllowedOptimizations, JoinOptions, LazyCsvReader, LazyFrame, LazyGroupBy,
+};
+use polars::prelude::{DataFrame, Field, JoinType, Schema};
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -279,6 +281,39 @@ impl PyLazyFrame {
     pub fn melt(&self, id_vars: Vec<String>, value_vars: Vec<String>) -> Self {
         let ldf = self.ldf.clone();
         ldf.melt(id_vars, value_vars).into()
+    }
+
+    pub fn map(&self, lambda: PyObject, predicate_pd: bool, projection_pd: bool) -> Self {
+        let mut opt = AllowedOptimizations::default();
+        opt.projection_pushdown = projection_pd;
+        opt.predicate_pushdown = predicate_pd;
+
+        let function = move |s: DataFrame| {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            // get the pypolars module
+            let pypolars = PyModule::import(py, "pypolars").unwrap();
+            // create a PyDataFrame struct/object for Python
+            let pyseries = PyDataFrame::new(s);
+            // Wrap this PyDataFrame object in the python side DataFrame wrapper
+            let python_df_wrapper = pypolars.call1("wrap_df", (pyseries,)).unwrap();
+            // call the lambda and get a python side Series wrapper
+            let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+                Ok(pyobj) => pyobj,
+                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+            };
+            // unpack the wrapper in a PyDataFrame
+            let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+                "Could net get DataFrame attribute '_s'. Make sure that you return a DataFrame object.",
+            );
+            // Downcast to Rust
+            let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+            // Finally get the actual Series
+            Ok(pydf.df)
+        };
+
+        let ldf = self.ldf.clone();
+        ldf.map(function, Some(opt)).into()
     }
 
     pub fn clone(&self) -> PyLazyFrame {

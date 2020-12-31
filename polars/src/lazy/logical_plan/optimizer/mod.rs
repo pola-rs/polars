@@ -137,6 +137,7 @@ impl StackOptimizer {
                         }
                     }
                     ALogicalPlan::Melt { input, .. } => plans.push(*input),
+                    ALogicalPlan::Udf { input, .. } => plans.push(*input),
                 }
 
                 // process the expressions on the stack and apply optimizations.
@@ -661,6 +662,14 @@ pub enum ALogicalPlan {
         maintain_order: bool,
         subset: Arc<Option<Vec<String>>>,
     },
+    Udf {
+        input: Node,
+        function: Arc<dyn DataFrameUdf>,
+        ///  allow predicate pushdown optimizations
+        predicate_pd: bool,
+        ///  allow projection pushdown optimizations
+        projection_pd: bool,
+    },
 }
 
 impl Default for ALogicalPlan {
@@ -694,6 +703,7 @@ impl ALogicalPlan {
             Distinct { input, .. } => arena.get(*input).schema(arena),
             Slice { input, .. } => arena.get(*input).schema(arena),
             Melt { schema, .. } => schema,
+            Udf { input, .. } => arena.get(*input).schema(arena),
         }
     }
 }
@@ -1003,6 +1013,20 @@ pub(crate) fn to_alp(
                 input: i,
                 maintain_order,
                 subset,
+            }
+        }
+        LogicalPlan::Udf {
+            input,
+            function,
+            projection_pd,
+            predicate_pd,
+        } => {
+            let input = to_alp(*input, expr_arena, lp_arena);
+            ALogicalPlan::Udf {
+                input,
+                function,
+                projection_pd,
+                predicate_pd,
             }
         }
     };
@@ -1396,6 +1420,20 @@ pub(crate) fn node_to_lp(
                 id_vars,
                 value_vars,
                 schema,
+            }
+        }
+        ALogicalPlan::Udf {
+            input,
+            function,
+            predicate_pd,
+            projection_pd,
+        } => {
+            let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
+            LogicalPlan::Udf {
+                input,
+                function,
+                predicate_pd,
+                projection_pd,
             }
         }
     }

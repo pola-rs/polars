@@ -497,6 +497,27 @@ impl ProjectionPushDown {
                 .build();
                 Ok(lp)
             }
+            Udf {
+                mut input,
+                function,
+                predicate_pd,
+                projection_pd,
+            } => {
+                if projection_pd {
+                    input = Box::new(self.push_down(
+                        *input,
+                        acc_projections,
+                        names,
+                        projections_seen,
+                    )?);
+                }
+                Ok(Udf {
+                    input,
+                    function,
+                    predicate_pd,
+                    projection_pd,
+                })
+            }
         }
     }
 }

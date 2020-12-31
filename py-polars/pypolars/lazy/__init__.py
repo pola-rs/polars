@@ -509,6 +509,26 @@ class LazyFrame:
             id_vars = [id_vars]
         return wrap_ldf(self._ldf.melt(id_vars, value_vars))
 
+    def map(
+        self,
+        f: "Union[UDF, Callable[[DataFrame], DataFrame]]",
+        predicate_pushdown: bool,
+        projection_pushdown: bool,
+    ) -> "LazyFrame":
+        """
+        Apply a custom UDF. It is important that the UDF returns a Polars DataFrame.
+
+        Parameters
+        ----------
+        f
+            lambda/ function to apply
+        predicate_pushdown
+            Allow predicate pushdown optimization to pass this node
+        projection_pushdown
+            Allow projection pushdown optimization to pass this node
+        """
+        return wrap_ldf(self._ldf.map(f, predicate_pushdown, projection_pushdown))
+
 
 def wrap_expr(pyexpr: "PyExpr") -> "Expr":
     return Expr.from_pyexpr(pyexpr)
@@ -1047,7 +1067,7 @@ class Expr:
 
         # input x: Series of type list containing the group values
         def wrap_f(x: "Series") -> "Series":
-            return x.map(f, dtype_out=dtype_out)
+            return x.apply(f, dtype_out=dtype_out)
 
         return self.map(wrap_f)
 

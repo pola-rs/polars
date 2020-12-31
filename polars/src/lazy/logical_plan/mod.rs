@@ -12,7 +12,7 @@ use ahash::RandomState;
 use arrow::datatypes::{DataType, SchemaRef};
 use itertools::Itertools;
 use std::collections::HashSet;
-use std::fmt::Write;
+use std::fmt::{Debug, Formatter, Write};
 use std::{cell::Cell, fmt, sync::Arc};
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
@@ -22,6 +22,25 @@ thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(Non
 pub enum Context {
     Aggregation,
     Other,
+}
+
+pub trait DataFrameUdf: Send + Sync {
+    fn call_udf(&self, df: DataFrame) -> Result<DataFrame>;
+}
+
+impl<F> DataFrameUdf for F
+where
+    F: Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+{
+    fn call_udf(&self, df: DataFrame) -> Result<DataFrame> {
+        self(df)
+    }
+}
+
+impl Debug for dyn DataFrameUdf {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "udf")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -177,6 +196,14 @@ pub enum LogicalPlan {
         value_vars: Arc<Vec<String>>,
         schema: SchemaRef,
     },
+    Udf {
+        input: Box<LogicalPlan>,
+        function: Arc<dyn DataFrameUdf>,
+        ///  allow predicate pushdown optimizations
+        predicate_pd: bool,
+        ///  allow projection pushdown optimizations
+        projection_pd: bool,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -309,6 +336,7 @@ impl fmt::Debug for LogicalPlan {
             Slice { input, offset, len } => {
                 write!(f, "SLICE {:?}, offset: {}, len: {}", input, offset, len)
             }
+            Udf { input, .. } => write!(f, "UDF {:?}", input),
         }
     }
 }
@@ -529,6 +557,11 @@ impl LogicalPlan {
                 input_left.dot(acc_str, id + 1, &current_node)?;
                 input_right.dot(acc_str, id + 1, &current_node)
             }
+            Udf { input, .. } => {
+                let current_node = format!("UDF [{}]", id);
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                input.dot(acc_str, id + 1, &current_node)
+            }
         }
     }
 }
@@ -702,6 +735,7 @@ impl LogicalPlan {
             Distinct { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             Melt { schema, .. } => schema,
+            Udf { input, .. } => input.schema(),
         }
     }
     pub fn describe(&self) -> String {
@@ -1045,6 +1079,18 @@ impl LogicalPlanBuilder {
             right_on,
             allow_par,
             force_par,
+        }
+        .into()
+    }
+    pub fn map<F>(self, function: F, optimizations: AllowedOptimizations) -> Self
+    where
+        F: DataFrameUdf + 'static,
+    {
+        LogicalPlan::Udf {
+            input: Box::new(self.0),
+            function: Arc::new(function),
+            predicate_pd: optimizations.predicate_pushdown,
+            projection_pd: optimizations.projection_pushdown,
         }
         .into()
     }

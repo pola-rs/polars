@@ -508,6 +508,23 @@ impl PredicatePushDown {
                 }
                 Ok(lp_builder.build())
             }
+
+            Udf {
+                mut input,
+                function,
+                predicate_pd,
+                projection_pd,
+            } => {
+                if predicate_pd {
+                    input = Box::new(self.push_down(*input, acc_predicates)?);
+                }
+                Ok(Udf {
+                    input,
+                    function,
+                    predicate_pd,
+                    projection_pd,
+                })
+            }
         }
     }
 }
