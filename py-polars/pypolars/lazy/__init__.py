@@ -967,7 +967,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.nanosecond())
 
-    def apply(
+    def map(
         self,
         f: "Union[UDF, Callable[[Series], Series]]",
         dtype_out: Optional["DataType"] = None,
@@ -995,9 +995,9 @@ class Expr:
             dtype_out = datatypes.Float64
         elif dtype_out == bool:
             dtype_out = datatypes.Boolean
-        return wrap_expr(self._pyexpr.apply(f, dtype_out))
+        return wrap_expr(self._pyexpr.map(f, dtype_out))
 
-    def apply_groups(
+    def apply(
         self,
         f: "Union[UDF, Callable[[Series], Series]]",
         dtype_out: Optional["DataType"] = None,
@@ -1047,9 +1047,9 @@ class Expr:
 
         # input x: Series of type list containing the group values
         def wrap_f(x: "Series") -> "Series":
-            return x.apply(f, dtype_out=dtype_out)
+            return x.map(f, dtype_out=dtype_out)
 
-        return self.apply(wrap_f)
+        return self.map(wrap_f)
 
     def explode(self):
         """

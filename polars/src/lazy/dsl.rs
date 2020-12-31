@@ -751,7 +751,7 @@ impl Expr {
     /// Apply a function/closure once the logical plan get executed.
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
-    pub fn apply<F>(self, function: F, output_type: Option<ArrowDataType>) -> Self
+    pub fn map<F>(self, function: F, output_type: Option<ArrowDataType>) -> Self
     where
         F: Udf + 'static,
     {

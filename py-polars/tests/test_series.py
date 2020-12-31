@@ -168,18 +168,18 @@ def test_fill_none():
 
 def test_apply():
     a = Series("a", [1, 2, None], nullable=True)
-    b = a.apply(lambda x: x ** 2, sniff_dtype=False)
+    b = a.map(lambda x: x ** 2, sniff_dtype=False)
     assert b == [1, 4, None]
 
     a = Series("a", ["foo", "bar", None], nullable=True)
-    b = a.apply(lambda x: x + "py")
+    b = a.map(lambda x: x + "py")
     assert b == ["foopy", "barpy", None]
 
-    b = a.apply(lambda x: len(x), dtype_out=Int32)
+    b = a.map(lambda x: len(x), dtype_out=Int32)
     assert b == [3, 3, None]
 
     # with out dtype sniffing
-    b = a.apply(lambda x: len(x))
+    b = a.map(lambda x: len(x))
     assert b == [3, 3, None]
 
 

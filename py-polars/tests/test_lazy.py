@@ -21,7 +21,7 @@ def test_lazy():
 
 def test_apply():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = df.lazy().with_column(col("a").apply(lambda s: s * 2).alias("foo")).collect()
+    new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
 
 def test_agg():
