@@ -947,7 +947,7 @@ mod test {
         let df = get_df();
         let new = df
             .lazy()
-            .select(&[col("sepal.width").apply(|s| Ok(s * 200.0), None)])
+            .select(&[col("sepal.width").map(|s| Ok(s * 200.0), None)])
             .collect()
             .unwrap();
         assert_eq!(
@@ -1121,7 +1121,7 @@ mod test {
         let df = load_df();
         let ldf = df
             .lazy()
-            .with_column(col("a").apply(|s| Ok(s * 2), None).alias("foo"))
+            .with_column(col("a").map(|s| Ok(s * 2), None).alias("foo"))
             .filter(col("a").lt(lit(2)))
             .select(&[col("b"), col("a")]);
 
@@ -1156,7 +1156,7 @@ mod test {
             .agg(vec![
                 col("day").list().alias("day"),
                 col("cumcases")
-                    .apply(
+                    .map(
                         |s: Series| {
                             // determine the diff per column
                             let a: ListChunked = s
@@ -1243,7 +1243,7 @@ mod test {
         let lf = df
             .lazy()
             .with_column_renamed("a", "x")
-            .filter(col("x").apply(
+            .filter(col("x").map(
                 |s: Series| Ok(s.gt(3).into_series()),
                 Some(ArrowDataType::Boolean),
             ))
