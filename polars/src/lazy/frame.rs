@@ -165,13 +165,14 @@ impl From<LogicalPlan> for LazyFrame {
 }
 
 #[derive(Copy, Clone)]
-struct OptState {
-    projection_pushdown: bool,
-    predicate_pushdown: bool,
-    type_coercion: bool,
-    simplify_expr: bool,
-    agg_scan_projection: bool,
-    aggregate_pushdown: bool,
+/// State of the allowed optimizations
+pub struct OptState {
+    pub projection_pushdown: bool,
+    pub predicate_pushdown: bool,
+    pub type_coercion: bool,
+    pub simplify_expr: bool,
+    pub agg_scan_projection: bool,
+    pub aggregate_pushdown: bool,
 }
 
 impl Default for OptState {
@@ -186,6 +187,9 @@ impl Default for OptState {
         }
     }
 }
+
+/// AllowedOptimizations
+pub type AllowedOptimizations = OptState;
 
 impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
@@ -789,6 +793,25 @@ impl LazyFrame {
     /// use [fetch](LazyFrame::fetch).
     pub fn limit(self, n: usize) -> LazyFrame {
         self.slice(0, n)
+    }
+
+    /// Apply a function/closure once the logical plan get executed.
+    ///
+    /// ## Warning
+    /// This can blow up in your face if the schema is changed due to the operation. The optimizer
+    /// relies on a correct schema.
+    ///
+    /// You can toggle certain optimizations off.
+    pub fn map<F>(self, function: F, optimizations: Option<AllowedOptimizations>) -> LazyFrame
+    where
+        F: DataFrameUdf + 'static,
+    {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .map(function, optimizations.unwrap_or_default())
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 }
 

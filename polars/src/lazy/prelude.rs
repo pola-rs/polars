@@ -5,7 +5,7 @@ pub use crate::lazy::{
             predicate::PredicatePushDown, projection::ProjectionPushDown,
             type_coercion::TypeCoercionRule, Optimize, *,
         },
-        LogicalPlan, LogicalPlanBuilder, ScalarValue,
+        DataFrameUdf, LogicalPlan, LogicalPlanBuilder, ScalarValue,
     },
     physical_plan::{
         executors::{CsvExec, DataFrameExec, FilterExec, GroupByExec, StandardExec},

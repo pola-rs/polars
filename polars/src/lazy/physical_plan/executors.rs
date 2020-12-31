@@ -609,3 +609,15 @@ impl Executor for MeltExec {
         df.melt(&self.id_vars.as_slice(), &self.value_vars.as_slice())
     }
 }
+
+pub(crate) struct UdfExec {
+    pub(crate) input: Box<dyn Executor>,
+    pub(crate) function: Arc<dyn DataFrameUdf>,
+}
+
+impl Executor for UdfExec {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
+        self.function.call_udf(df)
+    }
+}

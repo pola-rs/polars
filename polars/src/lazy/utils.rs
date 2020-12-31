@@ -889,6 +889,9 @@ pub(crate) fn agg_source_paths(
         Melt { input, .. } => {
             agg_source_paths(input, paths);
         }
+        Udf { input, .. } => {
+            agg_source_paths(input, paths);
+        }
     }
 }
 

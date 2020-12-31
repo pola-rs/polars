@@ -77,6 +77,9 @@ pub(crate) fn agg_projection(
         Melt { input, .. } => {
             agg_projection(input, columns);
         }
+        Udf { input, .. } => {
+            agg_projection(input, columns);
+        }
     }
 }
 

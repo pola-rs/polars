@@ -278,6 +278,12 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expressions(exprs, Context::Other)?;
                 Ok(Box::new(StackExec::new(input, phys_expr)))
             }
+            LogicalPlan::Udf {
+                input, function, ..
+            } => {
+                let input = self.create_initial_physical_plan(*input)?;
+                Ok(Box::new(UdfExec { input, function }))
+            }
         }
     }
 

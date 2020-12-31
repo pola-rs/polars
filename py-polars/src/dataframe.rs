@@ -14,12 +14,13 @@ use polars::frame::ser::csv::CsvEncoding;
 
 #[pyclass]
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct PyDataFrame {
     pub df: DataFrame,
 }
 
 impl PyDataFrame {
-    fn new(df: DataFrame) -> Self {
+    pub(crate) fn new(df: DataFrame) -> Self {
         PyDataFrame { df }
     }
 }
