@@ -565,11 +565,11 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             truthy,
             falsy,
         },
-        Expr::Apply {
+        Expr::Udf {
             input,
             function,
             output_type,
-        } => Expr::Apply {
+        } => Expr::Udf {
             input: Box::new(replace_wildcard_with_column(*input, column_name)),
             function,
             output_type,

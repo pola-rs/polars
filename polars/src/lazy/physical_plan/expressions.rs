@@ -519,7 +519,7 @@ impl PhysicalExpr for TernaryExpr {
 
 pub struct ApplyExpr {
     pub input: Arc<dyn PhysicalExpr>,
-    pub function: Arc<dyn Udf>,
+    pub function: Arc<dyn SeriesUdf>,
     pub output_type: Option<ArrowDataType>,
     pub expr: Expr,
 }
@@ -527,7 +527,7 @@ pub struct ApplyExpr {
 impl ApplyExpr {
     pub fn new(
         input: Arc<dyn PhysicalExpr>,
-        function: Arc<dyn Udf>,
+        function: Arc<dyn SeriesUdf>,
         output_type: Option<ArrowDataType>,
         expr: Expr,
     ) -> Self {
@@ -607,7 +607,7 @@ impl PhysicalExpr for WindowExpr {
             .select(self.apply_column.as_str());
 
         let out = match &self.function {
-            Expr::Apply { function, .. } => {
+            Expr::Udf { function, .. } => {
                 let mut df = gb.agg_list()?;
                 df.may_apply_at_idx(1, |s| function.call_udf(s.clone()))?;
                 Ok(df)

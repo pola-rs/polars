@@ -248,7 +248,7 @@ impl StackOptimizer {
                             exprs.push((*truthy, current_lp_node));
                             exprs.push((*falsy, current_lp_node));
                         }
-                        AExpr::Apply { input, .. } => {
+                        AExpr::Udf { input, .. } => {
                             exprs.push((*input, current_lp_node));
                         }
                         AExpr::Window {
@@ -321,9 +321,9 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    Apply {
+    Udf {
         input: Node,
-        function: Arc<dyn Udf>,
+        function: Arc<dyn SeriesUdf>,
         output_type: Option<ArrowDataType>,
     },
     Shift {
@@ -547,7 +547,7 @@ impl AExpr {
                 ))
             }
             Ternary { truthy, .. } => arena.get(*truthy).to_field(schema, ctxt, arena),
-            Apply {
+            Udf {
                 output_type, input, ..
             } => match output_type {
                 None => arena.get(*input).to_field(schema, ctxt, arena),
@@ -765,11 +765,11 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 falsy: f,
             }
         }
-        Expr::Apply {
+        Expr::Udf {
             input,
             function,
             output_type,
-        } => AExpr::Apply {
+        } => AExpr::Udf {
             input: to_aexpr(*input, arena),
             function,
             output_type,
@@ -1144,13 +1144,13 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
                 falsy: Box::new(f),
             }
         }
-        AExpr::Apply {
+        AExpr::Udf {
             input,
             function,
             output_type,
         } => {
             let i = node_to_exp(input, expr_arena);
-            Expr::Apply {
+            Expr::Udf {
                 input: Box::new(i),
                 function,
                 output_type,
