@@ -176,7 +176,14 @@ class DataFrame:
             elif series.dtype == Utf8:
                 data[col] = series.to_list()
             else:
-                data[col] = series.to_numpy()
+                s = series.to_numpy()
+
+                if series.dtype == Date32:
+                    s = pd.to_datetime(s, unit="d")
+                elif series.dtype == Date64:
+                    s = pd.to_datetime(s, unit="ms")
+
+                data[col] = s
         return pd.DataFrame(data)
 
     def to_csv(
@@ -257,6 +264,8 @@ class DataFrame:
         return self.get_columns().__iter__()
 
     def __getitem__(self, item):
+        if isinstance(item, np.ndarray):
+            item = Series("", item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple):
