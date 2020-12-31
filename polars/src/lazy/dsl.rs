@@ -11,11 +11,11 @@ use std::{
     sync::Arc,
 };
 
-pub trait Udf: Send + Sync {
+pub trait SeriesUdf: Send + Sync {
     fn call_udf(&self, s: Series) -> Result<Series>;
 }
 
-impl<F> Udf for F
+impl<F> SeriesUdf for F
 where
     F: Fn(Series) -> Result<Series> + Send + Sync,
 {
@@ -24,7 +24,7 @@ where
     }
 }
 
-impl Debug for dyn Udf {
+impl Debug for dyn SeriesUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "udf")
     }
@@ -105,9 +105,9 @@ pub enum Expr {
         truthy: Box<Expr>,
         falsy: Box<Expr>,
     },
-    Apply {
+    Udf {
         input: Box<Expr>,
-        function: Arc<dyn Udf>,
+        function: Arc<dyn SeriesUdf>,
         output_type: Option<ArrowDataType>,
     },
     Shift {
@@ -191,7 +191,7 @@ impl PartialEq for Expr {
             Expr::Column(left) => impl_partial_eq!(Column, left, other),
             Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
             Expr::Wildcard => matches!(other, Expr::Wildcard),
-            Expr::Apply { .. } => false,
+            Expr::Udf { .. } => false,
             Expr::BinaryExpr { .. } => false, // todo: should it?
             Expr::Ternary { .. } => false,
             Expr::IsNull(left) => impl_partial_eq!(IsNull, left, other),
@@ -433,7 +433,7 @@ impl Expr {
                 ))
             }
             Ternary { truthy, .. } => truthy.to_field(schema, ctxt),
-            Apply {
+            Udf {
                 output_type, input, ..
             } => match output_type {
                 None => input.to_field(schema, ctxt),
@@ -509,7 +509,7 @@ impl fmt::Debug for Expr {
                 "\nWHEN {:?}\n\t{:?}\nOTHERWISE\n\t{:?}",
                 predicate, truthy, falsy
             ),
-            Apply { input, .. } => write!(f, "APPLY({:?})", input),
+            Udf { input, .. } => write!(f, "APPLY({:?})", input),
             Shift { input, periods, .. } => write!(f, "SHIFT {:?} by {}", input, periods),
             Wildcard => write!(f, "*"),
         }
@@ -753,9 +753,9 @@ impl Expr {
     /// the correct output_type. If None given the output type of the input expr is used.
     pub fn map<F>(self, function: F, output_type: Option<ArrowDataType>) -> Self
     where
-        F: Udf + 'static,
+        F: SeriesUdf + 'static,
     {
-        Expr::Apply {
+        Expr::Udf {
             input: Box::new(self),
             function: Arc::new(function),
             output_type,

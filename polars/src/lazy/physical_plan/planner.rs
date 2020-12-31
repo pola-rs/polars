@@ -588,7 +588,7 @@ impl DefaultPlanner {
                     expr: expression,
                 }))
             }
-            Expr::Apply {
+            Expr::Udf {
                 input,
                 function,
                 output_type,

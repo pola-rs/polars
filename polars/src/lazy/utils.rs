@@ -30,7 +30,7 @@ pub(crate) fn projected_name(expr: &Expr) -> Result<Expr> {
             }
         }
         Expr::Cast { expr, .. } => projected_name(expr),
-        Expr::Apply { input, .. } => projected_name(input),
+        Expr::Udf { input, .. } => projected_name(input),
         Expr::Shift { input, .. } => projected_name(input),
         Expr::Window { function, .. } => projected_name(function),
         Expr::Ternary { predicate, .. } => projected_name(predicate),
@@ -274,8 +274,8 @@ pub(crate) fn has_aexpr(
                     | has_aexpr(*falsy, arena, matching_expr, follow_agg)
             }
         }
-        AExpr::Apply { input, .. } => {
-            if matches!(matching_expr, AExpr::Apply{..}) {
+        AExpr::Udf { input, .. } => {
+            if matches!(matching_expr, AExpr::Udf{..}) {
                 true
             } else {
                 has_aexpr(*input, arena, matching_expr, follow_agg)
@@ -518,8 +518,8 @@ pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
                     | has_expr(falsy, matching_expr)
             }
         }
-        Expr::Apply { input, .. } => {
-            if matches!(matching_expr, Expr::Apply{..}) {
+        Expr::Udf { input, .. } => {
+            if matches!(matching_expr, Expr::Udf{..}) {
                 true
             } else {
                 has_expr(input, matching_expr)
@@ -642,7 +642,7 @@ pub(crate) fn aexpr_to_root_nodes(node: Node, arena: &Arena<AExpr>) -> Vec<Node>
         }
         AExpr::Sort { expr, .. } => aexpr_to_root_nodes(*expr, arena),
         AExpr::Shift { input, .. } => aexpr_to_root_nodes(*input, arena),
-        AExpr::Apply { input, .. } => aexpr_to_root_nodes(*input, arena),
+        AExpr::Udf { input, .. } => aexpr_to_root_nodes(*input, arena),
         AExpr::Cast { expr, .. } => aexpr_to_root_nodes(*expr, arena),
         AExpr::Ternary {
             predicate,
@@ -711,7 +711,7 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
         }
         Expr::Sort { expr, .. } => expr_to_root_column_exprs(expr),
         Expr::Shift { input, .. } => expr_to_root_column_exprs(input),
-        Expr::Apply { input, .. } => expr_to_root_column_exprs(input),
+        Expr::Udf { input, .. } => expr_to_root_column_exprs(input),
         Expr::Cast { expr, .. } => expr_to_root_column_exprs(expr),
         Expr::Ternary {
             predicate,
@@ -803,11 +803,11 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
             })
         }
         Expr::Cast { expr, .. } => rename_expr_root_name(expr, new_name),
-        Expr::Apply {
+        Expr::Udf {
             input,
             function,
             output_type,
-        } => Ok(Expr::Apply {
+        } => Ok(Expr::Udf {
             input: Box::new(rename_expr_root_name(input, new_name)?),
             function: function.clone(),
             output_type: output_type.clone(),
