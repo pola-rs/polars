@@ -1,7 +1,10 @@
 from typing import Union, TextIO, Optional, List, BinaryIO
+import numpy as np
 
 from .frame import DataFrame
+from .series import Series
 from .lazy import LazyFrame
+from . import datatypes
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
@@ -197,3 +200,30 @@ def arg_where(mask: "Series"):
     UInt32 Series
     """
     return mask.arg_true()
+
+
+def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
+    """
+    Convert from pandas DataFrame to Polars DataFrame
+
+    Parameters
+    ----------
+    df
+        DataFrame to convert
+
+    Returns
+    -------
+    A Polars DataFrame
+    """
+    columns = []
+    for k in df.columns:
+        s = df[k].values
+        if s.dtype == np.dtype("datetime64[ns]"):
+            # ns to ms
+            s = s.astype(int) // int(1e6)
+            pl_s = Series(k, s, nullable=True).cast(datatypes.Date64)
+        else:
+            pl_s = Series(k, s, nullable=True)
+        columns.append(pl_s)
+
+    return DataFrame(columns, nullable=True)
