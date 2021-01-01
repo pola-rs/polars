@@ -316,6 +316,17 @@ impl PyLazyFrame {
         ldf.map(function, Some(opt)).into()
     }
 
+    pub fn drop_columns(&self, cols: Vec<String>) -> Self {
+        let ldf = self.ldf.clone();
+        let f = move |mut df: DataFrame| {
+            for col in &cols {
+                let _ = df.drop_in_place(col);
+            }
+            Ok(df)
+        };
+        ldf.map(f, None).into()
+    }
+
     pub fn clone(&self) -> PyLazyFrame {
         self.ldf.clone().into()
     }

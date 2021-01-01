@@ -2,48 +2,48 @@ from . import col
 
 
 def count(column: str) -> "Expr":
-    return col(column).agg_count()
+    return col(column).count()
 
 
 def sum(column: str) -> "Expr":
-    return col(column).agg_sum()
+    return col(column).sum()
 
 
 def min(column: str) -> "Expr":
-    return col(column).agg_min()
+    return col(column).min()
 
 
 def max(column: str) -> "Expr":
-    return col(column).agg_max()
+    return col(column).max()
 
 
 def first(column: str) -> "Expr":
-    return col(column).agg_first()
+    return col(column).first()
 
 
 def last(column: str) -> "Expr":
-    return col(column).agg_last()
+    return col(column).last()
 
 
 def list(column: str) -> "Expr":
-    return col(column).agg_list()
+    return col(column).list()
 
 
 def groups(column: str) -> "Expr":
-    return col(column).agg_groups()
+    return col(column).groups()
 
 
 def mean(column: str) -> "Expr":
-    return col(column).agg_mean()
+    return col(column).mean()
 
 
 def median(column: str) -> "Expr":
-    return col(column).agg_median()
+    return col(column).median()
 
 
 def n_unique(column: str) -> "Expr":
-    return col(column).agg_n_unique()
+    return col(column).n_unique()
 
 
 def quantile(column: str, quantile: float) -> "Expr":
-    return col(column).agg_quantile(quantile)
+    return col(column).quantile(quantile)
