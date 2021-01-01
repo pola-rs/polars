@@ -3,8 +3,9 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*};
+use arrow::array::Array;
 use arrow::compute;
-use num::{Num, NumCast, ToPrimitive};
+use num::{Num, NumCast, ToPrimitive, Zero};
 use std::cmp::{Ordering, PartialOrd};
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
@@ -94,12 +95,31 @@ macro_rules! impl_quantile {
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialOrd + Num + NumCast,
+    T::Native: PartialOrd + Num + NumCast + Zero,
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_chunks()
             .iter()
-            .map(|&a| compute::sum(a))
+            .map(|&a| {
+                // TODO! Fix in arrow 3.0.
+                // compute sum is incorrect in SIMD with null values.
+                // after arrow upgrade we should use the arrow kernel again.
+                if a.null_count() == 0 {
+                    compute::sum(a)
+                } else {
+                    let sum = a
+                        .iter()
+                        .fold(T::Native::zero(), |acc, opt_val| match opt_val {
+                            None => acc,
+                            Some(val) => acc + val,
+                        });
+                    if sum > Zero::zero() {
+                        Some(sum)
+                    } else {
+                        None
+                    }
+                }
+            })
             .fold(None, |acc, v| match v {
                 Some(v) => match acc {
                     None => Some(v),
