@@ -40,7 +40,9 @@ def prepare_other(other: Any) -> Series:
 
 
 class DataFrame:
-    def __init__(self, data: Dict[str, Sequence], nullable: bool = False):
+    def __init__(
+        self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = False
+    ):
 
         columns = []
         if isinstance(data, dict):

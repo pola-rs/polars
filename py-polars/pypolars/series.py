@@ -82,7 +82,10 @@ class Series:
         values
             Values of the series
         nullable
-            If nullable. List[Optional[Any]] will remain lists where None values will be interpreted as nulls
+            If nullable.
+                None values in a list will be interpreted as missing.
+                NaN values in a numpy array will be interpreted as missing. Note that missing and NaNs are not the same
+                in Polars
         """
         # assume the first input were the values
         if values is None and not isinstance(name, str):
@@ -124,9 +127,9 @@ class Series:
             elif dtype == np.int8:
                 self._s = PySeries.new_i8(name, values)
             elif dtype == np.float32:
-                self._s = PySeries.new_f32(name, values)
+                self._s = PySeries.new_f32(name, values, nullable)
             elif dtype == np.float64:
-                self._s = PySeries.new_f64(name, values)
+                self._s = PySeries.new_f64(name, values, nullable)
             elif isinstance(values[0], str):
                 self._s = PySeries.new_str(name, values)
             elif dtype == np.bool:
