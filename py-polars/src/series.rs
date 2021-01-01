@@ -83,8 +83,6 @@ init_method!(new_i8, i8);
 init_method!(new_i16, i16);
 init_method!(new_i32, i32);
 init_method!(new_i64, i64);
-init_method!(new_f32, f32);
-init_method!(new_f64, f64);
 init_method!(new_bool, bool);
 init_method!(new_u8, u8);
 init_method!(new_u16, u16);
@@ -94,6 +92,46 @@ init_method!(new_date32, i32);
 init_method!(new_date64, i64);
 init_method!(new_duration_ns, i64);
 init_method!(new_time_ns, i64);
+
+#[pymethods]
+impl PySeries {
+    #[staticmethod]
+    pub fn new_f32(name: &str, val: &PyArray1<f32>, nan_is_null: bool) -> PySeries {
+        // numpy array as slice is unsafe
+        unsafe {
+            if nan_is_null {
+                let ca: Float32Chunked = val
+                    .as_slice()
+                    .expect("contiguous array")
+                    .iter()
+                    .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
+                    .collect();
+                ca.into_series().into()
+            } else {
+                Series::new(name, val.as_slice().unwrap()).into()
+            }
+        }
+    }
+
+    #[staticmethod]
+    pub fn new_f64(name: &str, val: &PyArray1<f64>, nan_is_null: bool) -> PySeries {
+        // numpy array as slice is unsafe
+        unsafe {
+            if nan_is_null {
+                let mut ca: Float64Chunked = val
+                    .as_slice()
+                    .expect("contiguous array")
+                    .iter()
+                    .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
+                    .collect();
+                ca.rename(name);
+                ca.into_series().into()
+            } else {
+                Series::new(name, val.as_slice().unwrap()).into()
+            }
+        }
+    }
+}
 
 // Init with lists that can contain Nones
 macro_rules! init_method_opt {
