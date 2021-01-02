@@ -423,7 +423,17 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 column.rename(&new_name);
                 Ok(Some(column.into_series()))
             }
-            _ => unimplemented!(),
+            GroupByMethod::Std => {
+                let agg_s = series.agg_std(groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Var => {
+                let agg_s = series.agg_var(groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::Quantile(_) => {
+                unimplemented!()
+            }
         }
     }
 }

@@ -1302,7 +1302,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                         "n_unique" => {
                             finish_agg_opt!(self, "{}_n_unique", agg_n_unique, agg_col, cols)
                         }
-                        "median" => finish_agg_opt!(self, "{}_median", agg_n_unique, agg_col, cols),
+                        "median" => finish_agg_opt!(self, "{}_median", agg_median, agg_col, cols),
                         "std" => finish_agg_opt!(self, "{}_std", agg_std, agg_col, cols),
                         "var" => finish_agg_opt!(self, "{}_var", agg_var, agg_col, cols),
                         "count" => {

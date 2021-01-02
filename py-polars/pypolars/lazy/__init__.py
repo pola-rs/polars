@@ -718,7 +718,7 @@ class Expr:
         """
         Get median value
         """
-        return wrap_expr(self._pyexpr.mean())
+        return wrap_expr(self._pyexpr.median())
 
     def n_unique(self) -> "Expr":
         """Count unique values"""
