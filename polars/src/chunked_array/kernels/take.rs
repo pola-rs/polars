@@ -73,10 +73,10 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
     let nulls;
 
     // The required size is yet unknown
-    // Allocate 1.2 times the expected size.
+    // Allocate 2.0 times the expected size.
     // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
-    let values_capacity =
-        ((arr.value_data().len() as f32 * 1.2) as usize) / arr.len() * indices.len() as usize;
+    let mut values_capacity =
+        ((arr.value_data().len() as f32 * 2.0) as usize) / arr.len() * indices.len() as usize;
 
     // 16 bytes per string as default alloc
     let mut values_buf = AlignedVec::<u8>::with_capacity_aligned(values_capacity);
@@ -93,6 +93,11 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
                 length_so_far += s.len() as i32;
                 *offset = length_so_far;
 
+                if length_so_far as usize >= values_capacity {
+                    values_buf.reserve(values_capacity);
+                    values_capacity *= 2;
+                }
+
                 values_buf.extend_from_slice(s.as_bytes())
             });
         nulls = None;
@@ -106,6 +111,11 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
                     let index = indices.value(idx) as usize;
                     let s = arr.value(index);
                     length_so_far += s.len() as i32;
+
+                    if length_so_far as usize >= values_capacity {
+                        values_buf.reserve(values_capacity);
+                        values_capacity *= 2;
+                    }
 
                     values_buf.extend_from_slice(s.as_bytes())
                 }
