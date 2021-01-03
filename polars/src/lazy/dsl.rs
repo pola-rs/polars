@@ -927,6 +927,14 @@ impl Expr {
     pub fn and(self, expr: Expr) -> Self {
         binary_expr(self, Operator::And, expr)
     }
+
+    /// Raise expression to the power `exponent`
+    pub fn pow(self, exponent: f64) -> Self {
+        self.map(
+            move |s: Series| s.pow(exponent),
+            Some(ArrowDataType::Float64),
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.
@@ -966,6 +974,10 @@ pub fn median(name: &str) -> Expr {
 
 pub fn quantile(name: &str, quantile: f64) -> Expr {
     col(name).quantile(quantile)
+}
+
+pub fn pow(expr: Expr, exponent: f64) -> Expr {
+    expr.pow(exponent)
 }
 
 pub trait Literal {

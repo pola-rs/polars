@@ -426,8 +426,12 @@ impl Add<&str> for &Utf8Chunked {
 }
 
 pub trait Pow {
-    fn pow_f32(&self, exp: f32) -> Float32Chunked;
-    fn pow_f64(&self, exp: f64) -> Float64Chunked;
+    fn pow_f32(&self, _exp: f32) -> Float32Chunked {
+        unimplemented!()
+    }
+    fn pow_f64(&self, _exp: f64) -> Float64Chunked {
+        unimplemented!()
+    }
 }
 
 macro_rules! power {
@@ -460,6 +464,10 @@ where
         power!(self, exp, to_f64, Float64Chunked)
     }
 }
+
+impl Pow for BooleanChunked {}
+impl Pow for Utf8Chunked {}
+impl Pow for ListChunked {}
 
 #[cfg(test)]
 pub(crate) mod test {
