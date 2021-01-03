@@ -607,6 +607,17 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             function,
             output_type,
         },
+        Expr::BinaryFunction {
+            input_a,
+            input_b,
+            function,
+            output_field,
+        } => Expr::BinaryFunction {
+            input_a: Box::new(replace_wildcard_with_column(*input_a, column_name.clone())),
+            input_b: Box::new(replace_wildcard_with_column(*input_b, column_name)),
+            function,
+            output_field,
+        },
         Expr::BinaryExpr { left, op, right } => Expr::BinaryExpr {
             left: Box::new(replace_wildcard_with_column(*left, column_name.clone())),
             op,

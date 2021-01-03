@@ -275,6 +275,16 @@ pub(crate) fn has_aexpr(
                     | has_aexpr(*falsy, arena, matching_expr, follow_agg)
             }
         }
+        AExpr::BinaryFunction {
+            input_a, input_b, ..
+        } => {
+            if matches!(matching_expr, AExpr::BinaryFunction {..}) {
+                true
+            } else {
+                has_aexpr(*input_a, arena, matching_expr, follow_agg)
+                    | has_aexpr(*input_b, arena, matching_expr, follow_agg)
+            }
+        }
         AExpr::Udf { input, .. } => {
             if matches!(matching_expr, AExpr::Udf{..}) {
                 true
@@ -526,6 +536,15 @@ pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
                     | has_expr(falsy, matching_expr)
             }
         }
+        Expr::BinaryFunction {
+            input_a, input_b, ..
+        } => {
+            if matches!(matching_expr, Expr::BinaryFunction {..}) {
+                true
+            } else {
+                has_expr(input_a, matching_expr) | has_expr(input_b, matching_expr)
+            }
+        }
         Expr::Udf { input, .. } => {
             if matches!(matching_expr, Expr::Udf{..}) {
                 true
@@ -660,6 +679,14 @@ pub(crate) fn aexpr_to_root_nodes(node: Node, arena: &Arena<AExpr>) -> Vec<Node>
         AExpr::Shift { input, .. } => aexpr_to_root_nodes(*input, arena),
         AExpr::Slice { input, .. } => aexpr_to_root_nodes(*input, arena),
         AExpr::Udf { input, .. } => aexpr_to_root_nodes(*input, arena),
+        AExpr::BinaryFunction {
+            input_a, input_b, ..
+        } => {
+            let mut results = Vec::with_capacity(16);
+            results.extend(aexpr_to_root_nodes(*input_a, arena).into_iter());
+            results.extend(aexpr_to_root_nodes(*input_b, arena).into_iter());
+            results
+        }
         AExpr::Cast { expr, .. } => aexpr_to_root_nodes(*expr, arena),
         AExpr::Ternary {
             predicate,
@@ -730,6 +757,14 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
         Expr::Shift { input, .. } => expr_to_root_column_exprs(input),
         Expr::Slice { input, .. } => expr_to_root_column_exprs(input),
         Expr::Udf { input, .. } => expr_to_root_column_exprs(input),
+        Expr::BinaryFunction {
+            input_a, input_b, ..
+        } => {
+            let mut results = Vec::with_capacity(16);
+            results.extend(expr_to_root_column_exprs(input_a).into_iter());
+            results.extend(expr_to_root_column_exprs(input_b).into_iter());
+            results
+        }
         Expr::Cast { expr, .. } => expr_to_root_column_exprs(expr),
         Expr::Ternary {
             predicate,
@@ -830,6 +865,7 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
             function: function.clone(),
             output_type: output_type.clone(),
         }),
+        Expr::BinaryFunction { .. } => panic!("cannot rename root columns of BinaryFunction"),
         Expr::Shift { input, .. } => rename_expr_root_name(input, new_name),
         Expr::Slice { input, .. } => rename_expr_root_name(input, new_name),
         Expr::Ternary { predicate, .. } => rename_expr_root_name(predicate, new_name),
