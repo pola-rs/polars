@@ -834,6 +834,23 @@ macro_rules! impl_dyn_series {
                     .sample_frac(frac, with_replacement)
                     .map(|ca| ca.into_series())
             }
+
+            /// Raise a numeric series to the power of exponent.
+            fn pow(&self, exponent: f64) -> Result<Series> {
+                let f_err = || {
+                    Err(PolarsError::InvalidOperation(
+                        format!("power operation not supported on dtype {:?}", self.dtype()).into(),
+                    ))
+                };
+
+                match self.dtype() {
+                    ArrowDataType::Utf8 | ArrowDataType::List(_) | ArrowDataType::Boolean => {
+                        f_err()
+                    }
+                    ArrowDataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
+                    _ => Ok(self.0.pow_f64(exponent).into_series()),
+                }
+            }
         }
     };
 }

@@ -790,6 +790,13 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     fn get_as_any(&self, _index: usize) -> &dyn Any {
         unimplemented!()
     }
+
+    /// Raise a numeric series to the power of exponent.
+    fn pow(&self, _exponent: f64) -> Result<Series> {
+        Err(PolarsError::InvalidOperation(
+            format!("power operation not supported on dtype {:?}", self.dtype()).into(),
+        ))
+    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {

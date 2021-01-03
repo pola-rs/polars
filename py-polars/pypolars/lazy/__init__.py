@@ -596,6 +596,9 @@ class Expr:
     def __truediv__(self, other):
         return wrap_expr(self._pyexpr / self.__to_pyexpr(other))
 
+    def __pow__(self, power, modulo=None):
+        return self.pow(power)
+
     def __ge__(self, other):
         return self.gt_eq(self.__to_expr(other))
 
@@ -1120,6 +1123,12 @@ class Expr:
         Take the last n values
         """
         return wrap_expr(self._pyexpr.tail(n))
+
+    def pow(self, exponent: float) -> "Expr":
+        """
+        Raise expression to the power of exponent
+        """
+        return wrap_expr(self._pyexpr.pow(exponent))
 
 
 def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":
