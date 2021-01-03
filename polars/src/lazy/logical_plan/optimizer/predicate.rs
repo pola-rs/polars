@@ -125,6 +125,7 @@ impl PredicatePushDown {
         use LogicalPlan::*;
 
         match logical_plan {
+            // TODO! maybe the predicate should not pass the slice
             Slice { input, offset, len } => {
                 let input = Box::new(self.push_down(*input, acc_predicates)?);
                 Ok(Slice { input, offset, len })

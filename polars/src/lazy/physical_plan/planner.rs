@@ -612,6 +612,18 @@ impl DefaultPlanner {
                 let function = Arc::new(move |s: Series| s.shift(periods));
                 Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
+            Expr::Slice {
+                input,
+                offset,
+                length,
+            } => {
+                let input = self.create_physical_expr(*input, ctxt)?;
+                Ok(Arc::new(SliceExpr {
+                    input,
+                    offset,
+                    len: length,
+                }))
+            }
             Expr::Reverse(expr) => {
                 let input = self.create_physical_expr(*expr, ctxt)?;
                 let function = Arc::new(move |s: Series| Ok(s.reverse()));

@@ -263,6 +263,9 @@ impl StackOptimizer {
                                 exprs.push((*order_by, current_lp_node))
                             }
                         }
+                        AExpr::Slice { input, .. } => {
+                            exprs.push((*input, current_lp_node));
+                        }
                         AExpr::Literal { .. } | AExpr::Column { .. } | AExpr::Wildcard => {}
                     }
                 }
@@ -337,6 +340,11 @@ pub enum AExpr {
         order_by: Option<Node>,
     },
     Wildcard,
+    Slice {
+        input: Node,
+        offset: isize,
+        length: usize,
+    },
 }
 
 impl Default for AExpr {
@@ -562,6 +570,7 @@ impl AExpr {
                 }
             },
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
+            Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
         }
     }
@@ -796,6 +805,15 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             function: to_aexpr(*function, arena),
             partition_by: to_aexpr(*partition_by, arena),
             order_by: order_by.map(|ob| to_aexpr(*ob, arena)),
+        },
+        Expr::Slice {
+            input,
+            offset,
+            length,
+        } => AExpr::Slice {
+            input: to_aexpr(*input, arena),
+            offset,
+            length,
         },
         Expr::Wildcard => AExpr::Wildcard,
     };
@@ -1194,6 +1212,15 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
                 order_by,
             }
         }
+        AExpr::Slice {
+            input,
+            offset,
+            length,
+        } => Expr::Slice {
+            input: Box::new(node_to_exp(input, expr_arena)),
+            offset,
+            length,
+        },
         AExpr::Wildcard => Expr::Wildcard,
     }
 }
