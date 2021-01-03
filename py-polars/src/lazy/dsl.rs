@@ -172,16 +172,10 @@ impl PyExpr {
             .into()
     }
     pub fn tail(&self, n: Option<usize>) -> PyExpr {
-        self.clone()
-            .inner
-            .map(move |s: Series| Ok(s.tail(n)), None)
-            .into()
+        self.clone().inner.tail(n).into()
     }
     pub fn head(&self, n: Option<usize>) -> PyExpr {
-        self.clone()
-            .inner
-            .map(move |s: Series| Ok(s.head(n)), None)
-            .into()
+        self.clone().inner.head(n).into()
     }
 
     pub fn is_duplicated(&self) -> PyExpr {

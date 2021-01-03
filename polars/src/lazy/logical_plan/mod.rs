@@ -672,6 +672,15 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             input: Box::new(replace_wildcard_with_column(*input, column_name)),
             periods,
         },
+        Expr::Slice {
+            input,
+            offset,
+            length,
+        } => Expr::Slice {
+            input: Box::new(replace_wildcard_with_column(*input, column_name)),
+            offset,
+            length,
+        },
         Expr::Sort { expr, reverse } => Expr::Sort {
             expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
             reverse,

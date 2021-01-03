@@ -169,3 +169,29 @@ impl ChunkApplyKernel<StringArray> for Utf8Chunked {
         ChunkedArray::new_from_chunks(self.name(), chunks)
     }
 }
+
+impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
+    /// Apply a closure `F` elementwise.
+    fn apply<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(Series) -> Series + Copy,
+    {
+        apply!(self, f)
+    }
+
+    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
+    fn apply_with_idx<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, Series)) -> Series + Copy,
+    {
+        apply_enumerate!(self, f)
+    }
+
+    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
+    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, Option<Series>)) -> Option<Series> + Copy,
+    {
+        self.into_iter().enumerate().map(f).collect()
+    }
+}

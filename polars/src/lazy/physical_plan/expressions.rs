@@ -661,3 +661,67 @@ impl PhysicalExpr for WindowExpr {
         self.function.to_field(input_schema, Context::Other)
     }
 }
+
+pub struct SliceExpr {
+    pub(crate) input: Arc<dyn PhysicalExpr>,
+    pub(crate) offset: isize,
+    pub(crate) len: usize,
+}
+
+impl SliceExpr {
+    fn slice_series(&self, series: &Series) -> Result<Series> {
+        let series_len = series.len() as isize;
+        let offset = if self.offset >= 0 {
+            self.offset as usize
+        } else {
+            series_len.checked_sub(self.offset).ok_or_else(|| {
+                PolarsError::OutOfBounds(
+                    format!(
+                        "offset {} is larger than Series length of {}",
+                        self.offset, series_len
+                    )
+                    .into(),
+                )
+            })? as usize
+        };
+        let len = std::cmp::min(series_len as usize - offset, self.len);
+        series.slice(offset, len)
+    }
+}
+
+impl PhysicalExpr for SliceExpr {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series = self.input.evaluate(df)?;
+        self.slice_series(&series)
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.input.to_field(input_schema)
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+impl AggPhysicalExpr for SliceExpr {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
+        let s = self.input.evaluate(df)?;
+        let agg_s = s.agg_list(groups);
+        let out = agg_s.map(|s| {
+            s.list()
+                .unwrap()
+                .into_iter()
+                .map(|opt_s| match opt_s {
+                    None => None,
+                    Some(s) => {
+                        let r = self.slice_series(&s);
+                        r.ok()
+                    }
+                })
+                .collect::<ListChunked>()
+                .into_series()
+        });
+        Ok(out)
+    }
+}

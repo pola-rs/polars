@@ -534,8 +534,8 @@ class LazyFrame:
     def map(
         self,
         f: "Union[UDF, Callable[[DataFrame], DataFrame]]",
-        predicate_pushdown: bool,
-        projection_pushdown: bool,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
     ) -> "LazyFrame":
         """
         Apply a custom UDF. It is important that the UDF returns a Polars DataFrame.

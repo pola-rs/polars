@@ -126,6 +126,12 @@ pub enum Expr {
         order_by: Option<Box<Expr>>,
     },
     Wildcard,
+    Slice {
+        input: Box<Expr>,
+        /// length is not yet known so we accept negative offsets
+        offset: isize,
+        length: usize,
+    },
 }
 
 macro_rules! impl_partial_eq {
@@ -270,6 +276,22 @@ impl PartialEq for Expr {
                     } else {
                         false
                     }
+                } else {
+                    false
+                }
+            }
+            Expr::Slice {
+                input: left,
+                offset: offset_left,
+                length: length_left,
+            } => {
+                if let Expr::Slice {
+                    input,
+                    offset,
+                    length,
+                } = other
+                {
+                    offset == offset_left && length == length_left && left.eq(input)
                 } else {
                     false
                 }
@@ -447,6 +469,7 @@ impl Expr {
                 }
             },
             Shift { input, .. } => input.to_field(schema, ctxt),
+            Slice { input, .. } => input.to_field(schema, ctxt),
             Wildcard => panic!("should be no wildcard at this point"),
         }
     }
@@ -511,6 +534,11 @@ impl fmt::Debug for Expr {
             ),
             Udf { input, .. } => write!(f, "APPLY({:?})", input),
             Shift { input, periods, .. } => write!(f, "SHIFT {:?} by {}", input, periods),
+            Slice {
+                input,
+                offset,
+                length,
+            } => write!(f, "SLICE {:?} offset: {} len: {}", input, offset, length),
             Wildcard => write!(f, "*"),
         }
     }
@@ -708,11 +736,6 @@ impl Expr {
         AggExpr::List(Box::new(self)).into()
     }
 
-    /// Explode the utf8/ list column
-    pub fn explode(self) -> Self {
-        Expr::Explode(Box::new(self))
-    }
-
     /// Compute the quantile per group.
     pub fn quantile(self, quantile: f64) -> Self {
         AggExpr::Quantile {
@@ -725,6 +748,31 @@ impl Expr {
     /// Get the group indexes of the group by operation.
     pub fn agg_groups(self) -> Self {
         AggExpr::AggGroups(Box::new(self)).into()
+    }
+
+    /// Explode the utf8/ list column
+    pub fn explode(self) -> Self {
+        Expr::Explode(Box::new(self))
+    }
+
+    /// Slice the Series.
+    pub fn slice(self, offset: isize, length: usize) -> Self {
+        Expr::Slice {
+            input: Box::new(self),
+            offset,
+            length,
+        }
+    }
+
+    /// Get the first `n` elements of the Expr result
+    pub fn head(self, length: Option<usize>) -> Self {
+        self.slice(0, length.unwrap_or(10))
+    }
+
+    /// Get the last `n` elements of the Expr result
+    pub fn tail(self, length: Option<usize>) -> Self {
+        let len = length.unwrap_or(10);
+        self.slice(-(len as isize), len)
     }
 
     /// Cast expression to another data type.
