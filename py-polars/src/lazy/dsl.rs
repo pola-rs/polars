@@ -442,7 +442,26 @@ pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     let left = l.inner;
     let right = r.inner;
 
-    let op = dsl::Operator::from(op);
+    let op = match op {
+        0 => Operator::Eq,
+        1 => Operator::NotEq,
+        2 => Operator::Lt,
+        3 => Operator::LtEq,
+        4 => Operator::Gt,
+        5 => Operator::GtEq,
+        6 => Operator::Plus,
+        7 => Operator::Minus,
+        8 => Operator::Multiply,
+        9 => Operator::Divide,
+        10 => Operator::Modulus,
+        11 => Operator::And,
+        12 => Operator::Or,
+        13 => Operator::Not,
+        14 => Operator::Like,
+        15 => Operator::NotLike,
+        _ => panic!("not an operator"),
+    };
+
     dsl::binary_expr(left, op, right).into()
 }
 

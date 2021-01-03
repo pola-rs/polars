@@ -26,7 +26,51 @@ where
 
 impl Debug for dyn SeriesUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "udf")
+        write!(f, "SeriesUdf")
+    }
+}
+
+pub trait SeriesBinaryUdf: Send + Sync {
+    fn call_udf(&self, a: Series, b: Series) -> Result<Series>;
+}
+
+impl<F> SeriesBinaryUdf for F
+where
+    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+{
+    fn call_udf(&self, a: Series, b: Series) -> Result<Series> {
+        self(a, b)
+    }
+}
+
+impl Debug for dyn SeriesBinaryUdf {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SeriesBinaryUdf")
+    }
+}
+
+pub trait BinaryUdfOutputField: Send + Sync {
+    fn get_field(
+        &self,
+        _input_schema: &Schema,
+        cntxt: Context,
+        field_a: &Field,
+        field_b: &Field,
+    ) -> Option<Field>;
+}
+
+impl<F> BinaryUdfOutputField for F
+where
+    F: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
+{
+    fn get_field(
+        &self,
+        input_schema: &Schema,
+        cntxt: Context,
+        field_a: &Field,
+        field_b: &Field,
+    ) -> Option<Field> {
+        self(input_schema, cntxt, field_a, field_b)
     }
 }
 
@@ -132,6 +176,13 @@ pub enum Expr {
         offset: isize,
         length: usize,
     },
+    BinaryFunction {
+        input_a: Box<Expr>,
+        input_b: Box<Expr>,
+        function: Arc<dyn SeriesBinaryUdf>,
+        /// Delays output type evaluation until input schema is known.
+        output_field: Arc<dyn BinaryUdfOutputField>,
+    },
 }
 
 macro_rules! impl_partial_eq {
@@ -198,6 +249,7 @@ impl PartialEq for Expr {
             Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
             Expr::Wildcard => matches!(other, Expr::Wildcard),
             Expr::Udf { .. } => false,
+            Expr::BinaryFunction { .. } => false,
             Expr::BinaryExpr { .. } => false, // todo: should it?
             Expr::Ternary { .. } => false,
             Expr::IsNull(left) => impl_partial_eq!(IsNull, left, other),
@@ -468,6 +520,18 @@ impl Expr {
                     ))
                 }
             },
+            BinaryFunction {
+                input_a,
+                input_b,
+                output_field,
+                ..
+            } => {
+                let field_a = input_a.to_field(schema, ctxt)?;
+                let field_b = input_b.to_field(schema, ctxt)?;
+                output_field
+                    .get_field(schema, ctxt, &field_a, &field_b)
+                    .ok_or_else(|| panic!("field expected"))
+            }
             Shift { input, .. } => input.to_field(schema, ctxt),
             Slice { input, .. } => input.to_field(schema, ctxt),
             Wildcard => panic!("should be no wildcard at this point"),
@@ -533,6 +597,9 @@ impl fmt::Debug for Expr {
                 predicate, truthy, falsy
             ),
             Udf { input, .. } => write!(f, "APPLY({:?})", input),
+            BinaryFunction {
+                input_a, input_b, ..
+            } => write!(f, "BinaryFunction({:?}, {:?})", input_a, input_b),
             Shift { input, periods, .. } => write!(f, "SHIFT {:?} by {}", input, periods),
             Slice {
                 input,
@@ -544,7 +611,7 @@ impl fmt::Debug for Expr {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone)]
 pub enum Operator {
     Eq,
     NotEq,
@@ -562,30 +629,6 @@ pub enum Operator {
     Not,
     Like,
     NotLike,
-}
-
-impl From<u8> for Operator {
-    fn from(op: u8) -> Self {
-        match op {
-            0 => Operator::Eq,
-            1 => Operator::NotEq,
-            2 => Operator::Lt,
-            3 => Operator::LtEq,
-            4 => Operator::Gt,
-            5 => Operator::GtEq,
-            6 => Operator::Plus,
-            7 => Operator::Minus,
-            8 => Operator::Multiply,
-            9 => Operator::Divide,
-            10 => Operator::Modulus,
-            11 => Operator::And,
-            12 => Operator::Or,
-            13 => Operator::Not,
-            14 => Operator::Like,
-            15 => Operator::NotLike,
-            _ => panic!("not an operator"),
-        }
-    }
 }
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {

@@ -252,6 +252,12 @@ impl StackOptimizer {
                         AExpr::Udf { input, .. } => {
                             exprs.push((*input, current_lp_node));
                         }
+                        AExpr::BinaryFunction {
+                            input_a, input_b, ..
+                        } => {
+                            exprs.push((*input_a, current_lp_node));
+                            exprs.push((*input_b, current_lp_node));
+                        }
                         AExpr::Window {
                             function,
                             partition_by,
@@ -344,6 +350,13 @@ pub enum AExpr {
         input: Node,
         offset: isize,
         length: usize,
+    },
+    BinaryFunction {
+        input_a: Node,
+        input_b: Node,
+        function: Arc<dyn SeriesBinaryUdf>,
+        /// Delays output type evaluation until input schema is known.
+        output_field: Arc<dyn BinaryUdfOutputField>,
     },
 }
 
@@ -569,6 +582,17 @@ impl AExpr {
                     ))
                 }
             },
+            BinaryFunction {
+                input_a,
+                input_b,
+                output_field,
+                ..
+            } => {
+                let field_a = arena.get(*input_a).to_field(schema, ctxt, arena)?;
+                let field_b = arena.get(*input_b).to_field(schema, ctxt, arena)?;
+                let out = output_field.get_field(schema, ctxt, &field_a, &field_b);
+                Ok(out.unwrap())
+            }
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
@@ -792,6 +816,17 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             input: to_aexpr(*input, arena),
             function,
             output_type,
+        },
+        Expr::BinaryFunction {
+            input_a,
+            input_b,
+            function,
+            output_field,
+        } => AExpr::BinaryFunction {
+            input_a: to_aexpr(*input_a, arena),
+            input_b: to_aexpr(*input_b, arena),
+            function,
+            output_field,
         },
         Expr::Shift { input, periods } => AExpr::Shift {
             input: to_aexpr(*input, arena),
@@ -1198,6 +1233,17 @@ fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
                 output_type,
             }
         }
+        AExpr::BinaryFunction {
+            input_a,
+            input_b,
+            function,
+            output_field,
+        } => Expr::BinaryFunction {
+            input_a: Box::new(node_to_exp(input_a, expr_arena)),
+            input_b: Box::new(node_to_exp(input_b, expr_arena)),
+            function,
+            output_field,
+        },
         AExpr::Window {
             function,
             partition_by,

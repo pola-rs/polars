@@ -607,6 +607,21 @@ impl DefaultPlanner {
                     expr: expression,
                 }))
             }
+            Expr::BinaryFunction {
+                input_a,
+                input_b,
+                function,
+                output_field,
+            } => {
+                let input_a = self.create_physical_expr(*input_a, ctxt)?;
+                let input_b = self.create_physical_expr(*input_b, ctxt)?;
+                Ok(Arc::new(BinaryFunction {
+                    input_a,
+                    input_b,
+                    function,
+                    output_field,
+                }))
+            }
             Expr::Shift { input, periods } => {
                 let input = self.create_physical_expr(*input, ctxt)?;
                 let function = Arc::new(move |s: Series| s.shift(periods));

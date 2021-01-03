@@ -725,3 +725,27 @@ impl AggPhysicalExpr for SliceExpr {
         Ok(out)
     }
 }
+
+pub(crate) struct BinaryFunction {
+    pub(crate) input_a: Arc<dyn PhysicalExpr>,
+    pub(crate) input_b: Arc<dyn PhysicalExpr>,
+    pub(crate) function: Arc<dyn SeriesBinaryUdf>,
+    pub(crate) output_field: Arc<dyn BinaryUdfOutputField>,
+}
+
+impl PhysicalExpr for BinaryFunction {
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series_a = self.input_a.evaluate(df)?;
+        let series_b = self.input_b.evaluate(df)?;
+
+        self.function.call_udf(series_a, series_b)
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        let field_a = self.input_a.to_field(input_schema)?;
+        let field_b = self.input_b.to_field(input_schema)?;
+        self.output_field
+            .get_field(input_schema, Context::Other, &field_a, &field_b)
+            .ok_or_else(|| PolarsError::UnknownSchema("no field found".into()))
+    }
+}
