@@ -28,3 +28,13 @@ def test_agg():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()
     assert ldf.collect().shape == (1, 2)
+
+
+def test_binary_function():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = (
+        df.lazy()
+        .with_column(map_binary(col("a"), col("b"), lambda a, b: a + b))
+        .collect()
+    )
+    assert out["binary_function"] == (out.a + out.b)

@@ -739,6 +739,10 @@ impl PhysicalExpr for BinaryFunction {
         let series_b = self.input_b.evaluate(df)?;
 
         self.function.call_udf(series_a, series_b)
+            .map(|mut s | {
+                s.rename("binary_function");
+                s
+            })
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {

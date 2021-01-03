@@ -40,6 +40,16 @@ fn binary_expr(l: dsl::PyExpr, op: u8, r: dsl::PyExpr) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn binary_function(
+    a: dsl::PyExpr,
+    b: dsl::PyExpr,
+    lambda: PyObject,
+    output_type: &PyAny,
+) -> dsl::PyExpr {
+    dsl::binary_function(a, b, lambda, output_type)
+}
+
+#[pyfunction]
 fn when(predicate: PyExpr) -> dsl::When {
     dsl::when(predicate)
 }
@@ -60,6 +70,7 @@ fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(binary_function)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
     m.add_wrapped(wrap_pyfunction!(version)).unwrap();
     Ok(())
