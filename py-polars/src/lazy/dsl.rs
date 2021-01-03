@@ -465,6 +465,56 @@ pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     dsl::binary_expr(left, op, right).into()
 }
 
+pub fn binary_function(
+    input_a: PyExpr,
+    input_b: PyExpr,
+    lambda: PyObject,
+    output_type: &PyAny,
+) -> PyExpr {
+    let input_a = input_a.inner;
+    let input_b = input_b.inner;
+
+    let output_field = match output_type.is_none() {
+        true => Field::new("binary_function", ArrowDataType::Null, true),
+        false => {
+            let str_repr = output_type.str().unwrap().to_str().unwrap();
+            let data_type = str_to_arrow_type(str_repr);
+            Field::new("binary_function", data_type, true)
+        }
+    };
+
+    let func = move |a: Series, b: Series| {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        // get the pypolars module
+        let pypolars = PyModule::import(py, "pypolars").unwrap();
+        // create a PySeries struct/object for Python
+        let pyseries_a = PySeries::new(a);
+        let pyseries_b = PySeries::new(b);
+
+        // Wrap this PySeries object in the python side Series wrapper
+        let python_series_wrapper_a = pypolars.call1("wrap_s", (pyseries_a,)).unwrap();
+        let python_series_wrapper_b = pypolars.call1("wrap_s", (pyseries_b,)).unwrap();
+
+        // call the lambda and get a python side Series wrapper
+        let result_series_wrapper =
+            match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
+                Ok(pyobj) => pyobj,
+                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+            };
+        // unpack the wrapper in a PySeries
+        let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
+            "Could net get series attribute '_s'. Make sure that you return a Series object.",
+        );
+        // Downcast to Rust
+        let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
+        // Finally get the actual Series
+        Ok(pyseries.series)
+    };
+
+    polars::lazy::dsl::binary_function(input_a, input_b, func, Some(output_field)).into()
+}
+
 pub fn lit(value: &PyAny) -> PyExpr {
     if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();

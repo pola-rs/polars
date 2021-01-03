@@ -14,6 +14,7 @@ try:
         col as pycol,
         lit as pylit,
         binary_expr,
+        binary_function as pybinary_function,
         PyExpr,
         PyLazyGroupBy,
         when as pywhen,
@@ -1260,6 +1261,33 @@ def last(name: str) -> "Expr":
 
 def lit(value: Union[float, int, str]) -> "Expr":
     return wrap_expr(pylit(value))
+
+
+def map_binary(
+    a: "Union[str, Expr]",
+    b: "Union[str, Expr]",
+    f: Callable[[Series, Series], Series],
+    output_type: "Optional[DataType]" = None,
+) -> "Expr":
+    """
+    Map a custom function over two columns and produce a single Series result.
+
+    Parameters
+    ----------
+    a
+        Input Series a
+    b
+        Input Series b
+    f
+        Function to apply
+    output_type
+        Output type of the udf
+    """
+    if isinstance(a, str):
+        a = col(a)
+    if isinstance(b, str):
+        b = col(b)
+    return wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, output_type))
 
 
 class UDF:

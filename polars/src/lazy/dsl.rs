@@ -528,9 +528,14 @@ impl Expr {
             } => {
                 let field_a = input_a.to_field(schema, ctxt)?;
                 let field_b = input_b.to_field(schema, ctxt)?;
-                output_field
+                // if field is unknown we try to guess a return type. May fail.
+                Ok(output_field
                     .get_field(schema, ctxt, &field_a, &field_b)
-                    .ok_or_else(|| panic!("field expected"))
+                    .unwrap_or_else(|| Field::new("binary_expr",
+                                                  get_supertype(field_a.data_type(), field_b.data_type()).unwrap_or(ArrowDataType::Null),
+                                                        true
+                    ),
+                    ))
             }
             Shift { input, .. } => input.to_field(schema, ctxt),
             Slice { input, .. } => input.to_field(schema, ctxt),
@@ -1019,8 +1024,32 @@ pub fn quantile(name: &str, quantile: f64) -> Expr {
     col(name).quantile(quantile)
 }
 
-pub fn pow(expr: Expr, exponent: f64) -> Expr {
-    expr.pow(exponent)
+pub fn binary_function<F: 'static>(a: Expr, b: Expr, f: F, output_field: Option<Field>) -> Expr
+where
+    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+{
+    let output_field = move |_: &Schema, _: Context, _: &Field, _: &Field| output_field.clone();
+
+    Expr::BinaryFunction {
+        input_a: Box::new(a),
+        input_b: Box::new(b),
+        function: Arc::new(f),
+        output_field: Arc::new(output_field)
+    }
+}
+
+/// Binary function where the output type is determined at runtime when the schema is known.
+pub fn binary_function_lazy_field<F: 'static, Fld: 'static>(a: Expr, b: Expr, f: F, output_field: Fld) -> Expr
+    where
+        F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+        Fld: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
+{
+    Expr::BinaryFunction {
+        input_a: Box::new(a),
+        input_b: Box::new(b),
+        function: Arc::new(f),
+        output_field: Arc::new(output_field)
+    }
 }
 
 pub trait Literal {
