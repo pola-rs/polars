@@ -355,6 +355,16 @@ impl PySeries {
         Self::new(self.series.is_not_null().into_series())
     }
 
+    pub fn is_not_nan(&self) -> PyResult<Self> {
+        let ca = self.series.is_not_nan().map_err(PyPolarsEr::from)?;
+        Ok(ca.into_series().into())
+    }
+
+    pub fn is_nan(&self) -> PyResult<Self> {
+        let ca = self.series.is_nan().map_err(PyPolarsEr::from)?;
+        Ok(ca.into_series().into())
+    }
+
     pub fn is_unique(&self) -> PyResult<Self> {
         let ca = self.series.is_unique().map_err(PyPolarsEr::from)?;
         Ok(ca.into_series().into())

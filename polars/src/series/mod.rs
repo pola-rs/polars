@@ -8,6 +8,7 @@ pub mod implementations;
 pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
+use crate::chunked_array::float::IsNan;
 use arrow::array::ArrayDataRef;
 use num::NumCast;
 use std::any::Any;
@@ -1025,6 +1026,36 @@ impl Series {
             _ => Err(PolarsError::InvalidOperation(
                 format!(
                     "explode not supported for Series with dtype {:?}",
+                    self.dtype()
+                )
+                .into(),
+            )),
+        }
+    }
+
+    /// Check if float value is NaN (note this is different than missing/ null)
+    pub fn is_nan(&self) -> Result<BooleanChunked> {
+        match self.dtype() {
+            ArrowDataType::Float32 => Ok(self.f32().unwrap().is_nan()),
+            ArrowDataType::Float64 => Ok(self.f64().unwrap().is_nan()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!(
+                    "is_nan not supported for series with dtype {:?}",
+                    self.dtype()
+                )
+                .into(),
+            )),
+        }
+    }
+
+    /// Check if float value is NaN (note this is different than missing/ null)
+    pub fn is_not_nan(&self) -> Result<BooleanChunked> {
+        match self.dtype() {
+            ArrowDataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
+            ArrowDataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!(
+                    "is_nan not supported for series with dtype {:?}",
                     self.dtype()
                 )
                 .into(),

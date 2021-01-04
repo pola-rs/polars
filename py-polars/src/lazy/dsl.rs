@@ -74,19 +74,24 @@ impl PyExpr {
     pub fn alias(&self, name: &str) -> PyExpr {
         self.clone().inner.alias(name).into()
     }
-    #[text_signature = "($self)"]
     pub fn is_not(&self) -> PyExpr {
         self.clone().inner.not().into()
     }
-    #[text_signature = "($self)"]
     pub fn is_null(&self) -> PyExpr {
         self.clone().inner.is_null().into()
     }
-    #[text_signature = "($self)"]
     pub fn is_not_null(&self) -> PyExpr {
         self.clone().inner.is_not_null().into()
     }
-    #[text_signature = "($self)"]
+
+    pub fn is_nan(&self) -> PyExpr {
+        self.clone().inner.is_nan().into()
+    }
+
+    pub fn is_not_nan(&self) -> PyExpr {
+        self.clone().inner.is_not_nan().into()
+    }
+
     pub fn min(&self) -> PyExpr {
         self.clone().inner.min().into()
     }

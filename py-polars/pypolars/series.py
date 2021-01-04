@@ -619,16 +619,6 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_null())
 
-    def arg_true(self) -> "Series":
-        """
-        Get index values where Boolean Series evaluate True
-
-        Returns
-        -------
-        UInt32 Series
-        """
-        return Series._from_pyseries(self._s.arg_true())
-
     def is_not_null(self) -> "Series":
         """
         Get mask of non null values
@@ -638,6 +628,36 @@ class Series:
         Boolean Series
         """
         return Series._from_pyseries(self._s.is_not_null())
+
+    def is_nan(self) -> "Series":
+        """
+        Get mask of NaN values if Series dtype is Float
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_nan())
+
+    def is_not_nan(self) -> "Series":
+        """
+        Get negated mask of NaN values if Series dtype is_not Float
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_not_nan())
+
+    def arg_true(self) -> "Series":
+        """
+        Get index values where Boolean Series evaluate True
+
+        Returns
+        -------
+        UInt32 Series
+        """
+        return Series._from_pyseries(self._s.arg_true())
 
     def is_unique(self) -> "Series":
         """

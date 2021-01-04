@@ -653,6 +653,12 @@ class Expr:
     def is_not_null(self) -> "Expr":
         return wrap_expr(self._pyexpr.is_not_null())
 
+    def is_nan(self) -> "Expr":
+        return wrap_expr(self._pyexpr.is_nan())
+
+    def is_not_nan(self) -> "Expr":
+        return wrap_expr(self._pyexpr.is_not_nan())
+
     def agg_groups(self) -> "Expr":
         return wrap_expr(self._pyexpr.agg_groups())
 

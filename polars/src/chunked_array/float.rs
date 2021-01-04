@@ -1,7 +1,9 @@
+use crate::chunked_array::kernels::{is_nan, is_not_nan};
 use crate::{
     prelude::*,
     utils::{integer_decode_f32, integer_decode_f64},
 };
+use num::Float;
 
 pub trait ChunkIntegerDecode {
     fn integer_decode(&self) -> (UInt64Chunked, Int16Chunked, Int8Chunked);
@@ -73,5 +75,23 @@ where
             i16_builder.finish(),
             i8_builder.finish(),
         )
+    }
+}
+
+pub trait IsNan {
+    fn is_nan(&self) -> BooleanChunked;
+    fn is_not_nan(&self) -> BooleanChunked;
+}
+
+impl<T> IsNan for ChunkedArray<T>
+where
+    T: PolarsFloatType,
+    T::Native: Float,
+{
+    fn is_nan(&self) -> BooleanChunked {
+        self.apply_kernel_cast(is_nan)
+    }
+    fn is_not_nan(&self) -> BooleanChunked {
+        self.apply_kernel_cast(is_not_nan)
     }
 }
