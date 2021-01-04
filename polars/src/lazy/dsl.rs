@@ -861,6 +861,24 @@ impl Expr {
         }
     }
 
+    /// Get mask if NaN values if dtype is Float
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_nan(self) -> Self {
+        self.map(
+            |s: Series| s.is_nan().map(|ca| ca.into_series()),
+            Some(ArrowDataType::Boolean),
+        )
+    }
+
+    /// Get inverse mask if NaN values if dtype is Float
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_not_nan(self) -> Self {
+        self.map(
+            |s: Series| s.is_not_nan().map(|ca| ca.into_series()),
+            Some(ArrowDataType::Boolean),
+        )
+    }
+
     /// Shift the values in the array by some period. See [the eager implementation](crate::series::SeriesTrait::shift).
     pub fn shift(self, periods: i32) -> Self {
         Expr::Shift {

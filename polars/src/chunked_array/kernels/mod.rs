@@ -7,13 +7,15 @@ pub(crate) mod utils;
 pub mod zip_with;
 
 use crate::chunked_array::builder::{aligned_vec_to_primitive_array, get_bitmap};
-use crate::datatypes::{ArrowDataType, Float64Type, PolarsNumericType, PolarsPrimitiveType};
+use crate::datatypes::{
+    ArrowDataType, Float64Type, PolarsFloatType, PolarsNumericType, PolarsPrimitiveType,
+};
 use arrow::array::{Array, ArrayData, ArrayRef, PrimitiveArray};
 use arrow::datatypes::{
-    Float32Type, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type, UInt32Type, UInt64Type,
-    UInt8Type,
+    BooleanType, Float32Type, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type, UInt32Type,
+    UInt64Type, UInt8Type,
 };
-use num::NumCast;
+use num::{Float, NumCast};
 use std::sync::Arc;
 pub use zip_with::*;
 
@@ -74,6 +76,36 @@ where
         .map(|v| num::cast::cast::<S::Native, T::Native>(*v).unwrap())
         .collect();
     Arc::new(aligned_vec_to_primitive_array::<T>(
+        av,
+        null_bit_buffer,
+        Some(null_count),
+    ))
+}
+
+pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
+where
+    T: PolarsFloatType,
+    T::Native: Float,
+{
+    let vals = arr.value_slice(arr.offset(), arr.len());
+    let (null_count, null_bit_buffer) = get_bitmap(arr);
+    let av = vals.iter().map(|v| v.is_nan()).collect();
+    Arc::new(aligned_vec_to_primitive_array::<BooleanType>(
+        av,
+        null_bit_buffer,
+        Some(null_count),
+    ))
+}
+
+pub(crate) fn is_not_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
+where
+    T: PolarsFloatType,
+    T::Native: Float,
+{
+    let vals = arr.value_slice(arr.offset(), arr.len());
+    let (null_count, null_bit_buffer) = get_bitmap(arr);
+    let av = vals.iter().map(|v| !v.is_nan()).collect();
+    Arc::new(aligned_vec_to_primitive_array::<BooleanType>(
         av,
         null_bit_buffer,
         Some(null_count),
