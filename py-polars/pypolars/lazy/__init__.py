@@ -15,6 +15,8 @@ try:
         lit as pylit,
         binary_expr,
         binary_function as pybinary_function,
+        pearson_corr as pypearson_corr,
+        cov as pycov,
         PyExpr,
         PyLazyGroupBy,
         when as pywhen,
@@ -1264,6 +1266,28 @@ def last(name: str) -> "Expr":
 
 def lit(value: Union[float, int, str]) -> "Expr":
     return wrap_expr(pylit(value))
+
+
+def pearson_corr(
+    a: "Union[str, Expr]",
+    b: "Union[str, Expr]",
+) -> "Expr":
+    if isinstance(a, str):
+        a = col(a)
+    if isinstance(b, str):
+        b = col(b)
+    return wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr))
+
+
+def cov(
+    a: "Union[str, Expr]",
+    b: "Union[str, Expr]",
+) -> "Expr":
+    if isinstance(a, str):
+        a = col(a)
+    if isinstance(b, str):
+        b = col(b)
+    return wrap_expr(pycov(a._pyexpr, b._pyexpr))
 
 
 def map_binary(

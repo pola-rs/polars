@@ -195,6 +195,7 @@
 //! ```
 pub mod dsl;
 pub mod frame;
+pub mod functions;
 mod logical_plan;
 pub(crate) mod physical_plan;
 pub(crate) mod prelude;

@@ -751,4 +751,44 @@ impl PhysicalExpr for BinaryFunction {
             .get_field(input_schema, Context::Other, &field_a, &field_b)
             .ok_or_else(|| PolarsError::UnknownSchema("no field found".into()))
     }
+    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+        Ok(self)
+    }
+}
+
+impl AggPhysicalExpr for BinaryFunction {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
+        let a = self.input_a.evaluate(df)?;
+        let b = self.input_b.evaluate(df)?;
+
+        let agg_a = a.agg_list(groups).expect("no data?");
+        let agg_b = b.agg_list(groups).expect("no data?");
+
+        let mut all_unit_length = true;
+
+        let ca = agg_a
+            .list()
+            .unwrap()
+            .into_iter()
+            .zip(agg_b.list().unwrap())
+            .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
+                (Some(a), Some(b)) => {
+                    let out = self.function.call_udf(a, b).ok();
+
+                    if let Some(s) = &out {
+                        if s.len() != 1 {
+                            all_unit_length = false;
+                        }
+                    }
+                    out
+                }
+                _ => None,
+            })
+            .collect::<ListChunked>();
+
+        if all_unit_length {
+            return Ok(Some(ca.explode()?));
+        }
+        Ok(Some(ca.into_series()))
+    }
 }

@@ -50,6 +50,16 @@ fn binary_function(
 }
 
 #[pyfunction]
+fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
+    polars::lazy::functions::pearson_corr(a.inner, b.inner).into()
+}
+
+#[pyfunction]
+fn cov(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
+    polars::lazy::functions::cov(a.inner, b.inner).into()
+}
+
+#[pyfunction]
 fn when(predicate: PyExpr) -> dsl::When {
     dsl::when(predicate)
 }
@@ -71,6 +81,8 @@ fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_function)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
     m.add_wrapped(wrap_pyfunction!(version)).unwrap();
     Ok(())
