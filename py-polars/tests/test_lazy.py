@@ -30,6 +30,13 @@ def test_agg():
     assert ldf.collect().shape == (1, 2)
 
 
+def test_groupby_apply():
+    df = DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
+    ldf = df.lazy().groupby("a").apply(lambda df: df)
+    print(ldf.collect())
+    assert False
+
+
 def test_binary_function():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = (

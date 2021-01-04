@@ -226,11 +226,15 @@ impl DefaultPlanner {
                 }))
             }
             LogicalPlan::Aggregate {
-                input, keys, aggs, ..
+                input,
+                keys,
+                aggs,
+                apply,
+                ..
             } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let phys_aggs = self.create_physical_expressions(aggs, Context::Aggregation)?;
-                Ok(Box::new(GroupByExec::new(input, keys, phys_aggs)))
+                Ok(Box::new(GroupByExec::new(input, keys, phys_aggs, apply)))
             }
             LogicalPlan::Join {
                 input_left,

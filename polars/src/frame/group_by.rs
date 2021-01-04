@@ -2,7 +2,7 @@ use super::hash_join::prepare_hashed_relation;
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{IntoDynamicZip, Xob};
+use crate::utils::{accumulate_dataframes_vertical, IntoDynamicZip, Xob};
 use ahash::RandomState;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use itertools::Itertools;
@@ -1395,38 +1395,37 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
     /// Apply a closure over the groups as a new DataFrame.
     pub fn apply<F>(&self, f: F) -> Result<DataFrame>
-    where F: Fn(DataFrame) -> Result<DataFrame>
+    where
+        F: Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
     {
         let df = if let Some(agg) = &self.selected_agg {
-            let mut new_cols = Vec::with_capacity(self.selected_keys.len() + agg.len());
-            new_cols.extend_from_slice(&self.selected_keys);
-            let cols = self.df.select_series(agg)?;
-            new_cols.extend(cols.into_iter());
-            DataFrame::new_no_checks(new_cols)
+            if agg.is_empty() {
+                self.df.clone()
+            } else {
+                let mut new_cols = Vec::with_capacity(self.selected_keys.len() + agg.len());
+                new_cols.extend_from_slice(&self.selected_keys);
+                let cols = self.df.select_series(agg)?;
+                new_cols.extend(cols.into_iter());
+                DataFrame::new_no_checks(new_cols)
+            }
         } else {
             self.df.clone()
         };
 
-        let mut iter = self.get_groups()
-            .iter()
+        let dfs = self
+            .get_groups()
+            .par_iter()
             .map(|t| {
                 let cap = t.1.len();
-                let sub_df = unsafe { df.take_iter_unchecked_bounds(t.1.iter().copied(), Some(cap)) };
+                let sub_df =
+                    unsafe { df.take_iter_unchecked_bounds(t.1.iter().copied(), Some(cap)) };
                 f(sub_df)
-            });
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-        let mut acc_df;
-        if let Some(out) = iter.next() {
-            acc_df = out?;
-        } else {
-            return Err(PolarsError::NoData("Cannot apply groupby function, no groups found".into()))
-        }
-        for out in iter {
-            acc_df.vstack_mut(&out?)?;
-        }
-
-        acc_df.as_single_chunk();
-        Ok(acc_df)
+        let mut df = accumulate_dataframes_vertical(dfs)?;
+        df.as_single_chunk();
+        Ok(df)
     }
 
     /// Pivot a column of the current `DataFrame` and perform one of the following aggregations:
@@ -1508,7 +1507,6 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             values_column,
         }
     }
-
 }
 
 #[derive(Copy, Clone)]
@@ -1712,9 +1710,7 @@ fn pivot_count_impl<'a, CA: TakeRandom>(
     for (_first, idx) in groups {
         // for every group do the aggregation by adding them to the vector belonging by that column
         // the columns are hashed with the pivot values
-        let mut columns_agg_map_group
-
- = create_column_values_map::<CA::Item>(&pivot_vec, idx.len());
+        let mut columns_agg_map_group = create_column_values_map::<CA::Item>(&pivot_vec, idx.len());
         for &i in idx {
             let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
 
@@ -2196,13 +2192,10 @@ mod test {
         let df = df! {
             "a" => [1, 1, 2, 2, 2],
             "b" => [1, 2, 3, 4, 5]
-        }.unwrap();
+        }
+        .unwrap();
 
-        let out = df.groupby("a")
-            .unwrap()
-            .apply(|df| {
-                Ok(df)
-            }).unwrap();
-        assert!(out.frame_equal(&df));
+        let out = df.groupby("a").unwrap().apply(|df| Ok(df)).unwrap();
+        assert!(out.sort("b", false).unwrap().frame_equal(&df));
     }
 }

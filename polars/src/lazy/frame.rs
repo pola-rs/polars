@@ -847,7 +847,17 @@ impl LazyGroupBy {
     /// ```
     pub fn agg(self, aggs: Vec<Expr>) -> LazyFrame {
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(Arc::new(self.keys), aggs)
+            .groupby(Arc::new(self.keys), aggs, None)
+            .build();
+        LazyFrame::from_logical_plan(lp, self.opt_state)
+    }
+
+    pub fn apply<F>(self, f: F) -> LazyFrame
+    where
+        F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+    {
+        let lp = LogicalPlanBuilder::from(self.logical_plan)
+            .groupby(Arc::new(self.keys), vec![], Some(Arc::new(f)))
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }

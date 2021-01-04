@@ -430,6 +430,7 @@ pub struct GroupByExec {
     input: Box<dyn Executor>,
     keys: Arc<Vec<String>>,
     aggs: Vec<Arc<dyn PhysicalExpr>>,
+    apply: Option<Arc<dyn DataFrameUdf>>,
 }
 
 impl GroupByExec {
@@ -437,8 +438,14 @@ impl GroupByExec {
         input: Box<dyn Executor>,
         keys: Arc<Vec<String>>,
         aggs: Vec<Arc<dyn PhysicalExpr>>,
+        apply: Option<Arc<dyn DataFrameUdf>>,
     ) -> Self {
-        Self { input, keys, aggs }
+        Self {
+            input,
+            keys,
+            aggs,
+            apply,
+        }
     }
 }
 
@@ -446,6 +453,10 @@ impl Executor for GroupByExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let df = self.input.execute(cache)?;
         let gb = df.groupby(&*self.keys)?;
+        if let Some(f) = &self.apply {
+            return gb.apply(|df| f.call_udf(df));
+        }
+
         let groups = gb.get_groups();
 
         let mut columns = gb.keys();
