@@ -1393,6 +1393,42 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         DataFrame::new(cols)
     }
 
+    /// Apply a closure over the groups as a new DataFrame.
+    pub fn apply<F>(&self, f: F) -> Result<DataFrame>
+    where F: Fn(DataFrame) -> Result<DataFrame>
+    {
+        let df = if let Some(agg) = &self.selected_agg {
+            let mut new_cols = Vec::with_capacity(self.selected_keys.len() + agg.len());
+            new_cols.extend_from_slice(&self.selected_keys);
+            let cols = self.df.select_series(agg)?;
+            new_cols.extend(cols.into_iter());
+            DataFrame::new_no_checks(new_cols)
+        } else {
+            self.df.clone()
+        };
+
+        let mut iter = self.get_groups()
+            .iter()
+            .map(|t| {
+                let cap = t.1.len();
+                let sub_df = unsafe { df.take_iter_unchecked_bounds(t.1.iter().copied(), Some(cap)) };
+                f(sub_df)
+            });
+
+        let mut acc_df;
+        if let Some(out) = iter.next() {
+            acc_df = out?;
+        } else {
+            return Err(PolarsError::NoData("Cannot apply groupby function, no groups found".into()))
+        }
+        for out in iter {
+            acc_df.vstack_mut(&out?)?;
+        }
+
+        acc_df.as_single_chunk();
+        Ok(acc_df)
+    }
+
     /// Pivot a column of the current `DataFrame` and perform one of the following aggregations:
     /// * first
     /// * sum
@@ -1472,6 +1508,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             values_column,
         }
     }
+
 }
 
 #[derive(Copy, Clone)]
@@ -1675,7 +1712,9 @@ fn pivot_count_impl<'a, CA: TakeRandom>(
     for (_first, idx) in groups {
         // for every group do the aggregation by adding them to the vector belonging by that column
         // the columns are hashed with the pivot values
-        let mut columns_agg_map_group = create_column_values_map::<CA::Item>(&pivot_vec, idx.len());
+        let mut columns_agg_map_group
+
+ = create_column_values_map::<CA::Item>(&pivot_vec, idx.len());
         for &i in idx {
             let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
 
@@ -2150,5 +2189,20 @@ mod test {
             Vec::from(res.column("val_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]
         );
+    }
+
+    #[test]
+    fn test_groupby_apply() {
+        let df = df! {
+            "a" => [1, 1, 2, 2, 2],
+            "b" => [1, 2, 3, 4, 5]
+        }.unwrap();
+
+        let out = df.groupby("a")
+            .unwrap()
+            .apply(|df| {
+                Ok(df)
+            }).unwrap();
+        assert!(out.frame_equal(&df));
     }
 }

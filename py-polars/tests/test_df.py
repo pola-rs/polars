@@ -130,6 +130,7 @@ def test_groupby():
     # df.groupby(by="a", select="b", agg="count").frame_equal(
     #     DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
     # )
+    assert df.groupby("a").apply(lambda df: df[["c"]].sum())["c"][0] == 10
 
 
 def test_join():

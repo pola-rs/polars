@@ -464,6 +464,38 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
+    pub fn groupby_apply(&self, by: Vec<&str>, lambda: PyObject) -> PyResult<Self> {
+        let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
+        let function = move |df: DataFrame| {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            // get the pypolars module
+            let pypolars = PyModule::import(py, "pypolars").unwrap();
+
+            // create a PyDataFrame struct/object for Python
+            let pydf = PyDataFrame::new(df);
+
+            // Wrap this PySeries object in the python side DataFrame wrapper
+            let python_df_wrapper = pypolars.call1("wrap_df", (pydf,)).unwrap();
+
+            // call the lambda and get a python side DataFrame wrapper
+            let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+                Ok(pyobj) => pyobj,
+                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+            };
+            // unpack the wrapper in a PyDataFrame
+            let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+                "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+            );
+            // Downcast to Rust
+            let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+            // Finally get the actual DataFrame
+            Ok(pydf.df)
+        };
+        let df = gb.apply(function).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn groupby_quantile(
         &self,
         by: Vec<&str>,

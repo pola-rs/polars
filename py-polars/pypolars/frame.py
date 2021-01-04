@@ -867,6 +867,21 @@ class GroupBy:
         self._df = df
         self.by = by
 
+    def apply(self, f: "Callable[[DataFrame], DataFrame]"):
+        """
+        Apply a function over the groups as a sub-DataFrame.
+
+        Parameters
+        ----------
+        f
+            Custom function
+
+        Returns
+        -------
+        DataFrame
+        """
+        return wrap_df(self._df.groupby_apply(self.by, f))
+
     def agg(
         self, column_to_agg: "Union[List[Tuple[str, List[str]]], Dict[str, List[str]]]"
     ) -> DataFrame:
