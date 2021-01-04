@@ -492,7 +492,10 @@ impl PyDataFrame {
             // Finally get the actual DataFrame
             Ok(pydf.df)
         };
-        let df = gb.apply(function).map_err(PyPolarsEr::from)?;
+
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let df = py.allow_threads(|| gb.apply(function).map_err(PyPolarsEr::from))?;
         Ok(df.into())
     }
 
