@@ -381,6 +381,7 @@ impl PredicatePushDown {
                 keys,
                 aggs,
                 schema,
+                apply,
             } => {
                 // dont push down predicates. An aggregation needs all rows
                 let lp = Aggregate {
@@ -388,6 +389,7 @@ impl PredicatePushDown {
                     keys,
                     aggs,
                     schema,
+                    apply,
                 };
                 Ok(self.finish_at_leaf(lp, acc_predicates))
             }

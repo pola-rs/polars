@@ -360,25 +360,47 @@ impl ProjectionPushDown {
                 Ok(builder.build())
             }
             Aggregate {
-                input, keys, aggs, ..
+                input,
+                keys,
+                aggs,
+                apply,
+                schema,
             } => {
-                // todo! remove unnecessary vec alloc.
-                let (mut acc_projections, _local_projections, mut names) =
-                    self.split_acc_projections(acc_projections, input.schema());
+                // the custom function may have all columns
+                if let Some(f) = apply {
+                    let lp = Aggregate {
+                        input,
+                        keys,
+                        aggs,
+                        schema,
+                        apply: Some(f),
+                    };
 
-                // add the columns used in the aggregations to the projection
-                for agg in &aggs {
-                    add_to_accumulated(agg, &mut acc_projections, &mut names)?;
+                    let mut builder = LogicalPlanBuilder::from(lp);
+
+                    if !acc_projections.is_empty() {
+                        builder = builder.project(acc_projections);
+                    }
+                    Ok(builder.build())
+                } else {
+                    // todo! remove unnecessary vec alloc.
+                    let (mut acc_projections, _local_projections, mut names) =
+                        self.split_acc_projections(acc_projections, input.schema());
+
+                    // add the columns used in the aggregations to the projection
+                    for agg in &aggs {
+                        add_to_accumulated(agg, &mut acc_projections, &mut names)?;
+                    }
+
+                    // make sure the keys are projected
+                    for key in &*keys {
+                        add_to_accumulated(&col(key), &mut acc_projections, &mut names)?;
+                    }
+
+                    let lp = self.push_down(*input, acc_projections, names, projections_seen)?;
+                    let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs, apply);
+                    Ok(builder.build())
                 }
-
-                // make sure the keys are projected
-                for key in &*keys {
-                    add_to_accumulated(&col(key), &mut acc_projections, &mut names)?;
-                }
-
-                let lp = self.push_down(*input, acc_projections, names, projections_seen)?;
-                let builder = LogicalPlanBuilder::from(lp).groupby(keys, aggs);
-                Ok(builder.build())
             }
             Join {
                 input_left,

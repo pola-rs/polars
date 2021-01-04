@@ -531,11 +531,14 @@ impl Expr {
                 // if field is unknown we try to guess a return type. May fail.
                 Ok(output_field
                     .get_field(schema, ctxt, &field_a, &field_b)
-                    .unwrap_or_else(|| Field::new("binary_expr",
-                                                  get_supertype(field_a.data_type(), field_b.data_type()).unwrap_or(ArrowDataType::Null),
-                                                        true
-                    ),
-                    ))
+                    .unwrap_or_else(|| {
+                        Field::new(
+                            "binary_expr",
+                            get_supertype(field_a.data_type(), field_b.data_type())
+                                .unwrap_or(ArrowDataType::Null),
+                            true,
+                        )
+                    }))
             }
             Shift { input, .. } => input.to_field(schema, ctxt),
             Slice { input, .. } => input.to_field(schema, ctxt),
@@ -1034,21 +1037,26 @@ where
         input_a: Box::new(a),
         input_b: Box::new(b),
         function: Arc::new(f),
-        output_field: Arc::new(output_field)
+        output_field: Arc::new(output_field),
     }
 }
 
 /// Binary function where the output type is determined at runtime when the schema is known.
-pub fn binary_function_lazy_field<F: 'static, Fld: 'static>(a: Expr, b: Expr, f: F, output_field: Fld) -> Expr
-    where
-        F: Fn(Series, Series) -> Result<Series> + Send + Sync,
-        Fld: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
+pub fn binary_function_lazy_field<F: 'static, Fld: 'static>(
+    a: Expr,
+    b: Expr,
+    f: F,
+    output_field: Fld,
+) -> Expr
+where
+    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+    Fld: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
 {
     Expr::BinaryFunction {
         input_a: Box::new(a),
         input_b: Box::new(b),
         function: Arc::new(f),
-        output_field: Arc::new(output_field)
+        output_field: Arc::new(output_field),
     }
 }
 

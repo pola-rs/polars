@@ -155,6 +155,7 @@ pub enum LogicalPlan {
         keys: Arc<Vec<String>>,
         aggs: Vec<Expr>,
         schema: Schema,
+        apply: Option<Arc<dyn DataFrameUdf>>,
     },
     Join {
         input_left: Box<LogicalPlan>,
@@ -933,7 +934,13 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn groupby(self, keys: Arc<Vec<String>>, aggs: Vec<Expr>) -> Self {
+    pub fn groupby(
+        self,
+        keys: Arc<Vec<String>>,
+        aggs: Vec<Expr>,
+        apply: Option<Arc<dyn DataFrameUdf>>,
+    ) -> Self {
+        debug_assert!(!keys.is_empty());
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs, current_schema);
 
@@ -953,6 +960,7 @@ impl LogicalPlanBuilder {
             keys,
             aggs,
             schema,
+            apply,
         }
         .into()
     }

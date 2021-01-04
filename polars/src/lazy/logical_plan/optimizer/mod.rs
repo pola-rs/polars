@@ -674,6 +674,7 @@ pub enum ALogicalPlan {
         keys: Arc<Vec<String>>,
         aggs: Vec<Node>,
         schema: Schema,
+        apply: Option<Arc<dyn DataFrameUdf>>,
     },
     Join {
         input_left: Node,
@@ -999,6 +1000,7 @@ pub(crate) fn to_alp(
             keys,
             aggs,
             schema,
+            apply,
         } => {
             let i = to_alp(*input, expr_arena, lp_arena);
             let aggs_new = aggs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
@@ -1008,6 +1010,7 @@ pub(crate) fn to_alp(
                 keys,
                 aggs: aggs_new,
                 schema,
+                apply,
             }
         }
         LogicalPlan::Join {
@@ -1411,6 +1414,7 @@ pub(crate) fn node_to_lp(
             keys,
             aggs,
             schema,
+            apply,
         } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
             let a = aggs.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
@@ -1420,6 +1424,7 @@ pub(crate) fn node_to_lp(
                 keys,
                 aggs: a,
                 schema,
+                apply,
             }
         }
         ALogicalPlan::Join {

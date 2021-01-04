@@ -54,6 +54,9 @@ class LazyGroupBy:
         aggs = _selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
 
+    def apply(self, f: "Callable[[DataFrame], DataFrame]") -> "LazyFrame":
+        return wrap_ldf(self.lgb.apply(f))
+
 
 class LazyFrame:
     def __init__(self):
