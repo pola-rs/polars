@@ -112,6 +112,36 @@ where
     ))
 }
 
+pub(crate) fn is_finite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
+where
+    T: PolarsFloatType,
+    T::Native: Float,
+{
+    let vals = arr.value_slice(arr.offset(), arr.len());
+    let (null_count, null_bit_buffer) = get_bitmap(arr);
+    let av = vals.iter().map(|v| !v.is_finite()).collect();
+    Arc::new(aligned_vec_to_primitive_array::<BooleanType>(
+        av,
+        null_bit_buffer,
+        Some(null_count),
+    ))
+}
+
+pub(crate) fn is_infinite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
+where
+    T: PolarsFloatType,
+    T::Native: Float,
+{
+    let vals = arr.value_slice(arr.offset(), arr.len());
+    let (null_count, null_bit_buffer) = get_bitmap(arr);
+    let av = vals.iter().map(|v| !v.is_infinite()).collect();
+    Arc::new(aligned_vec_to_primitive_array::<BooleanType>(
+        av,
+        null_bit_buffer,
+        Some(null_count),
+    ))
+}
+
 pub(crate) fn cast_numeric_from_dtype<S>(arr: &PrimitiveArray<S>, dtype: ArrowDataType) -> ArrayRef
 where
     S: PolarsNumericType,

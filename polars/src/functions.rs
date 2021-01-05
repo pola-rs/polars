@@ -8,7 +8,11 @@ where
     T: PolarsFloatType,
     T::Native: Float + Div + NumCast,
 {
-    Some((&(a - a.mean()?) * &(b - b.mean()?)).sum()? / NumCast::from(a.len() - 1).unwrap())
+    if a.len() != b.len() {
+        None
+    } else {
+        Some((&(a - a.mean()?) * &(b - b.mean()?)).sum()? / NumCast::from(a.len() - 1).unwrap())
+    }
 }
 pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where

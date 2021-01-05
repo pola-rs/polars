@@ -1062,6 +1062,36 @@ impl Series {
             )),
         }
     }
+
+    /// Check if float value is finite
+    pub fn is_finite(&self) -> Result<BooleanChunked> {
+        match self.dtype() {
+            ArrowDataType::Float32 => Ok(self.f32().unwrap().is_finite()),
+            ArrowDataType::Float64 => Ok(self.f64().unwrap().is_finite()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!(
+                    "is_nan not supported for series with dtype {:?}",
+                    self.dtype()
+                )
+                .into(),
+            )),
+        }
+    }
+
+    /// Check if float value is finite
+    pub fn is_infinite(&self) -> Result<BooleanChunked> {
+        match self.dtype() {
+            ArrowDataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
+            ArrowDataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!(
+                    "is_nan not supported for series with dtype {:?}",
+                    self.dtype()
+                )
+                .into(),
+            )),
+        }
+    }
 }
 
 impl Deref for Series {

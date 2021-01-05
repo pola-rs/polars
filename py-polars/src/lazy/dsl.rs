@@ -46,31 +46,24 @@ impl<'p> PyObjectProtocol<'p> for PyExpr {
 
 #[pymethods]
 impl PyExpr {
-    #[text_signature = "($self, other)"]
     pub fn eq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.eq(other.inner).into()
     }
-    #[text_signature = "($self, other)"]
     pub fn neq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.neq(other.inner).into()
     }
-    #[text_signature = "($self, other)"]
     pub fn gt(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.gt(other.inner).into()
     }
-    #[text_signature = "($self, other)"]
     pub fn gt_eq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.gt_eq(other.inner).into()
     }
-    #[text_signature = "($self, other)"]
     pub fn lt_eq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.lt_eq(other.inner).into()
     }
-    #[text_signature = "($self, other)"]
     pub fn lt(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.lt(other.inner).into()
     }
-    #[text_signature = "($self, name)"]
     pub fn alias(&self, name: &str) -> PyExpr {
         self.clone().inner.alias(name).into()
     }
@@ -84,6 +77,14 @@ impl PyExpr {
         self.clone().inner.is_not_null().into()
     }
 
+    pub fn is_infinite(&self) -> PyExpr {
+        self.clone().inner.is_infinite().into()
+    }
+
+    pub fn is_finite(&self) -> PyExpr {
+        self.clone().inner.is_finite().into()
+    }
+
     pub fn is_nan(&self) -> PyExpr {
         self.clone().inner.is_nan().into()
     }
@@ -95,38 +96,30 @@ impl PyExpr {
     pub fn min(&self) -> PyExpr {
         self.clone().inner.min().into()
     }
-    #[text_signature = "($self)"]
     pub fn max(&self) -> PyExpr {
         self.clone().inner.max().into()
     }
-    #[text_signature = "($self)"]
     pub fn mean(&self) -> PyExpr {
         self.clone().inner.mean().into()
     }
-    #[text_signature = "($self)"]
     pub fn median(&self) -> PyExpr {
         self.clone().inner.median().into()
     }
-    #[text_signature = "($self)"]
     pub fn sum(&self) -> PyExpr {
         self.clone().inner.sum().into()
     }
-    #[text_signature = "($self)"]
     pub fn n_unique(&self) -> PyExpr {
         self.clone().inner.n_unique().into()
     }
-    #[text_signature = "($self)"]
     pub fn first(&self) -> PyExpr {
         self.clone().inner.first().into()
     }
-    #[text_signature = "($self)"]
     pub fn last(&self) -> PyExpr {
         self.clone().inner.last().into()
     }
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    #[text_signature = "($self, quantile)"]
     pub fn quantile(&self, quantile: f64) -> PyExpr {
         self.clone().inner.quantile(quantile).into()
     }
@@ -136,14 +129,12 @@ impl PyExpr {
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
     }
-    #[text_signature = "($self, data_type)"]
     pub fn cast(&self, data_type: &PyAny) -> PyExpr {
         let str_repr = data_type.str().unwrap().to_str().unwrap();
         let dt = str_to_arrow_type(str_repr);
         let expr = self.inner.clone().cast(dt);
         expr.into()
     }
-    #[text_signature = "($self, reverse)"]
     pub fn sort(&self, reverse: bool) -> PyExpr {
         self.clone().inner.sort(reverse).into()
     }

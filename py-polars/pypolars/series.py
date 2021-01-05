@@ -629,6 +629,26 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_not_null())
 
+    def is_finite(self) -> "Series":
+        """
+        Get mask of finite values if Series dtype is Float
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_finite())
+
+    def is_infinite(self) -> "Series":
+        """
+        Get mask of infinite values if Series dtype is Float
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_infinite())
+
     def is_nan(self) -> "Series":
         """
         Get mask of NaN values if Series dtype is Float

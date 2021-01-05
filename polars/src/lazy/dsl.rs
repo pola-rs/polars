@@ -861,7 +861,25 @@ impl Expr {
         }
     }
 
-    /// Get mask if NaN values if dtype is Float
+    /// Get mask of finite values if dtype is Float
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_finite(self) -> Self {
+        self.map(
+            |s: Series| s.is_finite().map(|ca| ca.into_series()),
+            Some(ArrowDataType::Boolean),
+        )
+    }
+
+    /// Get mask of infinite values if dtype is Float
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_infinite(self) -> Self {
+        self.map(
+            |s: Series| s.is_infinite().map(|ca| ca.into_series()),
+            Some(ArrowDataType::Boolean),
+        )
+    }
+
+    /// Get mask of NaN values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_nan(self) -> Self {
         self.map(
@@ -870,7 +888,7 @@ impl Expr {
         )
     }
 
-    /// Get inverse mask if NaN values if dtype is Float
+    /// Get inverse mask of NaN values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_not_nan(self) -> Self {
         self.map(
