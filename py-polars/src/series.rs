@@ -365,6 +365,16 @@ impl PySeries {
         Ok(ca.into_series().into())
     }
 
+    pub fn is_finite(&self) -> PyResult<Self> {
+        let ca = self.series.is_finite().map_err(PyPolarsEr::from)?;
+        Ok(ca.into_series().into())
+    }
+
+    pub fn is_infinite(&self) -> PyResult<Self> {
+        let ca = self.series.is_infinite().map_err(PyPolarsEr::from)?;
+        Ok(ca.into_series().into())
+    }
+
     pub fn is_unique(&self) -> PyResult<Self> {
         let ca = self.series.is_unique().map_err(PyPolarsEr::from)?;
         Ok(ca.into_series().into())

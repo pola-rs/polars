@@ -653,6 +653,12 @@ class Expr:
     def is_not_null(self) -> "Expr":
         return wrap_expr(self._pyexpr.is_not_null())
 
+    def is_finite(self) -> "Expr":
+        return wrap_expr(self._pyexpr.is_finite())
+
+    def is_infinite(self) -> "Expr":
+        return wrap_expr(self._pyexpr.is_infinite())
+
     def is_nan(self) -> "Expr":
         return wrap_expr(self._pyexpr.is_nan())
 
