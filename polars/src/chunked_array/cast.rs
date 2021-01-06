@@ -9,7 +9,7 @@ where
     N: PolarsDataType,
     T: PolarsDataType,
 {
-    if N::get_data_type() == T::get_data_type() {
+    if N::get_dtype() == T::get_dtype() {
         return unsafe {
             let ca = std::mem::transmute(ca.clone());
             Ok(ca)
@@ -17,8 +17,8 @@ where
     };
 
     // only i32 can be cast to Date32
-    if let ArrowDataType::Date32(DateUnit::Day) = N::get_data_type() {
-        if T::get_data_type() != ArrowDataType::Int32 {
+    if let ArrowDataType::Date32(DateUnit::Day) = N::get_dtype() {
+        if T::get_dtype() != ArrowDataType::Int32 {
             let casted_i32 = cast_ca::<Int32Type, _>(ca)?;
             return cast_ca(&casted_i32);
         }
@@ -26,7 +26,7 @@ where
     let chunks = ca
         .chunks
         .iter()
-        .map(|arr| compute::cast(arr, &N::get_data_type()))
+        .map(|arr| compute::cast(arr, &N::get_dtype()))
         .collect::<arrow::error::Result<Vec<_>>>()?;
 
     Ok(ChunkedArray::new_from_chunks(ca.field.name(), chunks))
@@ -57,7 +57,7 @@ where
             // Duration cast is not implemented in Arrow
             ArrowDataType::Duration(_) => {
                 // underlying type: i64
-                match N::get_data_type() {
+                match N::get_dtype() {
                     ArrowDataType::UInt64 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, UInt64)
                     }
@@ -75,7 +75,7 @@ where
                 }
             }
             ArrowDataType::Date32(_) => {
-                match N::get_data_type() {
+                match N::get_dtype() {
                     // underlying type: i32
                     ArrowDataType::Int32 => cast_ca(self),
                     ArrowDataType::Int64 => {
@@ -97,7 +97,7 @@ where
                 }
             }
             ArrowDataType::Date64(_) => {
-                match N::get_data_type() {
+                match N::get_dtype() {
                     // underlying type: i32
                     ArrowDataType::Int32 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Int32)

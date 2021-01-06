@@ -805,7 +805,7 @@ impl<'a> (dyn SeriesTrait + 'a) {
     where
         N: PolarsDataType,
     {
-        if &N::get_data_type() == self.dtype() {
+        if &N::get_dtype() == self.dtype() {
             Ok(self.as_ref())
         } else {
             Err(PolarsError::DataTypeMisMatch(
@@ -954,7 +954,7 @@ impl Series {
     where
         N: PolarsDataType,
     {
-        self.0.cast_with_arrow_datatype(&N::get_data_type())
+        self.0.cast_with_arrow_datatype(&N::get_dtype())
     }
     /// Returns `None` if the array is empty or only contains null values.
     /// ```
