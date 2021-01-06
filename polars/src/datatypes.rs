@@ -11,11 +11,11 @@ pub use arrow::datatypes::DataType as ArrowDataType;
 pub use arrow::datatypes::{
     ArrowNumericType, ArrowPrimitiveType, BooleanType, Date32Type, Date64Type, DateUnit,
     DurationMicrosecondType, DurationMillisecondType, DurationNanosecondType, DurationSecondType,
-    Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, IntervalDayTimeType,
-    IntervalUnit, IntervalYearMonthType, Time32MillisecondType, Time32SecondType,
-    Time64MicrosecondType, Time64NanosecondType, TimeUnit, TimestampMicrosecondType,
-    TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt16Type, UInt32Type,
-    UInt64Type, UInt8Type,
+    Field as ArrowField, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
+    IntervalDayTimeType, IntervalUnit, IntervalYearMonthType, Schema as ArrowSchema,
+    Time32MillisecondType, Time32SecondType, Time64MicrosecondType, Time64NanosecondType, TimeUnit,
+    TimestampMicrosecondType, TimestampMillisecondType, TimestampNanosecondType,
+    TimestampSecondType, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
 
 pub struct Utf8Type {}
@@ -211,17 +211,8 @@ impl ToStr for ArrowDataType {
             ArrowDataType::Utf8 => "str",
             ArrowDataType::Date32(DateUnit::Day) => "date32(days)",
             ArrowDataType::Date64(DateUnit::Millisecond) => "date64(ms)",
-            ArrowDataType::Time32(TimeUnit::Second) => "time64(s)",
-            ArrowDataType::Time32(TimeUnit::Millisecond) => "time64(ms)",
             ArrowDataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
-            ArrowDataType::Time64(TimeUnit::Microsecond) => "time64(μs)",
-            // Note: Polars doesn't support the optional TimeZone in the timestamps.
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => "timestamp(ns)",
-            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => "timestamp(μs)",
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => "timestamp(ms)",
-            ArrowDataType::Timestamp(TimeUnit::Second, _) => "timestamp(s)",
             ArrowDataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
-            ArrowDataType::Duration(TimeUnit::Microsecond) => "duration(μs)",
             ArrowDataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
             ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
             #[cfg(feature = "object")]
@@ -236,5 +227,125 @@ impl<'a> PartialEq for AnyType<'a> {
     // Everything of Any is slow. Don't use.
     fn eq(&self, other: &Self) -> bool {
         format!("{}", self) == format!("{}", other)
+    }
+}
+
+pub enum DataType {
+    Boolean,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Float32,
+    Float64,
+    Utf8,
+    Date32,
+    Date64,
+    Time64(TimeUnit),
+    List(ArrowDataType),
+    Object,
+}
+
+pub struct Field {
+    name: String,
+    data_type: DataType,
+}
+
+impl Field {
+    pub fn new(name: &str, data_type: DataType) -> Self {
+        Field {
+            name: name.to_string(),
+            data_type,
+        }
+    }
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+}
+
+pub struct Schema {
+    fields: Vec<Field>,
+}
+
+impl Schema {
+    pub fn new(fields: Vec<Field>) -> Self {
+        Schema { fields }
+    }
+
+    /// Returns an immutable reference of the vector of `Field` instances
+    pub fn fields(&self) -> &Vec<Field> {
+        &self.fields
+    }
+
+    /// Returns an immutable reference of a specific `Field` instance selected using an
+    /// offset within the internal `fields` vector
+    pub fn field(&self, i: usize) -> Option<&Field> {
+        self.fields.get(i)
+    }
+
+    /// Returns an immutable reference of a specific `Field` instance selected by name
+    pub fn field_with_name(&self, name: &str) -> Result<&Field> {
+        Ok(&self.fields[self.index_of(name)?])
+    }
+
+    /// Find the index of the column with the given name
+    pub fn index_of(&self, name: &str) -> Result<usize> {
+        for i in 0..self.fields.len() {
+            if self.fields[i].name == name {
+                return Ok(i);
+            }
+        }
+        let valid_fields: Vec<String> = self.fields.iter().map(|f| f.name().clone()).collect();
+        Err(PolarsError::NotFound(format!(
+            "Unable to get field named \"{}\". Valid fields: {:?}",
+            name, valid_fields
+        )))
+    }
+}
+
+type SchemaRef = Arc<Schema>;
+
+impl From<&ArrowDataType> for DataType {
+    fn from(dt: &ArrowDataType) -> Self {
+        match dt {
+            ArrowDataType::UInt8 => DataType::UInt8,
+            ArrowDataType::UInt16 => DataType::UInt16,
+            ArrowDataType::UInt32 => DataType::UInt32,
+            ArrowDataType::UInt64 => DataType::UInt64,
+            ArrowDataType::Int8 => DataType::Int8,
+            ArrowDataType::Int16 => DataType::Int16,
+            ArrowDataType::Int32 => DataType::Int32,
+            ArrowDataType::Int64 => DataType::Int64,
+            ArrowDataType::Utf8 => DataType::Utf8,
+            ArrowDataType::Boolean => DataType::Boolean,
+            ArrowDataType::Float32 => DataType::Float32,
+            ArrowDataType::Float64 => DataType::Float64,
+            ArrowDataType::List(dt) => DataType::List(*dt.clone()),
+            ArrowDataType::Date32(DateUnit::Day) => DataType::Date32,
+            ArrowDataType::Date64(DateUnit::Millisecond) => DataType::Date64,
+            ArrowDataType::Time64(TimeUnit::Nanosecond) => DataType::Time64(TimeUnit::Nanosecond),
+            dt => panic!(format!("Arrow datatype {:?} not supported by Polars", dt)),
+        }
+    }
+}
+
+impl From<&ArrowField> for Field {
+    fn from(f: &ArrowField) -> Self {
+        Field::new(f.name(), f.data_type().into())
+    }
+}
+impl From<&ArrowSchema> for Schema {
+    fn from(a_schema: &ArrowSchema) -> Self {
+        Schema::new(
+            a_schema
+                .fields()
+                .iter()
+                .map(|arrow_f| arrow_f.into())
+                .collect(),
+        )
     }
 }
