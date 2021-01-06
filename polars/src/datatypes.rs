@@ -23,16 +23,51 @@ pub struct Utf8Type {}
 
 pub struct ListType {}
 
+pub struct CategoricalType {}
+
 pub trait PolarsDataType: Send + Sync {
     fn get_dtype() -> DataType;
 }
 
-impl<T> PolarsDataType for T
-where
-    T: PolarsPrimitiveType + Sync + Send,
-{
+macro_rules! impl_polars_datatype {
+    ($ca:ident, $variant:ident) => {
+        impl PolarsDataType for $ca {
+            fn get_dtype() -> DataType {
+                DataType::$variant
+            }
+        }
+    };
+}
+
+impl_polars_datatype!(UInt8Type, UInt8);
+impl_polars_datatype!(UInt16Type, UInt16);
+impl_polars_datatype!(UInt32Type, UInt32);
+impl_polars_datatype!(UInt64Type, UInt64);
+impl_polars_datatype!(Int8Type, Int8);
+impl_polars_datatype!(Int16Type, Int16);
+impl_polars_datatype!(Int32Type, Int32);
+impl_polars_datatype!(Int64Type, Int64);
+impl_polars_datatype!(Float32Type, Float32);
+impl_polars_datatype!(Float64Type, Float64);
+impl_polars_datatype!(BooleanType, Boolean);
+impl_polars_datatype!(Date32Type, Date32);
+impl_polars_datatype!(Date64Type, Date64);
+
+impl PolarsDataType for Time64NanosecondType {
     fn get_dtype() -> DataType {
-        (&T::get_data_type()).into()
+        DataType::Time64(TimeUnit::Nanosecond)
+    }
+}
+
+impl PolarsDataType for DurationNanosecondType {
+    fn get_dtype() -> DataType {
+        DataType::Duration(TimeUnit::Nanosecond)
+    }
+}
+
+impl PolarsDataType for DurationMillisecondType {
+    fn get_dtype() -> DataType {
+        DataType::Duration(TimeUnit::Millisecond)
     }
 }
 
@@ -46,6 +81,20 @@ impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
         // null as we cannot no anything without self.
         DataType::List(ArrowDataType::Null)
+    }
+}
+
+impl PolarsDataType for CategoricalType {
+    fn get_dtype() -> DataType {
+        DataType::Categorical
+    }
+}
+
+impl ArrowPrimitiveType for CategoricalType {
+    type Native = u16;
+
+    fn get_data_type() -> ArrowDataType {
+        ArrowDataType::UInt16
     }
 }
 
@@ -88,8 +137,9 @@ pub type Date64Chunked = ChunkedArray<Date64Type>;
 pub type DurationNanosecondChunked = ChunkedArray<DurationNanosecondType>;
 pub type DurationMillisecondChunked = ChunkedArray<DurationMillisecondType>;
 pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
+pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
-pub trait PolarsPrimitiveType: ArrowPrimitiveType + Send + Sync {}
+pub trait PolarsPrimitiveType: ArrowPrimitiveType + Send + Sync + PolarsDataType {}
 impl PolarsPrimitiveType for BooleanType {}
 impl PolarsPrimitiveType for UInt8Type {}
 impl PolarsPrimitiveType for UInt16Type {}
@@ -106,6 +156,7 @@ impl PolarsPrimitiveType for Date64Type {}
 impl PolarsPrimitiveType for Time64NanosecondType {}
 impl PolarsPrimitiveType for DurationNanosecondType {}
 impl PolarsPrimitiveType for DurationMillisecondType {}
+impl PolarsPrimitiveType for CategoricalType {}
 
 pub trait PolarsNumericType: PolarsPrimitiveType + ArrowNumericType {}
 impl PolarsNumericType for UInt8Type {}
@@ -212,6 +263,7 @@ impl Display for DataType {
             DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
             #[cfg(feature = "object")]
             DataType::Object => "object",
+            DataType::Categorical => "categorical",
             _ => panic!(format!("{:?} not implemented", self)),
         };
         f.write_str(s)
@@ -247,6 +299,7 @@ pub enum DataType {
     #[cfg(feature = "object")]
     Object,
     Null,
+    Categorical,
 }
 
 impl DataType {
@@ -273,6 +326,7 @@ impl DataType {
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
             Object => unimplemented!(),
+            Categorical => ArrowDataType::UInt16,
         }
     }
 }
