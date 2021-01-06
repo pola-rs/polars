@@ -42,12 +42,12 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        if &T::get_data_type() == self.dtype() {
+        if &T::get_dtype() == self.dtype() {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {
             panic!(format!(
                 "implementation error, cannot get ref {:?} from {:?}",
-                T::get_data_type(),
+                T::get_dtype(),
                 self.dtype()
             ))
         }

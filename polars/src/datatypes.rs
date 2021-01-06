@@ -23,26 +23,26 @@ pub struct Utf8Type {}
 pub struct ListType {}
 
 pub trait PolarsDataType: Send + Sync {
-    fn get_data_type() -> ArrowDataType;
+    fn get_dtype() -> ArrowDataType;
 }
 
 impl<T> PolarsDataType for T
 where
     T: PolarsPrimitiveType + Sync + Send,
 {
-    fn get_data_type() -> ArrowDataType {
+    fn get_dtype() -> ArrowDataType {
         T::get_data_type()
     }
 }
 
 impl PolarsDataType for Utf8Type {
-    fn get_data_type() -> ArrowDataType {
+    fn get_dtype() -> ArrowDataType {
         ArrowDataType::Utf8
     }
 }
 
 impl PolarsDataType for ListType {
-    fn get_data_type() -> ArrowDataType {
+    fn get_dtype() -> ArrowDataType {
         // null as we cannot no anything without self.
         ArrowDataType::List(Box::new(ArrowDataType::Null))
     }
@@ -57,7 +57,7 @@ pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 #[cfg(feature = "object")]
 #[doc(cfg(feature = "object"))]
 impl<T: Send + Sync> PolarsDataType for ObjectType<T> {
-    fn get_data_type() -> ArrowDataType {
+    fn get_dtype() -> ArrowDataType {
         // the best fit?
         ArrowDataType::Binary
     }

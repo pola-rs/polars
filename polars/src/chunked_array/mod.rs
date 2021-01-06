@@ -461,14 +461,14 @@ where
     /// Create a new ChunkedArray from existing chunks.
     pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
         // prevent List<Box<Null>> if the inner list type is known.
-        let datatype = if matches!(T::get_data_type(), ArrowDataType::List(_)) {
+        let datatype = if matches!(T::get_dtype(), ArrowDataType::List(_)) {
             if let Some(arr) = chunks.get(0) {
                 arr.data_type().clone()
             } else {
-                T::get_data_type()
+                T::get_dtype()
             }
         } else {
-            T::get_data_type()
+            T::get_dtype()
         };
         let field = Arc::new(Field::new(name, datatype, true));
         let chunk_id = create_chunk_id(&chunks);
@@ -503,7 +503,7 @@ where
             }};
         }
         // TODO: insert types
-        match T::get_data_type() {
+        match T::get_dtype() {
             ArrowDataType::Utf8 => downcast_and_pack!(StringArray, Utf8),
             ArrowDataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
             ArrowDataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
