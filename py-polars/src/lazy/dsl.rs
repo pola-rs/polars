@@ -198,7 +198,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::Date32(DateUnit::Day)))
+            .map(function, Some(DataType::Date32))
             .into()
     }
 
@@ -210,7 +210,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::Date64(DateUnit::Millisecond)))
+            .map(function, Some(DataType::Date64))
             .into()
     }
 
@@ -221,7 +221,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
 
@@ -232,7 +232,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
 
@@ -243,7 +243,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
 
@@ -279,7 +279,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::Boolean))
+            .map(function, Some(DataType::Boolean))
             .into()
     }
 
@@ -287,7 +287,7 @@ impl PyExpr {
         let function = move |s: Series| s.datetime_str_fmt(&fmt);
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::Utf8))
+            .map(function, Some(DataType::Utf8))
             .into()
     }
 
@@ -295,56 +295,56 @@ impl PyExpr {
         let function = move |s: Series| s.year();
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
     pub fn month(&self) -> PyExpr {
         let function = move |s: Series| s.month();
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
     pub fn day(&self) -> PyExpr {
         let function = move |s: Series| s.day();
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
     pub fn ordinal_day(&self) -> PyExpr {
         let function = move |s: Series| s.ordinal_day();
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
     pub fn hour(&self) -> PyExpr {
         let function = move |s: Series| s.hour();
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
     pub fn minute(&self) -> PyExpr {
         let function = move |s: Series| s.minute();
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
     pub fn second(&self) -> PyExpr {
         let function = move |s: Series| s.second();
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
     pub fn nanosecond(&self) -> PyExpr {
         let function = move |s: Series| s.nanosecond();
         self.clone()
             .inner
-            .map(function, Some(ArrowDataType::UInt32))
+            .map(function, Some(DataType::UInt32))
             .into()
     }
 
@@ -471,11 +471,11 @@ pub fn binary_function(
     let input_b = input_b.inner;
 
     let output_field = match output_type.is_none() {
-        true => Field::new("binary_function", ArrowDataType::Null, true),
+        true => Field::new("binary_function", DataType::Null),
         false => {
             let str_repr = output_type.str().unwrap().to_str().unwrap();
             let data_type = str_to_arrow_type(str_repr);
-            Field::new("binary_function", data_type, true)
+            Field::new("binary_function", data_type)
         }
     };
 

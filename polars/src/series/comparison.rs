@@ -12,33 +12,33 @@ fn fill_bool(val: bool, len: usize) -> BooleanChunked {
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
         match $self.dtype() {
-            ArrowDataType::Boolean => $self.bool().unwrap().$method($rhs.bool().unwrap()),
-            ArrowDataType::Utf8 => $self.utf8().unwrap().$method($rhs.utf8().unwrap()),
-            ArrowDataType::UInt8 => $self.u8().unwrap().$method($rhs.u8().unwrap()),
-            ArrowDataType::UInt16 => $self.u16().unwrap().$method($rhs.u16().unwrap()),
-            ArrowDataType::UInt32 => $self.u32().unwrap().$method($rhs.u32().unwrap()),
-            ArrowDataType::UInt64 => $self.u64().unwrap().$method($rhs.u64().unwrap()),
-            ArrowDataType::Int8 => $self.i8().unwrap().$method($rhs.i8().unwrap()),
-            ArrowDataType::Int16 => $self.i16().unwrap().$method($rhs.i16().unwrap()),
-            ArrowDataType::Int32 => $self.i32().unwrap().$method($rhs.i32().unwrap()),
-            ArrowDataType::Int64 => $self.i64().unwrap().$method($rhs.i64().unwrap()),
-            ArrowDataType::Float32 => $self.f32().unwrap().$method($rhs.f32().unwrap()),
-            ArrowDataType::Float64 => $self.f64().unwrap().$method($rhs.f64().unwrap()),
-            ArrowDataType::Date32(_) => $self.date32().unwrap().$method($rhs.date32().unwrap()),
-            ArrowDataType::Date64(_) => $self.date64().unwrap().$method($rhs.date64().unwrap()),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => $self
+            DataType::Boolean => $self.bool().unwrap().$method($rhs.bool().unwrap()),
+            DataType::Utf8 => $self.utf8().unwrap().$method($rhs.utf8().unwrap()),
+            DataType::UInt8 => $self.u8().unwrap().$method($rhs.u8().unwrap()),
+            DataType::UInt16 => $self.u16().unwrap().$method($rhs.u16().unwrap()),
+            DataType::UInt32 => $self.u32().unwrap().$method($rhs.u32().unwrap()),
+            DataType::UInt64 => $self.u64().unwrap().$method($rhs.u64().unwrap()),
+            DataType::Int8 => $self.i8().unwrap().$method($rhs.i8().unwrap()),
+            DataType::Int16 => $self.i16().unwrap().$method($rhs.i16().unwrap()),
+            DataType::Int32 => $self.i32().unwrap().$method($rhs.i32().unwrap()),
+            DataType::Int64 => $self.i64().unwrap().$method($rhs.i64().unwrap()),
+            DataType::Float32 => $self.f32().unwrap().$method($rhs.f32().unwrap()),
+            DataType::Float64 => $self.f64().unwrap().$method($rhs.f64().unwrap()),
+            DataType::Date32 => $self.date32().unwrap().$method($rhs.date32().unwrap()),
+            DataType::Date64 => $self.date64().unwrap().$method($rhs.date64().unwrap()),
+            DataType::Time64(TimeUnit::Nanosecond) => $self
                 .time64_nanosecond()
                 .unwrap()
                 .$method($rhs.time64_nanosecond().unwrap()),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => $self
+            DataType::Duration(TimeUnit::Nanosecond) => $self
                 .duration_nanosecond()
                 .unwrap()
                 .$method($rhs.duration_nanosecond().unwrap()),
-            ArrowDataType::Duration(TimeUnit::Millisecond) => $self
+            DataType::Duration(TimeUnit::Millisecond) => $self
                 .duration_millisecond()
                 .unwrap()
                 .$method($rhs.duration_millisecond().unwrap()),
-            ArrowDataType::List(_) => $self.list().unwrap().$method($rhs.list().unwrap()),
+            DataType::List(_) => $self.list().unwrap().$method($rhs.list().unwrap()),
             _ => unimplemented!(),
         }
     }};

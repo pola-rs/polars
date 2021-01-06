@@ -168,27 +168,23 @@ where
 macro_rules! match_arrow_data_type_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident $(, $opt_args:expr)*) => {{
         match $obj {
-            ArrowDataType::Utf8 => $macro_utf8!($($opt_args)*),
-            ArrowDataType::Boolean => $macro!(BooleanType $(, $opt_args)*),
-            ArrowDataType::UInt8 => $macro!(UInt8Type $(, $opt_args)*),
-            ArrowDataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
-            ArrowDataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
-            ArrowDataType::UInt64 => $macro!(UInt64Type $(, $opt_args)*),
-            ArrowDataType::Int8 => $macro!(Int8Type $(, $opt_args)*),
-            ArrowDataType::Int16 => $macro!(Int16Type $(, $opt_args)*),
-            ArrowDataType::Int32 => $macro!(Int32Type $(, $opt_args)*),
-            ArrowDataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
-            ArrowDataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
-            ArrowDataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
-            ArrowDataType::Date32(DateUnit::Day) => $macro!(Date32Type $(, $opt_args)*),
-            ArrowDataType::Date64(DateUnit::Millisecond) => $macro!(Date64Type $(, $opt_args)*),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => $macro!(Time64NanosecondType $(, $opt_args)*),
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::DayTime) => $macro!(IntervalDayTimeType $(, $opt_args)*),
-            #[cfg(feature = "dtype-interval")]
-            ArrowDataType::Interval(IntervalUnit::YearMonth) => $macro!(IntervalYearMonthType $(, $opt_args)*),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => $macro!(DurationNanosecondType $(, $opt_args)*),
-            ArrowDataType::Duration(TimeUnit::Millisecond) => $macro!(DurationMillisecondType $(, $opt_args)*),
+            DataType::Utf8 => $macro_utf8!($($opt_args)*),
+            DataType::Boolean => $macro!(BooleanType $(, $opt_args)*),
+            DataType::UInt8 => $macro!(UInt8Type $(, $opt_args)*),
+            DataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
+            DataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
+            DataType::UInt64 => $macro!(UInt64Type $(, $opt_args)*),
+            DataType::Int8 => $macro!(Int8Type $(, $opt_args)*),
+            DataType::Int16 => $macro!(Int16Type $(, $opt_args)*),
+            DataType::Int32 => $macro!(Int32Type $(, $opt_args)*),
+            DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
+            DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
+            DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
+            DataType::Date32 => $macro!(Date32Type $(, $opt_args)*),
+            DataType::Date64 => $macro!(Date64Type $(, $opt_args)*),
+            DataType::Time64(TimeUnit::Nanosecond) => $macro!(Time64NanosecondType $(, $opt_args)*),
+            DataType::Duration(TimeUnit::Nanosecond) => $macro!(DurationNanosecondType $(, $opt_args)*),
+            DataType::Duration(TimeUnit::Millisecond) => $macro!(DurationMillisecondType $(, $opt_args)*),
             _ => unimplemented!(),
         }
     }};
@@ -198,24 +194,24 @@ macro_rules! match_arrow_data_type_apply_macro {
 macro_rules! apply_method_all_arrow_series {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
-            ArrowDataType::Boolean => $self.bool().unwrap().$method($($args),*),
-            ArrowDataType::Utf8 => $self.utf8().unwrap().$method($($args),*),
-            ArrowDataType::UInt8 => $self.u8().unwrap().$method($($args),*),
-            ArrowDataType::UInt16 => $self.u16().unwrap().$method($($args),*),
-            ArrowDataType::UInt32 => $self.u32().unwrap().$method($($args),*),
-            ArrowDataType::UInt64 => $self.u64().unwrap().$method($($args),*),
-            ArrowDataType::Int8 => $self.i8().unwrap().$method($($args),*),
-            ArrowDataType::Int16 => $self.i16().unwrap().$method($($args),*),
-            ArrowDataType::Int32 => $self.i32().unwrap().$method($($args),*),
-            ArrowDataType::Int64 => $self.i64().unwrap().$method($($args),*),
-            ArrowDataType::Float32 => $self.f32().unwrap().$method($($args),*),
-            ArrowDataType::Float64 => $self.f64().unwrap().$method($($args),*),
-            ArrowDataType::Date32(_) => $self.date32().unwrap().$method($($args),*),
-            ArrowDataType::Date64(_) => $self.date64().unwrap().$method($($args),*),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
-            ArrowDataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
-            ArrowDataType::List(_) => $self.list().unwrap().$method($($args),*),
+            DataType::Boolean => $self.bool().unwrap().$method($($args),*),
+            DataType::Utf8 => $self.utf8().unwrap().$method($($args),*),
+            DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
+            DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
+            DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
+            DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
+            DataType::Int8 => $self.i8().unwrap().$method($($args),*),
+            DataType::Int16 => $self.i16().unwrap().$method($($args),*),
+            DataType::Int32 => $self.i32().unwrap().$method($($args),*),
+            DataType::Int64 => $self.i64().unwrap().$method($($args),*),
+            DataType::Float32 => $self.f32().unwrap().$method($($args),*),
+            DataType::Float64 => $self.f64().unwrap().$method($($args),*),
+            DataType::Date32 => $self.date32().unwrap().$method($($args),*),
+            DataType::Date64 => $self.date64().unwrap().$method($($args),*),
+            DataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
+            DataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
+            DataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
+            DataType::List(_) => $self.list().unwrap().$method($($args),*),
             _ => unimplemented!()
         }
     }
@@ -227,21 +223,21 @@ macro_rules! apply_method_numeric_series {
     ($self:ident, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
 
-            ArrowDataType::UInt8 => $self.u8().unwrap().$method($($args),*),
-            ArrowDataType::UInt16 => $self.u16().unwrap().$method($($args),*),
-            ArrowDataType::UInt32 => $self.u32().unwrap().$method($($args),*),
-            ArrowDataType::UInt64 => $self.u64().unwrap().$method($($args),*),
-            ArrowDataType::Int8 => $self.i8().unwrap().$method($($args),*),
-            ArrowDataType::Int16 => $self.i16().unwrap().$method($($args),*),
-            ArrowDataType::Int32 => $self.i32().unwrap().$method($($args),*),
-            ArrowDataType::Int64 => $self.i64().unwrap().$method($($args),*),
-            ArrowDataType::Float32 => $self.f32().unwrap().$method($($args),*),
-            ArrowDataType::Float64 => $self.f64().unwrap().$method($($args),*),
-            ArrowDataType::Date32(_) => $self.date32().unwrap().$method($($args),*),
-            ArrowDataType::Date64(_) => $self.date64().unwrap().$method($($args),*),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
-            ArrowDataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
+            DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
+            DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
+            DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
+            DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
+            DataType::Int8 => $self.i8().unwrap().$method($($args),*),
+            DataType::Int16 => $self.i16().unwrap().$method($($args),*),
+            DataType::Int32 => $self.i32().unwrap().$method($($args),*),
+            DataType::Int64 => $self.i64().unwrap().$method($($args),*),
+            DataType::Float32 => $self.f32().unwrap().$method($($args),*),
+            DataType::Float64 => $self.f64().unwrap().$method($($args),*),
+            DataType::Date32 => $self.date32().unwrap().$method($($args),*),
+            DataType::Date64 => $self.date64().unwrap().$method($($args),*),
+            DataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
+            DataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
+            DataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
 
             _ => unimplemented!(),
         }
@@ -303,7 +299,7 @@ macro_rules! df {
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
-pub(crate) fn get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Result<ArrowDataType> {
+pub(crate) fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
     match _get_supertype(l, r) {
         Some(dt) => Ok(dt),
         None => _get_supertype(r, l).ok_or_else(|| {
@@ -315,8 +311,8 @@ pub(crate) fn get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Result<Arro
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
-fn _get_supertype(l: &ArrowDataType, r: &ArrowDataType) -> Option<ArrowDataType> {
-    use arrow::datatypes::DataType::*;
+fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
+    use DataType::*;
     // TODO! add list and temporal types
     match (l, r) {
         (Duration(_), Int8) => Some(Int64),

@@ -1,5 +1,5 @@
 use crate::dataframe::PyDataFrame;
-use crate::datatypes::DataType;
+use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::utils::str_to_arrow_type;
 use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
@@ -204,12 +204,10 @@ impl PySeries {
     pub fn get_object(&self, index: usize) -> PyObject {
         let gil = Python::acquire_gil();
         let python = gil.python();
-        if self.series.dtype() == &ArrowDataType::Binary {
+        if matches!(self.series.dtype(), DataType::Object) {
             // we don't use the null bitmap in this context as T::default is pyobject None
             let any = self.series.get_as_any(index);
             let obj: &ObjectValue = any.into();
-            let gil = Python::acquire_gil();
-            let python = gil.python();
             obj.to_object(python)
         } else {
             python.None()
@@ -239,7 +237,7 @@ impl PySeries {
     }
 
     pub fn dtype(&self) -> u8 {
-        let dt: DataType = self.series.dtype().into();
+        let dt: PyDataType = self.series.dtype().into();
         dt as u8
     }
 
@@ -467,32 +465,30 @@ impl PySeries {
         let series = &self.series;
 
         let pylist = match series.dtype() {
-            ArrowDataType::Boolean => PyList::new(python, series.bool().unwrap()),
-            ArrowDataType::Utf8 => PyList::new(python, series.utf8().unwrap()),
-            ArrowDataType::UInt8 => PyList::new(python, series.u8().unwrap()),
-            ArrowDataType::UInt16 => PyList::new(python, series.u16().unwrap()),
-            ArrowDataType::UInt32 => PyList::new(python, series.u32().unwrap()),
-            ArrowDataType::UInt64 => PyList::new(python, series.u64().unwrap()),
-            ArrowDataType::Int8 => PyList::new(python, series.i8().unwrap()),
-            ArrowDataType::Int16 => PyList::new(python, series.i16().unwrap()),
-            ArrowDataType::Int32 => PyList::new(python, series.i32().unwrap()),
-            ArrowDataType::Int64 => PyList::new(python, series.i64().unwrap()),
-            ArrowDataType::Float32 => PyList::new(python, series.f32().unwrap()),
-            ArrowDataType::Float64 => PyList::new(python, series.f64().unwrap()),
-            ArrowDataType::Date32(DateUnit::Day) => PyList::new(python, series.date32().unwrap()),
-            ArrowDataType::Date64(DateUnit::Millisecond) => {
-                PyList::new(python, series.date64().unwrap())
-            }
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+            DataType::Boolean => PyList::new(python, series.bool().unwrap()),
+            DataType::Utf8 => PyList::new(python, series.utf8().unwrap()),
+            DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
+            DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
+            DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
+            DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
+            DataType::Int8 => PyList::new(python, series.i8().unwrap()),
+            DataType::Int16 => PyList::new(python, series.i16().unwrap()),
+            DataType::Int32 => PyList::new(python, series.i32().unwrap()),
+            DataType::Int64 => PyList::new(python, series.i64().unwrap()),
+            DataType::Float32 => PyList::new(python, series.f32().unwrap()),
+            DataType::Float64 => PyList::new(python, series.f64().unwrap()),
+            DataType::Date32 => PyList::new(python, series.date32().unwrap()),
+            DataType::Date64 => PyList::new(python, series.date64().unwrap()),
+            DataType::Time64(TimeUnit::Nanosecond) => {
                 PyList::new(python, series.time64_nanosecond().unwrap())
             }
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+            DataType::Duration(TimeUnit::Nanosecond) => {
                 PyList::new(python, series.duration_nanosecond().unwrap())
             }
-            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+            DataType::Duration(TimeUnit::Millisecond) => {
                 PyList::new(python, series.duration_millisecond().unwrap())
             }
-            ArrowDataType::Binary => {
+            DataType::Object => {
                 let v = PyList::empty(python);
                 for i in 0..series.len() {
                     let val = series
@@ -569,27 +565,26 @@ impl PySeries {
 
         // we use floating types only if null values
         match series.dtype() {
-            ArrowDataType::Utf8 => self.to_list(),
-            ArrowDataType::List(_) => self.to_list(),
-            // hack for object
-            ArrowDataType::Binary => self.to_list(),
-            ArrowDataType::UInt8 => impl_to_np_array!(series.u8().unwrap(), f32),
-            ArrowDataType::UInt16 => impl_to_np_array!(series.u16().unwrap(), f32),
-            ArrowDataType::UInt32 => impl_to_np_array!(series.u32().unwrap(), f32),
-            ArrowDataType::UInt64 => impl_to_np_array!(series.u64().unwrap(), f64),
-            ArrowDataType::Int8 => impl_to_np_array!(series.i8().unwrap(), f32),
-            ArrowDataType::Int16 => impl_to_np_array!(series.i16().unwrap(), f32),
-            ArrowDataType::Int32 => impl_to_np_array!(series.i32().unwrap(), f32),
-            ArrowDataType::Int64 => impl_to_np_array!(series.i64().unwrap(), f64),
-            ArrowDataType::Float32 => impl_to_np_array!(series.f32().unwrap(), f32),
-            ArrowDataType::Float64 => impl_to_np_array!(series.f64().unwrap(), f64),
-            ArrowDataType::Date32(DateUnit::Day) => {
+            DataType::Utf8 => self.to_list(),
+            DataType::List(_) => self.to_list(),
+            DataType::Object => self.to_list(),
+            DataType::UInt8 => impl_to_np_array!(series.u8().unwrap(), f32),
+            DataType::UInt16 => impl_to_np_array!(series.u16().unwrap(), f32),
+            DataType::UInt32 => impl_to_np_array!(series.u32().unwrap(), f32),
+            DataType::UInt64 => impl_to_np_array!(series.u64().unwrap(), f64),
+            DataType::Int8 => impl_to_np_array!(series.i8().unwrap(), f32),
+            DataType::Int16 => impl_to_np_array!(series.i16().unwrap(), f32),
+            DataType::Int32 => impl_to_np_array!(series.i32().unwrap(), f32),
+            DataType::Int64 => impl_to_np_array!(series.i64().unwrap(), f64),
+            DataType::Float32 => impl_to_np_array!(series.f32().unwrap(), f32),
+            DataType::Float64 => impl_to_np_array!(series.f64().unwrap(), f64),
+            DataType::Date32 => {
                 impl_to_np_array!(series.date32().unwrap(), f32)
             }
-            ArrowDataType::Date64(DateUnit::Millisecond) => {
+            DataType::Date64 => {
                 impl_to_np_array!(series.date64().unwrap(), f64)
             }
-            ArrowDataType::Boolean => {
+            DataType::Boolean => {
                 let ca = series.bool().unwrap();
                 if ca.null_count() == 0 {
                     let v = ca.into_no_null_iter().collect::<Vec<_>>();
@@ -620,7 +615,7 @@ impl PySeries {
         };
 
         let out = match output_type {
-            Some(ArrowDataType::Int8) => {
+            Some(DataType::Int8) => {
                 let ca: Int8Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -631,7 +626,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Int16) => {
+            Some(DataType::Int16) => {
                 let ca: Int16Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -642,7 +637,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Int32) => {
+            Some(DataType::Int32) => {
                 let ca: Int32Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -653,7 +648,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Int64) => {
+            Some(DataType::Int64) => {
                 let ca: Int64Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -664,7 +659,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::UInt8) => {
+            Some(DataType::UInt8) => {
                 let ca: UInt8Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -675,7 +670,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::UInt16) => {
+            Some(DataType::UInt16) => {
                 let ca: UInt16Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -686,7 +681,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::UInt32) => {
+            Some(DataType::UInt32) => {
                 let ca: UInt32Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -697,7 +692,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::UInt64) => {
+            Some(DataType::UInt64) => {
                 let ca: UInt64Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -708,7 +703,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Float32) => {
+            Some(DataType::Float32) => {
                 let ca: Float32Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -719,7 +714,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Float64) => {
+            Some(DataType::Float64) => {
                 let ca: Float64Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -730,7 +725,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Boolean) => {
+            Some(DataType::Boolean) => {
                 let ca: BooleanChunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -741,7 +736,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Date32(_)) => {
+            Some(DataType::Date32) => {
                 let ca: Date32Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -752,7 +747,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Date64(_)) => {
+            Some(DataType::Date64) => {
                 let ca: Date64Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -763,7 +758,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(ArrowDataType::Utf8) => {
+            Some(DataType::Utf8) => {
                 let ca: Utf8Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_utf8_out_type,
@@ -868,11 +863,11 @@ impl PySeries {
 
     pub fn as_duration(&self) -> PyResult<Self> {
         match self.series.dtype() {
-            ArrowDataType::Date64(_) => {
+            DataType::Date64 => {
                 let ca = self.series.date64().unwrap().as_duration();
                 Ok(ca.into_series().into())
             }
-            ArrowDataType::Date32(_) => {
+            DataType::Date32 => {
                 let ca = self.series.date32().unwrap().as_duration();
                 Ok(ca.into_series().into())
             }

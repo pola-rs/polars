@@ -610,7 +610,7 @@ pub(crate) fn projected_names(exprs: &[Expr]) -> Result<Vec<Expr>> {
 }
 
 pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
-    Field::new(name, field.data_type().clone(), field.is_nullable())
+    Field::new(name, field.data_type().clone())
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.

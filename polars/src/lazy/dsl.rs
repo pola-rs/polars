@@ -3,7 +3,6 @@ use crate::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use crate::lazy::logical_plan::Context;
 use crate::lazy::utils::{output_name, rename_field};
 use crate::{lazy::prelude::*, prelude::*, utils::get_supertype};
-use arrow::datatypes::{Field, Schema};
 use std::fmt::{Debug, Formatter};
 use std::{
     fmt,
@@ -137,7 +136,7 @@ pub enum Expr {
     IsNull(Box<Expr>),
     Cast {
         expr: Box<Expr>,
-        data_type: ArrowDataType,
+        data_type: DataType,
     },
     Sort {
         expr: Box<Expr>,
@@ -152,7 +151,7 @@ pub enum Expr {
     Udf {
         input: Box<Expr>,
         function: Arc<dyn SeriesUdf>,
-        output_type: Option<ArrowDataType>,
+        output_type: Option<DataType>,
     },
     Shift {
         input: Box<Expr>,
@@ -354,7 +353,7 @@ impl PartialEq for Expr {
 
 impl Expr {
     /// Get DataType result of the expression. The schema is the input data.
-    pub fn get_type(&self, schema: &Schema, context: Context) -> Result<ArrowDataType> {
+    pub fn get_type(&self, schema: &Schema, context: Context) -> Result<DataType> {
         self.to_field(schema, context)
             .map(|f| f.data_type().clone())
     }
@@ -366,20 +365,20 @@ impl Expr {
             Window { function, .. } => function.to_field(schema, ctxt),
             Unique(expr) => {
                 let field = expr.to_field(&schema, ctxt)?;
-                Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
+                Ok(Field::new(field.name(), DataType::Boolean))
             }
             Duplicated(expr) => {
                 let field = expr.to_field(&schema, ctxt)?;
-                Ok(Field::new(field.name(), ArrowDataType::Boolean, true))
+                Ok(Field::new(field.name(), DataType::Boolean))
             }
             Reverse(expr) => expr.to_field(&schema, ctxt),
             Explode(expr) => expr.to_field(&schema, ctxt),
-            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema, ctxt)?, true)),
+            Alias(expr, name) => Ok(Field::new(name, expr.get_type(schema, ctxt)?)),
             Column(name) => {
                 let field = schema.field_with_name(name).map(|f| f.clone())?;
                 Ok(field)
             }
-            Literal(sv) => Ok(Field::new("lit", sv.get_datatype(), true)),
+            Literal(sv) => Ok(Field::new("lit", sv.get_datatype())),
             BinaryExpr { left, right, op } => {
                 let left_type = left.get_type(schema, ctxt)?;
                 let right_type = right.get_type(schema, ctxt)?;
@@ -395,7 +394,7 @@ impl Expr {
                     | Operator::GtEq
                     | Operator::Or
                     | Operator::NotLike
-                    | Operator::Like => ArrowDataType::Boolean,
+                    | Operator::Like => DataType::Boolean,
                     _ => get_supertype(&left_type, &right_type)?,
                 };
 
@@ -410,11 +409,11 @@ impl Expr {
                     _ => "binary_expr",
                 };
 
-                Ok(Field::new(out_name, expr_type, true))
+                Ok(Field::new(out_name, expr_type))
             }
-            Not(_) => Ok(Field::new("not", ArrowDataType::Boolean, true)),
-            IsNull(_) => Ok(Field::new("is_null", ArrowDataType::Boolean, true)),
-            IsNotNull(_) => Ok(Field::new("is_not_null", ArrowDataType::Boolean, true)),
+            Not(_) => Ok(Field::new("not", DataType::Boolean)),
+            IsNull(_) => Ok(Field::new("is_null", DataType::Boolean)),
+            IsNotNull(_) => Ok(Field::new("is_not_null", DataType::Boolean)),
             Sort { expr, .. } => expr.to_field(schema, ctxt),
             Agg(agg) => {
                 use AggExpr::*;
@@ -442,8 +441,7 @@ impl Expr {
                     }
                     NUnique(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
-                        let field =
-                            Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
+                        let field = Field::new(field.name(), DataType::UInt32);
                         match ctxt {
                             Context::Other => field,
                             Context::Aggregation => {
@@ -458,20 +456,17 @@ impl Expr {
                     }
                     Std(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
-                        let field =
-                            Field::new(field.name(), ArrowDataType::Float64, field.is_nullable());
+                        let field = Field::new(field.name(), DataType::Float64);
                         field_by_context(field, ctxt, GroupByMethod::Std)
                     }
                     Var(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
-                        let field =
-                            Field::new(field.name(), ArrowDataType::Float64, field.is_nullable());
+                        let field = Field::new(field.name(), DataType::Float64);
                         field_by_context(field, ctxt, GroupByMethod::Var)
                     }
                     Count(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
-                        let field =
-                            Field::new(field.name(), ArrowDataType::UInt32, field.is_nullable());
+                        let field = Field::new(field.name(), DataType::UInt32);
                         match ctxt {
                             Context::Other => field,
                             Context::Aggregation => {
@@ -484,11 +479,7 @@ impl Expr {
                     AggGroups(expr) => {
                         let field = expr.to_field(schema, ctxt)?;
                         let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-                        Field::new(
-                            &new_name,
-                            ArrowDataType::List(Box::new(ArrowDataType::UInt32)),
-                            field.is_nullable(),
-                        )
+                        Field::new(&new_name, DataType::List(ArrowDataType::UInt32))
                     }
                     Quantile { expr, quantile } => field_by_context(
                         expr.to_field(schema, ctxt)?,
@@ -500,11 +491,7 @@ impl Expr {
             }
             Cast { expr, data_type } => {
                 let field = expr.to_field(schema, ctxt)?;
-                Ok(Field::new(
-                    field.name(),
-                    data_type.clone(),
-                    field.is_nullable(),
-                ))
+                Ok(Field::new(field.name(), data_type.clone()))
             }
             Ternary { truthy, .. } => truthy.to_field(schema, ctxt),
             Udf {
@@ -513,11 +500,7 @@ impl Expr {
                 None => input.to_field(schema, ctxt),
                 Some(output_type) => {
                     let input_field = input.to_field(schema, ctxt)?;
-                    Ok(Field::new(
-                        input_field.name(),
-                        output_type.clone(),
-                        input_field.is_nullable(),
-                    ))
+                    Ok(Field::new(input_field.name(), output_type.clone()))
                 }
             },
             BinaryFunction {
@@ -535,8 +518,7 @@ impl Expr {
                         Field::new(
                             "binary_expr",
                             get_supertype(field_a.data_type(), field_b.data_type())
-                                .unwrap_or(ArrowDataType::Null),
-                            true,
+                                .unwrap_or(DataType::Null),
                         )
                     }))
             }
@@ -827,7 +809,7 @@ impl Expr {
     }
 
     /// Cast expression to another data type.
-    pub fn cast(self, data_type: ArrowDataType) -> Self {
+    pub fn cast(self, data_type: DataType) -> Self {
         Expr::Cast {
             expr: Box::new(self),
             data_type,
@@ -850,7 +832,7 @@ impl Expr {
     /// Apply a function/closure once the logical plan get executed.
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
-    pub fn map<F>(self, function: F, output_type: Option<ArrowDataType>) -> Self
+    pub fn map<F>(self, function: F, output_type: Option<DataType>) -> Self
     where
         F: SeriesUdf + 'static,
     {
@@ -866,7 +848,7 @@ impl Expr {
     pub fn is_finite(self) -> Self {
         self.map(
             |s: Series| s.is_finite().map(|ca| ca.into_series()),
-            Some(ArrowDataType::Boolean),
+            Some(DataType::Boolean),
         )
     }
 
@@ -875,7 +857,7 @@ impl Expr {
     pub fn is_infinite(self) -> Self {
         self.map(
             |s: Series| s.is_infinite().map(|ca| ca.into_series()),
-            Some(ArrowDataType::Boolean),
+            Some(DataType::Boolean),
         )
     }
 
@@ -884,7 +866,7 @@ impl Expr {
     pub fn is_nan(self) -> Self {
         self.map(
             |s: Series| s.is_nan().map(|ca| ca.into_series()),
-            Some(ArrowDataType::Boolean),
+            Some(DataType::Boolean),
         )
     }
 
@@ -893,7 +875,7 @@ impl Expr {
     pub fn is_not_nan(self) -> Self {
         self.map(
             |s: Series| s.is_not_nan().map(|ca| ca.into_series()),
-            Some(ArrowDataType::Boolean),
+            Some(DataType::Boolean),
         )
     }
 
@@ -1017,10 +999,7 @@ impl Expr {
 
     /// Raise expression to the power `exponent`
     pub fn pow(self, exponent: f64) -> Self {
-        self.map(
-            move |s: Series| s.pow(exponent),
-            Some(ArrowDataType::Float64),
-        )
+        self.map(move |s: Series| s.pow(exponent), Some(DataType::Float64))
     }
 }
 
@@ -1156,7 +1135,7 @@ pub fn is_not_null(expr: Expr) -> Expr {
 }
 
 /// [Cast](Expr::Cast) expression.
-pub fn cast(expr: Expr, data_type: ArrowDataType) -> Expr {
+pub fn cast(expr: Expr, data_type: DataType) -> Expr {
     Expr::Cast {
         expr: Box::new(expr),
         data_type,

@@ -9,7 +9,6 @@ use crate::{
     prelude::*,
 };
 use ahash::RandomState;
-use arrow::datatypes::{DataType, SchemaRef};
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Write};
@@ -211,7 +210,7 @@ impl Default for LogicalPlan {
     fn default() -> Self {
         CsvScan {
             path: "".to_string(),
-            schema: Arc::new(Schema::new(vec![Field::new("", ArrowDataType::Null, true)])),
+            schema: Arc::new(Schema::new(vec![Field::new("", DataType::Null)])),
             has_header: false,
             delimiter: b',',
             ignore_errors: false,
@@ -1022,8 +1021,8 @@ impl LogicalPlanBuilder {
                 .expect("field not found")
                 .data_type();
 
-            fields.push(Field::new("variable", ArrowDataType::Utf8, true));
-            fields.push(Field::new("value", value_dtype.clone(), true));
+            fields.push(Field::new("variable", DataType::Utf8));
+            fields.push(Field::new("value", value_dtype.clone()));
 
             Arc::new(Schema::new(fields))
         });
@@ -1088,7 +1087,7 @@ impl LogicalPlanBuilder {
             if !right_names.contains(name) {
                 if names.contains(name) {
                     let new_name = format!("{}_right", name);
-                    let field = Field::new(&new_name, f.data_type().clone(), f.is_nullable());
+                    let field = Field::new(&new_name, f.data_type().clone());
                     fields.push(field)
                 } else {
                     fields.push(f.clone())

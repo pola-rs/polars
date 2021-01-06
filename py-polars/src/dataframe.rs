@@ -1,7 +1,7 @@
 use polars::prelude::*;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
-use crate::datatypes::DataType;
+use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::utils::str_to_arrow_type;
@@ -74,7 +74,7 @@ impl PyDataFrame {
                 .map(|(name, dtype)| {
                     let str_repr = dtype.str().unwrap().to_str().unwrap();
                     let dtype = str_to_arrow_type(str_repr);
-                    Field::new(name, dtype, true)
+                    Field::new(name, dtype)
                 })
                 .collect();
             Some(Schema::new(fields))
@@ -259,7 +259,7 @@ impl PyDataFrame {
             .dtypes()
             .iter()
             .map(|arrow_dtype| {
-                let dt: DataType = arrow_dtype.into();
+                let dt: PyDataType = arrow_dtype.into();
                 dt as u8
             })
             .collect()

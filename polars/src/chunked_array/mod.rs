@@ -11,7 +11,7 @@ use arrow::{
         Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
-    datatypes::{DateUnit, Field, TimeUnit},
+    datatypes::TimeUnit,
 };
 use itertools::Itertools;
 use std::convert::TryFrom;
@@ -268,7 +268,7 @@ impl<T> ChunkedArray<T> {
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        if other.data_type() == self.field.data_type() {
+        if self.field.data_type() == other.data_type() {
             self.chunks.push(other);
             self.chunk_id = create_chunk_id(&self.chunks);
             Ok(())
@@ -377,7 +377,7 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Get data type of ChunkedArray.
-    pub fn dtype(&self) -> &ArrowDataType {
+    pub fn dtype(&self) -> &DataType {
         self.field.data_type()
     }
 
@@ -446,11 +446,7 @@ impl<T> ChunkedArray<T> {
 
     /// Rename this ChunkedArray.
     pub fn rename(&mut self, name: &str) {
-        self.field = Arc::new(Field::new(
-            name,
-            self.field.data_type().clone(),
-            self.field.is_nullable(),
-        ))
+        self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
     }
 }
 
@@ -460,17 +456,17 @@ where
 {
     /// Create a new ChunkedArray from existing chunks.
     pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
-        // prevent List<Box<Null>> if the inner list type is known.
-        let datatype = if matches!(T::get_dtype(), ArrowDataType::List(_)) {
+        // prevent List<Null> if the inner list type is known.
+        let datatype = if matches!(T::get_dtype(), DataType::List(_)) {
             if let Some(arr) = chunks.get(0) {
-                arr.data_type().clone()
+                arr.data_type().into()
             } else {
                 T::get_dtype()
             }
         } else {
             T::get_dtype()
         };
-        let field = Arc::new(Field::new(name, datatype, true));
+        let field = Arc::new(Field::new(name, datatype));
         let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
             field,
@@ -504,39 +500,39 @@ where
         }
         // TODO: insert types
         match T::get_dtype() {
-            ArrowDataType::Utf8 => downcast_and_pack!(StringArray, Utf8),
-            ArrowDataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
-            ArrowDataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
-            ArrowDataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
-            ArrowDataType::UInt32 => downcast_and_pack!(UInt32Array, UInt32),
-            ArrowDataType::UInt64 => downcast_and_pack!(UInt64Array, UInt64),
-            ArrowDataType::Int8 => downcast_and_pack!(Int8Array, Int8),
-            ArrowDataType::Int16 => downcast_and_pack!(Int16Array, Int16),
-            ArrowDataType::Int32 => downcast_and_pack!(Int32Array, Int32),
-            ArrowDataType::Int64 => downcast_and_pack!(Int64Array, Int64),
-            ArrowDataType::Float32 => downcast_and_pack!(Float32Array, Float32),
-            ArrowDataType::Float64 => downcast_and_pack!(Float64Array, Float64),
-            ArrowDataType::Date32(DateUnit::Day) => downcast_and_pack!(Date32Array, Date32),
-            ArrowDataType::Date64(DateUnit::Millisecond) => downcast_and_pack!(Date64Array, Date64),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+            DataType::Utf8 => downcast_and_pack!(StringArray, Utf8),
+            DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
+            DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
+            DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
+            DataType::UInt32 => downcast_and_pack!(UInt32Array, UInt32),
+            DataType::UInt64 => downcast_and_pack!(UInt64Array, UInt64),
+            DataType::Int8 => downcast_and_pack!(Int8Array, Int8),
+            DataType::Int16 => downcast_and_pack!(Int16Array, Int16),
+            DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
+            DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
+            DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
+            DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
+            DataType::Date32 => downcast_and_pack!(Date32Array, Date32),
+            DataType::Date64 => downcast_and_pack!(Date64Array, Date64),
+            DataType::Time64(TimeUnit::Nanosecond) => {
                 let v = downcast!(Time64NanosecondArray);
                 AnyType::Time64(v, TimeUnit::Nanosecond)
             }
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+            DataType::Duration(TimeUnit::Nanosecond) => {
                 let v = downcast!(DurationNanosecondArray);
                 AnyType::Duration(v, TimeUnit::Nanosecond)
             }
-            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+            DataType::Duration(TimeUnit::Millisecond) => {
                 let v = downcast!(DurationMillisecondArray);
                 AnyType::Duration(v, TimeUnit::Millisecond)
             }
-            ArrowDataType::List(_) => {
+            DataType::List(_) => {
                 let v = downcast!(ListArray);
                 let s = Series::try_from(("", v));
                 AnyType::List(s.unwrap())
             }
             #[cfg(feature = "object")]
-            ArrowDataType::Binary => AnyType::Object(&"object"),
+            DataType::Object => AnyType::Object(&"object"),
             _ => unimplemented!(),
         }
     }
@@ -564,7 +560,7 @@ where
             buffer, null_count, values,
         ));
         ChunkedArray {
-            field: Arc::new(Field::new(name, T::get_data_type(), true)),
+            field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
@@ -585,7 +581,7 @@ where
             Some(null_count),
         ));
         ChunkedArray {
-            field: Arc::new(Field::new(name, T::get_data_type(), true)),
+            field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
@@ -742,7 +738,7 @@ where
 impl ListChunked {
     pub(crate) fn get_inner_dtype(&self) -> &ArrowDataType {
         match self.dtype() {
-            ArrowDataType::List(dt) => dt,
+            DataType::List(dt) => dt,
             _ => panic!("should not happen"),
         }
     }

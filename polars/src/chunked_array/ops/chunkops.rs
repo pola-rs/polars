@@ -193,7 +193,7 @@ impl ChunkOps for ListChunked {
                 let mut chunks: Vec<Arc<dyn Array>> = Vec::with_capacity(chunk_id.len());
 
                 for &chunk_length in chunk_id {
-                    let mut builder = get_list_builder(self.dtype(), chunk_length, self.name());
+                    let mut builder = get_list_builder(&self.dtype(), chunk_length, self.name());
                     while let Some(v) = iter.next() {
                         builder.append_opt_series(v.as_ref())
                     }

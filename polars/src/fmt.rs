@@ -1,4 +1,3 @@
-use crate::datatypes::{AnyType, ToStr};
 use crate::prelude::*;
 
 #[cfg(feature = "temporal")]
@@ -196,7 +195,7 @@ impl Debug for Series {
         let limit = set_limit!(self);
 
         match self.dtype() {
-            ArrowDataType::Boolean => format_array!(
+            DataType::Boolean => format_array!(
                 limit,
                 f,
                 self.bool().unwrap(),
@@ -204,40 +203,40 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            ArrowDataType::Utf8 => {
+            DataType::Utf8 => {
                 format_utf8_array!(limit, f, self.utf8().unwrap(), self.name(), "Series")
             }
-            ArrowDataType::UInt8 => {
+            DataType::UInt8 => {
                 format_array!(limit, f, self.u8().unwrap(), "u8", self.name(), "Series")
             }
-            ArrowDataType::UInt16 => {
+            DataType::UInt16 => {
                 format_array!(limit, f, self.u16().unwrap(), "u6", self.name(), "Series")
             }
-            ArrowDataType::UInt32 => {
+            DataType::UInt32 => {
                 format_array!(limit, f, self.u32().unwrap(), "u32", self.name(), "Series")
             }
-            ArrowDataType::UInt64 => {
+            DataType::UInt64 => {
                 format_array!(limit, f, self.u64().unwrap(), "u64", self.name(), "Series")
             }
-            ArrowDataType::Int8 => {
+            DataType::Int8 => {
                 format_array!(limit, f, self.i8().unwrap(), "i8", self.name(), "Series")
             }
-            ArrowDataType::Int16 => {
+            DataType::Int16 => {
                 format_array!(limit, f, self.i16().unwrap(), "i16", self.name(), "Series")
             }
-            ArrowDataType::Int32 => {
+            DataType::Int32 => {
                 format_array!(limit, f, self.i32().unwrap(), "i32", self.name(), "Series")
             }
-            ArrowDataType::Int64 => {
+            DataType::Int64 => {
                 format_array!(limit, f, self.i64().unwrap(), "i64", self.name(), "Series")
             }
-            ArrowDataType::Float32 => {
+            DataType::Float32 => {
                 format_array!(limit, f, self.f32().unwrap(), "f32", self.name(), "Series")
             }
-            ArrowDataType::Float64 => {
+            DataType::Float64 => {
                 format_array!(limit, f, self.f64().unwrap(), "f64", self.name(), "Series")
             }
-            ArrowDataType::Date32(DateUnit::Day) => format_array!(
+            DataType::Date32 => format_array!(
                 limit,
                 f,
                 self.date32().unwrap(),
@@ -245,7 +244,7 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            ArrowDataType::Date64(DateUnit::Millisecond) => format_array!(
+            DataType::Date64 => format_array!(
                 limit,
                 f,
                 self.date64().unwrap(),
@@ -253,7 +252,7 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => format_array!(
+            DataType::Time64(TimeUnit::Nanosecond) => format_array!(
                 limit,
                 f,
                 self.time64_nanosecond().unwrap(),
@@ -261,7 +260,7 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => format_array!(
+            DataType::Duration(TimeUnit::Nanosecond) => format_array!(
                 limit,
                 f,
                 self.duration_nanosecond().unwrap(),
@@ -269,7 +268,7 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            ArrowDataType::Duration(TimeUnit::Millisecond) => format_array!(
+            DataType::Duration(TimeUnit::Millisecond) => format_array!(
                 limit,
                 f,
                 self.duration_millisecond().unwrap(),
@@ -277,13 +276,11 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            ArrowDataType::List(_) => {
+            DataType::List(_) => {
                 format_list_array!(limit, f, self.list().unwrap(), self.name(), "Series")
             }
             #[cfg(feature = "object")]
-            ArrowDataType::Binary => {
-                format_object_array(limit, f, self.as_ref(), self.name(), "Series")
-            }
+            DataType::Object => format_object_array(limit, f, self.as_ref(), self.name(), "Series"),
             _ => unimplemented!(),
         }
     }
@@ -345,7 +342,7 @@ impl Display for DataFrame {
             .fields()
             .iter()
             .take(max_n_cols)
-            .map(|f| format!("{}\n---\n{}", f.name(), f.data_type().to_str()))
+            .map(|f| format!("{}\n---\n{}", f.name(), f.data_type()))
             .collect();
         if reduce_columns {
             names.insert(insert_idx, "...".to_string())

@@ -100,7 +100,7 @@ where
         let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
         let schema = arrow_reader.get_schema()?;
-        Ok(schema)
+        Ok(schema.into())
     }
 }
 
@@ -110,7 +110,7 @@ impl ArrowReader for ParquetRecordBatchReader {
     }
 
     fn schema(&self) -> Arc<Schema> {
-        <Self as RecordBatchReader>::schema(self)
+        Arc::new((&*<Self as RecordBatchReader>::schema(self)).into())
     }
 }
 

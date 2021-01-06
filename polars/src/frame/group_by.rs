@@ -174,33 +174,33 @@ impl<'b> (dyn SeriesTrait + 'b) {
         }
 
         match self.dtype() {
-            ArrowDataType::Boolean => as_groupable_iter!(self.bool().unwrap(), Boolean),
-            ArrowDataType::UInt8 => as_groupable_iter!(self.u8().unwrap(), UInt8),
-            ArrowDataType::UInt16 => as_groupable_iter!(self.u16().unwrap(), UInt16),
-            ArrowDataType::UInt32 => as_groupable_iter!(self.u32().unwrap(), UInt32),
-            ArrowDataType::UInt64 => as_groupable_iter!(self.u64().unwrap(), UInt64),
-            ArrowDataType::Int8 => as_groupable_iter!(self.i8().unwrap(), Int8),
-            ArrowDataType::Int16 => as_groupable_iter!(self.i16().unwrap(), Int16),
-            ArrowDataType::Int32 => as_groupable_iter!(self.i32().unwrap(), Int32),
-            ArrowDataType::Int64 => as_groupable_iter!(self.i64().unwrap(), Int64),
-            ArrowDataType::Date32(DateUnit::Day) => {
+            DataType::Boolean => as_groupable_iter!(self.bool().unwrap(), Boolean),
+            DataType::UInt8 => as_groupable_iter!(self.u8().unwrap(), UInt8),
+            DataType::UInt16 => as_groupable_iter!(self.u16().unwrap(), UInt16),
+            DataType::UInt32 => as_groupable_iter!(self.u32().unwrap(), UInt32),
+            DataType::UInt64 => as_groupable_iter!(self.u64().unwrap(), UInt64),
+            DataType::Int8 => as_groupable_iter!(self.i8().unwrap(), Int8),
+            DataType::Int16 => as_groupable_iter!(self.i16().unwrap(), Int16),
+            DataType::Int32 => as_groupable_iter!(self.i32().unwrap(), Int32),
+            DataType::Int64 => as_groupable_iter!(self.i64().unwrap(), Int64),
+            DataType::Date32 => {
                 as_groupable_iter!(self.date32().unwrap(), Int32)
             }
-            ArrowDataType::Date64(DateUnit::Millisecond) => {
+            DataType::Date64 => {
                 as_groupable_iter!(self.date64().unwrap(), Int64)
             }
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
+            DataType::Time64(TimeUnit::Nanosecond) => {
                 as_groupable_iter!(self.time64_nanosecond().unwrap(), Int64)
             }
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+            DataType::Duration(TimeUnit::Nanosecond) => {
                 as_groupable_iter!(self.duration_nanosecond().unwrap(), Int64)
             }
-            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+            DataType::Duration(TimeUnit::Millisecond) => {
                 as_groupable_iter!(self.duration_millisecond().unwrap(), Int64)
             }
-            ArrowDataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
-            ArrowDataType::Float32 => Ok(float_to_groupable_iter(self.f32().unwrap())),
-            ArrowDataType::Float64 => Ok(float_to_groupable_iter(self.f64().unwrap())),
+            DataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
+            DataType::Float32 => Ok(float_to_groupable_iter(self.f32().unwrap())),
+            DataType::Float64 => Ok(float_to_groupable_iter(self.f64().unwrap())),
             dt => Err(PolarsError::Other(
                 format!("Column with dtype {:?} is not groupable", dt).into(),
             )),

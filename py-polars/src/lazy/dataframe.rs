@@ -91,7 +91,7 @@ impl PyLazyFrame {
                 .map(|(name, dtype)| {
                     let str_repr = dtype.str().unwrap().to_str().unwrap();
                     let dtype = str_to_arrow_type(str_repr);
-                    Field::new(name, dtype, true)
+                    Field::new(name, dtype)
                 })
                 .collect();
             Some(Schema::new(fields))

@@ -66,7 +66,7 @@ impl<R: Read> ArrowReader for ArrowCsvReader<R> {
     }
 
     fn schema(&self) -> Arc<Schema> {
-        self.schema()
+        Arc::new((&*self.schema()).into())
     }
 }
 
@@ -76,7 +76,7 @@ impl<R: Read> ArrowReader for ArrowJsonReader<R> {
     }
 
     fn schema(&self) -> Arc<Schema> {
-        self.schema()
+        Arc::new((&*self.schema()).into())
     }
 }
 
@@ -85,10 +85,6 @@ where
     T: PolarsDataType,
 {
     ChunkedArray::new_from_chunks(field.name(), vec![arr.clone()])
-}
-
-fn arr_to_series(arr: &ArrayRef, field: &Field) -> Result<Series> {
-    Series::try_from((field.name().as_str(), arr.clone()))
 }
 
 pub(crate) fn finish_reader<R: ArrowReader>(

@@ -2,7 +2,6 @@ use super::*;
 use crate::frame::hash_join::JoinType;
 use crate::frame::ser::{csv::CsvEncoding, ScanAggregation};
 use crate::lazy::logical_plan::FETCH_ROWS;
-use arrow::datatypes::SchemaRef;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::mem;

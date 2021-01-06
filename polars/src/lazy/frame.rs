@@ -13,7 +13,6 @@ use crate::{
     prelude::*,
 };
 use ahash::RandomState;
-use arrow::datatypes::SchemaRef;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -1278,7 +1277,7 @@ mod test {
             .with_column_renamed("a", "x")
             .filter(col("x").map(
                 |s: Series| Ok(s.gt(3).into_series()),
-                Some(ArrowDataType::Boolean),
+                Some(DataType::Boolean),
             ))
             .select(&[col("x")]);
 

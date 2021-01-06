@@ -57,7 +57,7 @@ where
     }
 
     fn schema(&self) -> Arc<Schema> {
-        self.schema()
+        Arc::new((&*self.schema()).into())
     }
 }
 
@@ -98,7 +98,7 @@ where
     }
 
     fn finish(self, df: &mut DataFrame) -> Result<()> {
-        let mut ipc_writer = ArrowIPCFileWriter::try_new(self.writer, &df.schema())?;
+        let mut ipc_writer = ArrowIPCFileWriter::try_new(self.writer, &df.schema().to_arrow())?;
 
         let iter = df.iter_record_batches(df.height());
 

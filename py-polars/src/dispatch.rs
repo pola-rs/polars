@@ -67,7 +67,7 @@ pub trait ApplyLambda<'a> {
         _lambda: &'a PyAny,
         _init_null_count: usize,
         _first_value: &Series,
-        _dt: &ArrowDataType,
+        _dt: &DataType,
     ) -> PyResult<ListChunked> {
         unimplemented!()
     }
@@ -123,7 +123,7 @@ fn iterator_to_utf8<'a>(
 }
 
 fn iterator_to_list(
-    dt: &ArrowDataType,
+    dt: &DataType,
     it: impl Iterator<Item = Option<Series>>,
     init_null_count: usize,
     first_value: &Series,
@@ -313,7 +313,7 @@ where
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: &Series,
-        dt: &ArrowDataType,
+        dt: &DataType,
     ) -> PyResult<ListChunked> {
         let skip = 1;
         if init_null_count == self.len() {
@@ -511,7 +511,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: &Series,
-        dt: &ArrowDataType,
+        dt: &DataType,
     ) -> PyResult<ListChunked> {
         let skip = 1;
         if init_null_count == self.len() {
@@ -678,8 +678,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let pypolars = PyModule::import(py, "pypolars")?;
 
         match self.dtype() {
-            ArrowDataType::List(dt) => {
-                let mut builder = get_list_builder(dt, self.len(), self.name());
+            DataType::List(dt) => {
+                let mut builder = get_list_builder(&dt.into(), self.len(), self.name());
 
                 let ca = if self.null_count() == 0 {
                     let mut it = self.into_no_null_iter();
@@ -692,7 +692,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         builder = get_list_builder(dt, self.len(), self.name());
                         builder.append_opt_series(Some(&out_series));
                     } else {
-                        let mut builder = get_list_builder(dt, 1, self.name());
+                        let mut builder = get_list_builder(&dt.into(), 1, self.name());
                         let ca = builder.finish();
                         return Ok(PySeries::new(ca.into_series()));
                     }
@@ -854,7 +854,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         lambda: &'a PyAny,
         init_null_count: usize,
         first_value: &Series,
-        dt: &ArrowDataType,
+        dt: &DataType,
     ) -> PyResult<ListChunked> {
         let skip = 1;
         let pypolars = PyModule::import(py, "pypolars")?;
