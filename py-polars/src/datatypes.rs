@@ -2,7 +2,7 @@ use polars::prelude::*;
 
 // Don't change the order of these!
 #[repr(u8)]
-pub enum DataType {
+pub enum PyDataType {
     Int8,
     Int16,
     Int32,
@@ -24,29 +24,29 @@ pub enum DataType {
     Object,
 }
 
-impl From<&ArrowDataType> for DataType {
-    fn from(dt: &ArrowDataType) -> Self {
-        use DataType::*;
+impl From<&DataType> for PyDataType {
+    fn from(dt: &DataType) -> Self {
+        use PyDataType::*;
         match dt {
-            ArrowDataType::Int8 => Int8,
-            ArrowDataType::Int16 => Int16,
-            ArrowDataType::Int32 => Int32,
-            ArrowDataType::Int64 => Int64,
-            ArrowDataType::UInt8 => UInt8,
-            ArrowDataType::UInt16 => UInt16,
-            ArrowDataType::UInt32 => UInt32,
-            ArrowDataType::UInt64 => UInt64,
-            ArrowDataType::Float32 => Float32,
-            ArrowDataType::Float64 => Float64,
-            ArrowDataType::Boolean => Bool,
-            ArrowDataType::Utf8 => Utf8,
-            ArrowDataType::List(_) => List,
-            ArrowDataType::Date32(_) => Date32,
-            ArrowDataType::Date64(_) => Date64,
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => Time64Nanosecond,
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => DurationNanosecond,
-            ArrowDataType::Duration(TimeUnit::Millisecond) => DurationMillisecond,
-            ArrowDataType::Binary => Object,
+            DataType::Int8 => Int8,
+            DataType::Int16 => Int16,
+            DataType::Int32 => Int32,
+            DataType::Int64 => Int64,
+            DataType::UInt8 => UInt8,
+            DataType::UInt16 => UInt16,
+            DataType::UInt32 => UInt32,
+            DataType::UInt64 => UInt64,
+            DataType::Float32 => Float32,
+            DataType::Float64 => Float64,
+            DataType::Boolean => Bool,
+            DataType::Utf8 => Utf8,
+            DataType::List(_) => List,
+            DataType::Date32 => Date32,
+            DataType::Date64 => Date64,
+            DataType::Time64(TimeUnit::Nanosecond) => Time64Nanosecond,
+            DataType::Duration(TimeUnit::Nanosecond) => DurationNanosecond,
+            DataType::Duration(TimeUnit::Millisecond) => DurationMillisecond,
+            DataType::Object => Object,
             dt => panic!(format!("datatype: {:?} not supported", dt)),
         }
     }

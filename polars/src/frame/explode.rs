@@ -5,8 +5,8 @@ use std::collections::VecDeque;
 
 fn get_exploded(series: &Series) -> Result<(Series, &[i32])> {
     match series.dtype() {
-        ArrowDataType::List(_) => series.list().unwrap().explode_and_offsets(),
-        ArrowDataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
+        DataType::List(_) => series.list().unwrap().explode_and_offsets(),
+        DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
         _ => Err(PolarsError::InvalidOperation("".into())),
     }
 }

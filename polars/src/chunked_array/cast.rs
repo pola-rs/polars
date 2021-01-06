@@ -17,7 +17,7 @@ where
     };
 
     // only i32 can be cast to Date32
-    if let ArrowDataType::Date32(DateUnit::Day) = N::get_dtype() {
+    if let DataType::Date32 = N::get_dtype() {
         if T::get_dtype() != ArrowDataType::Int32 {
             let casted_i32 = cast_ca::<Int32Type, _>(ca)?;
             return cast_ca(&casted_i32);
@@ -26,7 +26,7 @@ where
     let chunks = ca
         .chunks
         .iter()
-        .map(|arr| compute::cast(arr, &N::get_dtype()))
+        .map(|arr| compute::cast(arr, &N::get_dtype().to_arrow()))
         .collect::<arrow::error::Result<Vec<_>>>()?;
 
     Ok(ChunkedArray::new_from_chunks(ca.field.name(), chunks))
@@ -53,41 +53,41 @@ where
     where
         N: PolarsDataType,
     {
-        match T::get_data_type() {
+        match T::get_dtype() {
             // Duration cast is not implemented in Arrow
-            ArrowDataType::Duration(_) => {
+            DataType::Duration(_) => {
                 // underlying type: i64
                 match N::get_dtype() {
-                    ArrowDataType::UInt64 => {
+                    DataType::UInt64 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, UInt64)
                     }
                     // the underlying datatype is i64 so we transmute array
-                    ArrowDataType::Int64 => unsafe {
+                    DataType::Int64 => unsafe {
                         cast_from_dtype!(self, transmute_array_from_dtype, Int64)
                     },
-                    ArrowDataType::Float32 => {
+                    DataType::Float32 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
                     }
-                    ArrowDataType::Float64 => {
+                    DataType::Float64 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
                     }
                     _ => cast_ca(self),
                 }
             }
-            ArrowDataType::Date32(_) => {
+            DataType::Date32 => {
                 match N::get_dtype() {
                     // underlying type: i32
-                    ArrowDataType::Int32 => cast_ca(self),
-                    ArrowDataType::Int64 => {
+                    DataType::Int32 => cast_ca(self),
+                    DataType::Int64 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Int64)
                     }
-                    ArrowDataType::Float32 => {
+                    DataType::Float32 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
                     }
-                    ArrowDataType::Float64 => {
+                    DataType::Float64 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
                     }
-                    ArrowDataType::Utf8 => {
+                    DataType::Utf8 => {
                         let ca: ChunkedArray<N> = unsafe {
                             std::mem::transmute(self.cast::<Date32Type>().unwrap().str_fmt("%F"))
                         };
@@ -96,20 +96,20 @@ where
                     _ => cast_ca(self),
                 }
             }
-            ArrowDataType::Date64(_) => {
+            DataType::Date64 => {
                 match N::get_dtype() {
                     // underlying type: i32
-                    ArrowDataType::Int32 => {
+                    DataType::Int32 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Int32)
                     }
-                    ArrowDataType::Int64 => cast_ca(self),
-                    ArrowDataType::Float32 => {
+                    DataType::Int64 => cast_ca(self),
+                    DataType::Float32 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
                     }
-                    ArrowDataType::Float64 => {
+                    DataType::Float64 => {
                         cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
                     }
-                    ArrowDataType::Utf8 => {
+                    DataType::Utf8 => {
                         let ca: ChunkedArray<N> = unsafe {
                             std::mem::transmute(self.cast::<Date64Type>().unwrap().str_fmt("%+"))
                         };

@@ -34,7 +34,7 @@ pub use crate::{
     },
     testing::*,
 };
-pub use arrow::datatypes::{ArrowPrimitiveType, Field, Schema};
+pub use arrow::datatypes::{ArrowPrimitiveType, Field as ArrowField, Schema as ArrowSchema};
 pub use std::sync::Arc;
 
 #[cfg(feature = "temporal")]

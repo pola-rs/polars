@@ -22,7 +22,6 @@ use crate::lazy::prelude::PhysicalExpr;
 use crate::prelude::*;
 use crate::utils;
 use ahash::RandomState;
-use arrow::datatypes::SchemaRef;
 use crossbeam::thread;
 use crossbeam::thread::ScopedJoinHandle;
 use csv::{ByteRecord, ByteRecordsIntoIter, Reader};
@@ -119,16 +118,16 @@ fn all_digit(string: &str) -> bool {
     string.chars().all(|c| c.is_ascii_digit())
 }
 /// Infer the data type of a record
-fn infer_field_schema(string: &str) -> ArrowDataType {
+fn infer_field_schema(string: &str) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // Utf8 for them
     if string.starts_with('"') {
-        return ArrowDataType::Utf8;
+        return DataType::Utf8;
     }
     // match regex in a particular order
     let lower = string.to_ascii_lowercase();
     if lower == "true" || lower == "false" {
-        return ArrowDataType::Boolean;
+        return DataType::Boolean;
     }
     let skip_minus = if string.starts_with('-') { 1 } else { 0 };
 
@@ -136,19 +135,19 @@ fn infer_field_schema(string: &str) -> ArrowDataType {
     let (left, right) = (parts.next(), parts.next());
     let left_is_number = left.map_or(false, all_digit);
     if left_is_number && right.map_or(false, all_digit) {
-        return ArrowDataType::Float64;
+        return DataType::Float64;
     } else if left_is_number {
         // integers cannot start with leading zero's
         // we can unwrap because the map above succeeded
         let mut chars = left.unwrap().chars();
         if let Some(lead) = chars.next() {
             if lead == '0' && chars.next().is_some() {
-                return ArrowDataType::Utf8;
+                return DataType::Utf8;
             }
         }
-        return ArrowDataType::Int64;
+        return DataType::Int64;
     }
-    ArrowDataType::Utf8
+    DataType::Utf8
 }
 
 #[inline]
@@ -207,7 +206,7 @@ pub(crate) fn infer_file_schema<R: Read + Seek>(
     };
 
     // keep track of inferred field types
-    let mut column_types: Vec<HashSet<ArrowDataType, RandomState>> =
+    let mut column_types: Vec<HashSet<DataType, RandomState>> =
         vec![HashSet::with_hasher(RandomState::new()); header_length];
     // keep track of columns with nulls
     let mut nulls: Vec<bool> = vec![false; header_length];
@@ -237,7 +236,6 @@ pub(crate) fn infer_file_schema<R: Read + Seek>(
     // build schema from inference results
     for i in 0..header_length {
         let possibilities = &column_types[i];
-        let has_nulls = nulls[i];
         let field_name = &headers[i];
 
         if let Some(schema_overwrite) = schema_overwrite {
@@ -252,21 +250,21 @@ pub(crate) fn infer_file_schema<R: Read + Seek>(
         match possibilities.len() {
             1 => {
                 for dtype in possibilities.iter() {
-                    fields.push(Field::new(&field_name, dtype.clone(), has_nulls));
+                    fields.push(Field::new(&field_name, dtype.clone()));
                 }
             }
             2 => {
-                if possibilities.contains(&ArrowDataType::Int64)
-                    && possibilities.contains(&ArrowDataType::Float64)
+                if possibilities.contains(&DataType::Int64)
+                    && possibilities.contains(&DataType::Float64)
                 {
                     // we have an integer and double, fall down to double
-                    fields.push(Field::new(&field_name, ArrowDataType::Float64, has_nulls));
+                    fields.push(Field::new(&field_name, DataType::Float64));
                 } else {
                     // default to Utf8 for conflicting datatypes (e.g bool and int)
-                    fields.push(Field::new(&field_name, ArrowDataType::Utf8, has_nulls));
+                    fields.push(Field::new(&field_name, DataType::Utf8));
                 }
             }
-            _ => fields.push(Field::new(&field_name, ArrowDataType::Utf8, has_nulls)),
+            _ => fields.push(Field::new(&field_name, DataType::Utf8)),
         }
     }
     let csv_reader = records.into_reader();
@@ -303,20 +301,20 @@ fn init_builders(
 }
 
 fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Builder> {
-    let field = schema.field(i);
+    let field = schema.field(i).unwrap();
     let name = field.name();
 
     let builder = match field.data_type() {
-        &ArrowDataType::Boolean => Builder::Boolean(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::Int16 => Builder::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::Int32 => Builder::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::Int64 => Builder::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::UInt16 => Builder::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::UInt32 => Builder::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::UInt64 => Builder::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::Float32 => Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::Float64 => Builder::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-        &ArrowDataType::Utf8 => Builder::Utf8(Utf8ChunkedBuilder::new(name, capacity)),
+        &DataType::Boolean => Builder::Boolean(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Int16 => Builder::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Int32 => Builder::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Int64 => Builder::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::UInt16 => Builder::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::UInt32 => Builder::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::UInt64 => Builder::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Float32 => Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Float64 => Builder::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Utf8 => Builder::Utf8(Utf8ChunkedBuilder::new(name, capacity)),
         other => {
             return Err(PolarsError::Other(
                 format!("Unsupported data type {:?} when reading a csv", other).into(),
@@ -534,20 +532,20 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         bp: usize,
     ) -> Result<()> {
         let dispatch = |(i, builder): (&usize, &mut Builder)| {
-            let field = self.schema.field(*i);
+            let field = self.schema.field(*i).unwrap();
             match field.data_type() {
-                ArrowDataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
-                ArrowDataType::Int8 => self.add_to_primitive(rows, *i, builder.i32()),
-                ArrowDataType::Int16 => self.add_to_primitive(rows, *i, builder.i32()),
-                ArrowDataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
-                ArrowDataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
-                ArrowDataType::UInt8 => self.add_to_primitive(rows, *i, builder.u32()),
-                ArrowDataType::UInt16 => self.add_to_primitive(rows, *i, builder.u32()),
-                ArrowDataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
-                ArrowDataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
-                ArrowDataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
-                ArrowDataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
-                ArrowDataType::Utf8 => add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding),
+                DataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
+                DataType::Int8 => self.add_to_primitive(rows, *i, builder.i32()),
+                DataType::Int16 => self.add_to_primitive(rows, *i, builder.i32()),
+                DataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
+                DataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
+                DataType::UInt8 => self.add_to_primitive(rows, *i, builder.u32()),
+                DataType::UInt16 => self.add_to_primitive(rows, *i, builder.u32()),
+                DataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
+                DataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
+                DataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
+                DataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
+                DataType::Utf8 => add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding),
                 _ => todo!(),
             }
         };
@@ -833,42 +831,26 @@ fn add_to_builders_core(
     encoding: CsvEncoding,
 ) -> Result<()> {
     let dispatch = |(i, builder): (&usize, &mut Builder)| {
-        let field = schema.field(*i);
+        let field = schema.field(*i).unwrap();
         match field.data_type() {
-            ArrowDataType::Boolean => {
+            DataType::Boolean => {
                 add_to_primitive_core(rows, *i, builder.bool(), ignore_parser_error)
             }
-            ArrowDataType::Int8 => {
-                add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error)
-            }
-            ArrowDataType::Int16 => {
-                add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error)
-            }
-            ArrowDataType::Int32 => {
-                add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error)
-            }
-            ArrowDataType::Int64 => {
-                add_to_primitive_core(rows, *i, builder.i64(), ignore_parser_error)
-            }
-            ArrowDataType::UInt8 => {
-                add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error)
-            }
-            ArrowDataType::UInt16 => {
-                add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error)
-            }
-            ArrowDataType::UInt32 => {
-                add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error)
-            }
-            ArrowDataType::UInt64 => {
-                add_to_primitive_core(rows, *i, builder.u64(), ignore_parser_error)
-            }
-            ArrowDataType::Float32 => {
+            DataType::Int8 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
+            DataType::Int16 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
+            DataType::Int32 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
+            DataType::Int64 => add_to_primitive_core(rows, *i, builder.i64(), ignore_parser_error),
+            DataType::UInt8 => add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error),
+            DataType::UInt16 => add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error),
+            DataType::UInt32 => add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error),
+            DataType::UInt64 => add_to_primitive_core(rows, *i, builder.u64(), ignore_parser_error),
+            DataType::Float32 => {
                 add_to_primitive_core(rows, *i, builder.f32(), ignore_parser_error)
             }
-            ArrowDataType::Float64 => {
+            DataType::Float64 => {
                 add_to_primitive_core(rows, *i, builder.f64(), ignore_parser_error)
             }
-            ArrowDataType::Utf8 => add_to_utf8_builder_core(rows, *i, builder.utf8(), encoding),
+            DataType::Utf8 => add_to_utf8_builder_core(rows, *i, builder.utf8(), encoding),
             _ => todo!(),
         }
     };

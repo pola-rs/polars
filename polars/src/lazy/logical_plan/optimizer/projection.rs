@@ -6,7 +6,6 @@ use crate::lazy::utils::{
 };
 use crate::prelude::*;
 use ahash::RandomState;
-use arrow::datatypes::Schema;
 use std::collections::HashSet;
 use std::sync::Arc;
 

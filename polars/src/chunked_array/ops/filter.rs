@@ -200,7 +200,7 @@ impl ChunkFilter<ListType> for ListChunked {
             };
         }
         let dt = self.get_inner_dtype();
-        let mut builder = get_list_builder(dt, self.len(), self.name());
+        let mut builder = get_list_builder(&dt.into(), self.len(), self.name());
         filter
             .into_iter()
             .zip(self.into_iter())

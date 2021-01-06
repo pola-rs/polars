@@ -416,8 +416,8 @@ impl ChunkTake for ListChunked {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
-            ArrowDataType::List(dt) => {
-                let mut builder = get_list_builder(&**dt, capacity, self.name());
+            DataType::List(dt) => {
+                let mut builder = get_list_builder(&dt.into(), capacity, self.name());
                 let taker = self.take_rand();
 
                 for idx in indices {
@@ -441,8 +441,8 @@ impl ChunkTake for ListChunked {
         }
         let capacity = capacity.unwrap_or(indices.size_hint().0);
         match self.dtype() {
-            ArrowDataType::List(dt) => {
-                let mut builder = get_list_builder(&**dt, capacity, self.name());
+            DataType::List(dt) => {
+                let mut builder = get_list_builder(&dt.into(), capacity, self.name());
                 let taker = self.take_rand();
                 for idx in indices {
                     let v = taker.get_unchecked(idx);
@@ -465,8 +465,8 @@ impl ChunkTake for ListChunked {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
-            ArrowDataType::List(dt) => {
-                let mut builder = get_list_builder(&**dt, capacity, self.name());
+            DataType::List(dt) => {
+                let mut builder = get_list_builder(&dt.into(), capacity, self.name());
 
                 let taker = self.take_rand();
 
@@ -496,8 +496,8 @@ impl ChunkTake for ListChunked {
         let capacity = capacity.unwrap_or(indices.size_hint().0);
 
         match self.dtype() {
-            ArrowDataType::List(dt) => {
-                let mut builder = get_list_builder(&**dt, capacity, self.name());
+            DataType::List(dt) => {
+                let mut builder = get_list_builder(&dt.into(), capacity, self.name());
                 let taker = self.take_rand();
 
                 for opt_idx in indices {

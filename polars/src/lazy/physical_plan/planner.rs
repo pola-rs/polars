@@ -521,7 +521,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
-                                    output_type: Some(ArrowDataType::UInt32),
+                                    output_type: Some(DataType::UInt32),
                                     expr: expression,
                                 }))
                             }
@@ -571,7 +571,7 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
-                                    output_type: Some(ArrowDataType::UInt32),
+                                    output_type: Some(DataType::UInt32),
                                     expr: expression,
                                 }))
                             }

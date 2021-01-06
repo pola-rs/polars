@@ -17,34 +17,35 @@ pub use arrow::datatypes::{
     TimestampMicrosecondType, TimestampMillisecondType, TimestampNanosecondType,
     TimestampSecondType, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
+use std::fmt::{Display, Formatter};
 
 pub struct Utf8Type {}
 
 pub struct ListType {}
 
 pub trait PolarsDataType: Send + Sync {
-    fn get_dtype() -> ArrowDataType;
+    fn get_dtype() -> DataType;
 }
 
 impl<T> PolarsDataType for T
 where
     T: PolarsPrimitiveType + Sync + Send,
 {
-    fn get_dtype() -> ArrowDataType {
-        T::get_data_type()
+    fn get_dtype() -> DataType {
+        (&T::get_data_type()).into()
     }
 }
 
 impl PolarsDataType for Utf8Type {
-    fn get_dtype() -> ArrowDataType {
-        ArrowDataType::Utf8
+    fn get_dtype() -> DataType {
+        DataType::Utf8
     }
 }
 
 impl PolarsDataType for ListType {
-    fn get_dtype() -> ArrowDataType {
+    fn get_dtype() -> DataType {
         // null as we cannot no anything without self.
-        ArrowDataType::List(Box::new(ArrowDataType::Null))
+        DataType::List(ArrowDataType::Null)
     }
 }
 
@@ -57,9 +58,8 @@ pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 #[cfg(feature = "object")]
 #[doc(cfg(feature = "object"))]
 impl<T: Send + Sync> PolarsDataType for ObjectType<T> {
-    fn get_dtype() -> ArrowDataType {
-        // the best fit?
-        ArrowDataType::Binary
+    fn get_dtype() -> DataType {
+        DataType::Object
     }
 }
 
@@ -188,38 +188,33 @@ pub enum AnyType<'a> {
     Object(&'a str),
 }
 
-pub trait ToStr {
-    fn to_str(&self) -> String;
-}
-
-impl ToStr for ArrowDataType {
-    fn to_str(&self) -> String {
-        // TODO: add types here
+impl Display for DataType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            ArrowDataType::Null => "null",
-            ArrowDataType::Boolean => "bool",
-            ArrowDataType::UInt8 => "u8",
-            ArrowDataType::UInt16 => "u16",
-            ArrowDataType::UInt32 => "u32",
-            ArrowDataType::UInt64 => "u64",
-            ArrowDataType::Int8 => "i8",
-            ArrowDataType::Int16 => "i16",
-            ArrowDataType::Int32 => "i32",
-            ArrowDataType::Int64 => "i64",
-            ArrowDataType::Float32 => "f32",
-            ArrowDataType::Float64 => "f64",
-            ArrowDataType::Utf8 => "str",
-            ArrowDataType::Date32(DateUnit::Day) => "date32(days)",
-            ArrowDataType::Date64(DateUnit::Millisecond) => "date64(ms)",
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
-            ArrowDataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
-            ArrowDataType::List(tp) => return format!("list [{}]", tp.to_str()),
+            DataType::Null => "null",
+            DataType::Boolean => "bool",
+            DataType::UInt8 => "u8",
+            DataType::UInt16 => "u16",
+            DataType::UInt32 => "u32",
+            DataType::UInt64 => "u64",
+            DataType::Int8 => "i8",
+            DataType::Int16 => "i16",
+            DataType::Int32 => "i32",
+            DataType::Int64 => "i64",
+            DataType::Float32 => "f32",
+            DataType::Float64 => "f64",
+            DataType::Utf8 => "str",
+            DataType::Date32 => "date32(days)",
+            DataType::Date64 => "date64(ms)",
+            DataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
+            DataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
+            DataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
+            DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
             #[cfg(feature = "object")]
-            ArrowDataType::Binary => "object",
+            DataType::Object => "object",
             _ => panic!(format!("{:?} not implemented", self)),
         };
-        s.into()
+        f.write_str(s)
     }
 }
 
@@ -230,6 +225,7 @@ impl<'a> PartialEq for AnyType<'a> {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -247,9 +243,48 @@ pub enum DataType {
     Date64,
     Time64(TimeUnit),
     List(ArrowDataType),
+    Duration(TimeUnit),
+    #[cfg(feature = "object")]
     Object,
+    Null,
 }
 
+impl DataType {
+    pub fn to_arrow(&self) -> ArrowDataType {
+        use DataType::*;
+        match self {
+            Boolean => ArrowDataType::Boolean,
+            UInt8 => ArrowDataType::UInt8,
+            UInt16 => ArrowDataType::UInt16,
+            UInt32 => ArrowDataType::UInt32,
+            UInt64 => ArrowDataType::UInt64,
+            Int8 => ArrowDataType::Int8,
+            Int16 => ArrowDataType::Int16,
+            Int32 => ArrowDataType::Int32,
+            Int64 => ArrowDataType::Int64,
+            Float32 => ArrowDataType::Float32,
+            Float64 => ArrowDataType::Float64,
+            Utf8 => ArrowDataType::Utf8,
+            Date32 => ArrowDataType::Date32(DateUnit::Day),
+            Date64 => ArrowDataType::Date64(DateUnit::Millisecond),
+            Time64(tu) => ArrowDataType::Time64(tu.clone()),
+            List(dt) => ArrowDataType::List(Box::new(dt.clone())),
+            Duration(tu) => ArrowDataType::Duration(tu.clone()),
+            Null => ArrowDataType::Null,
+            #[cfg(feature = "object")]
+            Object => unimplemented!(),
+        }
+    }
+}
+
+impl PartialEq<ArrowDataType> for DataType {
+    fn eq(&self, other: &ArrowDataType) -> bool {
+        let dt: DataType = other.into();
+        self == &dt
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Field {
     name: String,
     data_type: DataType,
@@ -265,10 +300,25 @@ impl Field {
     pub fn name(&self) -> &String {
         &self.name
     }
+
+    pub fn data_type(&self) -> &DataType {
+        &self.data_type
+    }
+
+    pub fn to_arrow(&self) -> ArrowField {
+        ArrowField::new(&self.name, self.data_type.to_arrow(), true)
+    }
 }
 
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Schema {
     fields: Vec<Field>,
+}
+
+impl Default for Schema {
+    fn default() -> Self {
+        Schema { fields: vec![] }
+    }
 }
 
 impl Schema {
@@ -305,13 +355,49 @@ impl Schema {
             name, valid_fields
         )))
     }
+
+    pub fn to_arrow(&self) -> ArrowSchema {
+        let fields = self.fields.iter().map(|f| f.to_arrow()).collect();
+        ArrowSchema::new(fields)
+    }
+
+    pub fn try_merge(schemas: &[Self]) -> Result<Self> {
+        let mut merged = Self::default();
+
+        for schema in schemas {
+            // merge fields
+            for field in &schema.fields {
+                let mut new_field = true;
+                for merged_field in &mut merged.fields {
+                    if field.name != merged_field.name {
+                        continue;
+                    }
+                    new_field = false;
+                }
+                // found a new field, add to field list
+                if new_field {
+                    merged.fields.push(field.clone());
+                }
+            }
+        }
+
+        Ok(merged)
+    }
+
+    pub fn column_with_name(&self, name: &str) -> Option<(usize, &Field)> {
+        self.fields
+            .iter()
+            .enumerate()
+            .find(|&(_, c)| c.name == name)
+    }
 }
 
-type SchemaRef = Arc<Schema>;
+pub(crate) type SchemaRef = Arc<Schema>;
 
 impl From<&ArrowDataType> for DataType {
     fn from(dt: &ArrowDataType) -> Self {
         match dt {
+            ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
             ArrowDataType::UInt16 => DataType::UInt16,
             ArrowDataType::UInt32 => DataType::UInt32,
@@ -328,6 +414,12 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Date32(DateUnit::Day) => DataType::Date32,
             ArrowDataType::Date64(DateUnit::Millisecond) => DataType::Date64,
             ArrowDataType::Time64(TimeUnit::Nanosecond) => DataType::Time64(TimeUnit::Nanosecond),
+            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                DataType::Duration(TimeUnit::Nanosecond)
+            }
+            ArrowDataType::Duration(TimeUnit::Millisecond) => {
+                DataType::Duration(TimeUnit::Millisecond)
+            }
             dt => panic!(format!("Arrow datatype {:?} not supported by Polars", dt)),
         }
     }
@@ -347,5 +439,10 @@ impl From<&ArrowSchema> for Schema {
                 .map(|arrow_f| arrow_f.into())
                 .collect(),
         )
+    }
+}
+impl From<ArrowSchema> for Schema {
+    fn from(a_schema: ArrowSchema) -> Self {
+        (&a_schema).into()
     }
 }

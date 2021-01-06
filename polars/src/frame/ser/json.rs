@@ -110,8 +110,8 @@ where
     R: Read + Seek,
 {
     /// Set the JSON file's schema
-    pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
-        self.reader_builder = self.reader_builder.with_schema(schema);
+    pub fn with_schema(mut self, schema: &Schema) -> Self {
+        self.reader_builder = self.reader_builder.with_schema(Arc::new(schema.to_arrow()));
         self
     }
 

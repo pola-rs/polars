@@ -41,19 +41,19 @@ impl PhysicalExpr for LiteralExpr {
         use ScalarValue::*;
         let name = "literal";
         let field = match &self.0 {
-            Int8(_) => Field::new(name, ArrowDataType::Int8, true),
-            Int16(_) => Field::new(name, ArrowDataType::Int16, true),
-            Int32(_) => Field::new(name, ArrowDataType::Int32, true),
-            Int64(_) => Field::new(name, ArrowDataType::Int64, true),
-            UInt8(_) => Field::new(name, ArrowDataType::UInt8, true),
-            UInt16(_) => Field::new(name, ArrowDataType::UInt16, true),
-            UInt32(_) => Field::new(name, ArrowDataType::UInt32, true),
-            UInt64(_) => Field::new(name, ArrowDataType::UInt64, true),
-            Float32(_) => Field::new(name, ArrowDataType::Float32, true),
-            Float64(_) => Field::new(name, ArrowDataType::Float64, true),
-            Boolean(_) => Field::new(name, ArrowDataType::Boolean, true),
-            Utf8(_) => Field::new(name, ArrowDataType::Utf8, true),
-            Null => Field::new(name, ArrowDataType::Null, true),
+            Int8(_) => Field::new(name, DataType::Int8),
+            Int16(_) => Field::new(name, DataType::Int16),
+            Int32(_) => Field::new(name, DataType::Int32),
+            Int64(_) => Field::new(name, DataType::Int64),
+            UInt8(_) => Field::new(name, DataType::UInt8),
+            UInt16(_) => Field::new(name, DataType::UInt16),
+            UInt32(_) => Field::new(name, DataType::UInt32),
+            UInt64(_) => Field::new(name, DataType::UInt64),
+            Float32(_) => Field::new(name, DataType::Float32),
+            Float64(_) => Field::new(name, DataType::Float64),
+            Boolean(_) => Field::new(name, DataType::Boolean),
+            Utf8(_) => Field::new(name, DataType::Utf8),
+            Null => Field::new(name, DataType::Null),
         };
         Ok(field)
     }
@@ -192,7 +192,7 @@ impl PhysicalExpr for NotExpr {
         }
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
-        Ok(Field::new("not", ArrowDataType::Boolean, true))
+        Ok(Field::new("not", DataType::Boolean))
     }
 }
 
@@ -230,7 +230,6 @@ impl PhysicalExpr for AliasExpr {
                 .to_field(input_schema)?
                 .data_type()
                 .clone(),
-            true,
         ))
     }
 
@@ -274,7 +273,7 @@ impl PhysicalExpr for IsNullExpr {
         Ok(series.is_null().into_series())
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
-        Ok(Field::new("is_null", ArrowDataType::Boolean, true))
+        Ok(Field::new("is_null", DataType::Boolean))
     }
 }
 
@@ -302,7 +301,7 @@ impl PhysicalExpr for IsNotNullExpr {
         Ok(series.is_not_null().into_series())
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
-        Ok(Field::new("is_not_null", ArrowDataType::Boolean, true))
+        Ok(Field::new("is_not_null", DataType::Boolean))
     }
 }
 
@@ -311,11 +310,7 @@ macro_rules! impl_to_field_for_agg {
     ($self:ident, $input_schema:ident, $groupby_method_variant:expr) => {{
         let field = $self.expr.to_field($input_schema)?;
         let new_name = fmt_groupby_column(field.name(), $groupby_method_variant);
-        Ok(Field::new(
-            &new_name,
-            field.data_type().clone(),
-            field.is_nullable(),
-        ))
+        Ok(Field::new(&new_name, field.data_type().clone()))
     }};
 }
 
@@ -338,11 +333,7 @@ impl PhysicalExpr for PhysicalAggExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         let field = self.expr.to_field(input_schema)?;
         let new_name = fmt_groupby_column(field.name(), self.agg_type);
-        Ok(Field::new(
-            &new_name,
-            field.data_type().clone(),
-            field.is_nullable(),
-        ))
+        Ok(Field::new(&new_name, field.data_type().clone()))
     }
 
     fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
@@ -480,12 +471,12 @@ impl AggPhysicalExpr for AggQuantileExpr {
 
 pub struct CastExpr {
     input: Arc<dyn PhysicalExpr>,
-    data_type: ArrowDataType,
+    data_type: DataType,
     expr: Expr,
 }
 
 impl CastExpr {
-    pub fn new(input: Arc<dyn PhysicalExpr>, data_type: ArrowDataType, expr: Expr) -> Self {
+    pub fn new(input: Arc<dyn PhysicalExpr>, data_type: DataType, expr: Expr) -> Self {
         Self {
             input,
             data_type,
@@ -497,7 +488,7 @@ impl CastExpr {
 impl PhysicalExpr for CastExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let series = self.input.evaluate(df)?;
-        series.cast_with_arrow_datatype(&self.data_type)
+        series.cast_with_datatype(&self.data_type)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
@@ -530,7 +521,7 @@ impl PhysicalExpr for TernaryExpr {
 pub struct ApplyExpr {
     pub input: Arc<dyn PhysicalExpr>,
     pub function: Arc<dyn SeriesUdf>,
-    pub output_type: Option<ArrowDataType>,
+    pub output_type: Option<DataType>,
     pub expr: Expr,
 }
 
@@ -538,7 +529,7 @@ impl ApplyExpr {
     pub fn new(
         input: Arc<dyn PhysicalExpr>,
         function: Arc<dyn SeriesUdf>,
-        output_type: Option<ArrowDataType>,
+        output_type: Option<DataType>,
         expr: Expr,
     ) -> Self {
         ApplyExpr {
@@ -568,11 +559,7 @@ impl PhysicalExpr for ApplyExpr {
         match &self.output_type {
             Some(output_type) => {
                 let input_field = self.input.to_field(input_schema)?;
-                Ok(Field::new(
-                    input_field.name(),
-                    output_type.clone(),
-                    input_field.is_nullable(),
-                ))
+                Ok(Field::new(input_field.name(), output_type.clone()))
             }
             None => self.input.to_field(input_schema),
         }

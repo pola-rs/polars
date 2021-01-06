@@ -4,7 +4,6 @@ use crate::chunked_array::{
     ops::aggregate::{ChunkAggSeries, VarAggSeries},
     AsSinglePtr,
 };
-use crate::datatypes::ArrowDataType;
 use crate::fmt::FmtList;
 use crate::frame::group_by::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
@@ -13,8 +12,6 @@ use crate::prelude::*;
 use crate::series::private::PrivateSeries;
 use arrow::array::{ArrayDataRef, ArrayRef};
 use arrow::buffer::Buffer;
-#[cfg(feature = "object")]
-use arrow::datatypes::DataType;
 #[cfg(feature = "object")]
 use std::any::Any;
 #[cfg(feature = "object")]
@@ -183,16 +180,12 @@ macro_rules! impl_dyn_series {
                 self.0.ref_field()
             }
 
-            fn dtype(&self) -> &ArrowDataType {
-                self.field().data_type()
-            }
-
             fn chunks(&self) -> &Vec<ArrayRef> {
                 self.0.chunks()
             }
 
             fn i8(&self) -> Result<&Int8Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Int8) {
+                if matches!(self.0.dtype(), DataType::Int8) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int8Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -208,7 +201,7 @@ macro_rules! impl_dyn_series {
 
             // For each column create a series
             fn i16(&self) -> Result<&Int16Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Int16) {
+                if matches!(self.0.dtype(), DataType::Int16) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int16Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -223,7 +216,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn i32(&self) -> Result<&Int32Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Int32) {
+                if matches!(self.0.dtype(), DataType::Int32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int32Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -238,7 +231,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn i64(&self) -> Result<&Int64Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Int64) {
+                if matches!(self.0.dtype(), DataType::Int64) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int64Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -253,7 +246,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn f32(&self) -> Result<&Float32Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Float32) {
+                if matches!(self.0.dtype(), DataType::Float32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Float32Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -268,7 +261,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn f64(&self) -> Result<&Float64Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Float64) {
+                if matches!(self.0.dtype(), DataType::Float64) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Float64Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -283,7 +276,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn u8(&self) -> Result<&UInt8Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::UInt8) {
+                if matches!(self.0.dtype(), DataType::UInt8) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const UInt8Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -298,7 +291,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn u16(&self) -> Result<&UInt16Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::UInt16) {
+                if matches!(self.0.dtype(), DataType::UInt16) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const UInt16Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -313,7 +306,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn u32(&self) -> Result<&UInt32Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::UInt32) {
+                if matches!(self.0.dtype(), DataType::UInt32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const UInt32Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -328,7 +321,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn u64(&self) -> Result<&UInt64Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::UInt64) {
+                if matches!(self.0.dtype(), DataType::UInt64) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const UInt64Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -343,7 +336,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn bool(&self) -> Result<&BooleanChunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Boolean) {
+                if matches!(self.0.dtype(), DataType::Boolean) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const BooleanChunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -358,7 +351,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn utf8(&self) -> Result<&Utf8Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Utf8) {
+                if matches!(self.0.dtype(), DataType::Utf8) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Utf8Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -373,7 +366,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn date32(&self) -> Result<&Date32Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Date32(DateUnit::Day)) {
+                if matches!(self.0.dtype(), DataType::Date32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Date32Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -388,7 +381,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn date64(&self) -> Result<&Date64Chunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Date64(DateUnit::Millisecond)) {
+                if matches!(self.0.dtype(), DataType::Date64) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Date64Chunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -403,7 +396,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
-                if matches!(self.0.dtype(), ArrowDataType::Time64(TimeUnit::Nanosecond)) {
+                if matches!(self.0.dtype(), DataType::Time64(TimeUnit::Nanosecond)) {
                     unsafe {
                         Ok(&*(self as *const dyn SeriesTrait as *const Time64NanosecondChunked))
                     }
@@ -420,10 +413,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
-                if matches!(
-                    self.0.dtype(),
-                    ArrowDataType::Duration(TimeUnit::Nanosecond)
-                ) {
+                if matches!(self.0.dtype(), DataType::Duration(TimeUnit::Nanosecond)) {
                     unsafe {
                         Ok(&*(self as *const dyn SeriesTrait as *const DurationNanosecondChunked))
                     }
@@ -440,10 +430,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
-                if matches!(
-                    self.0.dtype(),
-                    ArrowDataType::Duration(TimeUnit::Millisecond)
-                ) {
+                if matches!(self.0.dtype(), DataType::Duration(TimeUnit::Millisecond)) {
                     unsafe {
                         Ok(&*(self as *const dyn SeriesTrait as *const DurationMillisecondChunked))
                     }
@@ -460,7 +447,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn list(&self) -> Result<&ListChunked> {
-                if matches!(self.0.dtype(), ArrowDataType::List(_)) {
+                if matches!(self.0.dtype(), DataType::List(_)) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const ListChunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -558,8 +545,8 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
             }
 
-            fn cast_with_arrow_datatype(&self, data_type: &ArrowDataType) -> Result<Series> {
-                use ArrowDataType::*;
+            fn cast_with_datatype(&self, data_type: &DataType) -> Result<Series> {
+                use DataType::*;
                 match data_type {
                     Boolean => ChunkCast::cast::<BooleanType>(&self.0).map(|ca| ca.into_series()),
                     Utf8 => ChunkCast::cast::<Utf8Type>(&self.0).map(|ca| ca.into_series()),
@@ -573,8 +560,8 @@ macro_rules! impl_dyn_series {
                     Int64 => ChunkCast::cast::<Int64Type>(&self.0).map(|ca| ca.into_series()),
                     Float32 => ChunkCast::cast::<Float32Type>(&self.0).map(|ca| ca.into_series()),
                     Float64 => ChunkCast::cast::<Float64Type>(&self.0).map(|ca| ca.into_series()),
-                    Date32(_) => ChunkCast::cast::<Date32Type>(&self.0).map(|ca| ca.into_series()),
-                    Date64(_) => ChunkCast::cast::<Date64Type>(&self.0).map(|ca| ca.into_series()),
+                    Date32 => ChunkCast::cast::<Date32Type>(&self.0).map(|ca| ca.into_series()),
+                    Date64 => ChunkCast::cast::<Date64Type>(&self.0).map(|ca| ca.into_series()),
                     Time64(TimeUnit::Nanosecond) => {
                         ChunkCast::cast::<Time64NanosecondType>(&self.0).map(|ca| ca.into_series())
                     }
@@ -772,8 +759,8 @@ macro_rules! impl_dyn_series {
             #[doc(cfg(feature = "temporal"))]
             fn day(&self) -> Result<Series> {
                 match self.0.dtype() {
-                    ArrowDataType::Date32(_) => self.date32().map(|ca| ca.day().into_series()),
-                    ArrowDataType::Date64(_) => self.date64().map(|ca| ca.day().into_series()),
+                    DataType::Date32 => self.date32().map(|ca| ca.day().into_series()),
+                    DataType::Date64 => self.date64().map(|ca| ca.day().into_series()),
                     _ => Err(PolarsError::InvalidOperation(
                         format!("operation not supported on dtype {:?}", self.dtype()).into(),
                     )),
@@ -784,8 +771,8 @@ macro_rules! impl_dyn_series {
             #[doc(cfg(feature = "temporal"))]
             fn ordinal_day(&self) -> Result<Series> {
                 match self.0.dtype() {
-                    ArrowDataType::Date32(_) => self.date32().map(|ca| ca.ordinal().into_series()),
-                    ArrowDataType::Date64(_) => self.date64().map(|ca| ca.ordinal().into_series()),
+                    DataType::Date32 => self.date32().map(|ca| ca.ordinal().into_series()),
+                    DataType::Date64 => self.date64().map(|ca| ca.ordinal().into_series()),
                     _ => Err(PolarsError::InvalidOperation(
                         format!("operation not supported on dtype {:?}", self.dtype()).into(),
                     )),
@@ -796,8 +783,8 @@ macro_rules! impl_dyn_series {
             #[doc(cfg(feature = "temporal"))]
             fn month(&self) -> Result<Series> {
                 match self.0.dtype() {
-                    ArrowDataType::Date32(_) => self.date32().map(|ca| ca.month().into_series()),
-                    ArrowDataType::Date64(_) => self.date64().map(|ca| ca.month().into_series()),
+                    DataType::Date32 => self.date32().map(|ca| ca.month().into_series()),
+                    DataType::Date64 => self.date64().map(|ca| ca.month().into_series()),
                     _ => Err(PolarsError::InvalidOperation(
                         format!("operation not supported on dtype {:?}", self.dtype()).into(),
                     )),
@@ -808,8 +795,8 @@ macro_rules! impl_dyn_series {
             #[doc(cfg(feature = "temporal"))]
             fn year(&self) -> Result<Series> {
                 match self.0.dtype() {
-                    ArrowDataType::Date32(_) => self.date32().map(|ca| ca.year().into_series()),
-                    ArrowDataType::Date64(_) => self.date64().map(|ca| ca.year().into_series()),
+                    DataType::Date32 => self.date32().map(|ca| ca.year().into_series()),
+                    DataType::Date64 => self.date64().map(|ca| ca.year().into_series()),
                     _ => Err(PolarsError::InvalidOperation(
                         format!("operation not supported on dtype {:?}", self.dtype()).into(),
                     )),
@@ -844,10 +831,8 @@ macro_rules! impl_dyn_series {
                 };
 
                 match self.dtype() {
-                    ArrowDataType::Utf8 | ArrowDataType::List(_) | ArrowDataType::Boolean => {
-                        f_err()
-                    }
-                    ArrowDataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
+                    DataType::Utf8 | DataType::List(_) | DataType::Boolean => f_err(),
+                    DataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
                     _ => Ok(self.0.pow_f64(exponent).into_series()),
                 }
             }
@@ -993,7 +978,7 @@ where
         ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
     }
 
-    fn cast_with_arrow_datatype(&self, _data_type: &DataType) -> Result<Series> {
+    fn cast_with_datatype(&self, _data_type: &DataType) -> Result<Series> {
         Err(PolarsError::InvalidOperation(
             "cannot cast array of type ObjectChunked to arrow datatype".into(),
         ))

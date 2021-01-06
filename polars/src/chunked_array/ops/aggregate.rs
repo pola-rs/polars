@@ -457,7 +457,7 @@ impl ChunkAggSeries for Utf8Chunked {
 
 macro_rules! one_null_list {
     ($self:ident) => {{
-        let mut builder = get_list_builder(&ArrowDataType::Null, 1, $self.name());
+        let mut builder = get_list_builder(&DataType::Null, 1, $self.name());
         builder.append_opt_series(None);
         builder.finish().into_series()
     }};

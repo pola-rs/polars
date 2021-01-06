@@ -6,7 +6,6 @@ use crate::series::implementations::Wrap;
 use crate::series::SeriesTrait;
 use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, Xob};
 use ahash::RandomState;
-use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -267,7 +266,7 @@ impl DataFrame {
     }
 
     /// Get the data types of the columns in the DataFrame.
-    pub fn dtypes(&self) -> Vec<ArrowDataType> {
+    pub fn dtypes(&self) -> Vec<DataType> {
         self.columns.iter().map(|s| s.dtype().clone()).collect()
     }
 
@@ -1282,7 +1281,7 @@ impl DataFrame {
         let n_chunks = self.n_chunks()?;
         let width = self.width();
 
-        let schema = Arc::new(self.schema());
+        let schema = Arc::new(self.schema().to_arrow());
 
         let mut record_batches = Vec::with_capacity(n_chunks);
         for i in 0..n_chunks {
@@ -1316,7 +1315,7 @@ impl DataFrame {
         }
         RecordBatchIter {
             columns: &self.columns,
-            schema: Arc::new(self.schema()),
+            schema: Arc::new(self.schema().to_arrow()),
             buffer_size,
             idx: 0,
             len: self.height(),
@@ -1571,7 +1570,7 @@ impl DataFrame {
 
 pub struct RecordBatchIter<'a> {
     columns: &'a Vec<Series>,
-    schema: Arc<Schema>,
+    schema: Arc<ArrowSchema>,
     buffer_size: usize,
     idx: usize,
     len: usize,
@@ -1666,7 +1665,7 @@ impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
 mod test {
     use crate::prelude::*;
     use arrow::array::{Float64Array, Int64Array};
-    use arrow::datatypes::DataType;
+    use arrow::datatypes::{DataType, Field, Schema};
     use arrow::record_batch::RecordBatch;
     use std::convert::TryFrom;
 

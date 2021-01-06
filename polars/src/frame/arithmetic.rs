@@ -5,7 +5,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 /// Get the supertype that is valid for all columns in the DataFrame.
 /// This reduces casting of the rhs in arithmetic.
-fn get_supertype_all(df: &DataFrame, rhs: &Series) -> Result<ArrowDataType> {
+fn get_supertype_all(df: &DataFrame, rhs: &Series) -> Result<DataType> {
     df.columns
         .iter()
         .fold(Ok(rhs.dtype().clone()), |dt, s| match dt {
@@ -17,9 +17,9 @@ fn get_supertype_all(df: &DataFrame, rhs: &Series) -> Result<ArrowDataType> {
 macro_rules! impl_arithmetic {
     ($self:expr, $rhs:expr, $operand: tt) => {{
         let st = get_supertype_all($self, $rhs)?;
-        let rhs = $rhs.cast_with_arrow_datatype(&st)?;
+        let rhs = $rhs.cast_with_datatype(&st)?;
         let cols = $self.columns.par_iter().map(|s| {
-            Ok(&s.cast_with_arrow_datatype(&st)? $operand &rhs)
+            Ok(&s.cast_with_datatype(&st)? $operand &rhs)
         }).collect::<Result<_>>()?;
         Ok(DataFrame::new_no_checks(cols))
     }}

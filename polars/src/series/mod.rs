@@ -138,7 +138,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Get datatype of series.
-    fn dtype(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &DataType {
         self.field().data_type()
     }
 
@@ -438,7 +438,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         unimplemented!()
     }
 
-    fn cast_with_arrow_datatype(&self, _data_type: &ArrowDataType) -> Result<Series> {
+    fn cast_with_datatype(&self, _data_type: &DataType) -> Result<Series> {
         unimplemented!()
     }
 
@@ -764,8 +764,8 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// Format Date32/Date64 with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     fn datetime_str_fmt(&self, fmt: &str) -> Result<Series> {
         match self.dtype() {
-            ArrowDataType::Date32(_) => self.date32().map(|ca| ca.str_fmt(fmt).into_series()),
-            ArrowDataType::Date64(_) => self.date64().map(|ca| ca.str_fmt(fmt).into_series()),
+            DataType::Date32 => self.date32().map(|ca| ca.str_fmt(fmt).into_series()),
+            DataType::Date64 => self.date64().map(|ca| ca.str_fmt(fmt).into_series()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -954,7 +954,7 @@ impl Series {
     where
         N: PolarsDataType,
     {
-        self.0.cast_with_arrow_datatype(&N::get_dtype())
+        self.0.cast_with_datatype(&N::get_dtype())
     }
     /// Returns `None` if the array is empty or only contains null values.
     /// ```
@@ -1021,8 +1021,8 @@ impl Series {
     /// Explode a list or utf8 Series. This expands every item to a new row..
     pub fn explode(&self) -> Result<Series> {
         match self.dtype() {
-            ArrowDataType::List(_) => self.list().unwrap().explode(),
-            ArrowDataType::Utf8 => self.utf8().unwrap().explode(),
+            DataType::List(_) => self.list().unwrap().explode(),
+            DataType::Utf8 => self.utf8().unwrap().explode(),
             _ => Err(PolarsError::InvalidOperation(
                 format!(
                     "explode not supported for Series with dtype {:?}",
@@ -1036,8 +1036,8 @@ impl Series {
     /// Check if float value is NaN (note this is different than missing/ null)
     pub fn is_nan(&self) -> Result<BooleanChunked> {
         match self.dtype() {
-            ArrowDataType::Float32 => Ok(self.f32().unwrap().is_nan()),
-            ArrowDataType::Float64 => Ok(self.f64().unwrap().is_nan()),
+            DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
+            DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
             _ => Err(PolarsError::InvalidOperation(
                 format!(
                     "is_nan not supported for series with dtype {:?}",
@@ -1051,8 +1051,8 @@ impl Series {
     /// Check if float value is NaN (note this is different than missing/ null)
     pub fn is_not_nan(&self) -> Result<BooleanChunked> {
         match self.dtype() {
-            ArrowDataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
-            ArrowDataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
+            DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
+            DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
             _ => Err(PolarsError::InvalidOperation(
                 format!(
                     "is_nan not supported for series with dtype {:?}",
@@ -1066,8 +1066,8 @@ impl Series {
     /// Check if float value is finite
     pub fn is_finite(&self) -> Result<BooleanChunked> {
         match self.dtype() {
-            ArrowDataType::Float32 => Ok(self.f32().unwrap().is_finite()),
-            ArrowDataType::Float64 => Ok(self.f64().unwrap().is_finite()),
+            DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
+            DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             _ => Err(PolarsError::InvalidOperation(
                 format!(
                     "is_nan not supported for series with dtype {:?}",
@@ -1081,8 +1081,8 @@ impl Series {
     /// Check if float value is finite
     pub fn is_infinite(&self) -> Result<BooleanChunked> {
         match self.dtype() {
-            ArrowDataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
-            ArrowDataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
+            DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
+            DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             _ => Err(PolarsError::InvalidOperation(
                 format!(
                     "is_nan not supported for series with dtype {:?}",

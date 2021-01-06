@@ -14,7 +14,7 @@ use std::sync::Arc;
 impl<T> Default for ChunkedArray<T> {
     fn default() -> Self {
         ChunkedArray {
-            field: Arc::new(Field::new("default", ArrowDataType::Null, false)),
+            field: Arc::new(Field::new("default", DataType::Null)),
             chunks: Vec::with_capacity(0),
             chunk_id: Vec::with_capacity(0),
             phantom: PhantomData,

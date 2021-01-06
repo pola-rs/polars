@@ -5,7 +5,7 @@ use crate::{
 use arrow::array::{
     ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, ListBuilder,
 };
-use arrow::datatypes::{Field, ToByteSlice};
+use arrow::datatypes::ToByteSlice;
 pub use arrow::memory;
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
@@ -41,7 +41,7 @@ where
 {
     pub fn new(capacity: usize) -> Self {
         let (boolean_builder, values, bitmap_builder) =
-            if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+            if matches!(T::get_dtype(), DataType::Boolean) {
                 (
                     PrimitiveBuilder::new(capacity),
                     AlignedVec::<T::Native>::with_capacity_aligned(0),
@@ -67,7 +67,7 @@ where
     /// Appends a value of type `T::Native` into the builder
     #[inline]
     pub fn append_value(&mut self, v: T::Native) {
-        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
+        if matches!(T::get_dtype(), DataType::Boolean) {
             self.boolean_builder.append_value(v).unwrap();
         } else {
             self.values.push(v);
@@ -158,7 +158,7 @@ where
     pub fn new(name: &str, capacity: usize) -> Self {
         PrimitiveChunkedBuilder {
             array_builder: PrimitiveArrayBuilder::<T>::new(capacity),
-            field: Field::new(name, T::get_data_type(), true),
+            field: Field::new(name, T::get_dtype()),
         }
     }
 }
@@ -176,7 +176,7 @@ impl Utf8ChunkedBuilder {
         Utf8ChunkedBuilder {
             builder: StringBuilder::new(capacity),
             capacity,
-            field: Field::new(name, ArrowDataType::Utf8, true),
+            field: Field::new(name, DataType::Utf8),
         }
     }
 
@@ -596,7 +596,7 @@ where
                 .expect("Could not append value");
         });
 
-        let field = Arc::new(Field::new(name, ArrowDataType::Utf8, true));
+        let field = Arc::new(Field::new(name, DataType::Utf8));
 
         ChunkedArray {
             field,
@@ -694,11 +694,7 @@ where
 {
     pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
         let builder = ListBuilder::with_capacity(values_builder, capacity);
-        let field = Field::new(
-            name,
-            ArrowDataType::List(Box::new(T::get_data_type())),
-            true,
-        );
+        let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
 
         ListPrimitiveChunkedBuilder { builder, field }
     }
@@ -764,11 +760,7 @@ pub struct ListUtf8ChunkedBuilder {
 impl ListUtf8ChunkedBuilder {
     pub fn new(name: &str, values_builder: StringBuilder, capacity: usize) -> Self {
         let builder = ListBuilder::with_capacity(values_builder, capacity);
-        let field = Field::new(
-            name,
-            ArrowDataType::List(Box::new(ArrowDataType::Utf8)),
-            true,
-        );
+        let field = Field::new(name, DataType::List(ArrowDataType::Utf8));
 
         ListUtf8ChunkedBuilder { builder, field }
     }
@@ -788,11 +780,7 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
     }
 }
 
-pub fn get_list_builder(
-    dt: &ArrowDataType,
-    capacity: usize,
-    name: &str,
-) -> Box<dyn ListBuilderTrait> {
+pub fn get_list_builder(dt: &DataType, capacity: usize, name: &str) -> Box<dyn ListBuilderTrait> {
     macro_rules! get_primitive_builder {
         ($type:ty) => {{
             let values_builder = PrimitiveBuilder::<$type>::new(capacity);
