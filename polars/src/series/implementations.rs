@@ -858,6 +858,7 @@ impl_dyn_series!(DurationMillisecondChunked);
 impl_dyn_series!(Date32Chunked);
 impl_dyn_series!(Date64Chunked);
 impl_dyn_series!(Time64NanosecondChunked);
+impl_dyn_series!(CategoricalChunked);
 
 #[cfg(feature = "object")]
 #[doc(cfg(feature = "object"))]
