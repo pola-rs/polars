@@ -1,7 +1,7 @@
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::utils::str_to_arrow_type;
+use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{
     AllowedOptimizations, JoinOptions, LazyCsvReader, LazyFrame, LazyGroupBy,
 };
@@ -90,7 +90,7 @@ impl PyLazyFrame {
                 .iter()
                 .map(|(name, dtype)| {
                     let str_repr = dtype.str().unwrap().to_str().unwrap();
-                    let dtype = str_to_arrow_type(str_repr);
+                    let dtype = str_to_polarstype(str_repr);
                     Field::new(name, dtype)
                 })
                 .collect();

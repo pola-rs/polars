@@ -115,6 +115,10 @@ class Object:
     pass
 
 
+class Categorical:
+    pass
+
+
 # Don't change the order of these!
 dtypes = [
     Int8,
@@ -157,6 +161,7 @@ DTYPE_TO_FFINAME = {
     DurationNanosecond: "duration_nanosecond",
     DurationMillisecond: "duration_millisecond",
     Object: "object",
+    Categorical: "categorical"
 }
 
 
