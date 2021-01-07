@@ -933,13 +933,13 @@ mod test {
         builder.append_series(&s1);
         builder.append_series(&s2);
         let ls = builder.finish();
-        if let AnyType::List(s) = ls.get_any(0) {
+        if let AnyType::List(s) = ls.get_as_enum(0) {
             // many chunks are aggregated to one in the ListArray
             assert_eq!(s.len(), 6)
         } else {
             assert!(false)
         }
-        if let AnyType::List(s) = ls.get_any(1) {
+        if let AnyType::List(s) = ls.get_as_enum(1) {
             assert_eq!(s.len(), 3)
         } else {
             assert!(false)
@@ -956,8 +956,8 @@ mod test {
 
         let ca = builder.finish();
         let v = AnyType::Utf8("hello");
-        assert_eq!(ca.get_any(0), v);
+        assert_eq!(ca.get_as_enum(0), v);
         let v = AnyType::Null;
-        assert_eq!(ca.get_any(1), v);
+        assert_eq!(ca.get_as_enum(1), v);
     }
 }
