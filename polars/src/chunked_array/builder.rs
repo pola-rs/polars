@@ -147,6 +147,7 @@ where
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 }
@@ -207,6 +208,7 @@ impl Utf8ChunkedBuilder {
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 }
@@ -603,6 +605,7 @@ where
             chunks: vec![Arc::new(builder.finish())],
             chunk_id: vec![v.len()],
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 
@@ -684,6 +687,7 @@ macro_rules! finish_list_builder {
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
+            categorical_map: None,
         }
     }};
 }

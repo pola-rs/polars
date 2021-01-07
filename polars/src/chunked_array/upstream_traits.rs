@@ -18,6 +18,7 @@ impl<T> Default for ChunkedArray<T> {
             chunks: Vec::with_capacity(0),
             chunk_id: Vec::with_capacity(0),
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 }
