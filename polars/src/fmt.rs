@@ -69,7 +69,7 @@ macro_rules! format_array {
         write![$f, "{}: '{}' [{}]\n[\n", $array_type, $name, $dtype]?;
 
         for i in 0..$limit {
-            let v = $a.get_any(i);
+            let v = $a.get_as_enum(i);
             write!($f, "\t{}\n", v)?;
         }
 
@@ -138,7 +138,7 @@ macro_rules! format_object_array {
         write![$f, "{}: '{}' [object]\n[\n", $array_type, $name]?;
 
         for i in 0..$limit {
-            let v = $object.get_any(i);
+            let v = $object.get_as_enum(i);
             match v {
                 AnyType::Null => writeln!($f, "\tnull")?,
                 _ => writeln!($f, "\tobject")?,

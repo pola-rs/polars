@@ -589,7 +589,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn get(&self, index: usize) -> AnyType {
-                self.0.get_any(index)
+                self.0.get_as_enum(index)
             }
 
             fn sort_in_place(&mut self, reverse: bool) {
@@ -993,7 +993,7 @@ where
     }
 
     fn get(&self, index: usize) -> AnyType {
-        ObjectChunked::get_any(&self.0, index)
+        ObjectChunked::get_as_enum(&self.0, index)
     }
 
     fn sort_in_place(&mut self, reverse: bool) {

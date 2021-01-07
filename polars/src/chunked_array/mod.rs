@@ -492,7 +492,7 @@ where
     }
 
     /// Get a single value. Beware this is slow. (only used for formatting)
-    pub(crate) fn get_any(&self, index: usize) -> AnyType {
+    pub(crate) fn get_as_enum(&self, index: usize) -> AnyType {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let arr = &*self.chunks[chunk_idx];
 
@@ -924,10 +924,10 @@ pub(crate) mod test {
     #[test]
     fn get() {
         let mut a = get_chunked_array();
-        assert_eq!(AnyType::Int32(2), a.get_any(1));
+        assert_eq!(AnyType::Int32(2), a.get_as_enum(1));
         // check if chunks indexes are properly determined
         a.append_array(a.chunks[0].clone()).unwrap();
-        assert_eq!(AnyType::Int32(1), a.get_any(3));
+        assert_eq!(AnyType::Int32(1), a.get_as_enum(3));
     }
 
     #[test]
