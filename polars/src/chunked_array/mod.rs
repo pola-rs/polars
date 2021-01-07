@@ -53,6 +53,7 @@ use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray, ListArray,
 };
 
+use ahash::AHashMap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
 
@@ -156,11 +157,12 @@ fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
 /// multiple append operations.
 pub struct ChunkedArray<T> {
     pub(crate) field: Arc<Field>,
-    // For now settle with dynamic generics until we are more confident about the api
     pub(crate) chunks: Vec<ArrayRef>,
     // chunk lengths
     chunk_id: Vec<usize>,
     phantom: PhantomData<T>,
+    /// Maps string categories to u16
+    categorical_map: Option<Arc<AHashMap<String, u16>>>,
 }
 
 impl<T> ChunkedArray<T> {
@@ -268,6 +270,11 @@ impl<T> ChunkedArray<T> {
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+        if matches!(self.dtype(), DataType::Categorical) {
+            return Err(PolarsError::InvalidOperation(
+                "append_array not supported for categorical type".into(),
+            ));
+        }
         if self.field.data_type() == other.data_type() {
             self.chunks.push(other);
             self.chunk_id = create_chunk_id(&self.chunks);
@@ -292,6 +299,7 @@ impl<T> ChunkedArray<T> {
             chunks,
             chunk_id,
             phantom: PhantomData,
+            categorical_map: self.categorical_map.clone(),
         }
     }
 
@@ -425,6 +433,13 @@ impl<T> ChunkedArray<T> {
     where
         Self: std::marker::Sized,
     {
+        if matches!(self.dtype(), DataType::Categorical) {
+            assert!(Arc::ptr_eq(
+                self.categorical_map.as_ref().unwrap(),
+                other.categorical_map.as_ref().unwrap()
+            ));
+        }
+
         // replace an empty array
         if self.chunks.len() == 1 && self.is_empty() {
             self.chunks = other.chunks.clone();
@@ -473,6 +488,7 @@ where
             chunks,
             chunk_id,
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 
@@ -564,6 +580,7 @@ where
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 
@@ -585,6 +602,7 @@ where
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 }
@@ -751,6 +769,7 @@ impl<T> Clone for ChunkedArray<T> {
             chunks: self.chunks.clone(),
             chunk_id: self.chunk_id.clone(),
             phantom: PhantomData,
+            categorical_map: self.categorical_map.clone(),
         }
     }
 }

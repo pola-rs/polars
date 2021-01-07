@@ -98,6 +98,91 @@ impl ArrowPrimitiveType for CategoricalType {
     }
 }
 
+// These don't need to be implemented as the kernels work in ArrowDataType::UInt16
+impl ArrowNumericType for CategoricalType {
+    type Simd = <UInt16Type as ArrowNumericType>::Simd;
+    type SimdMask = <UInt16Type as ArrowNumericType>::SimdMask;
+
+    fn lanes() -> usize {
+        UInt16Type::lanes()
+    }
+
+    fn init(value: Self::Native) -> Self::Simd {
+        UInt16Type::init(value)
+    }
+
+    fn load(slice: &[Self::Native]) -> Self::Simd {
+        UInt16Type::load(slice)
+    }
+
+    fn mask_init(value: bool) -> Self::SimdMask {
+        UInt16Type::mask_init(value)
+    }
+
+    fn mask_from_u64(mask: u64) -> Self::SimdMask {
+        UInt16Type::mask_from_u64(mask)
+    }
+
+    fn mask_get(mask: &Self::SimdMask, idx: usize) -> bool {
+        UInt16Type::mask_get(mask, idx)
+    }
+
+    fn bitmask<T>(mask: &Self::SimdMask, action: T)
+    where
+        T: FnMut(&[u8]),
+    {
+        UInt16Type::bitmask(mask, action)
+    }
+
+    fn mask_set(mask: Self::SimdMask, idx: usize, value: bool) -> Self::SimdMask {
+        UInt16Type::mask_set(mask, idx, value)
+    }
+
+    fn mask_select(mask: Self::SimdMask, a: Self::Simd, b: Self::Simd) -> Self::Simd {
+        UInt16Type::mask_select(mask, a, b)
+    }
+
+    fn mask_any(mask: Self::SimdMask) -> bool {
+        UInt16Type::mask_any(mask)
+    }
+
+    fn bin_op<F: Fn(Self::Simd, Self::Simd) -> Self::Simd>(
+        left: Self::Simd,
+        right: Self::Simd,
+        op: F,
+    ) -> Self::Simd {
+        UInt16Type::bin_op(left, right, op)
+    }
+
+    fn eq(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
+        UInt16Type::eq(left, right)
+    }
+
+    fn ne(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
+        UInt16Type::ne(left, right)
+    }
+
+    fn lt(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
+        UInt16Type::lt(left, right)
+    }
+
+    fn le(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
+        UInt16Type::le(left, right)
+    }
+
+    fn gt(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
+        UInt16Type::gt(left, right)
+    }
+
+    fn ge(left: Self::Simd, right: Self::Simd) -> Self::SimdMask {
+        UInt16Type::ge(left, right)
+    }
+
+    fn write(simd_result: Self::Simd, slice: &mut [Self::Native]) {
+        UInt16Type::write(simd_result, slice)
+    }
+}
+
 #[cfg(feature = "object")]
 #[doc(cfg(feature = "object"))]
 pub struct ObjectType<T>(T);
@@ -174,6 +259,7 @@ impl PolarsNumericType for Date64Type {}
 impl PolarsNumericType for Time64NanosecondType {}
 impl PolarsNumericType for DurationNanosecondType {}
 impl PolarsNumericType for DurationMillisecondType {}
+impl PolarsNumericType for CategoricalType {}
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -189,6 +275,7 @@ impl PolarsIntegerType for Date64Type {}
 impl PolarsIntegerType for Time64NanosecondType {}
 impl PolarsIntegerType for DurationNanosecondType {}
 impl PolarsIntegerType for DurationMillisecondType {}
+impl PolarsIntegerType for CategoricalType {}
 
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
