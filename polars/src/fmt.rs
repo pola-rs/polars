@@ -281,6 +281,14 @@ impl Debug for Series {
             }
             #[cfg(feature = "object")]
             DataType::Object => format_object_array(limit, f, self.as_ref(), self.name(), "Series"),
+            DataType::Categorical => format_array!(
+                limit,
+                f,
+                self.categorical().unwrap(),
+                "categorical",
+                self.name(),
+                "Series"
+            ),
             _ => unimplemented!(),
         }
     }

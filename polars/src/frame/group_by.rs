@@ -201,6 +201,7 @@ impl<'b> (dyn SeriesTrait + 'b) {
             DataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
             DataType::Float32 => Ok(float_to_groupable_iter(self.f32().unwrap())),
             DataType::Float64 => Ok(float_to_groupable_iter(self.f64().unwrap())),
+            DataType::Categorical => as_groupable_iter!(self.categorical().unwrap(), UInt16),
             dt => Err(PolarsError::Other(
                 format!("Column with dtype {:?} is not groupable", dt).into(),
             )),

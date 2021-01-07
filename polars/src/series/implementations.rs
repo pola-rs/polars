@@ -461,6 +461,21 @@ macro_rules! impl_dyn_series {
                 }
             }
 
+            fn categorical(&self) -> Result<&CategoricalChunked> {
+                if matches!(self.0.dtype(), DataType::Categorical) {
+                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const CategoricalChunked)) }
+                } else {
+                    Err(PolarsError::DataTypeMisMatch(
+                        format!(
+                            "cannot unpack Series: {:?} of type {:?} into categorical",
+                            self.name(),
+                            self.dtype(),
+                        )
+                        .into(),
+                    ))
+                }
+            }
+
             fn append_array(&mut self, other: ArrayRef) -> Result<()> {
                 self.0.append_array(other)
             }
@@ -574,6 +589,9 @@ macro_rules! impl_dyn_series {
                             .map(|ca| ca.into_series())
                     }
                     List(_) => ChunkCast::cast::<ListType>(&self.0).map(|ca| ca.into_series()),
+                    Categorical => {
+                        ChunkCast::cast::<CategoricalType>(&self.0).map(|ca| ca.into_series())
+                    }
                     dt => Err(PolarsError::Other(
                         format!("Casting to {:?} is not supported", dt).into(),
                     )),

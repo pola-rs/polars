@@ -22,6 +22,7 @@ pub enum PyDataType {
     DurationNanosecond,
     DurationMillisecond,
     Object,
+    Categorical
 }
 
 impl From<&DataType> for PyDataType {
@@ -47,6 +48,7 @@ impl From<&DataType> for PyDataType {
             DataType::Duration(TimeUnit::Nanosecond) => DurationNanosecond,
             DataType::Duration(TimeUnit::Millisecond) => DurationMillisecond,
             DataType::Object => Object,
+            DataType::Categorical => Categorical,
             dt => panic!(format!("datatype: {:?} not supported", dt)),
         }
     }
