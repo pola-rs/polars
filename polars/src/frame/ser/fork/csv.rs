@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::frame::ser::csv::CsvEncoding;
 use crate::frame::ser::ScanAggregation;
 #[cfg(feature = "lazy")]
@@ -315,6 +316,9 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
         &DataType::Float32 => Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Float64 => Builder::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Utf8 => Builder::Utf8(Utf8ChunkedBuilder::new(name, capacity)),
+        &DataType::Categorical => {
+            Builder::Categorical(CategoricalChunkedBuilder::new(name, capacity))
+        }
         other => {
             return Err(PolarsError::Other(
                 format!("Unsupported data type {:?} when reading a csv", other).into(),
@@ -1142,6 +1146,7 @@ enum Builder {
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
+    Categorical(CategoricalChunkedBuilder),
 }
 
 impl Builder {
@@ -1219,6 +1224,7 @@ impl Builder {
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Boolean(b) => b.finish().into_series(),
+            Categorical(b) => b.finish().into_series(),
         }
     }
 }

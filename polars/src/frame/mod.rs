@@ -78,6 +78,7 @@ impl_into_series!(DurationMillisecondChunked);
 impl_into_series!(Date32Chunked);
 impl_into_series!(Date64Chunked);
 impl_into_series!(Time64NanosecondChunked);
+impl_into_series!(CategoricalChunked);
 
 #[derive(Clone)]
 pub struct DataFrame {
