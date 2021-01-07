@@ -78,6 +78,7 @@ where
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 }
@@ -143,6 +144,7 @@ where
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
+            categorical_map: None,
         }
     }
 }
