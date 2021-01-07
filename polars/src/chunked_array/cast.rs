@@ -1,8 +1,9 @@
 //! Implementations of the ChunkCast Trait.
+use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::kernels::{cast_numeric_from_dtype, transmute_array_from_dtype};
 use crate::prelude::*;
 use arrow::compute;
-use num::NumCast;
+use num::{NumCast, ToPrimitive};
 
 fn cast_ca<N, T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<N>>
 where
@@ -47,13 +48,40 @@ macro_rules! cast_from_dtype {
 impl<T> ChunkCast for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast,
+    T::Native: NumCast + ToPrimitive,
 {
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
         N: PolarsDataType,
     {
         match T::get_dtype() {
+            DataType::Categorical => match N::get_dtype() {
+                DataType::Utf8 => {
+                    let mapping = &**self.categorical_map.as_ref().expect("should be set");
+
+                    let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+
+                    let f = |idx: T::Native| {
+                        let idx = idx.to_usize().unwrap();
+                        debug_assert!(idx < mapping.len());
+                        unsafe { mapping.get_unchecked(idx) }
+                    };
+
+                    if self.null_count() == 0 {
+                        self.into_no_null_iter()
+                            .for_each(|idx| builder.append_value(f(idx)));
+                    } else {
+                        self.into_iter().for_each(|opt_idx| {
+                            builder.append_option(opt_idx.map(f));
+                        });
+                    }
+
+                    let ca = builder.finish();
+                    let ca = unsafe { std::mem::transmute(ca) };
+                    Ok(ca)
+                }
+                _ => cast_ca(self),
+            },
             // Duration cast is not implemented in Arrow
             DataType::Duration(_) => {
                 // underlying type: i64
@@ -136,6 +164,31 @@ macro_rules! impl_chunkcast {
     };
 }
 
-impl_chunkcast!(Utf8Chunked);
+impl ChunkCast for Utf8Chunked {
+    fn cast<N>(&self) -> Result<ChunkedArray<N>>
+    where
+        N: PolarsDataType,
+    {
+        match N::get_dtype() {
+            DataType::Categorical => {
+                let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
+
+                if self.null_count() == 0 {
+                    self.into_no_null_iter()
+                        .for_each(|v| builder.append_value(v));
+                } else {
+                    self.into_iter()
+                        .for_each(|opt_v| builder.append_option(opt_v));
+                }
+
+                let ca = builder.finish();
+                let ca = unsafe { std::mem::transmute(ca) };
+                Ok(ca)
+            }
+            _ => cast_ca(self),
+        }
+    }
+}
+
 impl_chunkcast!(BooleanChunked);
 impl_chunkcast!(ListChunked);
