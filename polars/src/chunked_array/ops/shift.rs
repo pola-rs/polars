@@ -184,6 +184,12 @@ impl ChunkShift<ListType> for ListChunked {
     }
 }
 
+impl ChunkShift<CategoricalType> for CategoricalChunked {
+    fn shift(&self, periods: i32) -> Result<Self> {
+        self.cast::<UInt32Type>()?.shift(periods)?.cast()
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T> {
     fn shift_and_fill(

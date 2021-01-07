@@ -177,6 +177,26 @@ impl ChunkOps for Utf8Chunked {
         optional_rechunk!(self, rhs)
     }
 }
+
+impl ChunkOps for CategoricalChunked {
+    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        self.cast::<UInt32Type>()?.rechunk(chunk_lengths)?.cast()
+    }
+
+    fn optional_rechunk<A>(&self, rhs: &ChunkedArray<A>) -> Result<Option<Self>>
+    where
+        Self: std::marker::Sized,
+    {
+        Ok(self
+            .cast::<UInt32Type>()?
+            .optional_rechunk(rhs)?
+            .map(|ca| ca.cast().unwrap()))
+    }
+}
+
 impl ChunkOps for ListChunked {
     fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Self> {
         match (self.chunks.len(), chunk_lengths.map(|v| v.len())) {

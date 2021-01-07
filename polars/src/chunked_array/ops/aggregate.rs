@@ -220,6 +220,7 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
+impl ChunkVar<u32> for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}
@@ -382,6 +383,7 @@ impl VarAggSeries for Float64Chunked {
 }
 
 impl VarAggSeries for BooleanChunked {}
+impl VarAggSeries for CategoricalChunked {}
 impl VarAggSeries for ListChunked {}
 #[cfg(feature = "object")]
 impl<T> VarAggSeries for ObjectChunked<T> {}
@@ -454,6 +456,8 @@ impl ChunkAggSeries for Utf8Chunked {
         Ok(one_null_utf8!(self))
     }
 }
+
+impl ChunkAggSeries for CategoricalChunked {}
 
 macro_rules! one_null_list {
     ($self:ident) => {{

@@ -45,6 +45,41 @@ macro_rules! cast_from_dtype {
     }};
 }
 
+impl ChunkCast for CategoricalChunked {
+    fn cast<N>(&self) -> Result<ChunkedArray<N>>
+    where
+        N: PolarsDataType,
+    {
+        match N::get_dtype() {
+            DataType::Utf8 => {
+                let mapping = &**self.categorical_map.as_ref().expect("should be set");
+
+                let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+
+                let f = |idx: u32| mapping.get(&idx).unwrap();
+
+                if self.null_count() == 0 {
+                    self.into_no_null_iter()
+                        .for_each(|idx| builder.append_value(f(idx)));
+                } else {
+                    self.into_iter().for_each(|opt_idx| {
+                        builder.append_option(opt_idx.map(f));
+                    });
+                }
+
+                let ca = builder.finish();
+                let ca = unsafe { std::mem::transmute(ca) };
+                Ok(ca)
+            }
+            DataType::UInt32 => {
+                let ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
+                Ok(ca)
+            }
+            _ => cast_ca(self),
+        }
+    }
+}
+
 impl<T> ChunkCast for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -55,32 +90,6 @@ where
         N: PolarsDataType,
     {
         match T::get_dtype() {
-            DataType::Categorical => match N::get_dtype() {
-                DataType::Utf8 => {
-                    let mapping = &**self.categorical_map.as_ref().expect("should be set");
-
-                    let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
-
-                    let f = |idx: T::Native| {
-                        let idx = idx.to_u32().unwrap();
-                        mapping.get(&idx).unwrap()
-                    };
-
-                    if self.null_count() == 0 {
-                        self.into_no_null_iter()
-                            .for_each(|idx| builder.append_value(f(idx)));
-                    } else {
-                        self.into_iter().for_each(|opt_idx| {
-                            builder.append_option(opt_idx.map(f));
-                        });
-                    }
-
-                    let ca = builder.finish();
-                    let ca = unsafe { std::mem::transmute(ca) };
-                    Ok(ca)
-                }
-                _ => cast_ca(self),
-            },
             // Duration cast is not implemented in Arrow
             DataType::Duration(_) => {
                 // underlying type: i64

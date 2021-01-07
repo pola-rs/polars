@@ -185,6 +185,14 @@ impl ChunkFillNone for ListChunked {
     }
 }
 
+impl ChunkFillNone for CategoricalChunked {
+    fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Self> {
+        Err(PolarsError::InvalidOperation(
+            "fill_none not supported for Categorical type".into(),
+        ))
+    }
+}
+
 impl ChunkFillNoneValue<&Series> for ListChunked {
     fn fill_none_with_value(&self, _value: &Series) -> Result<Self> {
         Err(PolarsError::InvalidOperation(

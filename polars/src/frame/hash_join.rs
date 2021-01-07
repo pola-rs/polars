@@ -160,6 +160,23 @@ pub(crate) trait HashJoin<T> {
 impl HashJoin<Float64Type> for Float64Chunked {}
 impl HashJoin<Float32Type> for Float32Chunked {}
 impl HashJoin<ListType> for ListChunked {}
+impl HashJoin<CategoricalType> for CategoricalChunked {
+    fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(usize, usize)> {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .hash_join_inner(&other.cast().unwrap())
+    }
+    fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(usize, Option<usize>)> {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .hash_join_left(&other.cast().unwrap())
+    }
+    fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<usize>, Option<usize>)> {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .hash_join_outer(&other.cast().unwrap())
+    }
+}
 
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{
@@ -356,6 +373,7 @@ where
 impl ZipOuterJoinColumn for Float32Chunked {}
 impl ZipOuterJoinColumn for Float64Chunked {}
 impl ZipOuterJoinColumn for ListChunked {}
+impl ZipOuterJoinColumn for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ZipOuterJoinColumn for ObjectChunked<T> {}
 
@@ -955,6 +973,7 @@ mod test {
 
     #[test]
     fn test_join_categorical() {
+
         // Only checks if it runs. The join is flawed because the categories differ.
         let mut df_a = df! {
             "a" => &[1, 2, 1, 1],
@@ -974,7 +993,9 @@ mod test {
             .unwrap();
         df_b.may_apply("bar", |s| s.cast_with_datatype(&DataType::Categorical))
             .unwrap();
+        dbg!(&df_a);
 
         let out = df_a.join(&df_b, "b", "bar", JoinType::Inner).unwrap();
+        dbg!(out);
     }
 }

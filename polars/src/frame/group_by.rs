@@ -74,6 +74,12 @@ impl IntoGroupTuples for Utf8Chunked {
     }
 }
 
+impl IntoGroupTuples for CategoricalChunked {
+    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        group_tuples(self)
+    }
+}
+
 impl IntoGroupTuples for Float64Chunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
         match self.null_count() {
@@ -201,7 +207,7 @@ impl<'b> (dyn SeriesTrait + 'b) {
             DataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
             DataType::Float32 => Ok(float_to_groupable_iter(self.f32().unwrap())),
             DataType::Float64 => Ok(float_to_groupable_iter(self.f64().unwrap())),
-            DataType::Categorical => as_groupable_iter!(self.categorical().unwrap(), UInt16),
+            DataType::Categorical => as_groupable_iter!(self.categorical().unwrap(), UInt32),
             dt => Err(PolarsError::Other(
                 format!("Column with dtype {:?} is not groupable", dt).into(),
             )),
@@ -344,6 +350,7 @@ pub(crate) trait NumericAggSync {
 impl NumericAggSync for BooleanChunked {}
 impl NumericAggSync for Utf8Chunked {}
 impl NumericAggSync for ListChunked {}
+impl NumericAggSync for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> NumericAggSync for ObjectChunked<T> {}
 
@@ -531,6 +538,16 @@ impl AggFirst for ListChunked {
     }
 }
 
+impl AggFirst for CategoricalChunked {
+    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .agg_first(groups)
+            .cast::<CategoricalType>()
+            .unwrap()
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> AggFirst for ObjectChunked<T> {
     fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
@@ -565,6 +582,16 @@ where
 impl AggLast for Utf8Chunked {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, Utf8Chunked)
+    }
+}
+
+impl AggLast for CategoricalChunked {
+    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .agg_last(groups)
+            .cast::<CategoricalType>()
+            .unwrap()
     }
 }
 
@@ -627,6 +654,11 @@ where
 impl AggNUnique for Float32Chunked {}
 impl AggNUnique for Float64Chunked {}
 impl AggNUnique for ListChunked {}
+impl AggNUnique for CategoricalChunked {
+    fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+        self.cast::<UInt32Type>().unwrap().agg_n_unique(groups)
+    }
+}
 #[cfg(feature = "object")]
 impl<T> AggNUnique for ObjectChunked<T> {}
 
@@ -730,6 +762,7 @@ where
 impl AggQuantile for Utf8Chunked {}
 impl AggQuantile for BooleanChunked {}
 impl AggQuantile for ListChunked {}
+impl AggQuantile for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> AggQuantile for ObjectChunked<T> {}
 
@@ -1762,6 +1795,20 @@ impl ChunkPivot for Utf8Chunked {
         pivot_count_impl(&self, pivot_series, keys, groups)
     }
 }
+
+impl ChunkPivot for CategoricalChunked {
+    fn pivot_count<'a>(
+        &self,
+        pivot_series: &'a (dyn SeriesTrait + 'a),
+        keys: Vec<Series>,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<DataFrame> {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .pivot_count(pivot_series, keys, groups)
+    }
+}
+
 impl ChunkPivot for ListChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkPivot for ObjectChunked<T> {}

@@ -7,7 +7,7 @@ use ahash::AHashMap;
 use arrow::array::{
     ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, ListBuilder,
 };
-use arrow::datatypes::{ArrowNativeType, ToByteSlice};
+use arrow::datatypes::ToByteSlice;
 pub use arrow::memory;
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
@@ -639,32 +639,9 @@ where
         name: &str,
         it: impl Iterator<Item = Option<T::Native>>,
     ) -> ChunkedArray<T> {
-        // used by Unique. Should use something else
-        if matches!(T::get_dtype(), DataType::Categorical) {
-            let mut arr_builder = PrimitiveArrayBuilder::<UInt32Type>::new(get_iter_capacity(&it));
-            it.for_each(|opt| match opt {
-                Some(val) => {
-                    let val = val.to_usize().unwrap() as u32;
-                    arr_builder.append_value(val)
-                }
-                None => arr_builder.append_null(),
-            });
-            let arr = Arc::new(arr_builder.finish());
-            let len = arr.len();
-
-            let ca = ChunkedArray {
-                field: Arc::new(Field::new(name, DataType::Categorical)),
-                chunks: vec![arr],
-                chunk_id: vec![len],
-                phantom: PhantomData,
-                categorical_map: None,
-            };
-            ca
-        } else {
-            let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
-            it.for_each(|opt| builder.append_option(opt));
-            builder.finish()
-        }
+        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|opt| builder.append_option(opt));
+        builder.finish()
     }
 
     /// Create a new ChunkedArray from an iterator.

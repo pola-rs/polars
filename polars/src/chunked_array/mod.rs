@@ -56,6 +56,7 @@ use arrow::array::{
 use ahash::AHashMap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
+use std::ops::Deref;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
@@ -551,6 +552,7 @@ where
             DataType::Object => AnyType::Object(&"object"),
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
+                dbg!(v);
                 AnyType::Utf8(
                     &self
                         .categorical_map
@@ -643,6 +645,7 @@ where
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
 impl AsSinglePtr for Utf8Chunked {}
+impl AsSinglePtr for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> AsSinglePtr for ObjectChunked<T> {}
 
@@ -852,6 +855,29 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
 
 pub struct NoNull<T>(pub T);
 
+impl Deref for CategoricalChunked {
+    type Target = UInt32Chunked;
+
+    fn deref(&self) -> &Self::Target {
+        let ptr = self as *const CategoricalChunked;
+        let ptr = ptr as *const UInt32Chunked;
+        unsafe {&*ptr}
+    }
+}
+
+impl From<UInt32Chunked> for CategoricalChunked {
+    fn from(ca: UInt32Chunked) -> Self {
+        ca.cast().unwrap()
+    }
+}
+
+impl CategoricalChunked {
+    fn set_state<T>(mut self, other: &ChunkedArray<T>) -> Self {
+        self.categorical_map = other.categorical_map.clone();
+        self
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
@@ -1022,5 +1048,13 @@ pub(crate) mod test {
 
         let s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());
         dbg!(&s.into_iter().next());
+    }
+
+    #[test]
+    fn test_iter_categorical() {
+        let ca = Utf8Chunked::new_from_opt_slice("", &[Some("foo"), None, Some("bar"), Some("ham")]);
+        let ca = ca.cast::<CategoricalType>().unwrap();
+        let v: Vec<_> = ca.into_iter().collect();
+        assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }
 }
