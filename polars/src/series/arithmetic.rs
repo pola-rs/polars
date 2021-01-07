@@ -101,6 +101,7 @@ impl NumOpsDispatch for Utf8Chunked {
 }
 impl NumOpsDispatch for BooleanChunked {}
 impl NumOpsDispatch for ListChunked {}
+impl NumOpsDispatch for CategoricalChunked {}
 
 pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,

@@ -203,6 +203,30 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 }
 
+impl ChunkUnique<CategoricalType> for CategoricalChunked {
+    fn unique(&self) -> Result<Self> {
+        let set = fill_set(self.into_iter(), self.len());
+        let mut ca = UInt32Chunked::new_from_opt_iter(self.name(), set.iter().copied());
+        ca.categorical_map = self.categorical_map.clone();
+        ca.cast()
+    }
+
+    fn arg_unique(&self) -> Result<Vec<usize>> {
+        Ok(arg_unique_ca(self))
+    }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        Ok(is_unique(self))
+    }
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        Ok(is_duplicated(self))
+    }
+
+    fn value_counts(&self) -> Result<DataFrame> {
+        impl_value_counts!(self)
+    }
+}
+
 fn dummies_helper(mut groups: Vec<usize>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();
 
@@ -275,6 +299,7 @@ impl<T> ToDummies<ObjectType<T>> for ObjectChunked<T> {}
 impl ToDummies<Float32Type> for Float32Chunked {}
 impl ToDummies<Float64Type> for Float64Chunked {}
 impl ToDummies<BooleanType> for BooleanChunked {}
+impl ToDummies<CategoricalType> for CategoricalChunked {}
 
 impl ChunkUnique<BooleanType> for BooleanChunked {
     fn unique(&self) -> Result<Self> {

@@ -596,6 +596,24 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
+impl ChunkSort<CategoricalType> for CategoricalChunked {
+    fn sort(&self, reverse: bool) -> Self {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .sort(reverse)
+            .cast()
+            .unwrap()
+    }
+
+    fn sort_in_place(&mut self, reverse: bool) {
+        self.cast::<UInt32Type>().unwrap().sort_in_place(reverse)
+    }
+
+    fn argsort(&self, reverse: bool) -> Vec<usize> {
+        self.cast::<UInt32Type>().unwrap().argsort(reverse)
+    }
+}
+
 // TODO! return errors
 impl ChunkSort<ListType> for ListChunked {
     fn sort(&self, _reverse: bool) -> Self {
@@ -786,6 +804,12 @@ where
     }
 }
 
+impl ChunkReverse<CategoricalType> for CategoricalChunked {
+    fn reverse(&self) -> ChunkedArray<CategoricalType> {
+        self.cast::<UInt32Type>().unwrap().reverse().cast().unwrap()
+    }
+}
+
 macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse<$arrow_type> for $ca_type {
@@ -852,6 +876,16 @@ where
 impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     fn expand_at_index(&self, index: usize, length: usize) -> Utf8Chunked {
         impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<CategoricalType> for CategoricalChunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> CategoricalChunked {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .expand_at_index(index, length)
+            .cast()
+            .unwrap()
     }
 }
 

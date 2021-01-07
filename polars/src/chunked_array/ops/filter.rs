@@ -190,6 +190,15 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
     }
 }
 
+impl ChunkFilter<CategoricalType> for CategoricalChunked {
+    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<CategoricalType>>
+    where
+        Self: Sized,
+    {
+        self.cast::<UInt32Type>()?.filter(filter)?.cast()
+    }
+}
+
 impl ChunkFilter<ListType> for ListChunked {
     fn filter(&self, filter: &BooleanChunked) -> Result<ListChunked> {
         // broadcast

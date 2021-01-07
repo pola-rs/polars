@@ -1,5 +1,7 @@
+use crate::datatypes::CategoricalChunked;
 use crate::prelude::{
-    BooleanChunked, ChunkedArray, Downcast, ListChunked, PolarsNumericType, Series, Utf8Chunked,
+    BooleanChunked, ChunkedArray, Downcast, ListChunked, PolarsNumericType, Series,
+    Utf8Chunked,
 };
 use arrow::array::{
     Array, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps,
@@ -8,6 +10,7 @@ use arrow::array::{
 use std::convert::TryFrom;
 use std::iter::Copied;
 use std::slice::Iter;
+use std::ops::Deref;
 
 // If parallel feature is enable, then, activate the parallel module.
 #[cfg(feature = "parallel")]
@@ -582,6 +585,23 @@ where
             1 => Box::new(NumIterSingleChunk::new(self)),
             _ => Box::new(NumIterManyChunk::new(self)),
         }
+    }
+}
+impl<'a> IntoIterator for &'a CategoricalChunked {
+    type Item = Option<u32>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref().into_iter()
+    }
+}
+
+impl<'a> IntoNoNullIterator for &'a CategoricalChunked {
+    type Item = u32;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+
+    fn into_no_null_iter(self) -> Self::IntoIter {
+        self.deref().into_no_null_iter()
     }
 }
 

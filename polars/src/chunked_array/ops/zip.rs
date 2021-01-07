@@ -194,6 +194,28 @@ impl ChunkZip<ListType> for ListChunked {
     }
 }
 
+impl ChunkZip<CategoricalType> for CategoricalChunked {
+    fn zip_with(
+        &self,
+        mask: &BooleanChunked,
+        other: &ChunkedArray<CategoricalType>,
+    ) -> Result<ChunkedArray<CategoricalType>> {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .zip_with(mask, &other.cast().unwrap())?
+            .cast()
+    }
+
+    fn zip_with_series(
+        &self,
+        mask: &BooleanChunked,
+        other: &Series,
+    ) -> Result<ChunkedArray<CategoricalType>> {
+        let other = self.unpack_series_matching_type(other)?;
+        self.zip_with(mask, other)
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
     fn zip_with(

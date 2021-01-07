@@ -311,6 +311,7 @@ where
 impl ChunkWindow for ListChunked {}
 impl ChunkWindow for Utf8Chunked {}
 impl ChunkWindow for BooleanChunked {}
+impl ChunkWindow for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkWindow for ObjectChunked<T> {}
 

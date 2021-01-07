@@ -17,6 +17,7 @@ use arrow::array::{
 use arrow::compute::kernels::take::take;
 use std::convert::TryFrom;
 use std::sync::Arc;
+use std::ops::Deref;
 
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{
@@ -71,6 +72,18 @@ where
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         (*self).get_unchecked(index)
+    }
+}
+
+impl TakeRandom for CategoricalChunked {
+    type Item = u32;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        self.deref().get(index).into()
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        self.deref().get_unchecked(index).into()
     }
 }
 
@@ -346,6 +359,60 @@ impl ChunkTake for BooleanChunked {
         } else {
             Err(PolarsError::NoSlice)
         }
+    }
+}
+
+impl ChunkTake for CategoricalChunked {
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        let ca: CategoricalChunked = self.deref().take(indices, capacity).into();
+        ca.set_state(self)
+    }
+
+    unsafe fn take_unchecked(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        let ca: CategoricalChunked = self.deref().take_unchecked(indices, capacity).into();
+        ca.set_state(self)
+    }
+
+    fn take_opt(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        let ca: CategoricalChunked = self.deref().take_opt(indices, capacity).into();
+        ca.set_state(self)
+    }
+
+    unsafe fn take_opt_unchecked(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        let ca: CategoricalChunked = self.deref().take_opt_unchecked(indices, capacity).into();
+        ca.set_state(self)
+    }
+
+    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        let ca: CategoricalChunked= self.deref().take_from_single_chunked(idx)?.into();
+        Ok(ca.set_state(self))
     }
 }
 
@@ -968,6 +1035,19 @@ impl ChunkTakeEvery<ListType> for ListChunked {
         } else {
             self.into_iter().step_by(n).collect()
         }
+    }
+}
+
+impl ChunkTakeEvery<CategoricalType> for CategoricalChunked {
+    fn take_every(&self, n: usize) -> CategoricalChunked {
+        let mut ca = if self.null_count() == 0 {
+            let ca: Xob<UInt32Chunked> = self.into_no_null_iter().step_by(n).collect();
+            ca.into_inner()
+        } else {
+            self.into_iter().step_by(n).collect()
+        };
+        ca.categorical_map = self.categorical_map.clone();
+        ca.cast().unwrap()
     }
 }
 #[cfg(feature = "object")]

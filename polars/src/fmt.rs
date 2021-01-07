@@ -179,6 +179,14 @@ impl Debug for ListChunked {
     }
 }
 
+impl Debug for CategoricalChunked {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+        let dtype = format!("{:?}", DataType::Categorical);
+        format_array!(limit, f, self, dtype, self.name(), "ChunkedArray")
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> Debug for ObjectChunked<T>
 where
@@ -507,6 +515,12 @@ impl FmtList for Utf8Chunked {
 }
 
 impl FmtList for ListChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
+impl FmtList for CategoricalChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }
