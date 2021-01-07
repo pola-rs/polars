@@ -161,7 +161,7 @@ pub struct ChunkedArray<T> {
     chunk_id: Vec<usize>,
     phantom: PhantomData<T>,
     /// maps categorical u16 indexes to String values
-    categorical_map: Option<Arc<Vec<String>>>,
+    pub(crate) categorical_map: Option<Arc<Vec<String>>>,
 }
 
 impl<T> ChunkedArray<T> {
