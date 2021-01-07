@@ -1,7 +1,7 @@
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
-use crate::utils::str_to_arrow_type;
+use crate::utils::str_to_polarstype;
 use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
@@ -610,7 +610,7 @@ impl PySeries {
             true => None,
             false => {
                 let str_repr = output_type.str().unwrap().to_str().unwrap();
-                Some(str_to_arrow_type(str_repr))
+                Some(str_to_polarstype(str_repr))
             }
         };
 
@@ -1184,6 +1184,7 @@ impl_cast!(cast_date64, Date64Type);
 impl_cast!(cast_time64ns, Time64NanosecondType);
 impl_cast!(cast_duration_ns, DurationNanosecondType);
 impl_cast!(cast_str, Utf8Type);
+impl_cast!(cast_categorical, CategoricalType);
 
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {

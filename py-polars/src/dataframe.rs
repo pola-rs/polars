@@ -4,7 +4,7 @@ use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::utils::str_to_arrow_type;
+use crate::utils::str_to_polarstype;
 use crate::{
     error::PyPolarsEr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
@@ -73,7 +73,7 @@ impl PyDataFrame {
                 .iter()
                 .map(|(name, dtype)| {
                     let str_repr = dtype.str().unwrap().to_str().unwrap();
-                    let dtype = str_to_arrow_type(str_repr);
+                    let dtype = str_to_polarstype(str_repr);
                     Field::new(name, dtype)
                 })
                 .collect();

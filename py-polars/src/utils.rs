@@ -1,6 +1,6 @@
 use polars::prelude::*;
 
-pub fn str_to_arrow_type(s: &str) -> DataType {
+pub fn str_to_polarstype(s: &str) -> DataType {
     match s {
         "<class 'pypolars.datatypes.UInt8'>" => DataType::UInt8,
         "<class 'pypolars.datatypes.UInt16'>" => DataType::UInt16,
@@ -17,6 +17,7 @@ pub fn str_to_arrow_type(s: &str) -> DataType {
         "<class 'pypolars.datatypes.Date32'>" => DataType::Date32,
         "<class 'pypolars.datatypes.Date64'>" => DataType::Date64,
         "<class 'pypolars.datatypes.List'>" => DataType::List(ArrowDataType::Null),
-        tp => panic!(format!("Type {} not implemented in str_to_arrow_type", tp)),
+        "<class 'pypolars.datatypes.Categorical'>" => DataType::Categorical,
+        tp => panic!(format!("Type {} not implemented in str_to_polarstype", tp)),
     }
 }

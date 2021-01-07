@@ -1,5 +1,5 @@
 use crate::series::PySeries;
-use crate::utils::str_to_arrow_type;
+use crate::utils::str_to_polarstype;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -131,7 +131,7 @@ impl PyExpr {
     }
     pub fn cast(&self, data_type: &PyAny) -> PyExpr {
         let str_repr = data_type.str().unwrap().to_str().unwrap();
-        let dt = str_to_arrow_type(str_repr);
+        let dt = str_to_polarstype(str_repr);
         let expr = self.inner.clone().cast(dt);
         expr.into()
     }
@@ -353,7 +353,7 @@ impl PyExpr {
             true => None,
             false => {
                 let str_repr = output_type.str().unwrap().to_str().unwrap();
-                Some(str_to_arrow_type(str_repr))
+                Some(str_to_polarstype(str_repr))
             }
         };
 
@@ -474,7 +474,7 @@ pub fn binary_function(
         true => Field::new("binary_function", DataType::Null),
         false => {
             let str_repr = output_type.str().unwrap().to_str().unwrap();
-            let data_type = str_to_arrow_type(str_repr);
+            let data_type = str_to_polarstype(str_repr);
             Field::new("binary_function", data_type)
         }
     };
