@@ -157,14 +157,8 @@ where
     ChunkedArray<T>: ChunkOps + IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
-        let set = match self.null_count() {
-            0 => fill_set(self.into_no_null_iter().map(Some), self.len()),
-            _ => fill_set(self.into_iter(), self.len()),
-        };
-
-        let mut ca = Self::new_from_opt_iter(self.name(), set.iter().copied());
-        ca.categorical_map = self.categorical_map.clone();
-        Ok(ca)
+        let set = fill_set(self.into_iter(), self.len());
+        Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {

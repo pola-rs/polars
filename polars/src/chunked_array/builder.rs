@@ -1,12 +1,13 @@
 use crate::{
     prelude::*,
+    use_string_cache,
     utils::{get_iter_capacity, Xob},
 };
 use ahash::AHashMap;
 use arrow::array::{
     ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, ListBuilder,
 };
-use arrow::datatypes::ToByteSlice;
+use arrow::datatypes::{ArrowNativeType, ToByteSlice};
 pub use arrow::memory;
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
@@ -169,30 +170,46 @@ pub struct CategoricalChunkedBuilder {
     array_builder: PrimitiveArrayBuilder<UInt32Type>,
     field: Field,
     mapping: AHashMap<String, u32>,
+    reverse_mapping: AHashMap<u32, String>,
 }
 
 impl CategoricalChunkedBuilder {
-    pub fn new(name: &str, capacity: usize, mapping: Option<AHashMap<String, u32>>) -> Self {
-        let mapping = mapping.unwrap_or_else(|| AHashMap::with_capacity(128));
+    pub fn new(name: &str, capacity: usize) -> Self {
+        let mapping = AHashMap::with_capacity(128);
+        let reverse_mapping = AHashMap::with_capacity(128);
 
         CategoricalChunkedBuilder {
             array_builder: PrimitiveArrayBuilder::<UInt32Type>::new(capacity),
             field: Field::new(name, DataType::Categorical),
             mapping,
+            reverse_mapping,
         }
     }
 }
 
 impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
     fn append_value(&mut self, val: &str) {
-        let idx = match self.mapping.get(val) {
-            Some(idx) => *idx,
-            None => {
-                let idx = self.mapping.len() as u32;
-                self.mapping.insert(val.to_string(), idx);
-                idx
+        let idx = if use_string_cache() {
+            let mut mapping = crate::STRING_CACHE.lock_map();
+            match mapping.get(val) {
+                Some(idx) => *idx,
+                None => {
+                    let idx = mapping.len() as u32;
+                    mapping.insert(val.to_string(), idx);
+                    idx
+                }
+            }
+        } else {
+            match self.mapping.get(val) {
+                Some(idx) => *idx,
+                None => {
+                    let idx = self.mapping.len() as u32;
+                    self.mapping.insert(val.to_string(), idx);
+                    idx
+                }
             }
         };
+        self.reverse_mapping.insert(idx, val.to_string());
         self.array_builder.append_value(idx);
     }
 
@@ -201,26 +218,17 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
     }
 
     fn finish(self) -> ChunkedArray<CategoricalType> {
-        if self.mapping.len() > u16::MAX as usize {
-            panic!(format!("not more than {} categories supported", u16::MAX))
+        if self.mapping.len() > u32::MAX as usize {
+            panic!(format!("not more than {} categories supported", u32::MAX))
         };
         let arr = Arc::new(self.array_builder.finish());
-        let mut string_map = vec!["".to_string(); self.mapping.len()];
-
-        for (k, v) in self.mapping {
-            debug_assert!((v as usize) < string_map.len());
-            unsafe {
-                let v = string_map.get_unchecked_mut(v as usize);
-                *v = k;
-            }
-        }
         let len = arr.len();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
             chunk_id: vec![len],
             phantom: PhantomData,
-            categorical_map: Some(Arc::new(string_map)),
+            categorical_map: Some(Arc::new(self.reverse_mapping)),
         }
     }
 }
@@ -624,18 +632,39 @@ where
     }
 
     fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, opt_v.len());
-        opt_v.iter().for_each(|&opt| builder.append_option(opt));
-        builder.finish()
+        Self::new_from_opt_iter(name, opt_v.iter().copied())
     }
 
     fn new_from_opt_iter(
         name: &str,
         it: impl Iterator<Item = Option<T::Native>>,
     ) -> ChunkedArray<T> {
-        let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
-        it.for_each(|opt| builder.append_option(opt));
-        builder.finish()
+        // used by Unique. Should use something else
+        if matches!(T::get_dtype(), DataType::Categorical) {
+            let mut arr_builder = PrimitiveArrayBuilder::<UInt32Type>::new(get_iter_capacity(&it));
+            it.for_each(|opt| match opt {
+                Some(val) => {
+                    let val = val.to_usize().unwrap() as u32;
+                    arr_builder.append_value(val)
+                }
+                None => arr_builder.append_null(),
+            });
+            let arr = Arc::new(arr_builder.finish());
+            let len = arr.len();
+
+            let ca = ChunkedArray {
+                field: Arc::new(Field::new(name, DataType::Categorical)),
+                chunks: vec![arr],
+                chunk_id: vec![len],
+                phantom: PhantomData,
+                categorical_map: None,
+            };
+            ca
+        } else {
+            let mut builder = PrimitiveChunkedBuilder::new(name, get_iter_capacity(&it));
+            it.for_each(|opt| builder.append_option(opt));
+            builder.finish()
+        }
     }
 
     /// Create a new ChunkedArray from an iterator.

@@ -1,5 +1,5 @@
 from .series import Series, wrap_s
-from .frame import DataFrame, wrap_df
+from .frame import DataFrame, wrap_df, StringCache
 from .functions import *
 from .lazy import *
 from .datatypes import *
