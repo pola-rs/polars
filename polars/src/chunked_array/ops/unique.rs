@@ -162,7 +162,9 @@ where
             _ => fill_set(self.into_iter(), self.len()),
         };
 
-        Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
+        let mut ca = Self::new_from_opt_iter(self.name(), set.iter().copied());
+        ca.categorical_map = self.categorical_map.clone();
+        Ok(ca)
     }
 
     fn arg_unique(&self) -> Result<Vec<usize>> {

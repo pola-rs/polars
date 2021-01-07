@@ -291,6 +291,13 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         ))
     }
 
+    /// Unpack to ChunkedArray of dtype categorical
+    fn categorical(&self) -> Result<&CategoricalChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != categorical", self.dtype()).into(),
+        ))
+    }
+
     /// Append Arrow array of same dtype to this Series.
     fn append_array(&mut self, _other: ArrayRef) -> Result<()> {
         unimplemented!()

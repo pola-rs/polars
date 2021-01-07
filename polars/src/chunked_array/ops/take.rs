@@ -197,7 +197,9 @@ where
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
-        impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
+        let mut ca = impl_take!(self, indices, capacity, PrimitiveChunkedBuilder);
+        ca.categorical_map = self.categorical_map.clone();
+        ca
     }
 
     unsafe fn take_unchecked(
@@ -216,12 +218,15 @@ where
                 let idx_arr = idx_ca.downcast_chunks()[0];
                 let arr = self.downcast_chunks()[0];
                 let arr = take_no_null_primitive(arr, idx_arr);
-                return Self::new_from_chunks(self.name(), vec![arr]);
+                let mut ca = Self::new_from_chunks(self.name(), vec![arr]);
+                ca.categorical_map = self.categorical_map.clone();
+                return ca;
             }
-
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
-        impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
+        let mut ca = impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder);
+        ca.categorical_map = self.categorical_map.clone();
+        ca
     }
 
     fn take_opt(
@@ -232,7 +237,9 @@ where
         if self.is_empty() {
             return self.clone();
         }
-        impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
+        let mut ca = impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder);
+        ca.categorical_map = self.categorical_map.clone();
+        ca
     }
 
     unsafe fn take_opt_unchecked(
@@ -243,7 +250,9 @@ where
         if self.is_empty() {
             return self.clone();
         }
-        impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
+        let mut ca = impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder);
+        ca.categorical_map = self.categorical_map.clone();
+        ca
     }
 
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
@@ -260,7 +269,9 @@ where
                 let arr = &self.chunks[0];
                 take(arr, idx_arr, None).unwrap()
             };
-            Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
+            let mut ca = Self::new_from_chunks(self.name(), vec![new_arr]);
+            ca.categorical_map = self.categorical_map.clone();
+            Ok(ca)
         } else {
             Err(PolarsError::NoSlice)
         }

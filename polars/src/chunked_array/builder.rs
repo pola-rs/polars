@@ -166,17 +166,19 @@ where
 }
 
 pub struct CategoricalChunkedBuilder {
-    array_builder: PrimitiveArrayBuilder<UInt16Type>,
+    array_builder: PrimitiveArrayBuilder<UInt32Type>,
     field: Field,
-    mapping: AHashMap<String, u16>,
+    mapping: AHashMap<String, u32>,
 }
 
 impl CategoricalChunkedBuilder {
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: &str, capacity: usize, mapping: Option<AHashMap<String, u32>>) -> Self {
+        let mapping = mapping.unwrap_or_else(|| AHashMap::with_capacity(128));
+
         CategoricalChunkedBuilder {
-            array_builder: PrimitiveArrayBuilder::<UInt16Type>::new(capacity),
+            array_builder: PrimitiveArrayBuilder::<UInt32Type>::new(capacity),
             field: Field::new(name, DataType::Categorical),
-            mapping: AHashMap::with_capacity(128),
+            mapping,
         }
     }
 }
@@ -186,7 +188,7 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
         let idx = match self.mapping.get(val) {
             Some(idx) => *idx,
             None => {
-                let idx = self.mapping.len() as u16;
+                let idx = self.mapping.len() as u32;
                 self.mapping.insert(val.to_string(), idx);
                 idx
             }
@@ -203,8 +205,8 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
             panic!(format!("not more than {} categories supported", u16::MAX))
         };
         let arr = Arc::new(self.array_builder.finish());
-        let mut string_map = Vec::with_capacity(self.mapping.len());
-        unsafe { string_map.set_len(self.mapping.len()) };
+        let mut string_map = vec!["".to_string(); self.mapping.len()];
+
         for (k, v) in self.mapping {
             debug_assert!((v as usize) < string_map.len());
             unsafe {

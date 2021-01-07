@@ -160,7 +160,7 @@ pub struct ChunkedArray<T> {
     // chunk lengths
     chunk_id: Vec<usize>,
     phantom: PhantomData<T>,
-    /// maps categorical u16 indexes to String values
+    /// maps categorical u32 indexes to String values
     pub(crate) categorical_map: Option<Arc<Vec<String>>>,
 }
 
@@ -549,7 +549,7 @@ where
             #[cfg(feature = "object")]
             DataType::Object => AnyType::Object(&"object"),
             DataType::Categorical => {
-                let v = downcast!(UInt16Array) as usize;
+                let v = downcast!(UInt32Array) as usize;
                 AnyType::Utf8(&self.categorical_map.as_ref().expect("should be set")[v])
             }
             _ => unimplemented!(),

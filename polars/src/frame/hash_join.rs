@@ -952,4 +952,29 @@ mod test {
             .unwrap()
             .series_equal_missing(joined_outer.column("ham").unwrap()));
     }
+
+    #[test]
+    fn test_join_categorical() {
+        // Only checks if it runs. The join is flawed because the categories differ.
+        let mut df_a = df! {
+            "a" => &[1, 2, 1, 1],
+            "b" => &["a", "b", "c", "c"],
+            "c" => &[0, 1, 2, 3]
+        }
+        .unwrap();
+
+        let mut df_b = df! {
+            "foo" => &[1, 1, 1],
+            "bar" => &["a", "c", "c"],
+            "ham" => &["let", "var", "const"]
+        }
+        .unwrap();
+
+        df_a.may_apply("b", |s| s.cast_with_datatype(&DataType::Categorical))
+            .unwrap();
+        df_b.may_apply("bar", |s| s.cast_with_datatype(&DataType::Categorical))
+            .unwrap();
+
+        let out = df_a.join(&df_b, "b", "bar", JoinType::Inner).unwrap();
+    }
 }

@@ -521,7 +521,7 @@ where
     T::Native: std::cmp::PartialOrd,
 {
     fn sort(&self, reverse: bool) -> ChunkedArray<T> {
-        if reverse {
+        let mut ca: Self = if reverse {
             self.into_iter()
                 .sorted_by(|a, b| sort_partial(b, a))
                 .collect()
@@ -529,7 +529,9 @@ where
             self.into_iter()
                 .sorted_by(|a, b| sort_partial(a, b))
                 .collect()
-        }
+        };
+        ca.categorical_map = self.categorical_map.clone();
+        ca
     }
 
     fn sort_in_place(&mut self, reverse: bool) {

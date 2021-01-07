@@ -2,6 +2,7 @@
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::kernels::{cast_numeric_from_dtype, transmute_array_from_dtype};
 use crate::prelude::*;
+use ahash::AHashMap;
 use arrow::compute;
 use num::{NumCast, ToPrimitive};
 
@@ -171,7 +172,15 @@ impl ChunkCast for Utf8Chunked {
     {
         match N::get_dtype() {
             DataType::Categorical => {
-                let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
+                // make sure that
+                let unique = self.unique()?.sort(false);
+                let mut mapping = AHashMap::with_capacity(unique.len());
+                unique.into_no_null_iter().enumerate().for_each(|(i, s)| {
+                    mapping.insert(s.to_string(), i as u32);
+                });
+
+                let mut builder =
+                    CategoricalChunkedBuilder::new(self.name(), self.len(), Some(mapping));
 
                 if self.null_count() == 0 {
                     self.into_no_null_iter()
