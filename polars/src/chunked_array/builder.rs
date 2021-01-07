@@ -2,6 +2,7 @@ use crate::{
     prelude::*,
     utils::{get_iter_capacity, Xob},
 };
+use ahash::AHashMap;
 use arrow::array::{
     ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, ListBuilder,
 };
@@ -160,6 +161,64 @@ where
         PrimitiveChunkedBuilder {
             array_builder: PrimitiveArrayBuilder::<T>::new(capacity),
             field: Field::new(name, T::get_dtype()),
+        }
+    }
+}
+
+pub struct CategoricalChunkedBuilder {
+    array_builder: PrimitiveArrayBuilder<UInt16Type>,
+    field: Field,
+    mapping: AHashMap<String, u16>,
+}
+
+impl CategoricalChunkedBuilder {
+    pub fn new(name: &str, capacity: usize) -> Self {
+        CategoricalChunkedBuilder {
+            array_builder: PrimitiveArrayBuilder::<UInt16Type>::new(capacity),
+            field: Field::new(name, DataType::Categorical),
+            mapping: AHashMap::with_capacity(128),
+        }
+    }
+}
+
+impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
+    fn append_value(&mut self, val: &str) {
+        let idx = match self.mapping.get(val) {
+            Some(idx) => *idx,
+            None => {
+                let idx = self.mapping.len() as u16;
+                self.mapping.insert(val.to_string(), idx);
+                idx
+            }
+        };
+        self.array_builder.append_value(idx);
+    }
+
+    fn append_null(&mut self) {
+        self.array_builder.append_null()
+    }
+
+    fn finish(self) -> ChunkedArray<CategoricalType> {
+        if self.mapping.len() > u16::MAX as usize {
+            panic!(format!("not more than {} categories supported", u16::MAX))
+        };
+        let arr = Arc::new(self.array_builder.finish());
+        let mut string_map = Vec::with_capacity(self.mapping.len());
+        unsafe { string_map.set_len(self.mapping.len()) };
+        for (k, v) in self.mapping {
+            debug_assert!((v as usize) < string_map.len());
+            unsafe {
+                let v = string_map.get_unchecked_mut(v as usize);
+                *v = k;
+            }
+        }
+        let len = arr.len();
+        ChunkedArray {
+            field: Arc::new(self.field),
+            chunks: vec![arr],
+            chunk_id: vec![len],
+            phantom: PhantomData,
+            categorical_map: Some(Arc::new(string_map)),
         }
     }
 }
@@ -885,5 +944,20 @@ mod test {
         } else {
             assert!(false)
         }
+    }
+
+    #[test]
+    fn test_categorical_builder() {
+        let mut builder = CategoricalChunkedBuilder::new("foo", 10);
+
+        builder.append_value("hello");
+        builder.append_null();
+        builder.append_value("world");
+
+        let ca = builder.finish();
+        let v = AnyType::Utf8("hello");
+        assert_eq!(ca.get_any(0), v);
+        let v = AnyType::Null;
+        assert_eq!(ca.get_any(1), v);
     }
 }

@@ -53,7 +53,6 @@ use arrow::array::{
     Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray, ListArray,
 };
 
-use ahash::AHashMap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
 
@@ -161,8 +160,8 @@ pub struct ChunkedArray<T> {
     // chunk lengths
     chunk_id: Vec<usize>,
     phantom: PhantomData<T>,
-    /// Maps string categories to u16
-    categorical_map: Option<Arc<AHashMap<String, u16>>>,
+    /// maps categorical u16 indexes to String values
+    categorical_map: Option<Arc<Vec<String>>>,
 }
 
 impl<T> ChunkedArray<T> {
@@ -549,6 +548,10 @@ where
             }
             #[cfg(feature = "object")]
             DataType::Object => AnyType::Object(&"object"),
+            DataType::Categorical => {
+                let v = downcast!(UInt16Array) as usize;
+                AnyType::Utf8(&self.categorical_map.as_ref().expect("should be set")[v])
+            }
             _ => unimplemented!(),
         }
     }

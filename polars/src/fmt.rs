@@ -161,7 +161,7 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
-        let dtype = format!("{:?}", T::get_data_type());
+        let dtype = format!("{:?}", T::get_dtype());
         format_array!(limit, f, self, dtype, self.name(), "ChunkedArray")
     }
 }
