@@ -22,7 +22,7 @@ pub enum PyDataType {
     DurationNanosecond,
     DurationMillisecond,
     Object,
-    Categorical
+    Categorical,
 }
 
 impl From<&DataType> for PyDataType {

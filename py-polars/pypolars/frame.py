@@ -1,5 +1,5 @@
 try:
-    from .pypolars import PyDataFrame, PySeries, PyLazyFrame, version
+    from .pypolars import PyDataFrame, PySeries, PyLazyFrame, version, toggle_string_cache
 except:
     import warnings
 
@@ -1176,3 +1176,15 @@ class GBSelection:
             df[name] = s
 
         return df
+
+
+class StringCache:
+    def __init__(self):
+        pass
+
+    def __enter__(self):
+        toggle_string_cache(True)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        toggle_string_cache(False)

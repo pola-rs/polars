@@ -70,6 +70,11 @@ fn version() -> &'static str {
     VERSION
 }
 
+#[pyfunction]
+fn toggle_string_cache(toggle: bool) {
+    polars::toggle_string_cache(toggle)
+}
+
 #[pymodule]
 fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -85,5 +90,7 @@ fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
     m.add_wrapped(wrap_pyfunction!(version)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
+        .unwrap();
     Ok(())
 }
