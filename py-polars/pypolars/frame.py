@@ -1,5 +1,11 @@
 try:
-    from .pypolars import PyDataFrame, PySeries, PyLazyFrame, version, toggle_string_cache
+    from .pypolars import (
+        PyDataFrame,
+        PySeries,
+        PyLazyFrame,
+        version,
+        toggle_string_cache,
+    )
 except:
     import warnings
 

@@ -552,7 +552,6 @@ where
             DataType::Object => AnyType::Object(&"object"),
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
-                dbg!(v);
                 AnyType::Utf8(
                     &self
                         .categorical_map
@@ -861,7 +860,7 @@ impl Deref for CategoricalChunked {
     fn deref(&self) -> &Self::Target {
         let ptr = self as *const CategoricalChunked;
         let ptr = ptr as *const UInt32Chunked;
-        unsafe {&*ptr}
+        unsafe { &*ptr }
     }
 }
 
@@ -1052,7 +1051,8 @@ pub(crate) mod test {
 
     #[test]
     fn test_iter_categorical() {
-        let ca = Utf8Chunked::new_from_opt_slice("", &[Some("foo"), None, Some("bar"), Some("ham")]);
+        let ca =
+            Utf8Chunked::new_from_opt_slice("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca.cast::<CategoricalType>().unwrap();
         let v: Vec<_> = ca.into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);

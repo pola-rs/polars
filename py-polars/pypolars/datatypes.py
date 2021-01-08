@@ -140,7 +140,7 @@ dtypes = [
     DurationNanosecond,
     DurationMillisecond,
     Object,
-    Categorical
+    Categorical,
 ]
 DTYPE_TO_FFINAME = {
     Int8: "i8",

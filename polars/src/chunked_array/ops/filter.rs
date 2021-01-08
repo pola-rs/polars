@@ -7,6 +7,7 @@ use crate::utils::Xob;
 use arrow::array::Array;
 use arrow::array::ArrayRef;
 use arrow::compute::filter_primitive_array;
+use std::ops::Deref;
 use std::sync::Arc;
 
 macro_rules! impl_filter_with_nulls_in_both {
@@ -195,7 +196,8 @@ impl ChunkFilter<CategoricalType> for CategoricalChunked {
     where
         Self: Sized,
     {
-        self.cast::<UInt32Type>()?.filter(filter)?.cast()
+        let ca: CategoricalChunked = self.deref().filter(filter)?.cast()?;
+        Ok(ca.set_state(self))
     }
 }
 

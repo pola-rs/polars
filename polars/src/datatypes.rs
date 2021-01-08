@@ -254,7 +254,7 @@ impl Display for DataType {
             DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
             #[cfg(feature = "object")]
             DataType::Object => "object",
-            DataType::Categorical => "categorical",
+            DataType::Categorical => "cat",
             _ => panic!(format!("{:?} not implemented", self)),
         };
         f.write_str(s)

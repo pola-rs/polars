@@ -16,8 +16,8 @@ use arrow::array::{
 };
 use arrow::compute::kernels::take::take;
 use std::convert::TryFrom;
-use std::sync::Arc;
 use std::ops::Deref;
+use std::sync::Arc;
 
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{
@@ -79,11 +79,11 @@ impl TakeRandom for CategoricalChunked {
     type Item = u32;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
-        self.deref().get(index).into()
+        self.deref().get(index)
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.deref().get_unchecked(index).into()
+        self.deref().get_unchecked(index)
     }
 }
 
@@ -210,9 +210,7 @@ where
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
-        let mut ca = impl_take!(self, indices, capacity, PrimitiveChunkedBuilder);
-        ca.categorical_map = self.categorical_map.clone();
-        ca
+        impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
     unsafe fn take_unchecked(
@@ -231,15 +229,11 @@ where
                 let idx_arr = idx_ca.downcast_chunks()[0];
                 let arr = self.downcast_chunks()[0];
                 let arr = take_no_null_primitive(arr, idx_arr);
-                let mut ca = Self::new_from_chunks(self.name(), vec![arr]);
-                ca.categorical_map = self.categorical_map.clone();
-                return ca;
+                return Self::new_from_chunks(self.name(), vec![arr]);
             }
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
-        let mut ca = impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder);
-        ca.categorical_map = self.categorical_map.clone();
-        ca
+        impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
     fn take_opt(
@@ -250,9 +244,7 @@ where
         if self.is_empty() {
             return self.clone();
         }
-        let mut ca = impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder);
-        ca.categorical_map = self.categorical_map.clone();
-        ca
+        impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
     unsafe fn take_opt_unchecked(
@@ -263,9 +255,7 @@ where
         if self.is_empty() {
             return self.clone();
         }
-        let mut ca = impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder);
-        ca.categorical_map = self.categorical_map.clone();
-        ca
+        impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
@@ -282,9 +272,7 @@ where
                 let arr = &self.chunks[0];
                 take(arr, idx_arr, None).unwrap()
             };
-            let mut ca = Self::new_from_chunks(self.name(), vec![new_arr]);
-            ca.categorical_map = self.categorical_map.clone();
-            Ok(ca)
+            Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
         } else {
             Err(PolarsError::NoSlice)
         }
@@ -411,7 +399,7 @@ impl ChunkTake for CategoricalChunked {
     where
         Self: std::marker::Sized,
     {
-        let ca: CategoricalChunked= self.deref().take_from_single_chunked(idx)?.into();
+        let ca: CategoricalChunked = self.deref().take_from_single_chunked(idx)?.into();
         Ok(ca.set_state(self))
     }
 }

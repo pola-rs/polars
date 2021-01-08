@@ -183,6 +183,7 @@ class LazyFrame:
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
+        string_cache: bool = True,
     ) -> DataFrame:
         """
         Collect into a DataFrame
@@ -215,6 +216,7 @@ class LazyFrame:
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
+        string_cache: bool = True,
     ) -> DataFrame:
         """
         Fetch is like a collect operation, but it overwrites the number of rows read by every scan
