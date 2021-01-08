@@ -223,6 +223,7 @@ pub mod lazy;
 pub mod prelude;
 pub mod series;
 pub mod testing;
+pub(crate) mod vector_hasher;
 
 use ahash::AHashMap;
 use lazy_static::lazy_static;

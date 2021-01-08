@@ -1,8 +1,9 @@
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::Xob;
+use crate::vector_hasher::prepare_hashed_relation;
 use ahash::RandomState;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::Hash;
 use unsafe_unwrap::UnsafeUnwrap;
 
@@ -11,20 +12,6 @@ pub enum JoinType {
     Left,
     Inner,
     Outer,
-}
-
-pub(crate) fn prepare_hashed_relation<T>(
-    b: impl Iterator<Item = T>,
-) -> HashMap<T, Vec<usize>, RandomState>
-where
-    T: Hash + Eq,
-{
-    let mut hash_tbl: HashMap<T, Vec<usize>, ahash::RandomState> =
-        HashMap::with_capacity_and_hasher(b.size_hint().0 / 10, RandomState::new());
-
-    b.enumerate()
-        .for_each(|(idx, key)| hash_tbl.entry(key).or_insert_with(Vec::new).push(idx));
-    hash_tbl
 }
 
 /// Hash join a and b.

@@ -1,8 +1,8 @@
-use super::hash_join::prepare_hashed_relation;
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_vertical, IntoDynamicZip, Xob};
+use crate::vector_hasher::prepare_hashed_relation;
 use ahash::RandomState;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use itertools::Itertools;
