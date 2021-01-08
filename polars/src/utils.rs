@@ -40,7 +40,7 @@ pub(crate) fn floating_encode_f64(mantissa: u64, exponent: i16, sign: i8) -> f64
 /// Just a wrapper structure. Useful for certain impl specializations
 /// This is for instance use to implement
 /// `impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>`
-/// as `Option<T::Native>` was alrady implemented:
+/// as `Option<T::Native>` was already implemented:
 /// `impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>`
 pub struct Xob<T> {
     inner: T,
@@ -76,6 +76,34 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
         (0, None) => 1024,
         (lower, None) => lower,
     }
+}
+
+macro_rules! split_ca {
+    ($ca: ident, $n: expr) => {{
+        let total_len = $ca.len();
+        let chunk_size = total_len / $n;
+
+        let v = (0..$n)
+            .map(|i| {
+                let offset = i * chunk_size;
+                let len = if i == ($n - 1) {
+                    total_len - offset
+                } else {
+                    chunk_size
+                };
+                $ca.slice(i * chunk_size, len)
+            })
+            .collect::<Result<_>>()?;
+        Ok(v)
+    }};
+}
+
+pub(crate) fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>> {
+    split_ca!(ca, n)
+}
+
+pub(crate) fn split_series(series: &Series, n: usize) -> Result<Vec<Series>> {
+    split_ca!(series, n)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

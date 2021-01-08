@@ -1,8 +1,8 @@
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_vertical, IntoDynamicZip, Xob};
-use crate::vector_hasher::prepare_hashed_relation;
+use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, Xob};
+use crate::vector_hasher::{prepare_hashed_relation, prepare_hashed_relation_threaded};
 use ahash::RandomState;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use itertools::Itertools;
@@ -20,6 +20,22 @@ where
     T: Hash + Eq,
 {
     let hash_tbl = prepare_hashed_relation(a);
+
+    hash_tbl
+        .into_iter()
+        .map(|(_, indexes)| {
+            let first = unsafe { *indexes.get_unchecked(0) };
+            (first, indexes)
+        })
+        .collect()
+}
+
+fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<(usize, Vec<usize>)>
+where
+    I: Iterator<Item = T> + Send,
+    T: Send + Hash + Eq,
+{
+    let hash_tbl = prepare_hashed_relation_threaded(iters);
 
     hash_tbl
         .into_iter()
@@ -53,53 +69,111 @@ where
     }
 }
 
+fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
+    // TODO! change to something sensible
+    ca.len() > 1000
+}
+
+macro_rules! group_tuples {
+    ($ca: expr) => {{
+        let n_threads = num_cpus::get();
+
+        // TODO! choose a splitting len
+        if group_multithreaded($ca) {
+            let splitted = split_ca($ca, n_threads).unwrap();
+
+            if $ca.null_count() == 0 {
+                let iters = splitted
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                groupby_threaded(iters)
+            } else {
+                let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
+                groupby_threaded(iters)
+            }
+        } else {
+            if $ca.null_count() == 0 {
+                groupby($ca.into_no_null_iter())
+            } else {
+                groupby($ca.into_iter())
+            }
+        }
+    }};
+}
+
 impl<T> IntoGroupTuples for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Eq + Hash,
+    T::Native: Eq + Hash + Send,
 {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples(self)
+        group_tuples!(self)
     }
 }
 impl IntoGroupTuples for BooleanChunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples(self)
+        group_tuples!(self)
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples(self)
+        group_tuples!(self)
     }
 }
 
 impl IntoGroupTuples for CategoricalChunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples(self)
+        group_tuples!(self)
     }
+}
+
+macro_rules! impl_into_group_tpls_float {
+    ($self: ident) => {
+        if group_multithreaded($self) {
+            let n_threads = num_cpus::get();
+            let splitted = split_ca($self, n_threads).unwrap();
+            match $self.null_count() {
+                0 => {
+                    let iters = splitted
+                        .iter()
+                        .map(|ca| ca.into_no_null_iter().map(|v| v.integer_decode()))
+                        .collect_vec();
+                    groupby_threaded(iters)
+                }
+                _ => {
+                    let iters = splitted
+                        .iter()
+                        .map(|ca| {
+                            ca.into_iter()
+                                .map(|opt_v| opt_v.map(|v| v.integer_decode()))
+                        })
+                        .collect_vec();
+                    groupby_threaded(iters)
+                }
+            }
+        } else {
+            match $self.null_count() {
+                0 => groupby($self.into_no_null_iter().map(|v| v.integer_decode())),
+                _ => groupby(
+                    $self
+                        .into_iter()
+                        .map(|opt_v| opt_v.map(|v| v.integer_decode())),
+                ),
+            }
+        }
+    };
 }
 
 impl IntoGroupTuples for Float64Chunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        match self.null_count() {
-            0 => groupby(self.into_no_null_iter().map(|v| v.integer_decode())),
-            _ => groupby(
-                self.into_iter()
-                    .map(|opt_v| opt_v.map(|v| v.integer_decode())),
-            ),
-        }
+        impl_into_group_tpls_float!(self)
     }
 }
 impl IntoGroupTuples for Float32Chunked {
     fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        match self.null_count() {
-            0 => groupby(self.into_no_null_iter().map(|v| v.integer_decode())),
-            _ => groupby(
-                self.into_iter()
-                    .map(|opt_v| opt_v.map(|v| v.integer_decode())),
-            ),
-        }
+        impl_into_group_tpls_float!(self)
     }
 }
 impl IntoGroupTuples for ListChunked {}
@@ -159,7 +233,7 @@ impl From<f32> for Groupable<'_> {
 
 fn float_to_groupable_iter<'a, T>(
     ca: &'a ChunkedArray<T>,
-) -> Box<dyn Iterator<Item = Option<Groupable>> + 'a>
+) -> Box<dyn Iterator<Item = Option<Groupable>> + 'a + Send>
 where
     T: PolarsNumericType,
     T::Native: Into<Groupable<'a>>,
@@ -171,7 +245,7 @@ where
 impl<'b> (dyn SeriesTrait + 'b) {
     pub(crate) fn as_groupable_iter<'a>(
         &'a self,
-    ) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a>> {
+    ) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a + Send>> {
         macro_rules! as_groupable_iter {
             ($ca:expr, $variant:ident ) => {{
                 let bx = Box::new($ca.into_iter().map(|opt_b| opt_b.map(Groupable::$variant)));
@@ -230,23 +304,174 @@ impl DataFrame {
     /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
         let selected_keys = self.select_series(by)?;
+        let n_threads = num_cpus::get();
+
+        // flattened splitted vec,
+        let splitted_sel_keys = selected_keys
+            .iter()
+            .map(|s| split_series(s, n_threads).unwrap())
+            .flatten()
+            .collect_vec();
 
         let groups = match selected_keys.len() {
             1 => {
                 let series = &selected_keys[0];
                 series.group_tuples()
             }
-            2 => groupby(static_zip!(selected_keys, 1)),
-            3 => groupby(static_zip!(selected_keys, 2)),
-            4 => groupby(static_zip!(selected_keys, 3)),
-            5 => groupby(static_zip!(selected_keys, 4)),
-            6 => groupby(static_zip!(selected_keys, 5)),
-            7 => groupby(static_zip!(selected_keys, 6)),
-            8 => groupby(static_zip!(selected_keys, 7)),
-            9 => groupby(static_zip!(selected_keys, 8)),
-            10 => groupby(static_zip!(selected_keys, 9)),
-            11 => groupby(static_zip!(selected_keys, 10)),
-            12 => groupby(static_zip!(selected_keys, 11)),
+            2 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 1))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            3 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 2))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            4 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 3))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            5 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 4))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            6 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 5))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            7 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 6))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            8 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 7))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            9 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 8))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            10 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 9))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            11 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 10))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
+            12 => {
+                let iters = (0..n_threads)
+                    .map(|t| {
+                        let keys = splitted_sel_keys
+                            .iter()
+                            .skip(t)
+                            .step_by(n_threads)
+                            .collect_vec();
+                        Ok(static_zip!(keys, 11))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                groupby_threaded(iters)
+            }
             _ => {
                 let iter = selected_keys
                     .iter()
@@ -1985,7 +2210,10 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
 
 #[cfg(test)]
 mod test {
+    use crate::frame::group_by::{groupby, groupby_threaded};
     use crate::prelude::*;
+    use crate::utils::split_ca;
+    use itertools::Itertools;
 
     #[test]
     fn test_group_by() {
@@ -2245,5 +2473,25 @@ mod test {
 
         let out = df.groupby("a").unwrap().apply(|df| Ok(df)).unwrap();
         assert!(out.sort("b", false).unwrap().frame_equal(&df));
+    }
+
+    #[test]
+    fn test_groupby_threaded() {
+        for slice in &[
+            vec![1, 2, 3, 4, 4, 4, 2, 1],
+            vec![1, 2, 3, 4, 4, 4, 2, 1, 1],
+            vec![1, 2, 3, 4, 4, 4],
+        ] {
+            let ca = UInt8Chunked::new_from_slice("", &slice);
+            let splitted = split_ca(&ca, 4).unwrap();
+
+            let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
+            let b = groupby_threaded(splitted.iter().map(|ca| ca.into_iter()).collect())
+                .into_iter()
+                .sorted()
+                .collect_vec();
+
+            assert_eq!(a, b);
+        }
     }
 }
