@@ -1,7 +1,6 @@
 use crate::datatypes::CategoricalChunked;
 use crate::prelude::{
-    BooleanChunked, ChunkedArray, Downcast, ListChunked, PolarsNumericType, Series,
-    Utf8Chunked,
+    BooleanChunked, ChunkedArray, Downcast, ListChunked, PolarsNumericType, Series, Utf8Chunked,
 };
 use arrow::array::{
     Array, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps,
@@ -9,8 +8,8 @@ use arrow::array::{
 };
 use std::convert::TryFrom;
 use std::iter::Copied;
-use std::slice::Iter;
 use std::ops::Deref;
+use std::slice::Iter;
 
 // If parallel feature is enable, then, activate the parallel module.
 #[cfg(feature = "parallel")]

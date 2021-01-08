@@ -11,6 +11,7 @@ where
     T: PolarsDataType,
 {
     if N::get_dtype() == T::get_dtype() {
+        // convince the compiler that N and T are the same type
         return unsafe {
             let ca = std::mem::transmute(ca.clone());
             Ok(ca)
@@ -89,7 +90,15 @@ where
     where
         N: PolarsDataType,
     {
-        match T::get_dtype() {
+        let ca = match T::get_dtype() {
+            DataType::UInt32 => match N::get_dtype() {
+                DataType::Categorical => {
+                    let ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
+                    Ok(ca)
+                }
+                _ => cast_ca(self),
+            },
+
             // Duration cast is not implemented in Arrow
             DataType::Duration(_) => {
                 // underlying type: i64
@@ -155,7 +164,11 @@ where
                 }
             }
             _ => cast_ca(self),
-        }
+        };
+        ca.map(|mut ca| {
+            ca.field = Arc::new(Field::new(ca.name(), N::get_dtype()));
+            ca
+        })
     }
 }
 

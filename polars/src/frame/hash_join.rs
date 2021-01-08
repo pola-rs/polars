@@ -790,6 +790,7 @@ impl DataFrame {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use crate::toggle_string_cache;
 
     fn create_frames() -> (DataFrame, DataFrame) {
         let s0 = Series::new("days", &[0, 1, 2]);
@@ -973,8 +974,8 @@ mod test {
 
     #[test]
     fn test_join_categorical() {
+        toggle_string_cache(true);
 
-        // Only checks if it runs. The join is flawed because the categories differ.
         let mut df_a = df! {
             "a" => &[1, 2, 1, 1],
             "b" => &["a", "b", "c", "c"],
@@ -993,9 +994,20 @@ mod test {
             .unwrap();
         df_b.may_apply("bar", |s| s.cast_with_datatype(&DataType::Categorical))
             .unwrap();
-        dbg!(&df_a);
 
-        let out = df_a.join(&df_b, "b", "bar", JoinType::Inner).unwrap();
-        dbg!(out);
+        let out = df_a.join(&df_b, "b", "bar", JoinType::Left).unwrap();
+        assert_eq!(out.shape(), (6, 5));
+        let correct_ham = &[
+            Some("let"),
+            None,
+            Some("var"),
+            Some("const"),
+            Some("var"),
+            Some("const"),
+        ];
+        let ham_col = out.column("ham").unwrap();
+        let ca = ham_col.utf8().unwrap();
+
+        assert_eq!(Vec::from(ca), correct_ham);
     }
 }

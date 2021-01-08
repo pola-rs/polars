@@ -293,7 +293,7 @@ impl Debug for Series {
                 limit,
                 f,
                 self.categorical().unwrap(),
-                "categorical",
+                "cat",
                 self.name(),
                 "Series"
             ),
