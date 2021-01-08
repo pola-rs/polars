@@ -28,7 +28,7 @@ impl<'a, T> PolarsIterator for NumIterManyChunk<'a, T> where T: PolarsNumericTyp
 
 /// A `PolarsIterator` is an iterator over a `ChunkedArray` which contains polars types. A `PolarsIterator`
 /// must implement `ExactSizeIterator` and `DoubleEndedIterator`.
-pub trait PolarsIterator: ExactSizeIterator + DoubleEndedIterator {}
+pub trait PolarsIterator: ExactSizeIterator + DoubleEndedIterator + Send + Sync {}
 
 /// Trait for ChunkedArrays that don't have null values.
 /// The result is the most efficient implementation `Iterator`, according to the number of chunks.
