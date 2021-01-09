@@ -460,20 +460,26 @@ impl Executor for GroupByExec {
 
         let mut columns = gb.keys();
 
-        for expr in &self.aggs {
-            let agg_expr = expr.as_agg_expr()?;
-            let opt_agg = agg_expr.evaluate(&df, groups)?;
-            if let Some(agg) = opt_agg {
-                if agg.len() != groups.len() {
-                    panic!(format!(
-                        "returned aggregation is a different length: {} than the group lengths: {}",
-                        agg.len(),
-                        groups.len()
-                    ))
-                }
-                columns.push(agg)
-            }
-        }
+        let agg_columns = self.aggs
+            .par_iter()
+            .map(|expr| {
+
+                let agg_expr = expr.as_agg_expr()?;
+                let opt_agg = agg_expr.evaluate(&df, groups)?;
+                if let Some(agg) = &opt_agg {
+                    if agg.len() != groups.len() {
+                        panic!(format!(
+                            "returned aggregation is a different length: {} than the group lengths: {}",
+                            agg.len(),
+                            groups.len()
+                        ))
+                    }
+                };
+                Ok(opt_agg)
+            }).collect::<Result<Vec<_>>>()?;
+
+        columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+
         let df = DataFrame::new_no_checks(columns);
         if std::env::var(POLARS_VERBOSE).is_ok() {
             println!("groupby {:?} on dataframe finished", self.keys);

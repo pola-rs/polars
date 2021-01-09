@@ -132,7 +132,7 @@ where
     let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
     let mut hash_tbl: HashMap<T, Vec<usize>, RandomState> =
-        HashMap::with_capacity_and_hasher(size, random_state);
+        HashMap::with_capacity_and_hasher(size / 10, random_state);
 
     let mut offset = 0;
     for hashes_and_keys in hashes_and_keys {
