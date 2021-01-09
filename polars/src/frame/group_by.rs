@@ -2,9 +2,7 @@ use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecod
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, Xob};
-use crate::vector_hasher::{
-    create_hash_threaded_vectorized, prepare_hashed_relation, prepare_hashed_relation_threaded,
-};
+use crate::vector_hasher::{create_hash_threaded_vectorized, prepare_hashed_relation};
 use ahash::RandomState;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use hashbrown::HashMap;
@@ -42,7 +40,7 @@ where
     let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
     let mut hash_tbl: HashMap<T, (usize, Vec<usize>), RandomState> =
-        HashMap::with_capacity_and_hasher(size, random_state);
+        HashMap::with_capacity_and_hasher(size / 10, random_state);
 
     let mut offset = 0;
     // Almost similar to the code in vector_hasher.rs.
