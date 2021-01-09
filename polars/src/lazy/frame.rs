@@ -612,7 +612,7 @@ impl LazyFrame {
     /// use polars::lazy::dsl::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .inner_join(other, col("foo"), col("bar").cast(ArrowDataType::Utf8), None)
+    ///         .inner_join(other, col("foo"), col("bar").cast(DataType::Utf8), None)
     /// }
     /// ```
     pub fn inner_join(
