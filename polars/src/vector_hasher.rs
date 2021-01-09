@@ -37,6 +37,7 @@ pub(crate) type IdBuildHasher = BuildHasherDefault<IdHasher>;
 fn finish_table_from_key_hashes<T>(
     hashes_nd_keys: Vec<(u64, T)>,
     mut hash_tbl: HashMap<T, Vec<usize>, RandomState>,
+    offset: usize,
 ) -> HashMap<T, Vec<usize>, RandomState>
 where
     T: Hash + Eq,
@@ -45,6 +46,7 @@ where
         .into_iter()
         .enumerate()
         .for_each(|(idx, (h, t))| {
+            let idx = idx + offset;
             hash_tbl
                 .raw_entry_mut()
                 // uses the key to check equality to find and entry
@@ -78,12 +80,12 @@ where
     let hash_tbl: HashMap<T, Vec<usize>, RandomState> =
         HashMap::with_capacity_and_hasher(hashes_nd_keys.len(), random_state);
 
-    finish_table_from_key_hashes(hashes_nd_keys, hash_tbl)
+    finish_table_from_key_hashes(hashes_nd_keys, hash_tbl, 0)
 }
 
-pub(crate) fn prepare_hashed_relation_threaded<T, I>(
+pub(crate) fn create_hash_threaded_vectorized<I, T>(
     iters: Vec<I>,
-) -> HashMap<T, Vec<usize>, RandomState>
+) -> (Vec<Vec<(u64, T)>>, RandomState)
 where
     I: Iterator<Item = T> + Send,
     T: Send + Hash + Eq,
@@ -91,7 +93,7 @@ where
     let random_state = RandomState::default();
     let n_threads = iters.len();
 
-    let hashes_and_keys = thread::scope(|s| {
+    let hashes = thread::scope(|s| {
         let handles = iters
             .into_iter()
             .map(|iter| {
@@ -109,22 +111,35 @@ where
             .collect_vec();
 
         let mut results = Vec::with_capacity(n_threads);
-        let mut size = 0;
         for h in handles {
             let v = h.join().unwrap();
-            size += v.len();
             results.push(v);
         }
-        let mut hashes_and_keys = Vec::with_capacity(size);
-        for v in results {
-            hashes_and_keys.extend(v.into_iter());
-        }
-        hashes_and_keys
+        results
     })
     .unwrap();
+    (hashes, random_state)
+}
 
-    let hash_tbl: HashMap<T, Vec<usize>, RandomState> =
-        HashMap::with_capacity_and_hasher(hashes_and_keys.len(), random_state);
+pub(crate) fn prepare_hashed_relation_threaded<T, I>(
+    iters: Vec<I>,
+) -> HashMap<T, Vec<usize>, RandomState>
+where
+    I: Iterator<Item = T> + Send,
+    T: Send + Hash + Eq,
+{
+    let (hashes_and_keys, random_state) = create_hash_threaded_vectorized(iters);
+    let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
-    finish_table_from_key_hashes(hashes_and_keys, hash_tbl)
+    let mut hash_tbl: HashMap<T, Vec<usize>, RandomState> =
+        HashMap::with_capacity_and_hasher(size, random_state);
+
+    let mut offset = 0;
+    for hashes_and_keys in hashes_and_keys {
+        let len = hashes_and_keys.len();
+        hash_tbl = finish_table_from_key_hashes(hashes_and_keys, hash_tbl, offset);
+        offset += len;
+    }
+
+    hash_tbl
 }
