@@ -132,7 +132,7 @@
 //! #[macro_use] extern crate polars;
 //! use polars::prelude::*;
 //! use polars::lazy::dsl::*;
-//! use polars::datatypes::ArrowDataType;
+//! use polars::datatypes::DataType;
 //!
 //! let df = df! {
 //!     "column_a" => &[1, 2, 3, 4, 5],
@@ -147,7 +147,7 @@
 //!             Ok(Series::new("", &[6.0f32, 6.0, 6.0, 6.0, 6.0]))
 //!         },
 //!         // return type of the closure
-//!         Some(ArrowDataType::Float64)).alias("new_column")
+//!         Some(DataType::Float64)).alias("new_column")
 //!     )
 //!     .collect()
 //!     .unwrap();
