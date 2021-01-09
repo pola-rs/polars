@@ -5,6 +5,7 @@ use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoD
 use crate::vector_hasher::{create_hash_threaded_vectorized, prepare_hashed_relation};
 use ahash::RandomState;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
+use crossbeam::thread;
 use hashbrown::HashMap;
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
@@ -34,38 +35,71 @@ where
 fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<(usize, Vec<usize>)>
 where
     I: Iterator<Item = T> + Send,
-    T: Send + Hash + Eq,
+    T: Send + Hash + Eq + Sync + Copy,
 {
+    let n_threads = iters.len();
     let (hashes_and_keys, random_state) = create_hash_threaded_vectorized(iters);
     let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
-    let mut hash_tbl: HashMap<T, (usize, Vec<usize>), RandomState> =
-        HashMap::with_capacity_and_hasher(size / 10, random_state);
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+    thread::scope(|s| {
+        let handles = (0..n_threads)
+            .map(|thread_no| {
+                let random_state = random_state.clone();
+                let hashes_and_keys = &hashes_and_keys;
+                let thread_no = thread_no as u64;
+                s.spawn(move |_| {
+                    let mut hash_tbl: HashMap<T, (usize, Vec<usize>), RandomState> =
+                        HashMap::with_capacity_and_hasher(size / (5 * n_threads), random_state);
 
-    let mut offset = 0;
-    // Almost similar to the code in vector_hasher.rs.
-    // However we directly store the first idx as a tuple to save a layer of indirection.
-    for hashes_and_keys in hashes_and_keys {
-        let len = hashes_and_keys.len();
-        hashes_and_keys
+                    let n_threads = n_threads as u64;
+                    let mut offset = 0;
+                    for hashes_and_keys in hashes_and_keys {
+                        let len = hashes_and_keys.len();
+                        hashes_and_keys
+                            .iter()
+                            .enumerate()
+                            .for_each(|(idx, (h, k))| {
+                                // partition hashes by thread no.
+                                // So only a part of the hashes go to this hashmap
+                                if (h + thread_no) % n_threads == 0 {
+                                    let idx = idx + offset;
+                                    hash_tbl
+                                        .raw_entry_mut()
+                                        // uses the key to check equality to find and entry
+                                        .from_key_hashed_nocheck(*h, &k)
+                                        // if entry is found modify it
+                                        .and_modify(|_k, v| {
+                                            v.1.push(idx);
+                                        })
+                                        // otherwise we insert both the key and new Vec without hashing
+                                        .or_insert_with(|| (*k, (idx, vec![idx])));
+                                }
+                            });
+
+                        offset += len;
+                    }
+                    hash_tbl.shrink_to_fit();
+                    hash_tbl
+                })
+            })
+            .collect_vec();
+
+        handles
             .into_iter()
-            .enumerate()
-            .for_each(|(idx, (h, t))| {
-                let idx = idx + offset;
+            .map(|handle| {
+                let hash_tbl = handle.join().unwrap();
                 hash_tbl
-                    .raw_entry_mut()
-                    // uses the key to check equality to find and entry
-                    .from_key_hashed_nocheck(h, &t)
-                    // if entry is found modify it
-                    .and_modify(|_k, v| {
-                        v.1.push(idx);
-                    })
-                    // otherwise we insert both the key and new Vec without hashing
-                    .or_insert_with(|| (t, (idx, vec![idx])));
-            });
-        offset += len;
-    }
-    hash_tbl.into_iter().map(|(_k, v)| v).collect()
+                    .into_par_iter()
+                    .map(|(_k, v)| v)
+                    .collect::<Vec<_>>()
+            })
+            .flatten()
+            .collect_vec()
+    })
+    .unwrap()
 }
 
 /// Used to create the tuples for a groupby operation.
@@ -610,14 +644,9 @@ where
     fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         let ca: Float64Chunked = groups
             .par_iter()
-            .map(|(_first, idx)| {
-                // Fast path
-                if let Ok(slice) = self.cont_slice() {
-                    let mut sum = 0.;
-                    for i in idx {
-                        sum += slice[*i].to_f64().unwrap()
-                    }
-                    Some(sum / idx.len() as f64)
+            .map(|(first, idx)| {
+                if idx.len() == 1 {
+                    self.get(*first).map(|sum| sum.to_f64().unwrap())
                 } else {
                     let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
                     let opt_sum: Option<T::Native> = take.sum();
@@ -632,24 +661,9 @@ where
         Some(
             groups
                 .par_iter()
-                .map(|(_first, idx)| {
-                    if let Ok(slice) = self.cont_slice() {
-                        let mut min = None;
-                        for i in idx {
-                            let v = slice[*i];
-
-                            min = match min {
-                                Some(min) => {
-                                    if min < v {
-                                        Some(min)
-                                    } else {
-                                        Some(v)
-                                    }
-                                }
-                                None => Some(v),
-                            };
-                        }
-                        min
+                .map(|(first, idx)| {
+                    if idx.len() == 1 {
+                        self.get(*first)
                     } else {
                         let take =
                             unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
@@ -665,24 +679,9 @@ where
         Some(
             groups
                 .par_iter()
-                .map(|(_first, idx)| {
-                    if let Ok(slice) = self.cont_slice() {
-                        let mut max = None;
-                        for i in idx {
-                            let v = slice[*i];
-
-                            max = match max {
-                                Some(max) => {
-                                    if max > v {
-                                        Some(max)
-                                    } else {
-                                        Some(v)
-                                    }
-                                }
-                                None => Some(v),
-                            };
-                        }
-                        max
+                .map(|(first, idx)| {
+                    if idx.len() == 1 {
+                        self.get(*first)
                     } else {
                         let take =
                             unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
@@ -698,13 +697,9 @@ where
         Some(
             groups
                 .par_iter()
-                .map(|(_first, idx)| {
-                    if let Ok(slice) = self.cont_slice() {
-                        let mut sum = Zero::zero();
-                        for i in idx {
-                            sum = sum + slice[*i]
-                        }
-                        Some(sum)
+                .map(|(first, idx)| {
+                    if idx.len() == 1 {
+                        self.get(*first)
                     } else {
                         let take =
                             unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };

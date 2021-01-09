@@ -112,7 +112,8 @@ where
 
         let mut results = Vec::with_capacity(n_threads);
         for h in handles {
-            let v = h.join().unwrap();
+            let mut v = h.join().unwrap();
+            v.shrink_to_fit();
             results.push(v);
         }
         results
@@ -132,7 +133,7 @@ where
     let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
     let mut hash_tbl: HashMap<T, Vec<usize>, RandomState> =
-        HashMap::with_capacity_and_hasher(size / 10, random_state);
+        HashMap::with_capacity_and_hasher(size / 3, random_state);
 
     let mut offset = 0;
     for hashes_and_keys in hashes_and_keys {
