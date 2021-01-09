@@ -2,13 +2,16 @@ use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecod
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, Xob};
-use crate::vector_hasher::{prepare_hashed_relation, prepare_hashed_relation_threaded};
+use crate::vector_hasher::{
+    create_hash_threaded_vectorized, prepare_hashed_relation, prepare_hashed_relation_threaded,
+};
 use ahash::RandomState;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
+use hashbrown::HashMap;
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::{
     fmt::{Debug, Formatter},
@@ -35,15 +38,36 @@ where
     I: Iterator<Item = T> + Send,
     T: Send + Hash + Eq,
 {
-    let hash_tbl = prepare_hashed_relation_threaded(iters);
+    let (hashes_and_keys, random_state) = create_hash_threaded_vectorized(iters);
+    let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
-    hash_tbl
-        .into_iter()
-        .map(|(_, indexes)| {
-            let first = unsafe { *indexes.get_unchecked(0) };
-            (first, indexes)
-        })
-        .collect()
+    let mut hash_tbl: HashMap<T, (usize, Vec<usize>), RandomState> =
+        HashMap::with_capacity_and_hasher(size, random_state);
+
+    let mut offset = 0;
+    // Almost similar to the code in vector_hasher.rs.
+    // However we directly store the first idx as a tuple to save a layer of indirection.
+    for hashes_and_keys in hashes_and_keys {
+        let len = hashes_and_keys.len();
+        hashes_and_keys
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, (h, t))| {
+                let idx = idx + offset;
+                hash_tbl
+                    .raw_entry_mut()
+                    // uses the key to check equality to find and entry
+                    .from_key_hashed_nocheck(h, &t)
+                    // if entry is found modify it
+                    .and_modify(|_k, v| {
+                        v.1.push(idx);
+                    })
+                    // otherwise we insert both the key and new Vec without hashing
+                    .or_insert_with(|| (t, (idx, vec![idx])));
+            });
+        offset += len;
+    }
+    hash_tbl.into_iter().map(|(_k, v)| v).collect()
 }
 
 /// Used to create the tuples for a groupby operation.
