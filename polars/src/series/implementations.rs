@@ -606,8 +606,8 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::value_counts(&self.0)
             }
 
-            fn get(&self, index: usize) -> AnyType {
-                self.0.get_as_enum(index)
+            fn get(&self, index: usize) -> AnyValue {
+                self.0.get_any_value(index)
             }
 
             fn sort_in_place(&mut self, reverse: bool) {
@@ -1011,8 +1011,8 @@ where
         ChunkUnique::value_counts(&self.0)
     }
 
-    fn get(&self, index: usize) -> AnyType {
-        ObjectChunked::get_as_enum(&self.0, index)
+    fn get(&self, index: usize) -> AnyValue {
+        ObjectChunked::get_any_value(&self.0, index)
     }
 
     fn sort_in_place(&mut self, reverse: bool) {

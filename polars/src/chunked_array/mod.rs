@@ -493,20 +493,16 @@ where
         }
     }
 
-    /// Get a single value. Beware this is slow. (only used for formatting)
-    pub(crate) fn get_as_enum(&self, index: usize) -> AnyType {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &*self.chunks[chunk_idx];
-
+    fn arr_to_any_value(&self, arr: &dyn Array, idx: usize) -> AnyValue {
         if arr.is_null(idx) {
-            return AnyType::Null;
+            return AnyValue::Null;
         }
 
         macro_rules! downcast_and_pack {
             ($casttype:ident, $variant:ident) => {{
                 let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
                 let v = arr.value(idx);
-                AnyType::$variant(v)
+                AnyValue::$variant(v)
             }};
         }
         macro_rules! downcast {
@@ -533,26 +529,26 @@ where
             DataType::Date64 => downcast_and_pack!(Date64Array, Date64),
             DataType::Time64(TimeUnit::Nanosecond) => {
                 let v = downcast!(Time64NanosecondArray);
-                AnyType::Time64(v, TimeUnit::Nanosecond)
+                AnyValue::Time64(v, TimeUnit::Nanosecond)
             }
             DataType::Duration(TimeUnit::Nanosecond) => {
                 let v = downcast!(DurationNanosecondArray);
-                AnyType::Duration(v, TimeUnit::Nanosecond)
+                AnyValue::Duration(v, TimeUnit::Nanosecond)
             }
             DataType::Duration(TimeUnit::Millisecond) => {
                 let v = downcast!(DurationMillisecondArray);
-                AnyType::Duration(v, TimeUnit::Millisecond)
+                AnyValue::Duration(v, TimeUnit::Millisecond)
             }
             DataType::List(_) => {
                 let v = downcast!(ListArray);
                 let s = Series::try_from(("", v));
-                AnyType::List(s.unwrap())
+                AnyValue::List(s.unwrap())
             }
             #[cfg(feature = "object")]
-            DataType::Object => AnyType::Object(&"object"),
+            DataType::Object => AnyValue::Object(&"object"),
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
-                AnyType::Utf8(
+                AnyValue::Utf8(
                     &self
                         .categorical_map
                         .as_ref()
@@ -563,6 +559,25 @@ where
             }
             _ => unimplemented!(),
         }
+    }
+
+    /// Get a single value. Beware this is slow.
+    /// If you need to use this slightly performant, cast Categorical to UInt32
+    pub(crate) unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        debug_assert!(chunk_idx >= self.chunks.len());
+        let arr = &**self.chunks.get_unchecked(chunk_idx);
+        debug_assert!(idx >= arr.len());
+        self.arr_to_any_value(arr, idx)
+    }
+
+    /// Get a single value. Beware this is slow.
+    /// If you need to use this slightly performant, cast Categorical to UInt32
+    pub(crate) fn get_any_value(&self, index: usize) -> AnyValue {
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let arr = &*self.chunks[chunk_idx];
+        assert!(idx >= arr.len());
+        self.arr_to_any_value(arr, idx)
     }
 }
 
@@ -957,10 +972,10 @@ pub(crate) mod test {
     #[test]
     fn get() {
         let mut a = get_chunked_array();
-        assert_eq!(AnyType::Int32(2), a.get_as_enum(1));
+        assert_eq!(AnyValue::Int32(2), a.get_any_value(1));
         // check if chunks indexes are properly determined
         a.append_array(a.chunks[0].clone()).unwrap();
-        assert_eq!(AnyType::Int32(1), a.get_as_enum(3));
+        assert_eq!(AnyValue::Int32(1), a.get_any_value(3));
     }
 
     #[test]

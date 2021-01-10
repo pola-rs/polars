@@ -18,6 +18,7 @@ mod arithmetic;
 pub mod explode;
 pub mod group_by;
 pub mod hash_join;
+pub mod row;
 pub mod select;
 pub mod ser;
 mod upstream_traits;
@@ -545,11 +546,11 @@ impl DataFrame {
     ///
     /// ```
     /// use polars::prelude::*;
-    /// fn example(df: &mut DataFrame, idx: usize) -> Option<Vec<AnyType>> {
+    /// fn example(df: &mut DataFrame, idx: usize) -> Option<Vec<AnyValue>> {
     ///     df.get(idx)
     /// }
     /// ```
-    pub fn get(&self, idx: usize) -> Option<Vec<AnyType>> {
+    pub fn get(&self, idx: usize) -> Option<Vec<AnyValue>> {
         match self.columns.get(0) {
             Some(s) => {
                 if s.len() <= idx {

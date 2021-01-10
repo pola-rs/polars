@@ -69,7 +69,7 @@ macro_rules! format_array {
         write![$f, "{}: '{}' [{}]\n[\n", $array_type, $name, $dtype]?;
 
         for i in 0..$limit {
-            let v = $a.get_as_enum(i);
+            let v = $a.get_any_value(i);
             write!($f, "\t{}\n", v)?;
         }
 
@@ -124,7 +124,7 @@ fn format_object_array(
     for i in 0..limit {
         let v = object.get(i);
         match v {
-            AnyType::Null => writeln!(f, "\tnull")?,
+            AnyValue::Null => writeln!(f, "\tnull")?,
             _ => writeln!(f, "\tobject")?,
         }
     }
@@ -138,7 +138,7 @@ macro_rules! format_object_array {
         write![$f, "{}: '{}' [object]\n[\n", $array_type, $name]?;
 
         for i in 0..$limit {
-            let v = $object.get_as_enum(i);
+            let v = $object.get_any_value(i);
             match v {
                 AnyType::Null => writeln!($f, "\tnull")?,
                 _ => writeln!($f, "\tobject")?,
@@ -315,7 +315,7 @@ impl Debug for DataFrame {
 }
 
 fn prepare_row(
-    row: Vec<AnyType>,
+    row: Vec<AnyValue>,
     insert_idx: usize,
     reduce_columns: bool,
     max_n_cols: usize,
@@ -323,7 +323,7 @@ fn prepare_row(
     let string_limit = 32;
     let mut row_str = Vec::with_capacity(row.len());
     for v in row.iter().take(max_n_cols) {
-        let str_val = if let AnyType::Utf8(s) = v {
+        let str_val = if let AnyValue::Utf8(s) = v {
             if s.len() > string_limit {
                 format!("{}...", &s[..string_limit])
             } else {
@@ -428,33 +428,33 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
-impl Display for AnyType<'_> {
+impl Display for AnyValue<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 0;
         match self {
-            AnyType::Null => write!(f, "null"),
-            AnyType::UInt8(v) => write!(f, "{}", v),
-            AnyType::UInt16(v) => write!(f, "{}", v),
-            AnyType::UInt32(v) => write!(f, "{}", v),
-            AnyType::UInt64(v) => write!(f, "{}", v),
-            AnyType::Int8(v) => fmt_integer(f, width, *v),
-            AnyType::Int16(v) => fmt_integer(f, width, *v),
-            AnyType::Int32(v) => fmt_integer(f, width, *v),
-            AnyType::Int64(v) => fmt_integer(f, width, *v),
-            AnyType::Float32(v) => fmt_float(f, width, *v),
-            AnyType::Float64(v) => fmt_float(f, width, *v),
-            AnyType::Boolean(v) => write!(f, "{}", *v),
-            AnyType::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
-            AnyType::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
-            AnyType::Date64(v) => write!(f, "{}", date64_as_datetime(*v).date()),
-            AnyType::Time64(v, TimeUnit::Nanosecond) => {
+            AnyValue::Null => write!(f, "null"),
+            AnyValue::UInt8(v) => write!(f, "{}", v),
+            AnyValue::UInt16(v) => write!(f, "{}", v),
+            AnyValue::UInt32(v) => write!(f, "{}", v),
+            AnyValue::UInt64(v) => write!(f, "{}", v),
+            AnyValue::Int8(v) => fmt_integer(f, width, *v),
+            AnyValue::Int16(v) => fmt_integer(f, width, *v),
+            AnyValue::Int32(v) => fmt_integer(f, width, *v),
+            AnyValue::Int64(v) => fmt_integer(f, width, *v),
+            AnyValue::Float32(v) => fmt_float(f, width, *v),
+            AnyValue::Float64(v) => fmt_float(f, width, *v),
+            AnyValue::Boolean(v) => write!(f, "{}", *v),
+            AnyValue::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
+            AnyValue::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
+            AnyValue::Date64(v) => write!(f, "{}", date64_as_datetime(*v).date()),
+            AnyValue::Time64(v, TimeUnit::Nanosecond) => {
                 write!(f, "{}", time64_nanosecond_as_time(*v))
             }
-            AnyType::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
-            AnyType::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
-            AnyType::List(s) => write!(f, "{:?}", s.fmt_list()),
+            AnyValue::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
+            AnyValue::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
+            AnyValue::List(s) => write!(f, "{:?}", s.fmt_list()),
             #[cfg(feature = "object")]
-            AnyType::Object(_) => write!(f, "object"),
+            AnyValue::Object(_) => write!(f, "object"),
             _ => unimplemented!(),
         }
     }
