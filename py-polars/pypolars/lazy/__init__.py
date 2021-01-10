@@ -1196,7 +1196,7 @@ def count(name: str) -> "Expr":
     return col(name).count()
 
 
-def list(name: str) -> "Expr":
+def to_list(name: str) -> "Expr":
     """
     Aggregate to list
     """
