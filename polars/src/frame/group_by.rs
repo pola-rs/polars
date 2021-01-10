@@ -2,11 +2,14 @@ use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecod
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, Xob};
-use crate::vector_hasher::{create_hash_threaded_vectorized, prepare_hashed_relation};
+use crate::vector_hasher::{
+    create_hash_and_keys_threaded_vectorized, create_hash_threaded_vectorized,
+    prepare_hashed_relation, IdBuildHasher, IdxHash,
+};
 use ahash::RandomState;
 use arrow::array::{PrimitiveBuilder, StringBuilder};
 use crossbeam::thread;
-use hashbrown::HashMap;
+use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
@@ -38,7 +41,7 @@ where
     T: Send + Hash + Eq + Sync + Copy,
 {
     let n_threads = iters.len();
-    let (hashes_and_keys, random_state) = create_hash_threaded_vectorized(iters);
+    let (hashes_and_keys, random_state) = create_hash_and_keys_threaded_vectorized(iters);
     let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
     // We will create a hashtable in every thread.
@@ -66,22 +69,122 @@ where
                                 // So only a part of the hashes go to this hashmap
                                 if (h + thread_no) % n_threads == 0 {
                                     let idx = idx + offset;
-                                    hash_tbl
+                                    let entry = hash_tbl
                                         .raw_entry_mut()
                                         // uses the key to check equality to find and entry
-                                        .from_key_hashed_nocheck(*h, &k)
-                                        // if entry is found modify it
-                                        .and_modify(|_k, v| {
+                                        .from_key_hashed_nocheck(*h, &k);
+
+                                    match entry {
+                                        RawEntryMut::Vacant(entry) => {
+                                            entry.insert_hashed_nocheck(*h, *k, (idx, vec![idx]));
+                                        }
+                                        RawEntryMut::Occupied(mut entry) => {
+                                            let (_k, v) = entry.get_key_value_mut();
                                             v.1.push(idx);
-                                        })
-                                        // otherwise we insert both the key and new Vec without hashing
-                                        .or_insert_with(|| (*k, (idx, vec![idx])));
+                                        }
+                                    }
                                 }
                             });
 
                         offset += len;
                     }
                     hash_tbl.shrink_to_fit();
+                    hash_tbl
+                })
+            })
+            .collect_vec();
+
+        handles
+            .into_iter()
+            .map(|handle| {
+                let hash_tbl = handle.join().unwrap();
+                hash_tbl
+                    .into_par_iter()
+                    .map(|(_k, v)| v)
+                    .collect::<Vec<_>>()
+            })
+            .flatten()
+            .collect_vec()
+    })
+    .unwrap()
+}
+
+fn groupby_threaded_multiple_keys<I, T>(iters: Vec<I>, keys: DataFrame) -> Vec<(usize, Vec<usize>)>
+where
+    I: Iterator<Item = T> + Send,
+    T: Send + Hash + Eq + Sync + Copy,
+{
+    let n_threads = iters.len();
+    let (hashes, _random_state) = create_hash_threaded_vectorized(iters);
+    let size = hashes.iter().fold(0, |acc, v| acc + v.len());
+    // two row containers to amortize allocations;
+    let row_1 = keys.get_row(0);
+
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+
+    // We use a combination of a custom IdentityHasher and a uitility key IdxHash that stores
+    // the index of the row and and the hash. The Hash function of this key just returns the hash it stores.
+    thread::scope(|s| {
+        let handles = (0..n_threads)
+            .map(|thread_no| {
+                let hashes = &hashes;
+                let thread_no = thread_no as u64;
+
+                let keys = &keys;
+                // two row containers to amortize allocations;
+                let mut row_1 = row_1.clone();
+                let mut row_2 = row_1.clone();
+
+                s.spawn(move |_| {
+                    // rather over allocate because rehashing is expensive
+                    let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
+                        HashMap::with_capacity_and_hasher(
+                            size / (2 * n_threads),
+                            IdBuildHasher::default(),
+                        );
+
+                    let n_threads = n_threads as u64;
+                    let mut offset = 0;
+                    for hashes_and_keys in hashes {
+                        let len = hashes_and_keys.len();
+                        hashes_and_keys.iter().enumerate().for_each(|(idx, h)| {
+                            // partition hashes by thread no.
+                            // So only a part of the hashes go to this hashmap
+                            if (h + thread_no) % n_threads == 0 {
+                                let idx = idx + offset;
+
+                                let entry = hash_tbl
+                                    .raw_entry_mut()
+                                    // uses the idx to probe rows in the original DataFrame with keys
+                                    // to check equality to find an entry
+                                    .from_hash(*h, |idx_hash| {
+                                        let key_idx = idx_hash.idx;
+                                        unsafe {
+                                            keys.get_row_amortized_unchecked(key_idx, &mut row_1);
+                                            keys.get_row_amortized_unchecked(idx, &mut row_2);
+                                        }
+                                        row_1 == row_2
+                                    });
+                                match entry {
+                                    RawEntryMut::Vacant(entry) => {
+                                        entry.insert_hashed_nocheck(
+                                            *h,
+                                            IdxHash::new(idx, *h),
+                                            (idx, vec![idx]),
+                                        );
+                                    }
+                                    RawEntryMut::Occupied(mut entry) => {
+                                        let (_k, v) = entry.get_key_value_mut();
+                                        v.1.push(idx);
+                                    }
+                                }
+                            }
+                        });
+
+                        offset += len;
+                    }
                     hash_tbl
                 })
             })
@@ -362,6 +465,17 @@ impl DataFrame {
         let selected_keys = self.select_series(by)?;
         let n_threads = num_cpus::get();
 
+        // make sure that categorical is used as uint32 in value type
+        let keys_df = DataFrame::new_no_checks(
+            selected_keys
+                .iter()
+                .map(|s| match s.dtype() {
+                    DataType::Categorical => s.cast::<UInt32Type>().unwrap(),
+                    _ => s.clone(),
+                })
+                .collect(),
+        );
+
         // flattened splitted vec,
         let splitted_sel_keys = selected_keys
             .iter()
@@ -386,7 +500,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             3 => {
                 let iters = (0..n_threads)
@@ -400,7 +514,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             4 => {
                 let iters = (0..n_threads)
@@ -414,7 +528,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             5 => {
                 let iters = (0..n_threads)
@@ -428,7 +542,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             6 => {
                 let iters = (0..n_threads)
@@ -442,7 +556,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             7 => {
                 let iters = (0..n_threads)
@@ -456,7 +570,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             8 => {
                 let iters = (0..n_threads)
@@ -470,7 +584,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             9 => {
                 let iters = (0..n_threads)
@@ -484,7 +598,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             10 => {
                 let iters = (0..n_threads)
@@ -498,7 +612,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             11 => {
                 let iters = (0..n_threads)
@@ -512,7 +626,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             12 => {
                 let iters = (0..n_threads)
@@ -526,7 +640,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded(iters)
+                groupby_threaded_multiple_keys(iters, keys_df)
             }
             _ => {
                 let iter = selected_keys

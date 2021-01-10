@@ -464,6 +464,15 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         unimplemented!()
     }
 
+    /// Get a single value by index. Don't use this operation for loops as a runtime cast is
+    /// needed for every iteration.
+    ///
+    /// # Safety
+    /// Does not do any bounds checking
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
+        unimplemented!()
+    }
+
     /// Sort in place.
     fn sort_in_place(&mut self, _reverse: bool) {
         unimplemented!()

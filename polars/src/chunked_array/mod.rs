@@ -565,9 +565,9 @@ where
     /// If you need to use this slightly performant, cast Categorical to UInt32
     pub(crate) unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        debug_assert!(chunk_idx >= self.chunks.len());
+        debug_assert!(chunk_idx < self.chunks.len());
         let arr = &**self.chunks.get_unchecked(chunk_idx);
-        debug_assert!(idx >= arr.len());
+        debug_assert!(idx < arr.len());
         self.arr_to_any_value(arr, idx)
     }
 
@@ -576,7 +576,7 @@ where
     pub(crate) fn get_any_value(&self, index: usize) -> AnyValue {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let arr = &*self.chunks[chunk_idx];
-        assert!(idx >= arr.len());
+        assert!(idx < arr.len());
         self.arr_to_any_value(arr, idx)
     }
 }
