@@ -185,8 +185,8 @@ pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 
-#[derive(Debug)]
-pub enum AnyType<'a> {
+#[derive(Debug, Clone)]
+pub enum AnyValue<'a> {
     Null,
     /// A binary true or false.
     Boolean(bool),
@@ -261,10 +261,30 @@ impl Display for DataType {
     }
 }
 
-impl<'a> PartialEq for AnyType<'a> {
+impl<'a> PartialEq for AnyValue<'a> {
     // Everything of Any is slow. Don't use.
     fn eq(&self, other: &Self) -> bool {
-        format!("{}", self) == format!("{}", other)
+        use AnyValue::*;
+        match (self, other) {
+            (UInt8(l), UInt8(r)) => l == r,
+            (UInt16(l), UInt16(r)) => l == r,
+            (UInt32(l), UInt32(r)) => l == r,
+            (UInt64(l), UInt64(r)) => l == r,
+            (Int8(l), Int8(r)) => l == r,
+            (Int16(l), Int16(r)) => l == r,
+            (Int32(l), Int32(r)) => l == r,
+            (Int64(l), Int64(r)) => l == r,
+            (Float32(l), Float32(r)) => l == r,
+            (Float64(l), Float64(r)) => l == r,
+            (Date32(l), Date32(r)) => l == r,
+            (Date64(l), Date64(r)) => l == r,
+            (Time64(l, _), Time64(r, _)) => l == r,
+            (Duration(l, _), Duration(r, _)) => l == r,
+            (List(_), List(_)) => panic!("eq between list series not supported"),
+            #[cfg(feature = "object")]
+            (Object(_), Object(_)) => panic!("eq between object not supported"),
+            _ => false,
+        }
     }
 }
 

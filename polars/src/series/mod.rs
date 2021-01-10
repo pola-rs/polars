@@ -460,7 +460,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, _index: usize) -> AnyType {
+    fn get(&self, _index: usize) -> AnyValue {
         unimplemented!()
     }
 
