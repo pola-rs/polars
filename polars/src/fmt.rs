@@ -140,7 +140,7 @@ macro_rules! format_object_array {
         for i in 0..$limit {
             let v = $object.get_any_value(i);
             match v {
-                AnyType::Null => writeln!($f, "\tnull")?,
+                AnyValue::Null => writeln!($f, "\tnull")?,
                 _ => writeln!($f, "\tobject")?,
             }
         }

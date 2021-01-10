@@ -266,6 +266,7 @@ impl<'a> PartialEq for AnyValue<'a> {
     fn eq(&self, other: &Self) -> bool {
         use AnyValue::*;
         match (self, other) {
+            (Utf8(l), Utf8(r)) => l == r,
             (UInt8(l), UInt8(r)) => l == r,
             (UInt16(l), UInt16(r)) => l == r,
             (UInt32(l), UInt32(r)) => l == r,
@@ -280,9 +281,12 @@ impl<'a> PartialEq for AnyValue<'a> {
             (Date64(l), Date64(r)) => l == r,
             (Time64(l, _), Time64(r, _)) => l == r,
             (Duration(l, _), Duration(r, _)) => l == r,
+            (Boolean(l), Boolean(r)) => l == r,
             (List(_), List(_)) => panic!("eq between list series not supported"),
             #[cfg(feature = "object")]
             (Object(_), Object(_)) => panic!("eq between object not supported"),
+            // should it?
+            (Null, Null) => true,
             _ => false,
         }
     }
