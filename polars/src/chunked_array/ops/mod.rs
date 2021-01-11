@@ -38,9 +38,9 @@ pub trait ChunkBytes {
 }
 
 pub trait ChunkWindow {
-    /// Apply a rolling sum (moving sum) over the values in this array.
-    /// A window of length `window_size` will traverse the array. The values that fill this window
-    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// apply a rolling sum (moving sum) over the values in this array.
+    /// a window of length `window_size` will traverse the array. the values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. the resulting
     /// values will be aggregated to their sum.
     ///
     /// # Arguments
