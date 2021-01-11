@@ -100,12 +100,13 @@ impl PySeries {
         // numpy array as slice is unsafe
         unsafe {
             if nan_is_null {
-                let ca: Float32Chunked = val
+                let mut ca: Float32Chunked = val
                     .as_slice()
                     .expect("contiguous array")
                     .iter()
                     .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
                     .collect();
+                ca.rename(name);
                 ca.into_series().into()
             } else {
                 Series::new(name, val.as_slice().unwrap()).into()
