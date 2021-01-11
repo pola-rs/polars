@@ -52,6 +52,7 @@ csv-core = "0.1.10"
 memmap = "0.7.0"
 lazy_static = "1.4.0"
 hashbrown = {version = "0.9.1", features = ["rayon"] }
+fast-float = "0.1.0"
 
 [package.metadata.docs.rs]
 all-features = true

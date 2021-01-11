@@ -1,6 +1,7 @@
 from pypolars import DataFrame, Series
 from pypolars.datatypes import *
 from pypolars.lazy import *
+from pypolars import functions
 import pytest
 from io import BytesIO
 import numpy as np
@@ -257,3 +258,15 @@ def test_custom_groupby():
         .collect()
     )
     assert out.shape == (3, 2)
+
+
+def test_multiple_columns_drop():
+    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    out = df.drop(["a", "b"])
+    assert out.columns == ["c"]
+
+
+def test_concat():
+    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+
+    assert functions.concat([df, df]).shape == (6, 3)

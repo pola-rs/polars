@@ -227,3 +227,28 @@ def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
         columns.append(pl_s)
 
     return DataFrame(columns, nullable=True)
+
+
+def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
+    """
+    Aggregate all the Dataframe in a List of DataFrames to a single DataFrame
+
+    Parameters
+    ----------
+    dfs
+        DataFrames to concatenate
+    rechunk
+        rechunk the final DataFrame
+    """
+    assert len(dfs) > 0
+    df = dfs[0]
+    for i in range(1, len(dfs)):
+        try:
+            df = df.vstack(dfs[i], in_place=False)
+        # could have a double borrow (one mutable one ref)
+        except RuntimeError:
+            df.vstack(dfs[i].clone(), in_place=True)
+
+    if rechunk:
+        return df.rechunk()
+    return df
