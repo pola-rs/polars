@@ -1,15 +1,11 @@
 // Credits to https://github.com/omerbenamram/pyo3-file
-use parquet::{
-    errors::ParquetError,
-    file::reader::{Length, TryClone},
-};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 use std::borrow::Borrow;
 use std::fs::File;
 use std::io;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 #[derive(Clone)]
 pub struct PyFileLikeObject {
@@ -23,6 +19,47 @@ impl PyFileLikeObject {
     /// instantiate it with `PyFileLikeObject::require`
     pub fn new(object: PyObject) -> Self {
         PyFileLikeObject { inner: object }
+    }
+
+    pub fn as_file_buffer(&self) -> Cursor<Vec<u8>> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+
+        let bytes = self
+            .inner
+            .call_method(py, "read", (), None)
+            .expect("no read method found");
+
+        let bytes: &PyBytes = bytes
+            .cast_as(py)
+            .expect("Expecting to be able to downcast into bytes from read result.");
+
+        let buf = bytes.as_bytes().to_vec();
+
+        Cursor::new(buf)
+    }
+
+    /// Take a Python buffer and extends it lifetime to static.
+    ///
+    /// # Safety
+    /// It also returns the bytes PyObject. As long as that object is held, the lifetime is valid
+    /// as the destructor is not called.
+    pub unsafe fn as_file_buffer_ref(&self) -> (Cursor<&'static [u8]>, PyObject) {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+
+        let bytes = self
+            .inner
+            .call_method(py, "read", (), None)
+            .expect("no read method found");
+
+        let ref_bytes: &PyBytes = bytes
+            .cast_as(py)
+            .expect("Expecting to be able to downcast into bytes from read result.");
+        let buf = ref_bytes.as_bytes();
+
+        let static_buf = std::mem::transmute::<&[u8], &'static [u8]>(buf);
+        (Cursor::new(static_buf), bytes)
     }
 
     /// Same as `PyFileLikeObject::new`, but validates that the underlying
@@ -148,27 +185,6 @@ impl Seek for PyFileLikeObject {
 }
 
 pub trait FileLike: Read + Write + Seek + Sync + Send {}
-
-// Needed for arrow parquet
-impl Length for PyFileLikeObject {
-    fn len(&self) -> u64 {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let size = self
-            .inner
-            .call_method0(py, "__sizeof__")
-            .expect("Could not read size of buffer");
-        size.extract(py)
-            .expect("did not get an int as result of __sizeof__")
-    }
-}
-
-impl TryClone for PyFileLikeObject {
-    fn try_clone(&self) -> std::result::Result<Self, ParquetError> {
-        Ok(self.clone())
-    }
-}
 
 impl FileLike for File {}
 impl FileLike for PyFileLikeObject {}

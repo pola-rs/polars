@@ -113,8 +113,12 @@ impl PyDataFrame {
     #[staticmethod]
     pub fn read_parquet(py_f: PyObject) -> PyResult<Self> {
         use EitherRustPythonFile::*;
+
         let result = match get_either_file(py_f, false)? {
-            Py(f) => ParquetReader::new(f).finish(),
+            Py(f) => {
+                let (buf, _pybuf) = unsafe { f.as_file_buffer_ref() };
+                ParquetReader::new(buf).finish()
+            }
             Rust(f) => ParquetReader::new(f).finish(),
         };
         let df = result.map_err(PyPolarsEr::from)?;

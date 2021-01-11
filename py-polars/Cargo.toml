@@ -17,7 +17,6 @@ pyo3 = {version = "0.13", features = ["extension-module"] }
 thiserror = "1.0.20"
 numpy = "0.13.0"
 ndarray = "0.14.0"
-parquet = "2"
 
 
 [lib]
