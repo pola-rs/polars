@@ -298,9 +298,14 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn vstack(&mut self, df: &PyDataFrame) -> PyResult<()> {
+    pub fn vstack_mut(&mut self, df: &PyDataFrame) -> PyResult<()> {
         self.df.vstack_mut(&df.df).map_err(PyPolarsEr::from)?;
         Ok(())
+    }
+
+    pub fn vstack(&mut self, df: &PyDataFrame) -> PyResult<Self> {
+        let df = self.df.vstack(&df.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
     }
 
     pub fn drop_in_place(&mut self, name: &str) -> PyResult<PySeries> {

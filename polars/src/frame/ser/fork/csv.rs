@@ -1053,6 +1053,12 @@ impl From<lexical::Error> for PolarsError {
     }
 }
 
+impl From<fast_float::Error> for PolarsError {
+    fn from(_: fast_float::Error) -> Self {
+        PolarsError::Other("Could not parse primitive type during csv parsing".into())
+    }
+}
+
 trait PrimitiveParser: ArrowPrimitiveType {
     fn parse(bytes: &[u8]) -> Result<Self::Native>;
 }
@@ -1071,13 +1077,13 @@ impl PrimitiveParser for BooleanType {
 
 impl PrimitiveParser for Float32Type {
     fn parse(bytes: &[u8]) -> Result<f32> {
-        let a = lexical::parse(bytes)?;
+        let a = fast_float::parse(bytes)?;
         Ok(a)
     }
 }
 impl PrimitiveParser for Float64Type {
     fn parse(bytes: &[u8]) -> Result<f64> {
-        let a = lexical::parse(bytes)?;
+        let a = fast_float::parse(bytes)?;
         Ok(a)
     }
 }

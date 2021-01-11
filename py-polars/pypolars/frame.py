@@ -625,7 +625,7 @@ class DataFrame:
         else:
             return wrap_df(self._df.hstack([s.inner() for s in columns]))
 
-    def vstack(self, df: "DataFrame"):
+    def vstack(self, df: "DataFrame", in_place: bool = False):
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
@@ -633,18 +633,30 @@ class DataFrame:
         ----------
         df
             DataFrame to stack
+        in_place
+            Modify in place
         """
-        self._df.vstack(df._df)
+        if in_place:
+            self._df.vstack_mut(df._df)
+        else:
+            return wrap_df(self._df.vstack(df._df))
 
-    def drop(self, name: str) -> "DataFrame":
+    def drop(self, name: "Union[str, List[str]]") -> "DataFrame":
         """
         Remove column from DataFrame and return as new.
 
         Parameters
         ----------
         name
-            Column to drop
+            Column(s) to drop
         """
+        if isinstance(name, list):
+            df = self.clone()
+
+            for name in name:
+                df._df.drop_in_place(name)
+            return df
+
         return wrap_df(self._df.drop(name))
 
     def drop_in_place(self, name: str) -> Series:
@@ -854,7 +866,12 @@ class DataFrame:
             subset = [subset]
         return wrap_df(self._df.drop_duplicates(maintain_order, subset))
 
-    def _rechunk(self) -> "DataFrame":
+    def rechunk(self) -> "DataFrame":
+        """
+        Rechunk the data in this DataFrame to a contiguous allocation.
+
+        This will make sure all subsequent operations have optimal and predictable performance
+        """
         return wrap_df(self._df.rechunk())
 
     def sample(
@@ -1178,7 +1195,6 @@ class GBSelection:
         self,
         func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
         dtype_out: "Optional['DataType']" = None,
-        sniff_dtype: bool = True,
     ) -> "DataFrame":
         """
         Apply a function over the groups
@@ -1189,7 +1205,7 @@ class GBSelection:
         else:
             selection = self.selection
         for name in selection:
-            s = df.drop_in_place(name + "_agg_list").apply(func, dtype_out, sniff_dtype)
+            s = df.drop_in_place(name + "_agg_list").apply(func, dtype_out)
             s.rename(name)
             df[name] = s
 

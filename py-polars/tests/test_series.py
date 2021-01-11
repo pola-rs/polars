@@ -168,7 +168,7 @@ def test_fill_none():
 
 def test_apply():
     a = Series("a", [1, 2, None], nullable=True)
-    b = a.apply(lambda x: x ** 2, sniff_dtype=False)
+    b = a.apply(lambda x: x ** 2)
     assert b == [1, 4, None]
 
     a = Series("a", ["foo", "bar", None], nullable=True)
@@ -178,7 +178,6 @@ def test_apply():
     b = a.apply(lambda x: len(x), dtype_out=Int32)
     assert b == [3, 3, None]
 
-    # with out dtype sniffing
     b = a.apply(lambda x: len(x))
     assert b == [3, 3, None]
 

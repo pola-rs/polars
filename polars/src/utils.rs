@@ -443,6 +443,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int32, Int64) => Some(Int64),
         (Int32, Float32) => Some(Float32),
         (Int32, Float64) => Some(Float64),
+        (Int32, Date32) => Some(Int32),
+        (Int32, Date64) => Some(Int64),
 
         (Int64, Int8) => Some(Int64),
         (Int64, Int16) => Some(Int64),
@@ -450,11 +452,27 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int64, Int64) => Some(Int64),
         (Int64, Float32) => Some(Float32),
         (Int64, Float64) => Some(Float64),
+        (Int64, Date64) => Some(Int64),
+        (Int64, Date32) => Some(Int32),
 
         (Float32, Float32) => Some(Float32),
         (Float32, Float64) => Some(Float64),
+        (Float32, Date32) => Some(Float32),
+        (Float32, Date64) => Some(Float64),
         (Float64, Float32) => Some(Float64),
         (Float64, Float64) => Some(Float64),
+        (Float64, Date32) => Some(Float64),
+        (Float64, Date64) => Some(Float64),
+
+        (Date32, Int32) => Some(Int32),
+        (Date32, Int64) => Some(Int64),
+        (Date32, Float32) => Some(Float32),
+        (Date32, Float64) => Some(Float64),
+
+        (Date64, Int32) => Some(Int64),
+        (Date64, Int64) => Some(Int64),
+        (Date64, Float32) => Some(Float64),
+        (Date64, Float64) => Some(Float64),
 
         (Utf8, _) => Some(Utf8),
         (_, Utf8) => Some(Utf8),
