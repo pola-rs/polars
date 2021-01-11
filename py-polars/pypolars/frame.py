@@ -172,7 +172,8 @@ class DataFrame:
 
     def to_pandas(self) -> "pd.DataFrame":
         """
-        cast to a Pandas DataFrame.
+        Cast to a Pandas DataFrame. This requires that pandas is installed.
+        This operation clones data.
         """
         import pandas as pd
 
@@ -225,8 +226,6 @@ class DataFrame:
         ----------
         file
             write location
-        batch_size
-            Size of the write buffer. Increase to have faster io.
         """
         self._df.to_ipc(file)
 
@@ -573,9 +572,9 @@ class DataFrame:
         df
             DataFrame to join with
         left_on
-            Name(s) of the left join column
+            Name(s) of the left join column(s)
         right_on
-            Name(s) of the right join column
+            Name(s) of the right join column(s)
         on
             Name(s) of the join columns in both DataFrames
         how
@@ -610,7 +609,7 @@ class DataFrame:
         self, columns: "Union[List[Series], DataFrame]", in_place=False
     ) -> Optional["DataFrame"]:
         """
-        Return a new DataFrame grown horizontally by stacking Series to it.
+        Return a new DataFrame grown horizontally by stacking multiple Series to it.
 
         Parameters
         ----------
@@ -767,6 +766,19 @@ class DataFrame:
         return wrap_s(self._df.is_unique())
 
     def lazy(self) -> "pypolars.lazy.LazyFrame":
+        """
+        Start a lazy query from this point. This returns a `LazyFrame` object.
+
+        Operations on a `LazyFrame` are not executed until this is requested by either calling:
+
+        * `.fetch()` (run on a small number of rows)
+        * `.collect()` (run on all data)
+        * `.describe_plan()` (print unoptimized query plan)
+        * `.describe_optimized_plan()` (print optimized query plan)
+        * `.show_graph()` (show (un)optimized query plan) as graphiz graph.
+
+        Lazy operations are advised because the allow for query optimization and more parallelization.
+        """
         from pypolars.lazy import wrap_ldf
 
         return wrap_ldf(self._df.lazy())
@@ -1185,6 +1197,12 @@ class GBSelection:
 
 
 class StringCache:
+    """
+    Context manager that allows to data sources to share the same categorical features.
+    This will temporarily cache the string categories until the context manager is finished.
+
+    """
+
     def __init__(self):
         pass
 

@@ -908,7 +908,6 @@ class Series:
         self,
         func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
         dtype_out: "Optional['DataType']" = None,
-        sniff_dtype: bool = True,
     ):
         """
         Apply a function over elements in this Series and return a new Series.
@@ -921,8 +920,6 @@ class Series:
             function or lambda.
         dtype_out
             Output datatype. If none given the same datatype as this Series will be used.
-        sniff_dtype:
-            Deprecated
 
         Returns
         -------
@@ -1038,6 +1035,20 @@ class Series:
         return wrap_s(self._s.as_duration())
 
     def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None):
+        """
+        Parse a Series of dtype Utf8 to a Date32/Date64 Series.
+
+        Parameters
+        ----------
+        datatype
+            polars.Date32 or polars.Date64
+        fmt
+            formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
+
+        Returns
+        -------
+
+        """
         if datatype == Date32:
             return wrap_s(self._s.str_parse_date32(fmt))
         if datatype == Date64:
@@ -1049,7 +1060,23 @@ class Series:
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
-    ):
+    ) -> "Series":
+        """
+        apply a rolling min (moving min) over the values in this array.
+        a window of length `window_size` will traverse the array. the values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
+        values will be aggregated to their sum.                                                     ----------
+
+        window_size
+            The length of the window
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        """
         return wrap_s(self._s.rolling_min(window_size, weight, ignore_null))
 
     def rolling_max(
@@ -1057,7 +1084,23 @@ class Series:
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
-    ):
+    ) -> "Series":
+        """
+        apply a rolling max (moving max) over the values in this array.
+        a window of length `window_size` will traverse the array. the values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
+        values will be aggregated to their sum.                                                     ----------
+
+        window_size
+            The length of the window
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        """
         return wrap_s(self._s.rolling_max(window_size, weight, ignore_null))
 
     def rolling_mean(
@@ -1065,7 +1108,23 @@ class Series:
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
-    ):
+    ) -> "Series":
+        """
+        apply a rolling mean (moving mean) over the values in this array.
+        a window of length `window_size` will traverse the array. the values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
+        values will be aggregated to their sum.                                                     ----------
+
+        window_size
+            The length of the window
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        """
         return wrap_s(self._s.rolling_mean(window_size, weight, ignore_null))
 
     def rolling_sum(
@@ -1073,7 +1132,23 @@ class Series:
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
-    ):
+    ) -> "Series":
+        """
+        apply a rolling sum (moving sum) over the values in this array.
+        a window of length `window_size` will traverse the array. the values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
+        values will be aggregated to their sum.                                                     ----------
+
+        window_size
+            The length of the window
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        """
         return wrap_s(self._s.rolling_sum(window_size, weight, ignore_null))
 
     def year(self):
@@ -1198,6 +1273,9 @@ class Series:
     def parse_date(
         name: str, values: Sequence[str], dtype: "DataType", fmt: str
     ) -> "Series":
+        """
+        Deprecated.
+        """
         f = get_ffi_func("parse_<>_from_str_slice", dtype, PySeries)
         if f is None:
             return NotImplemented
