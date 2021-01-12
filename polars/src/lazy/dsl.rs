@@ -1011,37 +1011,50 @@ pub fn col(name: &str) -> Expr {
     }
 }
 
+/// Count the number of values in this Expression.
 pub fn count(name: &str) -> Expr {
-    col(name).count()
+    match name {
+        "" => col(name).count().alias("count"),
+        _ => col(name).count(),
+    }
 }
+
+/// Sum all the values in this Expression.
 pub fn sum(name: &str) -> Expr {
     col(name).sum()
 }
 
+/// Find the minimum of all the values in this Expression.
 pub fn min(name: &str) -> Expr {
     col(name).min()
 }
 
+/// Find the maximum of all the values in this Expression.
 pub fn max(name: &str) -> Expr {
     col(name).max()
 }
 
+/// Find the mean of all the values in this Expression.
 pub fn mean(name: &str) -> Expr {
     col(name).mean()
 }
 
+/// Find the mean of all the values in this Expression.
 pub fn avg(name: &str) -> Expr {
     col(name).mean()
 }
 
+/// Find the median of all the values in this Expression.
 pub fn median(name: &str) -> Expr {
     col(name).median()
 }
 
+/// Find a specific quantile of all the values in this Expression.
 pub fn quantile(name: &str, quantile: f64) -> Expr {
     col(name).quantile(quantile)
 }
 
+/// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
 pub fn binary_function<F: 'static>(a: Expr, b: Expr, f: F, output_field: Option<Field>) -> Expr
 where
     F: Fn(Series, Series) -> Result<Series> + Send + Sync,

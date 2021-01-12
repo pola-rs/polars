@@ -7,6 +7,7 @@ import os
 import tempfile
 import subprocess
 import shutil
+from datetime import datetime
 
 try:
     from ..pypolars import (
@@ -1189,7 +1190,7 @@ def col(name: str) -> "Expr":
     return wrap_expr(pycol(name))
 
 
-def count(name: str) -> "Expr":
+def count(name: str = "") -> "Expr":
     """
     Count the number of values in this column
     """
@@ -1278,7 +1279,60 @@ def last(name: str) -> "Expr":
     return col(name).last()
 
 
+def head(name: str, n: "Optional[int]" = None) -> "Expr":
+    """
+    Get the first n rows of an Expression
+
+    Parameters
+    ----------
+    name
+        column name
+    n
+        number of rows to take
+    """
+    return col(name).head(n)
+
+
+def tail(name: str, n: "Optional[int]" = None) -> "Expr":
+    """
+    Get the last n rows of an Expression
+
+    Parameters
+    ----------
+    name
+        column name
+    n
+        number of rows to take
+    """
+    return col(name).tail(n)
+
+
+def lit_date(dt: "datetime") -> Expr:
+    """
+    Converts a Python DateTime to a literal Expression.
+
+    Parameters
+    ----------
+    dt
+        datetime.datetime
+    """
+    return lit(int(dt.timestamp() * 1e3))
+
+
 def lit(value: Union[float, int, str]) -> "Expr":
+    """
+    A literal value
+
+    # Example
+
+    ```python
+    # literal integer
+    lit(1)
+
+    # literal str.
+    lit("foo")
+    ```
+    """
     return wrap_expr(pylit(value))
 
 
@@ -1286,6 +1340,16 @@ def pearson_corr(
     a: "Union[str, Expr]",
     b: "Union[str, Expr]",
 ) -> "Expr":
+    """
+    Compute the pearson's correlation between two columns
+
+    Parameters
+    ----------
+    a
+        Column name or Expression
+    b
+        Column name or Expression
+    """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
@@ -1297,6 +1361,16 @@ def cov(
     a: "Union[str, Expr]",
     b: "Union[str, Expr]",
 ) -> "Expr":
+    """
+    Compute the covariance between two columns/ expressions.
+
+    Parameters
+    ----------
+    a
+        Column name or Expression
+    b
+        Column name or Expression
+    """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):

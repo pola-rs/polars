@@ -446,7 +446,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
             AnyValue::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
-            AnyValue::Date64(v) => write!(f, "{}", date64_as_datetime(*v).date()),
+            AnyValue::Date64(v) => write!(f, "{}", date64_as_datetime(*v)),
             AnyValue::Time64(v, TimeUnit::Nanosecond) => {
                 write!(f, "{}", time64_nanosecond_as_time(*v))
             }
@@ -574,9 +574,9 @@ mod test {
         assert_eq!(
             r#"Series: '' [date64]
 [
-	1970-01-01
+	1970-01-01 00:00:00.001
 	null
-	2001-09-09
+	2001-09-09 01:46:40
 ]"#,
             format!("{:?}", s.into_series())
         );
