@@ -56,7 +56,7 @@ use arrow::array::{
 use ahash::AHashMap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use std::mem;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
@@ -876,6 +876,14 @@ impl Deref for CategoricalChunked {
         let ptr = self as *const CategoricalChunked;
         let ptr = ptr as *const UInt32Chunked;
         unsafe { &*ptr }
+    }
+}
+
+impl DerefMut for CategoricalChunked {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let ptr = self as *mut CategoricalChunked;
+        let ptr = ptr as *mut UInt32Chunked;
+        unsafe { &mut *ptr }
     }
 }
 
