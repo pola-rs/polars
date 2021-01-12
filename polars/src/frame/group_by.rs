@@ -41,7 +41,7 @@ where
     T: Send + Hash + Eq + Sync + Copy,
 {
     let n_threads = iters.len();
-    let (hashes_and_keys, random_state) = create_hash_and_keys_threaded_vectorized(iters);
+    let (hashes_and_keys, random_state) = create_hash_and_keys_threaded_vectorized(iters, None);
     let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
     // We will create a hashtable in every thread.

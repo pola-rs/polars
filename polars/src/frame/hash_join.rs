@@ -1,8 +1,14 @@
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::Xob;
-use crate::vector_hasher::prepare_hashed_relation;
+use crate::vector_hasher::{
+    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation,
+    prepare_hashed_relation_threaded,
+};
 use ahash::RandomState;
+use crossbeam::thread;
+use hashbrown::HashMap;
+use itertools::Itertools;
 use std::collections::HashSet;
 use std::hash::Hash;
 use unsafe_unwrap::UnsafeUnwrap;
@@ -12,6 +18,79 @@ pub enum JoinType {
     Left,
     Inner,
     Outer,
+}
+
+unsafe fn get_hash_tbl<T>(
+    h: u64,
+    hash_tables: &[HashMap<T, Vec<usize>, RandomState>],
+    len: u64,
+) -> &HashMap<T, Vec<usize>, RandomState>
+where
+    T: Send + Hash + Eq + Sync + Copy,
+{
+    debug_assert_eq!(len, hash_tables.len() as u64);
+    let idx = (h % len) as usize;
+    hash_tables.get_unchecked(idx)
+}
+
+#[allow(clippy::needless_collect)]
+fn hash_join_tuples_inner_threaded<T, I>(
+    a: Vec<I>,
+    b: Vec<I>,
+    // Because b should be the shorter relation we could need to swap to keep left left and right right.
+    swap: bool,
+) -> Vec<(usize, usize)>
+where
+    I: Iterator<Item = T> + Send,
+    T: Send + Hash + Eq + Sync + Copy,
+{
+    // first we hash one relation
+    let hash_tbls = prepare_hashed_relation_threaded(b);
+    let random_state = hash_tbls[0].hasher().clone();
+    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
+
+    let n_tables = hash_tbls.len() as u64;
+    // next we probe the other relation
+    // code duplication is because we want to only do the swap check once
+    thread::scope(|s| {
+        let handles = probe_hashes
+            .into_iter()
+            .map(|probe_hashes| {
+                // local reference
+                let hash_tbls = &hash_tbls;
+                let mut results = Vec::with_capacity(probe_hashes.len() / 10);
+
+                s.spawn(move |_| {
+                    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                        // probe table that contains the hashed value
+                        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+
+                        let entry = current_probe_table
+                            .raw_entry()
+                            .from_key_hashed_nocheck(*h, k);
+
+                        if let Some((_, indexes_b)) = entry {
+                            if swap {
+                                let tuples = indexes_b.iter().map(|&idx_b| (idx_b, idx_a));
+                                results.extend(tuples);
+                            } else {
+                                let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
+                                results.extend(tuples);
+                            }
+                        }
+                    });
+                    results
+                })
+            })
+            .collect::<Vec<_>>();
+
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .flatten()
+            .collect_vec()
+    })
+    .unwrap()
 }
 
 /// Hash join a and b.
