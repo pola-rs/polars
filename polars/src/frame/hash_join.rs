@@ -1,6 +1,6 @@
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::{split_ca, Xob};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation,
     prepare_hashed_relation_threaded,
@@ -10,7 +10,9 @@ use crossbeam::thread;
 use hashbrown::HashMap;
 use itertools::Itertools;
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::hash::Hash;
+use std::ops::Deref;
 use unsafe_unwrap::UnsafeUnwrap;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -28,8 +30,12 @@ unsafe fn get_hash_tbl<T>(
 where
     T: Send + Hash + Eq + Sync + Copy,
 {
-    debug_assert_eq!(len, hash_tables.len() as u64);
-    let idx = (h % len) as usize;
+    let mut idx = 0;
+    for i in 0..len {
+        if (h + i) % len == 0 {
+            idx = i as usize;
+        }
+    }
     hash_tables.get_unchecked(idx)
 }
 
@@ -42,12 +48,14 @@ fn hash_join_tuples_inner_threaded<T, I>(
 ) -> Vec<(usize, usize)>
 where
     I: Iterator<Item = T> + Send,
-    T: Send + Hash + Eq + Sync + Copy,
+    T: Send + Hash + Eq + Sync + Copy + Debug,
 {
     // first we hash one relation
     let hash_tbls = prepare_hashed_relation_threaded(b);
     let random_state = hash_tbls[0].hasher().clone();
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
+    // offset of the a indexes.
+    let mut offset = 0;
 
     let n_tables = hash_tbls.len() as u64;
     // next we probe the other relation
@@ -59,9 +67,12 @@ where
                 // local reference
                 let hash_tbls = &hash_tbls;
                 let mut results = Vec::with_capacity(probe_hashes.len() / 10);
+                let local_offset = offset;
+                offset += probe_hashes.len();
 
                 s.spawn(move |_| {
                     probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                        let idx_a = idx_a + local_offset;
                         // probe table that contains the hashed value
                         let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
@@ -228,19 +239,13 @@ impl HashJoin<Float32Type> for Float32Chunked {}
 impl HashJoin<ListType> for ListChunked {}
 impl HashJoin<CategoricalType> for CategoricalChunked {
     fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(usize, usize)> {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .hash_join_inner(&other.cast().unwrap())
+        self.deref().hash_join_inner(&other.cast().unwrap())
     }
     fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(usize, Option<usize>)> {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .hash_join_left(&other.cast().unwrap())
+        self.deref().hash_join_left(&other.cast().unwrap())
     }
     fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<usize>, Option<usize>)> {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .hash_join_outer(&other.cast().unwrap())
+        self.deref().hash_join_outer(&other.cast().unwrap())
     }
 }
 
@@ -262,6 +267,13 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
+fn n_join_threads() -> usize {
+    let max = std::env::var("POLARS_MAX_THREADS")
+        .map(|s| s.parse::<usize>().expect("integer"))
+        .unwrap_or(usize::MAX);
+    std::cmp::min(num_cpus::get(), max)
+}
+
 impl<T> HashJoin<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType + Sync,
@@ -270,21 +282,27 @@ where
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        match (a.cont_slice(), b.cont_slice()) {
-            (Ok(a_slice), Ok(b_slice)) => {
-                hash_join_tuples_inner(a_slice.iter(), b_slice.iter(), swap)
+        let n_threads = n_join_threads();
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
             }
-            (Ok(a_slice), Err(_)) => {
-                hash_join_tuples_inner(
-                    a_slice.iter().map(|v| Some(*v)), // take ownership
-                    b.into_iter(),
-                    swap,
-                )
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
             }
-            (Err(_), Ok(b_slice)) => {
-                hash_join_tuples_inner(a.into_iter(), b_slice.iter().map(|v| Some(*v)), swap)
-            }
-            (Err(_), Err(_)) => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
         }
     }
 
@@ -364,12 +382,27 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(usize, usize)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        // Create the join tuples
-        match (a.null_count() == 0, b.null_count() == 0) {
-            (true, true) => {
-                hash_join_tuples_inner(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+        let n_threads = n_join_threads();
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
             }
-            _ => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
+            }
         }
     }
 
@@ -873,22 +906,26 @@ mod test {
     #[test]
     fn test_inner_join() {
         let (temp, rain) = create_frames();
-        let joined = temp.inner_join(&rain, "days", "days").unwrap();
 
-        let join_col_days = Series::new("days", &[1, 2, 1]);
-        let join_col_temp = Series::new("temp", &[19.9, 7., 19.9]);
-        let join_col_rain = Series::new("rain", &[0.1, 0.3, 0.1]);
-        let join_col_rain_right = Series::new("rain_right", [0.1, 0.2, 0.4].as_ref());
-        let true_df = DataFrame::new(vec![
-            join_col_days,
-            join_col_temp,
-            join_col_rain,
-            join_col_rain_right,
-        ])
-        .unwrap();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+            let joined = temp.inner_join(&rain, "days", "days").unwrap();
 
-        println!("{}", joined);
-        assert!(joined.frame_equal(&true_df));
+            let join_col_days = Series::new("days", &[1, 2, 1]);
+            let join_col_temp = Series::new("temp", &[19.9, 7., 19.9]);
+            let join_col_rain = Series::new("rain", &[0.1, 0.3, 0.1]);
+            let join_col_rain_right = Series::new("rain_right", [0.1, 0.2, 0.4].as_ref());
+            let true_df = DataFrame::new(vec![
+                join_col_days,
+                join_col_temp,
+                join_col_rain,
+                join_col_rain_right,
+            ])
+            .unwrap();
+
+            println!("{}", joined);
+            assert!(joined.frame_equal(&true_df));
+        }
     }
 
     #[test]
