@@ -140,7 +140,7 @@ where
         let batch_size = set_batch_size(n_rows, self.stop_after_n_rows);
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
         let record_reader = arrow_reader.get_record_reader(batch_size)?;
-        finish_reader(record_reader, rechunk, None, None, None)
+        finish_reader(record_reader, rechunk, self.stop_after_n_rows, None, None)
     }
 }
 

@@ -169,7 +169,7 @@ def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
 
 
 def read_parquet(
-    file: Union[str, BinaryIO],
+    file: Union[str, BinaryIO], stop_after_n_rows: "Optional[int]" = None
 ) -> "DataFrame":
     """
     Read into a DataFrame from a parquet file.
@@ -178,12 +178,14 @@ def read_parquet(
     ----------
     file
         Path to a file or a file like object.
+    stop_after_n_rows
+        After n rows are read from the parquet stops reading.
 
     Returns
     -------
     DataFrame
     """
-    return DataFrame.read_parquet(file)
+    return DataFrame.read_parquet(file, stop_after_n_rows=stop_after_n_rows)
 
 
 def arg_where(mask: "Series"):
