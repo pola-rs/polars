@@ -130,7 +130,12 @@ impl PhysicalExpr for ColumnExpr {
         &self.1
     }
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let column = df.column(&self.0)?;
+        let column = match &**self.0 {
+            "" => df.select_at_idx(0).ok_or_else(|| {
+                PolarsError::NoData("could not select a column from an empty DataFrame".into())
+            })?,
+            _ => df.column(&self.0)?,
+        };
         Ok(column.clone())
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
