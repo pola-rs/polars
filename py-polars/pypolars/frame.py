@@ -134,7 +134,7 @@ class DataFrame:
 
     @staticmethod
     def read_parquet(
-        file: Union[str, BinaryIO],
+        file: Union[str, BinaryIO], stop_after_n_rows: "Optional[int]" = None
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -143,13 +143,15 @@ class DataFrame:
         ----------
         file
             Path to a file or a file like object.
+        stop_after_n_rows
+            After n rows are read from the parquet stops reading.
 
         Returns
         -------
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_parquet(file)
+        self._df = PyDataFrame.read_parquet(file, stop_after_n_rows)
         return self
 
     @staticmethod

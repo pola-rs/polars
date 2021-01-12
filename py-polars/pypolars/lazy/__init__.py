@@ -130,7 +130,7 @@ class LazyFrame:
 
     def show_graph(
         self,
-        optimized: bool,
+        optimized: bool = True,
         show: bool = True,
         output_path: "Optional[str]" = None,
         raw_output: bool = False,
@@ -1151,6 +1151,25 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pow(exponent))
 
+    def is_between(
+        self, start: "Union[Expr, datetime]", end: "Union[Expr, datetime]"
+    ) -> "Expr":
+        """
+        Check if this expression is between start and end
+        """
+        cast_to_date64 = False
+        if isinstance(start, datetime):
+            start = lit_date(start)
+            cast_to_date64 = True
+        if isinstance(end, datetime):
+            end = lit_date(end)
+            cast_to_date64 = True
+        if cast_to_date64:
+            expr = self.cast(datatypes.Date64)
+        else:
+            expr = self
+        return ((expr > start) & (expr < end)).alias("is_between")
+
 
 def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":
     if isinstance(expr, (int, float, str)):
@@ -1178,6 +1197,21 @@ class When:
 
 
 def when(expr: "Expr") -> When:
+    """
+    Start a when, then, otherwise expression
+
+    # Example
+
+    Below we add a column with the value 1, where column "foo" > 2 and the value -1 where it isn't.
+
+    ```python
+    lf.with_column(
+        when(col("foo") > 2)
+        .then(lit(1))
+        .otherwise(lit(-1))
+    )
+    ```
+    """
     expr = expr_to_lit_or_expr(expr)
     pw = pywhen(expr._pyexpr)
     return When(pw)
