@@ -5,8 +5,6 @@ use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::array::ArrayRef;
-use itertools::Itertools;
-use std::cmp::Ordering;
 use std::marker::Sized;
 
 pub(crate) mod aggregate;
@@ -17,6 +15,7 @@ pub(crate) mod fill_none;
 pub(crate) mod filter;
 pub(crate) mod set;
 pub(crate) mod shift;
+pub(crate) mod sort;
 pub(crate) mod take;
 pub(crate) mod unique;
 pub(crate) mod window;
@@ -504,167 +503,6 @@ pub trait ChunkSort<T> {
 
     /// Retrieve the indexes needed to sort this array.
     fn argsort(&self, reverse: bool) -> Vec<usize>;
-}
-
-fn sort_partial<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    match (a, b) {
-        (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
-        (None, Some(_)) => Ordering::Less,
-        (Some(_), None) => Ordering::Greater,
-        (None, None) => Ordering::Equal,
-    }
-}
-
-impl<T> ChunkSort<T> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: std::cmp::PartialOrd,
-{
-    fn sort(&self, reverse: bool) -> ChunkedArray<T> {
-        let mut ca: Self = if reverse {
-            self.into_iter()
-                .sorted_by(|a, b| sort_partial(b, a))
-                .collect()
-        } else {
-            self.into_iter()
-                .sorted_by(|a, b| sort_partial(a, b))
-                .collect()
-        };
-        ca.categorical_map = self.categorical_map.clone();
-        ca
-    }
-
-    fn sort_in_place(&mut self, reverse: bool) {
-        let sorted = self.sort(reverse);
-        self.chunks = sorted.chunks;
-    }
-
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
-        if reverse {
-            self.into_iter()
-                .enumerate()
-                .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(b, a))
-                .map(|(idx, _v)| idx)
-                .collect()
-        } else {
-            self.into_iter()
-                .enumerate()
-                .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(a, b))
-                .map(|(idx, _v)| idx)
-                .collect()
-        }
-    }
-}
-
-macro_rules! argsort {
-    ($self:ident, $closure:expr) => {{
-        $self
-            .into_iter()
-            .enumerate()
-            .sorted_by($closure)
-            .map(|(idx, _v)| idx)
-            .collect()
-    }};
-}
-
-macro_rules! sort {
-    ($self:ident, $reverse:ident) => {{
-        if $reverse {
-            $self.into_iter().sorted_by(|a, b| b.cmp(a)).collect()
-        } else {
-            $self.into_iter().sorted_by(|a, b| a.cmp(b)).collect()
-        }
-    }};
-}
-
-impl ChunkSort<Utf8Type> for Utf8Chunked {
-    fn sort(&self, reverse: bool) -> Utf8Chunked {
-        sort!(self, reverse)
-    }
-
-    fn sort_in_place(&mut self, reverse: bool) {
-        let sorted = self.sort(reverse);
-        self.chunks = sorted.chunks;
-    }
-
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
-        if reverse {
-            argsort!(self, |(_idx_a, a), (_idx_b, b)| b.cmp(a))
-        } else {
-            argsort!(self, |(_idx_a, a), (_idx_b, b)| a.cmp(b))
-        }
-    }
-}
-
-impl ChunkSort<CategoricalType> for CategoricalChunked {
-    fn sort(&self, reverse: bool) -> Self {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .sort(reverse)
-            .cast()
-            .unwrap()
-    }
-
-    fn sort_in_place(&mut self, reverse: bool) {
-        self.cast::<UInt32Type>().unwrap().sort_in_place(reverse)
-    }
-
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
-        self.cast::<UInt32Type>().unwrap().argsort(reverse)
-    }
-}
-
-// TODO! return errors
-impl ChunkSort<ListType> for ListChunked {
-    fn sort(&self, _reverse: bool) -> Self {
-        println!("A ListChunked cannot be sorted. Doing nothing");
-        self.clone()
-    }
-
-    fn sort_in_place(&mut self, _reverse: bool) {
-        println!("A ListChunked cannot be sorted. Doing nothing");
-    }
-
-    fn argsort(&self, _reverse: bool) -> Vec<usize> {
-        println!("A ListChunked cannot be sorted. Doing nothing");
-        (0..self.len()).collect()
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T> ChunkSort<ObjectType<T>> for ObjectChunked<T> {
-    fn sort(&self, _reverse: bool) -> Self {
-        println!("An object cannot be sorted. Doing nothing");
-        self.clone()
-    }
-
-    fn sort_in_place(&mut self, _reverse: bool) {
-        println!("An object cannot be sorted. Doing nothing");
-    }
-
-    fn argsort(&self, _reverse: bool) -> Vec<usize> {
-        println!("An object cannot be sorted. Doing nothing");
-        (0..self.len()).collect()
-    }
-}
-
-impl ChunkSort<BooleanType> for BooleanChunked {
-    fn sort(&self, reverse: bool) -> BooleanChunked {
-        sort!(self, reverse)
-    }
-
-    fn sort_in_place(&mut self, reverse: bool) {
-        let sorted = self.sort(reverse);
-        self.chunks = sorted.chunks;
-    }
-
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
-        if reverse {
-            argsort!(self, |(_idx_a, a), (_idx_b, b)| b.cmp(a))
-        } else {
-            argsort!(self, |(_idx_a, a), (_idx_b, b)| a.cmp(b))
-        }
-    }
 }
 
 #[derive(Copy, Clone, Debug)]

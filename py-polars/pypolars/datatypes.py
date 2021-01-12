@@ -204,7 +204,7 @@ def dtype_to_ctype(dtype: "DataType") -> "ctype":
     elif dtype == Date64:
         ptr_type = ctypes.c_long
     else:
-        return NotImplemented
+        raise NotImplementedError
     return ptr_type
 
 

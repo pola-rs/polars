@@ -1159,10 +1159,10 @@ class Expr:
         """
         cast_to_date64 = False
         if isinstance(start, datetime):
-            start = lit_date(start)
+            start = lit(start)
             cast_to_date64 = True
         if isinstance(end, datetime):
-            end = lit_date(end)
+            end = lit(end)
             cast_to_date64 = True
         if cast_to_date64:
             expr = self.cast(datatypes.Date64)
@@ -1353,7 +1353,7 @@ def lit_date(dt: "datetime") -> Expr:
     return lit(int(dt.timestamp() * 1e3))
 
 
-def lit(value: Union[float, int, str]) -> "Expr":
+def lit(value: Union[float, int, str, datetime]) -> "Expr":
     """
     A literal value
 
@@ -1365,8 +1365,14 @@ def lit(value: Union[float, int, str]) -> "Expr":
 
     # literal str.
     lit("foo")
+
+    # literal date64
+    lit(datetime(2021, 1, 20))
     ```
     """
+    if isinstance(value, datetime):
+        lit(int(value.timestamp() * 1e3))
+
     return wrap_expr(pylit(value))
 
 

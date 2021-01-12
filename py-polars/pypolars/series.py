@@ -783,11 +783,26 @@ class Series:
         """
         return self.dtype in (Float32, Float64)
 
-    def view(self) -> np.ndarray:
+    def view(self, ignore_nulls: bool = False) -> np.ndarray:
         """
         Get a view into this Series data with a numpy array. This operation doesn't clone data, but does not include
-        missing values
+        missing values. Don't use this unless you know what you are doing.
+
+        # Safety.
+
+        This function can lead to undefined behavior in the following cases:
+
+        ```python
+        # returns a view to a piece of memory that is already dropped.
+        pl.Series([1, 3, 5]).sort().view()
+
+        # Sums invalid data that is missing.
+        pl.Series([1, 2, None], nullable=True).view().sum()
+        ```
         """
+        if not ignore_nulls:
+            assert self.null_count() == 0
+
         ptr_type = dtype_to_ctype(self.dtype)
         ptr = self._s.as_single_ptr()
         array = _ptr_to_numpy(ptr, self.len(), ptr_type)
@@ -804,7 +819,7 @@ class Series:
                 if isinstance(arg, Number):
                     args.append(arg)
                 elif isinstance(arg, self.__class__):
-                    args.append(arg.view())
+                    args.append(arg.view(ignore_nulls=True))
                 else:
                     return NotImplemented
 
@@ -821,7 +836,9 @@ class Series:
 
     def to_numpy(self) -> np.ndarray:
         """
-        Convert this Series to numpy. This operation clones data.
+        Convert this Series to numpy. This operation clones data but is completely safe.
+
+        If you want a zero-copy view and know what you are doing, use `.view()`.
         """
         if self.dtype == List:
             return np.array(self.to_list())
