@@ -9,7 +9,9 @@ pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::float::IsNan;
+use crate::chunked_array::kernels::cast::cast;
 use arrow::array::ArrayDataRef;
+use itertools::Itertools;
 use num::NumCast;
 use std::any::Any;
 use std::convert::TryFrom;
@@ -1209,7 +1211,29 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
         }
 
         match data_type {
-            ArrowDataType::Utf8 => Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::LargeUtf8 => {
+                Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
+            }
+            ArrowDataType::Utf8 => {
+                let chunks = chunks
+                    .iter()
+                    .map(|arr| cast(arr, &ArrowDataType::LargeUtf8).unwrap())
+                    .collect_vec();
+                Ok(ListChunked::new_from_chunks(name, chunks).into_series())
+            }
+            ArrowDataType::List(_) => {
+                let chunks = chunks
+                    .iter()
+                    .map(|arr| {
+                        cast(
+                            arr,
+                            &ArrowDataType::LargeList(Box::new(ArrowDataType::Null)),
+                        )
+                        .unwrap()
+                    })
+                    .collect_vec();
+                Ok(ListChunked::new_from_chunks(name, chunks).into_series())
+            }
             ArrowDataType::Boolean => {
                 Ok(BooleanChunked::new_from_chunks(name, chunks).into_series())
             }
@@ -1242,7 +1266,9 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Duration(TimeUnit::Millisecond) => {
                 Ok(DurationMillisecondChunked::new_from_chunks(name, chunks).into_series())
             }
-            ArrowDataType::List(_) => Ok(ListChunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::LargeList(_) => {
+                Ok(ListChunked::new_from_chunks(name, chunks).into_series())
+            }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?}", dt).into(),
             )),

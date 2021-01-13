@@ -1,7 +1,7 @@
 //! Implementations of the ChunkApply Trait.
 use crate::prelude::*;
 use crate::utils::Xob;
-use arrow::array::{ArrayRef, PrimitiveArray, StringArray};
+use arrow::array::{ArrayRef, LargeStringArray, PrimitiveArray};
 
 macro_rules! apply {
     ($self:expr, $f:expr) => {{
@@ -152,17 +152,17 @@ where
     }
 }
 
-impl ChunkApplyKernel<StringArray> for Utf8Chunked {
+impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
     fn apply_kernel<F>(&self, f: F) -> Self
     where
-        F: Fn(&StringArray) -> ArrayRef,
+        F: Fn(&LargeStringArray) -> ArrayRef,
     {
         self.apply_kernel_cast(f)
     }
 
     fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
     where
-        F: Fn(&StringArray) -> ArrayRef,
+        F: Fn(&LargeStringArray) -> ArrayRef,
         S: PolarsDataType,
     {
         let chunks = self.downcast_chunks().into_iter().map(f).collect();

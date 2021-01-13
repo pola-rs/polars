@@ -29,7 +29,7 @@ pub trait ChunkExplode {
     fn explode(&self) -> Result<Series> {
         self.explode_and_offsets().map(|t| t.0)
     }
-    fn explode_and_offsets(&self) -> Result<(Series, &[i32])>;
+    fn explode_and_offsets(&self) -> Result<(Series, &[i64])>;
 }
 
 pub trait ChunkBytes {

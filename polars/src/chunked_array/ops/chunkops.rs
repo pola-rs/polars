@@ -1,9 +1,9 @@
 use crate::chunked_array::builder::get_list_builder;
+use crate::chunked_array::kernels::concat::concat;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
 use arrow::array::{Array, ArrayRef, PrimitiveBuilder, StringBuilder};
-use arrow::compute::concat;
 #[cfg(feature = "object")]
 use std::any::Any;
 #[cfg(feature = "object")]

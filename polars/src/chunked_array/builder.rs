@@ -5,12 +5,13 @@ use crate::{
 };
 use ahash::AHashMap;
 use arrow::array::{
-    ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, ListBuilder,
+    ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait,
+    LargeListBuilder,
 };
 use arrow::datatypes::ToByteSlice;
 pub use arrow::memory;
 use arrow::{
-    array::{Array, ArrayData, PrimitiveArray, PrimitiveBuilder, StringBuilder},
+    array::{Array, ArrayData, LargeStringBuilder, PrimitiveArray, PrimitiveBuilder},
     buffer::Buffer,
     util::bit_util,
 };
@@ -236,7 +237,7 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
 pub type BooleanChunkedBuilder = PrimitiveChunkedBuilder<BooleanType>;
 
 pub struct Utf8ChunkedBuilder {
-    pub builder: StringBuilder,
+    pub builder: LargeStringBuilder,
     pub capacity: usize,
     field: Field,
 }
@@ -244,7 +245,7 @@ pub struct Utf8ChunkedBuilder {
 impl Utf8ChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
         Utf8ChunkedBuilder {
-            builder: StringBuilder::new(capacity),
+            builder: LargeStringBuilder::new(capacity),
             capacity,
             field: Field::new(name, DataType::Utf8),
         }
@@ -662,7 +663,7 @@ where
     S: AsRef<str>,
 {
     fn new_from_slice(name: &str, v: &[S]) -> Self {
-        let mut builder = StringBuilder::new(v.len());
+        let mut builder = LargeStringBuilder::new(v.len());
         v.iter().for_each(|val| {
             builder
                 .append_value(val.as_ref())
@@ -714,7 +715,7 @@ pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub builder: ListBuilder<PrimitiveBuilder<T>>,
+    pub builder: LargeListBuilder<PrimitiveBuilder<T>>,
     field: Field,
 }
 
@@ -768,7 +769,7 @@ where
     T: PolarsPrimitiveType,
 {
     pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
-        let builder = ListBuilder::with_capacity(values_builder, capacity);
+        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
 
         ListPrimitiveChunkedBuilder { builder, field }
@@ -828,14 +829,14 @@ where
 }
 
 pub struct ListUtf8ChunkedBuilder {
-    builder: ListBuilder<StringBuilder>,
+    builder: LargeListBuilder<LargeStringBuilder>,
     field: Field,
 }
 
 impl ListUtf8ChunkedBuilder {
-    pub fn new(name: &str, values_builder: StringBuilder, capacity: usize) -> Self {
-        let builder = ListBuilder::with_capacity(values_builder, capacity);
-        let field = Field::new(name, DataType::List(ArrowDataType::Utf8));
+    pub fn new(name: &str, values_builder: LargeStringBuilder, capacity: usize) -> Self {
+        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
+        let field = Field::new(name, DataType::List(ArrowDataType::LargeUtf8));
 
         ListUtf8ChunkedBuilder { builder, field }
     }
@@ -865,7 +866,7 @@ pub fn get_list_builder(dt: &DataType, capacity: usize, name: &str) -> Box<dyn L
     }
     macro_rules! get_utf8_builder {
         () => {{
-            let values_builder = StringBuilder::new(capacity);
+            let values_builder = LargeStringBuilder::new(capacity);
             let builder = ListUtf8ChunkedBuilder::new(&name, values_builder, capacity);
             Box::new(builder)
         }};

@@ -1,8 +1,8 @@
 use crate::chunked_array::builder::aligned_vec_to_primitive_array;
 use crate::prelude::*;
 use arrow::array::{
-    Array, ArrayData, BooleanArray, PrimitiveArray, PrimitiveArrayOps, StringArray, StringBuilder,
-    UInt32Array,
+    Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray,
+    PrimitiveArrayOps, UInt32Array,
 };
 use arrow::buffer::MutableBuffer;
 use arrow::util::bit_util;
@@ -57,10 +57,10 @@ pub(crate) fn take_no_null_primitive<T: PolarsNumericType>(
     Arc::new(arr)
 }
 
-pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringArray> {
+pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
-    let offset_len_in_bytes = (data_len + 1) * mem::size_of::<i32>();
+    let offset_len_in_bytes = (data_len + 1) * mem::size_of::<i64>();
     let mut offset_buf = MutableBuffer::new(offset_len_in_bytes);
     offset_buf
         .resize(offset_len_in_bytes)
@@ -90,7 +90,7 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
             .for_each(|(idx, offset)| {
                 let index = indices.value(idx) as usize;
                 let s = arr.value(index);
-                length_so_far += s.len() as i32;
+                length_so_far += s.len() as i64;
                 *offset = length_so_far;
 
                 if length_so_far as usize >= values_capacity {
@@ -110,7 +110,7 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
                 if indices.is_valid(idx) {
                     let index = indices.value(idx) as usize;
                     let s = arr.value(index);
-                    length_so_far += s.len() as i32;
+                    length_so_far += s.len() as i64;
 
                     if length_so_far as usize >= values_capacity {
                         values_buf.reserve(values_capacity);
@@ -123,7 +123,7 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
             });
         nulls = indices.data_ref().null_buffer().cloned();
     } else {
-        let mut builder = StringBuilder::with_capacity(data_len, length_so_far as usize);
+        let mut builder = LargeStringBuilder::with_capacity(data_len, length_so_far as usize);
 
         if indices.null_count() == 0 {
             (0..data_len).for_each(|idx| {
@@ -156,14 +156,14 @@ pub(crate) fn take_utf8(arr: &StringArray, indices: &UInt32Array) -> Arc<StringA
     }
     values_buf.shrink_to_fit();
 
-    let mut data = ArrayData::builder(ArrowDataType::Utf8)
+    let mut data = ArrayData::builder(ArrowDataType::LargeUtf8)
         .len(data_len)
         .add_buffer(offset_buf.freeze())
         .add_buffer(values_buf.into_arrow_buffer());
     if let Some(null_buffer) = nulls {
         data = data.null_bit_buffer(null_buffer);
     }
-    Arc::new(StringArray::from(data.build()))
+    Arc::new(LargeStringArray::from(data.build()))
 }
 
 #[cfg(test)]
@@ -172,7 +172,7 @@ mod test {
 
     #[test]
     fn test_utf8_kernel() {
-        let s = StringArray::from(vec![Some("foo"), None, Some("bar")]);
+        let s = LargeStringArray::from(vec![Some("foo"), None, Some("bar")]);
         let out = take_utf8(&s, &UInt32Array::from(vec![1, 2]));
         assert!(out.is_null(0));
         assert!(out.is_valid(1));

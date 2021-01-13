@@ -12,7 +12,8 @@ use crate::chunked_array::kernels::take::{
 use crate::prelude::*;
 use crate::utils::Xob;
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps, StringArray,
+    Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
+    PrimitiveArrayOps,
 };
 use arrow::compute::kernels::take::take;
 use std::convert::TryFrom;
@@ -91,11 +92,11 @@ impl<'a> TakeRandom for &'a Utf8Chunked {
     type Item = &'a str;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, StringArray)
+        impl_take_random_get!(self, index, LargeStringArray)
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, StringArray)
+        impl_take_random_get_unchecked!(self, index, LargeStringArray)
     }
 }
 
@@ -105,11 +106,11 @@ impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
     type Item = &'a str;
 
     fn get(self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, StringArray)
+        impl_take_random_get!(self, index, LargeStringArray)
     }
 
     unsafe fn get_unchecked(self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, StringArray)
+        impl_take_random_get_unchecked!(self, index, LargeStringArray)
     }
 }
 
@@ -117,7 +118,7 @@ impl TakeRandom for ListChunked {
     type Item = Series;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
-        let opt_arr = impl_take_random_get!(self, index, ListArray);
+        let opt_arr = impl_take_random_get!(self, index, LargeListArray);
         opt_arr.map(|arr| {
             let s = Series::try_from((self.name(), arr));
             s.unwrap()
@@ -125,7 +126,7 @@ impl TakeRandom for ListChunked {
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let arr = impl_take_random_get_unchecked!(self, index, ListArray);
+        let arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
         let s = Series::try_from((self.name(), arr));
         s.unwrap()
     }
@@ -873,7 +874,7 @@ where
 
 pub struct Utf8TakeRandom<'a> {
     ca: &'a Utf8Chunked,
-    chunks: Vec<&'a StringArray>,
+    chunks: Vec<&'a LargeStringArray>,
 }
 
 impl<'a> TakeRandom for Utf8TakeRandom<'a> {
@@ -889,7 +890,7 @@ impl<'a> TakeRandom for Utf8TakeRandom<'a> {
 }
 
 pub struct Utf8TakeRandomSingleChunk<'a> {
-    arr: &'a StringArray,
+    arr: &'a LargeStringArray,
 }
 
 impl<'a> TakeRandom for Utf8TakeRandomSingleChunk<'a> {
@@ -938,7 +939,7 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
 }
 pub struct ListTakeRandom<'a> {
     ca: &'a ListChunked,
-    chunks: Vec<&'a ListArray>,
+    chunks: Vec<&'a LargeListArray>,
 }
 
 impl<'a> TakeRandom for ListTakeRandom<'a> {
@@ -960,7 +961,7 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
 }
 
 pub struct ListTakeRandomSingleChunk<'a> {
-    arr: &'a ListArray,
+    arr: &'a LargeListArray,
     name: &'a str,
 }
 
