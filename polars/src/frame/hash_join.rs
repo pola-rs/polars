@@ -71,25 +71,41 @@ where
                 offset += probe_hashes.len();
 
                 s.spawn(move |_| {
-                    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                        let idx_a = idx_a + local_offset;
-                        // probe table that contains the hashed value
-                        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+                    // code duplication is to hoist swap out of the inner loop.
+                    if swap {
+                        probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                            let idx_a = idx_a + local_offset;
+                            // probe table that contains the hashed value
+                            let current_probe_table =
+                                unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
-                        let entry = current_probe_table
-                            .raw_entry()
-                            .from_key_hashed_nocheck(*h, k);
+                            let entry = current_probe_table
+                                .raw_entry()
+                                .from_key_hashed_nocheck(*h, k);
 
-                        if let Some((_, indexes_b)) = entry {
-                            if swap {
+                            if let Some((_, indexes_b)) = entry {
                                 let tuples = indexes_b.iter().map(|&idx_b| (idx_b, idx_a));
                                 results.extend(tuples);
-                            } else {
+                            }
+                        });
+                    } else {
+                        probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                            let idx_a = idx_a + local_offset;
+                            // probe table that contains the hashed value
+                            let current_probe_table =
+                                unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+
+                            let entry = current_probe_table
+                                .raw_entry()
+                                .from_key_hashed_nocheck(*h, k);
+
+                            if let Some((_, indexes_b)) = entry {
                                 let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
                                 results.extend(tuples);
                             }
-                        }
-                    });
+                        });
+                    }
+
                     results
                 })
             })
