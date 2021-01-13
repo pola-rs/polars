@@ -17,7 +17,7 @@ jobs:
         - name: Install latest Rust nightly
           uses: actions-rs/toolchain@v1
           with:
-            toolchain: nightly-2020-11-12
+            toolchain: nightly-2021-01-08
             override: true
             components: rustfmt, clippy
         - name: Set up Python

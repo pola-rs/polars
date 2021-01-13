@@ -2,6 +2,9 @@
 
 members = [
     "polars",
+    "polars/polars-core",
+    "polars/polars-io",
+    "polars/polars-lazy",
     "pandas_cmp",
     "py-polars",
     "examples/iris_classifier",

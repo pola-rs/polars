@@ -11,9 +11,9 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-11-12
+          toolchain: nightly-2021-01-08
           override: true
       - name: Run tests
         run: |
-          cd polars && cargo test -- --test-threads=1
+          cd polars && make test
           cd ../py-polars && ./tasks.sh build-run-tests
