@@ -104,6 +104,65 @@ where
     .unwrap()
 }
 
+#[allow(clippy::needless_collect)]
+fn hash_join_tuples_left_threaded<T, I>(a: Vec<I>, b: Vec<I>) -> Vec<(usize, Option<usize>)>
+where
+    I: Iterator<Item = T> + Send,
+    T: Send + Hash + Eq + Sync + Copy + Debug,
+{
+    // first we hash one relation
+    let hash_tbls = prepare_hashed_relation_threaded(b);
+    let random_state = hash_tbls[0].hasher().clone();
+    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
+    // offset of the a indexes.
+    let mut offset = 0;
+
+    let n_tables = hash_tbls.len() as u64;
+    // next we probe the other relation
+    // code duplication is because we want to only do the swap check once
+    thread::scope(|s| {
+        let handles = probe_hashes
+            .into_iter()
+            .map(|probe_hashes| {
+                // local reference
+                let hash_tbls = &hash_tbls;
+                let mut results = Vec::with_capacity(probe_hashes.len() / 10);
+                let local_offset = offset;
+                offset += probe_hashes.len();
+
+                s.spawn(move |_| {
+                    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                        let idx_a = idx_a + local_offset;
+                        // probe table that contains the hashed value
+                        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+
+                        let entry = current_probe_table
+                            .raw_entry()
+                            .from_key_hashed_nocheck(*h, k);
+
+                        match entry {
+                            // left and right matches
+                            Some((_, indexes_b)) => {
+                                results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
+                            }
+                            // only left values, right = null
+                            None => results.push((idx_a, None)),
+                        }
+                    });
+                    results
+                })
+            })
+            .collect::<Vec<_>>();
+
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .flatten()
+            .collect_vec()
+    })
+    .unwrap()
+}
+
 /// Hash join a and b.
 ///     b should be the shorter relation.
 /// NOTE that T also can be an Option<T>. Nulls are seen as equal.
@@ -307,18 +366,30 @@ where
     }
 
     fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
-        match (self.cont_slice(), other.cont_slice()) {
-            (Ok(a_slice), Ok(b_slice)) => hash_join_tuples_left(a_slice.iter(), b_slice.iter()),
-            (Ok(a_slice), Err(_)) => {
-                hash_join_tuples_left(
-                    a_slice.iter().map(|v| Some(*v)), // take ownership
-                    other.into_iter(),
-                )
+        let n_threads = n_join_threads();
+
+        let a = self;
+        let b = other;
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_left_threaded(iters_a, iters_b)
             }
-            (Err(_), Ok(b_slice)) => {
-                hash_join_tuples_left(self.into_iter(), b_slice.iter().map(|v| Some(*v)))
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_left_threaded(iters_a, iters_b)
             }
-            (Err(_), Err(_)) => hash_join_tuples_left(self.into_iter(), other.into_iter()),
         }
     }
 
@@ -407,11 +478,30 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     }
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
-        match (self.null_count() == 0, other.null_count() == 0) {
-            (true, true) => {
-                hash_join_tuples_left(self.into_no_null_iter(), other.into_no_null_iter())
+        let n_threads = n_join_threads();
+
+        let a = self;
+        let b = other;
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_left_threaded(iters_a, iters_b)
             }
-            _ => hash_join_tuples_left(self.into_iter(), other.into_iter()),
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_left_threaded(iters_a, iters_b)
+            }
         }
     }
 
@@ -930,36 +1020,39 @@ mod test {
 
     #[test]
     fn test_left_join() {
-        let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
-        let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
-        let temp = DataFrame::new(vec![s0, s1]).unwrap();
+        for i in 1..8 {
+            std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+            let s0 = Series::new("days", &[0, 1, 2, 3, 4]);
+            let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
+            let temp = DataFrame::new(vec![s0, s1]).unwrap();
 
-        let s0 = Series::new("days", &[1, 2]);
-        let s1 = Series::new("rain", &[0.1, 0.2]);
-        let rain = DataFrame::new(vec![s0, s1]).unwrap();
-        let joined = temp.left_join(&rain, "days", "days").unwrap();
-        println!("{}", &joined);
-        assert_eq!(
-            (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
-            3.
-        );
-        assert_eq!(joined.column("rain").unwrap().null_count(), 3);
+            let s0 = Series::new("days", &[1, 2]);
+            let s1 = Series::new("rain", &[0.1, 0.2]);
+            let rain = DataFrame::new(vec![s0, s1]).unwrap();
+            let joined = temp.left_join(&rain, "days", "days").unwrap();
+            println!("{}", &joined);
+            assert_eq!(
+                (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
+                3.
+            );
+            assert_eq!(joined.column("rain").unwrap().null_count(), 3);
 
-        // test join on utf8
-        let s0 = Series::new("days", &["mo", "tue", "wed", "thu", "fri"]);
-        let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
-        let temp = DataFrame::new(vec![s0, s1]).unwrap();
+            // test join on utf8
+            let s0 = Series::new("days", &["mo", "tue", "wed", "thu", "fri"]);
+            let s1 = Series::new("temp", &[22.1, 19.9, 7., 2., 3.]);
+            let temp = DataFrame::new(vec![s0, s1]).unwrap();
 
-        let s0 = Series::new("days", &["tue", "wed"]);
-        let s1 = Series::new("rain", &[0.1, 0.2]);
-        let rain = DataFrame::new(vec![s0, s1]).unwrap();
-        let joined = temp.left_join(&rain, "days", "days").unwrap();
-        println!("{}", &joined);
-        assert_eq!(
-            (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
-            3.
-        );
-        assert_eq!(joined.column("rain").unwrap().null_count(), 3);
+            let s0 = Series::new("days", &["tue", "wed"]);
+            let s1 = Series::new("rain", &[0.1, 0.2]);
+            let rain = DataFrame::new(vec![s0, s1]).unwrap();
+            let joined = temp.left_join(&rain, "days", "days").unwrap();
+            println!("{}", &joined);
+            assert_eq!(
+                (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
+                3.
+            );
+            assert_eq!(joined.column("rain").unwrap().null_count(), 3);
+        }
     }
 
     #[test]
