@@ -1,10 +1,7 @@
-use crate::{prelude::*, utils::Xob};
-use arrow::compute::{
-    eq_scalar, eq_utf8_scalar, gt_eq_scalar, gt_eq_utf8_scalar, gt_scalar, gt_utf8_scalar,
-    lt_eq_scalar, lt_eq_utf8_scalar, lt_scalar, lt_utf8_scalar, neq_scalar, neq_utf8_scalar,
-};
+use crate::{chunked_array::kernels::comparison::*, prelude::*, utils::Xob};
+use arrow::compute::{eq_scalar, gt_eq_scalar, gt_scalar, lt_eq_scalar, lt_scalar, neq_scalar};
 use arrow::{
-    array::{ArrayRef, BooleanArray, PrimitiveArray, StringArray},
+    array::{ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray},
     compute,
     compute::kernels::comparison,
 };
@@ -283,7 +280,7 @@ impl Utf8Chunked {
     fn comparison(
         &self,
         rhs: &Utf8Chunked,
-        operator: impl Fn(&StringArray, &StringArray) -> arrow::error::Result<BooleanArray>,
+        operator: impl Fn(&LargeStringArray, &LargeStringArray) -> arrow::error::Result<BooleanArray>,
     ) -> Result<BooleanChunked> {
         let chunks = self
             .chunks
@@ -292,11 +289,11 @@ impl Utf8Chunked {
             .map(|(left, right)| {
                 let left = left
                     .as_any()
-                    .downcast_ref::<StringArray>()
+                    .downcast_ref::<LargeStringArray>()
                     .expect("could not downcast one of the chunks");
                 let right = right
                     .as_any()
-                    .downcast_ref::<StringArray>()
+                    .downcast_ref::<LargeStringArray>()
                     .expect("could not downcast one of the chunks");
                 let arr_res = operator(left, right);
                 let arr = match arr_res {
@@ -327,8 +324,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::eq_utf8)
-                .expect("should not fail")
+            self.comparison(rhs, eq_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
         }
@@ -345,8 +341,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::neq_utf8)
-                .expect("should not fail")
+            self.comparison(rhs, neq_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
         }
@@ -363,8 +358,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::gt_utf8)
-                .expect("should not fail")
+            self.comparison(rhs, gt_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
         }
@@ -381,8 +375,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::gt_eq_utf8)
-                .expect("should not fail")
+            self.comparison(rhs, gt_eq_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
         }
@@ -399,8 +392,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::lt_utf8)
-                .expect("should not fail")
+            self.comparison(rhs, lt_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
         }
@@ -417,8 +409,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id == rhs.chunk_id {
-            self.comparison(rhs, compute::lt_eq_utf8)
-                .expect("should not fail")
+            self.comparison(rhs, lt_eq_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
         }

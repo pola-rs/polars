@@ -7,7 +7,7 @@ use crate::vector_hasher::{
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use ahash::RandomState;
-use arrow::array::{PrimitiveBuilder, StringBuilder};
+use arrow::array::{LargeStringBuilder, PrimitiveBuilder};
 use crossbeam::thread;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
@@ -1059,7 +1059,7 @@ where
 
         macro_rules! impl_gb_utf8 {
             ($agg_col:expr) => {{
-                let values_builder = StringBuilder::new(groups.len());
+                let values_builder = LargeStringBuilder::new(groups.len());
                 let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
@@ -1759,7 +1759,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         macro_rules! impl_gb_utf8 {
             ($agg_col:expr) => {{
-                let values_builder = StringBuilder::new(self.groups.len());
+                let values_builder = LargeStringBuilder::new(self.groups.len());
                 let mut builder =
                     ListUtf8ChunkedBuilder::new("", values_builder, self.groups.len());
                 for (_first, idx) in &self.groups {

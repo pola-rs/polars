@@ -26,7 +26,7 @@ where
 }
 
 /// Combine two null bitmaps.
-fn get_new_null_bit_buffer(left: &impl Array, right: &impl Array) -> Option<Buffer> {
+pub(crate) fn combine_bitmaps_or(left: &impl Array, right: &impl Array) -> Option<Buffer> {
     // get data buffers
     let data_array = right.data();
     let data_mask = left.data();

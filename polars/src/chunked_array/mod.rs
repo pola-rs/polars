@@ -7,8 +7,8 @@ use crate::prelude::*;
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-        Int64Array, Int8Array, PrimitiveArray, PrimitiveArrayOps, PrimitiveBuilder, StringArray,
-        Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+        Int64Array, Int8Array, LargeStringArray, PrimitiveArray, PrimitiveArrayOps,
+        PrimitiveBuilder, Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
     datatypes::TimeUnit,
@@ -50,7 +50,8 @@ pub mod upstream_traits;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
-    Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray, ListArray,
+    Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
+    LargeListArray,
 };
 
 use ahash::AHashMap;
@@ -513,7 +514,7 @@ where
         }
         // TODO: insert types
         match T::get_dtype() {
-            DataType::Utf8 => downcast_and_pack!(StringArray, Utf8),
+            DataType::Utf8 => downcast_and_pack!(LargeStringArray, Utf8),
             DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
             DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
             DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
@@ -540,7 +541,7 @@ where
                 AnyValue::Duration(v, TimeUnit::Millisecond)
             }
             DataType::List(_) => {
-                let v = downcast!(ListArray);
+                let v = downcast!(LargeListArray);
                 let s = Series::try_from(("", v));
                 AnyValue::List(s.unwrap())
             }
@@ -821,25 +822,25 @@ where
     }
 }
 
-impl Downcast<StringArray> for Utf8Chunked {
-    fn downcast_chunks(&self) -> Vec<&StringArray> {
+impl Downcast<LargeStringArray> for Utf8Chunked {
+    fn downcast_chunks(&self) -> Vec<&LargeStringArray> {
         self.chunks
             .iter()
             .map(|arr| {
                 let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const StringArray) }
+                unsafe { &*(arr as *const dyn Array as *const LargeStringArray) }
             })
             .collect::<Vec<_>>()
     }
 }
 
-impl Downcast<ListArray> for ListChunked {
-    fn downcast_chunks(&self) -> Vec<&ListArray> {
+impl Downcast<LargeListArray> for ListChunked {
+    fn downcast_chunks(&self) -> Vec<&LargeListArray> {
         self.chunks
             .iter()
             .map(|arr| {
                 let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const ListArray) }
+                unsafe { &*(arr as *const dyn Array as *const LargeListArray) }
             })
             .collect::<Vec<_>>()
     }

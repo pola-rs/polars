@@ -3,8 +3,8 @@ use crate::prelude::{
     BooleanChunked, ChunkedArray, Downcast, ListChunked, PolarsNumericType, Series, Utf8Chunked,
 };
 use arrow::array::{
-    Array, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray, PrimitiveArrayOps,
-    StringArray,
+    Array, ArrayDataRef, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
+    PrimitiveArrayOps,
 };
 use std::convert::TryFrom;
 use std::iter::Copied;
@@ -1425,7 +1425,7 @@ macro_rules! impl_all_iterators {
 
 impl_all_iterators!(
     Utf8Chunked,
-    StringArray,
+    LargeStringArray,
     Utf8IterSingleChunk,
     Utf8IterSingleChunkNullCheck,
     Utf8IterManyChunk,
@@ -1450,7 +1450,7 @@ fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
 
 impl_all_iterators!(
     ListChunked,
-    ListArray,
+    LargeListArray,
     ListIterSingleChunk,
     ListIterSingleChunkNullCheck,
     ListIterManyChunk,

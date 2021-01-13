@@ -3,7 +3,7 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use std::collections::VecDeque;
 
-fn get_exploded(series: &Series) -> Result<(Series, &[i32])> {
+fn get_exploded(series: &Series) -> Result<(Series, &[i64])> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
