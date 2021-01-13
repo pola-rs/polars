@@ -63,18 +63,10 @@ Want to know about all the features Polars support? Read the docs!
 * installation guide: `pip install py-polars`
 * [the book](https://ritchie46.github.io/polars-book/)
 * [Reference guide](https://ritchie46.github.io/polars/pypolars/index.html)
-* [10 minutes to py-polars notebook](examples/10_minutes_to_pypolars.ipynb)
-* [lazy py-polars notebook](examples/lazy_py-polars.ipynb)
 
 ## Performance
-Polars is written to be performant. Below are some comparisons with pandas and pydatatable DataFrame library **(lower is better)**.
-
-#### GroupBy
-![](pandas_cmp/img/groupby10_.png)
-![](pandas_cmp/img/groupby10_mem.png)
-
-#### Joins
-![](pandas_cmp/img/join_80_000.png)
+Polars is written to be performant, and it is! But don't take my word for it, take a look at the results in 
+[h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
 
 ## Cargo Features
 
@@ -108,10 +100,10 @@ Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).
 
 ## Env vars
 * `POLARS_PAR_COLUMN_BP` -> breakpoint for (some) parallel operations on columns. 
-    If the number of columns exceeds this it will run in parallel
+    If the number of columns exceeds this it will run in parallel.
 * `POLARS_PAR_SORT_BOUND` -> Sets the lower bound of rows at which Polars will use a parallel sorting algorithm.
                              Default is 1M rows.
-* `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames
-* `POLARS_FMT_MAX_ROW` -> maximum number of rows shown when formatting DataFrames
-* `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting
+* `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
+* `POLARS_FMT_MAX_ROW` -> maximum number of rows shown when formatting DataFrames.
+* `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 * `POLARS_MAX_THREADS` -> maximum number of threads used in join algorithm. Default is unbounded.
