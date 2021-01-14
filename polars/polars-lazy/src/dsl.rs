@@ -1018,6 +1018,11 @@ impl Expr {
         binary_expr(self, Operator::And, expr)
     }
 
+    /// or operation
+    pub fn or(self, expr: Expr) -> Self {
+        binary_expr(self, Operator::Or, expr)
+    }
+
     /// Raise expression to the power `exponent`
     pub fn pow(self, exponent: f64) -> Self {
         self.map(move |s: Series| s.pow(exponent), Some(DataType::Float64))
@@ -1076,7 +1081,7 @@ pub fn quantile(name: &str, quantile: f64) -> Expr {
 }
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
-pub fn binary_function<F: 'static>(a: Expr, b: Expr, f: F, output_field: Option<Field>) -> Expr
+pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_field: Option<Field>) -> Expr
 where
     F: Fn(Series, Series) -> Result<Series> + Send + Sync,
 {
@@ -1091,7 +1096,7 @@ where
 }
 
 /// Binary function where the output type is determined at runtime when the schema is known.
-pub fn binary_function_lazy_field<F: 'static, Fld: 'static>(
+pub fn map_binary_lazy_field<F: 'static, Fld: 'static>(
     a: Expr,
     b: Expr,
     f: F,
@@ -1107,6 +1112,41 @@ where
         function: Arc::new(f),
         output_field: Arc::new(output_field),
     }
+}
+
+/// Accumulate over multiple columns horizontally / row wise.
+pub fn fold_exprs<F: 'static>(mut acc: Expr, f: F, exprs: Vec<Expr>) -> Expr
+where
+    F: Fn(Series, Series) -> Result<Series> + Send + Sync + Copy,
+{
+    for e in exprs {
+        acc = map_binary(acc, e, f, None);
+    }
+    acc
+}
+
+/// Get the the sum of the values per row
+pub fn sum_exprs(exprs: Vec<Expr>) -> Expr {
+    let func = |s1, s2| Ok(&s1 + &s2);
+    fold_exprs(lit(0), func, exprs)
+}
+
+/// Get the the minimum value per row
+pub fn max_exprs(exprs: Vec<Expr>) -> Expr {
+    let func = |s1: Series, s2: Series| {
+        let mask = s1.gt(&s2);
+        s1.zip_with(&mask, &s2)
+    };
+    fold_exprs(lit(0), func, exprs)
+}
+
+/// Get the the minimum value per row
+pub fn min_exprs(exprs: Vec<Expr>) -> Expr {
+    let func = |s1: Series, s2: Series| {
+        let mask = s1.lt(&s2);
+        s1.zip_with(&mask, &s2)
+    };
+    fold_exprs(lit(0), func, exprs)
 }
 
 pub trait Literal {

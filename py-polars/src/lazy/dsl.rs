@@ -186,6 +186,10 @@ impl PyExpr {
         self.clone().inner.and(expr.inner).into()
     }
 
+    pub fn _or(&self, expr: PyExpr) -> PyExpr {
+        self.clone().inner.or(expr.inner).into()
+    }
+
     pub fn pow(&self, exponent: f64) -> PyExpr {
         self.clone().inner.pow(exponent).into()
     }
@@ -518,7 +522,7 @@ pub fn binary_function(
         Ok(pyseries.series)
     };
 
-    polars::lazy::dsl::binary_function(input_a, input_b, func, Some(output_field)).into()
+    polars::lazy::dsl::map_binary(input_a, input_b, func, Some(output_field)).into()
 }
 
 pub fn lit(value: &PyAny) -> PyExpr {

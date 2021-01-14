@@ -1,6 +1,6 @@
 [package]
 name = "polars-lazy"
-version = "0.11.1"
+version = "0.12.0-beta.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 
@@ -14,5 +14,5 @@ ahash = "0.5"
 rayon = "1.5"
 itertools = "^0.9.0"
 
-polars-io = {version = "0.11.1", path = "../polars-io", features = ["lazy"]}
-polars-core = {version = "0.11.1", path = "../polars-core", features = ["lazy"]}
+polars-io = {version = "0.12.0-beta.0", path = "../polars-io", features = ["lazy"]}
+polars-core = {version = "0.12.0-beta.0", path = "../polars-core", features = ["lazy"]}

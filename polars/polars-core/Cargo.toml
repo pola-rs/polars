@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.11.1"
+version = "0.12.0-beta.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 

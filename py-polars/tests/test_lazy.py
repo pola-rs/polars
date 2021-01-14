@@ -1,6 +1,7 @@
 from pypolars import DataFrame, Series
 from pypolars.lazy import *
 from pypolars.datatypes import *
+import pypolars as pl
 import pytest
 
 
@@ -28,6 +29,18 @@ def test_agg():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()
     assert ldf.collect().shape == (1, 2)
+
+
+def test_fold():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = df.lazy().select(pl.sum(["a", "b"])).collect()
+    assert out["sum"].series_equal(Series("sum", [2, 4, 6]))
+
+
+def test_or():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = df.lazy().filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()
+    assert out.shape[0] == 2
 
 
 def test_groupby_apply():

@@ -25,7 +25,7 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
         };
         Ok(s)
     };
-    binary_function(a, b, function, Some(Field::new(name, DataType::Float32))).alias(name)
+    map_binary(a, b, function, Some(Field::new(name, DataType::Float32))).alias(name)
 }
 
 pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
@@ -52,5 +52,5 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
         };
         Ok(s)
     };
-    binary_function(a, b, function, Some(Field::new(name, DataType::Float32))).alias(name)
+    map_binary(a, b, function, Some(Field::new(name, DataType::Float32))).alias(name)
 }
