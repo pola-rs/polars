@@ -265,7 +265,7 @@ class LazyFrame:
         exprs = _selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 
-    def groupby(self, by: Union[str, List[str]]) -> LazyGroupBy:
+    def groupby(self, by: "Union[str, List[str], Expr, List[Expr]]") -> LazyGroupBy:
         """
         Start a groupby operation
 
@@ -274,8 +274,17 @@ class LazyFrame:
         by
             Column(s) to group by.
         """
-        if isinstance(by, str):
-            by = [by]
+        if isinstance(by, list):
+            new_by = []
+            for e in by:
+                if isinstance(e, str):
+                    e = col(e)
+                new_by.append(e._pyexpr)
+            by = new_by
+        elif isinstance(by, str):
+            by = [col(by)._pyexpr]
+        elif isinstance(by, Expr):
+            by = [by._pyexpr]
         lgb = self._ldf.groupby(by)
         return LazyGroupBy(lgb)
 

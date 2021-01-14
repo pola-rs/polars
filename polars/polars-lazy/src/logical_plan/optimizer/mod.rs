@@ -100,9 +100,12 @@ impl StackOptimizer {
                     ALogicalPlan::Cache { input } => {
                         plans.push(*input);
                     }
-                    ALogicalPlan::Aggregate { input, aggs, .. } => {
+                    ALogicalPlan::Aggregate {
+                        input, aggs, keys, ..
+                    } => {
                         plans.push(*input);
                         exprs.extend(aggs.iter().map(|e| (*e, *input)));
+                        exprs.extend(keys.iter().map(|e| (*e, *input)));
                     }
                     ALogicalPlan::Join {
                         input_left,
@@ -653,7 +656,7 @@ pub enum ALogicalPlan {
     },
     Aggregate {
         input: Node,
-        keys: Arc<Vec<String>>,
+        keys: Vec<Node>,
         aggs: Vec<Node>,
         schema: Schema,
         apply: Option<Arc<dyn DataFrameUdf>>,
@@ -986,10 +989,14 @@ pub(crate) fn to_alp(
         } => {
             let i = to_alp(*input, expr_arena, lp_arena);
             let aggs_new = aggs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
+            let keys_new = keys
+                .iter()
+                .map(|x| to_aexpr(x.clone(), expr_arena))
+                .collect();
 
             ALogicalPlan::Aggregate {
                 input: i,
-                keys,
+                keys: keys_new,
                 aggs: aggs_new,
                 schema,
                 apply,
@@ -1400,6 +1407,7 @@ pub(crate) fn node_to_lp(
         } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
             let a = aggs.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
+            let keys = Arc::new(keys.iter().map(|x| node_to_exp(*x, expr_arena)).collect());
 
             LogicalPlan::Aggregate {
                 input: Box::new(i),

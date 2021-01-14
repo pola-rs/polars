@@ -449,26 +449,12 @@ impl<'b> (dyn SeriesTrait + 'b) {
 }
 
 impl DataFrame {
-    /// Group DataFrame using a Series column.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("column_name")?
-    ///     .select("agg_column_name")
-    ///     .sum()
-    /// }
-    /// ```
-    pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
-        let selected_keys = self.select_series(by)?;
+    pub fn groupby_with_series(&self, by: Vec<Series>) -> Result<GroupBy> {
         let n_threads = num_cpus::get();
 
         // make sure that categorical is used as uint32 in value type
         let keys_df = DataFrame::new_no_checks(
-            selected_keys
-                .iter()
+            by.iter()
                 .map(|s| match s.dtype() {
                     DataType::Categorical => s.cast::<UInt32Type>().unwrap(),
                     _ => s.clone(),
@@ -477,15 +463,15 @@ impl DataFrame {
         );
 
         // flattened splitted vec,
-        let splitted_sel_keys = selected_keys
+        let splitted_sel_keys = by
             .iter()
             .map(|s| split_series(s, n_threads).unwrap())
             .flatten()
             .collect_vec();
 
-        let groups = match selected_keys.len() {
+        let groups = match by.len() {
             1 => {
-                let series = &selected_keys[0];
+                let series = &by[0];
                 series.group_tuples()
             }
             2 => {
@@ -643,7 +629,7 @@ impl DataFrame {
                 groupby_threaded_multiple_keys(iters, keys_df)
             }
             _ => {
-                let iter = selected_keys
+                let iter = by
                     .iter()
                     .map(|sk| sk.as_groupable_iter())
                     .collect::<Result<Vec<_>>>()?
@@ -655,10 +641,27 @@ impl DataFrame {
 
         Ok(GroupBy {
             df: self,
-            selected_keys,
+            selected_keys: by,
             groups,
             selected_agg: None,
         })
+    }
+
+    /// Group DataFrame using a Series column.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars_core::prelude::*;
+    /// fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
+    ///     df.groupby("column_name")?
+    ///     .select("agg_column_name")
+    ///     .sum()
+    /// }
+    /// ```
+    pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
+        let selected_keys = self.select_series(by)?;
+        self.groupby_with_series(selected_keys)
     }
 }
 

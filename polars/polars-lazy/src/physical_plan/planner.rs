@@ -235,7 +235,13 @@ impl DefaultPlanner {
             } => {
                 let input = self.create_initial_physical_plan(*input)?;
                 let phys_aggs = self.create_physical_expressions(aggs, Context::Aggregation)?;
-                Ok(Box::new(GroupByExec::new(input, keys, phys_aggs, apply)))
+                let phys_keys = self.create_physical_expressions(
+                    Arc::try_unwrap(keys).unwrap_or_else(|keys| (&*keys).clone()),
+                    Context::Other,
+                )?;
+                Ok(Box::new(GroupByExec::new(
+                    input, phys_keys, phys_aggs, apply,
+                )))
             }
             LogicalPlan::Join {
                 input_left,

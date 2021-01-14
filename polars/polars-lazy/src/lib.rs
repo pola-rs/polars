@@ -110,7 +110,7 @@
 //!
 //! let new = df
 //!     .lazy()
-//!     .groupby("date")
+//!     .groupby(vec![col("date")])
 //!     .agg(vec![
 //!         col("rain").min(),
 //!         col("rain").sum(),
@@ -170,7 +170,7 @@
 //!     .filter(
 //!         col("a").lt(lit(2))
 //!     )
-//!     .groupby("b")
+//!     .groupby(vec![col("b")])
 //!     .agg(
 //!         vec![col("b").first(), col("c").first()]
 //!      )
@@ -186,7 +186,7 @@
 //!
 //! fn aggregate_all_columns(df_a: DataFrame) -> LazyFrame {
 //!     df_a.lazy()
-//!     .groupby("b")
+//!     .groupby(vec![col("b")])
 //!     .agg(
 //!         vec![col("*").first()]
 //!      )

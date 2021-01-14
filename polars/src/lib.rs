@@ -204,8 +204,11 @@
 //!     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
 //!       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 pub mod prelude;
-pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
+pub use polars_core::{
+    chunked_array, datatypes, doc, error, frame, functions, series, testing, toggle_string_cache,
+};
 
+pub use polars_core::apply_method_all_arrow_series;
 pub use polars_core::df;
 
 pub use polars_io as io;
