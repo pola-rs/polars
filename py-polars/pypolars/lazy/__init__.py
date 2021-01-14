@@ -602,6 +602,9 @@ class Expr:
     def __and__(self, other):
         return wrap_expr(self._pyexpr._and(other._pyexpr))
 
+    def __or__(self, other):
+        return wrap_expr(self._pyexpr._or(other._pyexpr))
+
     def __add__(self, other):
         return wrap_expr(self._pyexpr + self.__to_pyexpr(other))
 
@@ -1294,24 +1297,40 @@ def var(name: str) -> "Expr":
     return col(name).var()
 
 
-def max(name: str) -> "Expr":
+def max(name: "Union[str, List[Expr]]") -> "Expr":
     """
     Get maximum value
     """
+    if isinstance(name, list):
+
+        def max_(acc: Series, val: Series) -> Series:
+            mask = acc < val
+            return acc.zip_with(mask, val)
+
+        return fold(lit(0), max_, name).alias("max")
     return col(name).max()
 
 
-def min(name: str) -> "Expr":
+def min(name: "Union[str, List[expr]]") -> "Expr":
     """
     Get minimum value
     """
+    if isinstance(name, list):
+
+        def min_(acc: Series, val: Series) -> Series:
+            mask = acc > val
+            return acc.zip_with(mask, val)
+
+        return fold(lit(0), min_, name).alias("min")
     return col(name).min()
 
 
-def sum(name: str) -> "Expr":
+def sum(name: "Union[str, List[Expr]]") -> "Expr":
     """
     Get sum value
     """
+    if isinstance(name, list):
+        return fold(lit(0), lambda a, b: a + b, name).alias("sum")
     return col(name).sum()
 
 
@@ -1485,6 +1504,27 @@ def map_binary(
     if isinstance(b, str):
         b = col(b)
     return wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, output_type))
+
+
+def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) -> Expr:
+    """
+    Accumulate over multiple columns horizontally / row wise with a left fold.
+
+    Parameters
+    ----------
+    acc
+     Accumulator Expression. This is the value that will be initialized when the fold starts.
+     For a sum this could for instance be lit(0)
+
+    f
+        Function to apply over the accumulator and the value
+        Fn(acc, value) -> new_value
+    exprs
+        Expressions to aggregate over
+    """
+    for e in exprs:
+        acc = map_binary(acc, e, f, None)
+    return acc
 
 
 class UDF:

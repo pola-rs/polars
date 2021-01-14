@@ -91,8 +91,16 @@ where
                 None => ChunkedArray::full_null(self.name(), self.len()),
                 Some(rhs) => self.apply(|val| val + rhs),
             }
+        // left broadcast
+        } else if self.len() == 1 {
+            let opt_lhs = self.get(0);
+            match opt_lhs {
+                None => ChunkedArray::full_null(self.name(), rhs.len()),
+                Some(lhs) => rhs.apply(|val| val + lhs),
+            }
+        }
         // slow path
-        } else {
+        else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, +)
         };
         ca.rename(self.name());
@@ -125,6 +133,12 @@ where
                 Some(rhs) => self.apply(|val| val / rhs),
             }
         // slow path
+        } else if self.len() == 1 {
+            let opt_lhs = self.get(0);
+            match opt_lhs {
+                None => ChunkedArray::full_null(self.name(), rhs.len()),
+                Some(lhs) => rhs.apply(|val| val / lhs),
+            }
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, /)
         };
@@ -154,6 +168,12 @@ where
             match opt_rhs {
                 None => ChunkedArray::full_null(self.name(), self.len()),
                 Some(rhs) => self.apply(|val| val * rhs),
+            }
+        } else if self.len() == 1 {
+            let opt_lhs = self.get(0);
+            match opt_lhs {
+                None => ChunkedArray::full_null(self.name(), rhs.len()),
+                Some(lhs) => rhs.apply(|val| val * lhs),
             }
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, *)
@@ -205,6 +225,12 @@ where
             match opt_rhs {
                 None => ChunkedArray::full_null(self.name(), self.len()),
                 Some(rhs) => self.apply(|val| val - rhs),
+            }
+        } else if self.len() == 1 {
+            let opt_lhs = self.get(0);
+            match opt_lhs {
+                None => ChunkedArray::full_null(self.name(), rhs.len()),
+                Some(lhs) => rhs.apply(|val| val - lhs),
             }
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, -)
