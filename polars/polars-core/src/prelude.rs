@@ -20,15 +20,7 @@ pub use crate::{
     datatypes,
     datatypes::*,
     error::{PolarsError, Result},
-    frame::{
-        hash_join::JoinType,
-        // ser::{
-        //     csv::{CsvReader, CsvWriter},
-        //     SerReader, SerWriter,
-        // },
-        DataFrame,
-        IntoSeries,
-    },
+    frame::{hash_join::JoinType, DataFrame, IntoSeries},
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
         NamedFrom, Series, SeriesTrait,

@@ -472,6 +472,39 @@ class Series:
         """
         return self._s.n_chunks()
 
+    def cum_sum(self, reverse: bool):
+        """
+        Get an array with the cumulative sum computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return self._s.cum_sum(reverse)
+
+    def cum_min(self, reverse: bool):
+        """
+        Get an array with the cumulative min computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return self._s.cum_min(reverse)
+
+    def cum_max(self, reverse: bool):
+        """
+        Get an array with the cumulative max computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return self._s.cum_max(reverse)
+
     def limit(self, num_elements: int) -> "Series":
         """
         Take n elements from this Series.

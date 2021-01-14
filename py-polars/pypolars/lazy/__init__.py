@@ -683,6 +683,39 @@ class Expr:
     def count(self) -> "Expr":
         return wrap_expr(self._pyexpr.count())
 
+    def cum_sum(self, reverse: bool):
+        """
+        Get an array with the cumulative sum computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return wrap_expr(self._pyexpr.cum_sum(reverse))
+
+    def cum_min(self, reverse: bool):
+        """
+        Get an array with the cumulative min computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return wrap_expr(self._pyexpr.cum_min(reverse))
+
+    def cum_max(self, reverse: bool):
+        """
+        Get an array with the cumulative max computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return wrap_expr(self._pyexpr.cum_max(reverse))
+
     def cast(self, dtype: "DataType") -> "Expr":
         if dtype == str:
             dtype = datatypes.Utf8
