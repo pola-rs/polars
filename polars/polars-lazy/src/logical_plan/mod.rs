@@ -150,7 +150,7 @@ pub enum LogicalPlan {
     },
     Aggregate {
         input: Box<LogicalPlan>,
-        keys: Arc<Vec<String>>,
+        keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
         schema: Schema,
         apply: Option<Arc<dyn DataFrameUdf>>,
@@ -476,7 +476,7 @@ impl LogicalPlan {
             } => {
                 let mut s_keys = String::with_capacity(128);
                 for key in keys.iter() {
-                    s_keys.push_str(&key.to_string());
+                    s_keys.push_str(&format!("{:?}", key));
                 }
                 let current_node = format!("AGG {:?} BY {} [{}]", aggs, s_keys, id);
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -934,7 +934,7 @@ impl LogicalPlanBuilder {
 
     pub fn groupby(
         self,
-        keys: Arc<Vec<String>>,
+        keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
         apply: Option<Arc<dyn DataFrameUdf>>,
     ) -> Self {
@@ -942,15 +942,8 @@ impl LogicalPlanBuilder {
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs, current_schema);
 
-        // todo! use same merge method as in with_columns
-        let fields = keys
-            .iter()
-            .map(|name| current_schema.field_with_name(name).unwrap().clone())
-            .collect::<Vec<_>>();
-
-        let schema1 = Schema::new(fields);
-
-        let schema2 = utils::expressions_to_schema(&aggs, self.0.schema(), Context::Aggregation);
+        let schema1 = utils::expressions_to_schema(&keys, current_schema, Context::Other);
+        let schema2 = utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation);
         let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
 
         LogicalPlan::Aggregate {
@@ -1184,7 +1177,7 @@ mod test {
 
         let lp = df
             .lazy()
-            .groupby("variety")
+            .groupby(vec![col("variety")])
             .agg(vec![col("sepal.width").min()])
             .logical_plan;
         println!("{:#?}", lp.schema().fields());

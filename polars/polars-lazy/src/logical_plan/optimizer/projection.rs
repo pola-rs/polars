@@ -393,7 +393,7 @@ impl ProjectionPushDown {
 
                     // make sure the keys are projected
                     for key in &*keys {
-                        add_to_accumulated(&col(key), &mut acc_projections, &mut names)?;
+                        add_to_accumulated(&key, &mut acc_projections, &mut names)?;
                     }
 
                     let lp = self.push_down(*input, acc_projections, names, projections_seen)?;

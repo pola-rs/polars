@@ -458,7 +458,7 @@ impl Executor for DropDuplicatesExec {
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {
     input: Box<dyn Executor>,
-    keys: Arc<Vec<String>>,
+    keys: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Arc<dyn PhysicalExpr>>,
     apply: Option<Arc<dyn DataFrameUdf>>,
 }
@@ -466,7 +466,7 @@ pub struct GroupByExec {
 impl GroupByExec {
     pub(crate) fn new(
         input: Box<dyn Executor>,
-        keys: Arc<Vec<String>>,
+        keys: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Arc<dyn PhysicalExpr>>,
         apply: Option<Arc<dyn DataFrameUdf>>,
     ) -> Self {
@@ -482,7 +482,12 @@ impl GroupByExec {
 impl Executor for GroupByExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let df = self.input.execute(cache)?;
-        let gb = df.groupby(&*self.keys)?;
+        let keys = self
+            .keys
+            .iter()
+            .map(|e| e.evaluate(&df))
+            .collect::<Result<_>>()?;
+        let gb = df.groupby_with_series(keys)?;
         if let Some(f) = &self.apply {
             return gb.apply(|df| f.call_udf(df));
         }
@@ -512,9 +517,6 @@ impl Executor for GroupByExec {
         columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
 
         let df = DataFrame::new_no_checks(columns);
-        if std::env::var(POLARS_VERBOSE).is_ok() {
-            println!("groupby {:?} on dataframe finished", self.keys);
-        };
         Ok(df)
     }
 }

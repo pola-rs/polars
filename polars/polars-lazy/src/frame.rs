@@ -9,7 +9,6 @@ use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use ahash::RandomState;
 use polars_core::frame::hash_join::JoinType;
-use polars_core::frame::select::Selection;
 use polars_core::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -446,7 +445,7 @@ impl LazyFrame {
     ///
     /// fn example(df: DataFrame) -> Result<DataFrame> {
     ///       df.lazy()
-    ///         .groupby("foo")
+    ///         .groupby(vec![col("foo")])
     ///         .agg(vec!(col("bar").sum(),
     ///                   col("ham").mean().alias("avg_ham")))
     ///         .collect()
@@ -528,7 +527,7 @@ impl LazyFrame {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby("date")
+    ///        .groupby(vec![col("date")])
     ///        .agg(vec![
     ///            col("rain").min(),
     ///            col("rain").sum(),
@@ -537,17 +536,12 @@ impl LazyFrame {
     ///        .sort("date", false)
     /// }
     /// ```
-    pub fn groupby<'g, J, S: Selection<'g, J>>(self, by: S) -> LazyGroupBy {
+    pub fn groupby(self, by: Vec<Expr>) -> LazyGroupBy {
         let opt_state = self.get_opt_state();
-        let keys = by
-            .to_selection_vec()
-            .iter()
-            .map(|&s| s.to_owned())
-            .collect();
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys,
+            keys: by,
         }
     }
 
@@ -822,7 +816,7 @@ impl LazyFrame {
 pub struct LazyGroupBy {
     pub(crate) logical_plan: LogicalPlan,
     opt_state: OptState,
-    keys: Vec<String>,
+    keys: Vec<Expr>,
 }
 
 impl LazyGroupBy {
@@ -839,7 +833,7 @@ impl LazyGroupBy {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby("date")
+    ///        .groupby(vec![col("date")])
     ///        .agg(vec![
     ///            col("rain").min(),
     ///            col("rain").sum(),
@@ -1015,7 +1009,7 @@ mod test {
 
         let new = df
             .lazy()
-            .groupby("variety")
+            .groupby(vec![col("variety")])
             .agg(vec![col("sepal.width").min()])
             .collect()
             .unwrap();
@@ -1030,7 +1024,7 @@ mod test {
         let df = get_df();
         let new = df
             .lazy()
-            .groupby(&["variety"])
+            .groupby(vec![col("variety")])
             .agg(vec![
                 col("sepal.length").min(),
                 col("petal.length").min().alias("foo"),
@@ -1064,7 +1058,7 @@ mod test {
 
         let lf = df
             .lazy()
-            .groupby("date")
+            .groupby(vec![col("date")])
             .agg(vec![
                 col("rain").min(),
                 col("rain").sum(),
@@ -1146,7 +1140,7 @@ mod test {
             .lazy()
             .left_join(df_b.clone().lazy(), col("b"), col("b"), None)
             .filter(col("a").lt(lit(2)))
-            .groupby("b")
+            .groupby(vec![col("b")])
             .agg(vec![col("b").first(), col("c").first()])
             .select(&[col("b"), col("c_first")])
             .collect()
@@ -1170,7 +1164,7 @@ mod test {
     fn test_lazy_query_3() {
         // query checks if schema of scanning is not changed by aggregation
         let _ = scan_foods_csv()
-            .groupby("calories")
+            .groupby(vec![col("calories")])
             .agg(vec![col("fats_g").max()])
             .collect()
             .unwrap();
@@ -1189,7 +1183,7 @@ mod test {
 
         let out = base_df
             .clone()
-            .groupby("uid")
+            .groupby(vec![col("uid")])
             .agg(vec![
                 col("day").list().alias("day"),
                 col("cumcases")
@@ -1255,7 +1249,7 @@ mod test {
 
         let new = df
             .lazy()
-            .groupby("b")
+            .groupby(vec![col("b")])
             .agg(vec![col("*").sum(), col("*").first()])
             .collect()
             .unwrap();

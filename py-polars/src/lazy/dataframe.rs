@@ -184,8 +184,9 @@ impl PyLazyFrame {
         ldf.select(exprs).into()
     }
 
-    pub fn groupby(&mut self, by: Vec<&str>) -> PyLazyGroupBy {
+    pub fn groupby(&mut self, by: Vec<PyExpr>) -> PyLazyGroupBy {
         let ldf = self.ldf.clone();
+        let by = py_exprs_to_exprs(by);
         let lazy_gb = ldf.groupby(by);
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
