@@ -893,6 +893,21 @@ impl Expr {
         }
     }
 
+    /// Get an array with the cumulative sum computed at every element
+    pub fn cum_sum(self, reverse: bool) -> Self {
+        self.map(move |s: Series| Ok(s.cum_sum(reverse)), None)
+    }
+
+    /// Get an array with the cumulative min computed at every element
+    pub fn cum_min(self, reverse: bool) -> Self {
+        self.map(move |s: Series| Ok(s.cum_min(reverse)), None)
+    }
+
+    /// Get an array with the cumulative max computed at every element
+    pub fn cum_max(self, reverse: bool) -> Self {
+        self.map(move |s: Series| Ok(s.cum_max(reverse)), None)
+    }
+
     /// Apply window function over a subgroup.
     /// This is similar to a groupby + aggregation + self join.
     /// Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).

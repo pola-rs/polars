@@ -161,6 +161,18 @@ macro_rules! impl_dyn_series {
         }
 
         impl SeriesTrait for Wrap<$ca> {
+            fn cum_max(&self, reverse: bool) -> Series {
+                self.0.cum_max(reverse).into_series()
+            }
+
+            fn cum_min(&self, reverse: bool) -> Series {
+                self.0.cum_min(reverse).into_series()
+            }
+
+            fn cum_sum(&self, reverse: bool) -> Series {
+                self.0.cum_sum(reverse).into_series()
+            }
+
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);
             }

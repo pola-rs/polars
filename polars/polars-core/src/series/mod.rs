@@ -117,6 +117,21 @@ pub(crate) mod private {
 }
 
 pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
+    /// Get an array with the cumulative max computed at every element
+    fn cum_max(&self, _reverse: bool) -> Series {
+        panic!("operation cum_max not supported for this dtype")
+    }
+
+    /// Get an array with the cumulative min computed at every element
+    fn cum_min(&self, _reverse: bool) -> Series {
+        panic!("operation cum_min not supported for this dtype")
+    }
+
+    /// Get an array with the cumulative sum computed at every element
+    fn cum_sum(&self, _reverse: bool) -> Series {
+        panic!("operation cum_sum not supported for this dtype")
+    }
+
     /// Rename the Series.
     fn rename(&mut self, name: &str);
 

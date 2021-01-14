@@ -10,6 +10,7 @@ use std::marker::Sized;
 pub(crate) mod aggregate;
 pub(crate) mod apply;
 pub(crate) mod chunkops;
+pub(crate) mod cum_agg;
 pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
@@ -20,6 +21,21 @@ pub(crate) mod take;
 pub(crate) mod unique;
 pub(crate) mod window;
 pub(crate) mod zip;
+
+pub trait ChunkCumAgg<T> {
+    /// Get an array with the cumulative max computed at every element
+    fn cum_max(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cum_max not supported for this dtype")
+    }
+    /// Get an array with the cumulative min computed at every element
+    fn cum_min(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cum_min not supported for this dtype")
+    }
+    /// Get an array with the cumulative sum computed at every element
+    fn cum_sum(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cum_sum not supported for this dtype")
+    }
+}
 
 pub trait ChunkTakeEvery<T> {
     fn take_every(&self, n: usize) -> ChunkedArray<T>;
