@@ -10,6 +10,7 @@ use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use ahash::RandomState;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
+use polars_core::toggle_string_cache;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -173,6 +174,7 @@ pub struct OptState {
     pub simplify_expr: bool,
     pub agg_scan_projection: bool,
     pub aggregate_pushdown: bool,
+    pub global_string_cache: bool,
 }
 
 impl Default for OptState {
@@ -184,6 +186,7 @@ impl Default for OptState {
             simplify_expr: true,
             agg_scan_projection: false,
             aggregate_pushdown: false,
+            global_string_cache: true,
         }
     }
 }
@@ -258,6 +261,12 @@ impl LazyFrame {
     /// Toggle aggregate pushdown.
     pub fn with_aggregate_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.aggregate_pushdown = toggle;
+        self
+    }
+
+    /// Toggle global string cache.
+    pub fn with_string_cache(mut self, toggle: bool) -> Self {
+        self.opt_state.global_string_cache = toggle;
         self
     }
 
@@ -466,15 +475,19 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> Result<DataFrame> {
+        let use_string_cache = self.opt_state.global_string_cache;
         let logical_plan = self.optimize()?;
 
+        toggle_string_cache(use_string_cache);
         let planner = DefaultPlanner::default();
         let mut physical_plan = planner.create_physical_plan(logical_plan)?;
         let cache = Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
             64,
             RandomState::default(),
         )));
-        physical_plan.execute(&cache)
+        let out = physical_plan.execute(&cache);
+        toggle_string_cache(!use_string_cache);
+        out
     }
 
     /// Filter by some predicate expression.
