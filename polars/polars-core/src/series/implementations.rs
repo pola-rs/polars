@@ -432,7 +432,7 @@ macro_rules! impl_dyn_series {
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
                         format!(
-                            "cannot unpack Series: {:?} of type {:?} into time64",
+                            "cannot unpack Series: {:?} of type {:?} into timestamp_nanosecond",
                             self.name(),
                             self.dtype(),
                         )
@@ -444,7 +444,10 @@ macro_rules! impl_dyn_series {
             fn timestamp_microsecond(&self) -> Result<&TimestampMicrosecondChunked> {
                 if matches!(self.0.dtype(), DataType::Time64(TimeUnit::Microsecond)) {
                     unsafe {
-                        Ok(&*(self as *const dyn SeriesTrait as *const TimestampMicrosecondChunked))
+                        Ok(
+                            &*(self as *const dyn SeriesTrait
+                                as *const TimestampMicrosecondChunked),
+                        )
                     }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
@@ -461,7 +464,10 @@ macro_rules! impl_dyn_series {
             fn timestamp_millisecond(&self) -> Result<&TimestampMillisecondChunked> {
                 if matches!(self.0.dtype(), DataType::Time64(TimeUnit::Millisecond)) {
                     unsafe {
-                        Ok(&*(self as *const dyn SeriesTrait as *const TimestampMillisecondChunked))
+                        Ok(
+                            &*(self as *const dyn SeriesTrait
+                                as *const TimestampMillisecondChunked),
+                        )
                     }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
