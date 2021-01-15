@@ -556,7 +556,10 @@ class DataFrame:
         """
         if isinstance(by, str):
             by = [by]
-        return GroupBy(self._df, by)
+        return GroupBy(self._df, by, downsample=False)
+
+    def downsample(self, by: str, rule: str, n: int) -> "GroupBy":
+        return GroupBy(self._df, by, downsample=True, rule=rule, downsample_n=n)
 
     def join(
         self,
@@ -900,9 +903,19 @@ class DataFrame:
 
 
 class GroupBy:
-    def __init__(self, df: DataFrame, by: "List[str]"):
+    def __init__(
+        self,
+        df: DataFrame,
+        by: "List[str]",
+        downsample: bool = False,
+        rule=None,
+        downsample_n: int = 0,
+    ):
         self._df = df
         self.by = by
+        self.downsample = downsample
+        self.rule = rule
+        self.downsample_n = downsample_n
 
     def apply(self, f: "Callable[[DataFrame], DataFrame]"):
         """
@@ -941,6 +954,8 @@ class GroupBy:
         -------
         Result of groupby split apply operations.
         """
+        if self.downsample:
+            raise ValueError("agg not suppore in downsample operation")
         if isinstance(column_to_agg, dict):
             column_to_agg = [
                 (column, [agg] if isinstance(agg, str) else agg)
@@ -963,6 +978,8 @@ class GroupBy:
         columns
             One or multiple columns
         """
+        if self.downsample:
+            raise ValueError("select not suppore in downsample operation")
         if isinstance(columns, str):
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
@@ -971,7 +988,9 @@ class GroupBy:
         """
         Select all columns for aggregation.
         """
-        return GBSelection(self._df, self.by, None)
+        return GBSelection(
+            self._df, self.by, None, self.downsample, self.rule, self.downsample_n
+        )
 
     def pivot(self, pivot_column: str, values_column: str) -> "PivotOps":
         """
@@ -984,6 +1003,8 @@ class GroupBy:
         values_column
             Column that will be aggregated
         """
+        if self.downsample:
+            raise ValueError("pivot not suppore in downsample operation")
         return PivotOps(self._df, self.by, pivot_column, values_column)
 
     def first(self) -> DataFrame:
@@ -1121,76 +1142,108 @@ class PivotOps:
 
 class GBSelection:
     def __init__(
-        self, df: DataFrame, by: "List[str]", selection: "Optional[List[str]]"
+        self,
+        df: DataFrame,
+        by: "List[str]",
+        selection: "Optional[List[str]]",
+        downsample: bool = False,
+        rule=None,
+        downsample_n: int = 0,
     ):
         self._df = df
         self.by = by
         self.selection = selection
+        self.downsample = downsample
+        self.rule = rule
+        self.n = downsample_n
 
     def first(self) -> DataFrame:
         """
         Aggregate the first values in the group.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "first"))
+
         return wrap_df(self._df.groupby(self.by, self.selection, "first"))
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "last"))
         return wrap_df(self._df.groupby(self.by, self.selection, "last"))
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "sum"))
         return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "min"))
         return wrap_df(self._df.groupby(self.by, self.selection, "min"))
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "max"))
         return wrap_df(self._df.groupby(self.by, self.selection, "max"))
 
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "count"))
         return wrap_df(self._df.groupby(self.by, self.selection, "count"))
 
     def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "mean"))
         return wrap_df(self._df.groupby(self.by, self.selection, "mean"))
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "n_unique"))
         return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))
 
     def quantile(self, quantile: float) -> DataFrame:
         """
-        Count the unique values per group.
+        Compute the quantile per group
         """
+        if self.downsample:
+            raise ValueError("quantile operation not supported during downsample")
         return wrap_df(self._df.groupby_quantile(self.by, self.selection, quantile))
 
     def median(self) -> DataFrame:
         """
         Return the median per group.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "median"))
         return wrap_df(self._df.groupby(self.by, self.selection, "median"))
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
+        if self.downsample:
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "agg_list"))
         return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))
 
     def apply(

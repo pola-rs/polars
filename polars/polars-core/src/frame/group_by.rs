@@ -719,7 +719,7 @@ impl DataFrame {
 #[derive(Debug, Clone)]
 pub struct GroupBy<'df, 'selection_str> {
     df: &'df DataFrame,
-    selected_keys: Vec<Series>,
+    pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
     pub(crate) groups: Vec<(usize, Vec<usize>)>,
     // columns selected for aggregation
