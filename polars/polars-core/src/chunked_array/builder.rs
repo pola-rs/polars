@@ -187,6 +187,57 @@ impl CategoricalChunkedBuilder {
         }
     }
 }
+impl CategoricalChunkedBuilder {
+    /// Appends all the values in a single lock of the global string cache.
+    pub fn append_values<'a, I>(&mut self, i: I)
+    where
+        I: IntoIterator<Item = Option<&'a str>>,
+    {
+        if use_string_cache() {
+            let mut mapping = crate::STRING_CACHE.lock_map();
+
+            for opt_s in i {
+                match opt_s {
+                    Some(s) => {
+                        let idx = match mapping.get(s) {
+                            Some(idx) => *idx,
+                            None => {
+                                let idx = mapping.len() as u32;
+                                mapping.insert(s.to_string(), idx);
+                                idx
+                            }
+                        };
+                        self.reverse_mapping.insert(idx, s.to_string());
+                        self.array_builder.append_value(idx);
+                    }
+                    None => {
+                        self.array_builder.append_null();
+                    }
+                }
+            }
+        } else {
+            for opt_s in i {
+                match opt_s {
+                    Some(s) => {
+                        let idx = match self.mapping.get(s) {
+                            Some(idx) => *idx,
+                            None => {
+                                let idx = self.mapping.len() as u32;
+                                self.mapping.insert(s.to_string(), idx);
+                                idx
+                            }
+                        };
+                        self.reverse_mapping.insert(idx, s.to_string());
+                        self.array_builder.append_value(idx);
+                    }
+                    None => {
+                        self.array_builder.append_null();
+                    }
+                }
+            }
+        }
+    }
+}
 
 impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
     fn append_value(&mut self, val: &str) {
