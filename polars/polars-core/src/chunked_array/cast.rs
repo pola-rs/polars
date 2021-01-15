@@ -3,6 +3,7 @@ use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::kernels::cast::cast;
 use crate::chunked_array::kernels::{cast_numeric_from_dtype, transmute_array_from_dtype};
 use crate::prelude::*;
+use crate::use_string_cache;
 use num::{NumCast, ToPrimitive};
 
 fn cast_ca<N, T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<N>>
@@ -196,7 +197,9 @@ impl ChunkCast for Utf8Chunked {
             DataType::Categorical => {
                 let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
 
-                if self.null_count() == 0 {
+                if use_string_cache() || self.null_count() != 0 {
+                    builder.append_values(self.into_iter());
+                } else if self.null_count() == 0 {
                     self.into_no_null_iter()
                         .for_each(|v| builder.append_value(v));
                 } else {
