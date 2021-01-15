@@ -8,6 +8,7 @@ use polars::chunked_array::builder::get_bitmap;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 use std::any::Any;
+use std::ops::{BitAnd, BitOr};
 
 #[derive(Clone, Debug)]
 pub struct ObjectValue {
@@ -223,6 +224,26 @@ impl PySeries {
         } else {
             Some(PySeries::new(series))
         }
+    }
+
+    pub fn bitand(&self, other: &PySeries) -> Self {
+        let s = self
+            .series
+            .bool()
+            .expect("boolean")
+            .bitand(other.series.bool().expect("boolean"))
+            .into_series();
+        s.into()
+    }
+
+    pub fn bitor(&self, other: &PySeries) -> Self {
+        let s = self
+            .series
+            .bool()
+            .expect("boolean")
+            .bitor(other.series.bool().expect("boolean"))
+            .into_series();
+        s.into()
     }
 
     pub fn cum_sum(&self, reverse: bool) -> Self {

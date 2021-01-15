@@ -8,6 +8,7 @@ use polars_core::{
     utils::get_supertype,
 };
 use std::fmt::{Debug, Formatter};
+use std::ops::{BitAnd, BitOr};
 use std::{
     fmt,
     ops::{Add, Div, Mul, Rem, Sub},
@@ -1190,6 +1191,18 @@ pub fn min_exprs(exprs: Vec<Expr>) -> Expr {
         s1.zip_with(&mask, &s2)
     };
     fold_exprs(lit(0), func, exprs)
+}
+
+/// Evaluate all the expressions with a bitwise or
+pub fn any_exprs(exprs: Vec<Expr>) -> Expr {
+    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitor(s2.bool()?).into_series());
+    fold_exprs(lit(false), func, exprs)
+}
+
+/// Evaluate all the expressions with a bitwise and
+pub fn all_exprs(exprs: Vec<Expr>) -> Expr {
+    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitand(s2.bool()?).into_series());
+    fold_exprs(lit(true), func, exprs)
 }
 
 pub trait Literal {

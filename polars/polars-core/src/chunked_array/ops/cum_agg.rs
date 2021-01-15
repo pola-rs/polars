@@ -84,7 +84,6 @@ impl ChunkCumAgg<CategoricalType> for CategoricalChunked {}
 impl ChunkCumAgg<Utf8Type> for Utf8Chunked {}
 impl ChunkCumAgg<ListType> for ListChunked {}
 impl ChunkCumAgg<BooleanType> for BooleanChunked {
-
     fn cum_max(&self, reverse: bool) -> ChunkedArray<BooleanType> {
         let iter: Box<dyn Iterator<Item = Option<bool>>> = match reverse {
             false => Box::new(self.into_iter()),
@@ -132,12 +131,9 @@ impl ChunkCumAgg<BooleanType> for BooleanChunked {
             ca
         }
     }
-
 }
 #[cfg(feature = "object")]
-impl<T> ChunkCumAgg<ObjectType<T>> for ObjectChunked<T> {
-
-}
+impl<T> ChunkCumAgg<ObjectType<T>> for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
