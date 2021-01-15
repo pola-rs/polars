@@ -39,7 +39,7 @@ where
 
 fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<(usize, Vec<usize>)>
 where
-    I: Iterator<Item = T> + Send,
+    I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
 {
     let n_threads = iters.len();

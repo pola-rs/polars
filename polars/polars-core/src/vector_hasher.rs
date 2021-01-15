@@ -220,7 +220,7 @@ pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     random_state: Option<RandomState>,
 ) -> (Vec<Vec<(u64, T)>>, RandomState)
 where
-    I: Iterator<Item = T> + Send,
+    I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq,
 {
     let random_state = random_state.unwrap_or_default();
@@ -233,12 +233,13 @@ where
                 // joinhandles
                 s.spawn(|_| {
                     // create hashes and keys
-                    iter.map(|val| {
-                        let mut hasher = random_state.build_hasher();
-                        val.hash(&mut hasher);
-                        (hasher.finish(), val)
-                    })
-                    .collect_vec()
+                    iter.into_iter()
+                        .map(|val| {
+                            let mut hasher = random_state.build_hasher();
+                            val.hash(&mut hasher);
+                            (hasher.finish(), val)
+                        })
+                        .collect_vec()
                 })
             })
             .collect_vec();
