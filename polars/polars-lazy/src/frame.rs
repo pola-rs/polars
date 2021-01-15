@@ -486,7 +486,9 @@ impl LazyFrame {
             RandomState::default(),
         )));
         let out = physical_plan.execute(&cache);
-        toggle_string_cache(!use_string_cache);
+        if use_string_cache {
+            toggle_string_cache(!use_string_cache);
+        }
         out
     }
 
