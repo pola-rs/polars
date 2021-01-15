@@ -71,6 +71,27 @@ impl PolarsDataType for DurationMillisecondType {
     }
 }
 
+impl PolarsDataType for TimestampNanosecondType {
+    fn get_dtype() -> DataType {
+        DataType::Timestamp(TimeUnit::Nanosecond, None)
+    }
+}
+impl PolarsDataType for TimestampMillisecondType {
+    fn get_dtype() -> DataType {
+        DataType::Timestamp(TimeUnit::Millisecond, None)
+    }
+}
+impl PolarsDataType for TimestampMicrosecondType {
+    fn get_dtype() -> DataType {
+        DataType::Timestamp(TimeUnit::Microsecond, None)
+    }
+}
+impl PolarsDataType for TimestampSecondType {
+    fn get_dtype() -> DataType {
+        DataType::Timestamp(TimeUnit::Second, None)
+    }
+}
+
 impl PolarsDataType for Utf8Type {
     fn get_dtype() -> DataType {
         DataType::Utf8
@@ -129,6 +150,10 @@ pub type Date64Chunked = ChunkedArray<Date64Type>;
 pub type DurationNanosecondChunked = ChunkedArray<DurationNanosecondType>;
 pub type DurationMillisecondChunked = ChunkedArray<DurationMillisecondType>;
 pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
+pub type TimestampSecondChunked = ChunkedArray<TimestampSecondType>;
+pub type TimestampMillisecondChunked = ChunkedArray<TimestampMillisecondType>;
+pub type TimestampMicrosecondChunked = ChunkedArray<TimestampMicrosecondType>;
+pub type TimestampNanosecondChunked = ChunkedArray<TimestampNanosecondType>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
 pub trait PolarsPrimitiveType: ArrowPrimitiveType + Send + Sync + PolarsDataType {}
@@ -146,6 +171,10 @@ impl PolarsPrimitiveType for Float64Type {}
 impl PolarsPrimitiveType for Date32Type {}
 impl PolarsPrimitiveType for Date64Type {}
 impl PolarsPrimitiveType for Time64NanosecondType {}
+impl PolarsPrimitiveType for TimestampSecondType {}
+impl PolarsPrimitiveType for TimestampMillisecondType {}
+impl PolarsPrimitiveType for TimestampMicrosecondType {}
+impl PolarsPrimitiveType for TimestampNanosecondType {}
 impl PolarsPrimitiveType for DurationNanosecondType {}
 impl PolarsPrimitiveType for DurationMillisecondType {}
 
@@ -163,6 +192,10 @@ impl PolarsNumericType for Float64Type {}
 impl PolarsNumericType for Date32Type {}
 impl PolarsNumericType for Date64Type {}
 impl PolarsNumericType for Time64NanosecondType {}
+impl PolarsNumericType for TimestampNanosecondType {}
+impl PolarsNumericType for TimestampMillisecondType {}
+impl PolarsNumericType for TimestampMicrosecondType {}
+impl PolarsNumericType for TimestampSecondType {}
 impl PolarsNumericType for DurationNanosecondType {}
 impl PolarsNumericType for DurationMillisecondType {}
 
@@ -178,6 +211,10 @@ impl PolarsIntegerType for Int64Type {}
 impl PolarsIntegerType for Date32Type {}
 impl PolarsIntegerType for Date64Type {}
 impl PolarsIntegerType for Time64NanosecondType {}
+impl PolarsIntegerType for TimestampNanosecondType {}
+impl PolarsIntegerType for TimestampMillisecondType {}
+impl PolarsIntegerType for TimestampMicrosecondType {}
+impl PolarsIntegerType for TimestampSecondType {}
 impl PolarsIntegerType for DurationNanosecondType {}
 impl PolarsIntegerType for DurationMillisecondType {}
 
@@ -249,6 +286,22 @@ impl Display for DataType {
             DataType::Date32 => "date32(days)",
             DataType::Date64 => "date64(ms)",
             DataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
+            DataType::Timestamp(TimeUnit::Nanosecond, None) => "timestamp(ns)",
+            DataType::Timestamp(TimeUnit::Microsecond, None) => "timestamp(us)",
+            DataType::Timestamp(TimeUnit::Millisecond, None) => "timestamp(ms)",
+            DataType::Timestamp(TimeUnit::Second, None) => "timestamp(sec)",
+            DataType::Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
+                return write!(f, "timestamp(ns,{})", tz)
+            }
+            DataType::Timestamp(TimeUnit::Microsecond, Some(tz)) => {
+                return write!(f, "timestamp(us,{})", tz)
+            }
+            DataType::Timestamp(TimeUnit::Millisecond, Some(tz)) => {
+                return write!(f, "timestamp(ms,{})", tz)
+            }
+            DataType::Timestamp(TimeUnit::Second, Some(tz)) => {
+                return write!(f, "timestamp(sec,{})", tz)
+            }
             DataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
             DataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
             DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
@@ -309,6 +362,7 @@ pub enum DataType {
     Date32,
     Date64,
     Time64(TimeUnit),
+    Timestamp(TimeUnit, Option<Arc<String>>),
     List(ArrowDataType),
     Duration(TimeUnit),
     #[cfg(feature = "object")]
@@ -336,6 +390,7 @@ impl DataType {
             Date32 => ArrowDataType::Date32(DateUnit::Day),
             Date64 => ArrowDataType::Date64(DateUnit::Millisecond),
             Time64(tu) => ArrowDataType::Time64(tu.clone()),
+            Timestamp(tu, tz) => ArrowDataType::Timestamp(tu.clone(), tz.clone()),
             List(dt) => ArrowDataType::List(Box::new(dt.clone())),
             Duration(tu) => ArrowDataType::Duration(tu.clone()),
             Null => ArrowDataType::Null,
