@@ -1,4 +1,4 @@
-use crate::{chunked_array::kernels::comparison::*, prelude::*, utils::Xob};
+use crate::{chunked_array::kernels::comparison::*, prelude::*, utils::NoNull};
 use arrow::compute::{eq_scalar, gt_eq_scalar, gt_scalar, lt_eq_scalar, lt_scalar, neq_scalar};
 use arrow::{
     array::{ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray},
