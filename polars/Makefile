@@ -1,4 +1,7 @@
 
+fmt:
+	cargo fmt --all
+
 check:
 	cargo c --all-features \
 	-p polars-core \

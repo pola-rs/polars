@@ -1027,6 +1027,49 @@ impl Expr {
     pub fn pow(self, exponent: f64) -> Self {
         self.map(move |s: Series| s.pow(exponent), Some(DataType::Float64))
     }
+
+    /// Get the year of a Date32/Date64
+    pub fn year(self) -> Expr {
+        let function = move |s: Series| s.year();
+        self.map(function, Some(DataType::UInt32))
+    }
+
+    /// Get the month of a Date32/Date64
+    pub fn month(self) -> Expr {
+        let function = move |s: Series| s.month();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the month of a Date32/Date64
+    pub fn day(self) -> Expr {
+        let function = move |s: Series| s.day();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the ordinal_day of a Date32/Date64
+    pub fn ordinal_day(self) -> Expr {
+        let function = move |s: Series| s.ordinal_day();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the hour of a Date64/Time64
+    pub fn hour(self) -> Expr {
+        let function = move |s: Series| s.hour();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the minute of a Date64/Time64
+    pub fn minute(self) -> Expr {
+        let function = move |s: Series| s.minute();
+        self.map(function, Some(DataType::UInt32))
+    }
+
+    /// Get the second of a Date64/Time64
+    pub fn second(self) -> Expr {
+        let function = move |s: Series| s.second();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the nanosecond of a Time64
+    pub fn nanosecond(self) -> Expr {
+        let function = move |s: Series| s.nanosecond();
+        self.map(function, Some(DataType::UInt32))
+    }
 }
 
 /// Create a Column Expression based on a column name.
