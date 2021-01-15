@@ -78,7 +78,7 @@ impl Executor for CacheExec {
 #[cfg(feature = "parquet")]
 pub struct ParquetExec {
     path: String,
-    schema: Schema,
+    schema: SchemaRef,
     with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     aggregate: Vec<ScanAggregation>,
@@ -90,7 +90,7 @@ pub struct ParquetExec {
 impl ParquetExec {
     pub(crate) fn new(
         path: String,
-        schema: Schema,
+        schema: SchemaRef,
         with_columns: Option<Vec<String>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         aggregate: Vec<ScanAggregation>,
@@ -129,8 +129,7 @@ impl Executor for ParquetExec {
         let file = std::fs::File::open(&self.path).unwrap();
 
         let with_columns = mem::take(&mut self.with_columns);
-        let mut schema = Schema::new(vec![]);
-        mem::swap(&mut self.schema, &mut schema);
+        let schema = mem::take(&mut self.schema);
 
         let projection: Option<Vec<_>> = if let Some(with_columns) = with_columns {
             Some(

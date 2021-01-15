@@ -391,6 +391,26 @@ impl Default for Schema {
 }
 
 impl Schema {
+    pub fn rename<I, J, T, S>(&self, old_names: I, new_names: J) -> Result<Schema>
+    where
+        I: IntoIterator<Item = T>,
+        J: IntoIterator<Item = S>,
+        T: AsRef<str>,
+        S: AsRef<str>,
+    {
+        let idx = old_names
+            .into_iter()
+            .map(|name| self.index_of(name.as_ref()))
+            .collect::<Result<Vec<_>>>()?;
+        let mut new_fields = self.fields.clone();
+
+        for (i, name) in idx.into_iter().zip(new_names) {
+            let dt = new_fields[i].data_type.clone();
+            new_fields[i] = Field::new(name.as_ref(), dt)
+        }
+        Ok(Self::new(new_fields))
+    }
+
     pub fn new(fields: Vec<Field>) -> Self {
         Schema { fields }
     }

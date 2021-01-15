@@ -314,7 +314,21 @@ impl LazyFrame {
 
     /// Rename a column in the DataFrame
     pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
-        self.with_column(col(existing_name).alias(new_name))
+        let schema = self.logical_plan.schema();
+        let schema = schema
+            .rename(&[existing_name], &[new_name])
+            .expect("cannot rename non existing column");
+
+        // first make sure that the column is projected, then we
+        let init = self.with_column(col(existing_name));
+
+        let existing_name = existing_name.to_string();
+        let new_name = new_name.to_string();
+        let f = move |mut df: DataFrame| {
+            df.rename(&existing_name, &new_name)?;
+            Ok(df)
+        };
+        init.map(f, Some(AllowedOptimizations::default()), Some(schema))
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -799,14 +813,23 @@ impl LazyFrame {
     /// relies on a correct schema.
     ///
     /// You can toggle certain optimizations off.
-    pub fn map<F>(self, function: F, optimizations: Option<AllowedOptimizations>) -> LazyFrame
+    pub fn map<F>(
+        self,
+        function: F,
+        optimizations: Option<AllowedOptimizations>,
+        schema: Option<Schema>,
+    ) -> LazyFrame
     where
         F: DataFrameUdf + 'static,
     {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .map(function, optimizations.unwrap_or_default())
+            .map(
+                function,
+                optimizations.unwrap_or_default(),
+                schema.map(Arc::new),
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -1272,6 +1295,7 @@ mod test {
     fn test_lazy_filter_and_rename() {
         let df = load_df();
         let lf = df
+            .clone()
             .lazy()
             .with_column_renamed("a", "x")
             .filter(col("x").map(
@@ -1285,6 +1309,14 @@ mod test {
         }
         .unwrap();
         assert!(lf.collect().unwrap().frame_equal(&correct));
+
+        // now we check if the column is rename or added when we don't select
+        let lf = df.lazy().with_column_renamed("a", "x").filter(col("x").map(
+            |s: Series| Ok(s.gt(3).into_series()),
+            Some(DataType::Boolean),
+        ));
+
+        assert_eq!(lf.collect().unwrap().get_column_names(), &["x", "b", "c"]);
     }
 
     #[test]

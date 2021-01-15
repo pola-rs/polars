@@ -523,6 +523,7 @@ impl ProjectionPushDown {
                 function,
                 predicate_pd,
                 projection_pd,
+                schema,
             } => {
                 if projection_pd {
                     input = Box::new(self.push_down(
@@ -537,6 +538,7 @@ impl ProjectionPushDown {
                     function,
                     predicate_pd,
                     projection_pd,
+                    schema,
                 })
             }
         }
