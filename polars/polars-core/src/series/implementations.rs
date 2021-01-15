@@ -424,6 +424,74 @@ macro_rules! impl_dyn_series {
                 }
             }
 
+            fn timestamp_nanosecond(&self) -> Result<&TimestampNanosecondChunked> {
+                if matches!(self.0.dtype(), DataType::Time64(TimeUnit::Nanosecond)) {
+                    unsafe {
+                        Ok(&*(self as *const dyn SeriesTrait as *const TimestampNanosecondChunked))
+                    }
+                } else {
+                    Err(PolarsError::DataTypeMisMatch(
+                        format!(
+                            "cannot unpack Series: {:?} of type {:?} into time64",
+                            self.name(),
+                            self.dtype(),
+                        )
+                        .into(),
+                    ))
+                }
+            }
+
+            fn timestamp_microsecond(&self) -> Result<&TimestampMicrosecondChunked> {
+                if matches!(self.0.dtype(), DataType::Time64(TimeUnit::Microsecond)) {
+                    unsafe {
+                        Ok(&*(self as *const dyn SeriesTrait as *const TimestampMicrosecondChunked))
+                    }
+                } else {
+                    Err(PolarsError::DataTypeMisMatch(
+                        format!(
+                            "cannot unpack Series: {:?} of type {:?} into timestamp_microsecond",
+                            self.name(),
+                            self.dtype(),
+                        )
+                        .into(),
+                    ))
+                }
+            }
+
+            fn timestamp_millisecond(&self) -> Result<&TimestampMillisecondChunked> {
+                if matches!(self.0.dtype(), DataType::Time64(TimeUnit::Millisecond)) {
+                    unsafe {
+                        Ok(&*(self as *const dyn SeriesTrait as *const TimestampMillisecondChunked))
+                    }
+                } else {
+                    Err(PolarsError::DataTypeMisMatch(
+                        format!(
+                            "cannot unpack Series: {:?} of type {:?} into timestamp_millisecond",
+                            self.name(),
+                            self.dtype(),
+                        )
+                        .into(),
+                    ))
+                }
+            }
+
+            fn timestamp_second(&self) -> Result<&TimestampSecondChunked> {
+                if matches!(self.0.dtype(), DataType::Time64(TimeUnit::Second)) {
+                    unsafe {
+                        Ok(&*(self as *const dyn SeriesTrait as *const TimestampSecondChunked))
+                    }
+                } else {
+                    Err(PolarsError::DataTypeMisMatch(
+                        format!(
+                            "cannot unpack Series: {:?} of type {:?} into timestamp_second",
+                            self.name(),
+                            self.dtype(),
+                        )
+                        .into(),
+                    ))
+                }
+            }
+
             fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
                 if matches!(self.0.dtype(), DataType::Duration(TimeUnit::Nanosecond)) {
                     unsafe {

@@ -287,6 +287,27 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         ))
     }
 
+    fn timestamp_nanosecond(&self) -> Result<&TimestampNanosecondChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != timestamp_nanosecond", self.dtype()).into(),
+        ))
+    }
+    fn timestamp_microsecond(&self) -> Result<&TimestampMicrosecondChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != timestamp_microsecond", self.dtype()).into(),
+        ))
+    }
+    fn timestamp_millisecond(&self) -> Result<&TimestampMillisecondChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != timestamp_millisecond", self.dtype()).into(),
+        ))
+    }
+    fn timestamp_second(&self) -> Result<&TimestampSecondChunked> {
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} != timestamp_second", self.dtype()).into(),
+        ))
+    }
+
     /// Unpack to ChunkedArray of dtype duration_nanosecond
     fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
         Err(PolarsError::DataTypeMisMatch(
