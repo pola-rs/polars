@@ -3,7 +3,7 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use arrow::array::ArrayRef;
 use std::marker::Sized;
 
@@ -288,7 +288,7 @@ pub trait ChunkTake {
     where
         Self: std::marker::Sized,
     {
-        let idx_ca: Xob<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
+        let idx_ca: NoNull<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
         let idx_ca = idx_ca.into_inner();
         self.take_from_single_chunked(&idx_ca)
     }
@@ -648,7 +648,7 @@ where
 {
     fn reverse(&self) -> ChunkedArray<T> {
         if let Ok(slice) = self.cont_slice() {
-            let ca: Xob<ChunkedArray<T>> = slice.iter().rev().copied().collect();
+            let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect();
             let mut ca = ca.into_inner();
             ca.rename(self.name());
             ca

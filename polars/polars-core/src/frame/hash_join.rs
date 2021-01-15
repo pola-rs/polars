@@ -1,6 +1,6 @@
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{split_ca, Xob};
+use crate::utils::{split_ca, NoNull};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation,
     prepare_hashed_relation_threaded,
@@ -569,7 +569,7 @@ where
                     }
                 }
             })
-            .collect::<Xob<ChunkedArray<T>>>()
+            .collect::<NoNull<ChunkedArray<T>>>()
             .into_inner()
             .into_series()
     }

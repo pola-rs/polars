@@ -2,7 +2,7 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -40,8 +40,8 @@ where
     }
 }
 
-// Xob is only a wrapper needed for specialization
-impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>
+// NoNull is only a wrapper needed for specialization
+impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsPrimitiveType,
 {
@@ -56,7 +56,7 @@ where
             for val in iter {
                 builder.append_value(val);
             }
-            Xob::new(builder.finish())
+            NoNull::new(builder.finish())
         } else {
             let iter = iter.into_iter();
             let mut v = AlignedVec::with_capacity_aligned(get_iter_capacity(&iter));
@@ -64,7 +64,7 @@ where
             for val in iter {
                 v.push(val)
             }
-            Xob::new(ChunkedArray::new_from_aligned_vec("", v))
+            NoNull::new(ChunkedArray::new_from_aligned_vec("", v))
         }
     }
 }
@@ -374,7 +374,7 @@ fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
     ll.iter().map(|list| list.len()).sum()
 }
 
-impl<T> FromParallelIterator<T::Native> for Xob<ChunkedArray<T>>
+impl<T> FromParallelIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsPrimitiveType,
 {
@@ -391,7 +391,7 @@ where
             }
         });
 
-        Xob::new(builder.finish())
+        NoNull::new(builder.finish())
     }
 }
 

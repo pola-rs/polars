@@ -3,7 +3,7 @@ use crate::physical_plan::AggPhysicalExpr;
 use crate::prelude::*;
 use polars_core::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
-use polars_core::utils::Xob;
+use polars_core::utils::NoNull;
 use std::sync::Arc;
 
 pub struct LiteralExpr(pub ScalarValue, Expr);
@@ -381,7 +381,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
-                let mut ca: Xob<UInt32Chunked> =
+                let mut ca: NoNull<UInt32Chunked> =
                     groups.iter().map(|(_, g)| g.len() as u32).collect();
                 ca.rename(&new_name);
                 Ok(Some(ca.into_inner().into_series()))
@@ -412,7 +412,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 let mut column: ListChunked = groups
                     .iter()
                     .map(|(_first, idx)| {
-                        let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
+                        let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
                         ca.into_inner().into_series()
                     })
                     .collect();

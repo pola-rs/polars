@@ -1,6 +1,6 @@
 use crate::chunked_array::kernels;
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use arrow::array::ArrayRef;
 use std::sync::Arc;
 
@@ -114,7 +114,7 @@ where
             Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
         // no null path
         } else if self.null_count() == 0 && other.null_count() == 0 {
-            let val: Xob<ChunkedArray<_>> = mask
+            let val: NoNull<ChunkedArray<_>> = mask
                 .into_no_null_iter()
                 .zip(self.into_no_null_iter())
                 .zip(other.into_no_null_iter())

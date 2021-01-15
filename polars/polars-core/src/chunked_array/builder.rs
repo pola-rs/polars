@@ -1,7 +1,7 @@
 use crate::{
     prelude::*,
     use_string_cache,
-    utils::{get_iter_capacity, Xob},
+    utils::{get_iter_capacity, NoNull},
 };
 use ahash::AHashMap;
 use arrow::array::{
@@ -651,7 +651,7 @@ where
 
     /// Create a new ChunkedArray from an iterator.
     fn new_from_iter(name: &str, it: impl Iterator<Item = T::Native>) -> ChunkedArray<T> {
-        let ca: Xob<ChunkedArray<_>> = it.collect();
+        let ca: NoNull<ChunkedArray<_>> = it.collect();
         let mut ca = ca.into_inner();
         ca.rename(name);
         ca

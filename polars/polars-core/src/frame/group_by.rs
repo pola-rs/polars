@@ -1,7 +1,7 @@
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, Xob};
+use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, NoNull};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, create_hash_threaded_vectorized,
     prepare_hashed_relation, IdBuildHasher, IdxHash,
@@ -1005,7 +1005,7 @@ where
     T::Native: Hash + Eq,
 {
     fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
-        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
+        Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
 
@@ -1024,13 +1024,13 @@ impl<T> AggNUnique for ObjectChunked<T> {}
 // TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
     fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
-        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
+        Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
 
 impl AggNUnique for Utf8Chunked {
     fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
-        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
+        Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
 
@@ -1601,7 +1601,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             .groups
             .iter()
             .map(|(_first, idx)| {
-                let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
+                let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
                 ca.into_inner().into_series()
             })
             .collect();

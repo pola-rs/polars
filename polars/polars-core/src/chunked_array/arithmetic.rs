@@ -1,6 +1,6 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use arrow::{array::ArrayRef, compute};
 use num::{Num, NumCast, ToPrimitive};
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -28,7 +28,7 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
             {
                 match ($self.null_count(), $rhs.null_count()) {
                     (0, 0) => {
-                        let a: Xob<ChunkedArray<_>> = $self
+                        let a: NoNull<ChunkedArray<_>> = $self
                         .into_no_null_iter()
                         .zip($rhs.into_no_null_iter())
                         .map(|(left, right)| left $operand right)
@@ -466,7 +466,7 @@ macro_rules! power {
             slice
                 .iter()
                 .map(|&val| val.$to_primitive().unwrap().powf($exp))
-                .collect::<Xob<$return>>()
+                .collect::<NoNull<$return>>()
                 .into_inner()
         } else {
             $self

@@ -10,7 +10,7 @@ use crate::chunked_array::kernels::take::{
     take_no_null_boolean, take_no_null_primitive, take_utf8,
 };
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
     PrimitiveArrayOps,
@@ -224,7 +224,7 @@ where
         }
         if self.chunks.len() == 1 {
             if self.null_count() == 0 {
-                let idx_ca: Xob<UInt32Chunked> =
+                let idx_ca: NoNull<UInt32Chunked> =
                     indices.into_iter().map(|idx| idx as u32).collect();
                 let idx_ca = idx_ca.into_inner();
                 let idx_arr = idx_ca.downcast_chunks()[0];
@@ -988,7 +988,7 @@ where
 {
     fn take_every(&self, n: usize) -> ChunkedArray<T> {
         if self.null_count() == 0 {
-            let a: Xob<_> = self.into_no_null_iter().step_by(n).collect();
+            let a: NoNull<_> = self.into_no_null_iter().step_by(n).collect();
             a.into_inner()
         } else {
             self.into_iter().step_by(n).collect()
@@ -999,7 +999,7 @@ where
 impl ChunkTakeEvery<BooleanType> for BooleanChunked {
     fn take_every(&self, n: usize) -> BooleanChunked {
         if self.null_count() == 0 {
-            let a: Xob<_> = self.into_no_null_iter().step_by(n).collect();
+            let a: NoNull<_> = self.into_no_null_iter().step_by(n).collect();
             a.into_inner()
         } else {
             self.into_iter().step_by(n).collect()
@@ -1030,7 +1030,7 @@ impl ChunkTakeEvery<ListType> for ListChunked {
 impl ChunkTakeEvery<CategoricalType> for CategoricalChunked {
     fn take_every(&self, n: usize) -> CategoricalChunked {
         let mut ca = if self.null_count() == 0 {
-            let ca: Xob<UInt32Chunked> = self.into_no_null_iter().step_by(n).collect();
+            let ca: NoNull<UInt32Chunked> = self.into_no_null_iter().step_by(n).collect();
             ca.into_inner()
         } else {
             self.into_iter().step_by(n).collect()

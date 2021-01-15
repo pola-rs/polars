@@ -1,7 +1,7 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
-use crate::utils::{floating_encode_f64, integer_decode_f64, Xob};
+use crate::utils::{floating_encode_f64, integer_decode_f64, NoNull};
 use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
 use ahash::RandomState;
 use itertools::Itertools;
@@ -139,7 +139,7 @@ macro_rules! impl_value_counts {
         let values = unsafe {
             $self.take_unchecked(group_tuples.iter().map(|t| t.0), Some(group_tuples.len()))
         };
-        let mut counts: Xob<UInt32Chunked> = group_tuples
+        let mut counts: NoNull<UInt32Chunked> = group_tuples
             .into_iter()
             .map(|(_, groups)| groups.len() as u32)
             .collect();

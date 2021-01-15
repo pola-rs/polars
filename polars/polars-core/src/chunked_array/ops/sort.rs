@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::cmp::Ordering;
@@ -48,7 +48,7 @@ where
             ChunkedArray::new_from_aligned_vec(self.name(), new)
         } else if self.null_count() == 0 {
             if reverse {
-                let ca: Xob<ChunkedArray<T>> = self
+                let ca: NoNull<ChunkedArray<T>> = self
                     .into_no_null_iter()
                     .sorted_by(|a, b| b.partial_cmp(a).unwrap())
                     .collect();
@@ -56,7 +56,7 @@ where
                 ca.rename(self.name());
                 ca
             } else {
-                let ca: Xob<ChunkedArray<T>> = self
+                let ca: NoNull<ChunkedArray<T>> = self
                     .into_no_null_iter()
                     .sorted_by(|a, b| a.partial_cmp(b).unwrap())
                     .collect();

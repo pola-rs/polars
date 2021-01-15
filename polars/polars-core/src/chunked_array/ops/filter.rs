@@ -2,7 +2,7 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::array::ArrayRef;
@@ -116,11 +116,11 @@ where
         }
         let out = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
-                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
+                let ca: NoNull<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
                 Ok(ca.into_inner())
             }
             (0, _) => {
-                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
+                let ca: NoNull<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
                 Ok(ca.into_inner())
             }
             (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
@@ -145,11 +145,11 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         check_filter_len!(self, filter);
         let out = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
-                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
+                let ca: NoNull<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
                 Ok(ca.into_inner())
             }
             (0, _) => {
-                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
+                let ca: NoNull<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
                 Ok(ca.into_inner())
             }
             (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),

@@ -39,16 +39,16 @@ pub(crate) fn floating_encode_f64(mantissa: u64, exponent: i16, sign: i8) -> f64
 
 /// Just a wrapper structure. Useful for certain impl specializations
 /// This is for instance use to implement
-/// `impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>`
+/// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
 /// as `Option<T::Native>` was already implemented:
 /// `impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>`
-pub struct Xob<T> {
+pub struct NoNull<T> {
     inner: T,
 }
 
-impl<T> Xob<T> {
+impl<T> NoNull<T> {
     pub fn new(inner: T) -> Self {
-        Xob { inner }
+        NoNull { inner }
     }
 
     pub fn into_inner(self) -> T {
@@ -56,7 +56,7 @@ impl<T> Xob<T> {
     }
 }
 
-impl<T> Deref for Xob<T> {
+impl<T> Deref for NoNull<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -64,7 +64,7 @@ impl<T> Deref for Xob<T> {
     }
 }
 
-impl<T> DerefMut for Xob<T> {
+impl<T> DerefMut for NoNull<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

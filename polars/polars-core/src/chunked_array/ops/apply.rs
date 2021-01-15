@@ -1,6 +1,6 @@
 //! Implementations of the ChunkApply Trait.
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use arrow::array::{ArrayRef, LargeStringArray, PrimitiveArray};
 
 macro_rules! apply {
@@ -47,7 +47,7 @@ where
         F: Fn(T::Native) -> T::Native + Copy,
     {
         if let Ok(slice) = self.cont_slice() {
-            let new: Xob<ChunkedArray<T>> = slice.iter().copied().map(f).collect();
+            let new: NoNull<ChunkedArray<T>> = slice.iter().copied().map(f).collect();
             new.into_inner()
         } else {
             let mut ca: ChunkedArray<T> = self
@@ -70,7 +70,7 @@ where
         F: Fn((usize, T::Native)) -> T::Native + Copy,
     {
         if self.null_count() == 0 {
-            let ca: Xob<_> = self.into_no_null_iter().enumerate().map(f).collect();
+            let ca: NoNull<_> = self.into_no_null_iter().enumerate().map(f).collect();
             ca.into_inner()
         } else {
             self.into_iter()

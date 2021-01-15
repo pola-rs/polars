@@ -4,7 +4,7 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::series::implementations::Wrap;
 use crate::series::SeriesTrait;
-use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, Xob};
+use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, NoNull};
 use ahash::RandomState;
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
@@ -708,7 +708,7 @@ impl DataFrame {
         };
 
         if n_chunks == 1 {
-            let idx_ca: Xob<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
             let idx_ca = idx_ca.into_inner();
             let cols = self
                 .columns
@@ -747,7 +747,7 @@ impl DataFrame {
         };
 
         if n_chunks == 1 {
-            let idx_ca: Xob<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
             let idx_ca = idx_ca.into_inner();
             let cols = self
                 .columns
