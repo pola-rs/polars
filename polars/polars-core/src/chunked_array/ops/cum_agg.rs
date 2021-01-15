@@ -83,9 +83,61 @@ where
 impl ChunkCumAgg<CategoricalType> for CategoricalChunked {}
 impl ChunkCumAgg<Utf8Type> for Utf8Chunked {}
 impl ChunkCumAgg<ListType> for ListChunked {}
-impl ChunkCumAgg<BooleanType> for BooleanChunked {}
+impl ChunkCumAgg<BooleanType> for BooleanChunked {
+
+    fn cum_max(&self, reverse: bool) -> ChunkedArray<BooleanType> {
+        let iter: Box<dyn Iterator<Item = Option<bool>>> = match reverse {
+            false => Box::new(self.into_iter()),
+            true => Box::new(self.into_iter().rev()),
+        };
+        let mut ca: Self = iter
+            .scan(false, |state, v| match v {
+                Some(v) => {
+                    if !v & *state {
+                        *state = v
+                    }
+                    Some(Some(*state))
+                }
+                None => Some(None),
+            })
+            .collect();
+        ca.rename(self.name());
+        if reverse {
+            ca.reverse()
+        } else {
+            ca
+        }
+    }
+
+    fn cum_min(&self, reverse: bool) -> ChunkedArray<BooleanType> {
+        let iter: Box<dyn Iterator<Item = Option<bool>>> = match reverse {
+            false => Box::new(self.into_iter()),
+            true => Box::new(self.into_iter().rev()),
+        };
+        let mut ca: Self = iter
+            .scan(true, |state, v| match v {
+                Some(v) => {
+                    if v & !(*state) {
+                        *state = v
+                    }
+                    Some(Some(*state))
+                }
+                None => Some(None),
+            })
+            .collect();
+        ca.rename(self.name());
+        if reverse {
+            ca.reverse()
+        } else {
+            ca
+        }
+    }
+
+}
 #[cfg(feature = "object")]
-impl<T> ChunkCumAgg<ObjectType<T>> for ObjectChunked<T> {}
+impl<T> ChunkCumAgg<ObjectType<T>> for ObjectChunked<T> {
+
+}
 
 #[cfg(test)]
 mod test {
