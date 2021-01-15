@@ -18,6 +18,7 @@ mod arithmetic;
 pub mod explode;
 pub mod group_by;
 pub mod hash_join;
+pub mod resample;
 pub mod row;
 pub mod select;
 mod upstream_traits;
