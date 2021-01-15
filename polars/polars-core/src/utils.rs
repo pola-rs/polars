@@ -421,6 +421,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (UInt32, UInt64) => Some(UInt64),
         (UInt32, Float32) => Some(Float32),
         (UInt32, Float64) => Some(Float64),
+        (UInt32, Boolean) => Some(UInt32),
 
         (UInt64, UInt8) => Some(UInt64),
         (UInt64, UInt16) => Some(UInt64),
@@ -428,6 +429,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (UInt64, UInt64) => Some(UInt64),
         (UInt64, Float32) => Some(Float32),
         (UInt64, Float64) => Some(Float64),
+        (UInt64, Boolean) => Some(UInt64),
 
         (Int8, Int8) => Some(Int8),
         (Int8, Int16) => Some(Int16),
@@ -435,6 +437,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int8, Int64) => Some(Int64),
         (Int8, Float32) => Some(Float32),
         (Int8, Float64) => Some(Float64),
+        (Int8, Boolean) => Some(Int8),
 
         (Int16, Int8) => Some(Int16),
         (Int16, Int16) => Some(Int16),
@@ -442,6 +445,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int16, Int64) => Some(Int64),
         (Int16, Float32) => Some(Float32),
         (Int16, Float64) => Some(Float64),
+        (Int16, Boolean) => Some(Int16),
 
         (Int32, Int8) => Some(Int32),
         (Int32, Int16) => Some(Int32),
@@ -451,6 +455,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int32, Float64) => Some(Float64),
         (Int32, Date32) => Some(Int32),
         (Int32, Date64) => Some(Int64),
+        (Int32, Boolean) => Some(Int32),
 
         (Int64, Int8) => Some(Int64),
         (Int64, Int16) => Some(Int64),
@@ -460,6 +465,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int64, Float64) => Some(Float64),
         (Int64, Date64) => Some(Int64),
         (Int64, Date32) => Some(Int32),
+        (Int64, Boolean) => Some(Int64),
 
         (Float32, Float32) => Some(Float32),
         (Float32, Float64) => Some(Float64),
@@ -469,6 +475,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Float64, Float64) => Some(Float64),
         (Float64, Date32) => Some(Float64),
         (Float64, Date64) => Some(Float64),
+        (Float64, Boolean) => Some(Float64),
 
         (Date32, Int32) => Some(Int32),
         (Date32, Int64) => Some(Int64),
@@ -484,6 +491,16 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (_, Utf8) => Some(Utf8),
 
         (Boolean, Boolean) => Some(Boolean),
+        (Boolean, Int8) => Some(Int8),
+        (Boolean, Int16) => Some(Int16),
+        (Boolean, Int32) => Some(Int32),
+        (Boolean, Int64) => Some(Int64),
+        (Boolean, UInt8) => Some(UInt8),
+        (Boolean, UInt16) => Some(UInt16),
+        (Boolean, UInt32) => Some(UInt32),
+        (Boolean, UInt64) => Some(UInt64),
+        (Boolean, Float32) => Some(Float32),
+        (Boolean, Float64) => Some(Float64),
 
         _ => None,
     }

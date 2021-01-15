@@ -1527,6 +1527,24 @@ def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) ->
     return acc
 
 
+def any(name: "Union[str, List[Expr]]") -> "Expr":
+    """
+    Evaluate columnwise or elementwise with a bitwise OR operation
+    """
+    if isinstance(name, list):
+        return fold(lit(0), lambda a, b: a | b, name).alias("any")
+    return col(name).sum() > 0
+
+
+def all(name: "Union[str, List[Expr]]") -> "Expr":
+    """
+    Evaluate columnwise or elementwise with a bitwise OR operation
+    """
+    if isinstance(name, list):
+        return fold(lit(0), lambda a, b: a & b, name).alias("all")
+    return col(name).cast(bool).sum() == col(name).count()
+
+
 class UDF:
     def __init__(self, f: Callable[[Series], Series], output_type: "DataType"):
         self.f = f

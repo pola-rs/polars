@@ -1,7 +1,9 @@
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, NoNull};
+use crate::utils::{
+    accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, NoNull,
+};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, create_hash_threaded_vectorized,
     prepare_hashed_relation, IdBuildHasher, IdxHash,

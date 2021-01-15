@@ -173,6 +173,12 @@ class Series:
     def __repr__(self) -> str:
         return self.__str__()
 
+    def __and__(self, other):
+        return wrap_s(self._s.bitand(other._s))
+
+    def __or__(self, other):
+        return wrap_s(self._s.bitor(other._s))
+
     def __eq__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
