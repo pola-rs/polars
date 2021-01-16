@@ -648,7 +648,7 @@ where
     T: PolarsNumericType,
 {
     fn as_single_ptr(&mut self) -> Result<usize> {
-        let mut ca = self.rechunk(None).expect("should not fail");
+        let mut ca = self.rechunk().expect("should not fail");
         mem::swap(&mut ca, self);
         let a = self.data_views()[0];
         let ptr = a.as_ptr();

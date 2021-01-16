@@ -173,19 +173,8 @@ impl DataFrame {
 
     /// Aggregate all chunks to contiguous memory.
     pub fn agg_chunks(&self) -> Self {
-        let f = |s: &Series| s.rechunk(Some(&[1])).expect("can always rechunk to single");
-        // breakpoint for parallel aggregation
-        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
-            .unwrap_or_else(|_| "".to_string())
-            .parse()
-            .unwrap_or(15);
-
-        let cols = if self.columns.len() > bp {
-            self.columns.par_iter().map(f).collect()
-        } else {
-            self.columns.iter().map(f).collect()
-        };
-
+        let f = |s: &Series| s.rechunk().expect("can always rechunk to single");
+        let cols = self.columns.par_iter().map(f).collect();
         DataFrame::new_no_checks(cols)
     }
 
@@ -194,10 +183,7 @@ impl DataFrame {
         self.columns = self
             .columns
             .iter()
-            .map(|s| {
-                s.rechunk(Some(&[1]))
-                    .expect("can always aggregate to single chunk")
-            })
+            .map(|s| s.rechunk().expect("can always aggregate to single chunk"))
             .collect();
         self
     }
@@ -1308,11 +1294,7 @@ impl DataFrame {
         match self.n_chunks() {
             Ok(1) => {}
             Ok(_) => {
-                self.columns = self
-                    .columns
-                    .iter()
-                    .map(|s| s.rechunk(None).unwrap())
-                    .collect();
+                self.columns = self.columns.iter().map(|s| s.rechunk().unwrap()).collect();
             }
             Err(_) => {} // no data. So iterator will be empty
         }
