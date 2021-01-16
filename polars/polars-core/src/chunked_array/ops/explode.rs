@@ -32,7 +32,7 @@ impl ChunkExplode for ListChunked {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
-        let ca = self.rechunk(Some(&[1])).unwrap();
+        let ca = self.rechunk().unwrap();
         let listarr: &LargeListArray = ca.downcast_chunks()[0];
         let list_data = listarr.data();
         let values = listarr.values();
@@ -50,7 +50,7 @@ impl ChunkExplode for Utf8Chunked {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
-        let ca = self.rechunk(Some(&[1])).unwrap();
+        let ca = self.rechunk().unwrap();
         let stringarr: &LargeStringArray = ca.downcast_chunks()[0];
         let list_data = stringarr.data();
         let str_values_buf = stringarr.value_data();

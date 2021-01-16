@@ -559,6 +559,26 @@ class DataFrame:
         return GroupBy(self._df, by, downsample=False)
 
     def downsample(self, by: str, rule: str, n: int) -> "GroupBy":
+        """
+        Start a downsampling groupby operation.
+
+        Parameters
+        ----------
+        by
+            Column that will be used as key in the groupby operation.
+            This should be a date64/date32 column
+        rule
+            Units of the downscaling operation.
+
+            Any of:
+                - "second"
+                - "minute"
+                - "hour"
+                - "day"
+
+        n
+            Number of units (e.g. 5 "day", 15 "minute"
+        """
         return GroupBy(self._df, by, downsample=True, rule=rule, downsample_n=n)
 
     def join(
