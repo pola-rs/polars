@@ -5,10 +5,8 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::array::ArrayRef;
-use arrow::compute::filter_primitive_array;
+use arrow::compute::filter as filter_fn;
 use std::ops::Deref;
-use std::sync::Arc;
 
 macro_rules! impl_filter_with_nulls_in_both {
     ($self:expr, $filter:expr) => {{
@@ -108,9 +106,7 @@ where
                 .downcast_chunks()
                 .iter()
                 .zip(filter.downcast_chunks())
-                .map(|(&left, mask)| {
-                    Arc::new(filter_primitive_array(left, mask).unwrap()) as ArrayRef
-                })
+                .map(|(&left, mask)| filter_fn(left, mask).unwrap())
                 .collect::<Vec<_>>();
             return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
         }
@@ -144,18 +140,12 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         }
         check_filter_len!(self, filter);
         let out = match (self.null_count(), filter.null_count()) {
-            (0, 0) => {
-                let ca: NoNull<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
-                Ok(ca.into_inner())
-            }
-            (0, _) => {
-                let ca: NoNull<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
-                Ok(ca.into_inner())
-            }
+            (0, 0) => Ok(impl_filter_no_nulls!(self, filter)),
+            (0, _) => Ok(impl_filter_no_nulls_in_self!(self, filter)),
             (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
             (_, _) => impl_filter_with_nulls_in_both!(self, filter),
         };
-        out.map(|mut ca| {
+        out.map(|mut ca: BooleanChunked| {
             ca.rename(self.name());
             ca
         })

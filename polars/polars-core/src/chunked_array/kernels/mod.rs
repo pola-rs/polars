@@ -1,6 +1,5 @@
 pub(crate) mod cast;
 pub(crate) mod comparison;
-pub(crate) mod concat;
 pub mod set;
 pub(crate) mod take;
 #[cfg(feature = "temporal")]
@@ -9,14 +8,16 @@ pub mod temporal;
 pub(crate) mod utils;
 pub mod zip_with;
 
-use crate::chunked_array::builder::{aligned_vec_to_primitive_array, get_bitmap};
+use crate::chunked_array::builder::{
+    aligned_vec_to_boolean_array, aligned_vec_to_primitive_array, get_bitmap,
+};
 use crate::datatypes::{
     ArrowDataType, Float64Type, PolarsFloatType, PolarsNumericType, PolarsPrimitiveType,
 };
 use arrow::array::{Array, ArrayData, ArrayRef, PrimitiveArray};
 use arrow::datatypes::{
-    BooleanType, Float32Type, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type, UInt32Type,
-    UInt64Type, UInt8Type,
+    Float32Type, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type, UInt32Type, UInt64Type,
+    UInt8Type,
 };
 use num::{Float, NumCast};
 use std::sync::Arc;
@@ -32,7 +33,7 @@ where
     let child_data = data.child_data().to_vec();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     let new_data = ArrayData::new(
-        T::get_data_type(),
+        T::DATA_TYPE,
         arr.len(),
         Some(null_count),
         null_bit_buffer,
@@ -72,7 +73,7 @@ where
     T::Native: num::NumCast,
     S::Native: num::NumCast,
 {
-    let vals = arr.value_slice(arr.offset(), arr.len());
+    let vals = arr.values();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     let av = vals
         .iter()
@@ -90,10 +91,10 @@ where
     T: PolarsFloatType,
     T::Native: Float,
 {
-    let vals = arr.value_slice(arr.offset(), arr.len());
+    let vals = arr.values();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     let av = vals.iter().map(|v| v.is_nan()).collect();
-    Arc::new(aligned_vec_to_primitive_array::<BooleanType>(
+    Arc::new(aligned_vec_to_boolean_array(
         av,
         null_bit_buffer,
         Some(null_count),
@@ -105,10 +106,10 @@ where
     T: PolarsFloatType,
     T::Native: Float,
 {
-    let vals = arr.value_slice(arr.offset(), arr.len());
+    let vals = arr.values();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     let av = vals.iter().map(|v| !v.is_nan()).collect();
-    Arc::new(aligned_vec_to_primitive_array::<BooleanType>(
+    Arc::new(aligned_vec_to_boolean_array(
         av,
         null_bit_buffer,
         Some(null_count),
@@ -120,10 +121,10 @@ where
     T: PolarsFloatType,
     T::Native: Float,
 {
-    let vals = arr.value_slice(arr.offset(), arr.len());
+    let vals = arr.values();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     let av = vals.iter().map(|v| !v.is_finite()).collect();
-    Arc::new(aligned_vec_to_primitive_array::<BooleanType>(
+    Arc::new(aligned_vec_to_boolean_array(
         av,
         null_bit_buffer,
         Some(null_count),
@@ -135,10 +136,10 @@ where
     T: PolarsFloatType,
     T::Native: Float,
 {
-    let vals = arr.value_slice(arr.offset(), arr.len());
+    let vals = arr.values();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     let av = vals.iter().map(|v| !v.is_infinite()).collect();
-    Arc::new(aligned_vec_to_primitive_array::<BooleanType>(
+    Arc::new(aligned_vec_to_boolean_array(
         av,
         null_bit_buffer,
         Some(null_count),

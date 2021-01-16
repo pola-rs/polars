@@ -595,6 +595,28 @@ where
         builder.finish()
     }
 }
+impl ChunkFull<bool> for BooleanChunked {
+    fn full(name: &str, value: bool, length: usize) -> Self {
+        let mut builder = BooleanChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_value(value)
+        }
+        builder.finish()
+    }
+}
+
+impl ChunkFullNull for BooleanChunked {
+    fn full_null(name: &str, length: usize) -> Self {
+        let mut builder = BooleanChunkedBuilder::new(name, length);
+
+        // todo: faster with null arrays or in one go allocation
+        for _ in 0..length {
+            builder.append_null()
+        }
+        builder.finish()
+    }
+}
 
 impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     fn full(name: &str, value: &'a str, length: usize) -> Self {
@@ -723,6 +745,12 @@ where
     T: PolarsPrimitiveType,
 {
     fn expand_at_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
+        impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> BooleanChunked {
         impl_chunk_expand!(self, length, index)
     }
 }

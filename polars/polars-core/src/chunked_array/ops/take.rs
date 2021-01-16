@@ -13,7 +13,6 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
-    PrimitiveArrayOps,
 };
 use arrow::compute::kernels::take::take;
 use std::convert::TryFrom;
@@ -48,7 +47,7 @@ macro_rules! impl_take_random_get_unchecked {
 
 impl<T> TakeRandom for ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     type Item = T::Native;
 
@@ -63,7 +62,7 @@ where
 
 impl<'a, T> TakeRandom for &'a ChunkedArray<T>
 where
-    T: ArrowPrimitiveType,
+    T: PolarsPrimitiveType,
 {
     type Item = T::Native;
 
@@ -73,6 +72,18 @@ where
 
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         (*self).get_unchecked(index)
+    }
+}
+
+impl TakeRandom for BooleanChunked {
+    type Item = bool;
+
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        impl_take_random_get!(self, index, BooleanArray)
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        impl_take_random_get_unchecked!(self, index, BooleanArray)
     }
 }
 
@@ -271,7 +282,7 @@ where
                 take_no_null_primitive(arr, idx_arr) as ArrayRef
             } else {
                 let arr = &self.chunks[0];
-                take(arr, idx_arr, None).unwrap()
+                take(&**arr, idx_arr, None).unwrap()
             };
             Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
         } else {
@@ -291,7 +302,7 @@ impl ChunkTake for BooleanChunked {
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
-        impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
+        impl_take!(self, indices, capacity, BooleanChunkedBuilder)
     }
 
     unsafe fn take_unchecked(
@@ -305,7 +316,7 @@ impl ChunkTake for BooleanChunked {
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
-        impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
+        impl_take_unchecked!(self, indices, capacity, BooleanChunkedBuilder)
     }
 
     fn take_opt(
@@ -316,7 +327,7 @@ impl ChunkTake for BooleanChunked {
         if self.is_empty() {
             return self.clone();
         }
-        impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
+        impl_take_opt!(self, indices, capacity, BooleanChunkedBuilder)
     }
 
     unsafe fn take_opt_unchecked(
@@ -327,7 +338,7 @@ impl ChunkTake for BooleanChunked {
         if self.is_empty() {
             return self.clone();
         }
-        impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
+        impl_take_opt_unchecked!(self, indices, capacity, BooleanChunkedBuilder)
     }
 
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
@@ -342,7 +353,7 @@ impl ChunkTake for BooleanChunked {
                 let arr = arr.as_any().downcast_ref::<BooleanArray>().unwrap();
                 take_no_null_boolean(arr, idx_arr)
             } else {
-                take(arr, idx_arr, None).unwrap()
+                take(&**arr, idx_arr, None).unwrap()
             };
             Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
         } else {
@@ -590,7 +601,7 @@ impl ChunkTake for ListChunked {
             let idx_arr = idx.downcast_chunks()[0];
             let arr = &self.chunks[0];
 
-            let new_arr = take(arr, idx_arr, None).unwrap();
+            let new_arr = take(&**arr, idx_arr, None).unwrap();
             Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
         } else {
             Err(PolarsError::NoSlice)
@@ -999,8 +1010,7 @@ where
 impl ChunkTakeEvery<BooleanType> for BooleanChunked {
     fn take_every(&self, n: usize) -> BooleanChunked {
         if self.null_count() == 0 {
-            let a: NoNull<_> = self.into_no_null_iter().step_by(n).collect();
-            a.into_inner()
+            self.into_no_null_iter().step_by(n).collect()
         } else {
             self.into_iter().step_by(n).collect()
         }

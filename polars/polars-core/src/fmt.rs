@@ -166,6 +166,14 @@ where
     }
 }
 
+impl Debug for ChunkedArray<BooleanType> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+        let dtype = format!("{:?}", DataType::Boolean);
+        format_array!(limit, f, self, dtype, self.name(), "ChunkedArray")
+    }
+}
+
 impl Debug for Utf8Chunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         format_utf8_array!(80, f, self, self.name(), "ChunkedArray")
@@ -515,6 +523,12 @@ impl<T> FmtList for ChunkedArray<T>
 where
     T: PolarsPrimitiveType,
 {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
+impl FmtList for BooleanChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }

@@ -1,10 +1,8 @@
 pub mod builder;
+use super::kernels::utils::{count_set_bits, count_set_bits_offset};
 pub use crate::prelude::*;
-use arrow::array::{
-    Array, ArrayDataRef, ArrayEqual, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, JsonEqual,
-};
+use arrow::array::{Array, ArrayDataRef, ArrayRef, BooleanBufferBuilder, JsonEqual};
 use arrow::bitmap::Bitmap;
-use arrow::util::bit_util::count_set_bits_offset;
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::Debug;
@@ -28,25 +26,6 @@ where
 {
     pub fn value(&self, index: usize) -> &T {
         &self.values[self.offset + index]
-    }
-}
-
-impl<T> ArrayEqual for ObjectArray<T>
-where
-    T: Any + Debug + Clone + Send + Sync,
-{
-    fn equals(&self, _other: &dyn Array) -> bool {
-        false
-    }
-
-    fn range_equals(
-        &self,
-        _other: &dyn Array,
-        _start_idx: usize,
-        _end_idx: usize,
-        _other_start_idx: usize,
-    ) -> bool {
-        false
     }
 }
 
@@ -88,7 +67,7 @@ where
         new.len = length;
         new.offset = offset;
         new.null_count = if let Some(bitmap) = &new.null_bitmap {
-            let valid_bits = bitmap.buffer_ref().data();
+            let valid_bits = bitmap.buffer_ref().as_slice();
             len.checked_sub(count_set_bits_offset(valid_bits, offset, length))
                 .unwrap();
             0

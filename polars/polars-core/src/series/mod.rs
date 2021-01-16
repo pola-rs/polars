@@ -1242,7 +1242,11 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .map(|arr| {
                         cast(
                             arr,
-                            &ArrowDataType::LargeList(Box::new(ArrowDataType::Null)),
+                            &ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
+                                "",
+                                ArrowDataType::Null,
+                                true,
+                            ))),
                         )
                         .unwrap()
                     })

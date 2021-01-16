@@ -132,7 +132,7 @@ pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
 pub trait PolarsPrimitiveType: ArrowPrimitiveType + Send + Sync + PolarsDataType {}
-impl PolarsPrimitiveType for BooleanType {}
+// impl PolarsPrimitiveType for BooleanType {}
 impl PolarsPrimitiveType for UInt8Type {}
 impl PolarsPrimitiveType for UInt16Type {}
 impl PolarsPrimitiveType for UInt32Type {}
@@ -336,7 +336,9 @@ impl DataType {
             Date32 => ArrowDataType::Date32(DateUnit::Day),
             Date64 => ArrowDataType::Date64(DateUnit::Millisecond),
             Time64(tu) => ArrowDataType::Time64(tu.clone()),
-            List(dt) => ArrowDataType::List(Box::new(dt.clone())),
+            List(dt) => {
+                ArrowDataType::List(Box::new(arrow::datatypes::Field::new("", dt.clone(), true)))
+            }
             Duration(tu) => ArrowDataType::Duration(tu.clone()),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
@@ -499,7 +501,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Boolean => DataType::Boolean,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
-            ArrowDataType::LargeList(dt) => DataType::List(*dt.clone()),
+            ArrowDataType::LargeList(f) => DataType::List(f.data_type().clone()),
             ArrowDataType::Date32(DateUnit::Day) => DataType::Date32,
             ArrowDataType::Date64(DateUnit::Millisecond) => DataType::Date64,
             ArrowDataType::Time64(TimeUnit::Nanosecond) => DataType::Time64(TimeUnit::Nanosecond),
