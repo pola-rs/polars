@@ -40,6 +40,18 @@ where
     }
 }
 
+impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
+    fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for opt_val in iter {
+            builder.append_option(opt_val);
+        }
+        builder.finish()
+    }
+}
+
 // NoNull is only a wrapper needed for specialization
 impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
@@ -48,36 +60,37 @@ where
     // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
-        // bools are bit packed
-        if let ArrowDataType::Boolean = T::get_data_type() {
-            let iter = iter.into_iter();
-            let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
+        let iter = iter.into_iter();
+        let mut v = AlignedVec::with_capacity_aligned(get_iter_capacity(&iter));
 
-            for val in iter {
-                builder.append_value(val);
-            }
-            NoNull::new(builder.finish())
-        } else {
-            let iter = iter.into_iter();
-            let mut v = AlignedVec::with_capacity_aligned(get_iter_capacity(&iter));
-
-            for val in iter {
-                v.push(val)
-            }
-            NoNull::new(ChunkedArray::new_from_aligned_vec("", v))
+        for val in iter {
+            v.push(val)
         }
+        NoNull::new(ChunkedArray::new_from_aligned_vec("", v))
     }
 }
 
 impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
+        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
             builder.append_value(val);
         }
         builder.finish()
+    }
+}
+
+impl FromIterator<bool> for NoNull<BooleanChunked> {
+    fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for val in iter {
+            builder.append_value(val);
+        }
+        NoNull::new(builder.finish())
     }
 }
 
@@ -421,7 +434,7 @@ impl FromParallelIterator<bool> for BooleanChunked {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut builder = PrimitiveChunkedBuilder::new("", capacity);
+        let mut builder = BooleanChunkedBuilder::new("", capacity);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {

@@ -6,8 +6,8 @@ use crate::prelude::*;
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-        Int64Array, Int8Array, LargeStringArray, PrimitiveArray, PrimitiveArrayOps,
-        PrimitiveBuilder, Time64NanosecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+        Int64Array, Int8Array, LargeStringArray, PrimitiveArray, Time64NanosecondArray,
+        UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
     datatypes::TimeUnit,
@@ -49,8 +49,8 @@ pub mod upstream_traits;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
-    Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
-    LargeListArray,
+    Array, ArrayDataRef, BooleanBuilder, Date32Array, DurationMillisecondArray,
+    DurationNanosecondArray, LargeListArray,
 };
 
 use ahash::AHashMap;
@@ -189,7 +189,7 @@ impl<T> ChunkedArray<T> {
                     let bit_end = arr.offset() + arr.len();
 
                     let byte_start = std::cmp::min(round_upto_power_of_2(arr.offset(), 8), bit_end);
-                    let data = null_bit_buffer.data();
+                    let data = null_bit_buffer.as_slice();
 
                     for i in arr.offset()..byte_start {
                         if get_bit(data, i) {
@@ -345,7 +345,7 @@ impl<T> ChunkedArray<T> {
             .chunks
             .iter()
             .map(|arr| {
-                let mut builder = PrimitiveBuilder::<BooleanType>::new(arr.len());
+                let mut builder = BooleanBuilder::new(arr.len());
                 for i in 0..arr.len() {
                     builder
                         .append_value(arr.is_null(i))
@@ -367,7 +367,7 @@ impl<T> ChunkedArray<T> {
             .chunks
             .iter()
             .map(|arr| {
-                let mut builder = PrimitiveBuilder::<BooleanType>::new(arr.len());
+                let mut builder = BooleanBuilder::new(arr.len());
                 for i in 0..arr.len() {
                     builder
                         .append_value(arr.is_valid(i))
@@ -665,7 +665,7 @@ where
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            Ok(self.downcast_chunks()[0].value_slice(0, self.len()))
+            Ok(self.downcast_chunks()[0].values())
         } else {
             Err(PolarsError::NoSlice)
         }
@@ -677,7 +677,7 @@ where
     pub fn data_views(&self) -> Vec<&[T::Native]> {
         self.downcast_chunks()
             .iter()
-            .map(|arr| arr.value_slice(0, arr.len()))
+            .map(|arr| arr.values())
             .collect()
     }
 
@@ -811,6 +811,18 @@ where
             .map(|arr| {
                 let arr = &**arr;
                 unsafe { &*(arr as *const dyn Array as *const PrimitiveArray<T>) }
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
+impl Downcast<BooleanArray> for BooleanChunked {
+    fn downcast_chunks(&self) -> Vec<&BooleanArray> {
+        self.chunks
+            .iter()
+            .map(|arr| {
+                let arr = &**arr;
+                unsafe { &*(arr as *const dyn Array as *const BooleanArray) }
             })
             .collect::<Vec<_>>()
     }

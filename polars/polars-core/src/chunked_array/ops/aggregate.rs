@@ -130,9 +130,9 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
-        match T::get_data_type() {
-            ArrowDataType::Float32 => agg_float_with_nans!(self, min_by, f32),
-            ArrowDataType::Float64 => agg_float_with_nans!(self, min_by, f64),
+        match T::get_dtype() {
+            DataType::Float32 => agg_float_with_nans!(self, min_by, f32),
+            DataType::Float64 => agg_float_with_nans!(self, min_by, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
@@ -142,9 +142,9 @@ where
     }
 
     fn max(&self) -> Option<T::Native> {
-        match T::get_data_type() {
-            ArrowDataType::Float32 => agg_float_with_nans!(self, max_by, f32),
-            ArrowDataType::Float64 => agg_float_with_nans!(self, max_by, f64),
+        match T::get_dtype() {
+            DataType::Float32 => agg_float_with_nans!(self, max_by, f32),
+            DataType::Float64 => agg_float_with_nans!(self, max_by, f64),
             _ => self
                 .downcast_chunks()
                 .iter()

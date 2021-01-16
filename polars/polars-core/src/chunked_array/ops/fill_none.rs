@@ -125,7 +125,7 @@ impl ChunkFillNone for BooleanChunked {
         if self.null_count() == 0 {
             return Ok(self.clone());
         }
-        let mut builder = PrimitiveChunkedBuilder::<BooleanType>::new(self.name(), self.len());
+        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
         match strategy {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
             FillNoneStrategy::Backward => impl_fill_backward!(self, builder),

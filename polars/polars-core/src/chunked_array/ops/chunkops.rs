@@ -1,9 +1,9 @@
 use crate::chunked_array::builder::get_list_builder;
-use crate::chunked_array::kernels::concat::concat;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
-use arrow::array::Array;
+use arrow::compute::concat;
+use itertools::Itertools;
 #[cfg(feature = "object")]
 use std::any::Any;
 #[cfg(feature = "object")]
@@ -24,7 +24,9 @@ where
         if self.chunks().len() == 1 {
             Ok(self.clone())
         } else {
-            let chunks = vec![concat(&self.chunks)?];
+            let chunks = vec![concat(
+                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+            )?];
             Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
         }
     }
@@ -35,7 +37,9 @@ impl ChunkOps for BooleanChunked {
         if self.chunks().len() == 1 {
             Ok(self.clone())
         } else {
-            let chunks = vec![concat(&self.chunks)?];
+            let chunks = vec![concat(
+                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+            )?];
             Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
         }
     }
@@ -46,7 +50,9 @@ impl ChunkOps for Utf8Chunked {
         if self.chunks().len() == 1 {
             Ok(self.clone())
         } else {
-            let chunks = vec![concat(&self.chunks)?];
+            let chunks = vec![concat(
+                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+            )?];
             Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
         }
     }

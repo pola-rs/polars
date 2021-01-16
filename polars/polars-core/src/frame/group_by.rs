@@ -9,7 +9,7 @@ use crate::vector_hasher::{
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use ahash::RandomState;
-use arrow::array::{LargeStringBuilder, PrimitiveBuilder};
+use arrow::array::{BooleanBuilder, LargeStringBuilder, PrimitiveBuilder};
 use crossbeam::thread;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
@@ -874,6 +874,12 @@ where
     }
 }
 
+impl AggFirst for BooleanChunked {
+    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+        impl_agg_first!(self, groups, BooleanChunked)
+    }
+}
+
 impl AggFirst for Utf8Chunked {
     fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, Utf8Chunked)
@@ -924,6 +930,12 @@ where
 {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, ChunkedArray<T>)
+    }
+}
+
+impl AggLast for BooleanChunked {
+    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+        impl_agg_last!(self, groups, BooleanChunked)
     }
 }
 
@@ -1063,11 +1075,26 @@ where
             }};
         }
 
+        macro_rules! impl_gb_bool {
+            ($agg_col:expr) => {{
+                let values_builder = BooleanBuilder::new(groups.len());
+                let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
+                for (_first, idx) in groups {
+                    let s = unsafe {
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
+                    };
+                    builder.append_series(&s)
+                }
+                builder.finish().into_series()
+            }};
+        }
+
         let s = self.clone().into_series();
         Some(match_arrow_data_type_apply_macro!(
             s.dtype(),
             impl_gb,
             impl_gb_utf8,
+            impl_gb_bool,
             s
         ))
     }
@@ -1764,11 +1791,31 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             }};
         }
 
+        macro_rules! impl_gb_bool {
+            ($agg_col:expr) => {{
+                let values_builder = BooleanBuilder::new(self.groups.len());
+                let mut builder =
+                    ListBooleanChunkedBuilder::new("", values_builder, self.groups.len());
+                for (_first, idx) in &self.groups {
+                    let s = unsafe {
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
+                    };
+                    builder.append_series(&s)
+                }
+                builder.finish().into_series()
+            }};
+        }
+
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
-            let mut agg =
-                match_arrow_data_type_apply_macro!(agg_col.dtype(), impl_gb, impl_gb_utf8, agg_col);
+            let mut agg = match_arrow_data_type_apply_macro!(
+                agg_col.dtype(),
+                impl_gb,
+                impl_gb_utf8,
+                impl_gb_bool,
+                agg_col
+            );
             agg.rename(&new_name);
             cols.push(agg);
         }

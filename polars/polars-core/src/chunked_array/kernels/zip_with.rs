@@ -1,11 +1,11 @@
 use super::utils::apply_bin_op_to_option_bitmap;
+use super::utils::count_set_bits_offset;
 use crate::chunked_array::builder::{aligned_vec_to_primitive_array, set_null_bits};
 use crate::chunked_array::kernels::utils::{get_bitmasks, BitMaskU64Prep};
 use crate::prelude::*;
-use arrow::array::{Array, ArrayData, BooleanArray, PrimitiveArray, PrimitiveArrayOps};
+use arrow::array::{Array, ArrayData, BooleanArray, PrimitiveArray};
 use arrow::buffer::{Buffer, MutableBuffer};
 use arrow::datatypes::ArrowNumericType;
-use arrow::util::bit_util::count_set_bits_offset;
 use std::ops::BitOr;
 
 fn get_new_null_bit_buffer(mask: &BooleanArray, a: &impl Array, b: &impl Array) -> Option<Buffer> {
@@ -40,14 +40,14 @@ where
     let mut bitmask_u64_helper = BitMaskU64Prep::new(mask);
     let mask_u64 = bitmask_u64_helper.get_mask_as_u64();
 
-    let left_bytes = left.data_ref().buffers()[0].data();
+    let left_bytes = left.data_ref().buffers()[0].as_slice();
     let left_offset = left.offset();
-    let right_bytes = right.data_ref().buffers()[0].data();
+    let right_bytes = right.data_ref().buffers()[0].as_slice();
     let right_offset = right.offset();
 
     let mut target_buffer = MutableBuffer::new(left.len() * value_size);
-    target_buffer.resize(left.len() * value_size).unwrap();
-    let target_bytes = target_buffer.data_mut();
+    target_buffer.resize(left.len() * value_size);
+    let target_bytes = target_buffer.as_slice_mut();
 
     let all_ones = u64::MAX;
     let bytes_length_64_values = 64 * value_size;
@@ -112,15 +112,15 @@ where
             target_bytes_idx += value_size;
         }
     }
-    let builder = ArrayData::builder(T::get_data_type())
+    let builder = ArrayData::builder(T::DATA_TYPE)
         .len(left.len())
-        .add_buffer(target_buffer.freeze());
+        .add_buffer(target_buffer.into());
     let null_bit_buffer = get_new_null_bit_buffer(mask, left, right);
     let null_count = null_bit_buffer
         .as_ref()
-        .map(|buf| left.len() - count_set_bits_offset(buf.data(), 0, left.len()));
+        .map(|buf| left.len() - count_set_bits_offset(buf.as_slice(), 0, left.len()));
 
-    let builder = set_null_bits(builder, null_bit_buffer, null_count, left.len());
+    let builder = set_null_bits(builder, null_bit_buffer, null_count);
     let data = builder.build();
     PrimitiveArray::<T>::from(data)
 }
@@ -143,8 +143,8 @@ where
     let mut values = AlignedVec::with_capacity_aligned(mask.len());
 
     // Get a slice to the values in the arrow arrays with the right offset
-    let vals_a = a.value_slice(a.offset(), a.len());
-    let vals_b = a.value_slice(b.offset(), b.len());
+    let vals_a = a.values();
+    let vals_b = a.values();
 
     // fill the aligned vector
     for i in 0..mask.len() {
@@ -178,6 +178,6 @@ mod test {
         let val = UInt8Array::from(vec![1, 1, 1, 1]);
         let val_2 = UInt8Array::from(vec![4, 4, 4, 4]);
         let a = zip_impl(&mask, &val, &val_2);
-        assert_eq!(a.value_slice(0, a.len()), &[1, 1, 4, 1]);
+        assert_eq!(a.values(), &[1, 1, 4, 1]);
     }
 }

@@ -5,7 +5,7 @@ use crate::{
 };
 use ahash::AHashMap;
 use arrow::array::{
-    ArrayBuilder, ArrayDataBuilder, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait,
+    ArrayDataBuilder, ArrayRef, BooleanArray, BooleanBufferBuilder, BooleanBuilder,
     LargeListBuilder,
 };
 use arrow::datatypes::ToByteSlice;
@@ -13,8 +13,8 @@ pub use arrow::memory;
 use arrow::{
     array::{Array, ArrayData, LargeStringBuilder, PrimitiveArray, PrimitiveBuilder},
     buffer::Buffer,
-    util::bit_util,
 };
+use num::Num;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::iter::FromIterator;
@@ -32,7 +32,6 @@ where
 {
     values: AlignedVec<T::Native>,
     bitmap_builder: BooleanBufferBuilder,
-    boolean_builder: PrimitiveBuilder<T>,
     null_count: usize,
 }
 
@@ -42,25 +41,12 @@ where
     T::Native: Default,
 {
     pub fn new(capacity: usize) -> Self {
-        let (boolean_builder, values, bitmap_builder) =
-            if matches!(T::get_dtype(), DataType::Boolean) {
-                (
-                    PrimitiveBuilder::new(capacity),
-                    AlignedVec::<T::Native>::with_capacity_aligned(0),
-                    BooleanBufferBuilder::new(0),
-                )
-            } else {
-                (
-                    PrimitiveBuilder::new(0),
-                    AlignedVec::<T::Native>::with_capacity_aligned(capacity),
-                    BooleanBufferBuilder::new(capacity),
-                )
-            };
+        let values = AlignedVec::<T::Native>::with_capacity_aligned(capacity);
+        let bitmap_builder = BooleanBufferBuilder::new(capacity);
 
         Self {
             values,
             bitmap_builder,
-            boolean_builder,
             null_count: 0,
         }
     }
@@ -68,38 +54,21 @@ where
     /// Appends a value of type `T::Native` into the builder
     #[inline]
     pub fn append_value(&mut self, v: T::Native) {
-        if matches!(T::get_dtype(), DataType::Boolean) {
-            self.boolean_builder.append_value(v).unwrap();
-        } else {
-            self.values.push(v);
-            self.bitmap_builder.append(true).unwrap();
-        }
+        self.values.push(v);
+        self.bitmap_builder.append(true);
     }
 
     /// Appends a null slot into the builder
     #[inline]
     pub fn append_null(&mut self) {
-        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
-            self.boolean_builder.append_null().unwrap();
-        }
-        {
-            self.bitmap_builder.append(false).unwrap();
-            self.values.push(Default::default());
-            self.null_count += 1;
-        }
+        self.bitmap_builder.append(false);
+        self.values.push(Default::default());
+        self.null_count += 1;
     }
 
     pub fn finish(mut self) -> PrimitiveArray<T> {
-        if matches!(T::get_data_type(), ArrowDataType::Boolean) {
-            self.boolean_builder.finish()
-        } else {
-            let null_bit_buffer = self.bitmap_builder.finish();
-            aligned_vec_to_primitive_array(
-                self.values,
-                Some(null_bit_buffer),
-                Some(self.null_count),
-            )
-        }
+        let null_bit_buffer = self.bitmap_builder.finish();
+        aligned_vec_to_primitive_array(self.values, Some(null_bit_buffer), Some(self.null_count))
     }
 }
 
@@ -113,6 +82,45 @@ pub trait ChunkedBuilder<N, T> {
         }
     }
     fn finish(self) -> ChunkedArray<T>;
+}
+
+pub struct BooleanChunkedBuilder {
+    array_builder: BooleanBuilder,
+    field: Field,
+}
+
+impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
+    /// Appends a value of type `T` into the builder
+    fn append_value(&mut self, v: bool) {
+        self.array_builder.append_value(v).unwrap();
+    }
+
+    /// Appends a null slot into the builder
+    fn append_null(&mut self) {
+        self.array_builder.append_null().unwrap();
+    }
+
+    fn finish(mut self) -> BooleanChunked {
+        let arr = Arc::new(self.array_builder.finish());
+
+        let len = arr.len();
+        ChunkedArray {
+            field: Arc::new(self.field),
+            chunks: vec![arr],
+            chunk_id: vec![len],
+            phantom: PhantomData,
+            categorical_map: None,
+        }
+    }
+}
+
+impl BooleanChunkedBuilder {
+    pub fn new(name: &str, capacity: usize) -> Self {
+        BooleanChunkedBuilder {
+            array_builder: BooleanBuilder::new(capacity),
+            field: Field::new(name, DataType::Boolean),
+        }
+    }
 }
 
 pub struct PrimitiveChunkedBuilder<T>
@@ -283,8 +291,6 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
     }
 }
 
-pub type BooleanChunkedBuilder = PrimitiveChunkedBuilder<BooleanType>;
-
 pub struct Utf8ChunkedBuilder {
     pub builder: LargeStringBuilder,
     pub capacity: usize,
@@ -374,22 +380,19 @@ pub(crate) fn set_null_bits(
     mut builder: ArrayDataBuilder,
     null_bit_buffer: Option<Buffer>,
     null_count: Option<usize>,
-    len: usize,
 ) -> ArrayDataBuilder {
     match null_count {
         Some(null_count) => {
             if null_count > 0 {
                 let null_bit_buffer = null_bit_buffer
                     .expect("implementation error. Should not be None if null_count > 0");
-                debug_assert!(null_count == len - bit_util::count_set_bits(null_bit_buffer.data()));
-                builder = builder
-                    .null_count(null_count)
-                    .null_bit_buffer(null_bit_buffer);
+
+                builder = builder.null_bit_buffer(null_bit_buffer);
             }
             builder
         }
         None => match null_bit_buffer {
-            None => builder.null_count(0),
+            None => builder,
             Some(_) => {
                 // this should take account into offset and length
                 unimplemented!()
@@ -410,11 +413,11 @@ where
     let len = values.len();
     // See:
     // https://docs.rs/arrow/0.16.0/src/arrow/array/builder.rs.html#314
-    let builder = ArrayData::builder(T::get_data_type())
+    let builder = ArrayData::builder(T::DATA_TYPE)
         .len(len)
         .add_buffer(Buffer::from(values.to_byte_slice()));
 
-    let builder = set_null_bits(builder, null_bit_buffer, Some(null_count), len);
+    let builder = set_null_bits(builder, null_bit_buffer, Some(null_count));
     let data = builder.build();
     PrimitiveArray::<T>::from(data)
 }
@@ -464,6 +467,26 @@ fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
 
 /// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
 /// Can also take a null bit buffer into account.
+pub fn aligned_vec_to_boolean_array(
+    values: AlignedVec<bool>,
+    null_bit_buffer: Option<Buffer>,
+    null_count: Option<usize>,
+) -> BooleanArray {
+    let vec_len = values.len();
+    let buffer = values.into_arrow_buffer();
+
+    let builder = ArrayData::builder(ArrowDataType::Boolean)
+        .len(vec_len)
+        .add_buffer(buffer);
+
+    let builder = set_null_bits(builder, null_bit_buffer, null_count);
+    let data = builder.build();
+
+    BooleanArray::from(data)
+}
+
+/// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
+/// Can also take a null bit buffer into account.
 pub fn aligned_vec_to_primitive_array<T: PolarsPrimitiveType>(
     values: AlignedVec<T::Native>,
     null_bit_buffer: Option<Buffer>,
@@ -472,11 +495,11 @@ pub fn aligned_vec_to_primitive_array<T: PolarsPrimitiveType>(
     let vec_len = values.len();
     let buffer = values.into_arrow_buffer();
 
-    let builder = ArrayData::builder(T::get_data_type())
+    let builder = ArrayData::builder(T::DATA_TYPE)
         .len(vec_len)
         .add_buffer(buffer);
 
-    let builder = set_null_bits(builder, null_bit_buffer, null_count, vec_len);
+    let builder = set_null_bits(builder, null_bit_buffer, null_count);
     let data = builder.build();
 
     PrimitiveArray::<T>::from(data)
@@ -498,6 +521,7 @@ impl<T> Drop for AlignedVec<T> {
             let mut me = mem::ManuallyDrop::new(inner);
             let ptr: *mut T = me.as_mut_ptr();
             let ptr = ptr as *mut u8;
+            let ptr = std::ptr::NonNull::new(ptr).unwrap();
             unsafe { memory::free_aligned(ptr, self.capacity()) }
         }
     }
@@ -545,7 +569,7 @@ impl<T> AlignedVec<T> {
         // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
         let t_size = std::mem::size_of::<T>();
         let capacity = size * t_size;
-        let ptr = memory::allocate_aligned(capacity) as *mut T;
+        let ptr = memory::allocate_aligned(capacity).as_ptr() as *mut T;
         let v = unsafe { Vec::from_raw_parts(ptr, 0, size) };
         AlignedVec {
             inner: v,
@@ -560,11 +584,13 @@ impl<T> AlignedVec<T> {
     pub fn reserve(&mut self, additional: usize) {
         let mut me = ManuallyDrop::new(mem::take(&mut self.inner));
         let ptr = me.as_mut_ptr() as *mut u8;
+        let ptr = std::ptr::NonNull::new(ptr).unwrap();
         let t_size = mem::size_of::<T>();
         let cap = me.capacity();
         let old_capacity = t_size * cap;
         let new_capacity = old_capacity + t_size * additional;
-        let ptr = unsafe { memory::reallocate(ptr, old_capacity, new_capacity) as *mut T };
+        let ptr = unsafe { memory::reallocate(ptr, old_capacity, new_capacity) };
+        let ptr = ptr.as_ptr() as *mut T;
         let v = unsafe { Vec::from_raw_parts(ptr, me.len(), cap + additional) };
         self.inner = v;
     }
@@ -640,12 +666,13 @@ impl<T> AlignedVec<T> {
         if self.capacity() > self.len() {
             let mut me = ManuallyDrop::new(mem::take(&mut self.inner));
             let ptr = me.as_mut_ptr() as *mut u8;
+            let ptr = std::ptr::NonNull::new(ptr).unwrap();
 
             let t_size = mem::size_of::<T>();
             let new_size = t_size * me.len();
             let old_size = t_size * me.capacity();
             let v = unsafe {
-                let ptr = memory::reallocate(ptr, old_size, new_size) as *mut T;
+                let ptr = memory::reallocate(ptr, old_size, new_size).as_ptr() as *mut T;
                 Vec::from_raw_parts(ptr, me.len(), me.len())
             };
             self.inner = v;
@@ -657,10 +684,11 @@ impl<T> AlignedVec<T> {
         let values = unsafe { self.into_inner() };
 
         let me = mem::ManuallyDrop::new(values);
-        let ptr = me.as_ptr() as *const u8;
+        let ptr = me.as_ptr() as *mut u8;
         let len = me.len() * std::mem::size_of::<T>();
         let capacity = me.capacity() * std::mem::size_of::<T>();
         debug_assert_eq!((ptr as usize) % 64, 0);
+        let ptr = std::ptr::NonNull::new(ptr).unwrap();
 
         unsafe { Buffer::from_raw_parts(ptr, len, capacity) }
     }
@@ -702,6 +730,32 @@ where
     fn new_from_iter(name: &str, it: impl Iterator<Item = T::Native>) -> ChunkedArray<T> {
         let ca: NoNull<ChunkedArray<_>> = it.collect();
         let mut ca = ca.into_inner();
+        ca.rename(name);
+        ca
+    }
+}
+
+impl NewChunkedArray<BooleanType, bool> for BooleanChunked {
+    fn new_from_slice(name: &str, v: &[bool]) -> Self {
+        Self::new_from_iter(name, v.iter().copied())
+    }
+
+    fn new_from_opt_slice(name: &str, opt_v: &[Option<bool>]) -> Self {
+        Self::new_from_opt_iter(name, opt_v.iter().copied())
+    }
+
+    fn new_from_opt_iter(
+        name: &str,
+        it: impl Iterator<Item = Option<bool>>,
+    ) -> ChunkedArray<BooleanType> {
+        let mut builder = BooleanChunkedBuilder::new(name, get_iter_capacity(&it));
+        it.for_each(|opt| builder.append_option(opt));
+        builder.finish()
+    }
+
+    /// Create a new ChunkedArray from an iterator.
+    fn new_from_iter(name: &str, it: impl Iterator<Item = bool>) -> ChunkedArray<BooleanType> {
+        let mut ca: ChunkedArray<_> = it.collect();
         ca.rename(name);
         ca
     }
@@ -768,37 +822,6 @@ where
     field: Field,
 }
 
-macro_rules! append_opt_series {
-    ($self:ident, $opt_s: ident) => {{
-        match $opt_s {
-            Some(s) => {
-                let data = s.array_data();
-                $self
-                    .builder
-                    .values()
-                    .append_data(&data)
-                    .expect("should not fail");
-                $self.builder.append(true).expect("should not fail");
-            }
-            None => {
-                $self.builder.append(false).expect("should not fail");
-            }
-        }
-    }};
-}
-
-macro_rules! append_series {
-    ($self:ident, $s: ident) => {{
-        let data = $s.array_data();
-        $self
-            .builder
-            .values()
-            .append_data(&data)
-            .expect("should not fail");
-        $self.builder.append(true).expect("should not fail");
-    }};
-}
-
 macro_rules! finish_list_builder {
     ($self:ident) => {{
         let arr = Arc::new($self.builder.finish());
@@ -839,14 +862,11 @@ where
         }
     }
     pub fn append_opt_slice(&mut self, opt_v: Option<&[Option<T::Native>]>) {
+        let value_builder = self.builder.values();
         match opt_v {
             Some(v) => {
-                v.iter().for_each(|opt| {
-                    self.builder
-                        .values()
-                        .append_option(*opt)
-                        .expect("could not append")
-                });
+                v.iter()
+                    .for_each(|opt| value_builder.append_option(*opt).expect("could not append"));
                 self.builder.append(true).expect("should not fail");
             }
             None => {
@@ -863,13 +883,37 @@ where
 impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
+    T::Native: Num,
 {
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        append_opt_series!(self, opt_s)
+        match opt_s {
+            Some(s) => self.append_series(s),
+            None => {
+                self.builder.append(false).unwrap();
+            }
+        }
     }
 
     fn append_series(&mut self, s: &Series) {
-        append_series!(self, s);
+        let builder = self.builder.values();
+        let arrays = s.chunks();
+        for a in arrays {
+            let data = a.data();
+            let value_buf = &data.buffers()[0];
+            let values = unsafe { value_buf.typed_data::<T::Native>() };
+            if a.null_count() == 0 {
+                builder.append_slice(values).unwrap();
+            } else {
+                values.iter().enumerate().for_each(|(idx, v)| {
+                    if a.is_valid(idx) {
+                        builder.append_value(*v).unwrap();
+                    } else {
+                        builder.append_null().unwrap();
+                    }
+                });
+            }
+        }
+        self.builder.append(true).unwrap();
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -893,11 +937,65 @@ impl ListUtf8ChunkedBuilder {
 
 impl ListBuilderTrait for ListUtf8ChunkedBuilder {
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        append_opt_series!(self, opt_s)
+        match opt_s {
+            Some(s) => self.append_series(s),
+            None => {
+                self.builder.append(false).unwrap();
+            }
+        }
     }
 
     fn append_series(&mut self, s: &Series) {
-        append_series!(self, s);
+        let ca = s.utf8().unwrap();
+        let value_builder = self.builder.values();
+        for s in ca {
+            match s {
+                Some(s) => value_builder.append_value(s).unwrap(),
+                None => value_builder.append_null().unwrap(),
+            };
+        }
+        self.builder.append(true).unwrap();
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        finish_list_builder!(self)
+    }
+}
+
+pub struct ListBooleanChunkedBuilder {
+    builder: LargeListBuilder<BooleanBuilder>,
+    field: Field,
+}
+
+impl ListBooleanChunkedBuilder {
+    pub fn new(name: &str, values_builder: BooleanBuilder, capacity: usize) -> Self {
+        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
+        let field = Field::new(name, DataType::List(ArrowDataType::Boolean));
+
+        Self { builder, field }
+    }
+}
+
+impl ListBuilderTrait for ListBooleanChunkedBuilder {
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        match opt_s {
+            Some(s) => self.append_series(s),
+            None => {
+                self.builder.append(false).unwrap();
+            }
+        }
+    }
+
+    fn append_series(&mut self, s: &Series) {
+        let ca = s.bool().unwrap();
+        let value_builder = self.builder.values();
+        for s in ca {
+            match s {
+                Some(s) => value_builder.append_value(s).unwrap(),
+                None => value_builder.append_null().unwrap(),
+            };
+        }
+        self.builder.append(true).unwrap();
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -913,6 +1011,13 @@ pub fn get_list_builder(dt: &DataType, capacity: usize, name: &str) -> Box<dyn L
             Box::new(builder)
         }};
     }
+    macro_rules! get_bool_builder {
+        () => {{
+            let values_builder = BooleanBuilder::new(capacity);
+            let builder = ListBooleanChunkedBuilder::new(&name, values_builder, capacity);
+            Box::new(builder)
+        }};
+    }
     macro_rules! get_utf8_builder {
         () => {{
             let values_builder = LargeStringBuilder::new(capacity);
@@ -920,7 +1025,12 @@ pub fn get_list_builder(dt: &DataType, capacity: usize, name: &str) -> Box<dyn L
             Box::new(builder)
         }};
     }
-    match_arrow_data_type_apply_macro!(dt, get_primitive_builder, get_utf8_builder)
+    match_arrow_data_type_apply_macro!(
+        dt,
+        get_primitive_builder,
+        get_utf8_builder,
+        get_bool_builder
+    )
 }
 
 #[cfg(test)]
@@ -979,7 +1089,7 @@ mod test {
         assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
 
         let a = aligned_vec_to_primitive_array::<Int32Type>(v, None, Some(0));
-        assert_eq!(a.value_slice(0, 2), &[1, 2])
+        assert_eq!(&a.values()[..2], &[1, 2])
     }
 
     #[test]

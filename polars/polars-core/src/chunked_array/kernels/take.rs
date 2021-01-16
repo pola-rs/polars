@@ -2,7 +2,7 @@ use crate::chunked_array::builder::aligned_vec_to_primitive_array;
 use crate::prelude::*;
 use arrow::array::{
     Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray,
-    PrimitiveArrayOps, UInt32Array,
+    UInt32Array,
 };
 use arrow::buffer::MutableBuffer;
 use arrow::util::bit_util;
@@ -17,7 +17,7 @@ pub(crate) fn take_no_null_boolean(arr: &BooleanArray, indices: &UInt32Array) ->
 
     // fill with false bits
     let mut val_buf = MutableBuffer::new(num_bytes).with_bitset(num_bytes, false);
-    let val_slice = val_buf.data_mut();
+    let val_slice = val_buf.as_slice_mut();
     (0..data_len).for_each(|i| {
         let index = indices.value(i) as usize;
         if arr.value(index) {
@@ -31,7 +31,7 @@ pub(crate) fn take_no_null_boolean(arr: &BooleanArray, indices: &UInt32Array) ->
         None,
         nulls,
         0,
-        vec![val_buf.freeze()],
+        vec![val_buf.into()],
         vec![],
     );
     Arc::new(BooleanArray::from(Arc::new(data)))
@@ -62,9 +62,7 @@ pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<La
 
     let offset_len_in_bytes = (data_len + 1) * mem::size_of::<i64>();
     let mut offset_buf = MutableBuffer::new(offset_len_in_bytes);
-    offset_buf
-        .resize(offset_len_in_bytes)
-        .expect("out of memory");
+    offset_buf.resize(offset_len_in_bytes);
     let offset_typed = offset_buf.typed_data_mut();
 
     let mut length_so_far = 0;
@@ -158,7 +156,7 @@ pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<La
 
     let mut data = ArrayData::builder(ArrowDataType::LargeUtf8)
         .len(data_len)
-        .add_buffer(offset_buf.freeze())
+        .add_buffer(offset_buf.into())
         .add_buffer(values_buf.into_arrow_buffer());
     if let Some(null_buffer) = nulls {
         data = data.null_bit_buffer(null_buffer);

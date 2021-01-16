@@ -67,7 +67,7 @@ where
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
         if let Some(value) = value {
-            if T::get_data_type() != ArrowDataType::Boolean && self.chunk_id() == mask.chunk_id() {
+            if T::get_dtype() != DataType::Boolean && self.chunk_id() == mask.chunk_id() {
                 let chunks = self
                     .downcast_chunks()
                     .into_iter()

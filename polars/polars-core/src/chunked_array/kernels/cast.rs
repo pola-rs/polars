@@ -36,9 +36,9 @@ pub fn cast(array: &ArrayRef, to_type: &ArrowDataType) -> Result<ArrayRef> {
         (LargeList(_), LargeList(ref to)) => {
             let data = array.data_ref();
             let underlying_array = make_array(data.child_data()[0].clone());
-            let cast_array = cast(&underlying_array, &to)?;
+            let cast_array = cast(&underlying_array, to.data_type())?;
             let array_data = ArrayData::new(
-                *to.clone(),
+                to.data_type().clone(),
                 array.len(),
                 Some(cast_array.null_count()),
                 cast_array
@@ -59,24 +59,21 @@ pub fn cast(array: &ArrayRef, to_type: &ArrowDataType) -> Result<ArrayRef> {
             let data = array.data_ref();
             let underlying_array = data.child_data()[0].clone();
 
-            let offset_ptr = data.buffers()[0].raw_data() as *const i32;
+            let offset_ptr = data.buffers()[0].as_ptr() as *const i32;
             // offsets in the list array. These indicate where a new list starts
             let offsets = unsafe { std::slice::from_raw_parts(offset_ptr, array.len()) };
             let mut offset_builder = Int64BufferBuilder::new(offsets.len());
 
             offsets
                 .iter()
-                .for_each(|v| offset_builder.append(*v as i64).unwrap());
-            offset_builder
-                .append(underlying_array.len() as i64)
-                .unwrap();
+                .for_each(|v| offset_builder.append(*v as i64));
+            offset_builder.append(underlying_array.len() as i64);
             let offset_buffer = offset_builder.finish();
 
             let mut builder = ArrayData::builder(ArrowDataType::LargeList(Box::new(
-                underlying_array.data_type().clone(),
+                arrow::datatypes::Field::new("", underlying_array.data_type().clone(), true),
             )))
             .len(array.len())
-            .null_count(array.null_count())
             .add_buffer(offset_buffer)
             .add_child_data(underlying_array);
 
@@ -90,9 +87,9 @@ pub fn cast(array: &ArrayRef, to_type: &ArrowDataType) -> Result<ArrayRef> {
             let stringarr = array.as_any().downcast_ref::<StringArray>().unwrap();
             let list_data = array.data();
             let str_values_buf = stringarr.value_data();
-            let str_data = unsafe { std::str::from_utf8_unchecked(str_values_buf.data()) };
+            let str_data = unsafe { std::str::from_utf8_unchecked(str_values_buf.as_slice()) };
             // We get the offsets of the strings in the original array
-            let offset_ptr = list_data.buffers()[0].raw_data() as *const i32;
+            let offset_ptr = list_data.buffers()[0].as_ptr() as *const i32;
             // offsets in the list array. These indicate where a new list starts
             let offsets = unsafe { std::slice::from_raw_parts(offset_ptr, array.len()) };
 
@@ -100,8 +97,8 @@ pub fn cast(array: &ArrayRef, to_type: &ArrowDataType) -> Result<ArrayRef> {
 
             offsets
                 .iter()
-                .for_each(|v| offset_builder.append(*v as i64).unwrap());
-            offset_builder.append(str_data.len() as i64).unwrap();
+                .for_each(|v| offset_builder.append(*v as i64));
+            offset_builder.append(str_data.len() as i64);
             let offset_buffer = offset_builder.finish();
 
             let mut builder = ArrayData::builder(ArrowDataType::LargeUtf8)
@@ -120,14 +117,14 @@ pub fn cast(array: &ArrayRef, to_type: &ArrowDataType) -> Result<ArrayRef> {
         )),
         (_, LargeList(ref to)) => {
             // cast primitive to list's primitive
-            let cast_array = cast(array, &to)?;
+            let cast_array = cast(array, to.data_type())?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
 
             // Todo! use alignedvec
             let offsets: Vec<i64> = (0..=array.len() as i64).collect();
             let value_offsets = Buffer::from(offsets[..].to_byte_slice());
             let list_data = ArrayData::new(
-                *to.clone(),
+                to.data_type().clone(),
                 array.len(),
                 Some(cast_array.null_count()),
                 cast_array

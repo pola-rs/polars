@@ -104,9 +104,9 @@ impl ChunkShiftFill<BooleanType, Option<bool>> for BooleanChunked {
             return Err(PolarsError::OutOfBounds(
                 format!("The value of parameter `periods`: {} in the shift operation is larger than the length of the ChunkedArray: {}", periods, self.len()).into()));
         }
-        let mut builder = PrimitiveChunkedBuilder::<BooleanType>::new(self.name(), self.len());
+        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
 
-        fn append_fn(builder: &mut PrimitiveChunkedBuilder<BooleanType>, v: Option<bool>) {
+        fn append_fn(builder: &mut BooleanChunkedBuilder, v: Option<bool>) {
             builder.append_option(v);
         }
 
