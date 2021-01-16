@@ -416,26 +416,6 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 }
 
-fn cmp_chunked_array_to_num<T>(
-    ca: &ChunkedArray<T>,
-    cmp_fn: &dyn Fn(Option<T::Native>) -> bool,
-) -> BooleanChunked
-where
-    T: PolarsNumericType,
-{
-    ca.into_iter().map(cmp_fn).collect()
-}
-
-fn cmp_chunked_array_to_num_no_null<T>(
-    ca: &ChunkedArray<T>,
-    cmp_fn: &dyn Fn(T::Native) -> bool,
-) -> BooleanChunked
-where
-    T: PolarsNumericType,
-{
-    ca.into_no_null_iter().map(cmp_fn).collect()
-}
-
 pub trait NumComp: Num + NumCast + PartialOrd {}
 
 impl NumComp for f32 {}

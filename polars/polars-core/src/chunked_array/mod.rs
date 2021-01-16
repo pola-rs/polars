@@ -304,11 +304,6 @@ impl<T> ChunkedArray<T> {
         }
     }
 
-    /// Recompute the chunk_id / chunk_lengths.
-    fn set_chunk_id(&mut self) {
-        self.chunk_id = create_chunk_id(&self.chunks)
-    }
-
     /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
     pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
         if offset + length > self.len() {

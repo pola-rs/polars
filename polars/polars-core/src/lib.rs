@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![feature(iterator_fold_self)]
 #![feature(doc_cfg)]
 
