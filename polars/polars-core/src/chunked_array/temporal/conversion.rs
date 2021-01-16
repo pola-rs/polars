@@ -94,10 +94,6 @@ pub fn parse_naive_date_from_str(s: &str, fmt: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, fmt).ok()
 }
 
-fn unix_time_naive_date() -> NaiveDate {
-    NaiveDate::from_ymd(1970, 1, 1)
-}
-
 impl FromNaiveDate<Date32Type, NaiveDate> for Date32Chunked {
     fn new_from_naive_date(name: &str, v: &[NaiveDate]) -> Self {
         let unit = v

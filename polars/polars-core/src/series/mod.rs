@@ -959,7 +959,7 @@ impl Series {
     }
 
     /// Append arrow array of same datatype.
-    fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
+    pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
         self.get_inner_mut().append_array(other)?;
         Ok(self)
     }

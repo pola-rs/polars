@@ -33,7 +33,6 @@ where
     values: AlignedVec<T::Native>,
     bitmap_builder: BooleanBufferBuilder,
     boolean_builder: PrimitiveBuilder<T>,
-    capacity: usize,
     null_count: usize,
 }
 
@@ -62,7 +61,6 @@ where
             values,
             bitmap_builder,
             boolean_builder,
-            capacity,
             null_count: 0,
         }
     }

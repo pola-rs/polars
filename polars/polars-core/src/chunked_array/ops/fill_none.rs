@@ -77,18 +77,6 @@ macro_rules! impl_fill_backward {
     }};
 }
 
-fn fill_value<T>(ca: &ChunkedArray<T>, value: Option<T::Native>) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    ca.into_iter()
-        .map(|opt_v| match opt_v {
-            Some(_) => opt_v,
-            None => value,
-        })
-        .collect()
-}
-
 macro_rules! impl_fill_value {
     ($ca:ident, $value:expr) => {{
         $ca.into_iter()

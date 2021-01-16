@@ -217,19 +217,6 @@ pub trait IntoGroupTuples {
     }
 }
 
-fn group_tuples<'a, T>(ca: &'a ChunkedArray<T>) -> Vec<(usize, Vec<usize>)>
-where
-    &'a ChunkedArray<T>: IntoNoNullIterator + IntoIterator,
-    <&'a ChunkedArray<T> as IntoIterator>::Item: Eq + Hash,
-    <&'a ChunkedArray<T> as IntoNoNullIterator>::Item: Eq + Hash,
-{
-    if ca.null_count() == 0 {
-        groupby(ca.into_no_null_iter())
-    } else {
-        groupby(ca.into_iter())
-    }
-}
-
 fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
     // TODO! change to something sensible
     ca.len() > 1000
@@ -388,7 +375,7 @@ impl From<f64> for Groupable<'_> {
 impl From<f32> for Groupable<'_> {
     fn from(v: f32) -> Self {
         let (m, e, s) = v.integer_decode();
-        Groupable::Float64(m, e, s)
+        Groupable::Float32(m, e, s)
     }
 }
 

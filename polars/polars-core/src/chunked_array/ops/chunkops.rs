@@ -3,7 +3,7 @@ use crate::chunked_array::kernels::concat::concat;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
-use arrow::array::{Array, ArrayRef};
+use arrow::array::Array;
 #[cfg(feature = "object")]
 use std::any::Any;
 #[cfg(feature = "object")]
@@ -14,21 +14,6 @@ pub trait ChunkOps {
     fn rechunk(&self) -> Result<Self>
     where
         Self: std::marker::Sized;
-}
-
-#[inline]
-fn mimic_chunks<T>(arr: &ArrayRef, chunk_lengths: &[usize], name: &str) -> ChunkedArray<T>
-where
-    T: PolarsDataType,
-    ChunkedArray<T>: ChunkOps,
-{
-    let mut chunks = Vec::with_capacity(chunk_lengths.len());
-    let mut offset = 0;
-    for chunk_length in chunk_lengths {
-        chunks.push(arr.slice(offset, *chunk_length));
-        offset += *chunk_length
-    }
-    ChunkedArray::new_from_chunks(name, chunks)
 }
 
 impl<T> ChunkOps for ChunkedArray<T>
