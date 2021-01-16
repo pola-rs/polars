@@ -314,12 +314,7 @@ impl Debug for DataFrame {
     }
 }
 
-fn prepare_row(
-    row: Vec<AnyValue>,
-    n_first: usize,
-    n_last: usize,
-) -> Vec<String> {
-
+fn prepare_row(row: Vec<AnyValue>, n_first: usize, n_last: usize) -> Vec<String> {
     fn make_str_val(v: &AnyValue) -> String {
         let string_limit = 32;
         if let AnyValue::Utf8(s) = v {
