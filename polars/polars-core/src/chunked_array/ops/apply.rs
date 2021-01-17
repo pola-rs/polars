@@ -55,9 +55,9 @@ where
                 .iter()
                 .copied()
                 .zip(self.null_bits())
-                .map(|(slice, (null_count, opt_buffer))| {
+                .map(|(slice, (_null_count, opt_buffer))| {
                     let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
-                    (vec, (null_count, opt_buffer))
+                    (vec, opt_buffer)
                 })
                 .collect();
             ca.rename(self.name());

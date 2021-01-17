@@ -1,4 +1,6 @@
+use arrow::array::{ArrayData, PrimitiveArray};
 use arrow::buffer::Buffer;
+use arrow::datatypes::*;
 use arrow::memory;
 use std::iter::FromIterator;
 use std::mem;
@@ -190,5 +192,26 @@ impl<T> AlignedVec<T> {
         let ptr = std::ptr::NonNull::new(ptr).unwrap();
 
         unsafe { Buffer::from_raw_parts(ptr, len, capacity) }
+    }
+
+    pub fn into_primitive_array<A: ArrowPrimitiveType>(
+        self,
+        null_buf: Option<Buffer>,
+    ) -> PrimitiveArray<A> {
+        debug_assert_eq!(mem::size_of::<A::Native>(), mem::size_of::<T>());
+
+        let vec_len = self.len();
+        let buffer = self.into_arrow_buffer();
+
+        let mut builder = ArrayData::builder(A::DATA_TYPE)
+            .len(vec_len)
+            .add_buffer(buffer);
+
+        if let Some(buf) = null_buf {
+            builder = builder.null_bit_buffer(buf);
+        }
+        let data = builder.build();
+
+        PrimitiveArray::<A>::from(data)
     }
 }

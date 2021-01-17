@@ -4,10 +4,7 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 use ahash::AHashMap;
-use arrow::array::{
-    ArrayDataBuilder, ArrayRef, BooleanArray, BooleanBufferBuilder, BooleanBuilder,
-    LargeListBuilder,
-};
+use arrow::array::{ArrayDataBuilder, ArrayRef, BooleanArray, BooleanBuilder, LargeListBuilder};
 use arrow::datatypes::ToByteSlice;
 pub use arrow::memory;
 use arrow::{
@@ -15,59 +12,11 @@ use arrow::{
     buffer::Buffer,
 };
 use num::Num;
+use polars_arrow::prelude::*;
 use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
-
-/// An arrow primitive builder that is faster than Arrow's native builder because it uses Rust Vec's
-/// as buffer
-pub struct PrimitiveArrayBuilder<T>
-where
-    T: PolarsPrimitiveType,
-    T::Native: Default,
-{
-    values: AlignedVec<T::Native>,
-    bitmap_builder: BooleanBufferBuilder,
-    null_count: usize,
-}
-
-impl<T> PrimitiveArrayBuilder<T>
-where
-    T: PolarsPrimitiveType,
-    T::Native: Default,
-{
-    pub fn new(capacity: usize) -> Self {
-        let values = AlignedVec::<T::Native>::with_capacity_aligned(capacity);
-        let bitmap_builder = BooleanBufferBuilder::new(capacity);
-
-        Self {
-            values,
-            bitmap_builder,
-            null_count: 0,
-        }
-    }
-
-    /// Appends a value of type `T::Native` into the builder
-    #[inline]
-    pub fn append_value(&mut self, v: T::Native) {
-        self.values.push(v);
-        self.bitmap_builder.append(true);
-    }
-
-    /// Appends a null slot into the builder
-    #[inline]
-    pub fn append_null(&mut self) {
-        self.bitmap_builder.append(false);
-        self.values.push(Default::default());
-        self.null_count += 1;
-    }
-
-    pub fn finish(mut self) -> PrimitiveArray<T> {
-        let null_bit_buffer = self.bitmap_builder.finish();
-        aligned_vec_to_primitive_array(self.values, Some(null_bit_buffer), Some(self.null_count))
-    }
-}
 
 pub trait ChunkedBuilder<N, T> {
     fn append_value(&mut self, val: N);
@@ -272,12 +221,13 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
         self.array_builder.append_null()
     }
 
-    fn finish(self) -> ChunkedArray<CategoricalType> {
+    fn finish(mut self) -> ChunkedArray<CategoricalType> {
         if self.mapping.len() > u32::MAX as usize {
             panic!(format!("not more than {} categories supported", u32::MAX))
         };
         let arr = Arc::new(self.array_builder.finish());
         let len = arr.len();
+        self.reverse_mapping.shrink_to_fit();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
@@ -432,17 +382,15 @@ pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
-impl<T> FromIterator<(AlignedVec<T::Native>, (usize, Option<Buffer>))> for ChunkedArray<T>
+impl<T> FromIterator<(AlignedVec<T::Native>, Option<Buffer>)> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn from_iter<I: IntoIterator<Item = (AlignedVec<T::Native>, (usize, Option<Buffer>))>>(
-        iter: I,
-    ) -> Self {
+    fn from_iter<I: IntoIterator<Item = (AlignedVec<T::Native>, Option<Buffer>)>>(iter: I) -> Self {
         let mut chunks = vec![];
 
-        for (values, (null_count, opt_buffer)) in iter {
-            let arr = aligned_vec_to_primitive_array::<T>(values, opt_buffer, Some(null_count));
+        for (values, opt_buffer) in iter {
+            let arr = values.into_primitive_array::<T>(opt_buffer);
             chunks.push(Arc::new(arr) as ArrayRef)
         }
         ChunkedArray::new_from_chunks("from_iter", chunks)
@@ -706,10 +654,7 @@ where
         let builder = self.builder.values();
         let arrays = s.chunks();
         for a in arrays {
-            let data = a.data();
-            let value_buf = &data.buffers()[0];
-            let offset = a.offset();
-            let values = &unsafe { value_buf.typed_data::<T::Native>() }[offset..offset + a.len()];
+            let values = a.get_values::<T>();
             if a.null_count() == 0 {
                 builder.append_slice(values).unwrap();
             } else {

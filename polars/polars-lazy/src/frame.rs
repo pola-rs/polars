@@ -1281,7 +1281,7 @@ mod test {
             .unwrap();
         assert_eq!(s.len(), 2);
         let s = out
-            .select_at_idx(2)
+            .select_at_idx(1)
             .unwrap()
             .list()
             .unwrap()
