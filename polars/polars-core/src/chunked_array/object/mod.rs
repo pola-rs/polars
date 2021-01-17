@@ -54,9 +54,7 @@ where
     }
 
     fn data_type(&self) -> &ArrowDataType {
-        // todo! we hijack the binary type for this. If we actually implement binary we need to find
-        // another solution
-        &ArrowDataType::Binary
+        unimplemented!()
     }
 
     fn slice(&self, offset: usize, length: usize) -> ArrayRef {
