@@ -70,4 +70,3 @@ impl PyPolarsPrimitiveType for Date64Type {}
 impl PyPolarsPrimitiveType for Time64NanosecondType {}
 impl PyPolarsPrimitiveType for DurationNanosecondType {}
 impl PyPolarsPrimitiveType for DurationMillisecondType {}
-impl PyPolarsPrimitiveType for BooleanType {}

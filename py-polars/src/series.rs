@@ -762,7 +762,7 @@ impl PySeries {
             Some(DataType::Boolean) => {
                 let ca: BooleanChunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_out_type,
+                    apply_lambda_with_bool_out_type,
                     py,
                     lambda,
                     0,
