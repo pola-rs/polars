@@ -2,6 +2,8 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
+#[cfg(feature = "object")]
+use arrow::array::Array;
 use arrow::compute::concat;
 use itertools::Itertools;
 #[cfg(feature = "object")]

@@ -101,7 +101,7 @@ where
 {
     fn from_parts(ca: &'a ChunkedArray<T>, offset: usize, len: usize) -> Self {
         let chunk = ca.downcast_chunks()[0];
-        let slice = chunk.values();
+        let slice = &chunk.values()[offset..len];
         let iter = slice.iter().copied();
 
         Self { iter }

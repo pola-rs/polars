@@ -25,7 +25,6 @@ use parquet_lib::arrow::{
 use parquet_lib::file::reader::{FileReader, SerializedFileReader};
 use polars_core::prelude::*;
 use std::io::{Read, Seek};
-use std::rc::Rc;
 use std::sync::Arc;
 
 fn set_batch_size(max_rows: usize, stop_after_n_rows: Option<usize>) -> usize {
@@ -47,11 +46,7 @@ pub struct ParquetReader<R> {
 
 impl<R> ParquetReader<R>
 where
-    R: 'static
-        + Read
-        + Seek
-        + parquet_lib::file::reader::Length
-        + parquet_lib::file::reader::TryClone,
+    R: 'static + Read + Seek + parquet_lib::file::reader::ChunkReader,
 {
     #[cfg(feature = "lazy")]
     // todo! hoist to lazy crate
@@ -63,7 +58,7 @@ where
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
 
-        let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
+        let file_reader = Arc::new(SerializedFileReader::new(self.reader)?);
         let rows_in_file = file_reader.metadata().file_metadata().num_rows() as usize;
 
         if let Some(stop_after_n_rows) = self.stop_after_n_rows {
@@ -102,7 +97,7 @@ where
     }
 
     pub fn schema(self) -> Result<Schema> {
-        let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
+        let file_reader = Arc::new(SerializedFileReader::new(self.reader)?);
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
         let schema = arrow_reader.get_schema()?;
         Ok(schema.into())
@@ -123,11 +118,7 @@ impl<R> ParquetReader<R> {}
 
 impl<R> SerReader<R> for ParquetReader<R>
 where
-    R: 'static
-        + Read
-        + Seek
-        + parquet_lib::file::reader::Length
-        + parquet_lib::file::reader::TryClone,
+    R: 'static + Read + Seek + parquet_lib::file::reader::ChunkReader,
 {
     fn new(reader: R) -> Self {
         ParquetReader {
@@ -144,7 +135,7 @@ where
 
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        let file_reader = Rc::new(SerializedFileReader::new(self.reader)?);
+        let file_reader = Arc::new(SerializedFileReader::new(self.reader)?);
         let n_rows = file_reader.metadata().file_metadata().num_rows() as usize;
         let batch_size = set_batch_size(n_rows, self.stop_after_n_rows);
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);

@@ -1,4 +1,3 @@
-use super::super::kernels::utils::count_set_bits_offset;
 use super::*;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
@@ -57,7 +56,8 @@ where
 
     pub fn finish(mut self) -> ObjectChunked<T> {
         let null_bit_buffer = self.bitmask_builder.finish();
-        let null_count = count_set_bits(null_bit_buffer.as_slice());
+        let null_count = null_bit_buffer.count_set_bits();
+
         let null_bitmap = Bitmap::from(null_bit_buffer);
         let null_bitmap = match null_count {
             0 => None,
