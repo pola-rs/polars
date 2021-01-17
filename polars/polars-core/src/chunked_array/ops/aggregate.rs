@@ -99,9 +99,7 @@ where
     fn sum(&self) -> Option<T::Native> {
         self.downcast_chunks()
             .iter()
-            .map(|&a| {
-                compute::sum(a)
-            })
+            .map(|&a| compute::sum(a))
             .fold(None, |acc, v| match v {
                 Some(v) => match acc {
                     None => Some(v),

@@ -32,6 +32,22 @@ where
     }
 }
 
+impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
+    fn extract(obj: &'a PyAny) -> PyResult<Self> {
+        let (seq, len) = get_pyseq(obj)?;
+        let mut builder = BooleanChunkedBuilder::new("", len);
+
+        for res in seq.iter()? {
+            let item = res?;
+            match item.extract::<bool>() {
+                Ok(val) => builder.append_value(val),
+                Err(_) => builder.append_null(),
+            }
+        }
+        Ok(Wrap(builder.finish()))
+    }
+}
+
 impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let (seq, len) = get_pyseq(obj)?;

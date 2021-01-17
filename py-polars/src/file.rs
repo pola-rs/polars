@@ -1,4 +1,5 @@
 // Credits to https://github.com/omerbenamram/pyo3-file
+use polars::io::parquet::SliceableCursor;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
@@ -19,6 +20,11 @@ impl PyFileLikeObject {
     /// instantiate it with `PyFileLikeObject::require`
     pub fn new(object: PyObject) -> Self {
         PyFileLikeObject { inner: object }
+    }
+
+    pub fn as_slicable_buffer(&self) -> SliceableCursor {
+        let data = self.as_file_buffer().into_inner();
+        SliceableCursor::new(data)
     }
 
     pub fn as_file_buffer(&self) -> Cursor<Vec<u8>> {

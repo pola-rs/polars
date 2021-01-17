@@ -23,6 +23,7 @@ use parquet_lib::arrow::{
     ParquetFileArrowReader,
 };
 use parquet_lib::file::reader::{FileReader, SerializedFileReader};
+pub use parquet_lib::file::serialized_reader::SliceableCursor;
 use polars_core::prelude::*;
 use std::io::{Read, Seek};
 use std::sync::Arc;
