@@ -73,7 +73,7 @@ impl DataFrame {
         self.downsample_with_series(s, rule)
     }
 
-    /// See [downsample](crate::DataFrame::downsample).
+    /// See [downsample](crate::frame::DataFrame::downsample).
     pub fn downsample_with_series(&self, key: &Series, rule: SampleRule) -> Result<GroupBy> {
         use SampleRule::*;
         // todo! implement logic for date32 if we don't want to pay the casting price
