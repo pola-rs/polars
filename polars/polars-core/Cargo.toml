@@ -23,8 +23,8 @@ strings = ["regex"]
 object = ["serde_json"]
 
 [dependencies]
-arrow = {version="3.0.0-SNAPSHOT", path = "../vendor/arrow/rust/arrow"}
-parquet = {version = "3.0.0-SNAPSHOT", optional = true, package="parquet", path = "../vendor/arrow/rust/parquet"}
+arrow = {version="3.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
+parquet = {version = "3.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
 thiserror = "^1.0.16"
 num = "^0.3.1"
 itertools = "^0.9.0"
