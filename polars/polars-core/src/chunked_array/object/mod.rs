@@ -1,5 +1,4 @@
 pub mod builder;
-use super::kernels::utils::{count_set_bits, count_set_bits_offset};
 pub use crate::prelude::*;
 use arrow::array::{Array, ArrayDataRef, ArrayRef, BooleanBufferBuilder, JsonEqual};
 use arrow::bitmap::Bitmap;
@@ -67,9 +66,8 @@ where
         new.len = length;
         new.offset = offset;
         new.null_count = if let Some(bitmap) = &new.null_bitmap {
-            let valid_bits = bitmap.buffer_ref().as_slice();
-            len.checked_sub(count_set_bits_offset(valid_bits, offset, length))
-                .unwrap();
+            let no_null_count = bitmap.buffer_ref().count_set_bits_offset(offset, length);
+            len.checked_sub(no_null_count).unwrap();
             0
         } else {
             0

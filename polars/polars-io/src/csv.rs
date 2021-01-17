@@ -362,7 +362,7 @@ mod test {
             .finish(&mut df)
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
-        assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);
+        assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7.0\n3,2.0\n4,3.0\n", csv);
     }
 
     #[test]

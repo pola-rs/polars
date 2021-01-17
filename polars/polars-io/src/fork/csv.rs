@@ -299,7 +299,7 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
     let name = field.name();
 
     let builder = match field.data_type() {
-        &DataType::Boolean => Builder::Boolean(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Boolean => Builder::Boolean(BooleanChunkedBuilder::new(name, capacity)),
         &DataType::Int16 => Builder::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Int32 => Builder::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Int64 => Builder::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
@@ -370,6 +370,32 @@ fn add_to_utf8_builder(
                 } else {
                     let s = parse_bytes_with_encoding(bytes, encoding)?;
                     builder.append_value(&s);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn add_to_bool_builder(
+    rows: &[ByteRecord],
+    col_idx: usize,
+    builder: &mut BooleanChunkedBuilder,
+    ignore_parser_errors: bool,
+) -> Result<()> {
+    for row in rows.iter() {
+        let v = row.get(col_idx);
+        match v {
+            None => builder.append_null(),
+            Some(bytes) => {
+                if bytes.eq_ignore_ascii_case(b"false") {
+                    builder.append_value(false);
+                } else if bytes.eq_ignore_ascii_case(b"true") {
+                    builder.append_value(true);
+                } else if ignore_parser_errors {
+                    builder.append_null();
+                } else {
+                    return Err(PolarsError::Other("Could not parse boolean".into()));
                 }
             }
         }
@@ -524,7 +550,9 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let dispatch = |(i, builder): (&usize, &mut Builder)| {
             let field = self.schema.field(*i).unwrap();
             match field.data_type() {
-                DataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
+                DataType::Boolean => {
+                    add_to_bool_builder(rows, *i, builder.bool(), self.ignore_parser_errors)
+                }
                 DataType::Int8 => self.add_to_primitive(rows, *i, builder.i32()),
                 DataType::Int16 => self.add_to_primitive(rows, *i, builder.i32()),
                 DataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
@@ -823,9 +851,7 @@ fn add_to_builders_core(
     let dispatch = |(i, builder): (&usize, &mut Builder)| {
         let field = schema.field(*i).unwrap();
         match field.data_type() {
-            DataType::Boolean => {
-                add_to_primitive_core(rows, *i, builder.bool(), ignore_parser_error)
-            }
+            DataType::Boolean => add_to_bool_core(rows, *i, builder.bool(), ignore_parser_error),
             DataType::Int8 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
             DataType::Int16 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
             DataType::Int32 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
@@ -904,11 +930,50 @@ where
                                 "Error while parsing value {} for column {} as {:?}",
                                 String::from_utf8_lossy(bytes),
                                 col_idx,
-                                T::get_data_type()
+                                T::get_dtype()
                             )
                             .into(),
                         ));
                     }
+                }
+            }
+            None => builder.append_null(),
+        }
+    }
+    Ok(())
+}
+
+#[inline]
+fn add_to_bool_core(
+    rows: &[PolarsCsvRecord],
+    col_idx: usize,
+    builder: &mut BooleanChunkedBuilder,
+    ignore_parser_errors: bool,
+) -> Result<()> {
+    // todo! keep track of line number for error reporting
+    for (_row_index, row) in rows.iter().enumerate() {
+        match row.get(col_idx) {
+            Some(bytes) => {
+                if bytes.is_empty() {
+                    builder.append_null();
+                    continue;
+                }
+                if bytes.eq_ignore_ascii_case(b"false") {
+                    builder.append_value(false);
+                } else if bytes.eq_ignore_ascii_case(b"true") {
+                    builder.append_value(true);
+                } else if ignore_parser_errors {
+                    builder.append_null();
+                } else {
+                    return Err(PolarsError::Other(
+                        format!(
+                            "Error while parsing value {} for column {} as {:?}",
+                            String::from_utf8_lossy(bytes),
+                            col_idx,
+                            DataType::Boolean
+                        )
+                        .into(),
+                    ));
                 }
             }
             None => builder.append_null(),
@@ -1050,18 +1115,6 @@ trait PrimitiveParser: ArrowPrimitiveType {
     fn parse(bytes: &[u8]) -> Result<Self::Native>;
 }
 
-impl PrimitiveParser for BooleanType {
-    fn parse(bytes: &[u8]) -> Result<bool> {
-        if bytes.eq_ignore_ascii_case(b"false") {
-            Ok(false)
-        } else if bytes.eq_ignore_ascii_case(b"true") {
-            Ok(true)
-        } else {
-            Err(PolarsError::Other("Could not parse boolean".into()))
-        }
-    }
-}
-
 impl PrimitiveParser for Float32Type {
     fn parse(bytes: &[u8]) -> Result<f32> {
         let a = fast_float::parse(bytes).map_err(|e| e.to_polars_err())?;
@@ -1125,7 +1178,7 @@ impl PrimitiveParser for Int64Type {
 }
 
 enum Builder {
-    Boolean(PrimitiveChunkedBuilder<BooleanType>),
+    Boolean(BooleanChunkedBuilder),
     Int16(PrimitiveChunkedBuilder<Int16Type>),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -1138,7 +1191,7 @@ enum Builder {
 }
 
 impl Builder {
-    fn bool(&mut self) -> &mut PrimitiveChunkedBuilder<BooleanType> {
+    fn bool(&mut self) -> &mut BooleanChunkedBuilder {
         match self {
             Builder::Boolean(builder) => builder,
             _ => panic!("implementation error"),
