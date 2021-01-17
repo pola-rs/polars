@@ -1257,6 +1257,40 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_query_5() {
+        // if this one fails, the list builder probably does not handle offsets
+        let df = df! {
+            "uid" => [0, 0, 0, 1, 1, 1],
+            "day" => [1, 2, 4, 1, 2, 3],
+            "cumcases" => [10, 12, 15, 25, 30, 41]
+        }
+        .unwrap();
+
+        let out = df
+            .lazy()
+            .groupby(vec![col("uid")])
+            .agg(vec![col("day").head(Some(2))])
+            .collect()
+            .unwrap();
+        let s = out
+            .select_at_idx(1)
+            .unwrap()
+            .list()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(s.len(), 2);
+        let s = out
+            .select_at_idx(2)
+            .unwrap()
+            .list()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(s.len(), 2);
+    }
+
+    #[test]
     fn test_simplify_expr() {
         // Test if expression containing literals is simplified
         let df = get_df();

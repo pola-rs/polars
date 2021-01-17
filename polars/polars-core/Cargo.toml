@@ -48,3 +48,4 @@ memmap = "0.7.0"
 lazy_static = "1.4.0"
 hashbrown = {version = "0.9.1", features = ["rayon"] }
 fast-float = "0.1.0"
+polars-arrow = {version = "0.12.0-beta.0", path = "../polars-arrow"}
