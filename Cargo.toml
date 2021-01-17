@@ -5,6 +5,7 @@ members = [
     "polars/polars-core",
     "polars/polars-io",
     "polars/polars-lazy",
+    "polars/polars-arrow",
     "pandas_cmp",
     "py-polars",
     "examples/iris_classifier",

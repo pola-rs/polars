@@ -3,8 +3,8 @@ pub use crate::{
     chunked_array::{
         arithmetic::Pow,
         builder::{
-            AlignedVec, BooleanChunkedBuilder, ChunkedBuilder, ListBooleanChunkedBuilder,
-            ListBuilderTrait, ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,
+            BooleanChunkedBuilder, ChunkedBuilder, ListBooleanChunkedBuilder, ListBuilderTrait,
+            ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
         comparison::{CompToSeries, NumComp},
@@ -28,6 +28,7 @@ pub use crate::{
     testing::*,
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field as ArrowField, Schema as ArrowSchema};
+pub use polars_arrow::vec::AlignedVec;
 pub use std::sync::Arc;
 
 #[cfg(feature = "temporal")]
