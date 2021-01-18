@@ -4,7 +4,7 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 use ahash::AHashMap;
-use arrow::array::{ArrayDataBuilder, ArrayRef, BooleanArray, LargeListBuilder};
+use arrow::array::{ArrayDataBuilder, ArrayRef, LargeListBuilder};
 use arrow::datatypes::ToByteSlice;
 pub use arrow::memory;
 use arrow::{
@@ -412,26 +412,6 @@ pub fn round_upto_multiple_of_64(num: usize) -> usize {
 fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
     debug_assert!(factor > 0 && (factor & (factor - 1)) == 0);
     (num + (factor - 1)) & !(factor - 1)
-}
-
-/// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
-/// Can also take a null bit buffer into account.
-pub fn aligned_vec_to_boolean_array(
-    values: AlignedVec<bool>,
-    null_bit_buffer: Option<Buffer>,
-    null_count: Option<usize>,
-) -> BooleanArray {
-    let vec_len = values.len();
-    let buffer = values.into_arrow_buffer();
-
-    let builder = ArrayData::builder(ArrowDataType::Boolean)
-        .len(vec_len)
-        .add_buffer(buffer);
-
-    let builder = set_null_bits(builder, null_bit_buffer, null_count);
-    let data = builder.build();
-
-    BooleanArray::from(data)
 }
 
 /// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray

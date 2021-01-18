@@ -132,6 +132,13 @@ impl BooleanArrayBuilder {
         }
     }
 
+    pub fn new_no_nulls(capacity: usize) -> Self {
+        Self {
+            values_builder: BooleanBufferBuilder::new(capacity),
+            bitmap_builder: BooleanBufferBuilder::new(0),
+        }
+    }
+
     /// Returns the capacity of this builder measured in slots of type `T`
     pub fn capacity(&self) -> usize {
         self.values_builder.capacity()
@@ -175,8 +182,20 @@ impl BooleanArrayBuilder {
         self.bitmap_builder.shrink_to_fit();
     }
 
+    pub fn finish_with_null_buffer(&mut self, buffer: Buffer) -> BooleanArray {
+        self.shrink_to_fit();
+        let len = self.len();
+        let data = ArrayData::builder(DataType::Boolean)
+            .len(len)
+            .add_buffer(self.values_builder.finish())
+            .null_bit_buffer(buffer)
+            .build();
+        BooleanArray::from(data)
+    }
+
     /// Builds the [BooleanArray] and reset this builder.
     pub fn finish(&mut self) -> BooleanArray {
+        self.shrink_to_fit();
         let len = self.len();
         let null_bit_buffer = self.bitmap_builder.finish();
         let null_count = len - null_bit_buffer.count_set_bits();
@@ -251,6 +270,17 @@ where
         }
     }
 
+    pub fn new_no_nulls(capacity: usize) -> Self {
+        let values = AlignedVec::<T::Native>::with_capacity_aligned(capacity);
+        let bitmap_builder = BooleanBufferBuilder::new(0);
+
+        Self {
+            values,
+            bitmap_builder,
+            null_count: 0,
+        }
+    }
+
     /// Appends a value of type `T::Native` into the builder
     #[inline]
     pub fn append_value(&mut self, v: T::Native) {
@@ -273,6 +303,12 @@ where
 
     pub fn shrink_to_fit(&mut self) {
         self.values.shrink_to_fit()
+    }
+
+    pub fn finish_with_null_buffer(&mut self, buffer: Buffer) -> PrimitiveArray<T> {
+        self.shrink_to_fit();
+        let values = mem::take(&mut self.values);
+        values.into_primitive_array(Some(buffer))
     }
 
     /// Build the array and reset this Builder
