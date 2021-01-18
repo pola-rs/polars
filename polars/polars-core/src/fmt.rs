@@ -562,7 +562,7 @@ impl<T> FmtList for ObjectChunked<T> {
 #[cfg(all(test, feature = "temporal"))]
 mod test {
     use crate::prelude::*;
-    use polars_arrow::array::PrimitiveArrayBuilder;
+    use polars_arrow::prelude::PrimitiveArrayBuilder;
 
     #[test]
     fn list() {

@@ -4,7 +4,7 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 use ahash::AHashMap;
-use arrow::array::{ArrayDataBuilder, ArrayRef, BooleanArray, BooleanBuilder, LargeListBuilder};
+use arrow::array::{ArrayDataBuilder, ArrayRef, BooleanArray, LargeListBuilder};
 use arrow::datatypes::ToByteSlice;
 pub use arrow::memory;
 use arrow::{
@@ -31,19 +31,19 @@ pub trait ChunkedBuilder<N, T> {
 }
 
 pub struct BooleanChunkedBuilder {
-    array_builder: BooleanBuilder,
+    array_builder: BooleanArrayBuilder,
     field: Field,
 }
 
 impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
     /// Appends a value of type `T` into the builder
     fn append_value(&mut self, v: bool) {
-        self.array_builder.append_value(v).unwrap();
+        self.array_builder.append_value(v);
     }
 
     /// Appends a null slot into the builder
     fn append_null(&mut self) {
-        self.array_builder.append_null().unwrap();
+        self.array_builder.append_null();
     }
 
     fn finish(mut self) -> BooleanChunked {
@@ -63,7 +63,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
 impl BooleanChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
         BooleanChunkedBuilder {
-            array_builder: BooleanBuilder::new(capacity),
+            array_builder: BooleanArrayBuilder::new(capacity),
             field: Field::new(name, DataType::Boolean),
         }
     }
@@ -701,12 +701,12 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
 }
 
 pub struct ListBooleanChunkedBuilder {
-    builder: LargeListBuilder<BooleanBuilder>,
+    builder: LargeListBuilder<BooleanArrayBuilder>,
     field: Field,
 }
 
 impl ListBooleanChunkedBuilder {
-    pub fn new(name: &str, values_builder: BooleanBuilder, capacity: usize) -> Self {
+    pub fn new(name: &str, values_builder: BooleanArrayBuilder, capacity: usize) -> Self {
         let builder = LargeListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(name, DataType::List(ArrowDataType::Boolean));
 
@@ -729,8 +729,8 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
         let value_builder = self.builder.values();
         for s in ca {
             match s {
-                Some(s) => value_builder.append_value(s).unwrap(),
-                None => value_builder.append_null().unwrap(),
+                Some(s) => value_builder.append_value(s),
+                None => value_builder.append_null(),
             };
         }
         self.builder.append(true).unwrap();
@@ -756,7 +756,7 @@ pub fn get_list_builder(
     }
     macro_rules! get_bool_builder {
         () => {{
-            let values_builder = BooleanBuilder::new(value_capacity);
+            let values_builder = BooleanArrayBuilder::new(value_capacity);
             let builder = ListBooleanChunkedBuilder::new(&name, values_builder, list_capacity);
             Box::new(builder)
         }};

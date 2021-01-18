@@ -9,7 +9,7 @@ use crate::vector_hasher::{
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use ahash::RandomState;
-use arrow::array::{BooleanBuilder, LargeStringBuilder};
+use arrow::array::LargeStringBuilder;
 use crossbeam::thread;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
@@ -1081,7 +1081,7 @@ where
 
         macro_rules! impl_gb_bool {
             ($agg_col:expr) => {{
-                let values_builder = BooleanBuilder::new(values_cap);
+                let values_builder = BooleanArrayBuilder::new(values_cap);
                 let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
