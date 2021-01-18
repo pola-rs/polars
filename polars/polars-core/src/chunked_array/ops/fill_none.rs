@@ -148,7 +148,9 @@ impl ChunkFillNone for Utf8Chunked {
         if self.null_count() == 0 {
             return Ok(self.clone());
         }
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        let factor = self.len() as f32 / (self.len() - self.null_count()) as f32;
+        let value_cap = (self.get_values_size() as f32 * 1.25 * factor) as usize;
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), value_cap);
         match strategy {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
             FillNoneStrategy::Backward => impl_fill_backward!(self, builder),

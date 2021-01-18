@@ -56,7 +56,7 @@ impl ChunkCast for CategoricalChunked {
             DataType::Utf8 => {
                 let mapping = &**self.categorical_map.as_ref().expect("should be set");
 
-                let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+                let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.len() * 5);
 
                 let f = |idx: u32| mapping.get(&idx).unwrap();
 

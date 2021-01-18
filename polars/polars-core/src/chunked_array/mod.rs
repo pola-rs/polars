@@ -916,6 +916,14 @@ impl ValueSize for ListChunked {
     }
 }
 
+impl ValueSize for Utf8Chunked {
+    fn get_values_size(&self) -> usize {
+        self.chunks
+            .iter()
+            .fold(0usize, |acc, arr| acc + arr.get_values_size())
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;

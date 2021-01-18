@@ -139,7 +139,7 @@ fn iterator_to_utf8<'a>(
     name: &str,
     capacity: usize,
 ) -> Utf8Chunked {
-    let mut builder = Utf8ChunkedBuilder::new(name, capacity);
+    let mut builder = Utf8ChunkedBuilder::new(name, capacity, capacity * 25);
     for _ in 0..init_null_count {
         builder.append_null();
     }
