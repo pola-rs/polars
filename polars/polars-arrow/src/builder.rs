@@ -1,6 +1,8 @@
 use crate::bit_util;
 use crate::vec::AlignedVec;
-use arrow::array::{ArrayBuilder, ArrayData, ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::array::{
+    ArrayBuilder, ArrayData, ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray,
+};
 use arrow::buffer::{Buffer, MutableBuffer};
 use arrow::datatypes::{ArrowPrimitiveType, DataType};
 use std::any::Any;
@@ -316,6 +318,82 @@ where
     }
 }
 
+#[derive(Debug)]
+pub struct LargeStringBuilder {
+    values: AlignedVec<u8>,
+    offsets: AlignedVec<i64>,
+    null_buffer: BooleanBufferBuilder,
+}
+
+impl LargeStringBuilder {
+    pub fn with_capacity(values_capacity: usize, list_capacity: usize) -> Self {
+        let mut offsets = AlignedVec::with_capacity_aligned(list_capacity + 1);
+        offsets.push(0);
+        Self {
+            values: AlignedVec::with_capacity_aligned(values_capacity),
+            offsets,
+            null_buffer: BooleanBufferBuilder::new(list_capacity),
+        }
+    }
+
+    pub fn append_value(&mut self, value: &str) {
+        self.values.extend_from_slice(value.as_bytes());
+        self.offsets.push(self.values.len() as i64);
+        self.null_buffer.append(true);
+    }
+
+    /// Finish the current variable-length list array slot.
+    pub fn append(&mut self, is_valid: bool) {
+        self.offsets.push(self.values.len() as i64);
+        self.null_buffer.append(is_valid);
+    }
+
+    /// Append a null value to the array.
+    pub fn append_null(&mut self) {
+        self.append(false);
+    }
+
+    /// Builds the `StringArray` and reset this builder.
+    pub fn finish(&mut self) -> LargeStringArray {
+        let values = mem::take(&mut self.values);
+        let offsets = mem::take(&mut self.offsets);
+
+        let arraydata = ArrayData::builder(DataType::LargeUtf8)
+            .len(offsets.len() - 1)
+            .add_buffer(offsets.into_arrow_buffer())
+            .add_buffer(values.into_arrow_buffer())
+            .null_bit_buffer(self.null_buffer.finish())
+            .build();
+        LargeStringArray::from(arraydata)
+    }
+}
+
+impl ArrayBuilder for LargeStringBuilder {
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    fn finish(&mut self) -> ArrayRef {
+        Arc::new(LargeStringBuilder::finish(self))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_box_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -330,6 +408,18 @@ mod test {
         let out = builder.finish();
         assert_eq!(out.len(), 2);
         assert_eq!(out.null_count(), 1);
+        dbg!(out);
+    }
+
+    #[test]
+    fn test_string_builder() {
+        let mut builder = LargeStringBuilder::with_capacity(3, 3);
+        builder.append_value("foo");
+        builder.append_null();
+        builder.append_value("bar");
+        let out = builder.finish();
+        let vals = out.iter().collect::<Vec<_>>();
+        assert_eq!(vals, &[Some("foo"), None, Some("bar")]);
         dbg!(out);
     }
 }

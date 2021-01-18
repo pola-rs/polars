@@ -1,5 +1,5 @@
 use arrow::array::{Array, ArrayData, ArrayDataRef, ArrayRef, ListArray, PrimitiveArray};
-use arrow::datatypes::ArrowPrimitiveType;
+use arrow::datatypes::{ArrowPrimitiveType, DataType};
 use num::Num;
 
 pub trait GetValues {
@@ -82,7 +82,13 @@ impl ValueSize for ArrayRef {
 
 impl ValueSize for ArrayData {
     fn get_values_size(&self) -> usize {
-        self.child_data()[0].len() - self.offset()
+        match self.data_type() {
+            DataType::LargeList(_) | DataType::List(_) => {
+                self.child_data()[0].len() - self.offset()
+            }
+            DataType::LargeUtf8 | DataType::Utf8 => self.buffers()[1].len() - self.offset(),
+            _ => unimplemented!(),
+        }
     }
 }
 

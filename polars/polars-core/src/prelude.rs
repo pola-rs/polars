@@ -28,6 +28,7 @@ pub use crate::{
     testing::*,
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field as ArrowField, Schema as ArrowSchema};
+pub(crate) use polars_arrow::array::*;
 pub use polars_arrow::vec::AlignedVec;
 pub use std::sync::Arc;
 

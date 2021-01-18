@@ -9,7 +9,6 @@ use crate::vector_hasher::{
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use ahash::RandomState;
-use arrow::array::LargeStringBuilder;
 use crossbeam::thread;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
@@ -1067,7 +1066,7 @@ where
 
         macro_rules! impl_gb_utf8 {
             ($agg_col:expr) => {{
-                let values_builder = LargeStringBuilder::new(values_cap);
+                let values_builder = LargeStringBuilder::with_capacity(values_cap * 5, values_cap);
                 let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {

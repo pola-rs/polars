@@ -51,7 +51,7 @@ impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
 impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let (seq, len) = get_pyseq(obj)?;
-        let mut builder = Utf8ChunkedBuilder::new("", len);
+        let mut builder = Utf8ChunkedBuilder::new("", len, len * 25);
 
         for res in seq.iter()? {
             let item = res?;
