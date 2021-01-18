@@ -55,6 +55,7 @@ use arrow::array::{
 
 use ahash::AHashMap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
+use polars_arrow::array::ValueSize;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
@@ -904,6 +905,14 @@ impl CategoricalChunked {
     fn set_state<T>(mut self, other: &ChunkedArray<T>) -> Self {
         self.categorical_map = other.categorical_map.clone();
         self
+    }
+}
+
+impl ValueSize for ListChunked {
+    fn get_values_size(&self) -> usize {
+        self.chunks
+            .iter()
+            .fold(0usize, |acc, arr| acc + arr.get_values_size())
     }
 }
 

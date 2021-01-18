@@ -1195,8 +1195,10 @@ impl_named_from!([Option<f64>], Float64Type, new_from_opt_slice);
 impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
         let series_slice = s.as_ref();
+        let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
+
         let dt = series_slice[0].dtype();
-        let mut builder = get_list_builder(dt, series_slice.len(), name);
+        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
         for series in series_slice {
             builder.append_series(series)
         }

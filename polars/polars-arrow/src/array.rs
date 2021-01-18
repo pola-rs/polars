@@ -1,5 +1,8 @@
 use crate::vec::AlignedVec;
-use arrow::array::{Array, ArrayDataRef, ArrayRef, BooleanBufferBuilder, PrimitiveArray};
+use arrow::array::{
+    Array, ArrayData, ArrayDataRef, ArrayRef, BooleanBufferBuilder, LargeListArray, ListArray,
+    PrimitiveArray,
+};
 use arrow::datatypes::ArrowPrimitiveType;
 use num::Num;
 
@@ -120,5 +123,29 @@ where
             Some(null_bit_buffer)
         };
         self.values.into_primitive_array(buf)
+    }
+}
+
+pub trait ValueSize {
+    /// Useful for a Utf8 or a List to get underlying value size.
+    /// During a rechunk this is handy
+    fn get_values_size(&self) -> usize;
+}
+
+impl ValueSize for ArrayRef {
+    fn get_values_size(&self) -> usize {
+        self.data_ref().get_values_size()
+    }
+}
+
+impl ValueSize for ArrayData {
+    fn get_values_size(&self) -> usize {
+        self.child_data()[0].len() - self.offset()
+    }
+}
+
+impl ValueSize for ListArray {
+    fn get_values_size(&self) -> usize {
+        self.data_ref().get_values_size()
     }
 }

@@ -1,5 +1,6 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use polars_arrow::prelude::*;
 
 fn chunk_shift_helper<T>(
     ca: &ChunkedArray<T>,
@@ -148,7 +149,8 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
                 format!("The value of parameter `periods`: {} in the shift operation is larger than the length of the ChunkedArray: {}", periods, self.len()).into()));
         }
         let dt = self.get_inner_dtype();
-        let mut builder = get_list_builder(&dt.into(), self.len(), self.name());
+        let mut builder =
+            get_list_builder(&dt.into(), self.get_values_size(), self.len(), self.name());
         fn append_fn(builder: &mut Box<dyn ListBuilderTrait>, v: Option<&Series>) {
             builder.append_opt_series(v);
         }
