@@ -757,25 +757,30 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
     }
 }
 
-pub fn get_list_builder(dt: &DataType, capacity: usize, name: &str) -> Box<dyn ListBuilderTrait> {
+pub fn get_list_builder(
+    dt: &DataType,
+    value_capacity: usize,
+    list_capacity: usize,
+    name: &str,
+) -> Box<dyn ListBuilderTrait> {
     macro_rules! get_primitive_builder {
         ($type:ty) => {{
-            let values_builder = PrimitiveBuilder::<$type>::new(capacity);
-            let builder = ListPrimitiveChunkedBuilder::new(&name, values_builder, capacity);
+            let values_builder = PrimitiveBuilder::<$type>::new(value_capacity);
+            let builder = ListPrimitiveChunkedBuilder::new(&name, values_builder, list_capacity);
             Box::new(builder)
         }};
     }
     macro_rules! get_bool_builder {
         () => {{
-            let values_builder = BooleanBuilder::new(capacity);
-            let builder = ListBooleanChunkedBuilder::new(&name, values_builder, capacity);
+            let values_builder = BooleanBuilder::new(value_capacity);
+            let builder = ListBooleanChunkedBuilder::new(&name, values_builder, list_capacity);
             Box::new(builder)
         }};
     }
     macro_rules! get_utf8_builder {
         () => {{
-            let values_builder = LargeStringBuilder::new(capacity);
-            let builder = ListUtf8ChunkedBuilder::new(&name, values_builder, capacity);
+            let values_builder = LargeStringBuilder::new(value_capacity);
+            let builder = ListUtf8ChunkedBuilder::new(&name, values_builder, list_capacity);
             Box::new(builder)
         }};
     }

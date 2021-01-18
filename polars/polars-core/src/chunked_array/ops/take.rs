@@ -15,6 +15,7 @@ use arrow::array::{
     Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
 };
 use arrow::compute::kernels::take::take;
+use polars_arrow::prelude::*;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -492,10 +493,12 @@ impl ChunkTake for ListChunked {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
         let capacity = capacity.unwrap_or(indices.size_hint().0);
+        let value_cap =
+            (self.get_values_size() as f32 / self.len() as f32 * capacity as f32 * 1.4) as usize;
 
         match self.dtype() {
             DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), capacity, self.name());
+                let mut builder = get_list_builder(&dt.into(), value_cap, capacity, self.name());
                 let taker = self.take_rand();
 
                 for idx in indices {
@@ -518,9 +521,11 @@ impl ChunkTake for ListChunked {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
         let capacity = capacity.unwrap_or(indices.size_hint().0);
+        let value_cap =
+            (self.get_values_size() as f32 / self.len() as f32 * capacity as f32 * 1.4) as usize;
         match self.dtype() {
             DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), capacity, self.name());
+                let mut builder = get_list_builder(&dt.into(), value_cap, capacity, self.name());
                 let taker = self.take_rand();
                 for idx in indices {
                     let v = taker.get_unchecked(idx);
@@ -541,10 +546,12 @@ impl ChunkTake for ListChunked {
             return self.clone();
         }
         let capacity = capacity.unwrap_or(indices.size_hint().0);
+        let value_cap =
+            (self.get_values_size() as f32 / self.len() as f32 * capacity as f32 * 1.4) as usize;
 
         match self.dtype() {
             DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), capacity, self.name());
+                let mut builder = get_list_builder(&dt.into(), value_cap, capacity, self.name());
 
                 let taker = self.take_rand();
 
@@ -572,10 +579,12 @@ impl ChunkTake for ListChunked {
             return self.clone();
         }
         let capacity = capacity.unwrap_or(indices.size_hint().0);
+        let value_cap =
+            (self.get_values_size() as f32 / self.len() as f32 * capacity as f32 * 1.4) as usize;
 
         match self.dtype() {
             DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), capacity, self.name());
+                let mut builder = get_list_builder(&dt.into(), value_cap, capacity, self.name());
                 let taker = self.take_rand();
 
                 for opt_idx in indices {

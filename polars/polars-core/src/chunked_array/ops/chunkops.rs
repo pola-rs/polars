@@ -6,6 +6,7 @@ use crate::prelude::*;
 use arrow::array::Array;
 use arrow::compute::concat;
 use itertools::Itertools;
+use polars_arrow::prelude::*;
 #[cfg(feature = "object")]
 use std::any::Any;
 #[cfg(feature = "object")]
@@ -74,7 +75,9 @@ impl ChunkOps for ListChunked {
         if self.chunks.len() == 1 {
             Ok(self.clone())
         } else {
-            let mut builder = get_list_builder(&self.dtype(), self.len(), self.name());
+            let values_capacity = self.get_values_size();
+            let mut builder =
+                get_list_builder(&self.dtype(), values_capacity, self.len(), self.name());
             for v in self {
                 builder.append_opt_series(v.as_ref())
             }

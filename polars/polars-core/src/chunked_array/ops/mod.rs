@@ -649,7 +649,7 @@ impl ChunkFull<&dyn SeriesTrait> for ListChunked {
 
 impl ChunkFullNull for ListChunked {
     fn full_null(name: &str, length: usize) -> ListChunked {
-        let mut builder = get_list_builder(&DataType::Null, length, name);
+        let mut builder = get_list_builder(&DataType::Null, 0, length, name);
         for _ in 0..length {
             builder.append_opt_series(None)
         }

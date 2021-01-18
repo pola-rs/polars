@@ -211,7 +211,8 @@ impl<'a> FromIterator<&'a Series> for ListChunked {
 
         // first take one to get the dtype. We panic if we have an empty iterator
         let v = it.next().unwrap();
-        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
+        // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
+        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
         builder.append_opt_series(Some(v));
         for s in it {
@@ -228,7 +229,7 @@ impl FromIterator<Series> for ListChunked {
 
         // first take one to get the dtype. We panic if we have an empty iterator
         let v = it.next().unwrap();
-        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
         builder.append_opt_series(Some(&v));
         for s in it {
@@ -268,7 +269,7 @@ macro_rules! impl_from_iter_opt_series {
             }
         }
         let capacity = get_iter_capacity(&it);
-        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
         // first fill all None's we encountered
         while cnt > 0 {
@@ -327,7 +328,7 @@ impl<'a> FromIterator<Option<&'a Series>> for ListChunked {
             }
         }
         let capacity = get_iter_capacity(&it);
-        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
         // first fill all None's we encountered
         while cnt > 0 {

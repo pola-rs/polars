@@ -6,6 +6,7 @@ use crate::utils::NoNull;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::filter as filter_fn;
+use polars_arrow::prelude::*;
 use std::ops::Deref;
 
 macro_rules! impl_filter_with_nulls_in_both {
@@ -200,8 +201,18 @@ impl ChunkFilter<ListType> for ListChunked {
                 _ => Ok(ListChunked::new_from_chunks(self.name(), vec![])),
             };
         }
+        if self.chunk_id == filter.chunk_id {
+            let chunks = self
+                .downcast_chunks()
+                .iter()
+                .zip(filter.downcast_chunks())
+                .map(|(&left, mask)| filter_fn(left, mask).unwrap())
+                .collect::<Vec<_>>();
+            return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        }
         let dt = self.get_inner_dtype();
-        let mut builder = get_list_builder(&dt.into(), self.len(), self.name());
+        let values_capacity = self.get_values_size();
+        let mut builder = get_list_builder(&dt.into(), values_capacity, self.len(), self.name());
         filter
             .into_iter()
             .zip(self.into_iter())
