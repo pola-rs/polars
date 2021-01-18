@@ -163,7 +163,7 @@ fn iterator_to_list(
     name: &str,
     capacity: usize,
 ) -> ListChunked {
-    let mut builder = get_list_builder(dt, capacity, name);
+    let mut builder = get_list_builder(dt, capacity * 5, capacity, name);
     for _ in 0..init_null_count {
         builder.append_opt_series(None);
     }
@@ -1002,7 +1002,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
         match self.dtype() {
             DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), self.len(), self.name());
+                let mut builder =
+                    get_list_builder(&dt.into(), self.len() * 5, self.len(), self.name());
 
                 let ca = if self.null_count() == 0 {
                     let mut it = self.into_no_null_iter();
@@ -1012,10 +1013,10 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         let out_series = call_series_lambda(pypolars, lambda, series)
                             .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
                         let dt = out_series.dtype();
-                        builder = get_list_builder(dt, self.len(), self.name());
+                        builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
                         builder.append_opt_series(Some(&out_series));
                     } else {
-                        let mut builder = get_list_builder(&dt.into(), 1, self.name());
+                        let mut builder = get_list_builder(&dt.into(), 0, 1, self.name());
                         let ca = builder.finish();
                         return Ok(PySeries::new(ca.into_series()));
                     }
@@ -1035,7 +1036,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                             let out_series = call_series_lambda(pypolars, lambda, series)
                                 .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
                             let dt = out_series.dtype();
-                            builder = get_list_builder(dt, self.len(), self.name());
+                            builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
                             builder.append_opt_series(Some(&out_series));
                             break;
                         } else {
