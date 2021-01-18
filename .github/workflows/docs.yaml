@@ -26,9 +26,9 @@ jobs:
           pip install pdoc3 ghp-import numpy
       - name: deploy docs
         run: |
-          cargo doc --all-features --package polars \
-          && echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
-          pdoc --html py-polars/pypolars/ && \
-          mv html/pypolars target/doc/pypolars && \
+          cargo doc --all-features --package polars && \
+          echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
+          pdoc --html py-polars/pypolars/ --output-dir target/doc/pypolars --template-dir py-polars/docs/templates/ --force && \
+          cp -r py-polars/docs/img target/doc/pypolars/img && \
           ghp-import -n target/doc && \
           git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages
