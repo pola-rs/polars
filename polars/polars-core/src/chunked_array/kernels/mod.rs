@@ -7,10 +7,9 @@ pub(crate) mod take;
 pub mod temporal;
 pub(crate) mod utils;
 pub mod zip_with;
+use polars_arrow::builder::BooleanArrayBuilder;
 
-use crate::chunked_array::builder::{
-    aligned_vec_to_boolean_array, aligned_vec_to_primitive_array, get_bitmap,
-};
+use crate::chunked_array::builder::{aligned_vec_to_primitive_array, get_bitmap};
 use crate::datatypes::{
     ArrowDataType, Float64Type, PolarsFloatType, PolarsNumericType, PolarsPrimitiveType,
 };
@@ -92,13 +91,17 @@ where
     T::Native: Float,
 {
     let vals = arr.values();
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals.iter().map(|v| v.is_nan()).collect();
-    Arc::new(aligned_vec_to_boolean_array(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
+    let (_, null_bit_buffer) = get_bitmap(arr);
+    let mut builder = BooleanArrayBuilder::new_no_nulls(vals.len());
+
+    vals.iter().for_each(|v| {
+        builder.append_value(v.is_nan());
+    });
+    let arr = match null_bit_buffer {
+        Some(buf) => builder.finish_with_null_buffer(buf),
+        None => builder.finish(),
+    };
+    Arc::new(arr)
 }
 
 pub(crate) fn is_not_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
@@ -107,13 +110,17 @@ where
     T::Native: Float,
 {
     let vals = arr.values();
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals.iter().map(|v| !v.is_nan()).collect();
-    Arc::new(aligned_vec_to_boolean_array(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
+    let (_, null_bit_buffer) = get_bitmap(arr);
+    let mut builder = BooleanArrayBuilder::new_no_nulls(vals.len());
+
+    vals.iter().for_each(|v| {
+        builder.append_value(!v.is_nan());
+    });
+    let arr = match null_bit_buffer {
+        Some(buf) => builder.finish_with_null_buffer(buf),
+        None => builder.finish(),
+    };
+    Arc::new(arr)
 }
 
 pub(crate) fn is_finite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
@@ -122,13 +129,17 @@ where
     T::Native: Float,
 {
     let vals = arr.values();
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals.iter().map(|v| !v.is_finite()).collect();
-    Arc::new(aligned_vec_to_boolean_array(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
+    let (_, null_bit_buffer) = get_bitmap(arr);
+    let mut builder = BooleanArrayBuilder::new_no_nulls(vals.len());
+
+    vals.iter().for_each(|v| {
+        builder.append_value(v.is_finite());
+    });
+    let arr = match null_bit_buffer {
+        Some(buf) => builder.finish_with_null_buffer(buf),
+        None => builder.finish(),
+    };
+    Arc::new(arr)
 }
 
 pub(crate) fn is_infinite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
@@ -137,13 +148,17 @@ where
     T::Native: Float,
 {
     let vals = arr.values();
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
-    let av = vals.iter().map(|v| !v.is_infinite()).collect();
-    Arc::new(aligned_vec_to_boolean_array(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
+    let (_, null_bit_buffer) = get_bitmap(arr);
+    let mut builder = BooleanArrayBuilder::new_no_nulls(vals.len());
+
+    vals.iter().for_each(|v| {
+        builder.append_value(v.is_infinite());
+    });
+    let arr = match null_bit_buffer {
+        Some(buf) => builder.finish_with_null_buffer(buf),
+        None => builder.finish(),
+    };
+    Arc::new(arr)
 }
 
 pub(crate) fn cast_numeric_from_dtype<S>(arr: &PrimitiveArray<S>, dtype: ArrowDataType) -> ArrayRef
