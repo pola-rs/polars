@@ -1084,6 +1084,18 @@ class Series:
         """
         return wrap_s(self._s.str_to_uppercase())
 
+    def str_rstrip(self) -> "Series":
+        """
+        Remove trailing whitespace
+        """
+        return self.str_replace(r"[ \t]+$", "")
+
+    def str_lstrip(self) -> "Series":
+        """
+        Remove leading whitespace
+        """
+        return self.str_replace(r"^\s*", "")
+
     def as_duration(self) -> "Series":
         """
         If Series is a date32 or a date64 it can be turned into a duration.
