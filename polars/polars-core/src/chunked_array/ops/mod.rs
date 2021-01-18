@@ -1,0 +1,875 @@
+//! Traits for miscellaneous operations on ChunkedArray
+use crate::chunked_array::builder::get_list_builder;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::ObjectType;
+use crate::prelude::*;
+use crate::utils::NoNull;
+use arrow::array::ArrayRef;
+use std::marker::Sized;
+
+pub(crate) mod aggregate;
+pub(crate) mod apply;
+pub(crate) mod chunkops;
+pub(crate) mod cum_agg;
+pub(crate) mod explode;
+pub(crate) mod fill_none;
+pub(crate) mod filter;
+pub(crate) mod set;
+pub(crate) mod shift;
+pub(crate) mod sort;
+pub(crate) mod take;
+pub(crate) mod unique;
+pub(crate) mod window;
+pub(crate) mod zip;
+
+pub trait ChunkCumAgg<T> {
+    /// Get an array with the cumulative max computed at every element
+    fn cum_max(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cum_max not supported for this dtype")
+    }
+    /// Get an array with the cumulative min computed at every element
+    fn cum_min(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cum_min not supported for this dtype")
+    }
+    /// Get an array with the cumulative sum computed at every element
+    fn cum_sum(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cum_sum not supported for this dtype")
+    }
+}
+
+pub trait ChunkTakeEvery<T> {
+    fn take_every(&self, n: usize) -> ChunkedArray<T>;
+}
+
+pub trait ChunkExplode {
+    fn explode(&self) -> Result<Series> {
+        self.explode_and_offsets().map(|t| t.0)
+    }
+    fn explode_and_offsets(&self) -> Result<(Series, &[i64])>;
+}
+
+pub trait ChunkBytes {
+    fn to_byte_slices(&self) -> Vec<&[u8]>;
+}
+
+pub trait ChunkWindow {
+    /// apply a rolling sum (moving sum) over the values in this array.
+    /// a window of length `window_size` will traverse the array. the values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. the resulting
+    /// values will be aggregated to their sum.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    fn rolling_sum(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling sum not supported for this datatype".into(),
+        ))
+    }
+    /// Apply a rolling mean (moving mean) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their mean.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    fn rolling_mean(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+
+    /// Apply a rolling min (moving min) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their min.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    fn rolling_min(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+
+    /// Apply a rolling max (moving max) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their max.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    fn rolling_max(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+}
+
+pub trait ChunkWindowCustom<T> {
+    /// Apply a rolling aggregation over the values in this array.
+    ///
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their max.
+    ///
+    /// You can pass a custom closure that will be used in the `fold` operation to aggregate the window.
+    /// The closure/fn of type `Fn(Option<T>, Option<T>) -> Option<T>` takes an `accumulator` and
+    /// a `value` as argument.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    fn rolling_custom<F>(
+        &self,
+        _window_size: usize,
+        _weight: Option<&[f64]>,
+        _fold_fn: F,
+        _init_fold: InitFold,
+    ) -> Result<Self>
+    where
+        F: Fn(Option<T>, Option<T>) -> Option<T> + Copy,
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+}
+
+/// Random access
+pub trait TakeRandom {
+    type Item;
+
+    /// Get a nullable value by index.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn get(&self, index: usize) -> Option<Self::Item>;
+
+    /// Get a value by index and ignore the null bit.
+    ///
+    /// # Safety
+    ///
+    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
+}
+// Utility trait because associated type needs a lifetime
+pub trait TakeRandomUtf8 {
+    type Item;
+
+    /// Get a nullable value by index.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn get(self, index: usize) -> Option<Self::Item>;
+
+    /// Get a value by index and ignore the null bit.
+    ///
+    /// # Safety
+    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
+    unsafe fn get_unchecked(self, index: usize) -> Self::Item;
+}
+
+/// Fast access by index.
+pub trait ChunkTake {
+    /// Take values from ChunkedArray by index.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
+    where
+        Self: std::marker::Sized;
+
+    /// Take values from ChunkedArray by index
+    ///
+    /// # Safety
+    ///
+    /// Runs without checking bounds or null validity.
+    unsafe fn take_unchecked(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized;
+
+    /// Take values from ChunkedArray by Option<index>.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    fn take_opt(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized;
+
+    /// Take values from ChunkedArray by Option<index>.
+    ///
+    /// # Safety
+    ///
+    /// Doesn't do any bound or null validity checking.
+    unsafe fn take_opt_unchecked(
+        &self,
+        indices: impl Iterator<Item = Option<usize>>,
+        capacity: Option<usize>,
+    ) -> Self
+    where
+        Self: std::marker::Sized;
+
+    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self>
+    where
+        Self: std::marker::Sized;
+
+    fn take_from_single_chunked_iter(&self, indices: impl Iterator<Item = usize>) -> Result<Self>
+    where
+        Self: std::marker::Sized,
+    {
+        let idx_ca: NoNull<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
+        let idx_ca = idx_ca.into_inner();
+        self.take_from_single_chunked(&idx_ca)
+    }
+}
+
+/// Create a `ChunkedArray` with new values by index or by boolean mask.
+/// Note that these operations clone data. This is however the only way we can modify at mask or
+/// index level as the underlying Arrow arrays are immutable.
+pub trait ChunkSet<'a, A, B> {
+    /// Set the values at indexes `idx` to some optional value `Option<T>`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let new = ca.set_at_idx(&[0, 1], Some(10)).unwrap();
+    ///
+    /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
+    /// ```
+    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<A>) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// Set the values at indexes `idx` by applying a closure to these values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let new = ca.set_at_idx_with(&[0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
+    ///
+    /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
+    /// ```
+    fn set_at_idx_with<T: AsTakeIndex, F>(&'a self, idx: &T, f: F) -> Result<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<A>) -> Option<B>;
+    /// Set the values where the mask evaluates to `true` to some optional value `Option<T>`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+    /// let new = ca.set(&mask, Some(5)).unwrap();
+    /// assert_eq!(Vec::from(&new), &[Some(1), Some(5), Some(3)]);
+    /// ```
+    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<A>) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// Set the values where the mask evaluates to `true` by applying a closure to these values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+    /// let new = ca.set_with(&mask, |opt_v| opt_v.map(
+    ///     |v| v * 2
+    /// )).unwrap();
+    /// assert_eq!(Vec::from(&new), &[Some(1), Some(4), Some(3)]);
+    /// ```
+    fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
+    where
+        Self: Sized,
+        F: Fn(Option<A>) -> Option<B>;
+}
+
+/// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
+pub trait ChunkCast {
+    /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
+    fn cast<N>(&self) -> Result<ChunkedArray<N>>
+    where
+        N: PolarsDataType;
+}
+
+/// Fastest way to do elementwise operations on a ChunkedArray<T>
+pub trait ChunkApply<'a, A, B> {
+    /// Apply a closure `F` elementwise.
+    fn apply<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(A) -> B + Copy;
+
+    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
+    fn apply_with_idx<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, A)) -> B + Copy;
+
+    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
+    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn((usize, Option<A>)) -> Option<B> + Copy;
+}
+
+/// Aggregation operations
+pub trait ChunkAgg<T> {
+    /// Aggregate the sum of the ChunkedArray.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn sum(&self) -> Option<T>;
+
+    fn min(&self) -> Option<T>;
+    /// Returns the maximum value in the array, according to the natural order.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn max(&self) -> Option<T>;
+
+    /// Returns the mean value in the array.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn mean(&self) -> Option<T>;
+
+    /// Returns the mean value in the array.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn median(&self) -> Option<T>;
+
+    /// Aggregate a given quantile of the ChunkedArray.
+    /// Returns `None` if the array is empty or only contains null values.
+    fn quantile(&self, quantile: f64) -> Result<Option<T>>;
+}
+
+/// Variance and standard deviation aggregation.
+pub trait ChunkVar<T> {
+    /// Compute the variance of this ChunkedArray/Series.
+    fn var(&self) -> Option<T> {
+        None
+    }
+
+    /// Compute the standard deviation of this ChunkedArray/Series.
+    fn std(&self) -> Option<T> {
+        None
+    }
+}
+
+/// Compare [Series](series/series/enum.Series.html)
+/// and [ChunkedArray](series/chunked_array/struct.ChunkedArray.html)'s and get a `boolean` mask that
+/// can be used to filter rows.
+///
+/// # Example
+///
+/// ```
+/// use polars_core::prelude::*;
+/// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
+///     let mask = df
+///     .column("column_a")?
+///     .eq(1);
+///
+///     df.filter(&mask)
+/// }
+/// ```
+pub trait ChunkCompare<Rhs> {
+    /// Check for equality and regard missing values as equal.
+    fn eq_missing(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Check for equality.
+    fn eq(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Check for inequality.
+    fn neq(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Greater than comparison.
+    fn gt(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Greater than or equal comparison.
+    fn gt_eq(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Less than comparison.
+    fn lt(&self, rhs: Rhs) -> BooleanChunked;
+
+    /// Less than or equal comparison
+    fn lt_eq(&self, rhs: Rhs) -> BooleanChunked;
+}
+
+/// Get unique values in a `ChunkedArray`
+pub trait ChunkUnique<T> {
+    // We don't return Self to be able to use AutoRef specialization
+    /// Get unique values of a ChunkedArray
+    fn unique(&self) -> Result<ChunkedArray<T>>;
+
+    /// Get first index of the unique values in a `ChunkedArray`.
+    /// This Vec is sorted.
+    fn arg_unique(&self) -> Result<Vec<usize>>;
+
+    /// Number of unique values in the `ChunkedArray`
+    fn n_unique(&self) -> Result<usize> {
+        self.arg_unique().map(|v| v.len())
+    }
+
+    /// Get a mask of all the unique values.
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        Err(PolarsError::InvalidOperation(
+            "is_unique is not implemented for this dtype".into(),
+        ))
+    }
+
+    /// Get a mask of all the duplicated values.
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        Err(PolarsError::InvalidOperation(
+            "is_duplicated is not implemented for this dtype".into(),
+        ))
+    }
+
+    /// Count the unique values.
+    fn value_counts(&self) -> Result<DataFrame> {
+        Err(PolarsError::InvalidOperation(
+            "is_duplicated is not implemented for this dtype".into(),
+        ))
+    }
+}
+
+pub trait ToDummies<T>: ChunkUnique<T> {
+    fn to_dummies(&self) -> Result<DataFrame> {
+        Err(PolarsError::InvalidOperation(
+            "is_duplicated is not implemented for this dtype".into(),
+        ))
+    }
+}
+
+/// Sort operations on `ChunkedArray`.
+pub trait ChunkSort<T> {
+    /// Returned a sorted `ChunkedArray`.
+    fn sort(&self, reverse: bool) -> ChunkedArray<T>;
+
+    /// Sort this array in place.
+    fn sort_in_place(&mut self, reverse: bool);
+
+    /// Retrieve the indexes needed to sort this array.
+    fn argsort(&self, reverse: bool) -> Vec<usize>;
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum FillNoneStrategy {
+    Backward,
+    Forward,
+    Mean,
+    Min,
+    Max,
+}
+
+/// Replace None values with various strategies
+pub trait ChunkFillNone {
+    /// Replace None values with one of the following strategies:
+    /// * Forward fill (replace None with the previous value)
+    /// * Backward fill (replace None with the next value)
+    /// * Mean fill (replace None with the mean of the whole array)
+    /// * Min fill (replace None with the minimum of the whole array)
+    /// * Max fill (replace None with the maximum of the whole array)
+    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self>
+    where
+        Self: Sized;
+}
+/// Replace None values with a value
+pub trait ChunkFillNoneValue<T> {
+    /// Replace None values with a give value `T`.
+    fn fill_none_with_value(&self, value: T) -> Result<Self>
+    where
+        Self: Sized;
+}
+
+/// Fill a ChunkedArray with one value.
+pub trait ChunkFull<T> {
+    /// Create a ChunkedArray with a single value.
+    fn full(name: &str, value: T, length: usize) -> Self
+    where
+        Self: std::marker::Sized;
+}
+
+pub trait ChunkFullNull {
+    fn full_null(_name: &str, _length: usize) -> Self
+    where
+        Self: std::marker::Sized;
+}
+
+impl<T> ChunkFull<T::Native> for ChunkedArray<T>
+where
+    T: PolarsPrimitiveType,
+{
+    fn full(name: &str, value: T::Native, length: usize) -> Self
+    where
+        T::Native: Copy,
+    {
+        let mut builder = PrimitiveChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_value(value)
+        }
+        builder.finish()
+    }
+}
+
+impl<T> ChunkFullNull for ChunkedArray<T>
+where
+    T: PolarsPrimitiveType,
+{
+    fn full_null(name: &str, length: usize) -> Self {
+        let mut builder = PrimitiveChunkedBuilder::new(name, length);
+
+        // todo: faster with null arrays or in one go allocation
+        for _ in 0..length {
+            builder.append_null()
+        }
+        builder.finish()
+    }
+}
+impl ChunkFull<bool> for BooleanChunked {
+    fn full(name: &str, value: bool, length: usize) -> Self {
+        let mut builder = BooleanChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_value(value)
+        }
+        builder.finish()
+    }
+}
+
+impl ChunkFullNull for BooleanChunked {
+    fn full_null(name: &str, length: usize) -> Self {
+        let mut builder = BooleanChunkedBuilder::new(name, length);
+
+        // todo: faster with null arrays or in one go allocation
+        for _ in 0..length {
+            builder.append_null()
+        }
+        builder.finish()
+    }
+}
+
+impl<'a> ChunkFull<&'a str> for Utf8Chunked {
+    fn full(name: &str, value: &'a str, length: usize) -> Self {
+        let mut builder = Utf8ChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_value(value);
+        }
+        builder.finish()
+    }
+}
+
+impl ChunkFullNull for Utf8Chunked {
+    fn full_null(name: &str, length: usize) -> Self {
+        // todo: faster with null arrays or in one go allocation
+        let mut builder = Utf8ChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_null()
+        }
+        builder.finish()
+    }
+}
+
+impl ChunkFull<&dyn SeriesTrait> for ListChunked {
+    fn full(_name: &str, _value: &dyn SeriesTrait, _length: usize) -> ListChunked {
+        unimplemented!()
+    }
+}
+
+impl ChunkFullNull for ListChunked {
+    fn full_null(name: &str, length: usize) -> ListChunked {
+        let mut builder = get_list_builder(&DataType::Null, 0, length, name);
+        for _ in 0..length {
+            builder.append_opt_series(None)
+        }
+        builder.finish()
+    }
+}
+
+/// Reverse a ChunkedArray<T>
+pub trait ChunkReverse<T> {
+    /// Return a reversed version of this array.
+    fn reverse(&self) -> ChunkedArray<T>;
+}
+
+impl<T> ChunkReverse<T> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: ChunkOps,
+{
+    fn reverse(&self) -> ChunkedArray<T> {
+        if let Ok(slice) = self.cont_slice() {
+            let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect();
+            let mut ca = ca.into_inner();
+            ca.rename(self.name());
+            ca
+        } else {
+            self.take((0..self.len()).rev(), None)
+        }
+    }
+}
+
+impl ChunkReverse<CategoricalType> for CategoricalChunked {
+    fn reverse(&self) -> ChunkedArray<CategoricalType> {
+        self.cast::<UInt32Type>().unwrap().reverse().cast().unwrap()
+    }
+}
+
+macro_rules! impl_reverse {
+    ($arrow_type:ident, $ca_type:ident) => {
+        impl ChunkReverse<$arrow_type> for $ca_type {
+            fn reverse(&self) -> Self {
+                self.take((0..self.len()).rev(), None)
+            }
+        }
+    };
+}
+
+impl_reverse!(BooleanType, BooleanChunked);
+impl_reverse!(Utf8Type, Utf8Chunked);
+impl_reverse!(ListType, ListChunked);
+#[cfg(feature = "object")]
+impl<T> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
+    fn reverse(&self) -> Self {
+        self.take((0..self.len()).rev(), None)
+    }
+}
+
+/// Filter values by a boolean mask.
+pub trait ChunkFilter<T> {
+    /// Filter values in the ChunkedArray with a boolean mask.
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let array = Int32Chunked::new_from_slice("array", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new_from_slice("mask", &[true, false, true]);
+    ///
+    /// let filtered = array.filter(&mask).unwrap();
+    /// assert_eq!(Vec::from(&filtered), [Some(1), Some(3)])
+    /// ```
+    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<T>>
+    where
+        Self: Sized;
+}
+
+/// Create a new ChunkedArray filled with values at that index.
+pub trait ChunkExpandAtIndex<T> {
+    /// Create a new ChunkedArray filled with values at that index.
+    fn expand_at_index(&self, length: usize, index: usize) -> ChunkedArray<T>;
+}
+
+macro_rules! impl_chunk_expand {
+    ($self:ident, $length:ident, $index:ident) => {{
+        let opt_val = $self.get($index);
+        match opt_val {
+            Some(val) => ChunkedArray::full($self.name(), val, $length),
+            None => ChunkedArray::full_null($self.name(), $length),
+        }
+    }};
+}
+
+impl<T> ChunkExpandAtIndex<T> for ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
+    T: PolarsPrimitiveType,
+{
+    fn expand_at_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
+        impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> BooleanChunked {
+        impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> Utf8Chunked {
+        impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<CategoricalType> for CategoricalChunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> CategoricalChunked {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .expand_at_index(index, length)
+            .cast()
+            .unwrap()
+    }
+}
+
+impl ChunkExpandAtIndex<ListType> for ListChunked {
+    fn expand_at_index(&self, _index: usize, _length: usize) -> ListChunked {
+        unimplemented!()
+    }
+}
+
+#[cfg(feature = "object")]
+impl<T> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
+    fn expand_at_index(&self, _index: usize, _length: usize) -> ObjectChunked<T> {
+        todo!()
+    }
+}
+
+/// Shift the values of a ChunkedArray by a number of periods.
+pub trait ChunkShiftFill<T, V> {
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with `fill_value`.
+    fn shift_and_fill(&self, periods: i32, fill_value: V) -> Result<ChunkedArray<T>>;
+}
+
+pub trait ChunkShift<T> {
+    fn shift(&self, periods: i32) -> Result<ChunkedArray<T>>;
+}
+
+/// Combine 2 ChunkedArrays based on some predicate.
+pub trait ChunkZip<T> {
+    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+    /// from `other` where the mask evaluates `false`
+    fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>>;
+
+    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+    /// from `other` where the mask evaluates `false`
+    fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>>;
+}
+
+/// Apply kernels on the arrow array chunks in a ChunkedArray.
+pub trait ChunkApplyKernel<A> {
+    /// Apply kernel and return result as a new ChunkedArray.
+    fn apply_kernel<F>(&self, f: F) -> Self
+    where
+        F: Fn(&A) -> ArrayRef;
+    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(&A) -> ArrayRef,
+        S: PolarsDataType;
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_shift() {
+        let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
+        let shifted = ca.shift_and_fill(1, Some(0)).unwrap();
+        assert_eq!(shifted.cont_slice().unwrap(), &[0, 1, 2]);
+        let shifted = ca.shift_and_fill(1, None).unwrap();
+        assert_eq!(Vec::from(&shifted), &[None, Some(1), Some(2)]);
+        let shifted = ca.shift_and_fill(-1, None).unwrap();
+        assert_eq!(Vec::from(&shifted), &[Some(2), Some(3), None]);
+        assert!(ca.shift_and_fill(3, None).is_err());
+
+        let s = Series::new("a", ["a", "b", "c"]);
+        let shifted = s.shift(-1).unwrap();
+        assert_eq!(
+            Vec::from(shifted.utf8().unwrap()),
+            &[Some("b"), Some("c"), None]
+        );
+    }
+
+    #[test]
+    fn test_fill_none() {
+        let ca =
+            Int32Chunked::new_from_opt_slice("", &[None, Some(2), Some(3), None, Some(4), None]);
+        let filled = ca.fill_none(FillNoneStrategy::Forward).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[None, Some(2), Some(3), Some(3), Some(4), Some(4)]
+        );
+        let filled = ca.fill_none(FillNoneStrategy::Backward).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(2), Some(2), Some(3), Some(4), Some(4), None]
+        );
+        let filled = ca.fill_none(FillNoneStrategy::Min).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(2), Some(2), Some(3), Some(2), Some(4), Some(2)]
+        );
+        let filled = ca.fill_none_with_value(10).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(10), Some(2), Some(3), Some(10), Some(4), Some(10)]
+        );
+        let filled = ca.fill_none(FillNoneStrategy::Mean).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(3), Some(2), Some(3), Some(3), Some(4), Some(3)]
+        );
+        println!("{:?}", filled);
+    }
+}

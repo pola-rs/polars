@@ -1,5 +1,7 @@
 from pypolars import DataFrame, Series
 from pypolars.datatypes import *
+from pypolars.lazy import *
+from pypolars import functions
 import pytest
 from io import BytesIO
 import numpy as np
@@ -31,6 +33,38 @@ def test_selection():
     assert df.select_at_idx(0).name == "a"
     assert (df.a == df["a"]).sum() == 3
     assert (df.c == df["a"]).sum() == 0
+
+
+def test_downsample():
+    s = Series(
+        "datetime",
+        [
+            946684800000,
+            946684860000,
+            946684920000,
+            946684980000,
+            946685040000,
+            946685100000,
+            946685160000,
+            946685220000,
+            946685280000,
+            946685340000,
+            946685400000,
+            946685460000,
+            946685520000,
+            946685580000,
+            946685640000,
+            946685700000,
+            946685760000,
+            946685820000,
+            946685880000,
+            946685940000,
+        ],
+    ).cast(Date64)
+    s2 = s.clone()
+    df = DataFrame({"a": s, "b": s2})
+    out = df.downsample("a", rule="minute", n=5).first()
+    assert out.shape == (4, 2)
 
 
 def test_sort():
@@ -71,40 +105,47 @@ def test_groupby():
             "c": [6, 5, 4, 3, 2, 1],
         }
     )
+
     assert (
         df.groupby("a")
         .select("b")
         .sum()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
     assert (
         df.groupby("a")
         .select("c")
         .sum()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .min()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .max()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .mean()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .last()
+        .sort(by_column="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     # check if it runs
@@ -122,6 +163,7 @@ def test_groupby():
     # df.groupby(by="a", select="b", agg="count").frame_equal(
     #     DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
     # )
+    assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
 
 def test_join():
@@ -150,10 +192,23 @@ def test_join():
     assert joined["c"].null_count() == 2
     assert joined["b"].null_count() == 2
 
+    df_a = DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
+    df_b = DataFrame(
+        {"foo": [1, 1, 1], "bar": ["a", "c", "c"], "ham": ["let", "var", "const"]}
+    )
+
+    # just check if join on multiple columns runs
+    df_a.join(df_b, left_on=["a", "b"], right_on=["foo", "bar"])
+
+    eager_join = df_a.join(df_b, left_on="a", right_on="foo")
+
+    lazy_join = df_a.lazy().join(df_b.lazy(), left_on="a", right_on="foo").collect()
+    assert lazy_join.shape == eager_join.shape
+
 
 def test_hstack():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df.hstack([Series("stacked", [-1, -1, -1])])
+    df.hstack([Series("stacked", [-1, -1, -1])], in_place=True)
     assert df.shape == (3, 3)
     assert df.columns == ["a", "b", "stacked"]
 
@@ -199,3 +254,51 @@ def test_shift():
     a = df.shift(1)
     b = DataFrame({"A": [None, "a", "b"], "B": [None, 1, 3]}, nullable=True)
     assert a.frame_equal(b, null_equal=True)
+
+
+def test_to_dummies():
+    df = DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    dummies = df.to_dummies()
+    assert dummies["A_a"].to_list() == [1, 0, 0]
+    assert dummies["A_b"].to_list() == [0, 1, 0]
+    assert dummies["A_c"].to_list() == [0, 0, 1]
+
+
+def test_from_pandas():
+    import pandas as pd
+
+    df = pd.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    DataFrame(df)
+
+
+def test_custom_groupby():
+    df = DataFrame({"A": ["a", "a", "c", "c"], "B": [1, 3, 5, 2]})
+    assert df.groupby("A").select("B").apply(lambda x: x.sum()).shape == (2, 2)
+    assert df.groupby("A").select("B").apply(
+        lambda x: Series("", np.array(x))
+    ).shape == (
+        2,
+        2,
+    )
+
+    df = DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
+
+    out = (
+        df.lazy()
+        .groupby("b")
+        .agg([col("a").apply(lambda x: x.sum(), dtype_out=int)])
+        .collect()
+    )
+    assert out.shape == (3, 2)
+
+
+def test_multiple_columns_drop():
+    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    out = df.drop(["a", "b"])
+    assert out.columns == ["c"]
+
+
+def test_concat():
+    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+
+    assert functions.concat([df, df]).shape == (6, 3)

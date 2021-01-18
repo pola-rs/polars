@@ -1,0 +1,40 @@
+name: Build and test
+
+on:
+  - push
+  - pull_request
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2021-01-08
+          override: true
+          components: rustfmt, clippy
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.6
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest black==20.8b1 pdoc3 numpy ghp-import pandas
+      - name: Run formatting checks
+        run: |
+          cargo fmt --all -- --check
+          black --check .
+      - name: Run linting checks
+        run : |
+          cd polars && cargo clippy -Z unstable-options --all-features \
+          -p polars-core \
+          -p polars-io \
+          -p polars-lazy \
+          -- -D warnings
+      - name: Run tests
+        run: |
+          cd polars && make test
+          cd ../py-polars && ./tasks.sh build-run-tests && cd ..

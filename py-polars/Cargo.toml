@@ -1,18 +1,22 @@
 [package]
 name = "py-polars"
-version = "0.0.8"
+version = "0.4.5"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
+readme = "README.md"
+repository = "https://github.com/ritchie46/polars"
+license = "MIT"
+documentation = "https://ritchie46.github.io/polars-book/"
+homepage = "https://github.com/ritchie46/polars"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars = {path = "../polars", features = ["parquet", "simd", "parallel", "lazy", "strings"]}
-pyo3 = {version = "0.12", features = ["extension-module"] }
+polars = {path = "../polars", features = ["parquet", "simd", "lazy", "strings", "temporal", "random", "object", "ipc"]}
+pyo3 = {version = "0.13", features = ["extension-module"] }
 thiserror = "1.0.20"
-numpy = "0.12"
-ndarray = "0.13.1"
-parquet = "2"
+numpy = "0.13.0"
+ndarray = "0.14.0"
 
 
 [lib]
@@ -27,3 +31,6 @@ requires-dist = ["numpy"]
 codegen-units = 1
 target-cpu = "native"
 lto = "fat"
+
+#[profile.dev]
+#opt-level = 1

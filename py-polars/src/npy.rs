@@ -9,12 +9,17 @@ use pyo3::prelude::*;
 use std::{mem, ptr};
 
 /// Create an empty numpy array arrows 64 byte alignment
-pub fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArray1<T>, *mut T) {
+///
+/// # Safety
+/// All elements in the array are non initialized
+///
+/// The array is also writable from Python.
+pub unsafe fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArray1<T>, *mut T) {
     let t_size = std::mem::size_of::<T>();
     let capacity = size * t_size;
-    let ptr = memory::allocate_aligned(capacity) as *mut T;
-    let mut buf = unsafe { Vec::from_raw_parts(ptr, 0, capacity) };
-    unsafe { buf.set_len(size) }
+    let ptr = memory::allocate_aligned(capacity).as_ptr() as *mut T;
+    let mut buf = Vec::from_raw_parts(ptr, 0, capacity);
+    buf.set_len(size);
     // modified from
     // numpy-0.10.0/src/array.rs:375
 
@@ -23,21 +28,20 @@ pub fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArray1<T>, 
 
     let dims = [len].into_dimension();
     let strides = [mem::size_of::<T>() as npy_intp];
-    unsafe {
-        let ptr = PY_ARRAY_API.PyArray_New(
-            PY_ARRAY_API.get_type_object(npyffi::NpyTypes::PyArray_Type),
-            dims.ndim_cint(),
-            dims.as_dims_ptr(),
-            T::npy_type() as i32,
-            strides.as_ptr() as *mut _, // strides
-            buffer_ptr as _,            // data
-            mem::size_of::<T>() as i32, // itemsize
-            flags::NPY_ARRAY_OUT_ARRAY, // flag
-            ptr::null_mut(),            //obj
-        );
-        mem::forget(buf);
-        (PyArray1::from_owned_ptr(py, ptr), buffer_ptr)
-    }
+
+    let ptr = PY_ARRAY_API.PyArray_New(
+        PY_ARRAY_API.get_type_object(npyffi::NpyTypes::PyArray_Type),
+        dims.ndim_cint(),
+        dims.as_dims_ptr(),
+        T::npy_type() as i32,
+        strides.as_ptr() as *mut _, // strides
+        buffer_ptr as _,            // data
+        mem::size_of::<T>() as i32, // itemsize
+        flags::NPY_ARRAY_OUT_ARRAY, // flag
+        ptr::null_mut(),            //obj
+    );
+    mem::forget(buf);
+    (PyArray1::from_owned_ptr(py, ptr), buffer_ptr)
 }
 
 pub unsafe fn vec_from_ptr<T>(ptr: usize, len: usize) -> Vec<T> {

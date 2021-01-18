@@ -1,6 +1,7 @@
 from pypolars import DataFrame, Series
 from pypolars.lazy import *
 from pypolars.datatypes import *
+import pypolars as pl
 import pytest
 
 
@@ -21,4 +22,38 @@ def test_lazy():
 
 def test_apply():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = df.lazy().with_column(col("a").apply(lambda s: s * 2)).collect()
+    new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
+
+
+def test_agg():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    ldf = df.lazy().min()
+    assert ldf.collect().shape == (1, 2)
+
+
+def test_fold():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = df.lazy().select(pl.sum(["a", "b"])).collect()
+    assert out["sum"].series_equal(Series("sum", [2, 4, 6]))
+
+
+def test_or():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = df.lazy().filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()
+    assert out.shape[0] == 2
+
+
+def test_groupby_apply():
+    df = DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
+    ldf = df.lazy().groupby("a").apply(lambda df: df)
+    assert ldf.collect().sort("b").frame_equal(df)
+
+
+def test_binary_function():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = (
+        df.lazy()
+        .with_column(map_binary(col("a"), col("b"), lambda a, b: a + b))
+        .collect()
+    )
+    assert out["binary_function"] == (out.a + out.b)

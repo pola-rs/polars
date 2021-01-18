@@ -1,12 +1,21 @@
-from __future__ import annotations
-from .pypolars import PySeries
+try:
+    from .pypolars import PySeries
+except:
+    import warnings
+
+    warnings.warn("binary files missing")
+    __pdoc__ = {
+        "wrap_s": False,
+        "find_first_non_none": False,
+        "out_to_dtype": False,
+        "get_ffi_func": False,
+    }
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any, Callable
-from .ffi import ptr_to_numpy
+from .ffi import _ptr_to_numpy
 from .datatypes import *
-
-import ctypes
 from numbers import Number
+import pypolars
 
 
 class IdentityDict(dict):
@@ -15,7 +24,7 @@ class IdentityDict(dict):
 
 
 def get_ffi_func(
-    name: str, dtype: str, obj: Optional[Series] = None, default: Optional = None
+    name: str, dtype: str, obj: Optional["Series"] = None, default: Optional = None
 ):
     """
     Dynamically obtain the proper ffi function/ method.
@@ -45,11 +54,11 @@ def get_ffi_func(
         return globals().get(fname, default)
 
 
-def wrap_s(s: PySeries) -> Series:
-    return Series.from_pyseries(s)
+def wrap_s(s: "PySeries") -> "Series":
+    return Series._from_pyseries(s)
 
 
-def find_first_non_none(a: List[Optional[Any]]) -> Any:
+def find_first_non_none(a: "List[Optional[Any]]") -> Any:
     v = a[0]
     if v is None:
         return find_first_non_none(a[1:])
@@ -61,7 +70,7 @@ class Series:
     def __init__(
         self,
         name: str,
-        values: Union[np.array, List[Optional[Any]]],
+        values: "Union[np.array, List[Optional[Any]]]" = None,
         nullable: bool = False,
     ):
         """
@@ -73,8 +82,15 @@ class Series:
         values
             Values of the series
         nullable
-            If nullable. List[Optional[Any]] will remain lists where None values will be interpreted as nulls
+            If nullable.
+                None values in a list will be interpreted as missing.
+                NaN values in a numpy array will be interpreted as missing. Note that missing and NaNs are not the same
+                in Polars
         """
+        # assume the first input were the values
+        if values is None and not isinstance(name, str):
+            values = name
+            name = ""
         if values.__class__ == self.__class__:
             values.rename(name)
             self._s = values._s
@@ -83,7 +99,7 @@ class Series:
         self._s: PySeries
         # series path
         if isinstance(values, Series):
-            self.from_pyseries(values)
+            self._from_pyseries(values)
             return
         elif isinstance(values, dict):
             raise ValueError(
@@ -96,6 +112,11 @@ class Series:
 
         # numpy path
         if isinstance(values, np.ndarray):
+            if not values.data.contiguous:
+                values = np.array(values)
+            if len(values.shape) > 1:
+                self._s = PySeries.new_object(name, values)
+                return
             dtype = values.dtype
             if dtype == np.int64:
                 self._s = PySeries.new_i64(name, values)
@@ -106,9 +127,9 @@ class Series:
             elif dtype == np.int8:
                 self._s = PySeries.new_i8(name, values)
             elif dtype == np.float32:
-                self._s = PySeries.new_f32(name, values)
+                self._s = PySeries.new_f32(name, values, nullable)
             elif dtype == np.float64:
-                self._s = PySeries.new_f64(name, values)
+                self._s = PySeries.new_f64(name, values, nullable)
             elif isinstance(values[0], str):
                 self._s = PySeries.new_str(name, values)
             elif dtype == np.bool:
@@ -122,7 +143,7 @@ class Series:
             elif dtype == np.uint64:
                 self._s = PySeries.new_u64(name, values)
             else:
-                raise ValueError(f"dtype: {dtype} not known")
+                self._s = PySeries.new_object(name, values)
         # list path
         else:
             dtype = find_first_non_none(values)
@@ -131,14 +152,14 @@ class Series:
             elif isinstance(dtype, float):
                 self._s = PySeries.new_opt_f64(name, values)
             elif isinstance(dtype, str):
-                self._s = PySeries.new_opt_str(name, values)
+                self._s = PySeries.new_str(name, values)
             elif isinstance(dtype, bool):
                 self._s = PySeries.new_opt_bool(name, values)
             else:
-                raise ValueError(f"dtype: {dtype} not known")
+                self._s = PySeries.new_object(name, values)
 
     @staticmethod
-    def from_pyseries(s: "PySeries") -> "Series":
+    def _from_pyseries(s: "PySeries") -> "Series":
         self = Series.__new__(Series)
         self._s = s
         return self
@@ -152,11 +173,17 @@ class Series:
     def __repr__(self) -> str:
         return self.__str__()
 
+    def __and__(self, other):
+        return wrap_s(self._s.bitand(other._s))
+
+    def __or__(self, other):
+        return wrap_s(self._s.bitor(other._s))
+
     def __eq__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.eq(other._s))
+            return Series._from_pyseries(self._s.eq(other._s))
         f = get_ffi_func("eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -166,7 +193,7 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.neq(other._s))
+            return Series._from_pyseries(self._s.neq(other._s))
         f = get_ffi_func("neq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -176,7 +203,7 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.gt(other._s))
+            return Series._from_pyseries(self._s.gt(other._s))
         f = get_ffi_func("gt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -186,83 +213,108 @@ class Series:
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.lt(other._s))
+            return Series._from_pyseries(self._s.lt(other._s))
         f = get_ffi_func("lt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __ge__(self, other) -> Series:
+    def __ge__(self, other) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.gt_eq(other._s))
+            return Series._from_pyseries(self._s.gt_eq(other._s))
         f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __le__(self, other) -> Series:
+    def __le__(self, other) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.lt_eq(other._s))
+            return Series._from_pyseries(self._s.lt_eq(other._s))
         f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __add__(self, other) -> Series:
+    def __add__(self, other) -> "Series":
+        if isinstance(other, str):
+            other = Series("", [other])
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.add(other._s))
-        f = get_ffi_func("add_<>", self.dtype, self._s)
+            return wrap_s(self._s.add(other._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("add_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __sub__(self, other) -> Series:
+    def __sub__(self, other) -> "Series":
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.sub(other._s))
-        f = get_ffi_func("sub_<>", self.dtype, self._s)
+            return Series._from_pyseries(self._s.sub(other._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("sub_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __truediv__(self, other) -> Series:
+    def __truediv__(self, other) -> "Series":
+        primitive = dtype_to_primitive(self.dtype)
+        if self.dtype != primitive:
+            return self.__floordiv__(other)
+
         if not self.is_float():
             out_dtype = Float64
         else:
-            out_dtype = DTYPE_TO_FFINAME[self.dtype]
+            out_dtype = self.dtype
         return np.true_divide(self, other, dtype=out_dtype)
 
-    def __floordiv__(self, other) -> Series:
-        return np.floor_divide(self, other)
-
-    def __mul__(self, other) -> Series:
+    def __floordiv__(self, other) -> "Series":
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.mul(other._s))
-        f = get_ffi_func("mul_<>", self.dtype, self._s)
+            return Series._from_pyseries(self._s.div(other._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("div_<>", dtype, self._s)
+        return wrap_s(f(other))
+
+    def __mul__(self, other) -> "Series":
+        if isinstance(other, Series):
+            return Series._from_pyseries(self._s.mul(other._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __radd__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.add(other._s))
-        f = get_ffi_func("add_<>_rhs", self.dtype, self._s)
+            return Series._from_pyseries(self._s.add(other._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("add_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __rsub__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(other._s.sub(self._s))
-        f = get_ffi_func("sub_<>_rhs", self.dtype, self._s)
+            return Series._from_pyseries(other._s.sub(self._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("sub_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
+    def __invert__(self):
+        if self.dtype == Boolean:
+            return wrap_s(self._s._not())
+        return NotImplemented
+
     def __rtruediv__(self, other):
+
+        primitive = dtype_to_primitive(self.dtype)
+        if self.dtype != primitive:
+            self.__rfloordiv__(other)
+
         if not self.is_float():
             out_dtype = Float64
         else:
@@ -271,38 +323,48 @@ class Series:
 
     def __rfloordiv__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(other._s.div(self._s))
-        f = get_ffi_func("div_<>_rhs", self.dtype, self._s)
+            return Series._from_pyseries(other._s.div(self._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("div_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __rmul__(self, other):
         if isinstance(other, Series):
-            return Series.from_pyseries(self._s.mul(other._s))
-        f = get_ffi_func("mul_<>", self.dtype, self._s)
+            return Series._from_pyseries(self._s.mul(other._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __getitem__(self, item):
+        if isinstance(item, int):
+            if item >= self.len():
+                raise IndexError
         # assume it is boolean mask
         if isinstance(item, Series):
-            return Series.from_pyseries(self._s.filter(item._s))
+            return Series._from_pyseries(self._s.filter(item._s))
         # slice
         if type(item) == slice:
             start, stop, stride = item.indices(self.len())
+            out = self.slice(start, stop - start)
             if stride != 1:
-                return NotImplemented
-            return self.slice(start, stop - start)
+                return out.take_every(stride)
+            else:
+                return out
         f = get_ffi_func("get_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
-        return f(item)
+        out = f(item)
+        if self.dtype == pypolars.datatypes.List:
+            return wrap_s(out)
+        return out
 
     def __setitem__(self, key, value):
         if isinstance(key, Series):
-            if key.dtype == Bool:
+            if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
             elif key.dtype == UInt64:
                 self._s = self.set_at_idx(key, value)._s
@@ -312,6 +374,9 @@ class Series:
         if isinstance(key, (np.ndarray, list, tuple)):
             s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
             self.__setitem__(s, value)
+
+    def drop_nulls(self) -> "Series":
+        return wrap_s(self._s.drop_nulls())
 
     @property
     def dtype(self):
@@ -324,8 +389,10 @@ class Series:
         """
         Reduce this Series to the sum value.
         """
-        if self.dtype == Bool:
+        if self.dtype == Boolean:
             return self._s.sum_u32()
+        if self.dtype == UInt8:
+            return self.cast(UInt64).sum()
         f = get_ffi_func("sum_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -342,7 +409,7 @@ class Series:
         """
         Get the minimal value in this Series
         """
-        if self.dtype == Bool:
+        if self.dtype == Boolean:
             return self._s.min_u32()
         f = get_ffi_func("min_<>", self.dtype, self._s)
         if f is None:
@@ -353,12 +420,36 @@ class Series:
         """
         Get the maximum value in this Series
         """
-        if self.dtype == Bool:
+        if self.dtype == Boolean:
             return self._s.max_u32()
         f = get_ffi_func("max_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return f()
+
+    def std(self) -> float:
+        """
+        Get standard deviation of this Series
+        """
+        return np.std(self.drop_nulls().view())
+
+    def var(self) -> float:
+        """
+        Get variance of this Series
+        """
+        return np.var(self.drop_nulls().view())
+
+    def to_dummies(self) -> "DataFrame":
+        """
+        Get dummy variables
+        """
+        return pypolars.frame.wrap_df(self._s.to_dummies())
+
+    def value_counts(self) -> "DataFrame":
+        """
+        Count the unique values in a Series
+        """
+        return pypolars.frame.wrap_df(self._s.value_counts())
 
     @property
     def name(self):
@@ -378,13 +469,49 @@ class Series:
         """
         self._s.rename(name)
 
+    def chunk_lengths(self) -> "List[int]":
+        return self._s.chunk_lengths()
+
     def n_chunks(self) -> int:
         """
         Get the number of chunks that this Series contains.
         """
         return self._s.n_chunks()
 
-    def limit(self, num_elements: int) -> Series:
+    def cum_sum(self, reverse: bool):
+        """
+        Get an array with the cumulative sum computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return self._s.cum_sum(reverse)
+
+    def cum_min(self, reverse: bool):
+        """
+        Get an array with the cumulative min computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return self._s.cum_min(reverse)
+
+    def cum_max(self, reverse: bool):
+        """
+        Get an array with the cumulative max computed at every element
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation
+        """
+        return self._s.cum_max(reverse)
+
+    def limit(self, num_elements: int) -> "Series":
         """
         Take n elements from this Series.
 
@@ -393,9 +520,9 @@ class Series:
         num_elements
             Amount of elements to take.
         """
-        return Series.from_pyseries(self._s.limit(num_elements))
+        return Series._from_pyseries(self._s.limit(num_elements))
 
-    def slice(self, offset: int, length: int) -> Series:
+    def slice(self, offset: int, length: int) -> "Series":
         """
         Get a slice of this Series
 
@@ -406,9 +533,9 @@ class Series:
         length
             Length of the slice.
         """
-        return Series.from_pyseries(self._s.slice(offset, length))
+        return Series._from_pyseries(self._s.slice(offset, length))
 
-    def append(self, other: Series):
+    def append(self, other: "Series"):
         """
         Append a Series to this one.
 
@@ -419,7 +546,7 @@ class Series:
         """
         self._s.append(other._s)
 
-    def filter(self, filter: Series) -> Series:
+    def filter(self, filter: "Series") -> "Series":
         """
         Filter elements by a boolean mask
 
@@ -428,9 +555,9 @@ class Series:
         filter
             Boolean mask
         """
-        return Series.from_pyseries(self._s.filter(filter._s))
+        return Series._from_pyseries(self._s.filter(filter._s))
 
-    def head(self, length: Optional[int] = None) -> Series:
+    def head(self, length: Optional[int] = None) -> "Series":
         """
         Get first N elements as Series
 
@@ -439,9 +566,9 @@ class Series:
         length
             Length of the head
         """
-        return Series.from_pyseries(self._s.head(length))
+        return Series._from_pyseries(self._s.head(length))
 
-    def tail(self, length: Optional[int] = None) -> Series:
+    def tail(self, length: Optional[int] = None) -> "Series":
         """
         Get last N elements as Series
 
@@ -450,9 +577,15 @@ class Series:
         length
             Length of the tail
         """
-        return Series.from_pyseries(self._s.tail(length))
+        return Series._from_pyseries(self._s.tail(length))
 
-    def sort(self, in_place: bool = False, reverse: bool = False) -> Optional[Series]:
+    def take_every(self, n: int) -> "Series":
+        """
+        Take every nth value in the Series and return as new Series.
+        """
+        return wrap_s(self._s.take_every(n))
+
+    def sort(self, in_place: bool = False, reverse: bool = False) -> Optional["Series"]:
         """
         Sort this Series.
 
@@ -479,7 +612,7 @@ class Series:
         """
         return self._s.argsort(reverse)
 
-    def arg_unique(self) -> List[int]:
+    def arg_unique(self) -> "List[int]":
         """
         Get unique arguments.
 
@@ -490,13 +623,13 @@ class Series:
         """
         return self._s.arg_unique()
 
-    def unique(self) -> Series:
+    def unique(self) -> "Series":
         """
         Get unique elements in series.
         """
         return wrap_s(self._s.unique())
 
-    def take(self, indices: Union[np.ndarray, List[int]]) -> Series:
+    def take(self, indices: "Union[np.ndarray, List[int]]") -> "Series":
         """
         Take values by index.
 
@@ -507,7 +640,7 @@ class Series:
         """
         if isinstance(indices, list):
             indices = np.array(indices)
-        return Series.from_pyseries(self._s.take(indices))
+        return Series._from_pyseries(self._s.take(indices))
 
     def null_count(self) -> int:
         """
@@ -515,7 +648,7 @@ class Series:
         """
         return self._s.null_count()
 
-    def is_null(self) -> Series:
+    def is_null(self) -> "Series":
         """
         Get mask of null values
 
@@ -523,9 +656,99 @@ class Series:
         -------
         Boolean Series
         """
-        return Series.from_pyseries(self._s.is_null())
+        return Series._from_pyseries(self._s.is_null())
 
-    def series_equal(self, other: Series, null_equal: bool = False) -> bool:
+    def is_not_null(self) -> "Series":
+        """
+        Get mask of non null values
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_not_null())
+
+    def is_finite(self) -> "Series":
+        """
+        Get mask of finite values if Series dtype is Float
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_finite())
+
+    def is_infinite(self) -> "Series":
+        """
+        Get mask of infinite values if Series dtype is Float
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_infinite())
+
+    def is_nan(self) -> "Series":
+        """
+        Get mask of NaN values if Series dtype is Float
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_nan())
+
+    def is_not_nan(self) -> "Series":
+        """
+        Get negated mask of NaN values if Series dtype is_not Float
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return Series._from_pyseries(self._s.is_not_nan())
+
+    def arg_true(self) -> "Series":
+        """
+        Get index values where Boolean Series evaluate True
+
+        Returns
+        -------
+        UInt32 Series
+        """
+        return Series._from_pyseries(self._s.arg_true())
+
+    def is_unique(self) -> "Series":
+        """
+        Get mask of all unique values
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return wrap_s(self._s.is_unique())
+
+    def is_duplicated(self) -> "Series":
+        """
+        Get mask of all duplicated values
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return wrap_s(self._s.is_duplicated())
+
+    def explode(self) -> "Series":
+        """
+        Explode a list or utf8 Series. This means that every item is expanded to a new row.
+
+        Returns
+        -------
+        Exploded Series of same dtype
+        """
+        return wrap_s(self._s.explode())
+
+    def series_equal(self, other: "Series", null_equal: bool = False) -> bool:
         """
         Check if series equal with another Series.
 
@@ -547,103 +770,34 @@ class Series:
     def __len__(self):
         return self.len()
 
-    def cast_utf8(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_utf8())
+    def cast(self, data_type="DataType"):
+        if data_type == int:
+            data_type = Int64
+        elif data_type == str:
+            data_type = Utf8
+        elif data_type == float:
+            data_type = Float64
+        f = get_ffi_func("cast_<>", data_type, self._s)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f())
 
-    def cast_u8(self):
+    def to_list(self) -> "List[Optional[Any]]":
         """
-        Cast this Series
+        Convert this Series to a Python List. This operation clones data.
         """
-        return wrap_s(self._s.cast_u8())
-
-    def cast_u16(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_u16())
-
-    def cast_u32(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_u32())
-
-    def cast_u64(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_u64())
-
-    def cast_i8(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_i8())
-
-    def cast_i16(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_i16())
-
-    def cast_i32(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_i32())
-
-    def cast_i64(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_i64())
-
-    def cast_f32(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_f32())
-
-    def cast_f64(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_f64())
-
-    def cast_date32(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_date32())
-
-    def cast_date64(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_date64())
-
-    def cast_time64ns(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_time64ns())
-
-    def cast_duration_ns(self):
-        """
-        Cast this Series
-        """
-        return wrap_s(self._s.cast_duration_ns())
-
-    def to_list(self) -> List[Optional[Any]]:
-        """
-        Convert this Series to a Python List
-        """
+        if self.dtype == List:
+            column = []
+            for i in range(len(self)):
+                subseries = self[i]
+                column.append(subseries.to_numpy())
+            return column
         return self._s.to_list()
 
-    def rechunk(self, in_place: bool = False) -> Optional[Series]:
+    def __iter__(self):
+        return self.to_list().__iter__()
+
+    def rechunk(self, in_place: bool = False) -> Optional["Series"]:
         """
         Create a single chunk of memory for this Series.
 
@@ -660,7 +814,7 @@ class Series:
         """
         Check if this Series datatype is numeric.
         """
-        return self.dtype not in (Utf8, Bool, LargeList)
+        return self.dtype not in (Utf8, Boolean, List)
 
     def is_float(self) -> bool:
         """
@@ -668,14 +822,29 @@ class Series:
         """
         return self.dtype in (Float32, Float64)
 
-    def view(self) -> np.ndarray:
+    def view(self, ignore_nulls: bool = False) -> np.ndarray:
         """
         Get a view into this Series data with a numpy array. This operation doesn't clone data, but does not include
-        missing values
+        missing values. Don't use this unless you know what you are doing.
+
+        # Safety.
+
+        This function can lead to undefined behavior in the following cases:
+
+        ```python
+        # returns a view to a piece of memory that is already dropped.
+        pl.Series([1, 3, 5]).sort().view()
+
+        # Sums invalid data that is missing.
+        pl.Series([1, 2, None], nullable=True).view().sum()
+        ```
         """
+        if not ignore_nulls:
+            assert self.null_count() == 0
+
         ptr_type = dtype_to_ctype(self.dtype)
         ptr = self._s.as_single_ptr()
-        array = ptr_to_numpy(ptr, self.len(), ptr_type)
+        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
         array.setflags(write=False)
         return array
 
@@ -689,7 +858,7 @@ class Series:
                 if isinstance(arg, Number):
                     args.append(arg)
                 elif isinstance(arg, self.__class__):
-                    args.append(arg.view())
+                    args.append(arg.view(ignore_nulls=True))
                 else:
                     return NotImplemented
 
@@ -706,15 +875,20 @@ class Series:
 
     def to_numpy(self) -> np.ndarray:
         """
-        Convert this Series to numpy. This operation clones data.
+        Convert this Series to numpy. This operation clones data but is completely safe.
+
+        If you want a zero-copy view and know what you are doing, use `.view()`.
         """
+        if self.dtype == List:
+            return np.array(self.to_list())
+
         a = self._s.to_numpy()
         # strings are returned in lists
         if isinstance(a, list):
             return np.array(a)
         return a
 
-    def set(self, filter: Series, value: Union[int, float]) -> Series:
+    def set(self, filter: "Series", value: Union[int, float]) -> "Series":
         """
         Set masked values.
 
@@ -731,8 +905,8 @@ class Series:
         return wrap_s(f(filter._s, value))
 
     def set_at_idx(
-        self, idx: Union[Series, np.ndarray], value: Union[int, float]
-    ) -> Series:
+        self, idx: Union["Series", np.ndarray], value: Union[int, float]
+    ) -> "Series":
         """
         Set values at the index locations.
 
@@ -765,13 +939,13 @@ class Series:
 
         return wrap_s(f(idx_array, value))
 
-    def clone(self) -> Series:
+    def clone(self) -> "Series":
         """
         Cheap deep clones
         """
         return wrap_s(self._s.clone())
 
-    def fill_none(self, strategy: str) -> Series:
+    def fill_none(self, strategy: str) -> "Series":
         """
         Fill null values with a fill strategy.
 
@@ -788,8 +962,8 @@ class Series:
 
     def apply(
         self,
-        func: Union[Callable[["T"], "T"], Callable[["T"], "S"]],
-        dtype_out: Optional["DataType"] = None,
+        func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
+        dtype_out: "Optional['DataType']" = None,
     ):
         """
         Apply a function over elements in this Series and return a new Series.
@@ -807,13 +981,18 @@ class Series:
         -------
         Series
         """
-        if dtype_out is None:
-            return wrap_s(self._s.apply_lambda(func))
-        else:
-            dt = dtype_to_int(dtype_out)
-            return wrap_s(self._s.apply_lambda(func, dt))
+        if dtype_out == str:
+            dtype_out = Utf8
+        elif dtype_out == int:
+            dtype_out = Int64
+        elif dtype_out == float:
+            dtype_out = Float64
+        elif dtype_out == bool:
+            dtype_out = Boolean
 
-    def shift(self, periods: int) -> Series:
+        return wrap_s(self._s.apply_lambda(func, dtype_out))
+
+    def shift(self, periods: int) -> "Series":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with `Nones`.
@@ -825,7 +1004,7 @@ class Series:
         """
         return wrap_s(self._s.shift(periods))
 
-    def zip_with(self, mask: Series, other: Series) -> Series:
+    def zip_with(self, mask: "Series", other: "Series") -> "Series":
         """
         Where mask evaluates true take values from self. Where mask evaluates false, take values from other.
 
@@ -842,7 +1021,7 @@ class Series:
         """
         return wrap_s(self._s.zip_with(mask._s, other._s))
 
-    def str_lengths(self) -> Series:
+    def str_lengths(self) -> "Series":
         """
         Get length of the string values in the Series.
 
@@ -851,3 +1030,347 @@ class Series:
         Series[u32]
         """
         return wrap_s(self._s.str_lengths())
+
+    def str_contains(self, pattern: str) -> "Series":
+        """
+        Check if strings in Series contain regex pattern
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        Boolean mask
+        """
+        return wrap_s(self._s.str_contains(pattern))
+
+    def str_replace(self, pattern: str, value: str) -> "Series":
+        """
+        Replace first regex math with a string value
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+        value
+            Substring to replace
+        """
+        return wrap_s(self._s.str_replace(pattern, value))
+
+    def str_replace_all(self, pattern: str, value: str) -> "Series":
+        """
+        Replace all regex matches with a string value
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+        value
+            Substring to replace
+        """
+        return wrap_s(self._s.str_replace_all(pattern, value))
+
+    def str_to_lowercase(self) -> "Series":
+        """
+        Modify the strings to their lowercase equivalent
+        """
+        return wrap_s(self._s.str_to_lowercase())
+
+    def str_to_uppercase(self) -> "Series":
+        """
+        Modify the strings to their uppercase equivalent
+        """
+        return wrap_s(self._s.str_to_uppercase())
+
+    def as_duration(self) -> "Series":
+        """
+        If Series is a date32 or a date64 it can be turned into a duration.
+        """
+        return wrap_s(self._s.as_duration())
+
+    def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None):
+        """
+        Parse a Series of dtype Utf8 to a Date32/Date64 Series.
+
+        Parameters
+        ----------
+        datatype
+            polars.Date32 or polars.Date64
+        fmt
+            formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
+
+        Returns
+        -------
+
+        """
+        if datatype == Date32:
+            return wrap_s(self._s.str_parse_date32(fmt))
+        if datatype == Date64:
+            return wrap_s(self._s.str_parse_date64(fmt))
+        return NotImplemented
+
+    def rolling_min(
+        self,
+        window_size: int,
+        weight: "Optional[List[float]]" = None,
+        ignore_null: bool = False,
+    ) -> "Series":
+        """
+        apply a rolling min (moving min) over the values in this array.
+        a window of length `window_size` will traverse the array. the values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
+        values will be aggregated to their sum.                                                     ----------
+
+        window_size
+            The length of the window
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        """
+        return wrap_s(self._s.rolling_min(window_size, weight, ignore_null))
+
+    def rolling_max(
+        self,
+        window_size: int,
+        weight: "Optional[List[float]]" = None,
+        ignore_null: bool = False,
+    ) -> "Series":
+        """
+        apply a rolling max (moving max) over the values in this array.
+        a window of length `window_size` will traverse the array. the values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
+        values will be aggregated to their sum.                                                     ----------
+
+        window_size
+            The length of the window
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        """
+        return wrap_s(self._s.rolling_max(window_size, weight, ignore_null))
+
+    def rolling_mean(
+        self,
+        window_size: int,
+        weight: "Optional[List[float]]" = None,
+        ignore_null: bool = False,
+    ) -> "Series":
+        """
+        apply a rolling mean (moving mean) over the values in this array.
+        a window of length `window_size` will traverse the array. the values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
+        values will be aggregated to their sum.                                                     ----------
+
+        window_size
+            The length of the window
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        """
+        return wrap_s(self._s.rolling_mean(window_size, weight, ignore_null))
+
+    def rolling_sum(
+        self,
+        window_size: int,
+        weight: "Optional[List[float]]" = None,
+        ignore_null: bool = False,
+    ) -> "Series":
+        """
+        apply a rolling sum (moving sum) over the values in this array.
+        a window of length `window_size` will traverse the array. the values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
+        values will be aggregated to their sum.                                                     ----------
+
+        window_size
+            The length of the window
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        """
+        return wrap_s(self._s.rolling_sum(window_size, weight, ignore_null))
+
+    def year(self):
+        """
+        Extract year from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the year number in the calendar date.
+
+        Returns
+        -------
+        Year as Int32
+        """
+        return wrap_s(self._s.year())
+
+    def month(self):
+        """
+        Extract month from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the month number starting from 1.
+        The return value ranges from 1 to 12.
+
+        Returns
+        -------
+        Month as UInt32
+        """
+        return wrap_s(self._s.month())
+
+    def day(self):
+        """
+        Extract day from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the day of month starting from 1.
+        The return value ranges from 1 to 31. (The last day of month differs by months.)
+
+        Returns
+        -------
+        Day as UInt32
+        """
+        return wrap_s(self._s.day())
+
+    def ordinal_day(self):
+        """
+        Extract ordinal day from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the day of year starting from 1.
+        The return value ranges from 1 to 366. (The last day of year differs by years.)
+
+        Returns
+        -------
+        Day as UInt32
+        """
+        return wrap_s(self._s.ordinal_day())
+
+    def hour(self):
+        """
+        Extract day from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns the hour number from 0 to 23.
+
+        Returns
+        -------
+        Hour as UInt32
+        """
+        return wrap_s(self._s.hour())
+
+    def minute(self):
+        """
+        Extract minutes from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns the minute number from 0 to 59.
+
+        Returns
+        -------
+        Minute as UInt32
+        """
+        return wrap_s(self._s.minute())
+
+    def second(self):
+        """
+        Extract seconds from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns the second number from 0 to 59.
+
+        Returns
+        -------
+        Second as UInt32
+        """
+        return wrap_s(self._s.second())
+
+    def nanosecond(self):
+        """
+        Extract seconds from underlying DateTime representation.
+        Can be performed on Date64
+
+        Returns the number of nanoseconds since the whole non-leap second.
+        The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
+
+        Returns
+        -------
+        Nanosecond as UInt32
+        """
+        return wrap_s(self._s.nanosecond())
+
+    def datetime_str_fmt(self, fmt):
+        """
+        Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+
+        Returns
+        -------
+        Utf8 Series
+        """
+        return wrap_s(self._s.date_str_fmt(fmt))
+
+    @staticmethod
+    def parse_date(
+        name: str, values: Sequence[str], dtype: "DataType", fmt: str
+    ) -> "Series":
+        """
+        Deprecated.
+        """
+        f = get_ffi_func("parse_<>_from_str_slice", dtype, PySeries)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(name, values, fmt))
+
+    def sample(
+        self,
+        n: "Optional[int]" = None,
+        frac: "Optional[float]" = None,
+        with_replacement: bool = False,
+    ) -> "DataFrame":
+        """
+        Sample from this Series by setting either `n` or `frac`
+
+        Parameters
+        ----------
+        n
+            Number of samples < self.len()
+        frac
+            Fraction between 0.0 and 1.0
+        with_replacement
+            sample with replacement
+        """
+        if n is not None:
+            return wrap_s(self._s.sample_n(n, with_replacement))
+        return wrap_s(self._s.sample_frac(frac, with_replacement))
+
+
+def out_to_dtype(out: Any) -> "Union[Datatype, np.ndarray]":
+    if isinstance(out, float):
+        return Float64
+    if isinstance(out, int):
+        return Int64
+    if isinstance(out, str):
+        return Utf8
+    if isinstance(out, bool):
+        return Boolean
+    if isinstance(out, Series):
+        return List
+    if isinstance(out, np.ndarray):
+        return np.ndarray
+    raise NotImplementedError

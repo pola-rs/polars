@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.7.2"
+version = "0.12.0-beta.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -11,30 +11,33 @@ readme = "../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-pretty = ["prettytable-rs"]
-simd = ["arrow/simd"]
-docs = []
-temporal = ["chrono"]
-random = ["rand", "rand_distr"]
-parallel = []
-default = ["pretty", "docs", "temporal", "simd"]
-lazy = []
+simd = ["polars-core/simd"]
+docs = ["polars-core/docs"]
+temporal = ["polars-core/temporal"]
+random = ["polars-core/random"]
+default = ["docs",
+    "temporal",
+    "simd",
+    "lazy",
+    "parquet"
+]
+ndarray = ["polars-core/ndarray"]
+parquet = ["polars-core/parquet", "polars-lazy/parquet"]
+lazy = ["polars-core/lazy"]
+parallel = ["polars-core/parallel"]
 # extra utilities for Utf8Chunked
-strings = ["regex"]
+strings = ["polars-core/strings"]
+# support for ObjectChunked<T> (downcastable Series of any type)
+object = ["polars-core/object"]
+# support for arrows json parsing
+json = ["polars-io/json"]
+# support for arrows ipc file parsing
+ipc = ["polars-io/ipc"]
 
 [dependencies]
-arrow = {version = "2", default_features = false}
-thiserror = "^1.0.16"
-num = "^0.2.1"
-fnv = "^1.0.7"
-itertools = "^0.9.0"
-unsafe_unwrap = "^0.1.0"
-rayon = "1.4"
-prettytable-rs = { version="^0.8.0", features=["win_crlf"], optional = true, default_features = false}
-chrono = {version = "^0.4.13", optional = true}
-parquet = {version = "2", optional = true}
-rand = {version = "0.7", optional = true}
-rand_distr = {version = "0.3", optional = true}
-ndarray = {version = "0.13", optional = true, default_features = false}
-regex = {version = "1.4", optional = true }
-anyhow = "1.0"
+polars-core = {version = "0.12.0-beta.0", path = "./polars-core", default-features = false}
+polars-io = {version = "0.12.0-beta.0", path = "./polars-io"}
+polars-lazy = {version = "0.12.0-beta.0", path = "./polars-lazy"}
+
+[package.metadata.docs.rs]
+all-features = true

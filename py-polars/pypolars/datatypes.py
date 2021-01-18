@@ -1,5 +1,7 @@
 import ctypes
 
+__pdoc__ = {"dtype_to_ctype": False, "dtype_to_int": False}
+
 
 class Int8:
     pass
@@ -41,7 +43,7 @@ class Float64:
     pass
 
 
-class Bool:
+class Boolean:
     pass
 
 
@@ -49,7 +51,7 @@ class Utf8:
     pass
 
 
-class LargeList:
+class List:
     pass
 
 
@@ -93,14 +95,6 @@ class DurationSecond:
     pass
 
 
-class IntervalDayTime:
-    pass
-
-
-class IntervalYearMonth:
-    pass
-
-
 class TimestampNanosecond:
     pass
 
@@ -117,6 +111,14 @@ class TimestampSecond:
     pass
 
 
+class Object:
+    pass
+
+
+class Categorical:
+    pass
+
+
 # Don't change the order of these!
 dtypes = [
     Int8,
@@ -129,25 +131,16 @@ dtypes = [
     UInt64,
     Float32,
     Float64,
-    Bool,
+    Boolean,
     Utf8,
-    LargeList,
+    List,
     Date32,
     Date64,
-    Time32Millisecond,
-    Time32Second,
     Time64Nanosecond,
-    Time64Microsecond,
     DurationNanosecond,
-    DurationMicrosecond,
     DurationMillisecond,
-    DurationSecond,
-    IntervalDayTime,
-    IntervalYearMonth,
-    TimestampNanosecond,
-    TimestampMicrosecond,
-    TimestampMillisecond,
-    TimestampSecond,
+    Object,
+    Categorical,
 ]
 DTYPE_TO_FFINAME = {
     Int8: "i8",
@@ -160,26 +153,29 @@ DTYPE_TO_FFINAME = {
     UInt64: "u64",
     Float32: "f32",
     Float64: "f64",
-    Bool: "bool",
+    Boolean: "bool",
     Utf8: "str",
-    LargeList: "large_list",
+    List: "list",
     Date32: "date32",
     Date64: "date64",
-    Time32Millisecond: "time32_millisecond",
-    Time32Second: "time32_second",
     Time64Nanosecond: "time64_nanosecond",
-    Time64Microsecond: "time64_microsecond",
     DurationNanosecond: "duration_nanosecond",
-    DurationMicrosecond: "duration_microsecond",
     DurationMillisecond: "duration_millisecond",
-    DurationSecond: "duration_second",
-    IntervalDayTime: "interval_daytime",
-    IntervalYearMonth: "interval_yearmonth",
-    TimestampNanosecond: "timestamp_nanosecond",
-    TimestampMicrosecond: "timestamp_microsecond",
-    TimestampMillisecond: "timestamp_millisecond",
-    TimestampSecond: "timestamp_second",
+    Object: "object",
+    Categorical: "categorical",
 }
+
+
+def dtype_to_primitive(dtype: "DataType") -> "DataType":
+    #  TODO: add more
+    if dtype == Date32:
+        return Int32
+    if dtype == Date64:
+        return Int64
+    ffi_name = DTYPE_TO_FFINAME[dtype]
+    if "duration" in ffi_name:
+        return Int64
+    return dtype
 
 
 def dtype_to_ctype(dtype: "DataType") -> "ctype":
@@ -208,7 +204,7 @@ def dtype_to_ctype(dtype: "DataType") -> "ctype":
     elif dtype == Date64:
         ptr_type = ctypes.c_long
     else:
-        return NotImplemented
+        raise NotImplementedError
     return ptr_type
 
 
@@ -218,3 +214,15 @@ def dtype_to_int(dtype: "DataType") -> int:
         if dt == dtype:
             return i
         i += 1
+
+
+def pytype_to_polars_type(data_type):
+    if data_type == int:
+        data_type = Int64
+    elif data_type == str:
+        data_type = Utf8
+    elif data_type == float:
+        data_type = Float64
+    else:
+        pass
+    return data_type

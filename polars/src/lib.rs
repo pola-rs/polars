@@ -9,11 +9,15 @@
 //! the lazy api is similar to [Spark](https://spark.apache.org/).
 //!
 //! ### Eager
-//! Read more in the pages of the [DataFrame](frame/struct.DataFrame.html), [Series](series/enum.Series.html), and
-//! [ChunkedArray](chunked_array/struct.ChunkedArray.html) data structures.
+//! Read more in the pages of the following data structures /traits.
+//!
+//! * [DataFrame struct](crate::frame::DataFrame)
+//! * [Series struct](crate::series::Series)
+//! * [Series trait](crate::series::SeriesTrait)
+//! * [ChunkedArray struct](crate::chunked_array::ChunkedArray)
 //!
 //! ### Lazy
-//! Read more in the [lazy](lazy/index.html) module
+//! Read more in the [lazy](polars_lazy) module
 //!
 //! ## Read and write CSV/ JSON
 //!
@@ -34,10 +38,10 @@
 //!
 //! For more IO examples see:
 //!
-//! * [the csv module](frame/ser/csv/index.html)
-//! * [the json module](frame/ser/json/index.html)
-//! * [the IPC module](frame/ser/ipc/index.html)
-//! * [the parquet module](frame/ser/parquet/index.html)
+//! * [the csv module](polars_io::csv)
+//! * [the json module](polars_io::json)
+//! * [the IPC module](polars_io::ipc)
+//! * [the parquet module](polars_io::parquet)
 //!
 //! ## Joins
 //!
@@ -138,7 +142,6 @@
 //!
 //! ```
 //! use polars::prelude::*;
-//! use itertools::Itertools;
 //! let s = Series::new("dollars", &[1, 2, 3]);
 //! let mask = s.eq(1);
 //!
@@ -166,49 +169,48 @@
 //!
 //! ## And more...
 //!
-//! * [DataFrame](frame/struct.DataFrame.html)
-//! * [Series](series/enum.Series.html)
-//! * [ChunkedArray](chunked_array/struct.ChunkedArray.html)
-//!     - [Operations implemented by Traits](chunked_array/ops/index.html)
-//! * [Time/ DateTime utilities](doc/time/index.html)
-//! * [Groupby, aggregations, pivots and melts](frame/group_by/struct.GroupBy.html)
+//! * [DataFrame](crate::frame::DataFrame)
+//! * [Series](crate::series::Series)
+//! * [ChunkedArray](crate::chunked_array::ChunkedArray)
+//!     - [Operations implemented by Traits](crate::chunked_array::ops)
+//! * [Time/ DateTime utilities](crate::doc::time)
+//! * [Groupby, aggregations, pivots and melts](crate::frame::group_by::GroupBy)
 //!
 //! ## Features
 //!
 //! Additional cargo features:
 //!
-//! * `pretty` (default)
-//!     - pretty printing of DataFrames
 //! * `temporal (default)`
 //!     - Conversions between Chrono and Polars for temporal data
 //! * `simd (default)`
 //!     - SIMD operations
 //! * `parquet`
 //!     - Read Apache Parquet format
+//! * `json`
+//!     - Json serialization
+//! * `ipc`
+//!     - Arrow's IPC format serialization
 //! * `random`
 //!     - Generate array's with randomly sampled values
 //! * `ndarray`
 //!     - Convert from `DataFrame` to `ndarray`
 //! * `parallel`
-//!     - Parallel variants of operation
+//!     - Parallel variants of operations
 //! * `lazy`
 //!     - Lazy api
 //! * `strings`
 //!     - String utilities for `Utf8Chunked`
-#![allow(dead_code)]
-#![feature(iterator_fold_self)]
-#![feature(doc_cfg)]
-#[macro_use]
-pub(crate) mod utils;
-pub mod chunked_array;
-pub mod datatypes;
-#[cfg(feature = "docs")]
-pub mod doc;
-pub mod error;
-mod fmt;
-pub mod frame;
-#[cfg(feature = "lazy")]
-pub mod lazy;
+//! * `object`
+//!     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
+//!       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 pub mod prelude;
-pub mod series;
-pub mod testing;
+pub use polars_core::{
+    chunked_array, datatypes, doc, error, frame, functions, series, testing, toggle_string_cache,
+};
+
+pub use polars_core::apply_method_all_arrow_series;
+pub use polars_core::df;
+
+pub use polars_io as io;
+#[cfg(feature = "lazy")]
+pub use polars_lazy as lazy;

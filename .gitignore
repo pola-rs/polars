@@ -4,3 +4,4 @@ Cargo.lock
 data/
 __pycache__/
 .ipynb_checkpoints/
+polars/vendor

@@ -1,7 +1,11 @@
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use polars::lazy::frame::{LazyFrame, LazyGroupBy};
+use crate::utils::str_to_polarstype;
+use polars::lazy::frame::{
+    AllowedOptimizations, JoinOptions, LazyCsvReader, LazyFrame, LazyGroupBy,
+};
+use polars::prelude::{DataFrame, Field, JoinType, Schema};
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -17,6 +21,38 @@ impl PyLazyGroupBy {
         let lgb = self.lgb.take().unwrap();
         let aggs = py_exprs_to_exprs(aggs);
         lgb.agg(aggs).into()
+    }
+
+    pub fn apply(&mut self, lambda: PyObject) -> PyLazyFrame {
+        let lgb = self.lgb.take().unwrap();
+
+        let function = move |df: DataFrame| {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            // get the pypolars module
+            let pypolars = PyModule::import(py, "pypolars").unwrap();
+
+            // create a PyDataFrame struct/object for Python
+            let pydf = PyDataFrame::new(df);
+
+            // Wrap this PySeries object in the python side DataFrame wrapper
+            let python_df_wrapper = pypolars.call1("wrap_df", (pydf,)).unwrap();
+
+            // call the lambda and get a python side DataFrame wrapper
+            let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+                Ok(pyobj) => pyobj,
+                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+            };
+            // unpack the wrapper in a PyDataFrame
+            let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+                "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+            );
+            // Downcast to Rust
+            let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+            // Finally get the actual DataFrame
+            Ok(pydf.df)
+        };
+        lgb.apply(function).into()
     }
 }
 
@@ -36,6 +72,48 @@ impl From<LazyFrame> for PyLazyFrame {
 
 #[pymethods]
 impl PyLazyFrame {
+    #[staticmethod]
+    pub fn new_from_csv(
+        path: String,
+        sep: &str,
+        has_header: bool,
+        ignore_errors: bool,
+        skip_rows: usize,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+        overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
+    ) -> Self {
+        let delimiter = sep.as_bytes()[0];
+
+        let overwrite_dtype = overwrite_dtype.and_then(|overwrite_dtype| {
+            let fields = overwrite_dtype
+                .iter()
+                .map(|(name, dtype)| {
+                    let str_repr = dtype.str().unwrap().to_str().unwrap();
+                    let dtype = str_to_polarstype(str_repr);
+                    Field::new(name, dtype)
+                })
+                .collect();
+            Some(Schema::new(fields))
+        });
+
+        LazyCsvReader::new(path)
+            .with_delimiter(delimiter)
+            .has_header(has_header)
+            .with_ignore_parser_errors(ignore_errors)
+            .with_skip_rows(skip_rows)
+            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_cache(cache)
+            .with_dtype_overwrite(overwrite_dtype.as_ref())
+            .finish()
+            .into()
+    }
+
+    #[staticmethod]
+    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
+        LazyFrame::new_from_parquet(path, stop_after_n_rows, cache).into()
+    }
+
     pub fn describe_plan(&self) -> String {
         self.ldf.describe_plan()
     }
@@ -47,18 +125,24 @@ impl PyLazyFrame {
             .map_err(PyPolarsEr::from)?;
         Ok(result)
     }
+    pub fn to_dot(&self, optimized: bool) -> PyResult<String> {
+        let result = self.ldf.to_dot(optimized).map_err(PyPolarsEr::from)?;
+        Ok(result)
+    }
 
     pub fn optimization_toggle(
         &self,
         type_coercion: bool,
         predicate_pushdown: bool,
         projection_pushdown: bool,
+        simplify_expr: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
-            .with_type_coercion_optimization(type_coercion)
-            .with_predicate_pushdown_optimization(predicate_pushdown)
-            .with_projection_pushdown_optimization(projection_pushdown);
+            .with_type_coercion(type_coercion)
+            .with_predicate_pushdown(predicate_pushdown)
+            .with_simplify_expr(simplify_expr)
+            .with_projection_pushdown(projection_pushdown);
         ldf.into()
     }
 
@@ -66,10 +150,26 @@ impl PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.sort(by_column, reverse).into()
     }
+    pub fn cache(&self) -> PyLazyFrame {
+        let ldf = self.ldf.clone();
+        ldf.cache().into()
+    }
 
     pub fn collect(&self) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
-        let df = ldf.collect().map_err(PyPolarsEr::from)?;
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        let df = py.allow_threads(|| ldf.collect().map_err(PyPolarsEr::from))?;
+        Ok(df.into())
+    }
+
+    pub fn fetch(&self, n_rows: usize) -> PyResult<PyDataFrame> {
+        let ldf = self.ldf.clone();
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsEr::from))?;
         Ok(df.into())
     }
 
@@ -84,44 +184,41 @@ impl PyLazyFrame {
         ldf.select(exprs).into()
     }
 
-    pub fn groupby(&mut self, by: Vec<&str>) -> PyLazyGroupBy {
+    pub fn groupby(&mut self, by: Vec<PyExpr>) -> PyLazyGroupBy {
         let ldf = self.ldf.clone();
+        let by = py_exprs_to_exprs(by);
         let lazy_gb = ldf.groupby(by);
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
-    pub fn inner_join(
+    pub fn join(
         &mut self,
         other: PyLazyFrame,
-        left_on: PyExpr,
-        right_on: PyExpr,
+        left_on: Vec<PyExpr>,
+        right_on: Vec<PyExpr>,
+        allow_parallel: bool,
+        force_parallel: bool,
+        how: &str,
     ) -> PyLazyFrame {
-        let ldf = self.ldf.clone();
-        let other = other.ldf.clone();
-        ldf.inner_join(other, left_on.inner, right_on.inner).into()
-    }
+        let how = match how {
+            "left" => JoinType::Left,
+            "inner" => JoinType::Inner,
+            "outer" => JoinType::Outer,
+            _ => panic!("not supported"),
+        };
 
-    pub fn outer_join(
-        &mut self,
-        other: PyLazyFrame,
-        left_on: PyExpr,
-        right_on: PyExpr,
-    ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let other = other.ldf.clone();
-        ldf.outer_join(other, left_on.inner, right_on.inner).into()
-    }
+        let other = other.ldf;
+        let options = JoinOptions {
+            allow_parallel,
+            force_parallel,
+        };
+        let left_on = left_on.into_iter().map(|pyexpr| pyexpr.inner).collect();
+        let right_on = right_on.into_iter().map(|pyexpr| pyexpr.inner).collect();
 
-    pub fn left_join(
-        &mut self,
-        other: PyLazyFrame,
-        left_on: PyExpr,
-        right_on: PyExpr,
-    ) -> PyLazyFrame {
-        let ldf = self.ldf.clone();
-        let other = other.ldf.clone();
-        ldf.left_join(other, left_on.inner, right_on.inner).into()
+        ldf.join(other, left_on, right_on, Some(options), how)
+            .into()
     }
 
     pub fn with_column(&mut self, expr: PyExpr) -> PyLazyFrame {
@@ -134,6 +231,11 @@ impl PyLazyFrame {
         ldf.with_columns(py_exprs_to_exprs(exprs)).into()
     }
 
+    pub fn with_column_renamed(&mut self, existing: &str, new: &str) -> PyLazyFrame {
+        let ldf = self.ldf.clone();
+        ldf.with_column_renamed(existing, new).into()
+    }
+
     pub fn reverse(&self) -> Self {
         let ldf = self.ldf.clone();
         ldf.reverse().into()
@@ -142,6 +244,120 @@ impl PyLazyFrame {
     pub fn shift(&self, periods: i32) -> Self {
         let ldf = self.ldf.clone();
         ldf.shift(periods).into()
+    }
+
+    pub fn fill_none(&self, fill_value: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.fill_none(fill_value.inner).into()
+    }
+
+    pub fn min(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.min().into()
+    }
+
+    pub fn max(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.max().into()
+    }
+
+    pub fn sum(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.sum().into()
+    }
+
+    pub fn mean(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.mean().into()
+    }
+
+    pub fn std(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.std().into()
+    }
+
+    pub fn var(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.var().into()
+    }
+
+    pub fn median(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.median().into()
+    }
+
+    pub fn quantile(&self, quantile: f64) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.quantile(quantile).into()
+    }
+
+    pub fn explode(&self, column: Vec<String>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.explode(column).into()
+    }
+
+    pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.drop_duplicates(maintain_order, subset).into()
+    }
+
+    pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.drop_nulls(subset.as_ref().map(|v| v.as_ref())).into()
+    }
+
+    pub fn slice(&self, offset: usize, len: usize) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.slice(offset, len).into()
+    }
+
+    pub fn melt(&self, id_vars: Vec<String>, value_vars: Vec<String>) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.melt(id_vars, value_vars).into()
+    }
+
+    pub fn map(&self, lambda: PyObject, predicate_pd: bool, projection_pd: bool) -> Self {
+        let mut opt = AllowedOptimizations::default();
+        opt.projection_pushdown = projection_pd;
+        opt.predicate_pushdown = predicate_pd;
+
+        let function = move |s: DataFrame| {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            // get the pypolars module
+            let pypolars = PyModule::import(py, "pypolars").unwrap();
+            // create a PyDataFrame struct/object for Python
+            let pyseries = PyDataFrame::new(s);
+            // Wrap this PyDataFrame object in the python side DataFrame wrapper
+            let python_df_wrapper = pypolars.call1("wrap_df", (pyseries,)).unwrap();
+            // call the lambda and get a python side Series wrapper
+            let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+                Ok(pyobj) => pyobj,
+                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+            };
+            // unpack the wrapper in a PyDataFrame
+            let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+                "Could net get DataFrame attribute '_s'. Make sure that you return a DataFrame object.",
+            );
+            // Downcast to Rust
+            let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+            // Finally get the actual Series
+            Ok(pydf.df)
+        };
+
+        let ldf = self.ldf.clone();
+        ldf.map(function, Some(opt), None).into()
+    }
+
+    pub fn drop_columns(&self, cols: Vec<String>) -> Self {
+        let ldf = self.ldf.clone();
+        let f = move |mut df: DataFrame| {
+            for col in &cols {
+                let _ = df.drop_in_place(col);
+            }
+            Ok(df)
+        };
+        ldf.map(f, None, None).into()
     }
 
     pub fn clone(&self) -> PyLazyFrame {

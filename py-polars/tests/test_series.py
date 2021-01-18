@@ -1,3 +1,4 @@
+import pytest
 from pypolars import Series
 from pypolars.datatypes import *
 import numpy as np
@@ -6,6 +7,13 @@ import pytest
 
 def create_series():
     return Series("a", [1, 2])
+
+
+def test_bitwise_ops():
+    a = Series([True, False, True])
+    b = Series([False, True, True])
+    assert a & b == [False, False, True]
+    assert a | b == [True, True, True]
 
 
 def test_equality():
@@ -100,12 +108,12 @@ def test_filter():
 def test_cast():
     a = Series("a", range(20))
 
-    assert a.cast_f32().dtype == Float32
-    assert a.cast_f64().dtype == Float64
-    assert a.cast_i32().dtype == Int32
-    assert a.cast_u32().dtype == UInt32
-    assert a.cast_date64().dtype == Date64
-    assert a.cast_date32().dtype == Date32
+    assert a.cast(Float32).dtype == Float32
+    assert a.cast(Float64).dtype == Float64
+    assert a.cast(Int32).dtype == Int32
+    assert a.cast(UInt32).dtype == UInt32
+    assert a.cast(Date64).dtype == Date64
+    assert a.cast(Date32).dtype == Date32
 
 
 def test_to_python():
@@ -177,8 +185,8 @@ def test_apply():
     b = a.apply(lambda x: len(x), dtype_out=Int32)
     assert b == [3, 3, None]
 
-    with pytest.raises(TypeError):
-        a.apply(lambda x: len(x))
+    b = a.apply(lambda x: len(x))
+    assert b == [3, 3, None]
 
 
 def test_shift():
@@ -186,3 +194,29 @@ def test_shift():
     assert a.shift(1) == [None, 1, 2]
     assert a.shift(-1) == [1, 2, None]
     assert a.shift(-2) == [1, None, None]
+
+
+@pytest.mark.parametrize(
+    "dtype, fmt, null_values", [(Date32, "%d-%m-%Y", 0), (Date32, "%Y-%m-%d", 3)]
+)
+def test_parse_date(dtype, fmt, null_values):
+    dates = ["25-08-1988", "20-01-1993", "25-09-2020"]
+    result = Series.parse_date("dates", dates, dtype, fmt)
+    # Why results Date64 into `nan`?
+    assert result.dtype == dtype
+    assert result.is_null().sum() == null_values
+
+
+def test_rolling():
+    a = Series("a", [1, 2, 3, 2, 1])
+    assert a.rolling_min(2) == [None, 1, 2, 2, 1]
+    assert a.rolling_max(2) == [None, 2, 3, 3, 2]
+    assert a.rolling_sum(2) == [None, 3, 5, 5, 3]
+
+
+def test_object():
+    vals = [[12], "foo", 9]
+    a = Series("a", vals)
+    assert a.dtype == Object
+    assert a.to_list() == vals
+    assert a[1] == "foo"
