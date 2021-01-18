@@ -96,6 +96,7 @@ impl<T> AlignedVec<T> {
         self.inner = v;
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
@@ -125,9 +126,11 @@ impl<T> AlignedVec<T> {
     /// Push at the end of the Vec. This is unsafe because a push when the capacity of the
     /// inner Vec is reached will reallocate the Vec without the alignment, leaving this destructor's
     /// alignment incorrect
+    #[inline]
     pub fn push(&mut self, value: T) {
         if self.inner.len() == self.capacity() {
-            self.reserve(1);
+            // exponential allocation
+            self.reserve(std::cmp::max(self.capacity(), 5));
         }
         self.inner.push(value)
     }
@@ -213,5 +216,13 @@ impl<T> AlignedVec<T> {
         let data = builder.build();
 
         PrimitiveArray::<A>::from(data)
+    }
+}
+
+impl<T> Default for AlignedVec<T> {
+    fn default() -> Self {
+        // Be careful here. Don't initialize with a normal Vec as this will cause the wrong deallocator
+        // to run and SIGSEGV
+        Self::with_capacity_aligned(0)
     }
 }

@@ -9,11 +9,12 @@ use crate::vector_hasher::{
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use ahash::RandomState;
-use arrow::array::{BooleanBuilder, LargeStringBuilder, PrimitiveBuilder};
+use arrow::array::{BooleanBuilder, LargeStringBuilder};
 use crossbeam::thread;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
+use polars_arrow::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -1046,9 +1047,12 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_list(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        // needed capacity for the list
+        let values_cap = groups.iter().fold(0, |acc, g| acc + g.1.len());
+
         macro_rules! impl_gb {
             ($type:ty, $agg_col:expr) => {{
-                let values_builder = PrimitiveBuilder::<$type>::new(groups.len());
+                let values_builder = PrimitiveArrayBuilder::<$type>::new(values_cap);
                 let mut builder =
                     ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
@@ -1063,7 +1067,7 @@ where
 
         macro_rules! impl_gb_utf8 {
             ($agg_col:expr) => {{
-                let values_builder = LargeStringBuilder::new(groups.len());
+                let values_builder = LargeStringBuilder::new(values_cap);
                 let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
@@ -1077,7 +1081,7 @@ where
 
         macro_rules! impl_gb_bool {
             ($agg_col:expr) => {{
-                let values_builder = BooleanBuilder::new(groups.len());
+                let values_builder = BooleanBuilder::new(values_cap);
                 let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
@@ -1761,63 +1765,13 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+------------------------+
     /// ```
     pub fn agg_list(&self) -> Result<DataFrame> {
-        macro_rules! impl_gb {
-            ($type:ty, $agg_col:expr) => {{
-                let values_builder = PrimitiveBuilder::<$type>::new(self.groups.len());
-                let mut builder =
-                    ListPrimitiveChunkedBuilder::new("", values_builder, self.groups.len());
-                for (_first, idx) in &self.groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
-                    };
-                    builder.append_opt_series(Some(&s))
-                }
-                builder.finish().into_series()
-            }};
-        }
-
-        macro_rules! impl_gb_utf8 {
-            ($agg_col:expr) => {{
-                let values_builder = LargeStringBuilder::new(self.groups.len());
-                let mut builder =
-                    ListUtf8ChunkedBuilder::new("", values_builder, self.groups.len());
-                for (_first, idx) in &self.groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
-                    };
-                    builder.append_series(&s)
-                }
-                builder.finish().into_series()
-            }};
-        }
-
-        macro_rules! impl_gb_bool {
-            ($agg_col:expr) => {{
-                let values_builder = BooleanBuilder::new(self.groups.len());
-                let mut builder =
-                    ListBooleanChunkedBuilder::new("", values_builder, self.groups.len());
-                for (_first, idx) in &self.groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
-                    };
-                    builder.append_series(&s)
-                }
-                builder.finish().into_series()
-            }};
-        }
-
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
-            let mut agg = match_arrow_data_type_apply_macro!(
-                agg_col.dtype(),
-                impl_gb,
-                impl_gb_utf8,
-                impl_gb_bool,
-                agg_col
-            );
-            agg.rename(&new_name);
-            cols.push(agg);
+            if let Some(mut agg) = agg_col.agg_list(&self.groups) {
+                agg.rename(&new_name);
+                cols.push(agg);
+            }
         }
         DataFrame::new(cols)
     }

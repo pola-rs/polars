@@ -1,10 +1,12 @@
 use crate::vec::AlignedVec;
 use arrow::array::{
-    Array, ArrayData, ArrayDataRef, ArrayRef, BooleanBufferBuilder, LargeListArray, ListArray,
+    Array, ArrayBuilder, ArrayData, ArrayDataRef, ArrayRef, BooleanBufferBuilder, ListArray,
     PrimitiveArray,
 };
 use arrow::datatypes::ArrowPrimitiveType;
 use num::Num;
+use std::sync::Arc;
+use std::{any::Any, mem};
 
 pub trait GetValues {
     fn get_values<T>(&self) -> &[T::Native]
@@ -107,6 +109,11 @@ where
         self.bitmap_builder.append(true);
     }
 
+    #[inline]
+    pub fn append_slice(&mut self, other: &[T::Native]) {
+        self.values.extend_from_slice(other)
+    }
+
     /// Appends a null slot into the builder
     #[inline]
     pub fn append_null(&mut self) {
@@ -115,14 +122,50 @@ where
         self.null_count += 1;
     }
 
-    pub fn finish(mut self) -> PrimitiveArray<T> {
+    pub fn shrink_to_fit(&mut self) {
+        self.values.shrink_to_fit()
+    }
+
+    /// Build the array and reset this Builder
+    pub fn finish(&mut self) -> PrimitiveArray<T> {
+        self.shrink_to_fit();
+        let values = mem::take(&mut self.values);
         let null_bit_buffer = self.bitmap_builder.finish();
         let buf = if self.null_count == 0 {
             None
         } else {
             Some(null_bit_buffer)
         };
-        self.values.into_primitive_array(buf)
+        values.into_primitive_array(buf)
+    }
+}
+
+impl<T> ArrayBuilder for PrimitiveArrayBuilder<T>
+where
+    T: ArrowPrimitiveType,
+{
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    fn finish(&mut self) -> ArrayRef {
+        Arc::new(PrimitiveArrayBuilder::finish(self))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_box_any(self: Box<Self>) -> Box<dyn Any> {
+        self
     }
 }
 
@@ -147,5 +190,22 @@ impl ValueSize for ArrayData {
 impl ValueSize for ListArray {
     fn get_values_size(&self) -> usize {
         self.data_ref().get_values_size()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use arrow::datatypes::UInt32Type;
+
+    #[test]
+    fn test_primitive_builder() {
+        let mut builder = PrimitiveArrayBuilder::<UInt32Type>::new(10);
+        builder.append_value(0);
+        builder.append_null();
+        let out = builder.finish();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out.null_count(), 1);
+        dbg!(out);
     }
 }
