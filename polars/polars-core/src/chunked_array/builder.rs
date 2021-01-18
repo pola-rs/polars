@@ -8,7 +8,7 @@ use arrow::array::{ArrayDataBuilder, ArrayRef, BooleanArray, BooleanBuilder, Lar
 use arrow::datatypes::ToByteSlice;
 pub use arrow::memory;
 use arrow::{
-    array::{Array, ArrayData, LargeStringBuilder, PrimitiveArray, PrimitiveBuilder},
+    array::{Array, ArrayData, LargeStringBuilder, PrimitiveArray},
     buffer::Buffer,
 };
 use num::Num;
@@ -93,7 +93,7 @@ where
         self.array_builder.append_null()
     }
 
-    fn finish(self) -> ChunkedArray<T> {
+    fn finish(mut self) -> ChunkedArray<T> {
         let arr = Arc::new(self.array_builder.finish());
 
         let len = arr.len();
@@ -574,7 +574,7 @@ pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub builder: LargeListBuilder<PrimitiveBuilder<T>>,
+    pub builder: LargeListBuilder<PrimitiveArrayBuilder<T>>,
     field: Field,
 }
 
@@ -596,7 +596,7 @@ impl<T> ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
+    pub fn new(name: &str, values_builder: PrimitiveArrayBuilder<T>, capacity: usize) -> Self {
         let builder = LargeListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
 
@@ -606,23 +606,7 @@ where
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
         match opt_v {
             Some(v) => {
-                self.builder
-                    .values()
-                    .append_slice(v)
-                    .expect("could not append");
-                self.builder.append(true).expect("should not fail");
-            }
-            None => {
-                self.builder.append(false).expect("should not fail");
-            }
-        }
-    }
-    pub fn append_opt_slice(&mut self, opt_v: Option<&[Option<T::Native>]>) {
-        let value_builder = self.builder.values();
-        match opt_v {
-            Some(v) => {
-                v.iter()
-                    .for_each(|opt| value_builder.append_option(*opt).expect("could not append"));
+                self.builder.values().append_slice(v);
                 self.builder.append(true).expect("should not fail");
             }
             None => {
@@ -656,13 +640,13 @@ where
         for a in arrays {
             let values = a.get_values::<T>();
             if a.null_count() == 0 {
-                builder.append_slice(values).unwrap();
+                builder.append_slice(values);
             } else {
                 values.iter().enumerate().for_each(|(idx, v)| {
                     if a.is_valid(idx) {
-                        builder.append_value(*v).unwrap();
+                        builder.append_value(*v);
                     } else {
-                        builder.append_null().unwrap();
+                        builder.append_null();
                     }
                 });
             }
@@ -765,7 +749,7 @@ pub fn get_list_builder(
 ) -> Box<dyn ListBuilderTrait> {
     macro_rules! get_primitive_builder {
         ($type:ty) => {{
-            let values_builder = PrimitiveBuilder::<$type>::new(value_capacity);
+            let values_builder = PrimitiveArrayBuilder::<$type>::new(value_capacity);
             let builder = ListPrimitiveChunkedBuilder::new(&name, values_builder, list_capacity);
             Box::new(builder)
         }};
@@ -795,7 +779,7 @@ pub fn get_list_builder(
 #[cfg(test)]
 mod test {
     use super::*;
-    use arrow::array::Int32Array;
+    use arrow::array::PrimitiveBuilder;
 
     #[test]
     fn test_primitive_builder() {
@@ -853,7 +837,7 @@ mod test {
 
     #[test]
     fn test_list_builder() {
-        let values_builder = Int32Array::builder(10);
+        let values_builder = PrimitiveArrayBuilder::<Int32Type>::new(10);
         let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
 
         // create a series containing two chunks

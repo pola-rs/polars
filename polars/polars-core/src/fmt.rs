@@ -562,11 +562,11 @@ impl<T> FmtList for ObjectChunked<T> {
 #[cfg(all(test, feature = "temporal"))]
 mod test {
     use crate::prelude::*;
+    use polars_arrow::array::PrimitiveArrayBuilder;
 
     #[test]
     fn list() {
-        use arrow::array::Int32Array;
-        let values_builder = Int32Array::builder(10);
+        let values_builder = PrimitiveArrayBuilder::<UInt32Type>::new(10);
         let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
         builder.append_slice(Some(&[1, 2, 3]));
         builder.append_slice(None);
