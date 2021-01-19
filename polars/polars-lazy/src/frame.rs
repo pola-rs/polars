@@ -1519,4 +1519,28 @@ mod test {
             }
         };
     }
+
+    #[test]
+    fn test_lazy_partition_agg() {
+        let df = df! {
+            "foo" => &[1, 1, 2, 2, 3],
+            "bar" => &[1.0, 1.0, 2.0, 2.0, 3.0]
+        }
+        .unwrap();
+
+        let out = df
+            .clone()
+            .lazy()
+            .groupby(vec![col("foo")])
+            .agg(vec![col("bar").mean()])
+            .sort("foo", false)
+            .collect()
+            .unwrap();
+        dbg!(&out);
+
+        assert_eq!(
+            Vec::from(out.column("bar_mean").unwrap().f64().unwrap()),
+            &[Some(1.0), Some(2.0), Some(3.0)]
+        );
+    }
 }

@@ -523,7 +523,10 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     }
 }
 
-pub fn accumulate_dataframes_vertical(dfs: Vec<DataFrame>) -> Result<DataFrame> {
+pub fn accumulate_dataframes_vertical<I>(dfs: I) -> Result<DataFrame>
+where
+    I: IntoIterator<Item = DataFrame>,
+{
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
     for df in iter {

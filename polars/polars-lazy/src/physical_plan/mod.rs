@@ -76,4 +76,21 @@ impl PhysicalIOExpr for dyn PhysicalExpr {
 
 pub trait AggPhysicalExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>>;
+
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<Option<Vec<Series>>> {
+        // we return a vec, such that an implementor can return more information, such as a sum and count.
+        self.evaluate(df, groups).map(|opt| opt.map(|s| vec![s]))
+    }
+
+    fn evaluate_partitioned_final(
+        &self,
+        final_df: &DataFrame,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<Option<Series>> {
+        self.evaluate(final_df, groups)
+    }
 }

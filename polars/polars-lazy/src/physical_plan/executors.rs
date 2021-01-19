@@ -549,14 +549,14 @@ impl PartitionGroupByExec {
 
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+        let original_df = self.input.execute(cache)?;
 
         // This will be the aggregation on the partition results. Due to the groupby
         // operation the column names have changed. This makes sure we can select the columns with
         // the new names. We also keep a hold on the names to make sure that we don't get a double
         // new name due to the double aggregation. These output_names will be used to rename the final
         // output
-        let schema = df.schema();
+        let schema = original_df.schema();
         let aggs_and_names = self
             .aggs
             .iter()
@@ -577,8 +577,7 @@ impl Executor for PartitionGroupByExec {
         let n_threads = num_cpus::get();
         // We do a partitioned groupby. Meaning that we first do the groupby operation arbitrarily
         // splitted on several threads. Than the final result we apply the same groupby again.
-        let dfs = split_df(&df, n_threads)?;
-        drop(df);
+        let dfs = split_df(&original_df, n_threads)?;
 
         let n_threads = num_cpus::get();
 
@@ -605,9 +604,9 @@ impl Executor for PartitionGroupByExec {
                             .iter()
                             .map(|expr| {
                                 let agg_expr = expr.as_agg_expr()?;
-                                let opt_agg = agg_expr.evaluate(&df, groups)?;
+                                let opt_agg = agg_expr.evaluate_partitioned(&df, groups)?;
                                 if let Some(agg) = &opt_agg {
-                                    if agg.len() != groups.len() {
+                                    if agg[0].len() != groups.len() {
                                         panic!(format!(
                                             "returned aggregation is a different length: {} than the group lengths: {}",
                                             agg.len(),
@@ -618,7 +617,13 @@ impl Executor for PartitionGroupByExec {
                                 Ok(opt_agg)
                             }).collect::<Result<Vec<_>>>()?;
 
-                        columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+                        for agg in agg_columns {
+                            if let Some(agg) = agg {
+                                for agg in agg {
+                                    columns.push(agg)
+                                }
+                            }
+                        }
 
                         let df = DataFrame::new_no_checks(columns);
                         Ok(df)
@@ -658,7 +663,7 @@ impl Executor for PartitionGroupByExec {
                 let agg_expr = expr.as_agg_expr().unwrap();
                 // If None the column doesn't exist anymore.
                 // For instance when summing a string this column will not be in the aggregation result
-                let opt_agg = agg_expr.evaluate(&df, groups).ok();
+                let opt_agg = agg_expr.evaluate_partitioned_final(&df, groups).ok();
                 opt_agg.map(|opt_s| {
                     opt_s.map(|mut s| {
                         s.rename(name);

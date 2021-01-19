@@ -433,6 +433,53 @@ impl AggPhysicalExpr for PhysicalAggExpr {
             }
         }
     }
+
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<Option<Vec<Series>>> {
+        match self.agg_type {
+            GroupByMethod::Mean => {
+                let series = self.expr.evaluate(df)?;
+                let mut new_name = fmt_groupby_column(series.name(), self.agg_type);
+                let agg_s = series.agg_sum(groups);
+
+                if let Some(mut agg_s) = agg_s {
+                    agg_s.rename(&new_name);
+                    new_name.push_str("__POLARS_MEAN_COUNT");
+                    let ca: NoNull<UInt32Chunked> =
+                        groups.iter().map(|t| t.1.len() as u32).collect();
+                    let mut count_s = ca.into_inner().into_series();
+                    count_s.rename(&new_name);
+                    Ok(Some(vec![agg_s, count_s]))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => AggPhysicalExpr::evaluate(self, df, groups).map(|opt| opt.map(|s| vec![s])),
+        }
+    }
+
+    fn evaluate_partitioned_final(
+        &self,
+        final_df: &DataFrame,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<Option<Series>> {
+        match self.agg_type {
+            GroupByMethod::Mean => {
+                let series = self.expr.evaluate(final_df)?;
+                let count_name = format!("{}__POLARS_MEAN_COUNT", series.name());
+                let new_name = fmt_groupby_column(series.name(), self.agg_type);
+                let count = final_df.column(&count_name).unwrap();
+                // divide by the count
+                let series = &series / count;
+                let agg_s = series.agg_sum(groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            _ => AggPhysicalExpr::evaluate(self, final_df, groups),
+        }
+    }
 }
 
 pub struct AggQuantileExpr {
