@@ -242,7 +242,6 @@ impl DefaultPlanner {
                         | Expr::Agg(AggExpr::Max(_))
                         | Expr::Agg(AggExpr::Sum(_))
                         | Expr::Agg(AggExpr::Count(_))
-                        | Expr::Agg(AggExpr::List(_))
                         | Expr::Agg(AggExpr::Last(_))
                         | Expr::Agg(AggExpr::First(_)) => {}
                         _ => {
