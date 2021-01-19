@@ -19,3 +19,4 @@ itertools = "^0.9.0"
 
 polars-io = {version = "0.12.0-beta.0", path = "../polars-io", features = ["lazy"]}
 polars-core = {version = "0.12.0-beta.0", path = "../polars-core", features = ["lazy"]}
+polars-arrow = {version = "0.12.0-beta.0", path = "../polars-arrow"}

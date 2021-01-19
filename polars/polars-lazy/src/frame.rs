@@ -1529,18 +1529,40 @@ mod test {
         .unwrap();
 
         let out = df
-            .clone()
             .lazy()
             .groupby(vec![col("foo")])
             .agg(vec![col("bar").mean()])
             .sort("foo", false)
             .collect()
             .unwrap();
-        dbg!(&out);
 
         assert_eq!(
             Vec::from(out.column("bar_mean").unwrap().f64().unwrap()),
             &[Some(1.0), Some(2.0), Some(3.0)]
         );
+
+        let out = scan_foods_csv()
+            .groupby(vec![col("category")])
+            .agg(vec![col("calories").list()])
+            .sort("category", false)
+            .collect()
+            .unwrap();
+        dbg!(&out);
+        let cat_agg_list = out.select_at_idx(1).unwrap();
+        let fruit_series = cat_agg_list.list().unwrap().get(0).unwrap();
+        let fruit_list = fruit_series.i64().unwrap();
+        dbg!(fruit_list);
+        assert_eq!(
+            Vec::from(fruit_list),
+            &[
+                Some(60),
+                Some(30),
+                Some(50),
+                Some(30),
+                Some(60),
+                Some(130),
+                Some(50),
+            ]
+        )
     }
 }
