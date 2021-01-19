@@ -767,6 +767,34 @@ pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Resul
                 order_by: order_by.clone(),
             })
         }
+        Expr::Agg(agg) => {
+            let agg = match agg {
+                AggExpr::First(e) => AggExpr::First(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::Last(e) => AggExpr::Last(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::List(e) => AggExpr::List(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::Sum(e) => AggExpr::Sum(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::Min(e) => AggExpr::Min(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::Max(e) => AggExpr::Max(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::Median(e) => {
+                    AggExpr::Median(Box::new(rename_expr_root_name(e, new_name)?))
+                }
+                AggExpr::NUnique(e) => {
+                    AggExpr::NUnique(Box::new(rename_expr_root_name(e, new_name)?))
+                }
+                AggExpr::Mean(e) => AggExpr::Mean(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::Count(e) => AggExpr::Count(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::Quantile { expr, quantile } => AggExpr::Quantile {
+                    expr: Box::new(rename_expr_root_name(expr, new_name)?),
+                    quantile: *quantile,
+                },
+                AggExpr::AggGroups(e) => {
+                    AggExpr::AggGroups(Box::new(rename_expr_root_name(e, new_name)?))
+                }
+                AggExpr::Std(e) => AggExpr::Std(Box::new(rename_expr_root_name(e, new_name)?)),
+                AggExpr::Var(e) => AggExpr::Var(Box::new(rename_expr_root_name(e, new_name)?)),
+            };
+            Ok(Expr::Agg(agg))
+        }
         Expr::Column(_) => Ok(Expr::Column(new_name)),
         Expr::Reverse(expr) => rename_expr_root_name(expr, new_name),
         Expr::Unique(expr) => rename_expr_root_name(expr, new_name),

@@ -1,4 +1,5 @@
 use crate::prelude::*;
+pub use num_cpus;
 use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
@@ -104,6 +105,18 @@ pub(crate) fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedA
 
 pub(crate) fn split_series(series: &Series, n: usize) -> Result<Vec<Series>> {
     split_ca!(series, n)
+}
+
+pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
+    trait Len {
+        fn len(&self) -> usize;
+    }
+    impl Len for DataFrame {
+        fn len(&self) -> usize {
+            self.height()
+        }
+    }
+    split_ca!(df, n)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -1,7 +1,9 @@
 use super::*;
-use crate::logical_plan::FETCH_ROWS;
+use crate::logical_plan::{Context, FETCH_ROWS};
+use crate::utils::rename_expr_root_name;
 use itertools::Itertools;
 use polars_core::frame::hash_join::JoinType;
+use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
 use rayon::prelude::*;
@@ -511,6 +513,138 @@ impl Executor for GroupByExec {
                     }
                 };
                 Ok(opt_agg)
+            }).collect::<Result<Vec<_>>>()?;
+
+        columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+
+        let df = DataFrame::new_no_checks(columns);
+        Ok(df)
+    }
+}
+
+/// Take an input Executor and a multiple expressions
+pub struct PartitionGroupByExec {
+    input: Box<dyn Executor>,
+    keys: Vec<Arc<dyn PhysicalExpr>>,
+    phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
+    aggs: Vec<Expr>,
+}
+
+impl PartitionGroupByExec {
+    pub(crate) fn new(
+        input: Box<dyn Executor>,
+        keys: Vec<Arc<dyn PhysicalExpr>>,
+        phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
+        aggs: Vec<Expr>,
+    ) -> Self {
+        Self {
+            input,
+            keys,
+            phys_aggs,
+            aggs,
+        }
+    }
+}
+
+impl Executor for PartitionGroupByExec {
+    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+        let df = self.input.execute(cache)?;
+
+        // This will be the aggregation on the partition results. Due to the groupby
+        // operation the column names have changed. This makes sure we can select the columns with
+        // the new names. We also keep a hold on the names to make sure that we don't get a double
+        // new name due to the double aggregation. These output_names will be used to rename the final
+        // output
+        let schema = df.schema();
+        let aggs_and_names = self
+            .aggs
+            .iter()
+            .map(|e| {
+                let out_field = e.to_field(&schema, Context::Aggregation)?;
+                let out_name = Arc::new(out_field.name().clone());
+                let e = rename_expr_root_name(e, out_name.clone())?;
+                Ok((e, out_name))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let planner = DefaultPlanner {};
+        let outer_phys_aggs = aggs_and_names
+            .iter()
+            .map(|(e, _)| planner.create_physical_expr(e.clone(), Context::Aggregation))
+            .collect::<Result<Vec<_>>>()?;
+
+        let n_threads = num_cpus::get();
+        // We do a partitioned groupby. Meaning that we first do the groupby operation arbitrarily
+        // splitted on several threads. Than the final result we apply the same groupby again.
+        // TODO! Minify threading in downstream code.
+        let dfs = split_df(&df, n_threads)?;
+        drop(df);
+        let dfs = dfs.par_iter()
+            .map(|df| {
+                let keys = self
+                    .keys
+                    .iter()
+                    .map(|e| e.evaluate(&df))
+                    .collect::<Result<Vec<_>>>()?;
+
+                let gb = df.groupby_with_series(keys)?;
+                let groups = gb.get_groups();
+
+                let mut columns = gb.keys();
+                let agg_columns = self.phys_aggs
+                    .iter()
+                    .map(|expr| {
+                        let agg_expr = expr.as_agg_expr()?;
+                        let opt_agg = agg_expr.evaluate(&df, groups)?;
+                        if let Some(agg) = &opt_agg {
+                            if agg.len() != groups.len() {
+                                panic!(format!(
+                                    "returned aggregation is a different length: {} than the group lengths: {}",
+                                    agg.len(),
+                                    groups.len()
+                                ))
+                            }
+                        };
+                        Ok(opt_agg)
+                    }).collect::<Result<Vec<_>>>()?;
+
+                columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+
+                let df = DataFrame::new_no_checks(columns);
+                Ok(df)
+            }).collect::<Result<Vec<_>>>()?;
+        let df = accumulate_dataframes_vertical(dfs)?;
+
+        let keys = self
+            .keys
+            .iter()
+            .map(|e| e.evaluate(&df))
+            .collect::<Result<Vec<_>>>()?;
+
+        // do the same on the outer results
+        let gb = df.groupby_with_series(keys)?;
+        let groups = gb.get_groups();
+
+        let mut columns = gb.keys();
+        let agg_columns = outer_phys_aggs
+            .iter()
+            .zip(aggs_and_names.iter().map(|(_, name)| name))
+            .map(|(expr, name)| {
+                let agg_expr = expr.as_agg_expr()?;
+                let opt_agg = agg_expr.evaluate(&df, groups)?;
+                if let Some(agg) = &opt_agg {
+                    if agg.len() != groups.len() {
+                        panic!(format!(
+                            "returned aggregation is a different length: {} than the group lengths: {}",
+                            agg.len(),
+                            groups.len()
+                        ))
+                    }
+                };
+                Ok(opt_agg.map(|mut s| {
+                    s.rename(name);
+                    s
+                }))
             }).collect::<Result<Vec<_>>>()?;
 
         columns.extend(agg_columns.into_iter().filter_map(|opt| opt));

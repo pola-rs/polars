@@ -22,7 +22,7 @@ pub trait PhysicalPlanner {
 // combine physical expressions, which produce Series.
 
 /// Executors will evaluate physical expressions and collect them in a DataFrame.
-pub trait Executor: Send {
+pub trait Executor: Send + Sync {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame>;
 }
 

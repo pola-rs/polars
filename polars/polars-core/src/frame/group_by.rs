@@ -37,7 +37,15 @@ where
         .collect()
 }
 
-fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<(usize, Vec<usize>)>
+fn groupby_threaded_flat<I, T>(iters: Vec<I>) -> Vec<(usize, Vec<usize>)>
+where
+    I: IntoIterator<Item = T> + Send,
+    T: Send + Hash + Eq + Sync + Copy,
+{
+    groupby_threaded(iters).into_iter().flatten().collect()
+}
+
+fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<Vec<(usize, Vec<usize>)>>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -95,7 +103,6 @@ where
                 })
             })
             .collect_vec();
-
         handles
             .into_iter()
             .map(|handle| {
@@ -105,13 +112,15 @@ where
                     .map(|(_k, v)| v)
                     .collect::<Vec<_>>()
             })
-            .flatten()
             .collect_vec()
     })
     .unwrap()
 }
 
-fn groupby_threaded_multiple_keys<I, T>(iters: Vec<I>, keys: DataFrame) -> Vec<(usize, Vec<usize>)>
+fn groupby_threaded_multiple_keys_flat<I, T>(
+    iters: Vec<I>,
+    keys: DataFrame,
+) -> Vec<(usize, Vec<usize>)>
 where
     I: Iterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -235,10 +244,10 @@ macro_rules! group_tuples {
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect_vec();
-                groupby_threaded(iters)
+                groupby_threaded_flat(iters)
             } else {
                 let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-                groupby_threaded(iters)
+                groupby_threaded_flat(iters)
             }
         } else {
             if $ca.null_count() == 0 {
@@ -288,7 +297,7 @@ macro_rules! impl_into_group_tpls_float {
                         .iter()
                         .map(|ca| ca.into_no_null_iter().map(|v| v.integer_decode()))
                         .collect_vec();
-                    groupby_threaded(iters)
+                    groupby_threaded_flat(iters)
                 }
                 _ => {
                     let iters = splitted
@@ -298,7 +307,7 @@ macro_rules! impl_into_group_tpls_float {
                                 .map(|opt_v| opt_v.map(|v| v.integer_decode()))
                         })
                         .collect_vec();
-                    groupby_threaded(iters)
+                    groupby_threaded_flat(iters)
                 }
             }
         } else {
@@ -440,16 +449,21 @@ impl<'b> (dyn SeriesTrait + 'b) {
 impl DataFrame {
     pub fn groupby_with_series(&self, by: Vec<Series>) -> Result<GroupBy> {
         let n_threads = num_cpus::get();
+        if by.is_empty() || by[0].len() != self.height() {
+            return Err(PolarsError::ShapeMisMatch(
+                "the Series used as keys should have the same length as the DataFrame".into(),
+            ));
+        };
 
         // make sure that categorical is used as uint32 in value type
-        let keys_df = DataFrame::new_no_checks(
+        let keys_df = DataFrame::new(
             by.iter()
                 .map(|s| match s.dtype() {
                     DataType::Categorical => s.cast::<UInt32Type>().unwrap(),
                     _ => s.clone(),
                 })
                 .collect(),
-        );
+        )?;
 
         // flattened splitted vec,
         let splitted_sel_keys = by
@@ -475,7 +489,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             3 => {
                 let iters = (0..n_threads)
@@ -489,7 +503,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             4 => {
                 let iters = (0..n_threads)
@@ -503,7 +517,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             5 => {
                 let iters = (0..n_threads)
@@ -517,7 +531,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             6 => {
                 let iters = (0..n_threads)
@@ -531,7 +545,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             7 => {
                 let iters = (0..n_threads)
@@ -545,7 +559,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             8 => {
                 let iters = (0..n_threads)
@@ -559,7 +573,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             9 => {
                 let iters = (0..n_threads)
@@ -573,7 +587,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             10 => {
                 let iters = (0..n_threads)
@@ -587,7 +601,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             11 => {
                 let iters = (0..n_threads)
@@ -601,7 +615,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             12 => {
                 let iters = (0..n_threads)
@@ -615,7 +629,7 @@ impl DataFrame {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                groupby_threaded_multiple_keys(iters, keys_df)
+                groupby_threaded_multiple_keys_flat(iters, keys_df)
             }
             _ => {
                 let iter = by
@@ -2333,7 +2347,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::group_by::{groupby, groupby_threaded};
+    use crate::frame::group_by::{groupby, groupby_threaded_flat};
     use crate::prelude::*;
     use crate::utils::split_ca;
     use itertools::Itertools;
@@ -2609,7 +2623,7 @@ mod test {
             let splitted = split_ca(&ca, 4).unwrap();
 
             let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
-            let b = groupby_threaded(splitted.iter().map(|ca| ca.into_iter()).collect())
+            let b = groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect())
                 .into_iter()
                 .sorted()
                 .collect_vec();
