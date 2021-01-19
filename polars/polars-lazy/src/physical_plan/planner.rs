@@ -249,6 +249,10 @@ impl DefaultPlanner {
                         }
                     }
                 }
+                // a custom function cannot be partitioned.
+                if apply.is_some() {
+                    partitionable = false;
+                }
                 let phys_keys = self.create_physical_expressions(
                     Arc::try_unwrap(keys).unwrap_or_else(|keys| (&*keys).clone()),
                     Context::Other,
