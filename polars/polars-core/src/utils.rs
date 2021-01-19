@@ -1,4 +1,5 @@
 use crate::prelude::*;
+pub use crossbeam;
 pub use num_cpus;
 use std::ops::{Deref, DerefMut};
 

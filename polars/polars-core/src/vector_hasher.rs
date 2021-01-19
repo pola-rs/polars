@@ -178,17 +178,18 @@ where
     .unwrap()
 }
 
-pub(crate) fn create_hash_vectorized<I, T>(iter: I) -> (Vec<u64>, RandomState) where
-    I: Iterator<Item = T> ,
+pub(crate) fn create_hash_vectorized<I, T>(iter: I) -> (Vec<u64>, RandomState)
+where
+    I: Iterator<Item = T>,
     T: Hash + Eq,
 {
-
     let random_state = RandomState::default();
-    let v = iter.map(|val| {
-        let mut hasher = random_state.build_hasher();
-        val.hash(&mut hasher);
-        hasher.finish()
-    })
+    let v = iter
+        .map(|val| {
+            let mut hasher = random_state.build_hasher();
+            val.hash(&mut hasher);
+            hasher.finish()
+        })
         .collect_vec();
     (v, random_state)
 }

@@ -3,6 +3,7 @@ use crate::logical_plan::{Context, FETCH_ROWS};
 use crate::utils::rename_expr_root_name;
 use itertools::Itertools;
 use polars_core::frame::hash_join::JoinType;
+use polars_core::utils::crossbeam::thread;
 use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
@@ -576,43 +577,67 @@ impl Executor for PartitionGroupByExec {
         let n_threads = num_cpus::get();
         // We do a partitioned groupby. Meaning that we first do the groupby operation arbitrarily
         // splitted on several threads. Than the final result we apply the same groupby again.
-        // TODO! Minify threading in downstream code.
         let dfs = split_df(&df, n_threads)?;
         drop(df);
-        let dfs = dfs.par_iter()
-            .map(|df| {
-                let keys = self
-                    .keys
-                    .iter()
-                    .map(|e| e.evaluate(&df))
-                    .collect::<Result<Vec<_>>>()?;
 
-                let gb = df.groupby_with_series(keys, false)?;
-                let groups = gb.get_groups();
+        let n_threads = num_cpus::get();
 
-                let mut columns = gb.keys();
-                let agg_columns = self.phys_aggs
-                    .iter()
-                    .map(|expr| {
-                        let agg_expr = expr.as_agg_expr()?;
-                        let opt_agg = agg_expr.evaluate(&df, groups)?;
-                        if let Some(agg) = &opt_agg {
-                            if agg.len() != groups.len() {
-                                panic!(format!(
-                                    "returned aggregation is a different length: {} than the group lengths: {}",
-                                    agg.len(),
-                                    groups.len()
-                                ))
-                            }
-                        };
-                        Ok(opt_agg)
-                    }).collect::<Result<Vec<_>>>()?;
+        let dfs: Result<_> = thread::scope(|s| {
 
-                columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+            let handles = (0..n_threads)
+                .map(|i| {
 
-                let df = DataFrame::new_no_checks(columns);
-                Ok(df)
-            }).collect::<Result<Vec<_>>>()?;
+                    let df = &dfs[i];
+                    let keys = self
+                        .keys
+                        .iter()
+                        .map(|e| e.evaluate(&df))
+                        .collect::<Result<Vec<_>>>()?;
+                    let phys_aggs = &self.phys_aggs;
+
+                    let handle = s.spawn(move |_| {
+
+                        let gb = df.groupby_with_series(keys, false)?;
+                        let groups = gb.get_groups();
+
+                        let mut columns = gb.keys();
+                        let agg_columns = phys_aggs
+                            .iter()
+                            .map(|expr| {
+                                let agg_expr = expr.as_agg_expr()?;
+                                let opt_agg = agg_expr.evaluate(&df, groups)?;
+                                if let Some(agg) = &opt_agg {
+                                    if agg.len() != groups.len() {
+                                        panic!(format!(
+                                            "returned aggregation is a different length: {} than the group lengths: {}",
+                                            agg.len(),
+                                            groups.len()
+                                        ))
+                                    }
+                                };
+                                Ok(opt_agg)
+                            }).collect::<Result<Vec<_>>>()?;
+
+                        columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+
+                        let df = DataFrame::new_no_checks(columns);
+                        Ok(df)
+
+                    });
+
+                    Ok(handle)
+
+                }).collect::<Result<Vec<_>>>()?;
+
+            let dfs = handles.into_iter()
+                .map(|h| {
+                    h.join().unwrap()
+                }).collect::<Result<Vec<_>>>()?;
+            // the assignment is for readability
+            Ok(dfs)
+        }).unwrap();
+        let dfs = dfs?;
+
         let df = accumulate_dataframes_vertical(dfs)?;
 
         let keys = self
@@ -622,32 +647,27 @@ impl Executor for PartitionGroupByExec {
             .collect::<Result<Vec<_>>>()?;
 
         // do the same on the outer results
-        let gb = df.groupby_with_series(keys, false)?;
+        let gb = df.groupby_with_series(keys, true)?;
         let groups = gb.get_groups();
 
         let mut columns = gb.keys();
         let agg_columns = outer_phys_aggs
             .iter()
             .zip(aggs_and_names.iter().map(|(_, name)| name))
-            .map(|(expr, name)| {
-                let agg_expr = expr.as_agg_expr()?;
-                let opt_agg = agg_expr.evaluate(&df, groups)?;
-                if let Some(agg) = &opt_agg {
-                    if agg.len() != groups.len() {
-                        panic!(format!(
-                            "returned aggregation is a different length: {} than the group lengths: {}",
-                            agg.len(),
-                            groups.len()
-                        ))
-                    }
-                };
-                Ok(opt_agg.map(|mut s| {
-                    s.rename(name);
-                    s
-                }))
-            }).collect::<Result<Vec<_>>>()?;
+            .filter_map(|(expr, name)| {
+                let agg_expr = expr.as_agg_expr().unwrap();
+                // If None the column doesn't exist anymore.
+                // For instance when summing a string this column will not be in the aggregation result
+                let opt_agg = agg_expr.evaluate(&df, groups).ok();
+                opt_agg.map(|opt_s| {
+                    opt_s.map(|mut s| {
+                        s.rename(name);
+                        s
+                    })
+                })
+            });
 
-        columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+        columns.extend(agg_columns.filter_map(|opt| opt));
 
         let df = DataFrame::new_no_checks(columns);
         Ok(df)
