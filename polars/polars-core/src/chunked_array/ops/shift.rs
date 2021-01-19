@@ -127,7 +127,7 @@ impl ChunkShiftFill<Utf8Type, Option<&str>> for Utf8Chunked {
             return Err(PolarsError::OutOfBounds(
                 format!("The value of parameter `periods`: {} in the shift operation is larger than the length of the ChunkedArray: {}", periods, self.len()).into()));
         }
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
         fn append_fn(builder: &mut Utf8ChunkedBuilder, v: Option<&str>) {
             builder.append_option(v);
         }

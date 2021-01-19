@@ -410,7 +410,7 @@ impl ChunkAggSeries for BooleanChunked {
 
 macro_rules! one_null_utf8 {
     ($self:ident) => {{
-        let mut builder = Utf8ChunkedBuilder::new($self.name(), 1);
+        let mut builder = Utf8ChunkedBuilder::new($self.name(), 1, 0);
         builder.append_null();
         builder.finish().into_series()
     }};

@@ -4,11 +4,11 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 use ahash::AHashMap;
-use arrow::array::{ArrayDataBuilder, ArrayRef, BooleanArray, BooleanBuilder, LargeListBuilder};
+use arrow::array::{ArrayDataBuilder, ArrayRef, LargeListBuilder};
 use arrow::datatypes::ToByteSlice;
 pub use arrow::memory;
 use arrow::{
-    array::{Array, ArrayData, LargeStringBuilder, PrimitiveArray},
+    array::{Array, ArrayData, PrimitiveArray},
     buffer::Buffer,
 };
 use num::Num;
@@ -31,19 +31,19 @@ pub trait ChunkedBuilder<N, T> {
 }
 
 pub struct BooleanChunkedBuilder {
-    array_builder: BooleanBuilder,
+    array_builder: BooleanArrayBuilder,
     field: Field,
 }
 
 impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
     /// Appends a value of type `T` into the builder
     fn append_value(&mut self, v: bool) {
-        self.array_builder.append_value(v).unwrap();
+        self.array_builder.append_value(v);
     }
 
     /// Appends a null slot into the builder
     fn append_null(&mut self) {
-        self.array_builder.append_null().unwrap();
+        self.array_builder.append_null();
     }
 
     fn finish(mut self) -> BooleanChunked {
@@ -63,7 +63,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
 impl BooleanChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
         BooleanChunkedBuilder {
-            array_builder: BooleanBuilder::new(capacity),
+            array_builder: BooleanArrayBuilder::new(capacity),
             field: Field::new(name, DataType::Boolean),
         }
     }
@@ -245,9 +245,15 @@ pub struct Utf8ChunkedBuilder {
 }
 
 impl Utf8ChunkedBuilder {
-    pub fn new(name: &str, capacity: usize) -> Self {
+    /// Create a new UtfChunkedBuilder
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity` - Number of string elements in the final array.
+    /// * `bytes_capacity` - Number of bytes needed to store the string values.
+    pub fn new(name: &str, capacity: usize, bytes_capacity: usize) -> Self {
         Utf8ChunkedBuilder {
-            builder: LargeStringBuilder::new(capacity),
+            builder: LargeStringBuilder::with_capacity(bytes_capacity, capacity),
             capacity,
             field: Field::new(name, DataType::Utf8),
         }
@@ -255,14 +261,12 @@ impl Utf8ChunkedBuilder {
 
     /// Appends a value of type `T` into the builder
     pub fn append_value<S: AsRef<str>>(&mut self, v: S) {
-        self.builder
-            .append_value(v.as_ref())
-            .expect("could not append");
+        self.builder.append_value(v.as_ref());
     }
 
     /// Appends a null slot into the builder
     pub fn append_null(&mut self) {
-        self.builder.append_null().expect("could not append");
+        self.builder.append_null();
     }
 
     pub fn append_option<S: AsRef<str>>(&mut self, opt: Option<S>) {
@@ -292,7 +296,7 @@ pub struct Utf8ChunkedBuilderCow {
 impl Utf8ChunkedBuilderCow {
     pub fn new(name: &str, capacity: usize) -> Self {
         Utf8ChunkedBuilderCow {
-            builder: Utf8ChunkedBuilder::new(name, capacity),
+            builder: Utf8ChunkedBuilder::new(name, capacity, capacity),
         }
     }
 }
@@ -412,26 +416,6 @@ fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
 
 /// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
 /// Can also take a null bit buffer into account.
-pub fn aligned_vec_to_boolean_array(
-    values: AlignedVec<bool>,
-    null_bit_buffer: Option<Buffer>,
-    null_count: Option<usize>,
-) -> BooleanArray {
-    let vec_len = values.len();
-    let buffer = values.into_arrow_buffer();
-
-    let builder = ArrayData::builder(ArrowDataType::Boolean)
-        .len(vec_len)
-        .add_buffer(buffer);
-
-    let builder = set_null_bits(builder, null_bit_buffer, null_count);
-    let data = builder.build();
-
-    BooleanArray::from(data)
-}
-
-/// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
-/// Can also take a null bit buffer into account.
 pub fn aligned_vec_to_primitive_array<T: PolarsPrimitiveType>(
     values: AlignedVec<T::Native>,
     null_bit_buffer: Option<Buffer>,
@@ -522,11 +506,11 @@ where
     S: AsRef<str>,
 {
     fn new_from_slice(name: &str, v: &[S]) -> Self {
-        let mut builder = LargeStringBuilder::new(v.len());
+        let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
+
+        let mut builder = LargeStringBuilder::with_capacity(values_size, v.len());
         v.iter().for_each(|val| {
-            builder
-                .append_value(val.as_ref())
-                .expect("Could not append value");
+            builder.append_value(val.as_ref());
         });
 
         let field = Arc::new(Field::new(name, DataType::Utf8));
@@ -541,7 +525,11 @@ where
     }
 
     fn new_from_opt_slice(name: &str, opt_v: &[Option<S>]) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new(name, opt_v.len());
+        let values_size = opt_v.iter().fold(0, |acc, s| match s {
+            Some(s) => acc + s.as_ref().len(),
+            None => acc,
+        });
+        let mut builder = Utf8ChunkedBuilder::new(name, values_size, opt_v.len());
 
         opt_v.iter().for_each(|opt| match opt {
             Some(v) => builder.append_value(v.as_ref()),
@@ -551,14 +539,16 @@ where
     }
 
     fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new(name, get_iter_capacity(&it));
+        let cap = get_iter_capacity(&it);
+        let mut builder = Utf8ChunkedBuilder::new(name, cap, cap * 5);
         it.for_each(|opt| builder.append_option(opt));
         builder.finish()
     }
 
     /// Create a new ChunkedArray from an iterator.
     fn new_from_iter(name: &str, it: impl Iterator<Item = S>) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new(name, get_iter_capacity(&it));
+        let cap = get_iter_capacity(&it);
+        let mut builder = Utf8ChunkedBuilder::new(name, cap, cap * 5);
         it.for_each(|v| builder.append_value(v));
         builder.finish()
     }
@@ -688,8 +678,8 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         let value_builder = self.builder.values();
         for s in ca {
             match s {
-                Some(s) => value_builder.append_value(s).unwrap(),
-                None => value_builder.append_null().unwrap(),
+                Some(s) => value_builder.append_value(s),
+                None => value_builder.append_null(),
             };
         }
         self.builder.append(true).unwrap();
@@ -701,12 +691,12 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
 }
 
 pub struct ListBooleanChunkedBuilder {
-    builder: LargeListBuilder<BooleanBuilder>,
+    builder: LargeListBuilder<BooleanArrayBuilder>,
     field: Field,
 }
 
 impl ListBooleanChunkedBuilder {
-    pub fn new(name: &str, values_builder: BooleanBuilder, capacity: usize) -> Self {
+    pub fn new(name: &str, values_builder: BooleanArrayBuilder, capacity: usize) -> Self {
         let builder = LargeListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(name, DataType::List(ArrowDataType::Boolean));
 
@@ -729,8 +719,8 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
         let value_builder = self.builder.values();
         for s in ca {
             match s {
-                Some(s) => value_builder.append_value(s).unwrap(),
-                None => value_builder.append_null().unwrap(),
+                Some(s) => value_builder.append_value(s),
+                None => value_builder.append_null(),
             };
         }
         self.builder.append(true).unwrap();
@@ -756,14 +746,15 @@ pub fn get_list_builder(
     }
     macro_rules! get_bool_builder {
         () => {{
-            let values_builder = BooleanBuilder::new(value_capacity);
+            let values_builder = BooleanArrayBuilder::new(value_capacity);
             let builder = ListBooleanChunkedBuilder::new(&name, values_builder, list_capacity);
             Box::new(builder)
         }};
     }
     macro_rules! get_utf8_builder {
         () => {{
-            let values_builder = LargeStringBuilder::new(value_capacity);
+            let values_builder =
+                LargeStringBuilder::with_capacity(value_capacity * 5, value_capacity);
             let builder = ListUtf8ChunkedBuilder::new(&name, values_builder, list_capacity);
             Box::new(builder)
         }};

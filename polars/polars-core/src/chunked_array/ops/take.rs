@@ -428,7 +428,20 @@ impl ChunkTake for Utf8Chunked {
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
-        impl_take!(self, indices, capacity, Utf8ChunkedBuilder)
+
+        let capacity = capacity.unwrap_or(indices.size_hint().0);
+        let fact = capacity as f32 / self.len() as f32 * 1.2;
+        let values_cap = (capacity as f32 * fact) as usize;
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity, values_cap);
+
+        let taker = self.take_rand();
+        for idx in indices {
+            match taker.get(idx) {
+                Some(v) => builder.append_value(v),
+                None => builder.append_null(),
+            }
+        }
+        builder.finish()
     }
     unsafe fn take_unchecked(
         &self,
@@ -441,7 +454,18 @@ impl ChunkTake for Utf8Chunked {
         if self.chunks.len() == 1 {
             return self.take_from_single_chunked_iter(indices).unwrap();
         }
-        impl_take_unchecked!(self, indices, capacity, Utf8ChunkedBuilder)
+        let capacity = capacity.unwrap_or(indices.size_hint().0);
+        let fact = capacity as f32 / self.len() as f32 * 1.2;
+        let values_cap = (capacity as f32 * fact) as usize;
+
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity, values_cap);
+
+        let taker = self.take_rand();
+        for idx in indices {
+            let v = taker.get_unchecked(idx);
+            builder.append_value(v);
+        }
+        builder.finish()
     }
 
     fn take_opt(
@@ -455,7 +479,24 @@ impl ChunkTake for Utf8Chunked {
         if self.is_empty() {
             return self.clone();
         }
-        impl_take_opt!(self, indices, capacity, Utf8ChunkedBuilder)
+
+        let capacity = capacity.unwrap_or(indices.size_hint().0);
+        let fact = capacity as f32 / self.len() as f32 * 1.2;
+        let values_cap = (capacity as f32 * fact) as usize;
+
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity, values_cap);
+        let taker = self.take_rand();
+
+        for opt_idx in indices {
+            match opt_idx {
+                Some(idx) => match taker.get(idx) {
+                    Some(v) => builder.append_value(v),
+                    None => builder.append_null(),
+                },
+                None => builder.append_null(),
+            };
+        }
+        builder.finish()
     }
 
     unsafe fn take_opt_unchecked(
@@ -466,7 +507,24 @@ impl ChunkTake for Utf8Chunked {
         if self.is_empty() {
             return self.clone();
         }
-        impl_take_opt_unchecked!(self, indices, capacity, Utf8ChunkedBuilder)
+
+        let capacity = capacity.unwrap_or(indices.size_hint().0);
+        let fact = capacity as f32 / self.len() as f32 * 1.2;
+        let values_cap = (capacity as f32 * fact) as usize;
+
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity, values_cap);
+        let taker = self.take_rand();
+
+        for opt_idx in indices {
+            match opt_idx {
+                Some(idx) => {
+                    let v = taker.get_unchecked(idx);
+                    builder.append_value(v);
+                }
+                None => builder.append_null(),
+            };
+        }
+        builder.finish()
     }
 
     fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {

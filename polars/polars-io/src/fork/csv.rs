@@ -308,7 +308,7 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
         &DataType::UInt64 => Builder::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Float32 => Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Float64 => Builder::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-        &DataType::Utf8 => Builder::Utf8(Utf8ChunkedBuilder::new(name, capacity)),
+        &DataType::Utf8 => Builder::Utf8(Utf8ChunkedBuilder::new(name, capacity, capacity * 20)),
         other => {
             return Err(PolarsError::Other(
                 format!("Unsupported data type {:?} when reading a csv", other).into(),

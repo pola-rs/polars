@@ -99,7 +99,9 @@ impl FromIterator<bool> for NoNull<BooleanChunked> {
 impl<'a> FromIterator<&'a str> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for val in iter {
             builder.append_value(val);
@@ -111,7 +113,9 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
 impl<'a> FromIterator<Cow<'a, str>> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = Cow<'a, str>>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for cow in iter {
             match cow {
@@ -126,7 +130,9 @@ impl<'a> FromIterator<Cow<'a, str>> for Utf8Chunked {
 impl<'a> FromIterator<Option<Cow<'a, str>>> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = Option<Cow<'a, str>>>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for opt_val in iter {
             match opt_val {
@@ -144,7 +150,9 @@ impl<'a> FromIterator<Option<Cow<'a, str>>> for Utf8Chunked {
 impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = &'a &'a str>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for val in iter {
             builder.append_value(val);
@@ -156,7 +164,9 @@ impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
 macro_rules! impl_from_iter_utf8 {
     ($iter:ident) => {{
         let iter = $iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for opt_val in iter {
             builder.append_option(opt_val.as_ref())
@@ -180,7 +190,9 @@ impl<'a> FromIterator<&'a Option<&'a str>> for Utf8Chunked {
 impl FromIterator<String> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for val in iter {
             builder.append_value(val.as_str());
@@ -192,7 +204,10 @@ impl FromIterator<String> for Utf8Chunked {
 impl FromIterator<Option<String>> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = Option<String>>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for opt_val in iter {
             match opt_val {
@@ -451,8 +466,9 @@ impl FromParallelIterator<String> for Utf8Chunked {
     fn from_par_iter<I: IntoParallelIterator<Item = String>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        let values_cap = capacity * 5;
 
-        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
@@ -468,8 +484,9 @@ impl FromParallelIterator<Option<String>> for Utf8Chunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<String>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        let values_cap = capacity * 5;
 
-        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
@@ -484,8 +501,9 @@ impl<'a> FromParallelIterator<Option<&'a str>> for Utf8Chunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<&'a str>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        let values_cap = capacity * 5;
 
-        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
@@ -500,8 +518,9 @@ impl<'a> FromParallelIterator<&'a str> for Utf8Chunked {
     fn from_par_iter<I: IntoParallelIterator<Item = &'a str>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        let values_cap = capacity * 5;
 
-        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
