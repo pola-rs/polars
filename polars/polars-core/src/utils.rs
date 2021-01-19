@@ -81,6 +81,9 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
 
 macro_rules! split_ca {
     ($ca: ident, $n: expr) => {{
+        if $n == 1 {
+            return Ok(vec![$ca.clone()]);
+        }
         let total_len = $ca.len();
         let chunk_size = total_len / $n;
 

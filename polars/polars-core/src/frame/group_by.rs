@@ -221,7 +221,7 @@ pub trait IntoGroupTuples {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in te tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+    fn group_tuples(&self, _multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
         unimplemented!()
     }
 }
@@ -232,11 +232,10 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
 }
 
 macro_rules! group_tuples {
-    ($ca: expr) => {{
-        let n_threads = num_cpus::get();
-
+    ($ca: expr, $multithreaded: expr) => {{
         // TODO! choose a splitting len
-        if group_multithreaded($ca) {
+        if $multithreaded && group_multithreaded($ca) {
+            let n_threads = num_cpus::get();
             let splitted = split_ca($ca, n_threads).unwrap();
 
             if $ca.null_count() == 0 {
@@ -264,31 +263,31 @@ where
     T: PolarsIntegerType,
     T::Native: Eq + Hash + Send,
 {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        group_tuples!(self, multithreaded)
     }
 }
 impl IntoGroupTuples for BooleanChunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        group_tuples!(self, multithreaded)
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        group_tuples!(self, multithreaded)
     }
 }
 
 impl IntoGroupTuples for CategoricalChunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        group_tuples!(self, multithreaded)
     }
 }
 
 macro_rules! impl_into_group_tpls_float {
-    ($self: ident) => {
-        if group_multithreaded($self) {
+    ($self: ident, $multithreaded:expr) => {
+        if $multithreaded && group_multithreaded($self) {
             let n_threads = num_cpus::get();
             let splitted = split_ca($self, n_threads).unwrap();
             match $self.null_count() {
@@ -324,13 +323,13 @@ macro_rules! impl_into_group_tpls_float {
 }
 
 impl IntoGroupTuples for Float64Chunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        impl_into_group_tpls_float!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        impl_into_group_tpls_float!(self, multithreaded)
     }
 }
 impl IntoGroupTuples for Float32Chunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        impl_into_group_tpls_float!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        impl_into_group_tpls_float!(self, multithreaded)
     }
 }
 impl IntoGroupTuples for ListChunked {}
@@ -447,8 +446,8 @@ impl<'b> (dyn SeriesTrait + 'b) {
 }
 
 impl DataFrame {
-    pub fn groupby_with_series(&self, by: Vec<Series>) -> Result<GroupBy> {
-        let n_threads = num_cpus::get();
+    pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
+        let n_threads = if multithreaded { num_cpus::get() } else { 1 };
         if by.is_empty() || by[0].len() != self.height() {
             return Err(PolarsError::ShapeMisMatch(
                 "the Series used as keys should have the same length as the DataFrame".into(),
@@ -475,7 +474,7 @@ impl DataFrame {
         let groups = match by.len() {
             1 => {
                 let series = &by[0];
-                series.group_tuples()
+                series.group_tuples(multithreaded)
             }
             2 => {
                 let iters = (0..n_threads)
@@ -664,7 +663,7 @@ impl DataFrame {
     /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
         let selected_keys = self.select_series(by)?;
-        self.groupby_with_series(selected_keys)
+        self.groupby_with_series(selected_keys, true)
     }
 }
 
@@ -816,7 +815,7 @@ where
     fn agg_sum(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
         Some(
             groups
-                .par_iter()
+                .iter()
                 .map(|(first, idx)| {
                     if idx.len() == 1 {
                         self.get(*first)

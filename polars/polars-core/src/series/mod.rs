@@ -110,7 +110,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             unimplemented!()
         }
-        fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        fn group_tuples(&self, _multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
             unimplemented!()
         }
     }

@@ -488,7 +488,7 @@ impl Executor for GroupByExec {
             .iter()
             .map(|e| e.evaluate(&df))
             .collect::<Result<_>>()?;
-        let gb = df.groupby_with_series(keys)?;
+        let gb = df.groupby_with_series(keys, true)?;
         if let Some(f) = &self.apply {
             return gb.apply(|df| f.call_udf(df));
         }
@@ -587,7 +587,7 @@ impl Executor for PartitionGroupByExec {
                     .map(|e| e.evaluate(&df))
                     .collect::<Result<Vec<_>>>()?;
 
-                let gb = df.groupby_with_series(keys)?;
+                let gb = df.groupby_with_series(keys, false)?;
                 let groups = gb.get_groups();
 
                 let mut columns = gb.keys();
@@ -622,7 +622,7 @@ impl Executor for PartitionGroupByExec {
             .collect::<Result<Vec<_>>>()?;
 
         // do the same on the outer results
-        let gb = df.groupby_with_series(keys)?;
+        let gb = df.groupby_with_series(keys, false)?;
         let groups = gb.get_groups();
 
         let mut columns = gb.keys();
