@@ -10,6 +10,7 @@ use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
 #[cfg(feature = "object")]
 use crate::series::private::PrivateSeries;
+use ahash::RandomState;
 use arrow::array::{ArrayDataRef, ArrayRef};
 use arrow::buffer::Buffer;
 #[cfg(feature = "object")]
@@ -17,7 +18,6 @@ use std::any::Any;
 #[cfg(feature = "object")]
 use std::fmt::Debug;
 use std::ops::Deref;
-use ahash::RandomState;
 
 pub(crate) struct Wrap<T>(pub T);
 
@@ -58,7 +58,6 @@ where
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
         impl private::PrivateSeries for Wrap<$ca> {
-
             fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
                 self.0.vec_hash(random_state)
             }

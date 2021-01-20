@@ -1,3 +1,6 @@
+use crate::datatypes::UInt64Chunked;
+use crate::prelude::*;
+use crate::utils::NoNull;
 use ahash::RandomState;
 use crossbeam::thread;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
@@ -194,43 +197,6 @@ where
     (v, random_state)
 }
 
-pub(crate) fn create_hash_threaded_vectorized<I, T>(iters: Vec<I>) -> (Vec<Vec<u64>>, RandomState)
-where
-    I: Iterator<Item = T> + Send,
-    T: Send + Hash + Eq,
-{
-    let random_state = RandomState::default();
-    let n_threads = iters.len();
-
-    let hashes = thread::scope(|s| {
-        let handles = iters
-            .into_iter()
-            .map(|iter| {
-                // joinhandles
-                s.spawn(|_| {
-                    // create hashes
-                    iter.map(|val| {
-                        let mut hasher = random_state.build_hasher();
-                        val.hash(&mut hasher);
-                        hasher.finish()
-                    })
-                    .collect_vec()
-                })
-            })
-            .collect_vec();
-
-        let mut results = Vec::with_capacity(n_threads);
-        for h in handles {
-            let mut v = h.join().unwrap();
-            v.shrink_to_fit();
-            results.push(v);
-        }
-        results
-    })
-    .unwrap();
-    (hashes, random_state)
-}
-
 pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     iters: Vec<I>,
     random_state: Option<RandomState>,
@@ -270,4 +236,70 @@ where
     })
     .unwrap();
     (hashes, random_state)
+}
+
+// Combines two hashes into one hash
+// http://myeyesareblind.com/2017/02/06/Combine-hash-values/
+fn combine_hashes(l: u64, r: u64) -> u64 {
+    let hash = (17 * 37u64).wrapping_add(l);
+    hash.wrapping_mul(37).wrapping_add(r)
+}
+
+pub(crate) fn df_rows_to_hashes_threaded(
+    keys: &[DataFrame],
+    random_state: Option<RandomState>,
+) -> (Vec<UInt64Chunked>, RandomState) {
+    let random_state = random_state.unwrap_or_default();
+    let n_threads = keys.len();
+
+    let hashes = thread::scope(|s| {
+        let handles = keys
+            .iter()
+            .map(|df| {
+                let random_state = random_state.clone();
+                // joinhandles
+                s.spawn(move |_| {
+                    let (ca, _) = df_rows_to_hashes(df, Some(random_state));
+                    ca
+                })
+            })
+            .collect_vec();
+
+        let mut results = Vec::with_capacity(n_threads);
+        for h in handles {
+            let v = h.join().unwrap();
+            results.push(v);
+        }
+        results
+    })
+    .unwrap();
+    (hashes, random_state)
+}
+
+pub(crate) fn df_rows_to_hashes(
+    keys: &DataFrame,
+    random_state: Option<RandomState>,
+) -> (UInt64Chunked, RandomState) {
+    let random_state = random_state.unwrap_or_default();
+    let hashes: Vec<_> = keys
+        .columns
+        .iter()
+        .map(|s| s.vec_hash(random_state.clone()))
+        .collect();
+
+    let mut iter = hashes.into_iter();
+    let first = iter.next().unwrap();
+
+    // take the columns of hashes and create one hash from them.
+    (
+        iter.fold(first, |acc, s| {
+            let ca: NoNull<UInt64Chunked> = acc
+                .into_no_null_iter()
+                .zip(s.into_no_null_iter())
+                .map(|(a, b)| combine_hashes(a, b))
+                .collect();
+            ca.into_inner()
+        }),
+        random_state,
+    )
 }

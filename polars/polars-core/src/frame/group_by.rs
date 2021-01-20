@@ -2,11 +2,11 @@ use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecod
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{
-    accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, NoNull,
+    accumulate_dataframes_vertical, split_ca, split_df, split_series, IntoDynamicZip, NoNull,
 };
 use crate::vector_hasher::{
-    create_hash_and_keys_threaded_vectorized, create_hash_threaded_vectorized,
-    create_hash_vectorized, prepare_hashed_relation, IdBuildHasher, IdxHash,
+    create_hash_and_keys_threaded_vectorized, create_hash_vectorized, df_rows_to_hashes_threaded,
+    prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use ahash::RandomState;
 use crossbeam::thread;
@@ -16,21 +16,25 @@ use num::{Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashSet;
-use std::hash::{Hash, BuildHasher, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::{
     fmt::{Debug, Formatter},
     ops::Add,
 };
 
 pub trait VecHash {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+    /// Compute the hase for all values in the array.
+    ///
+    /// This currently only works with the ahash RandomState hasher builder.
+    fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
         unimplemented!()
     }
 }
 
 impl<T> VecHash for ChunkedArray<T>
-where T: PolarsIntegerType,
-T::Native: Hash
+where
+    T: PolarsIntegerType,
+    T::Native: Hash,
 {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
@@ -39,21 +43,23 @@ T::Native: Hash
                     let mut hasher = random_state.build_hasher();
                     v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
-
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         } else {
             self.into_iter()
                 .map(|opt_v| {
                     let mut hasher = random_state.build_hasher();
                     opt_v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         }
     }
 }
 
-impl VecHash for Utf8Chunked
-{
+impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
             self.into_no_null_iter()
@@ -61,21 +67,23 @@ impl VecHash for Utf8Chunked
                     let mut hasher = random_state.build_hasher();
                     v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
-
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         } else {
             self.into_iter()
                 .map(|opt_v| {
                     let mut hasher = random_state.build_hasher();
                     opt_v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         }
     }
 }
 
-impl VecHash for BooleanChunked
-{
+impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
             self.into_no_null_iter()
@@ -83,68 +91,69 @@ impl VecHash for BooleanChunked
                     let mut hasher = random_state.build_hasher();
                     v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
-
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         } else {
             self.into_iter()
                 .map(|opt_v| {
                     let mut hasher = random_state.build_hasher();
                     opt_v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         }
     }
 }
 
-impl VecHash for Float32Chunked
-{
+impl VecHash for Float32Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
             self.into_no_null_iter()
                 .map(|v| {
-                    let v: i32 = unsafe { std::mem::transmute(v)};
+                    let v = v.to_bits() as i32;
                     let mut hasher = random_state.build_hasher();
                     v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
-
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         } else {
             self.into_iter()
                 .map(|opt_v| {
-                    let opt_v = opt_v.map(|v| {
-                        let v: i32 = unsafe { std::mem::transmute(v)};
-                        v
-                    });
+                    let opt_v = opt_v.map(|v| v.to_bits() as i32);
                     let mut hasher = random_state.build_hasher();
                     opt_v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         }
     }
 }
-impl VecHash for Float64Chunked
-{
+impl VecHash for Float64Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
             self.into_no_null_iter()
                 .map(|v| {
-                    let v: i64 = unsafe { std::mem::transmute(v)};
+                    let v = v.to_bits() as i64;
                     let mut hasher = random_state.build_hasher();
                     v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
-
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         } else {
             self.into_iter()
                 .map(|opt_v| {
-                    let opt_v = opt_v.map(|v| {
-                        let v: i64 = unsafe { std::mem::transmute(v)};
-                        v
-                    });
+                    let opt_v = opt_v.map(|v| v.to_bits() as i64);
                     let mut hasher = random_state.build_hasher();
                     opt_v.hash(&mut hasher);
                     hasher.finish()
-                }).collect::<NoNull<_>>().into_inner()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
         }
     }
 }
@@ -294,8 +303,12 @@ where
     T: Send + Hash + Eq + Sync + Copy,
 {
     let n_threads = iters.len();
-    let (hashes, _random_state) = create_hash_threaded_vectorized(iters);
-    let size = hashes.iter().fold(0, |acc, v| acc + v.len());
+
+    let dfs = split_df(&keys, n_threads).unwrap();
+    let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
+    let size = hashes.len();
+    // let (hashes, _random_state) = create_hash_threaded_vectorized(iters);
+    // let size = hashes.iter().fold(0, |acc, v| acc + v.len());
     // two row containers to amortize allocations;
     let row_1 = keys.get_row(0);
 
@@ -326,9 +339,9 @@ where
 
                     let n_threads = n_threads as u64;
                     let mut offset = 0;
-                    for hashes_ in hashes {
-                        let len = hashes_.len();
-                        hashes_.iter().enumerate().for_each(|(idx, h)| {
+                    for hashes in hashes {
+                        let len = hashes.len();
+                        hashes.into_no_null_iter().enumerate().for_each(|(idx, h)| {
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
                             if (h + thread_no) % n_threads == 0 {
@@ -338,7 +351,7 @@ where
                                     .raw_entry_mut()
                                     // uses the idx to probe rows in the original DataFrame with keys
                                     // to check equality to find an entry
-                                    .from_hash(*h, |idx_hash| {
+                                    .from_hash(h, |idx_hash| {
                                         let key_idx = idx_hash.idx;
                                         unsafe {
                                             keys.get_row_amortized_unchecked(key_idx, &mut row_1);
@@ -349,8 +362,8 @@ where
                                 match entry {
                                     RawEntryMut::Vacant(entry) => {
                                         entry.insert_hashed_nocheck(
-                                            *h,
-                                            IdxHash::new(idx, *h),
+                                            h,
+                                            IdxHash::new(idx, h),
                                             (idx, vec![idx]),
                                         );
                                     }
