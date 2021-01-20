@@ -17,6 +17,7 @@ use std::any::Any;
 #[cfg(feature = "object")]
 use std::fmt::Debug;
 use std::ops::Deref;
+use ahash::RandomState;
 
 pub(crate) struct Wrap<T>(pub T);
 
@@ -57,6 +58,11 @@ where
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
         impl private::PrivateSeries for Wrap<$ca> {
+
+            fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+                self.0.vec_hash(random_state)
+            }
+
             fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
                 self.0.agg_mean(groups)
             }
