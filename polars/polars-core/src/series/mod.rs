@@ -24,7 +24,7 @@ pub(crate) mod private {
     use ahash::RandomState;
 
     pub trait PrivateSeries {
-        fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+        fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
             unimplemented!()
         }
         fn agg_mean(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
