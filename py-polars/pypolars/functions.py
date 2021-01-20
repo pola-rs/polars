@@ -26,6 +26,7 @@ def read_csv(
     encoding: str = "utf8",
     n_threads: Optional[int] = None,
     dtype: "Optional[Dict[str, DataType]]" = None,
+    new_columns: "Optional[List[str]]" = None,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a csv file.
@@ -68,7 +69,7 @@ def read_csv(
     DataFrame
     """
 
-    return DataFrame.read_csv(
+    df = DataFrame.read_csv(
         file=file,
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,
@@ -84,6 +85,9 @@ def read_csv(
         n_threads=n_threads,
         dtype=dtype,
     )
+    if new_columns:
+        df.columns = new_columns
+    return df
 
 
 def scan_csv(
