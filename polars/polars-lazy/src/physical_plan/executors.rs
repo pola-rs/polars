@@ -579,8 +579,6 @@ impl Executor for PartitionGroupByExec {
         // splitted on several threads. Than the final result we apply the same groupby again.
         let dfs = split_df(&original_df, n_threads)?;
 
-        let n_threads = num_cpus::get();
-
         let dfs: Result<_> = thread::scope(|s| {
 
             let handles = (0..n_threads)

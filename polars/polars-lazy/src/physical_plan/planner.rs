@@ -236,20 +236,25 @@ impl DefaultPlanner {
                 let input = self.create_initial_physical_plan(*input)?;
                 let mut partitionable = true;
 
-                for agg in &aggs {
-                    match agg {
-                        Expr::Agg(AggExpr::Min(_))
-                        | Expr::Agg(AggExpr::Max(_))
-                        | Expr::Agg(AggExpr::Sum(_))
-                        | Expr::Agg(AggExpr::Count(_))
-                        | Expr::Agg(AggExpr::Last(_))
-                        | Expr::Agg(AggExpr::List(_))
-                        | Expr::Agg(AggExpr::Mean(_))
-                        | Expr::Agg(AggExpr::First(_)) => {}
-                        _ => {
-                            partitionable = false;
+                // currently only a single aggregation seems faster with ad-hoc partitioning.
+                if aggs.len() == 1 && keys.len() == 1 {
+                    for agg in &aggs {
+                        match agg {
+                            Expr::Agg(AggExpr::Min(_))
+                            | Expr::Agg(AggExpr::Max(_))
+                            | Expr::Agg(AggExpr::Sum(_))
+                            // first need to implement this correctly
+                            // | Expr::Agg(AggExpr::Count(_))
+                            | Expr::Agg(AggExpr::Last(_))
+                            | Expr::Agg(AggExpr::List(_))
+                            | Expr::Agg(AggExpr::First(_)) => {}
+                            _ => {
+                                partitionable = false;
+                            }
                         }
                     }
+                } else {
+                    partitionable = false;
                 }
                 // a custom function cannot be partitioned.
                 if apply.is_some() {
