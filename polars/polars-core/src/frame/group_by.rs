@@ -1,4 +1,5 @@
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
+use crate::frame::row::Row;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{
@@ -255,6 +256,37 @@ where
     .unwrap()
 }
 
+fn populate_multiple_key_hashmap<'a, 'b>(
+    hash_tbl: &mut HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher>,
+    row_1: &'b mut Row<'a>,
+    row_2: &'b mut Row<'a>,
+    idx: usize,
+    h: u64,
+    keys: &'a DataFrame,
+) {
+    let entry = hash_tbl
+        .raw_entry_mut()
+        // uses the idx to probe rows in the original DataFrame with keys
+        // to check equality to find an entry
+        .from_hash(h, |idx_hash| {
+            let key_idx = idx_hash.idx;
+            unsafe {
+                keys.get_row_amortized_unchecked(key_idx, row_1);
+                keys.get_row_amortized_unchecked(idx, row_2);
+            }
+            row_1 == row_2
+        });
+    match entry {
+        RawEntryMut::Vacant(entry) => {
+            entry.insert_hashed_nocheck(h, IdxHash::new(idx, h), (idx, vec![idx]));
+        }
+        RawEntryMut::Occupied(mut entry) => {
+            let (_k, v) = entry.get_key_value_mut();
+            v.1.push(idx);
+        }
+    }
+}
+
 fn groupby_multiple_keys<I, T>(iter: I, keys: DataFrame) -> Vec<(usize, Vec<usize>)>
 where
     I: Iterator<Item = T>,
@@ -269,27 +301,7 @@ where
     let mut row_2 = row_1.clone();
 
     for (idx, h) in hashes.iter().enumerate() {
-        let entry = hash_tbl
-            .raw_entry_mut()
-            // uses the idx to probe rows in the original DataFrame with keys
-            // to check equality to find an entry
-            .from_hash(*h, |idx_hash| {
-                let key_idx = idx_hash.idx;
-                unsafe {
-                    keys.get_row_amortized_unchecked(key_idx, &mut row_1);
-                    keys.get_row_amortized_unchecked(idx, &mut row_2);
-                }
-                row_1 == row_2
-            });
-        match entry {
-            RawEntryMut::Vacant(entry) => {
-                entry.insert_hashed_nocheck(*h, IdxHash::new(idx, *h), (idx, vec![idx]));
-            }
-            RawEntryMut::Occupied(mut entry) => {
-                let (_k, v) = entry.get_key_value_mut();
-                v.1.push(idx);
-            }
-        }
+        populate_multiple_key_hashmap(&mut hash_tbl, &mut row_1, &mut row_2, idx, *h, &keys);
     }
     hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
 }
@@ -346,32 +358,14 @@ where
                             // So only a part of the hashes go to this hashmap
                             if (h + thread_no) % n_threads == 0 {
                                 let idx = idx + offset;
-
-                                let entry = hash_tbl
-                                    .raw_entry_mut()
-                                    // uses the idx to probe rows in the original DataFrame with keys
-                                    // to check equality to find an entry
-                                    .from_hash(h, |idx_hash| {
-                                        let key_idx = idx_hash.idx;
-                                        unsafe {
-                                            keys.get_row_amortized_unchecked(key_idx, &mut row_1);
-                                            keys.get_row_amortized_unchecked(idx, &mut row_2);
-                                        }
-                                        row_1 == row_2
-                                    });
-                                match entry {
-                                    RawEntryMut::Vacant(entry) => {
-                                        entry.insert_hashed_nocheck(
-                                            h,
-                                            IdxHash::new(idx, h),
-                                            (idx, vec![idx]),
-                                        );
-                                    }
-                                    RawEntryMut::Occupied(mut entry) => {
-                                        let (_k, v) = entry.get_key_value_mut();
-                                        v.1.push(idx);
-                                    }
-                                }
+                                populate_multiple_key_hashmap(
+                                    &mut hash_tbl,
+                                    &mut row_1,
+                                    &mut row_2,
+                                    idx,
+                                    h,
+                                    keys,
+                                );
                             }
                         });
 
