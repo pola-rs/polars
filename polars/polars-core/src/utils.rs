@@ -80,7 +80,7 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
     }
 }
 
-macro_rules! split_ca {
+macro_rules! split_array {
     ($ca: ident, $n: expr) => {{
         if $n == 1 {
             return Ok(vec![$ca.clone()]);
@@ -104,11 +104,7 @@ macro_rules! split_ca {
 }
 
 pub(crate) fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>> {
-    split_ca!(ca, n)
-}
-
-pub(crate) fn split_series(series: &Series, n: usize) -> Result<Vec<Series>> {
-    split_ca!(series, n)
+    split_array!(ca, n)
 }
 
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
@@ -120,7 +116,7 @@ pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
             self.height()
         }
     }
-    split_ca!(df, n)
+    split_array!(df, n)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

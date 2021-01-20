@@ -2,11 +2,9 @@ use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecod
 use crate::frame::row::Row;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{
-    accumulate_dataframes_vertical, split_ca, split_df, split_series, IntoDynamicZip, NoNull,
-};
+use crate::utils::{accumulate_dataframes_vertical, split_ca, split_df, NoNull};
 use crate::vector_hasher::{
-    create_hash_and_keys_threaded_vectorized, create_hash_vectorized, df_rows_to_hashes_threaded,
+    create_hash_and_keys_threaded_vectorized, df_rows_to_hashes, df_rows_to_hashes_threaded,
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use ahash::RandomState;
@@ -287,12 +285,8 @@ fn populate_multiple_key_hashmap<'a, 'b>(
     }
 }
 
-fn groupby_multiple_keys<I, T>(iter: I, keys: DataFrame) -> Vec<(usize, Vec<usize>)>
-where
-    I: Iterator<Item = T>,
-    T: Hash + Eq + Copy,
-{
-    let (hashes, _random_state) = create_hash_vectorized(iter);
+fn groupby_multiple_keys(keys: DataFrame) -> Vec<(usize, Vec<usize>)> {
+    let (hashes, _) = df_rows_to_hashes(&keys, None);
     let size = hashes.len();
     // rather over allocate because rehashing is expensive
     let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
@@ -300,22 +294,16 @@ where
     let mut row_1 = keys.get_row(0);
     let mut row_2 = row_1.clone();
 
-    for (idx, h) in hashes.iter().enumerate() {
-        populate_multiple_key_hashmap(&mut hash_tbl, &mut row_1, &mut row_2, idx, *h, &keys);
+    for (idx, h) in hashes.into_no_null_iter().enumerate() {
+        populate_multiple_key_hashmap(&mut hash_tbl, &mut row_1, &mut row_2, idx, h, &keys);
     }
     hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
 }
 
-fn groupby_threaded_multiple_keys_flat<I, T>(
-    iters: Vec<I>,
+fn groupby_threaded_multiple_keys_flat(
     keys: DataFrame,
-) -> Vec<(usize, Vec<usize>)>
-where
-    I: Iterator<Item = T> + Send,
-    T: Send + Hash + Eq + Sync + Copy,
-{
-    let n_threads = iters.len();
-
+    n_threads: usize,
+) -> Vec<(usize, Vec<usize>)> {
     let dfs = split_df(&keys, n_threads).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let size = hashes.len();
@@ -615,7 +603,6 @@ impl<'b> (dyn SeriesTrait + 'b) {
 
 impl DataFrame {
     pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
-        let n_threads = if multithreaded { num_cpus::get() } else { 1 };
         if by.is_empty() || by[0].len() != self.height() {
             return Err(PolarsError::ShapeMisMatch(
                 "the Series used as keys should have the same length as the DataFrame".into(),
@@ -632,236 +619,18 @@ impl DataFrame {
                 .collect(),
         )?;
 
-        // flattened splitted vec,
-        let splitted_sel_keys = by
-            .iter()
-            .map(|s| split_series(s, n_threads).unwrap())
-            .flatten()
-            .collect_vec();
-
         let groups = match by.len() {
             1 => {
                 let series = &by[0];
                 series.group_tuples(multithreaded)
             }
-            2 => {
-                if multithreaded {}
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 1))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            3 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 2))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            4 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 3))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            5 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 4))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            6 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 5))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            7 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 6))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            8 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 7))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            9 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 8))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            10 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 9))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            11 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 10))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
-            12 => {
-                let mut iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 11))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                if multithreaded {
-                    groupby_threaded_multiple_keys_flat(iters, keys_df)
-                } else {
-                    let iter = iters.pop().unwrap();
-                    groupby_multiple_keys(iter, keys_df)
-                }
-            }
             _ => {
-                let iter = by
-                    .iter()
-                    .map(|sk| sk.as_groupable_iter())
-                    .collect::<Result<Vec<_>>>()?
-                    .into_dynamic_zip();
-
-                groupby(iter)
+                if multithreaded {
+                    let n_threads = num_cpus::get();
+                    groupby_threaded_multiple_keys_flat(keys_df, n_threads)
+                } else {
+                    groupby_multiple_keys(keys_df)
+                }
             }
         };
 
