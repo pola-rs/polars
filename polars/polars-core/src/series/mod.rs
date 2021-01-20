@@ -21,8 +21,12 @@ use std::sync::Arc;
 pub(crate) mod private {
     use super::*;
     use crate::frame::group_by::PivotAgg;
+    use ahash::RandomState;
 
     pub trait PrivateSeries {
+        fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+            unimplemented!()
+        }
         fn agg_mean(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
             unimplemented!()
         }
