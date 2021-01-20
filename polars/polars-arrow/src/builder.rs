@@ -391,8 +391,10 @@ impl LargeStringBuilder {
 
     /// Builds the `StringArray` and reset this builder.
     pub fn finish(&mut self) -> LargeStringArray {
-        let values = mem::take(&mut self.values);
-        let offsets = mem::take(&mut self.offsets);
+        let mut values = mem::take(&mut self.values);
+        values.shrink_to_fit();
+        let mut offsets = mem::take(&mut self.offsets);
+        offsets.shrink_to_fit();
 
         let arraydata = ArrayData::builder(DataType::LargeUtf8)
             .len(offsets.len() - 1)
