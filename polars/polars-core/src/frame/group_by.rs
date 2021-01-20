@@ -113,7 +113,7 @@ impl VecHash for Float32Chunked {
         if self.null_count() == 0 {
             self.into_no_null_iter()
                 .map(|v| {
-                    let v = v.to_bits() as i32;
+                    let v = v.to_bits();
                     let mut hasher = random_state.build_hasher();
                     v.hash(&mut hasher);
                     hasher.finish()
@@ -123,7 +123,7 @@ impl VecHash for Float32Chunked {
         } else {
             self.into_iter()
                 .map(|opt_v| {
-                    let opt_v = opt_v.map(|v| v.to_bits() as i32);
+                    let opt_v = opt_v.map(|v| v.to_bits());
                     let mut hasher = random_state.build_hasher();
                     opt_v.hash(&mut hasher);
                     hasher.finish()
@@ -138,7 +138,7 @@ impl VecHash for Float64Chunked {
         if self.null_count() == 0 {
             self.into_no_null_iter()
                 .map(|v| {
-                    let v = v.to_bits() as i64;
+                    let v = v.to_bits();
                     let mut hasher = random_state.build_hasher();
                     v.hash(&mut hasher);
                     hasher.finish()
@@ -148,7 +148,7 @@ impl VecHash for Float64Chunked {
         } else {
             self.into_iter()
                 .map(|opt_v| {
-                    let opt_v = opt_v.map(|v| v.to_bits() as i64);
+                    let opt_v = opt_v.map(|v| v.to_bits());
                     let mut hasher = random_state.build_hasher();
                     opt_v.hash(&mut hasher);
                     hasher.finish()
@@ -469,29 +469,22 @@ macro_rules! impl_into_group_tpls_float {
                 0 => {
                     let iters = splitted
                         .iter()
-                        .map(|ca| ca.into_no_null_iter().map(|v| v.integer_decode()))
+                        .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
                         .collect_vec();
                     groupby_threaded_flat(iters)
                 }
                 _ => {
                     let iters = splitted
                         .iter()
-                        .map(|ca| {
-                            ca.into_iter()
-                                .map(|opt_v| opt_v.map(|v| v.integer_decode()))
-                        })
+                        .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
                         .collect_vec();
                     groupby_threaded_flat(iters)
                 }
             }
         } else {
             match $self.null_count() {
-                0 => groupby($self.into_no_null_iter().map(|v| v.integer_decode())),
-                _ => groupby(
-                    $self
-                        .into_iter()
-                        .map(|opt_v| opt_v.map(|v| v.integer_decode())),
-                ),
+                0 => groupby($self.into_no_null_iter().map(|v| v.to_bits())),
+                _ => groupby($self.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()))),
             }
         }
     };
