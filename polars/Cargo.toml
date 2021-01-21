@@ -22,7 +22,7 @@ default = ["docs",
     "parquet"
 ]
 ndarray = ["polars-core/ndarray"]
-parquet = ["polars-core/parquet", "polars-lazy/parquet"]
+parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
 lazy = ["polars-core/lazy"]
 parallel = ["polars-core/parallel"]
 # extra utilities for Utf8Chunked
@@ -36,7 +36,7 @@ ipc = ["polars-io/ipc"]
 
 [dependencies]
 polars-core = {version = "0.12.0-beta.0", path = "./polars-core", default-features = false}
-polars-io = {version = "0.12.0-beta.0", path = "./polars-io"}
+polars-io = {version = "0.12.0-beta.0", path = "./polars-io", default-features = false}
 polars-lazy = {version = "0.12.0-beta.0", path = "./polars-lazy"}
 
 [package.metadata.docs.rs]

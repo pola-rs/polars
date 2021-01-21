@@ -106,6 +106,7 @@ impl BooleanBufferBuilder {
 
     #[inline]
     pub fn finish(&mut self) -> Buffer {
+        self.shrink_to_fit();
         // `append` does not update the buffer's `len` so do it before `into` is called.
         let new_buffer_len = bit_util::ceil(self.len, 8);
         debug_assert!(new_buffer_len >= self.buffer.len());
@@ -302,7 +303,8 @@ where
     }
 
     pub fn shrink_to_fit(&mut self) {
-        self.values.shrink_to_fit()
+        self.values.shrink_to_fit();
+        self.bitmap_builder.shrink_to_fit();
     }
 
     pub fn finish_with_null_buffer(&mut self, buffer: Buffer) -> PrimitiveArray<T> {
@@ -391,15 +393,22 @@ impl LargeStringBuilder {
 
     /// Builds the `StringArray` and reset this builder.
     pub fn finish(&mut self) -> LargeStringArray {
-        let mut values = mem::take(&mut self.values);
-        values.shrink_to_fit();
-        let mut offsets = mem::take(&mut self.offsets);
-        offsets.shrink_to_fit();
+        // values are u8 typed
+        let values = mem::take(&mut self.values);
+        // offsets are i64 typed
+        let offsets = mem::take(&mut self.offsets);
+        let offsets_len = offsets.len() - 1;
+        // buffers are u8 typed
+        let buf_offsets = offsets.into_arrow_buffer();
+        let buf_values = values.into_arrow_buffer();
+        assert_eq!(buf_values.len(), buf_values.capacity());
+        assert_eq!(buf_offsets.len(), buf_offsets.capacity());
 
+        // note that the arrays are already shrinked when transformed to an arrow buffer.
         let arraydata = ArrayData::builder(DataType::LargeUtf8)
-            .len(offsets.len() - 1)
-            .add_buffer(offsets.into_arrow_buffer())
-            .add_buffer(values.into_arrow_buffer())
+            .len(offsets_len)
+            .add_buffer(buf_offsets)
+            .add_buffer(buf_values)
             .null_bit_buffer(self.null_buffer.finish())
             .build();
         LargeStringArray::from(arraydata)
@@ -451,13 +460,12 @@ mod test {
 
     #[test]
     fn test_string_builder() {
-        let mut builder = LargeStringBuilder::with_capacity(3, 3);
+        let mut builder = LargeStringBuilder::with_capacity(1, 3);
         builder.append_value("foo");
         builder.append_null();
         builder.append_value("bar");
         let out = builder.finish();
         let vals = out.iter().collect::<Vec<_>>();
         assert_eq!(vals, &[Some("foo"), None, Some("bar")]);
-        dbg!(out);
     }
 }
