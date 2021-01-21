@@ -789,12 +789,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             capacity = std::cmp::min(n, capacity);
         }
 
-        let physical_cpus = num_cpus::get_physical();
-        let mut n_threads =
-            std::cmp::min(physical_cpus * 4, self.n_threads.unwrap_or(physical_cpus));
-        if self.path.is_none() {
-            n_threads = 1;
-        }
+        let n_threads = if self.path.is_none() {
+            1
+        } else {
+            self.n_threads.unwrap_or_else(|| num_cpus::get())
+        };
 
         // we reuse this container to amortize allocations
         let mut parsed_dfs = Vec::with_capacity(128);

@@ -1,7 +1,9 @@
 pub(crate) mod optimizer;
 use crate::logical_plan::optimizer::predicate::combine_predicates;
 use crate::logical_plan::LogicalPlan::CsvScan;
-use crate::utils::{expr_to_root_column_exprs, expr_to_root_column_names, has_expr};
+use crate::utils::{
+    expr_to_root_column_exprs, expr_to_root_column_names, has_expr, rename_expr_root_name,
+};
 use crate::{prelude::*, utils};
 use ahash::RandomState;
 use itertools::Itertools;
@@ -721,6 +723,22 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
         }
 
         if has_wildcard {
+            // if count wildcard. count one column
+            let dummy = &Expr::Agg(AggExpr::Count(Box::new(Expr::Wildcard)));
+            if has_expr(&expr, dummy) {
+                let new_name = Arc::new(schema.field(0).unwrap().name().clone());
+                let expr = rename_expr_root_name(&expr, new_name).unwrap();
+
+                let expr = if let Expr::Alias(_, _) = &expr {
+                    expr
+                } else {
+                    Expr::Alias(Box::new(expr), Arc::new("count".to_string()))
+                };
+                result.push(expr);
+
+                continue;
+            }
+
             for field in schema.fields() {
                 let name = field.name();
                 let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
