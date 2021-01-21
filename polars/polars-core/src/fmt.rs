@@ -404,7 +404,7 @@ impl Display for DataFrame {
             }
             let dots = rows[0].iter().map(|_| "...".to_string()).collect();
             rows.push(dots);
-            for i in (self.height() - max_n_cols / 2 - 1)..self.height() {
+            for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
                 let row = self.get(i).unwrap();
                 rows.push(prepare_row(row, n_first, n_last));
             }
