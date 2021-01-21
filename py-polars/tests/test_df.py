@@ -224,9 +224,10 @@ def test_drop():
 
 def test_file_buffer():
     f = BytesIO()
-    f.write(b"1,2,3,4,5,6\n1,2,3,4,5,6")
+    f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     df = DataFrame.read_csv(f, has_headers=False)
+    print(df)
     assert df.shape == (2, 6)
     f.seek(0)
 

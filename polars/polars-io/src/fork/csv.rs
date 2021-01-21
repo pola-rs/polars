@@ -1,31 +1,13 @@
-// Licensed to the Apache Software Foundation (ASF) under one_
-// or more contributor license agreements.  See the NOTICE file
-// distributed with this work for additional information
-// regarding copyright ownership.  The ASF licenses this file
-// to you under the Apache License, Version 2.0 (the
-// "License"); you may not use this file except in compliance
-// with the License.  You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing,
-// software distributed under the License is distributed on an
-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.  See the License for the
-// specific language governing permissions and limitations
-// under the License.
-
 use crate::csv::CsvEncoding;
 use crate::PhysicalIOExpr;
 use crate::ScanAggregation;
 use ahash::RandomState;
 use crossbeam::thread;
 use crossbeam::thread::ScopedJoinHandle;
-use csv::{ByteRecord, ByteRecordsIntoIter, Reader};
+use csv::ByteRecordsIntoIter;
 use num::traits::Pow;
 use polars_core::prelude::*;
 use polars_core::utils;
-use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
@@ -318,91 +300,6 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
     Ok(builder)
 }
 
-fn next_rows<R: Read + Send + Sync>(
-    rows: &mut Vec<ByteRecord>,
-    csv_reader: &mut Reader<R>,
-    line_number: &mut usize,
-    batch_size: usize,
-    ignore_parser_errors: bool,
-) -> Result<usize> {
-    let mut count = 0;
-    loop {
-        *line_number += 1;
-        debug_assert!(rows.get(count).is_some());
-        let record = unsafe { rows.get_unchecked_mut(count) };
-
-        match csv_reader.read_byte_record(record) {
-            Ok(true) => count += 1,
-            // end of file
-            Ok(false) => {
-                break;
-            }
-            Err(e) => {
-                if ignore_parser_errors {
-                    continue;
-                } else {
-                    return Err(PolarsError::Other(
-                        format!("Error parsing line {}: {:?}", line_number, e).into(),
-                    ));
-                }
-            }
-        }
-        if count == batch_size {
-            break;
-        }
-    }
-    Ok(count)
-}
-
-fn add_to_utf8_builder(
-    rows: &[ByteRecord],
-    col_idx: usize,
-    builder: &mut Utf8ChunkedBuilder,
-    encoding: CsvEncoding,
-) -> Result<()> {
-    for row in rows.iter() {
-        let v = row.get(col_idx);
-        match v {
-            None => builder.append_null(),
-            Some(bytes) => {
-                if bytes.is_empty() {
-                    builder.append_null()
-                } else {
-                    let s = parse_bytes_with_encoding(bytes, encoding)?;
-                    builder.append_value(&s);
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn add_to_bool_builder(
-    rows: &[ByteRecord],
-    col_idx: usize,
-    builder: &mut BooleanChunkedBuilder,
-    ignore_parser_errors: bool,
-) -> Result<()> {
-    for row in rows.iter() {
-        let v = row.get(col_idx);
-        match v {
-            None => builder.append_null(),
-            Some(bytes) => {
-                if bytes.eq_ignore_ascii_case(b"false") {
-                    builder.append_value(false);
-                } else if bytes.eq_ignore_ascii_case(b"true") {
-                    builder.append_value(true);
-                } else if ignore_parser_errors {
-                    builder.append_null();
-                } else {
-                    return Err(PolarsError::Other("Could not parse boolean".into()));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 fn builders_to_df(builders: Vec<Builder>) -> DataFrame {
     let columns = builders.into_iter().map(|b| b.into_series()).collect();
     DataFrame::new_no_checks(columns)
@@ -499,174 +396,27 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         }
     }
 
-    fn add_to_primitive<T>(
-        &self,
-        rows: &[ByteRecord],
-        col_idx: usize,
-        builder: &mut PrimitiveChunkedBuilder<T>,
-    ) -> Result<()>
-    where
-        T: PolarsPrimitiveType + PrimitiveParser,
-    {
-        for (row_index, row) in rows.iter().enumerate() {
-            match row.get(col_idx) {
-                Some(bytes) => {
-                    if bytes.is_empty() {
-                        builder.append_null();
-                        continue;
-                    }
-                    match T::parse(bytes) {
-                        Ok(e) => builder.append_value(e),
-                        Err(_) => {
-                            if self.ignore_parser_errors {
-                                builder.append_null();
-                                continue;
-                            }
-                            return Err(PolarsError::Other(
-                                format!(
-                                    "Error while parsing value {} for column {} at line {}",
-                                    String::from_utf8_lossy(bytes),
-                                    col_idx,
-                                    self.line_number + row_index
-                                )
-                                .into(),
-                            ));
-                        }
-                    }
-                }
-                None => builder.append_null(),
-            }
-        }
-        Ok(())
-    }
-
-    fn add_to_builders(
-        &self,
-        builders: &mut [Builder],
-        projection: &[usize],
-        rows: &[ByteRecord],
-        bp: usize,
-    ) -> Result<()> {
-        let dispatch = |(i, builder): (&usize, &mut Builder)| {
-            let field = self.schema.field(*i).unwrap();
-            match field.data_type() {
-                DataType::Boolean => {
-                    add_to_bool_builder(rows, *i, builder.bool(), self.ignore_parser_errors)
-                }
-                DataType::Int8 => self.add_to_primitive(rows, *i, builder.i32()),
-                DataType::Int16 => self.add_to_primitive(rows, *i, builder.i32()),
-                DataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
-                DataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
-                DataType::UInt8 => self.add_to_primitive(rows, *i, builder.u32()),
-                DataType::UInt16 => self.add_to_primitive(rows, *i, builder.u32()),
-                DataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
-                DataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
-                DataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
-                DataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
-                DataType::Utf8 => add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding),
-                _ => todo!(),
-            }
-        };
-
-        if projection.len() > bp {
-            projection
-                .par_iter()
-                .zip(builders)
-                .map(dispatch)
-                .collect::<Result<_>>()?;
-        } else {
-            projection.iter().zip(builders).try_for_each(dispatch)?;
-        }
-
-        Ok(())
-    }
-
-    fn one_thread(
+    fn parse_csv(
         &mut self,
         projection: &[usize],
-        parsed_dfs: &mut Vec<DataFrame>,
-        csv_reader: &mut Reader<R>,
-        predicate: Option<&Arc<dyn PhysicalIOExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
-        capacity: usize,
-    ) -> Result<()> {
-        self.batch_size = std::cmp::max(self.batch_size, 128);
-        if self.skip_rows > 0 {
-            let mut record = Default::default();
-            for _ in 0..self.skip_rows {
-                self.line_number += 1;
-                let _ = csv_reader.read_byte_record(&mut record);
-            }
-        }
-
-        let mut builders = init_builders(&projection, capacity, &self.schema)?;
-        // this will be used to amortize allocations
-        // Only correctly parsed lines will fill the start of the Vec.
-        // The whole vec is initialized with default values.
-        // Once a batch of rows is read we use the correctly parsed information to truncate the lenght
-        // to all correct values.
-        let mut rows = Vec::with_capacity(self.batch_size);
-        rows.resize_with(self.batch_size, Default::default);
-        let mut count = 0;
-        let mut line_number = self.line_number;
-        // TODO! benchmark this
-        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
-            .unwrap_or_else(|_| "".to_string())
-            .parse()
-            .unwrap_or(15);
-        loop {
-            count += 1;
-            let correctly_parsed = next_rows(
-                &mut rows,
-                csv_reader,
-                &mut line_number,
-                self.batch_size,
-                self.ignore_parser_errors,
-            )?;
-            // stop when the whole file is processed
-            if correctly_parsed == 0 {
-                break;
-            } else if correctly_parsed < self.batch_size {
-                // this only happens at the last batch if it doesn't fit a whole batch.
-                rows.truncate(correctly_parsed);
-            }
-            if count % CAPACITY_MULTIPLIER == 0 {
-                let mut builders_tmp = init_builders(&projection, capacity, &self.schema)?;
-                std::mem::swap(&mut builders_tmp, &mut builders);
-                finish_builder(builders_tmp, parsed_dfs, predicate, aggregate)?;
-            }
-
-            self.add_to_builders(&mut builders, &projection, &rows, bp)?;
-
-            // stop after n_rows are processed
-            if let Some(n_rows) = self.n_rows {
-                if line_number > n_rows {
-                    break;
-                }
-            }
-        }
-        finish_builder(builders, parsed_dfs, predicate, aggregate)?;
-        Ok(())
-    }
-
-    fn n_threads(
-        &mut self,
-        projection: &[usize],
-        parsed_dfs: &mut Vec<DataFrame>,
         predicate: Option<&Arc<dyn PhysicalIOExpr>>,
         aggregate: Option<&[ScanAggregation]>,
         capacity: usize,
         n_threads: usize,
-    ) -> Result<()> {
-        let path = self.path.as_ref().unwrap();
+        bytes: &[u8],
+    ) -> Result<Vec<DataFrame>> {
+        let mut parsed_dfs = Vec::with_capacity(128);
 
-        let file = std::fs::File::open(&path).unwrap();
-        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-
-        let mut bytes = mmap[..].as_ref();
+        dbg!(n_threads);
+        let mut bytes = bytes;
         if self.has_header {
-            let pos = next_line_position(bytes).expect("no newline characters found in file");
-            bytes = mmap[pos..].as_ref();
+            dbg!("has_header");
+            let mut pos = next_line_position(bytes).expect("no newline characters found in file");
+            if pos == 0 {
+                pos = next_line_position(&bytes[1..]).expect("no newline characters found in file")
+                    + 1;
+            }
+            bytes = bytes[pos..].as_ref();
         }
         if self.skip_rows > 0 {
             for _ in 0..self.skip_rows {
@@ -690,7 +440,9 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             }
         }
 
+        dbg!(&bytes);
         let file_chunks = get_file_chunks(bytes, n_threads);
+        dbg!(&file_chunks);
 
         let scopes: Result<_> = thread::scope(|s| {
             let mut handlers = Vec::with_capacity(n_threads);
@@ -770,7 +522,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         .unwrap();
         let _ = scopes?;
 
-        Ok(())
+        Ok(parsed_dfs)
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
@@ -779,8 +531,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         predicate: Option<Arc<dyn PhysicalIOExpr>>,
         aggregate: Option<&[ScanAggregation]>,
     ) -> Result<DataFrame> {
-        let mut record_iter = self.record_iter.take().unwrap();
-
         // only take projections once
         let projection = take_projection(&mut self.projection, &self.schema);
         let mut capacity = self.batch_size * CAPACITY_MULTIPLIER;
@@ -789,33 +539,41 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             capacity = std::cmp::min(n, capacity);
         }
 
-        let n_threads = if self.path.is_none() {
-            1
-        } else {
-            self.n_threads.unwrap_or_else(|| num_cpus::get())
+        let n_threads = self.n_threads.unwrap_or_else(num_cpus::get);
+
+        let parsed_dfs = match (&self.path, self.record_iter.is_some()) {
+            (Some(p), _) => {
+                let file = std::fs::File::open(p).unwrap();
+                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                let bytes = mmap[..].as_ref();
+                self.parse_csv(
+                    &projection,
+                    predicate.as_ref(),
+                    aggregate,
+                    capacity,
+                    n_threads,
+                    bytes,
+                )?
+            }
+            (None, true) => {
+                let mut r = std::mem::take(&mut self.record_iter).unwrap().into_reader();
+                let mut bytes = Vec::with_capacity(1024 * 128);
+                r.get_mut().read_to_end(&mut bytes)?;
+                if bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r' {
+                    bytes.push(b'\n')
+                }
+                self.parse_csv(
+                    &projection,
+                    predicate.as_ref(),
+                    aggregate,
+                    capacity,
+                    n_threads,
+                    &bytes,
+                )?
+            }
+            _ => return Err(PolarsError::Other("file or reader must be set".into())),
         };
 
-        // we reuse this container to amortize allocations
-        let mut parsed_dfs = Vec::with_capacity(128);
-
-        match n_threads {
-            1 => self.one_thread(
-                &projection,
-                &mut parsed_dfs,
-                record_iter.reader_mut(),
-                predicate.as_ref(),
-                aggregate,
-                capacity,
-            )?,
-            _ => self.n_threads(
-                &projection,
-                &mut parsed_dfs,
-                predicate.as_ref(),
-                aggregate,
-                capacity,
-                n_threads,
-            )?,
-        }
         let mut df = utils::accumulate_dataframes_vertical(parsed_dfs)?;
         if let Some(aggregate) = aggregate {
             let cols = aggregate
