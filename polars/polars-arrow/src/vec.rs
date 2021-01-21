@@ -54,8 +54,9 @@ impl<T: Clone> AlignedVec<T> {
     pub fn extend_from_slice(&mut self, other: &[T]) {
         let remaining_cap = self.capacity() - self.len();
         let needed_cap = other.len();
+        // exponential allocation
         if needed_cap > remaining_cap {
-            self.reserve(needed_cap - remaining_cap);
+            self.reserve(std::cmp::max(needed_cap, self.capacity()));
         }
         self.inner.extend_from_slice(other)
     }
@@ -179,6 +180,7 @@ impl<T> AlignedVec<T> {
                 let ptr = memory::reallocate(ptr, old_size, new_size).as_ptr() as *mut T;
                 Vec::from_raw_parts(ptr, me.len(), me.len())
             };
+
             self.inner = v;
         }
     }
