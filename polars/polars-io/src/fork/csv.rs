@@ -456,6 +456,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     rows.resize_with(batch_size, Default::default);
 
                     let mut builders = init_builders(&projection, capacity, &schema).unwrap();
+
+                    #[cfg(target_os = "linux")]
+                    let has_utf8 = builders.iter().any(|b| matches!(b, Builder::Utf8(_)));
+
                     let mut local_parsed_dfs = Vec::with_capacity(16);
 
                     let mut local_bytes;
@@ -501,9 +505,24 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                 aggregate,
                             )
                             .unwrap();
+
+                            #[cfg(target_os = "linux")]
+                            {
+                                // linux global allocators don't return freed memory immediately to the OS.
+                                // macos and windows return more aggressively.
+                                // We choose this location to do trim heap memory as this will be called after CSV read
+                                // which may have some over-allocated utf8
+                                // This is an expensive operation therefore we don't want to call it too often, and only when
+                                // there are utf8 arrays.
+                                if has_utf8 && count % (CAPACITY_MULTIPLIER * 16) == 0 {
+                                    use polars_core::utils::malloc_trim;
+                                    unsafe { malloc_trim(0) };
+                                }
+                            }
                         }
                     }
                     finish_builder(builders, &mut local_parsed_dfs, predicate, aggregate)?;
+
                     Ok(local_parsed_dfs)
                 });
                 handlers.push(h)

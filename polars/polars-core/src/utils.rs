@@ -539,3 +539,9 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame
     }
     Ok(acc_df)
 }
+
+#[cfg(target_os = "linux")]
+extern "C" {
+    #[allow(dead_code)]
+    pub fn malloc_trim(__pad: usize) -> std::os::raw::c_int;
+}

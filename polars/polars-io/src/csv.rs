@@ -339,12 +339,28 @@ where
     /// Read the file and create the DataFrame.
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        let mut csv_reader = self.build_inner_reader()?;
-        let df = csv_reader.as_df(None, None)?;
-        match rechunk {
-            true => Ok(df.agg_chunks()),
-            false => Ok(df),
+        // we use this scope so that everything gets dropped before calling malloc_trim
+        let df = {
+            let mut csv_reader = self.build_inner_reader()?;
+            let df = csv_reader.as_df(None, None)?;
+
+            match rechunk {
+                true => Ok(df.agg_chunks()),
+                false => Ok(df),
+            }
+        };
+        #[cfg(target_os = "linux")]
+        {
+            if rechunk {
+                use polars_core::utils::malloc_trim;
+                // linux global allocators don't return freed memory immediately to the OS.
+                // macos and windows return more aggressively.
+                // We choose this location to do trim heap memory as this will be called after CSV read
+                // which may have some over-allocated utf8
+                unsafe { malloc_trim(0) };
+            }
         }
+        df
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 readme = "README.md"
@@ -17,8 +17,6 @@ pyo3 = {version = "0.13", features = ["extension-module"] }
 thiserror = "1.0.20"
 numpy = "0.13.0"
 ndarray = "0.14.0"
-jemallocator = {version = "0.3", features = ["disable_initial_exec_tls"]}
-
 
 [lib]
 name = "pypolars"
@@ -30,6 +28,7 @@ requires-dist = ["numpy"]
 
 [profile.release]
 codegen-units = 1
+
 target-cpu = "native"
 lto = "fat"
 
