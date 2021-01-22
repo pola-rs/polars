@@ -24,9 +24,6 @@ pub mod prelude;
 pub mod series;
 pub mod utils;
 
-#[global_allocator]
-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
-
 #[pyfunction]
 fn col(name: &str) -> dsl::PyExpr {
     dsl::col(name)
