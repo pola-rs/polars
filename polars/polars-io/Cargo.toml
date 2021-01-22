@@ -24,7 +24,7 @@ csv = "1.1"
 lexical = "^5.2"
 num_cpus = "1.13.0"
 csv-core = "0.1.10"
-memmap = "0.7.0"
+memmap = { package = "memmap2", version = "0.2.0" }
 fast-float = "0.1.0"
 anyhow = "1.0"
 rayon = "1.5"
