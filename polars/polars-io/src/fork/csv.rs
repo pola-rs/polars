@@ -443,7 +443,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let scopes: Result<_> = thread::scope(|s| {
             let mut handlers = Vec::with_capacity(n_threads);
 
-            for (mut total_bytes_offset, stop_at_nbytes) in file_chunks {
+            for (thread_no, (mut total_bytes_offset, stop_at_nbytes) ) in file_chunks.into_iter().enumerate() {
                 let delimiter = self.delimiter;
                 let batch_size = self.batch_size;
                 let schema = self.schema.clone();
@@ -514,7 +514,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                 // which may have some over-allocated utf8
                                 // This is an expensive operation therefore we don't want to call it too often, and only when
                                 // there are utf8 arrays.
-                                if has_utf8 && count % (CAPACITY_MULTIPLIER * 16) == 0 {
+                                if has_utf8 && thread_no == 0 && count % (CAPACITY_MULTIPLIER * 16) == 0 {
                                     use polars_core::utils::malloc_trim;
                                     unsafe { malloc_trim(0) };
                                 }
