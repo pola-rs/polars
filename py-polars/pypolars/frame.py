@@ -100,6 +100,28 @@ class DataFrame:
         n_threads: Optional[int] = None,
         dtype: "Optional[Dict[str, DataType]]" = None,
     ) -> "DataFrame":
+        """
+        Read a comma-seperated value file into a Dataframe.
+
+        Parameters
+        ---
+        - file `str`, `TextIO`  
+            Any valid filepath can be used. Example: `file.csv`.
+        - sep `str`  
+            Default is `,`.
+        - stop_after_n_rows `int`   
+            Only read specified number of rows of the dataset. After `n` stops reading. Default is `None`. 
+        - has_headers `bool`  
+            Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`, `x` being an enumeration over every column in the dataset. Default = `True`.
+        - encoding `str`  
+            Default = `utf8`.
+
+        Example
+        ---
+        ```python
+        dataframe = pl.read_csv('file.csv', sep=';', stop_after_n_rows=25)
+        ```
+        """
         self = DataFrame.__new__(DataFrame)
 
         if isinstance(file, str):
@@ -174,7 +196,7 @@ class DataFrame:
 
     def to_pandas(self) -> "pd.DataFrame":
         """
-        Cast to a Pandas DataFrame. This requires that pandas is installed.
+        Cast to a Pandas DataFrame. This requires that Pandas is installed.
         This operation clones data.
         """
         import pandas as pd
@@ -205,18 +227,29 @@ class DataFrame:
         delimiter: str = ",",
     ):
         """
-        Write DataFrame to CSV
+        Write Dataframe to comma-seperated values file (csv)
 
         Parameters
-        ----------
-        file
-            write location
-        batch_size
+        ---
+        - file `str`, `TextIO`  
+            Write location
+        - batch_size `int`  
             Size of the write buffer. Increase to have faster io.
-        has_headers
+        - has_headers `bool`  
             Whether or not to include header in the CSV output.
-        delimiter
-            Space elements with this symbol.
+        - delimiter `str`  
+            Space elements with this symbol. default = `,`
+
+        Example
+        ---
+        ```python
+        dataframe = pl.DataFrame({
+            "foo": np.random.rand(10),
+            "bar": np.arange(10),
+            "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
+        })
+        dataframe.to_csv('new_file.csv', sep=';')
+        ```
         """
         self._df.to_csv(file, batch_size, has_headers, ord(delimiter))
 
