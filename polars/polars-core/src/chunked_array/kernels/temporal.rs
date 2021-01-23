@@ -5,12 +5,12 @@ use crate::chunked_array::{
     temporal::conversions_utils::*,
 };
 use crate::prelude::*;
-use arrow::array::{Array, ArrayRef, PrimitiveArray};
+use arrow::array::{ArrayRef, PrimitiveArray};
 use chrono::{Datelike, Timelike};
 use std::sync::Arc;
 
 pub fn date32_as_duration(arr: &PrimitiveArray<Date32Type>) -> ArrayRef {
-    let vals = arr.value_slice(arr.offset(), arr.len());
+    let vals = arr.values();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
 
     let av = vals
@@ -26,7 +26,7 @@ pub fn date32_as_duration(arr: &PrimitiveArray<Date32Type>) -> ArrayRef {
 }
 
 pub fn date64_as_duration(arr: &PrimitiveArray<Date64Type>) -> ArrayRef {
-    let vals = arr.value_slice(arr.offset(), arr.len());
+    let vals = arr.values();
     let (null_count, null_bit_buffer) = get_bitmap(arr);
     Arc::new(build_with_existing_null_bitmap_and_slice::<
         DurationMillisecondType,
@@ -36,7 +36,7 @@ pub fn date64_as_duration(arr: &PrimitiveArray<Date64Type>) -> ArrayRef {
 macro_rules! to_temporal_unit {
     ($name: ident, $chrono_method:ident, $to_datetime_fn: expr, $dtype_in: ty, $dtype_out:ty) => {
         pub fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
-            let vals = arr.value_slice(arr.offset(), arr.len());
+            let vals = arr.values();
             let (null_count, null_bit_buffer) = get_bitmap(arr);
             let av = vals
                 .iter()

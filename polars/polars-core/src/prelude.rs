@@ -3,7 +3,7 @@ pub use crate::{
     chunked_array::{
         arithmetic::Pow,
         builder::{
-            AlignedVec, BooleanChunkedBuilder, ChunkedBuilder, ListBuilderTrait,
+            BooleanChunkedBuilder, ChunkedBuilder, ListBooleanChunkedBuilder, ListBuilderTrait,
             ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
@@ -20,7 +20,7 @@ pub use crate::{
     datatypes,
     datatypes::*,
     error::{PolarsError, Result},
-    frame::{hash_join::JoinType, DataFrame, IntoSeries},
+    frame::{group_by::VecHash, hash_join::JoinType, DataFrame, IntoSeries},
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
         NamedFrom, Series, SeriesTrait,
@@ -28,6 +28,8 @@ pub use crate::{
     testing::*,
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field as ArrowField, Schema as ArrowSchema};
+pub(crate) use polars_arrow::array::*;
+pub use polars_arrow::vec::AlignedVec;
 pub use std::sync::Arc;
 
 #[cfg(feature = "temporal")]

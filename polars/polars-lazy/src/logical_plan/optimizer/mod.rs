@@ -619,7 +619,7 @@ pub enum ALogicalPlan {
     #[cfg(feature = "parquet")]
     ParquetScan {
         path: String,
-        schema: Schema,
+        schema: SchemaRef,
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
@@ -628,19 +628,19 @@ pub enum ALogicalPlan {
     },
     DataFrameScan {
         df: Arc<DataFrame>,
-        schema: Schema,
+        schema: SchemaRef,
         projection: Option<Vec<Node>>,
         selection: Option<Node>,
     },
     Projection {
         expr: Vec<Node>,
         input: Node,
-        schema: Schema,
+        schema: SchemaRef,
     },
     LocalProjection {
         expr: Vec<Node>,
         input: Node,
-        schema: Schema,
+        schema: SchemaRef,
     },
     Sort {
         input: Node,
@@ -658,13 +658,13 @@ pub enum ALogicalPlan {
         input: Node,
         keys: Vec<Node>,
         aggs: Vec<Node>,
-        schema: Schema,
+        schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
     },
     Join {
         input_left: Node,
         input_right: Node,
-        schema: Schema,
+        schema: SchemaRef,
         how: JoinType,
         left_on: Vec<Node>,
         right_on: Vec<Node>,
@@ -674,7 +674,7 @@ pub enum ALogicalPlan {
     HStack {
         input: Node,
         exprs: Vec<Node>,
-        schema: Schema,
+        schema: SchemaRef,
     },
     Distinct {
         input: Node,
@@ -688,6 +688,7 @@ pub enum ALogicalPlan {
         predicate_pd: bool,
         ///  allow projection pushdown optimizations
         projection_pd: bool,
+        schema: Option<SchemaRef>,
     },
 }
 
@@ -722,7 +723,10 @@ impl ALogicalPlan {
             Distinct { input, .. } => arena.get(*input).schema(arena),
             Slice { input, .. } => arena.get(*input).schema(arena),
             Melt { schema, .. } => schema,
-            Udf { input, .. } => arena.get(*input).schema(arena),
+            Udf { input, schema, .. } => match schema {
+                Some(schema) => schema,
+                None => arena.get(*input).schema(arena),
+            },
         }
     }
 }
@@ -1065,6 +1069,7 @@ pub(crate) fn to_alp(
             function,
             projection_pd,
             predicate_pd,
+            schema,
         } => {
             let input = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::Udf {
@@ -1072,6 +1077,7 @@ pub(crate) fn to_alp(
                 function,
                 projection_pd,
                 predicate_pd,
+                schema,
             }
         }
     };
@@ -1495,6 +1501,7 @@ pub(crate) fn node_to_lp(
             function,
             predicate_pd,
             projection_pd,
+            schema,
         } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
             LogicalPlan::Udf {
@@ -1502,6 +1509,7 @@ pub(crate) fn node_to_lp(
                 function,
                 predicate_pd,
                 projection_pd,
+                schema,
             }
         }
     }
@@ -1565,7 +1573,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             let lp = ALogicalPlan::Projection {
                 expr: exprs,
                 input: self.root,
-                schema,
+                schema: Arc::new(schema),
             };
             let node = self.lp_arena.add(lp);
             ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)

@@ -1,31 +1,13 @@
-// Licensed to the Apache Software Foundation (ASF) under one_
-// or more contributor license agreements.  See the NOTICE file
-// distributed with this work for additional information
-// regarding copyright ownership.  The ASF licenses this file
-// to you under the Apache License, Version 2.0 (the
-// "License"); you may not use this file except in compliance
-// with the License.  You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing,
-// software distributed under the License is distributed on an
-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.  See the License for the
-// specific language governing permissions and limitations
-// under the License.
-
 use crate::csv::CsvEncoding;
 use crate::PhysicalIOExpr;
 use crate::ScanAggregation;
 use ahash::RandomState;
 use crossbeam::thread;
 use crossbeam::thread::ScopedJoinHandle;
-use csv::{ByteRecord, ByteRecordsIntoIter, Reader};
+use csv::ByteRecordsIntoIter;
 use num::traits::Pow;
 use polars_core::prelude::*;
 use polars_core::utils;
-use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
@@ -299,7 +281,7 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
     let name = field.name();
 
     let builder = match field.data_type() {
-        &DataType::Boolean => Builder::Boolean(PrimitiveChunkedBuilder::new(name, capacity)),
+        &DataType::Boolean => Builder::Boolean(BooleanChunkedBuilder::new(name, capacity)),
         &DataType::Int16 => Builder::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Int32 => Builder::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Int64 => Builder::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
@@ -308,7 +290,7 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
         &DataType::UInt64 => Builder::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Float32 => Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Float64 => Builder::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
-        &DataType::Utf8 => Builder::Utf8(Utf8ChunkedBuilder::new(name, capacity)),
+        &DataType::Utf8 => Builder::Utf8(Utf8ChunkedBuilder::new(name, capacity, capacity * 32)),
         other => {
             return Err(PolarsError::Other(
                 format!("Unsupported data type {:?} when reading a csv", other).into(),
@@ -316,65 +298,6 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
         }
     };
     Ok(builder)
-}
-
-fn next_rows<R: Read + Send + Sync>(
-    rows: &mut Vec<ByteRecord>,
-    csv_reader: &mut Reader<R>,
-    line_number: &mut usize,
-    batch_size: usize,
-    ignore_parser_errors: bool,
-) -> Result<usize> {
-    let mut count = 0;
-    loop {
-        *line_number += 1;
-        debug_assert!(rows.get(count).is_some());
-        let record = unsafe { rows.get_unchecked_mut(count) };
-
-        match csv_reader.read_byte_record(record) {
-            Ok(true) => count += 1,
-            // end of file
-            Ok(false) => {
-                break;
-            }
-            Err(e) => {
-                if ignore_parser_errors {
-                    continue;
-                } else {
-                    return Err(PolarsError::Other(
-                        format!("Error parsing line {}: {:?}", line_number, e).into(),
-                    ));
-                }
-            }
-        }
-        if count == batch_size {
-            break;
-        }
-    }
-    Ok(count)
-}
-
-fn add_to_utf8_builder(
-    rows: &[ByteRecord],
-    col_idx: usize,
-    builder: &mut Utf8ChunkedBuilder,
-    encoding: CsvEncoding,
-) -> Result<()> {
-    for row in rows.iter() {
-        let v = row.get(col_idx);
-        match v {
-            None => builder.append_null(),
-            Some(bytes) => {
-                if bytes.is_empty() {
-                    builder.append_null()
-                } else {
-                    let s = parse_bytes_with_encoding(bytes, encoding)?;
-                    builder.append_value(&s);
-                }
-            }
-        }
-    }
-    Ok(())
 }
 
 fn builders_to_df(builders: Vec<Builder>) -> DataFrame {
@@ -473,172 +396,25 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         }
     }
 
-    fn add_to_primitive<T>(
-        &self,
-        rows: &[ByteRecord],
-        col_idx: usize,
-        builder: &mut PrimitiveChunkedBuilder<T>,
-    ) -> Result<()>
-    where
-        T: PolarsPrimitiveType + PrimitiveParser,
-    {
-        for (row_index, row) in rows.iter().enumerate() {
-            match row.get(col_idx) {
-                Some(bytes) => {
-                    if bytes.is_empty() {
-                        builder.append_null();
-                        continue;
-                    }
-                    match T::parse(bytes) {
-                        Ok(e) => builder.append_value(e),
-                        Err(_) => {
-                            if self.ignore_parser_errors {
-                                builder.append_null();
-                                continue;
-                            }
-                            return Err(PolarsError::Other(
-                                format!(
-                                    "Error while parsing value {} for column {} at line {}",
-                                    String::from_utf8_lossy(bytes),
-                                    col_idx,
-                                    self.line_number + row_index
-                                )
-                                .into(),
-                            ));
-                        }
-                    }
-                }
-                None => builder.append_null(),
-            }
-        }
-        Ok(())
-    }
-
-    fn add_to_builders(
-        &self,
-        builders: &mut [Builder],
-        projection: &[usize],
-        rows: &[ByteRecord],
-        bp: usize,
-    ) -> Result<()> {
-        let dispatch = |(i, builder): (&usize, &mut Builder)| {
-            let field = self.schema.field(*i).unwrap();
-            match field.data_type() {
-                DataType::Boolean => self.add_to_primitive(rows, *i, builder.bool()),
-                DataType::Int8 => self.add_to_primitive(rows, *i, builder.i32()),
-                DataType::Int16 => self.add_to_primitive(rows, *i, builder.i32()),
-                DataType::Int32 => self.add_to_primitive(rows, *i, builder.i32()),
-                DataType::Int64 => self.add_to_primitive(rows, *i, builder.i64()),
-                DataType::UInt8 => self.add_to_primitive(rows, *i, builder.u32()),
-                DataType::UInt16 => self.add_to_primitive(rows, *i, builder.u32()),
-                DataType::UInt32 => self.add_to_primitive(rows, *i, builder.u32()),
-                DataType::UInt64 => self.add_to_primitive(rows, *i, builder.u64()),
-                DataType::Float32 => self.add_to_primitive(rows, *i, builder.f32()),
-                DataType::Float64 => self.add_to_primitive(rows, *i, builder.f64()),
-                DataType::Utf8 => add_to_utf8_builder(rows, *i, builder.utf8(), self.encoding),
-                _ => todo!(),
-            }
-        };
-
-        if projection.len() > bp {
-            projection
-                .par_iter()
-                .zip(builders)
-                .map(dispatch)
-                .collect::<Result<_>>()?;
-        } else {
-            projection.iter().zip(builders).try_for_each(dispatch)?;
-        }
-
-        Ok(())
-    }
-
-    fn one_thread(
+    fn parse_csv(
         &mut self,
         projection: &[usize],
-        parsed_dfs: &mut Vec<DataFrame>,
-        csv_reader: &mut Reader<R>,
-        predicate: Option<&Arc<dyn PhysicalIOExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
-        capacity: usize,
-    ) -> Result<()> {
-        self.batch_size = std::cmp::max(self.batch_size, 128);
-        if self.skip_rows > 0 {
-            let mut record = Default::default();
-            for _ in 0..self.skip_rows {
-                self.line_number += 1;
-                let _ = csv_reader.read_byte_record(&mut record);
-            }
-        }
-
-        let mut builders = init_builders(&projection, capacity, &self.schema)?;
-        // this will be used to amortize allocations
-        // Only correctly parsed lines will fill the start of the Vec.
-        // The whole vec is initialized with default values.
-        // Once a batch of rows is read we use the correctly parsed information to truncate the lenght
-        // to all correct values.
-        let mut rows = Vec::with_capacity(self.batch_size);
-        rows.resize_with(self.batch_size, Default::default);
-        let mut count = 0;
-        let mut line_number = self.line_number;
-        // TODO! benchmark this
-        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
-            .unwrap_or_else(|_| "".to_string())
-            .parse()
-            .unwrap_or(15);
-        loop {
-            count += 1;
-            let correctly_parsed = next_rows(
-                &mut rows,
-                csv_reader,
-                &mut line_number,
-                self.batch_size,
-                self.ignore_parser_errors,
-            )?;
-            // stop when the whole file is processed
-            if correctly_parsed == 0 {
-                break;
-            } else if correctly_parsed < self.batch_size {
-                // this only happens at the last batch if it doesn't fit a whole batch.
-                rows.truncate(correctly_parsed);
-            }
-            if count % CAPACITY_MULTIPLIER == 0 {
-                let mut builders_tmp = init_builders(&projection, capacity, &self.schema)?;
-                std::mem::swap(&mut builders_tmp, &mut builders);
-                finish_builder(builders_tmp, parsed_dfs, predicate, aggregate)?;
-            }
-
-            self.add_to_builders(&mut builders, &projection, &rows, bp)?;
-
-            // stop after n_rows are processed
-            if let Some(n_rows) = self.n_rows {
-                if line_number > n_rows {
-                    break;
-                }
-            }
-        }
-        finish_builder(builders, parsed_dfs, predicate, aggregate)?;
-        Ok(())
-    }
-
-    fn n_threads(
-        &mut self,
-        projection: &[usize],
-        parsed_dfs: &mut Vec<DataFrame>,
         predicate: Option<&Arc<dyn PhysicalIOExpr>>,
         aggregate: Option<&[ScanAggregation]>,
         capacity: usize,
         n_threads: usize,
-    ) -> Result<()> {
-        let path = self.path.as_ref().unwrap();
+        bytes: &[u8],
+    ) -> Result<Vec<DataFrame>> {
+        let mut parsed_dfs = Vec::with_capacity(128);
 
-        let file = std::fs::File::open(&path).unwrap();
-        let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-
-        let mut bytes = mmap[..].as_ref();
+        let mut bytes = bytes;
         if self.has_header {
-            let pos = next_line_position(bytes).expect("no newline characters found in file");
-            bytes = mmap[pos..].as_ref();
+            let mut pos = next_line_position(bytes).expect("no newline characters found in file");
+            if pos == 0 {
+                pos = next_line_position(&bytes[1..]).expect("no newline characters found in file")
+                    + 1;
+            }
+            bytes = bytes[pos..].as_ref();
         }
         if self.skip_rows > 0 {
             for _ in 0..self.skip_rows {
@@ -667,7 +443,9 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let scopes: Result<_> = thread::scope(|s| {
             let mut handlers = Vec::with_capacity(n_threads);
 
-            for (mut total_bytes_offset, stop_at_nbytes) in file_chunks {
+            for (thread_no, (mut total_bytes_offset, stop_at_nbytes)) in
+                file_chunks.into_iter().enumerate()
+            {
                 let delimiter = self.delimiter;
                 let batch_size = self.batch_size;
                 let schema = self.schema.clone();
@@ -680,6 +458,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     rows.resize_with(batch_size, Default::default);
 
                     let mut builders = init_builders(&projection, capacity, &schema).unwrap();
+
+                    #[cfg(target_os = "linux")]
+                    let has_utf8 = builders.iter().any(|b| matches!(b, Builder::Utf8(_)));
+
                     let mut local_parsed_dfs = Vec::with_capacity(16);
 
                     let mut local_bytes;
@@ -725,9 +507,27 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                 aggregate,
                             )
                             .unwrap();
+
+                            #[cfg(target_os = "linux")]
+                            {
+                                // linux global allocators don't return freed memory immediately to the OS.
+                                // macos and windows return more aggressively.
+                                // We choose this location to do trim heap memory as this will be called after CSV read
+                                // which may have some over-allocated utf8
+                                // This is an expensive operation therefore we don't want to call it too often, and only when
+                                // there are utf8 arrays.
+                                if has_utf8
+                                    && thread_no == 0
+                                    && count % (CAPACITY_MULTIPLIER * 16) == 0
+                                {
+                                    use polars_core::utils::malloc_trim;
+                                    unsafe { malloc_trim(0) };
+                                }
+                            }
                         }
                     }
                     finish_builder(builders, &mut local_parsed_dfs, predicate, aggregate)?;
+
                     Ok(local_parsed_dfs)
                 });
                 handlers.push(h)
@@ -742,7 +542,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         .unwrap();
         let _ = scopes?;
 
-        Ok(())
+        Ok(parsed_dfs)
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
@@ -751,8 +551,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         predicate: Option<Arc<dyn PhysicalIOExpr>>,
         aggregate: Option<&[ScanAggregation]>,
     ) -> Result<DataFrame> {
-        let mut record_iter = self.record_iter.take().unwrap();
-
         // only take projections once
         let projection = take_projection(&mut self.projection, &self.schema);
         let mut capacity = self.batch_size * CAPACITY_MULTIPLIER;
@@ -761,34 +559,41 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             capacity = std::cmp::min(n, capacity);
         }
 
-        let physical_cpus = num_cpus::get_physical();
-        let mut n_threads =
-            std::cmp::min(physical_cpus * 4, self.n_threads.unwrap_or(physical_cpus));
-        if self.path.is_none() {
-            n_threads = 1;
-        }
+        let n_threads = self.n_threads.unwrap_or_else(num_cpus::get);
 
-        // we reuse this container to amortize allocations
-        let mut parsed_dfs = Vec::with_capacity(128);
+        let parsed_dfs = match (&self.path, self.record_iter.is_some()) {
+            (Some(p), _) => {
+                let file = std::fs::File::open(p).unwrap();
+                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                let bytes = mmap[..].as_ref();
+                self.parse_csv(
+                    &projection,
+                    predicate.as_ref(),
+                    aggregate,
+                    capacity,
+                    n_threads,
+                    bytes,
+                )?
+            }
+            (None, true) => {
+                let mut r = std::mem::take(&mut self.record_iter).unwrap().into_reader();
+                let mut bytes = Vec::with_capacity(1024 * 128);
+                r.get_mut().read_to_end(&mut bytes)?;
+                if bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r' {
+                    bytes.push(b'\n')
+                }
+                self.parse_csv(
+                    &projection,
+                    predicate.as_ref(),
+                    aggregate,
+                    capacity,
+                    n_threads,
+                    &bytes,
+                )?
+            }
+            _ => return Err(PolarsError::Other("file or reader must be set".into())),
+        };
 
-        match n_threads {
-            1 => self.one_thread(
-                &projection,
-                &mut parsed_dfs,
-                record_iter.reader_mut(),
-                predicate.as_ref(),
-                aggregate,
-                capacity,
-            )?,
-            _ => self.n_threads(
-                &projection,
-                &mut parsed_dfs,
-                predicate.as_ref(),
-                aggregate,
-                capacity,
-                n_threads,
-            )?,
-        }
         let mut df = utils::accumulate_dataframes_vertical(parsed_dfs)?;
         if let Some(aggregate) = aggregate {
             let cols = aggregate
@@ -823,9 +628,7 @@ fn add_to_builders_core(
     let dispatch = |(i, builder): (&usize, &mut Builder)| {
         let field = schema.field(*i).unwrap();
         match field.data_type() {
-            DataType::Boolean => {
-                add_to_primitive_core(rows, *i, builder.bool(), ignore_parser_error)
-            }
+            DataType::Boolean => add_to_bool_core(rows, *i, builder.bool(), ignore_parser_error),
             DataType::Int8 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
             DataType::Int16 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
             DataType::Int32 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
@@ -904,11 +707,50 @@ where
                                 "Error while parsing value {} for column {} as {:?}",
                                 String::from_utf8_lossy(bytes),
                                 col_idx,
-                                T::get_data_type()
+                                T::get_dtype()
                             )
                             .into(),
                         ));
                     }
+                }
+            }
+            None => builder.append_null(),
+        }
+    }
+    Ok(())
+}
+
+#[inline]
+fn add_to_bool_core(
+    rows: &[PolarsCsvRecord],
+    col_idx: usize,
+    builder: &mut BooleanChunkedBuilder,
+    ignore_parser_errors: bool,
+) -> Result<()> {
+    // todo! keep track of line number for error reporting
+    for (_row_index, row) in rows.iter().enumerate() {
+        match row.get(col_idx) {
+            Some(bytes) => {
+                if bytes.is_empty() {
+                    builder.append_null();
+                    continue;
+                }
+                if bytes.eq_ignore_ascii_case(b"false") {
+                    builder.append_value(false);
+                } else if bytes.eq_ignore_ascii_case(b"true") {
+                    builder.append_value(true);
+                } else if ignore_parser_errors {
+                    builder.append_null();
+                } else {
+                    return Err(PolarsError::Other(
+                        format!(
+                            "Error while parsing value {} for column {} as {:?}",
+                            String::from_utf8_lossy(bytes),
+                            col_idx,
+                            DataType::Boolean
+                        )
+                        .into(),
+                    ));
                 }
             }
             None => builder.append_null(),
@@ -1050,18 +892,6 @@ trait PrimitiveParser: ArrowPrimitiveType {
     fn parse(bytes: &[u8]) -> Result<Self::Native>;
 }
 
-impl PrimitiveParser for BooleanType {
-    fn parse(bytes: &[u8]) -> Result<bool> {
-        if bytes.eq_ignore_ascii_case(b"false") {
-            Ok(false)
-        } else if bytes.eq_ignore_ascii_case(b"true") {
-            Ok(true)
-        } else {
-            Err(PolarsError::Other("Could not parse boolean".into()))
-        }
-    }
-}
-
 impl PrimitiveParser for Float32Type {
     fn parse(bytes: &[u8]) -> Result<f32> {
         let a = fast_float::parse(bytes).map_err(|e| e.to_polars_err())?;
@@ -1125,7 +955,7 @@ impl PrimitiveParser for Int64Type {
 }
 
 enum Builder {
-    Boolean(PrimitiveChunkedBuilder<BooleanType>),
+    Boolean(BooleanChunkedBuilder),
     Int16(PrimitiveChunkedBuilder<Int16Type>),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -1138,7 +968,7 @@ enum Builder {
 }
 
 impl Builder {
-    fn bool(&mut self) -> &mut PrimitiveChunkedBuilder<BooleanType> {
+    fn bool(&mut self) -> &mut BooleanChunkedBuilder {
         match self {
             Builder::Boolean(builder) => builder,
             _ => panic!("implementation error"),

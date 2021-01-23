@@ -1,7 +1,7 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
-use crate::utils::{floating_encode_f64, integer_decode_f64, Xob};
+use crate::utils::{floating_encode_f64, integer_decode_f64, NoNull};
 use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
 use ahash::RandomState;
 use itertools::Itertools;
@@ -47,7 +47,7 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
-    let groups = ca.group_tuples();
+    let groups = ca.group_tuples(true);
     let mut out = is_unique_helper(groups, ca.len(), true, false);
     out.rename(ca.name());
     out
@@ -58,7 +58,7 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoGroupTuples,
 {
-    let groups = ca.group_tuples();
+    let groups = ca.group_tuples(true);
     let mut out = is_unique_helper(groups, ca.len(), false, true);
     out.rename(ca.name());
     out
@@ -135,11 +135,11 @@ where
 
 macro_rules! impl_value_counts {
     ($self:expr) => {{
-        let group_tuples = $self.group_tuples();
+        let group_tuples = $self.group_tuples(true);
         let values = unsafe {
             $self.take_unchecked(group_tuples.iter().map(|t| t.0), Some(group_tuples.len()))
         };
-        let mut counts: Xob<UInt32Chunked> = group_tuples
+        let mut counts: NoNull<UInt32Chunked> = group_tuples
             .into_iter()
             .map(|(_, groups)| groups.len() as u32)
             .collect();
@@ -253,7 +253,7 @@ fn sort_columns(columns: Vec<Series>) -> Vec<Series> {
 
 impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples();
+        let groups = self.group_tuples(true);
         let col_name = self.name();
 
         let columns = groups
@@ -276,7 +276,7 @@ where
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples();
+        let groups = self.group_tuples(true);
         let col_name = self.name();
 
         let columns = groups

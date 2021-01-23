@@ -67,7 +67,7 @@ where
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
         if let Some(value) = value {
-            if T::get_data_type() != ArrowDataType::Boolean && self.chunk_id() == mask.chunk_id() {
+            if T::get_dtype() != DataType::Boolean && self.chunk_id() == mask.chunk_id() {
                 let chunks = self
                     .downcast_chunks()
                     .into_iter()
@@ -155,7 +155,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
     {
         let idx_iter = idx.as_take_iter();
         let mut ca_iter = self.into_iter().enumerate();
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
         for current_idx in idx_iter {
             if current_idx > self.len() {
@@ -191,7 +191,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         Self: Sized,
         F: Fn(Option<&'a str>) -> Option<String>,
     {
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
         impl_set_at_idx_with!(self, builder, idx, f)
     }
 
@@ -200,7 +200,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         Self: Sized,
     {
         check_bounds!(self, mask);
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
         self.into_iter()
             .zip(mask)
             .for_each(|(opt_val_self, opt_mask)| match opt_mask {
@@ -217,7 +217,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         F: Fn(Option<&'a str>) -> Option<String>,
     {
         check_bounds!(self, mask);
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
         self.into_iter()
             .zip(mask)
             .for_each(|(opt_val, opt_mask)| match opt_mask {

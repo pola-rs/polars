@@ -21,8 +21,12 @@ use std::sync::Arc;
 pub(crate) mod private {
     use super::*;
     use crate::frame::group_by::PivotAgg;
+    use ahash::RandomState;
 
     pub trait PrivateSeries {
+        fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
+            unimplemented!()
+        }
         fn agg_mean(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
             unimplemented!()
         }
@@ -110,7 +114,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             unimplemented!()
         }
-        fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+        fn group_tuples(&self, _multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
             unimplemented!()
         }
     }
@@ -422,7 +426,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
-    fn rechunk(&self, _chunk_lengths: Option<&[usize]>) -> Result<Series> {
+    fn rechunk(&self) -> Result<Series> {
         unimplemented!()
     }
 
@@ -959,7 +963,7 @@ impl Series {
     }
 
     /// Append arrow array of same datatype.
-    fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
+    pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
         self.get_inner_mut().append_array(other)?;
         Ok(self)
     }
@@ -1195,8 +1199,10 @@ impl_named_from!([Option<f64>], Float64Type, new_from_opt_slice);
 impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
         let series_slice = s.as_ref();
+        let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
+
         let dt = series_slice[0].dtype();
-        let mut builder = get_list_builder(dt, series_slice.len(), name);
+        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
         for series in series_slice {
             builder.append_series(series)
         }
@@ -1242,7 +1248,11 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .map(|arr| {
                         cast(
                             arr,
-                            &ArrowDataType::LargeList(Box::new(ArrowDataType::Null)),
+                            &ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
+                                "",
+                                ArrowDataType::Null,
+                                true,
+                            ))),
                         )
                         .unwrap()
                     })

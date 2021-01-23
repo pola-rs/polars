@@ -2,13 +2,12 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::array::ArrayRef;
-use arrow::compute::filter_primitive_array;
+use arrow::compute::filter as filter_fn;
+use polars_arrow::prelude::*;
 use std::ops::Deref;
-use std::sync::Arc;
 
 macro_rules! impl_filter_with_nulls_in_both {
     ($self:expr, $filter:expr) => {{
@@ -108,19 +107,17 @@ where
                 .downcast_chunks()
                 .iter()
                 .zip(filter.downcast_chunks())
-                .map(|(&left, mask)| {
-                    Arc::new(filter_primitive_array(left, mask).unwrap()) as ArrayRef
-                })
+                .map(|(&left, mask)| filter_fn(left, mask).unwrap())
                 .collect::<Vec<_>>();
             return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
         }
         let out = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
-                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
+                let ca: NoNull<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
                 Ok(ca.into_inner())
             }
             (0, _) => {
-                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
+                let ca: NoNull<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
                 Ok(ca.into_inner())
             }
             (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
@@ -144,18 +141,12 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         }
         check_filter_len!(self, filter);
         let out = match (self.null_count(), filter.null_count()) {
-            (0, 0) => {
-                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls!(self, filter);
-                Ok(ca.into_inner())
-            }
-            (0, _) => {
-                let ca: Xob<ChunkedArray<_>> = impl_filter_no_nulls_in_self!(self, filter);
-                Ok(ca.into_inner())
-            }
+            (0, 0) => Ok(impl_filter_no_nulls!(self, filter)),
+            (0, _) => Ok(impl_filter_no_nulls_in_self!(self, filter)),
             (_, 0) => impl_filter_no_nulls_in_mask!(self, filter),
             (_, _) => impl_filter_with_nulls_in_both!(self, filter),
         };
-        out.map(|mut ca| {
+        out.map(|mut ca: BooleanChunked| {
             ca.rename(self.name());
             ca
         })
@@ -210,8 +201,18 @@ impl ChunkFilter<ListType> for ListChunked {
                 _ => Ok(ListChunked::new_from_chunks(self.name(), vec![])),
             };
         }
+        if self.chunk_id == filter.chunk_id {
+            let chunks = self
+                .downcast_chunks()
+                .iter()
+                .zip(filter.downcast_chunks())
+                .map(|(&left, mask)| filter_fn(left, mask).unwrap())
+                .collect::<Vec<_>>();
+            return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        }
         let dt = self.get_inner_dtype();
-        let mut builder = get_list_builder(&dt.into(), self.len(), self.name());
+        let values_capacity = self.get_values_size();
+        let mut builder = get_list_builder(&dt.into(), values_capacity, self.len(), self.name());
         filter
             .into_iter()
             .zip(self.into_iter())

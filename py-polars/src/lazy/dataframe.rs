@@ -346,7 +346,7 @@ impl PyLazyFrame {
         };
 
         let ldf = self.ldf.clone();
-        ldf.map(function, Some(opt)).into()
+        ldf.map(function, Some(opt), None).into()
     }
 
     pub fn drop_columns(&self, cols: Vec<String>) -> Self {
@@ -357,7 +357,7 @@ impl PyLazyFrame {
             }
             Ok(df)
         };
-        ldf.map(f, None).into()
+        ldf.map(f, None, None).into()
     }
 
     pub fn clone(&self) -> PyLazyFrame {

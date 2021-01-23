@@ -77,18 +77,6 @@ macro_rules! impl_fill_backward {
     }};
 }
 
-fn fill_value<T>(ca: &ChunkedArray<T>, value: Option<T::Native>) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    ca.into_iter()
-        .map(|opt_v| match opt_v {
-            Some(_) => opt_v,
-            None => value,
-        })
-        .collect()
-}
-
 macro_rules! impl_fill_value {
     ($ca:ident, $value:expr) => {{
         $ca.into_iter()
@@ -137,7 +125,7 @@ impl ChunkFillNone for BooleanChunked {
         if self.null_count() == 0 {
             return Ok(self.clone());
         }
-        let mut builder = PrimitiveChunkedBuilder::<BooleanType>::new(self.name(), self.len());
+        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
         match strategy {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
             FillNoneStrategy::Backward => impl_fill_backward!(self, builder),
@@ -160,7 +148,9 @@ impl ChunkFillNone for Utf8Chunked {
         if self.null_count() == 0 {
             return Ok(self.clone());
         }
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len());
+        let factor = self.len() as f32 / (self.len() - self.null_count()) as f32;
+        let value_cap = (self.get_values_size() as f32 * 1.25 * factor) as usize;
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), value_cap);
         match strategy {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
             FillNoneStrategy::Backward => impl_fill_backward!(self, builder),

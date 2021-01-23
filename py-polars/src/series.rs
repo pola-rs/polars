@@ -8,6 +8,7 @@ use polars::chunked_array::builder::get_bitmap;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 use std::any::Any;
+use std::ops::{BitAnd, BitOr};
 
 #[derive(Clone, Debug)]
 pub struct ObjectValue {
@@ -216,13 +217,33 @@ impl PySeries {
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
-        let series = self.series.rechunk(None).expect("should not fail");
+        let series = self.series.rechunk().expect("should not fail");
         if in_place {
             self.series = series;
             None
         } else {
             Some(PySeries::new(series))
         }
+    }
+
+    pub fn bitand(&self, other: &PySeries) -> Self {
+        let s = self
+            .series
+            .bool()
+            .expect("boolean")
+            .bitand(other.series.bool().expect("boolean"))
+            .into_series();
+        s.into()
+    }
+
+    pub fn bitor(&self, other: &PySeries) -> Self {
+        let s = self
+            .series
+            .bool()
+            .expect("boolean")
+            .bitor(other.series.bool().expect("boolean"))
+            .into_series();
+        s.into()
     }
 
     pub fn cum_sum(&self, reverse: bool) -> Self {
@@ -741,7 +762,7 @@ impl PySeries {
             Some(DataType::Boolean) => {
                 let ca: BooleanChunked = apply_method_all_arrow_series!(
                     series,
-                    apply_lambda_with_primitive_out_type,
+                    apply_lambda_with_bool_out_type,
                     py,
                     lambda,
                     0,

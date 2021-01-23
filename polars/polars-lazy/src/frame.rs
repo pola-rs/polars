@@ -10,6 +10,7 @@ use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use ahash::RandomState;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
+use polars_core::toggle_string_cache;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -173,6 +174,7 @@ pub struct OptState {
     pub simplify_expr: bool,
     pub agg_scan_projection: bool,
     pub aggregate_pushdown: bool,
+    pub global_string_cache: bool,
 }
 
 impl Default for OptState {
@@ -184,6 +186,7 @@ impl Default for OptState {
             simplify_expr: true,
             agg_scan_projection: false,
             aggregate_pushdown: false,
+            global_string_cache: true,
         }
     }
 }
@@ -261,6 +264,12 @@ impl LazyFrame {
         self
     }
 
+    /// Toggle global string cache.
+    pub fn with_string_cache(mut self, toggle: bool) -> Self {
+        self.opt_state.global_string_cache = toggle;
+        self
+    }
+
     /// Describe the logical plan.
     pub fn describe_plan(&self) -> String {
         self.logical_plan.describe()
@@ -314,7 +323,21 @@ impl LazyFrame {
 
     /// Rename a column in the DataFrame
     pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
-        self.with_column(col(existing_name).alias(new_name))
+        let schema = self.logical_plan.schema();
+        let schema = schema
+            .rename(&[existing_name], &[new_name])
+            .expect("cannot rename non existing column");
+
+        // first make sure that the column is projected, then we
+        let init = self.with_column(col(existing_name));
+
+        let existing_name = existing_name.to_string();
+        let new_name = new_name.to_string();
+        let f = move |mut df: DataFrame| {
+            df.rename(&existing_name, &new_name)?;
+            Ok(df)
+        };
+        init.map(f, Some(AllowedOptimizations::default()), Some(schema))
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -452,15 +475,21 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> Result<DataFrame> {
+        let use_string_cache = self.opt_state.global_string_cache;
         let logical_plan = self.optimize()?;
 
+        toggle_string_cache(use_string_cache);
         let planner = DefaultPlanner::default();
         let mut physical_plan = planner.create_physical_plan(logical_plan)?;
         let cache = Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
             64,
             RandomState::default(),
         )));
-        physical_plan.execute(&cache)
+        let out = physical_plan.execute(&cache);
+        if use_string_cache {
+            toggle_string_cache(!use_string_cache);
+        }
+        out
     }
 
     /// Filter by some predicate expression.
@@ -799,14 +828,23 @@ impl LazyFrame {
     /// relies on a correct schema.
     ///
     /// You can toggle certain optimizations off.
-    pub fn map<F>(self, function: F, optimizations: Option<AllowedOptimizations>) -> LazyFrame
+    pub fn map<F>(
+        self,
+        function: F,
+        optimizations: Option<AllowedOptimizations>,
+        schema: Option<Schema>,
+    ) -> LazyFrame
     where
         F: DataFrameUdf + 'static,
     {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .map(function, optimizations.unwrap_or_default())
+            .map(
+                function,
+                optimizations.unwrap_or_default(),
+                schema.map(Arc::new),
+            )
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -1219,6 +1257,40 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_query_5() {
+        // if this one fails, the list builder probably does not handle offsets
+        let df = df! {
+            "uid" => [0, 0, 0, 1, 1, 1],
+            "day" => [1, 2, 4, 1, 2, 3],
+            "cumcases" => [10, 12, 15, 25, 30, 41]
+        }
+        .unwrap();
+
+        let out = df
+            .lazy()
+            .groupby(vec![col("uid")])
+            .agg(vec![col("day").head(Some(2))])
+            .collect()
+            .unwrap();
+        let s = out
+            .select_at_idx(1)
+            .unwrap()
+            .list()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(s.len(), 2);
+        let s = out
+            .select_at_idx(1)
+            .unwrap()
+            .list()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(s.len(), 2);
+    }
+
+    #[test]
     fn test_simplify_expr() {
         // Test if expression containing literals is simplified
         let df = get_df();
@@ -1272,6 +1344,7 @@ mod test {
     fn test_lazy_filter_and_rename() {
         let df = load_df();
         let lf = df
+            .clone()
             .lazy()
             .with_column_renamed("a", "x")
             .filter(col("x").map(
@@ -1285,6 +1358,14 @@ mod test {
         }
         .unwrap();
         assert!(lf.collect().unwrap().frame_equal(&correct));
+
+        // now we check if the column is rename or added when we don't select
+        let lf = df.lazy().with_column_renamed("a", "x").filter(col("x").map(
+            |s: Series| Ok(s.gt(3).into_series()),
+            Some(DataType::Boolean),
+        ));
+
+        assert_eq!(lf.collect().unwrap().get_column_names(), &["x", "b", "c"]);
     }
 
     #[test]
@@ -1437,5 +1518,51 @@ mod test {
                 assert!(false)
             }
         };
+    }
+
+    #[test]
+    fn test_lazy_partition_agg() {
+        let df = df! {
+            "foo" => &[1, 1, 2, 2, 3],
+            "bar" => &[1.0, 1.0, 2.0, 2.0, 3.0]
+        }
+        .unwrap();
+
+        let out = df
+            .lazy()
+            .groupby(vec![col("foo")])
+            .agg(vec![col("bar").mean()])
+            .sort("foo", false)
+            .collect()
+            .unwrap();
+
+        assert_eq!(
+            Vec::from(out.column("bar_mean").unwrap().f64().unwrap()),
+            &[Some(1.0), Some(2.0), Some(3.0)]
+        );
+
+        let out = scan_foods_csv()
+            .groupby(vec![col("category")])
+            .agg(vec![col("calories").list()])
+            .sort("category", false)
+            .collect()
+            .unwrap();
+        dbg!(&out);
+        let cat_agg_list = out.select_at_idx(1).unwrap();
+        let fruit_series = cat_agg_list.list().unwrap().get(0).unwrap();
+        let fruit_list = fruit_series.i64().unwrap();
+        dbg!(fruit_list);
+        assert_eq!(
+            Vec::from(fruit_list),
+            &[
+                Some(60),
+                Some(30),
+                Some(50),
+                Some(30),
+                Some(60),
+                Some(130),
+                Some(50),
+            ]
+        )
     }
 }

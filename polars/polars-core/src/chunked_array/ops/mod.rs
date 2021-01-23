@@ -3,7 +3,7 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use arrow::array::ArrayRef;
 use std::marker::Sized;
 
@@ -288,7 +288,7 @@ pub trait ChunkTake {
     where
         Self: std::marker::Sized,
     {
-        let idx_ca: Xob<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
+        let idx_ca: NoNull<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
         let idx_ca = idx_ca.into_inner();
         self.take_from_single_chunked(&idx_ca)
     }
@@ -595,10 +595,32 @@ where
         builder.finish()
     }
 }
+impl ChunkFull<bool> for BooleanChunked {
+    fn full(name: &str, value: bool, length: usize) -> Self {
+        let mut builder = BooleanChunkedBuilder::new(name, length);
+
+        for _ in 0..length {
+            builder.append_value(value)
+        }
+        builder.finish()
+    }
+}
+
+impl ChunkFullNull for BooleanChunked {
+    fn full_null(name: &str, length: usize) -> Self {
+        let mut builder = BooleanChunkedBuilder::new(name, length);
+
+        // todo: faster with null arrays or in one go allocation
+        for _ in 0..length {
+            builder.append_null()
+        }
+        builder.finish()
+    }
+}
 
 impl<'a> ChunkFull<&'a str> for Utf8Chunked {
     fn full(name: &str, value: &'a str, length: usize) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new(name, length);
+        let mut builder = Utf8ChunkedBuilder::new(name, length, length * value.len());
 
         for _ in 0..length {
             builder.append_value(value);
@@ -610,7 +632,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
         // todo: faster with null arrays or in one go allocation
-        let mut builder = Utf8ChunkedBuilder::new(name, length);
+        let mut builder = Utf8ChunkedBuilder::new(name, length, 0);
 
         for _ in 0..length {
             builder.append_null()
@@ -627,7 +649,7 @@ impl ChunkFull<&dyn SeriesTrait> for ListChunked {
 
 impl ChunkFullNull for ListChunked {
     fn full_null(name: &str, length: usize) -> ListChunked {
-        let mut builder = get_list_builder(&DataType::Null, length, name);
+        let mut builder = get_list_builder(&DataType::Null, 0, length, name);
         for _ in 0..length {
             builder.append_opt_series(None)
         }
@@ -648,7 +670,7 @@ where
 {
     fn reverse(&self) -> ChunkedArray<T> {
         if let Ok(slice) = self.cont_slice() {
-            let ca: Xob<ChunkedArray<T>> = slice.iter().rev().copied().collect();
+            let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect();
             let mut ca = ca.into_inner();
             ca.rename(self.name());
             ca
@@ -723,6 +745,12 @@ where
     T: PolarsPrimitiveType,
 {
     fn expand_at_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
+        impl_chunk_expand!(self, length, index)
+    }
+}
+
+impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
+    fn expand_at_index(&self, index: usize, length: usize) -> BooleanChunked {
         impl_chunk_expand!(self, length, index)
     }
 }

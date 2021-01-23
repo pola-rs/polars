@@ -1,9 +1,11 @@
 use crate::logical_plan::Context;
 use crate::physical_plan::AggPhysicalExpr;
 use crate::prelude::*;
+use polars_arrow::array::ValueSize;
+use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
-use polars_core::utils::Xob;
+use polars_core::utils::NoNull;
 use std::sync::Arc;
 
 pub struct LiteralExpr(pub ScalarValue, Expr);
@@ -381,7 +383,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
-                let mut ca: Xob<UInt32Chunked> =
+                let mut ca: NoNull<UInt32Chunked> =
                     groups.iter().map(|(_, g)| g.len() as u32).collect();
                 ca.rename(&new_name);
                 Ok(Some(ca.into_inner().into_series()))
@@ -412,7 +414,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 let mut column: ListChunked = groups
                     .iter()
                     .map(|(_first, idx)| {
-                        let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
+                        let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
                         ca.into_inner().into_series()
                     })
                     .collect();
@@ -431,6 +433,82 @@ impl AggPhysicalExpr for PhysicalAggExpr {
             GroupByMethod::Quantile(_) => {
                 unimplemented!()
             }
+        }
+    }
+
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<Option<Vec<Series>>> {
+        match self.agg_type {
+            GroupByMethod::Mean => {
+                let series = self.expr.evaluate(df)?;
+                let mut new_name = fmt_groupby_column(series.name(), self.agg_type);
+                let agg_s = series.agg_sum(groups);
+
+                if let Some(mut agg_s) = agg_s {
+                    agg_s.rename(&new_name);
+                    new_name.push_str("__POLARS_MEAN_COUNT");
+                    let ca: NoNull<UInt32Chunked> =
+                        groups.iter().map(|t| t.1.len() as u32).collect();
+                    let mut count_s = ca.into_inner().into_series();
+                    count_s.rename(&new_name);
+                    Ok(Some(vec![agg_s, count_s]))
+                } else {
+                    Ok(None)
+                }
+            }
+            GroupByMethod::List => {
+                let series = self.expr.evaluate(df)?;
+                let new_name = fmt_groupby_column(series.name(), self.agg_type);
+                let opt_agg = series.agg_list(groups);
+                Ok(opt_agg.map(|mut s| {
+                    s.rename(&new_name);
+                    vec![s]
+                }))
+            }
+            _ => AggPhysicalExpr::evaluate(self, df, groups).map(|opt| opt.map(|s| vec![s])),
+        }
+    }
+
+    fn evaluate_partitioned_final(
+        &self,
+        final_df: &DataFrame,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<Option<Series>> {
+        match self.agg_type {
+            GroupByMethod::Mean => {
+                let series = self.expr.evaluate(final_df)?;
+                let count_name = format!("{}__POLARS_MEAN_COUNT", series.name());
+                let new_name = fmt_groupby_column(series.name(), self.agg_type);
+                let count = final_df.column(&count_name).unwrap();
+                // divide by the count
+                let series = &series / count;
+                let agg_s = series.agg_sum(groups);
+                Ok(rename_option_series(agg_s, &new_name))
+            }
+            GroupByMethod::List => {
+                let series = self.expr.evaluate(final_df)?;
+                let ca = series.list().unwrap();
+                let new_name = fmt_groupby_column(ca.name(), self.agg_type);
+
+                let values_type = match ca.dtype() {
+                    DataType::List(dt) => DataType::from(dt),
+                    _ => unreachable!(),
+                };
+
+                let mut builder =
+                    get_list_builder(&values_type, ca.get_values_size(), ca.len(), &new_name);
+                for (_, idx) in groups {
+                    let ca = ca.take(idx.iter().copied(), None);
+                    let s = ca.explode_and_offsets()?.0;
+                    builder.append_series(&s);
+                }
+                let out = builder.finish();
+                Ok(Some(out.into_series()))
+            }
+            _ => AggPhysicalExpr::evaluate(self, final_df, groups),
         }
     }
 }

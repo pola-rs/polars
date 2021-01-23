@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use arrow::array::{ArrayRef, BooleanBufferBuilder, BufferBuilderTrait};
+use arrow::array::{ArrayRef, BooleanBufferBuilder};
 use arrow::datatypes::ToByteSlice;
 use arrow::{
     array::{Array, ArrayData, LargeListArray, LargeStringArray},
@@ -32,11 +32,11 @@ impl ChunkExplode for ListChunked {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
-        let ca = self.rechunk(Some(&[1])).unwrap();
+        let ca = self.rechunk().unwrap();
         let listarr: &LargeListArray = ca.downcast_chunks()[0];
         let list_data = listarr.data();
         let values = listarr.values();
-        let offset_ptr = list_data.buffers()[0].raw_data() as *const i64;
+        let offset_ptr = list_data.buffers()[0].as_ptr() as *const i64;
         // offsets in the list array. These indicate where a new list starts
         let offsets = unsafe { std::slice::from_raw_parts(offset_ptr, self.len()) };
 
@@ -50,19 +50,19 @@ impl ChunkExplode for Utf8Chunked {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
-        let ca = self.rechunk(Some(&[1])).unwrap();
+        let ca = self.rechunk().unwrap();
         let stringarr: &LargeStringArray = ca.downcast_chunks()[0];
         let list_data = stringarr.data();
         let str_values_buf = stringarr.value_data();
 
         // We get the offsets of the strings in the original array
-        let offset_ptr = list_data.buffers()[0].raw_data() as *const i64;
+        let offset_ptr = list_data.buffers()[0].as_ptr() as *const i64;
         // offsets in the list array. These indicate where a new list starts
         let offsets = unsafe { std::slice::from_raw_parts(offset_ptr, self.len()) };
 
         // Because the strings are u8 stored but really are utf8 data we need to traverse the utf8 to
         // get the chars indexes
-        let str_data = unsafe { std::str::from_utf8_unchecked(str_values_buf.data()) };
+        let str_data = unsafe { std::str::from_utf8_unchecked(str_values_buf.as_slice()) };
         // iterator over index and chars, we take only the index
         // todo! directly create a buffer from an aligned vec or a mutable buffer
         let mut new_offsets = str_data.char_indices().map(|t| t.0 as i64).collect_vec();
@@ -87,13 +87,13 @@ impl ChunkExplode for Utf8Chunked {
             for &offset in offsets.iter().skip(1) {
                 while count < offset {
                     count += 1;
-                    bitmap_builder.append(last_valid).expect("enough capacity");
+                    bitmap_builder.append(last_valid);
                 }
                 last_idx += 1;
                 last_valid = stringarr.is_valid(last_idx);
             }
             for _ in 0..(capacity - count as usize) {
-                bitmap_builder.append(last_valid).expect("enough capacity");
+                bitmap_builder.append(last_valid);
             }
             builder = builder.null_bit_buffer(bitmap_builder.finish());
         }

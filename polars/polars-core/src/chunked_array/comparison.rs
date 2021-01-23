@@ -1,4 +1,4 @@
-use crate::{chunked_array::kernels::comparison::*, prelude::*, utils::Xob};
+use crate::{chunked_array::kernels::comparison::*, prelude::*, utils::NoNull};
 use arrow::compute::{eq_scalar, gt_eq_scalar, gt_scalar, lt_eq_scalar, lt_scalar, neq_scalar};
 use arrow::{
     array::{ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray},
@@ -414,26 +414,6 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
         }
     }
-}
-
-fn cmp_chunked_array_to_num<T>(
-    ca: &ChunkedArray<T>,
-    cmp_fn: &dyn Fn(Option<T::Native>) -> bool,
-) -> BooleanChunked
-where
-    T: PolarsNumericType,
-{
-    ca.into_iter().map(cmp_fn).collect()
-}
-
-fn cmp_chunked_array_to_num_no_null<T>(
-    ca: &ChunkedArray<T>,
-    cmp_fn: &dyn Fn(T::Native) -> bool,
-) -> BooleanChunked
-where
-    T: PolarsNumericType,
-{
-    ca.into_no_null_iter().map(cmp_fn).collect()
 }
 
 pub trait NumComp: Num + NumCast + PartialOrd {}

@@ -4,7 +4,6 @@ use crate::prelude::{
 };
 use arrow::array::{
     Array, ArrayDataRef, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
-    PrimitiveArrayOps,
 };
 use std::convert::TryFrom;
 use std::iter::Copied;
@@ -89,7 +88,7 @@ where
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         let chunk = ca.downcast_chunks()[0];
-        let slice = chunk.value_slice(0, chunk.len());
+        let slice = chunk.values();
         let iter = slice.iter().copied();
 
         NumIterSingleChunk { iter }
@@ -232,10 +231,7 @@ where
         } else {
             let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
 
-            self.current_iter_left = current_chunk
-                .value_slice(0, current_chunk.len())
-                .iter()
-                .copied();
+            self.current_iter_left = current_chunk.values().iter().copied();
         }
     }
 
@@ -247,18 +243,12 @@ where
             self.current_iter_right = None
         } else {
             let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
-            self.current_iter_right = Some(
-                current_chunk
-                    .value_slice(0, current_chunk.len())
-                    .iter()
-                    .copied(),
-            );
+            self.current_iter_right = Some(current_chunk.values().iter().copied());
         }
     }
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         let chunks = ca.downcast_chunks();
-        let current_len_left = chunks[0].len();
-        let current_iter_left = chunks[0].value_slice(0, current_len_left).iter().copied();
+        let current_iter_left = chunks[0].values().iter().copied();
 
         let idx_left = 0;
         let chunk_idx_left = 0;
@@ -270,7 +260,7 @@ where
             current_iter_right = None
         } else {
             let arr = chunks[chunk_idx_right];
-            current_iter_right = Some(arr.value_slice(0, arr.len()).iter().copied())
+            current_iter_right = Some(arr.values().iter().copied())
         }
 
         NumIterManyChunk {
@@ -393,10 +383,7 @@ where
             let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
             self.current_data_left = current_chunk.data();
 
-            self.current_iter_left = current_chunk
-                .value_slice(0, current_chunk.len())
-                .iter()
-                .copied();
+            self.current_iter_left = current_chunk.values().iter().copied();
         }
     }
 
@@ -411,20 +398,14 @@ where
             let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
             self.current_data_right = current_chunk.data();
 
-            self.current_iter_right = Some(
-                current_chunk
-                    .value_slice(0, current_chunk.len())
-                    .iter()
-                    .copied(),
-            );
+            self.current_iter_right = Some(current_chunk.values().iter().copied());
         }
     }
 
     fn new(ca: &'a ChunkedArray<T>) -> Self {
         let chunks = ca.downcast_chunks();
         let arr_left = chunks[0];
-        let current_len_left = arr_left.len();
-        let current_iter_left = arr_left.value_slice(0, current_len_left).iter().copied();
+        let current_iter_left = arr_left.values().iter().copied();
         let current_data_left = arr_left.data();
 
         let idx_left = 0;
@@ -438,7 +419,7 @@ where
         if chunk_idx_left == chunk_idx_right {
             current_iter_right = None
         } else {
-            current_iter_right = Some(arr.value_slice(0, arr.len()).iter().copied())
+            current_iter_right = Some(arr.values().iter().copied())
         }
         let current_array_idx_right = arr.len();
 

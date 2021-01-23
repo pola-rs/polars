@@ -2,7 +2,7 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -40,39 +40,40 @@ where
     }
 }
 
-// Xob is only a wrapper needed for specialization
-impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>
+impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
+    fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for opt_val in iter {
+            builder.append_option(opt_val);
+        }
+        builder.finish()
+    }
+}
+
+// NoNull is only a wrapper needed for specialization
+impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsPrimitiveType,
 {
     // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
-        // bools are bit packed
-        if let ArrowDataType::Boolean = T::get_data_type() {
-            let iter = iter.into_iter();
-            let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
+        let iter = iter.into_iter();
+        let mut v = AlignedVec::with_capacity_aligned(get_iter_capacity(&iter));
 
-            for val in iter {
-                builder.append_value(val);
-            }
-            Xob::new(builder.finish())
-        } else {
-            let iter = iter.into_iter();
-            let mut v = AlignedVec::with_capacity_aligned(get_iter_capacity(&iter));
-
-            for val in iter {
-                v.push(val)
-            }
-            Xob::new(ChunkedArray::new_from_aligned_vec("", v))
+        for val in iter {
+            v.push(val)
         }
+        NoNull::new(ChunkedArray::new_from_aligned_vec("", v))
     }
 }
 
 impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
+        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
 
         for val in iter {
             builder.append_value(val);
@@ -81,12 +82,26 @@ impl FromIterator<bool> for BooleanChunked {
     }
 }
 
+impl FromIterator<bool> for NoNull<BooleanChunked> {
+    fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
+
+        for val in iter {
+            builder.append_value(val);
+        }
+        NoNull::new(builder.finish())
+    }
+}
+
 // FromIterator for Utf8Chunked variants.
 
 impl<'a> FromIterator<&'a str> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for val in iter {
             builder.append_value(val);
@@ -98,7 +113,9 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
 impl<'a> FromIterator<Cow<'a, str>> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = Cow<'a, str>>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for cow in iter {
             match cow {
@@ -113,7 +130,9 @@ impl<'a> FromIterator<Cow<'a, str>> for Utf8Chunked {
 impl<'a> FromIterator<Option<Cow<'a, str>>> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = Option<Cow<'a, str>>>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for opt_val in iter {
             match opt_val {
@@ -131,7 +150,9 @@ impl<'a> FromIterator<Option<Cow<'a, str>>> for Utf8Chunked {
 impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = &'a &'a str>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for val in iter {
             builder.append_value(val);
@@ -143,7 +164,9 @@ impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
 macro_rules! impl_from_iter_utf8 {
     ($iter:ident) => {{
         let iter = $iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for opt_val in iter {
             builder.append_option(opt_val.as_ref())
@@ -167,7 +190,9 @@ impl<'a> FromIterator<&'a Option<&'a str>> for Utf8Chunked {
 impl FromIterator<String> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for val in iter {
             builder.append_value(val.as_str());
@@ -179,7 +204,10 @@ impl FromIterator<String> for Utf8Chunked {
 impl FromIterator<Option<String>> for Utf8Chunked {
     fn from_iter<I: IntoIterator<Item = Option<String>>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let mut builder = Utf8ChunkedBuilder::new("", get_iter_capacity(&iter));
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
 
         for opt_val in iter {
             match opt_val {
@@ -198,7 +226,8 @@ impl<'a> FromIterator<&'a Series> for ListChunked {
 
         // first take one to get the dtype. We panic if we have an empty iterator
         let v = it.next().unwrap();
-        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
+        // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
+        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
         builder.append_opt_series(Some(v));
         for s in it {
@@ -215,7 +244,7 @@ impl FromIterator<Series> for ListChunked {
 
         // first take one to get the dtype. We panic if we have an empty iterator
         let v = it.next().unwrap();
-        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
         builder.append_opt_series(Some(&v));
         for s in it {
@@ -255,7 +284,7 @@ macro_rules! impl_from_iter_opt_series {
             }
         }
         let capacity = get_iter_capacity(&it);
-        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
         // first fill all None's we encountered
         while cnt > 0 {
@@ -314,7 +343,7 @@ impl<'a> FromIterator<Option<&'a Series>> for ListChunked {
             }
         }
         let capacity = get_iter_capacity(&it);
-        let mut builder = get_list_builder(v.dtype(), capacity, "collected");
+        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
         // first fill all None's we encountered
         while cnt > 0 {
@@ -374,7 +403,7 @@ fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
     ll.iter().map(|list| list.len()).sum()
 }
 
-impl<T> FromParallelIterator<T::Native> for Xob<ChunkedArray<T>>
+impl<T> FromParallelIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsPrimitiveType,
 {
@@ -391,7 +420,7 @@ where
             }
         });
 
-        Xob::new(builder.finish())
+        NoNull::new(builder.finish())
     }
 }
 
@@ -421,7 +450,7 @@ impl FromParallelIterator<bool> for BooleanChunked {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut builder = PrimitiveChunkedBuilder::new("", capacity);
+        let mut builder = BooleanChunkedBuilder::new("", capacity);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
@@ -437,8 +466,9 @@ impl FromParallelIterator<String> for Utf8Chunked {
     fn from_par_iter<I: IntoParallelIterator<Item = String>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        let values_cap = capacity * 5;
 
-        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
@@ -454,8 +484,9 @@ impl FromParallelIterator<Option<String>> for Utf8Chunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<String>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        let values_cap = capacity * 5;
 
-        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
@@ -470,8 +501,9 @@ impl<'a> FromParallelIterator<Option<&'a str>> for Utf8Chunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<&'a str>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        let values_cap = capacity * 5;
 
-        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {
@@ -486,8 +518,9 @@ impl<'a> FromParallelIterator<&'a str> for Utf8Chunked {
     fn from_par_iter<I: IntoParallelIterator<Item = &'a str>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        let values_cap = capacity * 5;
 
-        let mut builder = Utf8ChunkedBuilder::new("", capacity);
+        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
         // Unpack all these results and append them single threaded
         vectors.iter().for_each(|vec| {
             for val in vec {

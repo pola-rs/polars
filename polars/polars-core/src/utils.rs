@@ -1,4 +1,6 @@
 use crate::prelude::*;
+pub use crossbeam;
+pub use num_cpus;
 use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
@@ -39,16 +41,16 @@ pub(crate) fn floating_encode_f64(mantissa: u64, exponent: i16, sign: i8) -> f64
 
 /// Just a wrapper structure. Useful for certain impl specializations
 /// This is for instance use to implement
-/// `impl<T> FromIterator<T::Native> for Xob<ChunkedArray<T>>`
+/// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
 /// as `Option<T::Native>` was already implemented:
 /// `impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>`
-pub struct Xob<T> {
+pub struct NoNull<T> {
     inner: T,
 }
 
-impl<T> Xob<T> {
+impl<T> NoNull<T> {
     pub fn new(inner: T) -> Self {
-        Xob { inner }
+        NoNull { inner }
     }
 
     pub fn into_inner(self) -> T {
@@ -56,7 +58,7 @@ impl<T> Xob<T> {
     }
 }
 
-impl<T> Deref for Xob<T> {
+impl<T> Deref for NoNull<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -64,7 +66,7 @@ impl<T> Deref for Xob<T> {
     }
 }
 
-impl<T> DerefMut for Xob<T> {
+impl<T> DerefMut for NoNull<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -78,8 +80,11 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
     }
 }
 
-macro_rules! split_ca {
+macro_rules! split_array {
     ($ca: ident, $n: expr) => {{
+        if $n == 1 {
+            return Ok(vec![$ca.clone()]);
+        }
         let total_len = $ca.len();
         let chunk_size = total_len / $n;
 
@@ -99,11 +104,19 @@ macro_rules! split_ca {
 }
 
 pub(crate) fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>> {
-    split_ca!(ca, n)
+    split_array!(ca, n)
 }
 
-pub(crate) fn split_series(series: &Series, n: usize) -> Result<Vec<Series>> {
-    split_ca!(series, n)
+pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
+    trait Len {
+        fn len(&self) -> usize;
+    }
+    impl Len for DataFrame {
+        fn len(&self) -> usize {
+            self.height()
+        }
+    }
+    split_array!(df, n)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -200,10 +213,10 @@ where
 
 #[macro_export]
 macro_rules! match_arrow_data_type_apply_macro {
-    ($obj:expr, $macro:ident, $macro_utf8:ident $(, $opt_args:expr)*) => {{
+    ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
             DataType::Utf8 => $macro_utf8!($($opt_args)*),
-            DataType::Boolean => $macro!(BooleanType $(, $opt_args)*),
+            DataType::Boolean => $macro_bool!($($opt_args)*),
             DataType::UInt8 => $macro!(UInt8Type $(, $opt_args)*),
             DataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
             DataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
@@ -421,6 +434,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (UInt32, UInt64) => Some(UInt64),
         (UInt32, Float32) => Some(Float32),
         (UInt32, Float64) => Some(Float64),
+        (UInt32, Boolean) => Some(UInt32),
 
         (UInt64, UInt8) => Some(UInt64),
         (UInt64, UInt16) => Some(UInt64),
@@ -428,6 +442,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (UInt64, UInt64) => Some(UInt64),
         (UInt64, Float32) => Some(Float32),
         (UInt64, Float64) => Some(Float64),
+        (UInt64, Boolean) => Some(UInt64),
 
         (Int8, Int8) => Some(Int8),
         (Int8, Int16) => Some(Int16),
@@ -435,6 +450,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int8, Int64) => Some(Int64),
         (Int8, Float32) => Some(Float32),
         (Int8, Float64) => Some(Float64),
+        (Int8, Boolean) => Some(Int8),
 
         (Int16, Int8) => Some(Int16),
         (Int16, Int16) => Some(Int16),
@@ -442,6 +458,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int16, Int64) => Some(Int64),
         (Int16, Float32) => Some(Float32),
         (Int16, Float64) => Some(Float64),
+        (Int16, Boolean) => Some(Int16),
 
         (Int32, Int8) => Some(Int32),
         (Int32, Int16) => Some(Int32),
@@ -451,6 +468,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int32, Float64) => Some(Float64),
         (Int32, Date32) => Some(Int32),
         (Int32, Date64) => Some(Int64),
+        (Int32, Boolean) => Some(Int32),
 
         (Int64, Int8) => Some(Int64),
         (Int64, Int16) => Some(Int64),
@@ -460,6 +478,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int64, Float64) => Some(Float64),
         (Int64, Date64) => Some(Int64),
         (Int64, Date32) => Some(Int32),
+        (Int64, Boolean) => Some(Int64),
 
         (Float32, Float32) => Some(Float32),
         (Float32, Float64) => Some(Float64),
@@ -469,6 +488,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Float64, Float64) => Some(Float64),
         (Float64, Date32) => Some(Float64),
         (Float64, Date64) => Some(Float64),
+        (Float64, Boolean) => Some(Float64),
 
         (Date32, Int32) => Some(Int32),
         (Date32, Int64) => Some(Int64),
@@ -484,12 +504,25 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (_, Utf8) => Some(Utf8),
 
         (Boolean, Boolean) => Some(Boolean),
+        (Boolean, Int8) => Some(Int8),
+        (Boolean, Int16) => Some(Int16),
+        (Boolean, Int32) => Some(Int32),
+        (Boolean, Int64) => Some(Int64),
+        (Boolean, UInt8) => Some(UInt8),
+        (Boolean, UInt16) => Some(UInt16),
+        (Boolean, UInt32) => Some(UInt32),
+        (Boolean, UInt64) => Some(UInt64),
+        (Boolean, Float32) => Some(Float32),
+        (Boolean, Float64) => Some(Float64),
 
         _ => None,
     }
 }
 
-pub fn accumulate_dataframes_vertical(dfs: Vec<DataFrame>) -> Result<DataFrame> {
+pub fn accumulate_dataframes_vertical<I>(dfs: I) -> Result<DataFrame>
+where
+    I: IntoIterator<Item = DataFrame>,
+{
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
     for df in iter {
@@ -505,4 +538,10 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame
         acc_df.hstack_mut(df.get_columns())?;
     }
     Ok(acc_df)
+}
+
+#[cfg(target_os = "linux")]
+extern "C" {
+    #[allow(dead_code)]
+    pub fn malloc_trim(__pad: usize) -> std::os::raw::c_int;
 }

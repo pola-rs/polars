@@ -4,7 +4,7 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::series::implementations::Wrap;
 use crate::series::SeriesTrait;
-use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, Xob};
+use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, NoNull};
 use ahash::RandomState;
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
@@ -18,6 +18,7 @@ mod arithmetic;
 pub mod explode;
 pub mod group_by;
 pub mod hash_join;
+pub mod resample;
 pub mod row;
 pub mod select;
 mod upstream_traits;
@@ -172,19 +173,8 @@ impl DataFrame {
 
     /// Aggregate all chunks to contiguous memory.
     pub fn agg_chunks(&self) -> Self {
-        let f = |s: &Series| s.rechunk(Some(&[1])).expect("can always rechunk to single");
-        // breakpoint for parallel aggregation
-        let bp = std::env::var("POLARS_PAR_COLUMN_BP")
-            .unwrap_or_else(|_| "".to_string())
-            .parse()
-            .unwrap_or(15);
-
-        let cols = if self.columns.len() > bp {
-            self.columns.par_iter().map(f).collect()
-        } else {
-            self.columns.iter().map(f).collect()
-        };
-
+        let f = |s: &Series| s.rechunk().expect("can always rechunk to single");
+        let cols = self.columns.par_iter().map(f).collect();
         DataFrame::new_no_checks(cols)
     }
 
@@ -193,10 +183,7 @@ impl DataFrame {
         self.columns = self
             .columns
             .iter()
-            .map(|s| {
-                s.rechunk(Some(&[1]))
-                    .expect("can always aggregate to single chunk")
-            })
+            .map(|s| s.rechunk().expect("can always aggregate to single chunk"))
             .collect();
         self
     }
@@ -708,7 +695,7 @@ impl DataFrame {
         };
 
         if n_chunks == 1 {
-            let idx_ca: Xob<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
             let idx_ca = idx_ca.into_inner();
             let cols = self
                 .columns
@@ -747,7 +734,7 @@ impl DataFrame {
         };
 
         if n_chunks == 1 {
-            let idx_ca: Xob<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
             let idx_ca = idx_ca.into_inner();
             let cols = self
                 .columns
@@ -1307,11 +1294,7 @@ impl DataFrame {
         match self.n_chunks() {
             Ok(1) => {}
             Ok(_) => {
-                self.columns = self
-                    .columns
-                    .iter()
-                    .map(|s| s.rechunk(None).unwrap())
-                    .collect();
+                self.columns = self.columns.iter().map(|s| s.rechunk().unwrap()).collect();
             }
             Err(_) => {} // no data. So iterator will be empty
         }

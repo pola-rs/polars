@@ -8,6 +8,7 @@ use polars_core::{
     utils::get_supertype,
 };
 use std::fmt::{Debug, Formatter};
+use std::ops::{BitAnd, BitOr};
 use std::{
     fmt,
     ops::{Add, Div, Mul, Rem, Sub},
@@ -1027,6 +1028,49 @@ impl Expr {
     pub fn pow(self, exponent: f64) -> Self {
         self.map(move |s: Series| s.pow(exponent), Some(DataType::Float64))
     }
+
+    /// Get the year of a Date32/Date64
+    pub fn year(self) -> Expr {
+        let function = move |s: Series| s.year();
+        self.map(function, Some(DataType::UInt32))
+    }
+
+    /// Get the month of a Date32/Date64
+    pub fn month(self) -> Expr {
+        let function = move |s: Series| s.month();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the month of a Date32/Date64
+    pub fn day(self) -> Expr {
+        let function = move |s: Series| s.day();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the ordinal_day of a Date32/Date64
+    pub fn ordinal_day(self) -> Expr {
+        let function = move |s: Series| s.ordinal_day();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the hour of a Date64/Time64
+    pub fn hour(self) -> Expr {
+        let function = move |s: Series| s.hour();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the minute of a Date64/Time64
+    pub fn minute(self) -> Expr {
+        let function = move |s: Series| s.minute();
+        self.map(function, Some(DataType::UInt32))
+    }
+
+    /// Get the second of a Date64/Time64
+    pub fn second(self) -> Expr {
+        let function = move |s: Series| s.second();
+        self.map(function, Some(DataType::UInt32))
+    }
+    /// Get the nanosecond of a Time64
+    pub fn nanosecond(self) -> Expr {
+        let function = move |s: Series| s.nanosecond();
+        self.map(function, Some(DataType::UInt32))
+    }
 }
 
 /// Create a Column Expression based on a column name.
@@ -1147,6 +1191,18 @@ pub fn min_exprs(exprs: Vec<Expr>) -> Expr {
         s1.zip_with(&mask, &s2)
     };
     fold_exprs(lit(0), func, exprs)
+}
+
+/// Evaluate all the expressions with a bitwise or
+pub fn any_exprs(exprs: Vec<Expr>) -> Expr {
+    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitor(s2.bool()?).into_series());
+    fold_exprs(lit(false), func, exprs)
+}
+
+/// Evaluate all the expressions with a bitwise and
+pub fn all_exprs(exprs: Vec<Expr>) -> Expr {
+    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitand(s2.bool()?).into_series());
+    fold_exprs(lit(true), func, exprs)
 }
 
 pub trait Literal {

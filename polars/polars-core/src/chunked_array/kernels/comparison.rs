@@ -1,9 +1,6 @@
 use super::utils::combine_bitmaps_or;
 use crate::prelude::*;
-use arrow::array::{
-    Array, ArrayData, BooleanArray, BooleanBufferBuilder, BufferBuilderTrait, LargeStringArray,
-    PrimitiveArray,
-};
+use arrow::array::{Array, ArrayData, BooleanArray, BooleanBufferBuilder, LargeStringArray};
 use arrow::error::Result;
 
 /// Helper function to perform boolean lambda function on values from two arrays, this
@@ -16,7 +13,7 @@ macro_rules! compare_op {
 
         let mut result = BooleanBufferBuilder::new($left.len());
         for i in 0..$left.len() {
-            result.append($op($left.value(i), $right.value(i)))?;
+            result.append($op($left.value(i), $right.value(i)));
         }
 
         let data = ArrayData::new(
@@ -28,7 +25,7 @@ macro_rules! compare_op {
             vec![result.finish()],
             vec![],
         );
-        Ok(PrimitiveArray::<BooleanType>::from(Arc::new(data)))
+        Ok(BooleanArray::from(Arc::new(data)))
     }};
 }
 
@@ -37,7 +34,7 @@ macro_rules! compare_op_scalar {
         let null_bit_buffer = $left.data().null_buffer().cloned();
         let mut result = BooleanBufferBuilder::new($left.len());
         for i in 0..$left.len() {
-            result.append($op($left.value(i), $right))?;
+            result.append($op($left.value(i), $right));
         }
 
         let data = ArrayData::new(
@@ -49,7 +46,7 @@ macro_rules! compare_op_scalar {
             vec![result.finish()],
             vec![],
         );
-        Ok(PrimitiveArray::<BooleanType>::from(Arc::new(data)))
+        Ok(BooleanArray::from(Arc::new(data)))
     }};
 }
 

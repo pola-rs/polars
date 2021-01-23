@@ -1,10 +1,7 @@
 pub mod builder;
 pub use crate::prelude::*;
-use arrow::array::{
-    Array, ArrayDataRef, ArrayEqual, ArrayRef, BooleanBufferBuilder, BufferBuilderTrait, JsonEqual,
-};
+use arrow::array::{Array, ArrayDataRef, ArrayRef, BooleanBufferBuilder, JsonEqual};
 use arrow::bitmap::Bitmap;
-use arrow::util::bit_util::count_set_bits_offset;
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::Debug;
@@ -28,25 +25,6 @@ where
 {
     pub fn value(&self, index: usize) -> &T {
         &self.values[self.offset + index]
-    }
-}
-
-impl<T> ArrayEqual for ObjectArray<T>
-where
-    T: Any + Debug + Clone + Send + Sync,
-{
-    fn equals(&self, _other: &dyn Array) -> bool {
-        false
-    }
-
-    fn range_equals(
-        &self,
-        _other: &dyn Array,
-        _start_idx: usize,
-        _end_idx: usize,
-        _other_start_idx: usize,
-    ) -> bool {
-        false
     }
 }
 
@@ -76,9 +54,7 @@ where
     }
 
     fn data_type(&self) -> &ArrowDataType {
-        // todo! we hijack the binary type for this. If we actually implement binary we need to find
-        // another solution
-        &ArrowDataType::Binary
+        unimplemented!()
     }
 
     fn slice(&self, offset: usize, length: usize) -> ArrayRef {
@@ -88,9 +64,8 @@ where
         new.len = length;
         new.offset = offset;
         new.null_count = if let Some(bitmap) = &new.null_bitmap {
-            let valid_bits = bitmap.buffer_ref().data();
-            len.checked_sub(count_set_bits_offset(valid_bits, offset, length))
-                .unwrap();
+            let no_null_count = bitmap.buffer_ref().count_set_bits_offset(offset, length);
+            len.checked_sub(no_null_count).unwrap();
             0
         } else {
             0

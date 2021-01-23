@@ -1,6 +1,6 @@
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{split_ca, Xob};
+use crate::utils::{split_ca, NoNull};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation,
     prepare_hashed_relation_threaded,
@@ -14,6 +14,24 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Deref;
 use unsafe_unwrap::UnsafeUnwrap;
+
+macro_rules! det_hash_prone_order {
+    ($self:expr, $other:expr) => {{
+        // The shortest relation will be used to create a hash table.
+        let left_first = $self.len() > $other.len();
+        let a;
+        let b;
+        if left_first {
+            a = $self;
+            b = $other;
+        } else {
+            b = $self;
+            a = $other;
+        }
+
+        (a, b, !left_first)
+    }};
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum JoinType {
@@ -40,14 +58,15 @@ where
 }
 
 #[allow(clippy::needless_collect)]
-fn hash_join_tuples_inner_threaded<T, I>(
+fn hash_join_tuples_inner_threaded<T, I, J>(
     a: Vec<I>,
-    b: Vec<I>,
+    b: Vec<J>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swap: bool,
 ) -> Vec<(usize, usize)>
 where
     I: Iterator<Item = T> + Send,
+    J: Iterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy + Debug,
 {
     // first we hash one relation
@@ -121,9 +140,10 @@ where
 }
 
 #[allow(clippy::needless_collect)]
-fn hash_join_tuples_left_threaded<T, I>(a: Vec<I>, b: Vec<I>) -> Vec<(usize, Option<usize>)>
+fn hash_join_tuples_left_threaded<T, I, J>(a: Vec<I>, b: Vec<J>) -> Vec<(usize, Option<usize>)>
 where
     I: Iterator<Item = T> + Send,
+    J: Iterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy + Debug,
 {
     // first we hash one relation
@@ -309,8 +329,97 @@ pub(crate) trait HashJoin<T> {
     }
 }
 
-impl HashJoin<Float64Type> for Float64Chunked {}
-impl HashJoin<Float32Type> for Float32Chunked {}
+macro_rules! impl_float_hash_join {
+    ($type: ty, $ca: ty) => {
+        impl HashJoin<$type> for $ca {
+            fn hash_join_inner(&self, other: &$ca) -> Vec<(usize, usize)> {
+                let (a, b, swap) = det_hash_prone_order!(self, other);
+
+                let n_threads = n_join_threads();
+                let splitted_a = split_ca(a, n_threads).unwrap();
+                let splitted_b = split_ca(b, n_threads).unwrap();
+
+                match (a.null_count(), b.null_count()) {
+                    (0, 0) => {
+                        let iters_a = splitted_a
+                            .iter()
+                            .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
+                            .collect_vec();
+                        let iters_b = splitted_b
+                            .iter()
+                            .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
+                            .collect_vec();
+                        hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
+                    }
+                    _ => {
+                        let iters_a = splitted_a
+                            .iter()
+                            .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
+                            .collect_vec();
+                        let iters_b = splitted_b
+                            .iter()
+                            .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
+                            .collect_vec();
+                        hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
+                    }
+                }
+            }
+            fn hash_join_left(&self, other: &$ca) -> Vec<(usize, Option<usize>)> {
+                let n_threads = n_join_threads();
+
+                let a = self;
+                let b = other;
+                let splitted_a = split_ca(a, n_threads).unwrap();
+                let splitted_b = split_ca(b, n_threads).unwrap();
+
+                match (a.null_count(), b.null_count()) {
+                    (0, 0) => {
+                        let iters_a = splitted_a
+                            .iter()
+                            .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
+                            .collect_vec();
+                        let iters_b = splitted_b
+                            .iter()
+                            .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
+                            .collect_vec();
+                        hash_join_tuples_left_threaded(iters_a, iters_b)
+                    }
+                    _ => {
+                        let iters_a = splitted_a
+                            .iter()
+                            .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
+                            .collect_vec();
+                        let iters_b = splitted_b
+                            .iter()
+                            .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
+                            .collect_vec();
+                        hash_join_tuples_left_threaded(iters_a, iters_b)
+                    }
+                }
+            }
+            fn hash_join_outer(&self, other: &$ca) -> Vec<(Option<usize>, Option<usize>)> {
+                let (a, b, swap) = det_hash_prone_order!(self, other);
+
+                match (a.null_count() == 0, b.null_count() == 0) {
+                    (true, true) => hash_join_tuples_outer(
+                        a.into_no_null_iter().map(|v| v.to_bits()),
+                        b.into_no_null_iter().map(|v| v.to_bits()),
+                        swap,
+                    ),
+                    _ => hash_join_tuples_outer(
+                        a.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())),
+                        b.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())),
+                        swap,
+                    ),
+                }
+            }
+        }
+    };
+}
+
+impl_float_hash_join!(Float32Type, Float32Chunked);
+impl_float_hash_join!(Float64Type, Float64Chunked);
+
 impl HashJoin<ListType> for ListChunked {}
 impl HashJoin<CategoricalType> for CategoricalChunked {
     fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(usize, usize)> {
@@ -322,24 +431,6 @@ impl HashJoin<CategoricalType> for CategoricalChunked {
     fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<usize>, Option<usize>)> {
         self.deref().hash_join_outer(&other.cast().unwrap())
     }
-}
-
-macro_rules! det_hash_prone_order {
-    ($self:expr, $other:expr) => {{
-        // The shortest relation will be used to create a hash table.
-        let left_first = $self.len() > $other.len();
-        let a;
-        let b;
-        if left_first {
-            a = $self;
-            b = $other;
-        } else {
-            b = $self;
-            a = $other;
-        }
-
-        (a, b, !left_first)
-    }};
 }
 
 fn n_join_threads() -> usize {
@@ -411,23 +502,12 @@ where
 
     fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<usize>, Option<usize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
-        match (a.cont_slice(), b.cont_slice()) {
-            (Ok(a_slice), Ok(b_slice)) => {
-                hash_join_tuples_outer(a_slice.iter(), b_slice.iter(), swap)
+
+        match (a.null_count() == 0, b.null_count() == 0) {
+            (true, true) => {
+                hash_join_tuples_outer(a.into_no_null_iter(), b.into_no_null_iter(), swap)
             }
-            (Ok(a_slice), Err(_)) => {
-                hash_join_tuples_outer(
-                    a_slice.iter().map(|v| Some(*v)), // take ownership
-                    b.into_iter(),
-                    swap,
-                )
-            }
-            (Err(_), Ok(b_slice)) => hash_join_tuples_outer(
-                a.into_iter(),
-                b_slice.iter().map(|v: &T::Native| Some(*v)),
-                swap,
-            ),
-            (Err(_), Err(_)) => hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap),
+            _ => hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap),
         }
     }
 }
@@ -569,7 +649,7 @@ where
                     }
                 }
             })
-            .collect::<Xob<ChunkedArray<T>>>()
+            .collect::<NoNull<ChunkedArray<T>>>()
             .into_inner()
             .into_series()
     }

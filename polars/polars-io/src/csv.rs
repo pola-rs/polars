@@ -339,12 +339,28 @@ where
     /// Read the file and create the DataFrame.
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        let mut csv_reader = self.build_inner_reader()?;
-        let df = csv_reader.as_df(None, None)?;
-        match rechunk {
-            true => Ok(df.agg_chunks()),
-            false => Ok(df),
+        // we use this scope so that everything gets dropped before calling malloc_trim
+        let df = {
+            let mut csv_reader = self.build_inner_reader()?;
+            let df = csv_reader.as_df(None, None)?;
+
+            match rechunk {
+                true => Ok(df.agg_chunks()),
+                false => Ok(df),
+            }
+        };
+        #[cfg(target_os = "linux")]
+        {
+            if rechunk {
+                use polars_core::utils::malloc_trim;
+                // linux global allocators don't return freed memory immediately to the OS.
+                // macos and windows return more aggressively.
+                // We choose this location to do trim heap memory as this will be called after CSV read
+                // which may have some over-allocated utf8
+                unsafe { malloc_trim(0) };
+            }
         }
+        df
     }
 }
 
@@ -362,7 +378,7 @@ mod test {
             .finish(&mut df)
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
-        assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7\n3,2\n4,3\n", csv);
+        assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7.0\n3,2.0\n4,3.0\n", csv);
     }
 
     #[test]
@@ -416,5 +432,25 @@ mod test {
             .with_ignore_parser_errors(true)
             .finish()
             .unwrap();
+
+        let s = r#""sepal.length","sepal.width","petal.length","petal.width","variety"
+        5.1,3.5,1.4,.2,"Setosa"
+        4.9,3,1.4,.2,"Setosa"
+        4.7,3.2,1.3,.2,"Setosa"
+        4.6,3.1,1.5,.2,"Setosa"
+        5,3.6,1.4,.2,"Setosa"
+        5.4,3.9,1.7,.4,"Setosa"
+        4.6,3.4,1.4,.3,"Setosa"#;
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file)
+            .infer_schema(Some(100))
+            .has_header(true)
+            .with_batch_size(100)
+            .finish()
+            .unwrap();
+
+        assert_eq!("sepal.length", df.get_columns()[0].name());
+        assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
     }
 }

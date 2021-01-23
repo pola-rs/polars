@@ -3,7 +3,6 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*};
-use arrow::array::Array;
 use arrow::compute;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use std::cmp::{Ordering, PartialOrd};
@@ -100,26 +99,7 @@ where
     fn sum(&self) -> Option<T::Native> {
         self.downcast_chunks()
             .iter()
-            .map(|&a| {
-                // TODO! Fix in arrow 3.0.
-                // compute sum is incorrect in SIMD with null values.
-                // after arrow upgrade we should use the arrow kernel again.
-                if a.null_count() == 0 {
-                    compute::sum(a)
-                } else {
-                    let sum = a
-                        .iter()
-                        .fold(T::Native::zero(), |acc, opt_val| match opt_val {
-                            None => acc,
-                            Some(val) => acc + val,
-                        });
-                    if sum > Zero::zero() {
-                        Some(sum)
-                    } else {
-                        None
-                    }
-                }
-            })
+            .map(|&a| compute::sum(a))
             .fold(None, |acc, v| match v {
                 Some(v) => match acc {
                     None => Some(v),
@@ -130,9 +110,9 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
-        match T::get_data_type() {
-            ArrowDataType::Float32 => agg_float_with_nans!(self, min_by, f32),
-            ArrowDataType::Float64 => agg_float_with_nans!(self, min_by, f64),
+        match T::get_dtype() {
+            DataType::Float32 => agg_float_with_nans!(self, min_by, f32),
+            DataType::Float64 => agg_float_with_nans!(self, min_by, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
@@ -142,9 +122,9 @@ where
     }
 
     fn max(&self) -> Option<T::Native> {
-        match T::get_data_type() {
-            ArrowDataType::Float32 => agg_float_with_nans!(self, max_by, f32),
-            ArrowDataType::Float64 => agg_float_with_nans!(self, max_by, f64),
+        match T::get_dtype() {
+            DataType::Float32 => agg_float_with_nans!(self, max_by, f32),
+            DataType::Float64 => agg_float_with_nans!(self, max_by, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
@@ -430,7 +410,7 @@ impl ChunkAggSeries for BooleanChunked {
 
 macro_rules! one_null_utf8 {
     ($self:ident) => {{
-        let mut builder = Utf8ChunkedBuilder::new($self.name(), 1);
+        let mut builder = Utf8ChunkedBuilder::new($self.name(), 1, 0);
         builder.append_null();
         builder.finish().into_series()
     }};
@@ -461,7 +441,7 @@ impl ChunkAggSeries for CategoricalChunked {}
 
 macro_rules! one_null_list {
     ($self:ident) => {{
-        let mut builder = get_list_builder(&DataType::Null, 1, $self.name());
+        let mut builder = get_list_builder(&DataType::Null, 0, 1, $self.name());
         builder.append_opt_series(None);
         builder.finish().into_series()
     }};

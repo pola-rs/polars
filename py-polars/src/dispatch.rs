@@ -22,7 +22,6 @@ impl PyArrowPrimitiveType for Date64Type {}
 impl PyArrowPrimitiveType for Time64NanosecondType {}
 impl PyArrowPrimitiveType for DurationNanosecondType {}
 impl PyArrowPrimitiveType for DurationMillisecondType {}
-impl PyArrowPrimitiveType for BooleanType {}
 
 pub trait ApplyLambda<'a> {
     fn apply_lambda_unknown(&'a self, _py: Python, _lambda: &'a PyAny) -> PyResult<PySeries> {
@@ -46,6 +45,17 @@ pub trait ApplyLambda<'a> {
         D: PyArrowPrimitiveType,
         D::Native: ToPyObject + FromPyObject<'a>,
     {
+        unimplemented!()
+    }
+
+    /// Apply a lambda with a boolean output type
+    fn apply_lambda_with_bool_out_type(
+        &'a self,
+        _py: Python,
+        _lambda: &'a PyAny,
+        _init_null_count: usize,
+        _first_value: Option<bool>,
+    ) -> PyResult<ChunkedArray<BooleanType>> {
         unimplemented!()
     }
 
@@ -99,6 +109,29 @@ where
     builder.finish()
 }
 
+fn iterator_to_bool(
+    it: impl Iterator<Item = Option<bool>>,
+    init_null_count: usize,
+    first_value: Option<bool>,
+    name: &str,
+    capacity: usize,
+) -> ChunkedArray<BooleanType> {
+    let mut builder = BooleanChunkedBuilder::new(name, capacity);
+    for _ in 0..init_null_count {
+        builder.append_null();
+    }
+    if let Some(val) = first_value {
+        builder.append_value(val)
+    }
+    for opt_val in it {
+        match opt_val {
+            Some(val) => builder.append_value(val),
+            None => builder.append_null(),
+        }
+    }
+    builder.finish()
+}
+
 fn iterator_to_utf8<'a>(
     it: impl Iterator<Item = Option<&'a str>>,
     init_null_count: usize,
@@ -106,7 +139,7 @@ fn iterator_to_utf8<'a>(
     name: &str,
     capacity: usize,
 ) -> Utf8Chunked {
-    let mut builder = Utf8ChunkedBuilder::new(name, capacity);
+    let mut builder = Utf8ChunkedBuilder::new(name, capacity, capacity * 25);
     for _ in 0..init_null_count {
         builder.append_null();
     }
@@ -130,7 +163,7 @@ fn iterator_to_list(
     name: &str,
     capacity: usize,
 ) -> ListChunked {
-    let mut builder = get_list_builder(dt, capacity, name);
+    let mut builder = get_list_builder(dt, capacity * 5, capacity, name);
     for _ in 0..init_null_count {
         builder.append_opt_series(None);
     }
@@ -149,6 +182,237 @@ where
     let arg = PyTuple::new(py, &[in_val]);
     let out = lambda.call1(arg).expect("lambda failed");
     out.extract::<S>()
+}
+
+impl<'a> ApplyLambda<'a> for BooleanChunked {
+    fn apply_lambda_unknown(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        let mut null_count = 0;
+        let mut it = self.into_iter();
+        while let Some(opt_v) = it.next() {
+            if let Some(v) = opt_v {
+                let arg = PyTuple::new(py, &[v]);
+                let out = lambda.call1(arg)?;
+                if out.is_none() {
+                    null_count += 1;
+                    continue;
+                } else if out.is_instance::<PyInt>().unwrap() {
+                    let first_value = out.extract::<i64>().unwrap();
+                    return self
+                        .apply_lambda_with_primitive_out_type::<Int64Type>(
+                            py,
+                            lambda,
+                            null_count,
+                            Some(first_value),
+                        )
+                        .map(|ca| ca.into_series().into());
+                } else if out.is_instance::<PyFloat>().unwrap() {
+                    let first_value = out.extract::<f64>().unwrap();
+                    return self
+                        .apply_lambda_with_primitive_out_type::<Float64Type>(
+                            py,
+                            lambda,
+                            null_count,
+                            Some(first_value),
+                        )
+                        .map(|ca| ca.into_series().into());
+                } else if out.is_instance::<PyBool>().unwrap() {
+                    let first_value = out.extract::<bool>().unwrap();
+                    return self
+                        .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
+                        .map(|ca| ca.into_series().into());
+                } else if out.is_instance::<PyString>().unwrap() {
+                    let first_value = out.extract::<&str>().unwrap();
+                    return self
+                        .apply_lambda_with_utf8_out_type(py, lambda, null_count, Some(first_value))
+                        .map(|ca| ca.into_series().into());
+                } else if out.hasattr("_s")? {
+                    let py_pyseries = out.getattr("_s").unwrap();
+                    let series = py_pyseries.extract::<PySeries>().unwrap().series;
+                    let dt = series.dtype();
+                    return self
+                        .apply_lambda_with_list_out_type(py, lambda, null_count, &series, dt)
+                        .map(|ca| ca.into_series().into());
+                } else {
+                    return Err(PyPolarsEr::Other("Could not determine output type".into()).into());
+                }
+            } else {
+                null_count += 1
+            }
+        }
+        Ok(Self::full_null(self.name(), self.len())
+            .into_series()
+            .into())
+    }
+
+    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        self.apply_lambda_with_bool_out_type(py, lambda, 0, None)
+            .map(|ca| PySeries::new(ca.into_series()))
+    }
+
+    fn apply_lambda_with_primitive_out_type<D>(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<D::Native>,
+    ) -> PyResult<ChunkedArray<D>>
+    where
+        D: PyArrowPrimitiveType,
+        D::Native: ToPyObject + FromPyObject<'a>,
+    {
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count + skip)
+                .map(|val| call_lambda(py, lambda, val).ok());
+            Ok(iterator_to_primitive(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self
+                .into_iter()
+                .skip(init_null_count + skip)
+                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+            Ok(iterator_to_primitive(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        }
+    }
+
+    fn apply_lambda_with_bool_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<bool>,
+    ) -> PyResult<BooleanChunked> {
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count + skip)
+                .map(|val| call_lambda(py, lambda, val).ok());
+            Ok(iterator_to_bool(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self
+                .into_iter()
+                .skip(init_null_count + skip)
+                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+            Ok(iterator_to_bool(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        }
+    }
+
+    fn apply_lambda_with_utf8_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<&str>,
+    ) -> PyResult<Utf8Chunked> {
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count + skip)
+                .map(|val| call_lambda(py, lambda, val).ok());
+
+            Ok(iterator_to_utf8(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self
+                .into_iter()
+                .skip(init_null_count + skip)
+                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+            Ok(iterator_to_utf8(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        }
+    }
+
+    fn apply_lambda_with_list_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: &Series,
+        dt: &DataType,
+    ) -> PyResult<ListChunked> {
+        let skip = 1;
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count + skip)
+                .map(|val| {
+                    let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
+                    pyseries.map(|ps| ps.series)
+                });
+
+            Ok(iterator_to_list(
+                dt,
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self
+                .into_iter()
+                .skip(init_null_count + skip)
+                .map(|opt_val| {
+                    opt_val.and_then(|val| {
+                        let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
+                        pyseries.map(|ps| ps.series)
+                    })
+                });
+            Ok(iterator_to_list(
+                dt,
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        }
+    }
 }
 
 impl<'a, T> ApplyLambda<'a> for ChunkedArray<T>
@@ -192,12 +456,7 @@ where
                 } else if out.is_instance::<PyBool>().unwrap() {
                     let first_value = out.extract::<bool>().unwrap();
                     return self
-                        .apply_lambda_with_primitive_out_type::<BooleanType>(
-                            py,
-                            lambda,
-                            null_count,
-                            Some(first_value),
-                        )
+                        .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
                         .map(|ca| ca.into_series().into());
                 } else if out.is_instance::<PyString>().unwrap() {
                     let first_value = out.extract::<&str>().unwrap();
@@ -260,6 +519,43 @@ where
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
             Ok(iterator_to_primitive(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        }
+    }
+
+    fn apply_lambda_with_bool_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<bool>,
+    ) -> PyResult<BooleanChunked> {
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count + skip)
+                .map(|val| call_lambda(py, lambda, val).ok());
+            Ok(iterator_to_bool(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self
+                .into_iter()
+                .skip(init_null_count + skip)
+                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+            Ok(iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
@@ -391,12 +687,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
                 } else if out.is_instance::<PyBool>().unwrap() {
                     let first_value = out.extract::<bool>().unwrap();
                     return self
-                        .apply_lambda_with_primitive_out_type::<BooleanType>(
-                            py,
-                            lambda,
-                            null_count,
-                            Some(first_value),
-                        )
+                        .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
                         .map(|ca| ca.into_series().into());
                 } else if out.is_instance::<PyString>().unwrap() {
                     let first_value = out.extract::<&str>().unwrap();
@@ -459,6 +750,43 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
             Ok(iterator_to_primitive(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        }
+    }
+
+    fn apply_lambda_with_bool_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<bool>,
+    ) -> PyResult<BooleanChunked> {
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count + skip)
+                .map(|val| call_lambda(py, lambda, val).ok());
+            Ok(iterator_to_bool(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self
+                .into_iter()
+                .skip(init_null_count + skip)
+                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+            Ok(iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
@@ -642,12 +970,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 } else if out.is_instance::<PyBool>().unwrap() {
                     let first_value = out.extract::<bool>().unwrap();
                     return self
-                        .apply_lambda_with_primitive_out_type::<BooleanType>(
-                            py,
-                            lambda,
-                            null_count,
-                            Some(first_value),
-                        )
+                        .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
                         .map(|ca| ca.into_series().into());
                 } else if out.is_instance::<PyString>().unwrap() {
                     let first_value = out.extract::<&str>().unwrap();
@@ -679,7 +1002,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
         match self.dtype() {
             DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), self.len(), self.name());
+                let mut builder =
+                    get_list_builder(&dt.into(), self.len() * 5, self.len(), self.name());
 
                 let ca = if self.null_count() == 0 {
                     let mut it = self.into_no_null_iter();
@@ -689,10 +1013,10 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         let out_series = call_series_lambda(pypolars, lambda, series)
                             .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
                         let dt = out_series.dtype();
-                        builder = get_list_builder(dt, self.len(), self.name());
+                        builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
                         builder.append_opt_series(Some(&out_series));
                     } else {
-                        let mut builder = get_list_builder(&dt.into(), 1, self.name());
+                        let mut builder = get_list_builder(&dt.into(), 0, 1, self.name());
                         let ca = builder.finish();
                         return Ok(PySeries::new(ca.into_series()));
                     }
@@ -712,7 +1036,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                             let out_series = call_series_lambda(pypolars, lambda, series)
                                 .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
                             let dt = out_series.dtype();
-                            builder = get_list_builder(dt, self.len(), self.name());
+                            builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
                             builder.append_opt_series(Some(&out_series));
                             break;
                         } else {
@@ -785,6 +1109,58 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     })
                 });
             Ok(iterator_to_primitive(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        }
+    }
+
+    fn apply_lambda_with_bool_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<bool>,
+    ) -> PyResult<BooleanChunked> {
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let pypolars = PyModule::import(py, "pypolars")?;
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count + skip)
+                .map(|val| {
+                    // create a PySeries struct/object for Python
+                    let pyseries = PySeries::new(val);
+                    // Wrap this PySeries object in the python side Series wrapper
+                    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                    call_lambda(py, lambda, python_series_wrapper).ok()
+                });
+            Ok(iterator_to_bool(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self
+                .into_iter()
+                .skip(init_null_count + skip)
+                .map(|opt_val| {
+                    opt_val.and_then(|val| {
+                        // create a PySeries struct/object for Python
+                        let pyseries = PySeries::new(val);
+                        // Wrap this PySeries object in the python side Series wrapper
+                        let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                        call_lambda(py, lambda, python_series_wrapper).ok()
+                    })
+                });
+            Ok(iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,

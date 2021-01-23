@@ -5,10 +5,6 @@ use crate::apply_method_numeric_series;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
 
-fn fill_bool(val: bool, len: usize) -> BooleanChunked {
-    std::iter::repeat(val).take(len).collect()
-}
-
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
         match $self.dtype() {

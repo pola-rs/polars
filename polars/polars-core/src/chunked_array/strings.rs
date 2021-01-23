@@ -1,11 +1,11 @@
 use crate::prelude::*;
-use crate::utils::Xob;
+use crate::utils::NoNull;
 use regex::Regex;
 
 macro_rules! apply_closure_to_primitive {
     ($self:expr, $f:expr) => {{
         if $self.null_count() == 0 {
-            let ca: Xob<_> = $self.into_no_null_iter().map($f).collect();
+            let ca: NoNull<_> = $self.into_no_null_iter().map($f).collect();
             ca.into_inner()
         } else {
             let ca = $self.into_iter().map(|opt_s| opt_s.map($f)).collect();
@@ -37,7 +37,12 @@ impl Utf8Chunked {
     pub fn contains(&self, pat: &str) -> Result<BooleanChunked> {
         let reg = Regex::new(pat)?;
         let f = |s| reg.is_match(s);
-        Ok(apply_closure_to_primitive!(self, f))
+        let ca = if self.null_count() == 0 {
+            self.into_no_null_iter().map(f).collect()
+        } else {
+            self.into_iter().map(|opt_s| opt_s.map(f)).collect()
+        };
+        Ok(ca)
     }
 
     /// Replace the leftmost (sub)string by a regex pattern

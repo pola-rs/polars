@@ -173,6 +173,12 @@ class Series:
     def __repr__(self) -> str:
         return self.__str__()
 
+    def __and__(self, other):
+        return wrap_s(self._s.bitand(other._s))
+
+    def __or__(self, other):
+        return wrap_s(self._s.bitor(other._s))
+
     def __eq__(self, other):
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
@@ -1077,6 +1083,18 @@ class Series:
         Modify the strings to their uppercase equivalent
         """
         return wrap_s(self._s.str_to_uppercase())
+
+    def str_rstrip(self) -> "Series":
+        """
+        Remove trailing whitespace
+        """
+        return self.str_replace(r"[ \t]+$", "")
+
+    def str_lstrip(self) -> "Series":
+        """
+        Remove leading whitespace
+        """
+        return self.str_replace(r"^\s*", "")
 
     def as_duration(self) -> "Series":
         """

@@ -1,24 +1,163 @@
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
+use crate::frame::row::Row;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_vertical, split_ca, split_series, IntoDynamicZip, Xob};
+use crate::utils::{accumulate_dataframes_vertical, split_ca, split_df, NoNull};
 use crate::vector_hasher::{
-    create_hash_and_keys_threaded_vectorized, create_hash_threaded_vectorized,
+    create_hash_and_keys_threaded_vectorized, df_rows_to_hashes, df_rows_to_hashes_threaded,
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use ahash::RandomState;
-use arrow::array::{LargeStringBuilder, PrimitiveBuilder};
 use crossbeam::thread;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
+use polars_arrow::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashSet;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::{
     fmt::{Debug, Formatter},
     ops::Add,
 };
+
+pub trait VecHash {
+    /// Compute the hase for all values in the array.
+    ///
+    /// This currently only works with the ahash RandomState hasher builder.
+    fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
+        unimplemented!()
+    }
+}
+
+impl<T> VecHash for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Hash,
+{
+    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+        if self.null_count() == 0 {
+            self.into_no_null_iter()
+                .map(|v| {
+                    let mut hasher = random_state.build_hasher();
+                    v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_v| {
+                    let mut hasher = random_state.build_hasher();
+                    opt_v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        }
+    }
+}
+
+impl VecHash for Utf8Chunked {
+    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+        if self.null_count() == 0 {
+            self.into_no_null_iter()
+                .map(|v| {
+                    let mut hasher = random_state.build_hasher();
+                    v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_v| {
+                    let mut hasher = random_state.build_hasher();
+                    opt_v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        }
+    }
+}
+
+impl VecHash for BooleanChunked {
+    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+        if self.null_count() == 0 {
+            self.into_no_null_iter()
+                .map(|v| {
+                    let mut hasher = random_state.build_hasher();
+                    v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_v| {
+                    let mut hasher = random_state.build_hasher();
+                    opt_v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        }
+    }
+}
+
+impl VecHash for Float32Chunked {
+    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+        if self.null_count() == 0 {
+            self.into_no_null_iter()
+                .map(|v| {
+                    let v = v.to_bits();
+                    let mut hasher = random_state.build_hasher();
+                    v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_v| {
+                    let opt_v = opt_v.map(|v| v.to_bits());
+                    let mut hasher = random_state.build_hasher();
+                    opt_v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        }
+    }
+}
+impl VecHash for Float64Chunked {
+    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+        if self.null_count() == 0 {
+            self.into_no_null_iter()
+                .map(|v| {
+                    let v = v.to_bits();
+                    let mut hasher = random_state.build_hasher();
+                    v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        } else {
+            self.into_iter()
+                .map(|opt_v| {
+                    let opt_v = opt_v.map(|v| v.to_bits());
+                    let mut hasher = random_state.build_hasher();
+                    opt_v.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<NoNull<_>>()
+                .into_inner()
+        }
+    }
+}
+
+impl VecHash for ListChunked {}
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
 where
@@ -35,9 +174,17 @@ where
         .collect()
 }
 
-fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<(usize, Vec<usize>)>
+fn groupby_threaded_flat<I, T>(iters: Vec<I>) -> Vec<(usize, Vec<usize>)>
 where
-    I: Iterator<Item = T> + Send,
+    I: IntoIterator<Item = T> + Send,
+    T: Send + Hash + Eq + Sync + Copy,
+{
+    groupby_threaded(iters).into_iter().flatten().collect()
+}
+
+fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<Vec<(usize, Vec<usize>)>>
+where
+    I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
 {
     let n_threads = iters.len();
@@ -93,7 +240,6 @@ where
                 })
             })
             .collect_vec();
-
         handles
             .into_iter()
             .map(|handle| {
@@ -103,20 +249,66 @@ where
                     .map(|(_k, v)| v)
                     .collect::<Vec<_>>()
             })
-            .flatten()
             .collect_vec()
     })
     .unwrap()
 }
 
-fn groupby_threaded_multiple_keys<I, T>(iters: Vec<I>, keys: DataFrame) -> Vec<(usize, Vec<usize>)>
-where
-    I: Iterator<Item = T> + Send,
-    T: Send + Hash + Eq + Sync + Copy,
-{
-    let n_threads = iters.len();
-    let (hashes, _random_state) = create_hash_threaded_vectorized(iters);
-    let size = hashes.iter().fold(0, |acc, v| acc + v.len());
+fn populate_multiple_key_hashmap<'a, 'b>(
+    hash_tbl: &mut HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher>,
+    row_1: &'b mut Row<'a>,
+    row_2: &'b mut Row<'a>,
+    idx: usize,
+    h: u64,
+    keys: &'a DataFrame,
+) {
+    let entry = hash_tbl
+        .raw_entry_mut()
+        // uses the idx to probe rows in the original DataFrame with keys
+        // to check equality to find an entry
+        .from_hash(h, |idx_hash| {
+            let key_idx = idx_hash.idx;
+            unsafe {
+                keys.get_row_amortized_unchecked(key_idx, row_1);
+                keys.get_row_amortized_unchecked(idx, row_2);
+            }
+            row_1 == row_2
+        });
+    match entry {
+        RawEntryMut::Vacant(entry) => {
+            entry.insert_hashed_nocheck(h, IdxHash::new(idx, h), (idx, vec![idx]));
+        }
+        RawEntryMut::Occupied(mut entry) => {
+            let (_k, v) = entry.get_key_value_mut();
+            v.1.push(idx);
+        }
+    }
+}
+
+fn groupby_multiple_keys(keys: DataFrame) -> Vec<(usize, Vec<usize>)> {
+    let (hashes, _) = df_rows_to_hashes(&keys, None);
+    let size = hashes.len();
+    // rather over allocate because rehashing is expensive
+    let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
+        HashMap::with_capacity_and_hasher(size, IdBuildHasher::default());
+    let mut row_1 = keys.get_row(0);
+    let mut row_2 = row_1.clone();
+
+    for (idx, h) in hashes.into_no_null_iter().enumerate() {
+        populate_multiple_key_hashmap(&mut hash_tbl, &mut row_1, &mut row_2, idx, h, &keys);
+    }
+    hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+}
+
+fn groupby_threaded_multiple_keys_flat(
+    keys: DataFrame,
+    n_threads: usize,
+) -> Vec<(usize, Vec<usize>)> {
+    let dfs = split_df(&keys, n_threads).unwrap();
+    let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
+    let size = hashes.len();
+    // let (hashes, _random_state) = create_hash_threaded_vectorized(iters);
+    // let size = hashes.iter().fold(0, |acc, v| acc + v.len());
     // two row containers to amortize allocations;
     let row_1 = keys.get_row(0);
 
@@ -147,39 +339,21 @@ where
 
                     let n_threads = n_threads as u64;
                     let mut offset = 0;
-                    for hashes_and_keys in hashes {
-                        let len = hashes_and_keys.len();
-                        hashes_and_keys.iter().enumerate().for_each(|(idx, h)| {
+                    for hashes in hashes {
+                        let len = hashes.len();
+                        hashes.into_no_null_iter().enumerate().for_each(|(idx, h)| {
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
                             if (h + thread_no) % n_threads == 0 {
                                 let idx = idx + offset;
-
-                                let entry = hash_tbl
-                                    .raw_entry_mut()
-                                    // uses the idx to probe rows in the original DataFrame with keys
-                                    // to check equality to find an entry
-                                    .from_hash(*h, |idx_hash| {
-                                        let key_idx = idx_hash.idx;
-                                        unsafe {
-                                            keys.get_row_amortized_unchecked(key_idx, &mut row_1);
-                                            keys.get_row_amortized_unchecked(idx, &mut row_2);
-                                        }
-                                        row_1 == row_2
-                                    });
-                                match entry {
-                                    RawEntryMut::Vacant(entry) => {
-                                        entry.insert_hashed_nocheck(
-                                            *h,
-                                            IdxHash::new(idx, *h),
-                                            (idx, vec![idx]),
-                                        );
-                                    }
-                                    RawEntryMut::Occupied(mut entry) => {
-                                        let (_k, v) = entry.get_key_value_mut();
-                                        v.1.push(idx);
-                                    }
-                                }
+                                populate_multiple_key_hashmap(
+                                    &mut hash_tbl,
+                                    &mut row_1,
+                                    &mut row_2,
+                                    idx,
+                                    h,
+                                    keys,
+                                );
                             }
                         });
 
@@ -210,21 +384,8 @@ pub trait IntoGroupTuples {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in te tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
+    fn group_tuples(&self, _multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
         unimplemented!()
-    }
-}
-
-fn group_tuples<'a, T>(ca: &'a ChunkedArray<T>) -> Vec<(usize, Vec<usize>)>
-where
-    &'a ChunkedArray<T>: IntoNoNullIterator + IntoIterator,
-    <&'a ChunkedArray<T> as IntoIterator>::Item: Eq + Hash,
-    <&'a ChunkedArray<T> as IntoNoNullIterator>::Item: Eq + Hash,
-{
-    if ca.null_count() == 0 {
-        groupby(ca.into_no_null_iter())
-    } else {
-        groupby(ca.into_iter())
     }
 }
 
@@ -234,11 +395,10 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
 }
 
 macro_rules! group_tuples {
-    ($ca: expr) => {{
-        let n_threads = num_cpus::get();
-
+    ($ca: expr, $multithreaded: expr) => {{
         // TODO! choose a splitting len
-        if group_multithreaded($ca) {
+        if $multithreaded && group_multithreaded($ca) {
+            let n_threads = num_cpus::get();
             let splitted = split_ca($ca, n_threads).unwrap();
 
             if $ca.null_count() == 0 {
@@ -246,10 +406,10 @@ macro_rules! group_tuples {
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect_vec();
-                groupby_threaded(iters)
+                groupby_threaded_flat(iters)
             } else {
                 let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-                groupby_threaded(iters)
+                groupby_threaded_flat(iters)
             }
         } else {
             if $ca.null_count() == 0 {
@@ -266,73 +426,66 @@ where
     T: PolarsIntegerType,
     T::Native: Eq + Hash + Send,
 {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        group_tuples!(self, multithreaded)
     }
 }
 impl IntoGroupTuples for BooleanChunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        group_tuples!(self, multithreaded)
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        group_tuples!(self, multithreaded)
     }
 }
 
 impl IntoGroupTuples for CategoricalChunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        group_tuples!(self, multithreaded)
     }
 }
 
 macro_rules! impl_into_group_tpls_float {
-    ($self: ident) => {
-        if group_multithreaded($self) {
+    ($self: ident, $multithreaded:expr) => {
+        if $multithreaded && group_multithreaded($self) {
             let n_threads = num_cpus::get();
             let splitted = split_ca($self, n_threads).unwrap();
             match $self.null_count() {
                 0 => {
                     let iters = splitted
                         .iter()
-                        .map(|ca| ca.into_no_null_iter().map(|v| v.integer_decode()))
+                        .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
                         .collect_vec();
-                    groupby_threaded(iters)
+                    groupby_threaded_flat(iters)
                 }
                 _ => {
                     let iters = splitted
                         .iter()
-                        .map(|ca| {
-                            ca.into_iter()
-                                .map(|opt_v| opt_v.map(|v| v.integer_decode()))
-                        })
+                        .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
                         .collect_vec();
-                    groupby_threaded(iters)
+                    groupby_threaded_flat(iters)
                 }
             }
         } else {
             match $self.null_count() {
-                0 => groupby($self.into_no_null_iter().map(|v| v.integer_decode())),
-                _ => groupby(
-                    $self
-                        .into_iter()
-                        .map(|opt_v| opt_v.map(|v| v.integer_decode())),
-                ),
+                0 => groupby($self.into_no_null_iter().map(|v| v.to_bits())),
+                _ => groupby($self.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()))),
             }
         }
     };
 }
 
 impl IntoGroupTuples for Float64Chunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        impl_into_group_tpls_float!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        impl_into_group_tpls_float!(self, multithreaded)
     }
 }
 impl IntoGroupTuples for Float32Chunked {
-    fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-        impl_into_group_tpls_float!(self)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        impl_into_group_tpls_float!(self, multithreaded)
     }
 }
 impl IntoGroupTuples for ListChunked {}
@@ -386,7 +539,7 @@ impl From<f64> for Groupable<'_> {
 impl From<f32> for Groupable<'_> {
     fn from(v: f32) -> Self {
         let (m, e, s) = v.integer_decode();
-        Groupable::Float64(m, e, s)
+        Groupable::Float32(m, e, s)
     }
 }
 
@@ -449,193 +602,35 @@ impl<'b> (dyn SeriesTrait + 'b) {
 }
 
 impl DataFrame {
-    pub fn groupby_with_series(&self, by: Vec<Series>) -> Result<GroupBy> {
-        let n_threads = num_cpus::get();
+    pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
+        if by.is_empty() || by[0].len() != self.height() {
+            return Err(PolarsError::ShapeMisMatch(
+                "the Series used as keys should have the same length as the DataFrame".into(),
+            ));
+        };
 
         // make sure that categorical is used as uint32 in value type
-        let keys_df = DataFrame::new_no_checks(
+        let keys_df = DataFrame::new(
             by.iter()
                 .map(|s| match s.dtype() {
                     DataType::Categorical => s.cast::<UInt32Type>().unwrap(),
                     _ => s.clone(),
                 })
                 .collect(),
-        );
-
-        // flattened splitted vec,
-        let splitted_sel_keys = by
-            .iter()
-            .map(|s| split_series(s, n_threads).unwrap())
-            .flatten()
-            .collect_vec();
+        )?;
 
         let groups = match by.len() {
             1 => {
                 let series = &by[0];
-                series.group_tuples()
-            }
-            2 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 1))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            3 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 2))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            4 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 3))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            5 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 4))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            6 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 5))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            7 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 6))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            8 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 7))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            9 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 8))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            10 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 9))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            11 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 10))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
-            }
-            12 => {
-                let iters = (0..n_threads)
-                    .map(|t| {
-                        let keys = splitted_sel_keys
-                            .iter()
-                            .skip(t)
-                            .step_by(n_threads)
-                            .collect_vec();
-                        Ok(static_zip!(keys, 11))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                groupby_threaded_multiple_keys(iters, keys_df)
+                series.group_tuples(multithreaded)
             }
             _ => {
-                let iter = by
-                    .iter()
-                    .map(|sk| sk.as_groupable_iter())
-                    .collect::<Result<Vec<_>>>()?
-                    .into_dynamic_zip();
-
-                groupby(iter)
+                if multithreaded {
+                    let n_threads = num_cpus::get();
+                    groupby_threaded_multiple_keys_flat(keys_df, n_threads)
+                } else {
+                    groupby_multiple_keys(keys_df)
+                }
             }
         };
 
@@ -661,7 +656,7 @@ impl DataFrame {
     /// ```
     pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
         let selected_keys = self.select_series(by)?;
-        self.groupby_with_series(selected_keys)
+        self.groupby_with_series(selected_keys, true)
     }
 }
 
@@ -717,7 +712,7 @@ impl DataFrame {
 #[derive(Debug, Clone)]
 pub struct GroupBy<'df, 'selection_str> {
     df: &'df DataFrame,
-    selected_keys: Vec<Series>,
+    pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
     pub(crate) groups: Vec<(usize, Vec<usize>)>,
     // columns selected for aggregation
@@ -885,6 +880,12 @@ where
     }
 }
 
+impl AggFirst for BooleanChunked {
+    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+        impl_agg_first!(self, groups, BooleanChunked)
+    }
+}
+
 impl AggFirst for Utf8Chunked {
     fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_first!(self, groups, Utf8Chunked)
@@ -935,6 +936,12 @@ where
 {
     fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
         impl_agg_last!(self, groups, ChunkedArray<T>)
+    }
+}
+
+impl AggLast for BooleanChunked {
+    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+        impl_agg_last!(self, groups, BooleanChunked)
     }
 }
 
@@ -1005,7 +1012,7 @@ where
     T::Native: Hash + Eq,
 {
     fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
-        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
+        Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
 
@@ -1024,13 +1031,13 @@ impl<T> AggNUnique for ObjectChunked<T> {}
 // TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
     fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
-        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
+        Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
 
 impl AggNUnique for Utf8Chunked {
     fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
-        Some(impl_agg_n_unique!(self, groups, Xob<UInt32Chunked>))
+        Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
 
@@ -1045,9 +1052,12 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_list(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        // needed capacity for the list
+        let values_cap = groups.iter().fold(0, |acc, g| acc + g.1.len());
+
         macro_rules! impl_gb {
             ($type:ty, $agg_col:expr) => {{
-                let values_builder = PrimitiveBuilder::<$type>::new(groups.len());
+                let values_builder = PrimitiveArrayBuilder::<$type>::new(values_cap);
                 let mut builder =
                     ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
@@ -1062,8 +1072,22 @@ where
 
         macro_rules! impl_gb_utf8 {
             ($agg_col:expr) => {{
-                let values_builder = LargeStringBuilder::new(groups.len());
+                let values_builder = LargeStringBuilder::with_capacity(values_cap * 5, values_cap);
                 let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
+                for (_first, idx) in groups {
+                    let s = unsafe {
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
+                    };
+                    builder.append_series(&s)
+                }
+                builder.finish().into_series()
+            }};
+        }
+
+        macro_rules! impl_gb_bool {
+            ($agg_col:expr) => {{
+                let values_builder = BooleanArrayBuilder::new(values_cap);
+                let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
@@ -1079,6 +1103,7 @@ where
             s.dtype(),
             impl_gb,
             impl_gb_utf8,
+            impl_gb_bool,
             s
         ))
     }
@@ -1601,7 +1626,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             .groups
             .iter()
             .map(|(_first, idx)| {
-                let ca: Xob<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
+                let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
                 ca.into_inner().into_series()
             })
             .collect();
@@ -1745,43 +1770,13 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+------------------------+
     /// ```
     pub fn agg_list(&self) -> Result<DataFrame> {
-        macro_rules! impl_gb {
-            ($type:ty, $agg_col:expr) => {{
-                let values_builder = PrimitiveBuilder::<$type>::new(self.groups.len());
-                let mut builder =
-                    ListPrimitiveChunkedBuilder::new("", values_builder, self.groups.len());
-                for (_first, idx) in &self.groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
-                    };
-                    builder.append_opt_series(Some(&s))
-                }
-                builder.finish().into_series()
-            }};
-        }
-
-        macro_rules! impl_gb_utf8 {
-            ($agg_col:expr) => {{
-                let values_builder = LargeStringBuilder::new(self.groups.len());
-                let mut builder =
-                    ListUtf8ChunkedBuilder::new("", values_builder, self.groups.len());
-                for (_first, idx) in &self.groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
-                    };
-                    builder.append_series(&s)
-                }
-                builder.finish().into_series()
-            }};
-        }
-
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
-            let mut agg =
-                match_arrow_data_type_apply_macro!(agg_col.dtype(), impl_gb, impl_gb_utf8, agg_col);
-            agg.rename(&new_name);
-            cols.push(agg);
+            if let Some(mut agg) = agg_col.agg_list(&self.groups) {
+                agg.rename(&new_name);
+                cols.push(agg);
+            }
         }
         DataFrame::new(cols)
     }
@@ -2344,7 +2339,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::group_by::{groupby, groupby_threaded};
+    use crate::frame::group_by::{groupby, groupby_threaded_flat};
     use crate::prelude::*;
     use crate::utils::split_ca;
     use itertools::Itertools;
@@ -2620,7 +2615,7 @@ mod test {
             let splitted = split_ca(&ca, 4).unwrap();
 
             let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
-            let b = groupby_threaded(splitted.iter().map(|ca| ca.into_iter()).collect())
+            let b = groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect())
                 .into_iter()
                 .sorted()
                 .collect_vec();

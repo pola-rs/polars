@@ -10,6 +10,8 @@ use crate::{
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
+use polars::frame::group_by::GroupBy;
+use polars::frame::resample::SampleRule;
 
 #[pyclass]
 #[repr(transparent)]
@@ -115,7 +117,7 @@ impl PyDataFrame {
 
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
-                let (buf, _pybuf) = unsafe { f.as_file_buffer_ref() };
+                let buf = f.as_slicable_buffer();
                 ParquetReader::new(buf)
                     .with_stop_after_n_rows(stop_after_n_rows)
                     .finish()
@@ -438,32 +440,29 @@ impl PyDataFrame {
         }
     }
 
+    pub fn downsample(&self, by: &str, rule: &str, n: u32, agg: &str) -> PyResult<Self> {
+        let rule = match rule {
+            "second" => SampleRule::Second(n),
+            "minute" => SampleRule::Minute(n),
+            "day" => SampleRule::Day(n),
+            "hour" => SampleRule::Hour(n),
+            a => {
+                return Err(PyPolarsEr::Other(format!("rule {} not supported", a)).into());
+            }
+        };
+        let gb = self.df.downsample(by, rule).map_err(PyPolarsEr::from)?;
+        let df = finish_groupby(gb, agg)?;
+        let out = df.df.sort(by, false).map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
+
     pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {
         let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
         let selection = match select.as_ref() {
             Some(s) => gb.select(s),
             None => gb,
         };
-        let df = match agg {
-            "min" => selection.min(),
-            "max" => selection.max(),
-            "mean" => selection.mean(),
-            "first" => selection.first(),
-            "last" => selection.last(),
-            "sum" => selection.sum(),
-            "count" => selection.count(),
-            "n_unique" => selection.n_unique(),
-            "median" => selection.median(),
-            "agg_list" => selection.agg_list(),
-            "groups" => selection.groups(),
-            "std" => selection.std(),
-            "var" => selection.var(),
-            a => Err(PolarsError::Other(
-                format!("agg fn {} does not exists", a).into(),
-            )),
-        };
-        let df = df.map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
+        finish_groupby(selection, agg)
     }
 
     pub fn groupby_agg(
@@ -624,4 +623,27 @@ impl PyDataFrame {
         let df = self.df.to_dummies().map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
+}
+
+fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
+    let df = match agg {
+        "min" => gb.min(),
+        "max" => gb.max(),
+        "mean" => gb.mean(),
+        "first" => gb.first(),
+        "last" => gb.last(),
+        "sum" => gb.sum(),
+        "count" => gb.count(),
+        "n_unique" => gb.n_unique(),
+        "median" => gb.median(),
+        "agg_list" => gb.agg_list(),
+        "groups" => gb.groups(),
+        "std" => gb.std(),
+        "var" => gb.var(),
+        a => Err(PolarsError::Other(
+            format!("agg fn {} does not exists", a).into(),
+        )),
+    };
+    let df = df.map_err(PyPolarsEr::from)?;
+    Ok(PyDataFrame::new(df))
 }

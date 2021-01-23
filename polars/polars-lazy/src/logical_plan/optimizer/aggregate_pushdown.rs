@@ -26,7 +26,7 @@ impl AggregatePushdown {
         node: Node,
         expr: Vec<Node>,
         input: Node,
-        schema: Schema,
+        schema: SchemaRef,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Option<ALogicalPlan> {
@@ -118,7 +118,7 @@ impl OptimizationRule for AggregatePushdown {
                     Some(ALogicalPlan::Projection {
                         expr: nodes,
                         input: new_node,
-                        schema: Schema::new(fields),
+                        schema: Arc::new(Schema::new(fields)),
                     })
                 }
             }

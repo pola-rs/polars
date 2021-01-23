@@ -1,7 +1,9 @@
 pub(crate) mod optimizer;
 use crate::logical_plan::optimizer::predicate::combine_predicates;
 use crate::logical_plan::LogicalPlan::CsvScan;
-use crate::utils::{expr_to_root_column_exprs, expr_to_root_column_names, has_expr};
+use crate::utils::{
+    expr_to_root_column_exprs, expr_to_root_column_names, has_expr, rename_expr_root_name,
+};
 use crate::{prelude::*, utils};
 use ahash::RandomState;
 use itertools::Itertools;
@@ -121,7 +123,7 @@ pub enum LogicalPlan {
     #[doc(cfg(feature = "parquet"))]
     ParquetScan {
         path: String,
-        schema: Schema,
+        schema: SchemaRef,
         with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
         aggregate: Vec<Expr>,
@@ -131,7 +133,7 @@ pub enum LogicalPlan {
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     DataFrameScan {
         df: Arc<DataFrame>,
-        schema: Schema,
+        schema: SchemaRef,
         projection: Option<Vec<Expr>>,
         selection: Option<Expr>,
     },
@@ -140,25 +142,25 @@ pub enum LogicalPlan {
     LocalProjection {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
-        schema: Schema,
+        schema: SchemaRef,
     },
     // vertical selection
     Projection {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
-        schema: Schema,
+        schema: SchemaRef,
     },
     Aggregate {
         input: Box<LogicalPlan>,
         keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
-        schema: Schema,
+        schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
     },
     Join {
         input_left: Box<LogicalPlan>,
         input_right: Box<LogicalPlan>,
-        schema: Schema,
+        schema: SchemaRef,
         how: JoinType,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
@@ -168,7 +170,7 @@ pub enum LogicalPlan {
     HStack {
         input: Box<LogicalPlan>,
         exprs: Vec<Expr>,
-        schema: Schema,
+        schema: SchemaRef,
     },
     Distinct {
         input: Box<LogicalPlan>,
@@ -202,6 +204,7 @@ pub enum LogicalPlan {
         predicate_pd: bool,
         ///  allow projection pushdown optimizations
         projection_pd: bool,
+        schema: Option<SchemaRef>,
     },
 }
 
@@ -720,6 +723,22 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
         }
 
         if has_wildcard {
+            // if count wildcard. count one column
+            let dummy = &Expr::Agg(AggExpr::Count(Box::new(Expr::Wildcard)));
+            if has_expr(&expr, dummy) {
+                let new_name = Arc::new(schema.field(0).unwrap().name().clone());
+                let expr = rename_expr_root_name(&expr, new_name).unwrap();
+
+                let expr = if let Expr::Alias(_, _) = &expr {
+                    expr
+                } else {
+                    Expr::Alias(Box::new(expr), Arc::new("count".to_string()))
+                };
+                result.push(expr);
+
+                continue;
+            }
+
             for field in schema.fields() {
                 let name = field.name();
                 let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
@@ -754,7 +773,10 @@ impl LogicalPlan {
             Distinct { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             Melt { schema, .. } => schema,
-            Udf { input, .. } => input.schema(),
+            Udf { input, schema, .. } => match schema {
+                Some(schema) => schema,
+                None => input.schema(),
+            },
         }
     }
     pub fn describe(&self) -> String {
@@ -779,9 +801,11 @@ impl LogicalPlanBuilder {
     #[doc(cfg(feature = "parquet"))]
     pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
         let file = std::fs::File::open(&path).expect("could not open file");
-        let schema = ParquetReader::new(file)
-            .schema()
-            .expect("could not get parquet schema");
+        let schema = Arc::new(
+            ParquetReader::new(file)
+                .schema()
+                .expect("could not get parquet schema"),
+        );
 
         LogicalPlan::ParquetScan {
             path,
@@ -851,7 +875,7 @@ impl LogicalPlanBuilder {
             LogicalPlan::Projection {
                 expr: exprs,
                 input: Box::new(self.0),
-                schema,
+                schema: Arc::new(schema),
             }
             .into()
         } else {
@@ -865,7 +889,7 @@ impl LogicalPlanBuilder {
             LogicalPlan::LocalProjection {
                 expr: exprs,
                 input: Box::new(self.0),
-                schema,
+                schema: Arc::new(schema),
             }
             .into()
         } else {
@@ -910,7 +934,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::HStack {
             input: Box::new(self.0),
             exprs,
-            schema: new_schema,
+            schema: Arc::new(new_schema),
         }
         .into()
     }
@@ -950,7 +974,7 @@ impl LogicalPlanBuilder {
             input: Box::new(self.0),
             keys,
             aggs,
-            schema,
+            schema: Arc::new(schema),
             apply,
         }
         .into()
@@ -961,7 +985,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn from_existing_df(df: DataFrame) -> Self {
-        let schema = df.schema();
+        let schema = Arc::new(df.schema());
         LogicalPlan::DataFrameScan {
             df: Arc::new(df),
             schema,
@@ -1087,7 +1111,7 @@ impl LogicalPlanBuilder {
             }
         }
 
-        let schema = Schema::new(fields);
+        let schema = Arc::new(Schema::new(fields));
 
         LogicalPlan::Join {
             input_left: Box::new(self.0),
@@ -1101,7 +1125,12 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
-    pub fn map<F>(self, function: F, optimizations: AllowedOptimizations) -> Self
+    pub fn map<F>(
+        self,
+        function: F,
+        optimizations: AllowedOptimizations,
+        schema: Option<SchemaRef>,
+    ) -> Self
     where
         F: DataFrameUdf + 'static,
     {
@@ -1110,6 +1139,7 @@ impl LogicalPlanBuilder {
             function: Arc::new(function),
             predicate_pd: optimizations.predicate_pushdown,
             projection_pd: optimizations.projection_pushdown,
+            schema,
         }
         .into()
     }

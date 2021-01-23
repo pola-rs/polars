@@ -513,19 +513,48 @@ impl PredicatePushDown {
             }
 
             Udf {
-                mut input,
+                input,
                 function,
                 predicate_pd,
                 projection_pd,
+                schema,
             } => {
                 if predicate_pd {
-                    input = Box::new(self.push_down(*input, acc_predicates)?);
+                    let input_schema = input.schema();
+                    let mut pushdown_predicates = optimizer::init_hashmap();
+                    let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+                    for (_, predicate) in acc_predicates {
+                        if check_down_node(&predicate, input_schema) {
+                            let name = Arc::new(
+                                predicate
+                                    .to_field(input_schema, Context::Other)
+                                    .unwrap()
+                                    .name()
+                                    .clone(),
+                            );
+                            insert_and_combine_predicate(&mut pushdown_predicates, name, predicate)
+                        } else {
+                            local_predicates.push(predicate);
+                        }
+                    }
+                    let input = Box::new(self.push_down(*input, pushdown_predicates)?);
+                    let lp = Udf {
+                        input,
+                        function,
+                        predicate_pd,
+                        projection_pd,
+                        schema,
+                    };
+
+                    let builder = LogicalPlanBuilder::from(lp);
+                    return Ok(self.finish_node(local_predicates, builder));
                 }
                 Ok(Udf {
                     input,
                     function,
                     predicate_pd,
                     projection_pd,
+                    schema,
                 })
             }
         }

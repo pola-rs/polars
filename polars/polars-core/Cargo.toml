@@ -3,6 +3,9 @@ name = "polars-core"
 version = "0.12.0-beta.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "Core of the Polars DataFrame library"
+repository = "https://github.com/ritchie46/polars"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,7 +23,8 @@ strings = ["regex"]
 object = ["serde_json"]
 
 [dependencies]
-arrow = {version = "2", default_features = false}
+arrow = {version="3.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
+parquet = {version = "3.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
 thiserror = "^1.0.16"
 num = "^0.3.1"
 itertools = "^0.9.0"
@@ -28,7 +32,6 @@ unsafe_unwrap = "^0.1.0"
 rayon = "1.5"
 comfy-table = { version="1"}
 chrono = {version = "^0.4.13", optional = true}
-parquet = {version = "2", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
@@ -45,3 +48,4 @@ memmap = "0.7.0"
 lazy_static = "1.4.0"
 hashbrown = {version = "0.9.1", features = ["rayon"] }
 fast-float = "0.1.0"
+polars-arrow = {version = "0.12.0-beta.0", path = "../polars-arrow"}

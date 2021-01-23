@@ -10,6 +10,7 @@ use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
 #[cfg(feature = "object")]
 use crate::series::private::PrivateSeries;
+use ahash::RandomState;
 use arrow::array::{ArrayDataRef, ArrayRef};
 use arrow::buffer::Buffer;
 #[cfg(feature = "object")]
@@ -39,7 +40,10 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        if &T::get_dtype() == self.dtype() {
+        if &T::get_dtype() == self.dtype() ||
+            // needed because we want to get ref of List no matter what the inner type is.
+            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)) )
+        {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {
             panic!(format!(
@@ -54,6 +58,10 @@ where
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
         impl private::PrivateSeries for Wrap<$ca> {
+            fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+                self.0.vec_hash(random_state)
+            }
+
             fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
                 self.0.agg_mean(groups)
             }
@@ -155,8 +163,8 @@ macro_rules! impl_dyn_series {
             fn remainder(&self, rhs: &Series) -> Result<Series> {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
-            fn group_tuples(&self) -> Vec<(usize, Vec<usize>)> {
-                IntoGroupTuples::group_tuples(&self.0)
+            fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+                IntoGroupTuples::group_tuples(&self.0, multithreaded)
             }
         }
 
@@ -556,8 +564,8 @@ macro_rules! impl_dyn_series {
                 self.0.len()
             }
 
-            fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Series> {
-                ChunkOps::rechunk(&self.0, chunk_lengths).map(|ca| ca.into_series())
+            fn rechunk(&self) -> Result<Series> {
+                ChunkOps::rechunk(&self.0).map(|ca| ca.into_series())
             }
 
             fn head(&self, length: Option<usize>) -> Series {
@@ -993,8 +1001,8 @@ where
         ObjectChunked::len(&self.0)
     }
 
-    fn rechunk(&self, chunk_lengths: Option<&[usize]>) -> Result<Series> {
-        ChunkOps::rechunk(&self.0, chunk_lengths).map(|ca| ca.into_series())
+    fn rechunk(&self) -> Result<Series> {
+        ChunkOps::rechunk(&self.0).map(|ca| ca.into_series())
     }
 
     fn head(&self, length: Option<usize>) -> Series {

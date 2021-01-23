@@ -166,6 +166,14 @@ where
     }
 }
 
+impl Debug for ChunkedArray<BooleanType> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let limit = set_limit!(self);
+        let dtype = format!("{:?}", DataType::Boolean);
+        format_array!(limit, f, self, dtype, self.name(), "ChunkedArray")
+    }
+}
+
 impl Debug for Utf8Chunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         format_utf8_array!(80, f, self, self.name(), "ChunkedArray")
@@ -314,16 +322,10 @@ impl Debug for DataFrame {
     }
 }
 
-fn prepare_row(
-    row: Vec<AnyValue>,
-    insert_idx: usize,
-    reduce_columns: bool,
-    max_n_cols: usize,
-) -> Vec<String> {
-    let string_limit = 32;
-    let mut row_str = Vec::with_capacity(row.len());
-    for v in row.iter().take(max_n_cols) {
-        let str_val = if let AnyValue::Utf8(s) = v {
+fn prepare_row(row: Vec<AnyValue>, n_first: usize, n_last: usize) -> Vec<String> {
+    fn make_str_val(v: &AnyValue) -> String {
+        let string_limit = 32;
+        if let AnyValue::Utf8(s) = v {
             if s.len() > string_limit {
                 format!("{}...", &s[..string_limit])
             } else {
@@ -331,11 +333,19 @@ fn prepare_row(
             }
         } else {
             format!("{}", v)
-        };
-        row_str.push(str_val);
+        }
+    }
+
+    let reduce_columns = n_first + n_last < row.len();
+    let mut row_str = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+    for v in row[0..n_first].iter() {
+        row_str.push(make_str_val(v));
     }
     if reduce_columns {
-        row_str.insert(insert_idx, "...".to_string());
+        row_str.push("...".to_string());
+    }
+    for v in row[row.len() - n_last..].iter() {
+        row_str.push(make_str_val(v));
     }
     row_str
 }
@@ -350,18 +360,27 @@ impl Display for DataFrame {
             .unwrap_or_else(|_| "8".to_string())
             .parse()
             .unwrap_or(8);
-        let insert_idx = max_n_cols / 2;
-        let reduce_columns = self.width() > max_n_cols;
 
-        let mut names: Vec<_> = self
-            .schema()
-            .fields()
-            .iter()
-            .take(max_n_cols)
-            .map(|f| format!("{}\n---\n{}", f.name(), f.data_type()))
-            .collect();
+        let (n_first, n_last) = if self.width() > max_n_cols {
+            ((max_n_cols + 1) / 2, max_n_cols / 2)
+        } else {
+            (self.width(), 0)
+        };
+        let reduce_columns = n_first + n_last < self.width();
+
+        let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
+
+        let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+        let schema = self.schema();
+        let fields = schema.fields();
+        for field in fields[0..n_first].iter() {
+            names.push(field_to_str(field))
+        }
         if reduce_columns {
-            names.insert(insert_idx, "...".to_string())
+            names.push("...".to_string())
+        }
+        for field in fields[self.width() - n_last..].iter() {
+            names.push(field_to_str(field))
         }
         let mut table = Table::new();
         table
@@ -381,13 +400,13 @@ impl Display for DataFrame {
         if self.height() > max_n_rows {
             for i in 0..(max_n_rows / 2) {
                 let row = self.get(i).unwrap();
-                rows.push(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+                rows.push(prepare_row(row, n_first, n_last));
             }
             let dots = rows[0].iter().map(|_| "...".to_string()).collect();
             rows.push(dots);
-            for i in (self.height() - max_n_cols / 2 - 1)..self.height() {
+            for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
                 let row = self.get(i).unwrap();
-                rows.push(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+                rows.push(prepare_row(row, n_first, n_last));
             }
             for row in rows {
                 table.add_row(row);
@@ -396,7 +415,7 @@ impl Display for DataFrame {
             for i in 0..max_n_rows {
                 let opt = self.get(i);
                 if let Some(row) = opt {
-                    table.add_row(prepare_row(row, insert_idx, reduce_columns, max_n_cols));
+                    table.add_row(prepare_row(row, n_first, n_last));
                 } else {
                     break;
                 }
@@ -509,6 +528,12 @@ where
     }
 }
 
+impl FmtList for BooleanChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
 impl FmtList for Utf8Chunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
@@ -537,11 +562,11 @@ impl<T> FmtList for ObjectChunked<T> {
 #[cfg(all(test, feature = "temporal"))]
 mod test {
     use crate::prelude::*;
+    use polars_arrow::prelude::PrimitiveArrayBuilder;
 
     #[test]
     fn list() {
-        use arrow::array::Int32Array;
-        let values_builder = Int32Array::builder(10);
+        let values_builder = PrimitiveArrayBuilder::<UInt32Type>::new(10);
         let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
         builder.append_slice(Some(&[1, 2, 3]));
         builder.append_slice(None);

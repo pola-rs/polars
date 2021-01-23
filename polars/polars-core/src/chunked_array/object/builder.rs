@@ -2,7 +2,6 @@ use super::*;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use arrow::bitmap::Bitmap;
-use arrow::util::bit_util::count_set_bits;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -27,13 +26,13 @@ where
     /// Appends a value of type `T` into the builder
     pub fn append_value(&mut self, v: T) {
         self.values.push(v);
-        self.bitmask_builder.append(true).unwrap();
+        self.bitmask_builder.append(true);
     }
 
     /// Appends a null slot into the builder
     pub fn append_null(&mut self) {
         self.values.push(T::default());
-        self.bitmask_builder.append(false).unwrap();
+        self.bitmask_builder.append(false);
     }
 
     pub fn append_value_from_any(&mut self, v: &dyn Any) -> Result<()> {
@@ -57,7 +56,8 @@ where
 
     pub fn finish(mut self) -> ObjectChunked<T> {
         let null_bit_buffer = self.bitmask_builder.finish();
-        let null_count = count_set_bits(null_bit_buffer.data());
+        let null_count = null_bit_buffer.count_set_bits();
+
         let null_bitmap = Bitmap::from(null_bit_buffer);
         let null_bitmap = match null_count {
             0 => None,

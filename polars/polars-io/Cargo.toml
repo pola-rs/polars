@@ -3,6 +3,9 @@ name = "polars-io"
 version = "0.12.0-beta.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "IO related logic for the Polars DataFrame library"
+repository = "https://github.com/ritchie46/polars"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,13 +18,13 @@ lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
 
 [dependencies]
-arrow = "2.0.0"
-parquet_lib = {version = "2", optional = true, package="parquet"}
+arrow = {version="3.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
+parquet_lib = {version = "3.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
 csv = "1.1"
 lexical = "^5.2"
 num_cpus = "1.13.0"
 csv-core = "0.1.10"
-memmap = "0.7.0"
+memmap = { package = "memmap2", version = "0.2.0" }
 fast-float = "0.1.0"
 anyhow = "1.0"
 rayon = "1.5"

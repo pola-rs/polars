@@ -25,7 +25,7 @@ jobs:
           pip install maturin pytest black==20.8b1 pdoc3 numpy ghp-import pandas
       - name: Run formatting checks
         run: |
-          cargo fmt -- --check
+          cargo fmt --all -- --check
           black --check .
       - name: Run linting checks
         run : |

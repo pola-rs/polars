@@ -35,6 +35,38 @@ def test_selection():
     assert (df.c == df["a"]).sum() == 0
 
 
+def test_downsample():
+    s = Series(
+        "datetime",
+        [
+            946684800000,
+            946684860000,
+            946684920000,
+            946684980000,
+            946685040000,
+            946685100000,
+            946685160000,
+            946685220000,
+            946685280000,
+            946685340000,
+            946685400000,
+            946685460000,
+            946685520000,
+            946685580000,
+            946685640000,
+            946685700000,
+            946685760000,
+            946685820000,
+            946685880000,
+            946685940000,
+        ],
+    ).cast(Date64)
+    s2 = s.clone()
+    df = DataFrame({"a": s, "b": s2})
+    out = df.downsample("a", rule="minute", n=5).first()
+    assert out.shape == (4, 2)
+
+
 def test_sort():
     df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     df.sort("a", in_place=True)
@@ -192,9 +224,10 @@ def test_drop():
 
 def test_file_buffer():
     f = BytesIO()
-    f.write(b"1,2,3,4,5,6\n1,2,3,4,5,6")
+    f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     df = DataFrame.read_csv(f, has_headers=False)
+    print(df)
     assert df.shape == (2, 6)
     f.seek(0)
 

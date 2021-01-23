@@ -22,7 +22,7 @@ pub trait PhysicalPlanner {
 // combine physical expressions, which produce Series.
 
 /// Executors will evaluate physical expressions and collect them in a DataFrame.
-pub trait Executor: Send {
+pub trait Executor: Send + Sync {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame>;
 }
 
@@ -43,7 +43,8 @@ pub trait PhysicalExpr: Send + Sync {
     fn to_field(&self, input_schema: &Schema) -> Result<Field>;
 
     fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
-        panic!("not an agg expression");
+        let e = self.as_expression();
+        panic!(format!("{:?} is not an agg expression", e));
     }
 }
 
@@ -75,4 +76,21 @@ impl PhysicalIOExpr for dyn PhysicalExpr {
 
 pub trait AggPhysicalExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>>;
+
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<Option<Vec<Series>>> {
+        // we return a vec, such that an implementor can return more information, such as a sum and count.
+        self.evaluate(df, groups).map(|opt| opt.map(|s| vec![s]))
+    }
+
+    fn evaluate_partitioned_final(
+        &self,
+        final_df: &DataFrame,
+        groups: &[(usize, Vec<usize>)],
+    ) -> Result<Option<Series>> {
+        self.evaluate(final_df, groups)
+    }
 }

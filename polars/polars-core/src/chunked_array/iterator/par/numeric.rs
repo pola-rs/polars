@@ -101,7 +101,7 @@ where
 {
     fn from_parts(ca: &'a ChunkedArray<T>, offset: usize, len: usize) -> Self {
         let chunk = ca.downcast_chunks()[0];
-        let slice = chunk.value_slice(offset, len);
+        let slice = &chunk.values()[offset..len];
         let iter = slice.iter().copied();
 
         Self { iter }
@@ -137,8 +137,7 @@ where
 
             let current_array_right = chunks[chunk_idx_right];
             let current_iter_right = Some(
-                current_array_right
-                    .value_slice(0, current_array_idx_right)
+                current_array_right.values()[..current_array_idx_right]
                     .iter()
                     .copied(),
             );
@@ -146,8 +145,8 @@ where
             (current_array_left_len, current_iter_right)
         };
 
-        let current_iter_left = current_array_left
-            .value_slice(current_array_idx_left, current_array_left_len)
+        let current_iter_left = current_array_left.values()
+            [current_array_idx_left..current_array_left_len]
             .iter()
             .copied();
 
@@ -420,8 +419,7 @@ where
             let current_array_left_len = current_array_left.len() - current_array_idx_left;
 
             let current_iter_right = Some(
-                current_array_right
-                    .value_slice(0, current_array_idx_right)
+                current_array_right.values()[..current_array_idx_right]
                     .iter()
                     .copied(),
             );
@@ -429,8 +427,8 @@ where
             (current_array_left_len, current_iter_right)
         };
 
-        let current_iter_left = current_array_left
-            .value_slice(current_array_idx_left, current_array_left_len)
+        let current_iter_left = current_array_left.values()
+            [current_array_idx_left..current_array_left_len]
             .iter()
             .copied();
 

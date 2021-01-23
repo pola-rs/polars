@@ -9,6 +9,13 @@ def create_series():
     return Series("a", [1, 2])
 
 
+def test_bitwise_ops():
+    a = Series([True, False, True])
+    b = Series([False, True, True])
+    assert a & b == [False, False, True]
+    assert a | b == [True, True, True]
+
+
 def test_equality():
     a = create_series()
     b = a
