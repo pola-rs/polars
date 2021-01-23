@@ -9,7 +9,7 @@ use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
-use polars_io::fork::csv::infer_file_schema;
+use polars_io::csv_core::utils::infer_file_schema;
 use polars_io::prelude::*;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Write};
