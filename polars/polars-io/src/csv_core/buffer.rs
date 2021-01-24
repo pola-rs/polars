@@ -1,3 +1,4 @@
+use crate::csv::CsvEncoding;
 use polars_core::prelude::*;
 
 trait ToPolarsError {
@@ -100,15 +101,12 @@ where
 #[derive(Debug)]
 pub(crate) struct Utf8Field {
     start_pos: usize,
-    len: u32,
+    pub(crate) len: u32,
 }
 
 impl Utf8Field {
-    pub(crate) fn parse_str<'a>(&self, bytes: &'a [u8]) -> Result<&'a str> {
-        match std::str::from_utf8(&bytes[self.start_pos..self.start_pos + self.len as usize]) {
-            Ok(s) => Ok(s),
-            Err(_) => Err(PolarsError::Other("utf8_error".into())),
-        }
+    pub(crate) fn find<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
+        &bytes[self.start_pos..self.start_pos + self.len as usize]
     }
 }
 
@@ -261,7 +259,12 @@ impl Buffer {
     }
 }
 
-pub(crate) fn buffers_to_series<I>(buffers: I, bytes: &[u8], ignore_errors: bool) -> Result<Series>
+pub(crate) fn buffers_to_series<I>(
+    buffers: I,
+    bytes: &[u8],
+    ignore_errors: bool,
+    encoding: CsvEncoding,
+) -> Result<Series>
 where
     I: IntoIterator<Item = Buffer>,
 {
@@ -356,17 +359,30 @@ where
             let values_size = buffers.iter().map(|(_, size)| *size).sum::<usize>();
             let row_size = buffers.iter().map(|(v, _)| v.len()).sum::<usize>();
             let mut builder = Utf8ChunkedBuilder::new("", row_size, values_size);
+            let mut reader = csv_core::Reader::new();
+            let mut string_buf = Vec::with_capacity(256);
 
-            buffers
-                .into_iter()
-                .flat_map(|(v, _)| v.into_iter().map(|utf8_field| utf8_field.parse_str(bytes)))
-                .try_for_each(|parse_result| {
+            buffers.into_iter().try_for_each(|(v, _)| {
+                v.into_iter().try_for_each(|utf8_field| {
+                    // find the original str location
+                    let bytes = utf8_field.find(bytes);
+
+                    if utf8_field.len as usize > string_buf.len() {
+                        string_buf.reserve(string_buf.capacity())
+                    }
+                    // proper escape the str field by copying to output buffer
+                    let (_, _, n_end) = reader.read_field(bytes, &mut string_buf);
+                    let parse_result = std::str::from_utf8(&string_buf[..n_end])
+                        .map_err(|_| PolarsError::Other("invalid utf8 data".into()));
                     match parse_result {
                         Ok(s) => {
                             builder.append_value(s);
                         }
                         Err(err) => {
-                            if ignore_errors {
+                            if matches!(encoding, CsvEncoding::LossyUtf8) {
+                                let s = String::from_utf8_lossy(&string_buf[..n_end]);
+                                builder.append_value(s.as_ref());
+                            } else if ignore_errors {
                                 builder.append_null();
                             } else {
                                 return Err(err);
@@ -374,7 +390,8 @@ where
                         }
                     }
                     Ok(())
-                })?;
+                })
+            })?;
             Ok(builder.finish().into_series())
         }
     }

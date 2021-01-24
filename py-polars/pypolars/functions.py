@@ -88,7 +88,7 @@ def read_csv(
         encoding=encoding,
         n_threads=n_threads,
         dtype=dtype,
-        use_stable_parser=use_stable_parser
+        use_stable_parser=use_stable_parser,
     )
     if new_columns:
         df.columns = new_columns

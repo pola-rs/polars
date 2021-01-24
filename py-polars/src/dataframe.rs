@@ -58,7 +58,7 @@ impl PyDataFrame {
         mut n_threads: Option<usize>,
         path: Option<String>,
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
-        use_stable_parser: bool
+        use_stable_parser: bool,
     ) -> PyResult<Self> {
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,

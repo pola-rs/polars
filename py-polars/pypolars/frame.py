@@ -99,7 +99,7 @@ class DataFrame:
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
         dtype: "Optional[Dict[str, DataType]]" = None,
-        use_stable_parser: bool = False
+        use_stable_parser: bool = False,
     ) -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
 
@@ -130,7 +130,7 @@ class DataFrame:
             n_threads,
             path,
             dtype,
-            use_stable_parser
+            use_stable_parser,
         )
         return self
 
