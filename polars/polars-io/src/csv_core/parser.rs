@@ -257,7 +257,10 @@ mod test {
         if let Buffer::Utf8(buf, len) = &buffers[0] {
             let v = buf
                 .iter()
-                .map(|utf8_field| utf8_field.parse_str(bytes).unwrap())
+                .map(|utf8_field| {
+                    let sub_slice = utf8_field.find(bytes);
+                    std::str::from_utf8(sub_slice).unwrap()
+                })
                 .collect::<Vec<_>>();
 
             let total_len: usize = v.iter().map(|s| s.len()).sum();

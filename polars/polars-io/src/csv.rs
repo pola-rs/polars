@@ -340,7 +340,7 @@ where
             reader,
             rechunk: true,
             stop_after_n_rows: None,
-            max_records: Some(100),
+            max_records: Some(128),
             skip_rows: 0,
             projection: None,
             batch_size: 32,

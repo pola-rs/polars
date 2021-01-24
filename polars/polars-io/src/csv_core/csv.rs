@@ -354,10 +354,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         let columns = buffers
             .into_par_iter()
-            .enumerate()
-            .map(|(idx, buffers)| {
+            .zip(projection)
+            .map(|(buffers, idx)| {
                 let iter = buffers.into_iter();
-                let mut s = buffers_to_series(iter, bytes, self.ignore_parser_errors)?;
+                let mut s =
+                    buffers_to_series(iter, bytes, self.ignore_parser_errors, self.encoding)?;
                 let name = self.schema.field(idx).unwrap().name();
                 s.rename(name);
                 Ok(s)

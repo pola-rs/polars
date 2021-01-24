@@ -39,5 +39,13 @@ polars-core = {version = "0.12.0-beta.0", path = "./polars-core", default-featur
 polars-io = {version = "0.12.0-beta.0", path = "./polars-io", default-features = false}
 polars-lazy = {version = "0.12.0-beta.0", path = "./polars-lazy"}
 
+[dev-dependencies]
+criterion = "0.3"
+
+
+[[bench]]
+name = "csv"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
