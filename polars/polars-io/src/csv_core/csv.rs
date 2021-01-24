@@ -289,9 +289,15 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             }
         }
 
+        // we also need to sort the projection to have predictable output.
+        // the `parse_lines` function expects this.
         let projection = self
             .projection
             .take()
+            .map(|mut v| {
+                v.sort_unstable();
+                v
+            })
             .unwrap_or_else(|| (0..self.schema.fields().len()).collect());
 
         // split the file by the nearest new line characters such that every thread processes
@@ -357,8 +363,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             .zip(projection)
             .map(|(buffers, idx)| {
                 let iter = buffers.into_iter();
-                let mut s =
-                    buffers_to_series(iter, bytes, self.ignore_parser_errors, self.encoding)?;
+                let mut s = buffers_to_series(
+                    iter,
+                    bytes,
+                    self.ignore_parser_errors,
+                    self.encoding,
+                    self.delimiter,
+                )?;
                 let name = self.schema.field(idx).unwrap().name();
                 s.rename(name);
                 Ok(s)
@@ -376,7 +387,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     ) -> Result<DataFrame> {
         let n_threads = self.n_threads.unwrap_or_else(num_cpus::get);
 
-        let mut df = if predicate.is_some() || self.stable_parser {
+        let mut df = if predicate.is_some() || self.stable_parser || aggregate.is_some() {
             let mut capacity = self.batch_size * CAPACITY_MULTIPLIER;
             if let Some(n) = self.n_rows {
                 self.batch_size = std::cmp::min(self.batch_size, n);

@@ -380,6 +380,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use polars_core::datatypes::AnyValue;
     use std::io::Cursor;
 
     #[test]
@@ -462,6 +463,11 @@ mod test {
             .finish()
             .unwrap();
 
+        let col = df.column("variety").unwrap();
+        assert_eq!(col.get(0), AnyValue::Utf8("Setosa"));
+        assert_eq!(col.get(2), AnyValue::Utf8("Setosa"));
+        dbg!(&df);
+
         assert_eq!("sepal.length", df.get_columns()[0].name());
         assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
         assert_eq!(df.height(), 7);
@@ -514,6 +520,8 @@ mod test {
             .with_projection(Some(vec![0, 2]))
             .finish()
             .unwrap();
-        dbg!(df);
+        dbg!(&df);
+        let col_1 = df.select_at_idx(0).unwrap();
+        assert_eq!(col_1.get(0), AnyValue::Utf8("vegetables"));
     }
 }
