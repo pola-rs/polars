@@ -168,8 +168,12 @@ pub(crate) fn parse_lines(
 
         for (idx, field) in line.split(|b| *b == delimiter).enumerate() {
             if idx == next_projected {
-                // todo! get rid of bound check
-                let buf = &mut buffers[processed_fields];
+                debug_assert!(processed_fields < buffers.len());
+                let buf = unsafe {
+                    // SAFETY: processed fields index can never exceed the projection indices.
+                    buffers.get_unchecked_mut(processed_fields)
+                };
+                // let buf = &mut buffers[processed_fields];
                 buf.add(field, ignore_parser_errors, read)?;
 
                 processed_fields += 1;
@@ -259,7 +263,7 @@ mod test {
                 .iter()
                 .map(|utf8_field| {
                     let sub_slice = utf8_field.find(bytes);
-                    std::str::from_utf8(sub_slice).unwrap()
+                    std::str::from_utf8(&sub_slice[..sub_slice.len() - 1]).unwrap()
                 })
                 .collect::<Vec<_>>();
 

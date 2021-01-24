@@ -105,12 +105,16 @@ pub(crate) struct Utf8Field {
 }
 
 impl Utf8Field {
+    /// find the string slice in the original slice that was used to create this Utf8Field
     pub(crate) fn find<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
-        &bytes[self.start_pos..self.start_pos + self.len as usize]
+        // the +1 adds the trailing separator (often a ','). this is needed for the rust csv_core crate
+        // that will parse this to escape the input.
+        &bytes[self.start_pos..self.start_pos + self.len as usize + 1]
     }
 }
 
 impl ParsedBuffer<Utf8Type> for Vec<Utf8Field> {
+    #[inline]
     fn parse_bytes(&mut self, bytes: &[u8], _ignore_errors: bool, start_pos: usize) -> Result<()> {
         self.push(Utf8Field {
             start_pos,
@@ -122,6 +126,7 @@ impl ParsedBuffer<Utf8Type> for Vec<Utf8Field> {
 }
 
 impl ParsedBuffer<BooleanType> for Vec<Option<bool>> {
+    #[inline]
     fn parse_bytes(&mut self, bytes: &[u8], ignore_errors: bool, start_pos: usize) -> Result<()> {
         if bytes.eq_ignore_ascii_case(b"false") {
             self.push(Some(false));
@@ -195,6 +200,7 @@ impl Default for Buffer {
 }
 
 impl Buffer {
+    #[inline]
     pub(crate) fn add(
         &mut self,
         bytes: &[u8],
@@ -264,6 +270,7 @@ pub(crate) fn buffers_to_series<I>(
     bytes: &[u8],
     ignore_errors: bool,
     encoding: CsvEncoding,
+    delimiter: u8,
 ) -> Result<Series>
 where
     I: IntoIterator<Item = Buffer>,
@@ -359,8 +366,8 @@ where
             let values_size = buffers.iter().map(|(_, size)| *size).sum::<usize>();
             let row_size = buffers.iter().map(|(v, _)| v.len()).sum::<usize>();
             let mut builder = Utf8ChunkedBuilder::new("", row_size, values_size);
-            let mut reader = csv_core::Reader::new();
-            let mut string_buf = Vec::with_capacity(256);
+            let mut reader = csv_core::ReaderBuilder::new().delimiter(delimiter).build();
+            let mut string_buf = vec![0; 256];
 
             buffers.into_iter().try_for_each(|(v, _)| {
                 v.into_iter().try_for_each(|utf8_field| {
@@ -372,7 +379,12 @@ where
                     }
                     // proper escape the str field by copying to output buffer
                     let (_, _, n_end) = reader.read_field(bytes, &mut string_buf);
-                    let parse_result = std::str::from_utf8(&string_buf[..n_end])
+                    let out_slice = unsafe {
+                        // SAFETY
+                        // we know that n_end never will be larger than our output buffer
+                        string_buf.get_unchecked(..n_end)
+                    };
+                    let parse_result = std::str::from_utf8(out_slice)
                         .map_err(|_| PolarsError::Other("invalid utf8 data".into()));
                     match parse_result {
                         Ok(s) => {
