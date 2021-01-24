@@ -39,6 +39,7 @@ pub struct SequentialReader<R: Read> {
     has_header: bool,
     delimiter: u8,
     sample_size: usize,
+    stable_parser: bool
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -90,6 +91,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         n_threads: Option<usize>,
         path: Option<String>,
         sample_size: usize,
+        stable_parser: bool,
     ) -> Self {
         let csv_reader = init_csv_reader(reader, has_header, delimiter);
         let record_iter = Some(csv_reader.into_byte_records());
@@ -109,6 +111,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             has_header,
             delimiter,
             sample_size,
+            stable_parser
         }
     }
 
@@ -373,7 +376,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     ) -> Result<DataFrame> {
         let n_threads = self.n_threads.unwrap_or_else(num_cpus::get);
 
-        let mut df = if predicate.is_some() {
+        let mut df = if predicate.is_some() || self.stable_parser {
             let mut capacity = self.batch_size * CAPACITY_MULTIPLIER;
             if let Some(n) = self.n_rows {
                 self.batch_size = std::cmp::min(self.batch_size, n);
@@ -446,6 +449,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     path: Option<String>,
     schema_overwrite: Option<&Schema>,
     sample_size: usize,
+    stable_parser: bool
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -486,5 +490,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         n_threads,
         path,
         sample_size,
+        stable_parser
     ))
 }
