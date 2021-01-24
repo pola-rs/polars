@@ -39,7 +39,7 @@ pub struct SequentialReader<R: Read> {
     has_header: bool,
     delimiter: u8,
     sample_size: usize,
-    stable_parser: bool
+    stable_parser: bool,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -111,7 +111,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             has_header,
             delimiter,
             sample_size,
-            stable_parser
+            stable_parser,
         }
     }
 
@@ -343,9 +343,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         // restructure the buffers so that they can be dropped as soon as processed;
         // Structure:
         //      the inner vec has got buffers from a single column
-        let buffers = projection
-            .iter()
-            .map(|&idx| {
+        let buffers = (0..projection.len())
+            .map(|idx| {
                 buffers
                     .iter_mut()
                     .map(|buffers| std::mem::take(&mut buffers[idx]))
@@ -449,7 +448,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     path: Option<String>,
     schema_overwrite: Option<&Schema>,
     sample_size: usize,
-    stable_parser: bool
+    stable_parser: bool,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -490,6 +489,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         n_threads,
         path,
         sample_size,
-        stable_parser
+        stable_parser,
     ))
 }

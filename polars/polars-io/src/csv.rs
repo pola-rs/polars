@@ -181,7 +181,7 @@ where
     path: Option<String>,
     schema_overwrite: Option<&'a Schema>,
     sample_size: usize,
-    stable_parser: bool
+    stable_parser: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -317,7 +317,7 @@ where
             self.path,
             self.schema_overwrite,
             self.sample_size,
-            self.stable_parser
+            self.stable_parser,
         )
     }
 }
@@ -354,7 +354,7 @@ where
             path: None,
             schema_overwrite: None,
             sample_size: 1024,
-            stable_parser: false
+            stable_parser: false,
         }
     }
 
@@ -502,6 +502,18 @@ mod test {
             .finish()
             .unwrap();
 
+        dbg!(df);
+    }
+
+    #[test]
+    fn test_projection() {
+        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let file = std::fs::File::open(path).unwrap();
+        let df = CsvReader::new(file)
+            .with_path(Some(path.to_string()))
+            .with_projection(Some(vec![0, 2]))
+            .finish()
+            .unwrap();
         dbg!(df);
     }
 }
