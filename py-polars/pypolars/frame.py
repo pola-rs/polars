@@ -109,13 +109,10 @@ class DataFrame:
             Any valid filepath can be used. Example: `file.csv`.
         sep
             Character to use as delimiter in the file.
-        
         stop_after_n_rows
             Only read specified number of rows of the dataset. After `n` stops reading.
-        
         has_headers
             Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`, `x` being an enumeration over every column in the dataset.
-        
         encoding
             Allowed encodings: `utf8`, `utf8-lossy`. Lossy means that invalid utf8 values are replaced with `�` character.
 
@@ -236,13 +233,10 @@ class DataFrame:
         ---
         file
             Write location
-
         batch_size
             Size of the write buffer. Increase to have faster io.
-
         has_headers
             Whether or not to include header in the CSV output.
-        
         delimiter
             Space elements with this symbol.
 
