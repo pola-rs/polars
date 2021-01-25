@@ -6,10 +6,11 @@ use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::PhysicalIOExpr;
 use crate::ScanAggregation;
-use crossbeam::thread;
-use crossbeam::thread::ScopedJoinHandle;
 use csv::ByteRecordsIntoIter;
-use polars_core::prelude::*;
+use polars_core::{
+    POOL,
+    prelude::*
+};
 use rayon::prelude::*;
 use std::fmt;
 use std::io::{Read, Seek};
@@ -146,26 +147,22 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             .projection
             .take()
             .unwrap_or_else(|| (0..self.schema.fields().len()).collect());
-        let mut parsed_dfs = Vec::with_capacity(128);
-
         let bytes = self.find_starting_point(bytes)?;
 
         let file_chunks = get_file_chunks(bytes, n_threads);
 
-        let scopes: Result<_> = thread::scope(|s| {
-            let mut handlers = Vec::with_capacity(n_threads);
+        let parsed_dfs = POOL.install(|| {
+            file_chunks
+                .into_par_iter()
+                .enumerate()
+                .map(|(thread_no, (mut total_bytes_offset, stop_at_nbytes))| {
+                    let delimiter = self.delimiter;
+                    let batch_size = self.batch_size;
+                    let schema = self.schema.clone();
+                    let ignore_parser_errors = self.ignore_parser_errors;
+                    let encoding = self.encoding;
+                    let projection = &projection;
 
-            for (thread_no, (mut total_bytes_offset, stop_at_nbytes)) in
-                file_chunks.into_iter().enumerate()
-            {
-                let delimiter = self.delimiter;
-                let batch_size = self.batch_size;
-                let schema = self.schema.clone();
-                let ignore_parser_errors = self.ignore_parser_errors;
-                let encoding = self.encoding;
-                let projection = &projection;
-
-                let h: ScopedJoinHandle<Result<_>> = s.spawn(move |_| {
                     // container to ammortize allocs
                     let mut rows = Vec::with_capacity(batch_size);
                     rows.resize_with(batch_size, Default::default);
@@ -173,7 +170,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     let mut builders = init_builders(&projection, capacity, &schema).unwrap();
 
                     #[cfg(target_os = "linux")]
-                    let has_utf8 = builders
+                        let has_utf8 = builders
                         .iter()
                         .any(|b| matches!(b, super::chunked_parser::Builder::Utf8(_)));
 
@@ -221,41 +218,32 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                 predicate,
                                 aggregate,
                             )
-                            .unwrap();
+                                .unwrap();
 
                             #[cfg(target_os = "linux")]
-                            {
-                                // linux global allocators don't return freed memory immediately to the OS.
-                                // macos and windows return more aggressively.
-                                // We choose this location to do trim heap memory as this will be called after CSV read
-                                // which may have some over-allocated utf8
-                                // This is an expensive operation therefore we don't want to call it too often, and only when
-                                // there are utf8 arrays.
-                                if has_utf8
-                                    && thread_no == 0
-                                    && count % (CAPACITY_MULTIPLIER * 16) == 0
                                 {
-                                    use polars_core::utils::malloc_trim;
-                                    unsafe { malloc_trim(0) };
+                                    // linux global allocators don't return freed memory immediately to the OS.
+                                    // macos and windows return more aggressively.
+                                    // We choose this location to do trim heap memory as this will be called after CSV read
+                                    // which may have some over-allocated utf8
+                                    // This is an expensive operation therefore we don't want to call it too often, and only when
+                                    // there are utf8 arrays.
+                                    if has_utf8
+                                        && thread_no == 0
+                                        && count % (CAPACITY_MULTIPLIER * 16) == 0
+                                    {
+                                        use polars_core::utils::malloc_trim;
+                                        unsafe { malloc_trim(0) };
+                                    }
                                 }
-                            }
                         }
                     }
                     finish_builder(builders, &mut local_parsed_dfs, predicate, aggregate)?;
 
                     Ok(local_parsed_dfs)
-                });
-                handlers.push(h)
-            }
-            for h in handlers {
-                let local_parsed_dfs = h.join().expect("thread panicked")?;
-                parsed_dfs.extend(local_parsed_dfs.into_iter())
-            }
-
-            Ok(())
-        })
-        .unwrap();
-        let _ = scopes?;
+                })
+                .collect::<Result<Vec<_>>>()
+        })?.into_iter().flatten().collect::<Vec<_>>();
 
         Ok(parsed_dfs)
     }
@@ -305,16 +293,17 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let file_chunks = get_file_chunks(bytes, n_threads);
         let local_capacity = total_rows / n_threads;
 
-        let scopes: Result<_> = thread::scope(|s| {
-            let mut handlers = Vec::with_capacity(n_threads);
+        // all the buffers returned from the threads
+        // Structure:
+        //      the inner vec has got buffers from all the columns.
+        let mut buffers = POOL.install( || {
+            file_chunks.into_par_iter()
+                .map(|(bytes_offset_thread, stop_at_nbytes)| {
+                    let delimiter = self.delimiter;
+                    let schema = self.schema.clone();
+                    let ignore_parser_errors = self.ignore_parser_errors;
+                    let projection = &projection;
 
-            for (bytes_offset_thread, stop_at_nbytes) in file_chunks {
-                let delimiter = self.delimiter;
-                let schema = self.schema.clone();
-                let ignore_parser_errors = self.ignore_parser_errors;
-                let projection = &projection;
-
-                let h: ScopedJoinHandle<Result<_>> = s.spawn(move |_| {
                     let mut buffers = init_buffers(&projection, local_capacity, &schema)?;
                     let local_bytes = &bytes[bytes_offset_thread..stop_at_nbytes];
                     let read = bytes_offset_thread;
@@ -328,23 +317,9 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         ignore_parser_errors,
                     )?;
                     Ok(buffers)
-                });
-                handlers.push(h)
-            }
 
-            let mut buffers = Vec::with_capacity(handlers.len());
-            for h in handlers {
-                let local_buffer = h.join().expect("thread panicked")?;
-                buffers.push(local_buffer);
-            }
-
-            Ok(buffers)
-        })
-        .unwrap();
-        // all the buffers returned from the threads
-        // Structure:
-        //      the inner vec has got buffers from all the columns.
-        let mut buffers = scopes?;
+                }).collect::<Result<Vec<_>>>()
+        })?;
 
         // restructure the buffers so that they can be dropped as soon as processed;
         // Structure:
