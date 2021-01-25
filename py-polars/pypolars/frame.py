@@ -105,16 +105,19 @@ class DataFrame:
 
         Parameters
         ---
-        - file `str`, `TextIO`  
+        file
             Any valid filepath can be used. Example: `file.csv`.
-        - sep `str`  
-            Default is `,`.
-        - stop_after_n_rows `int`   
-            Only read specified number of rows of the dataset. After `n` stops reading. Default is `None`. 
-        - has_headers `bool`  
-            Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`, `x` being an enumeration over every column in the dataset. Default = `True`.
-        - encoding `str`  
-            Default = `utf8`.
+        sep
+            Character to use as delimiter in the file.
+        
+        stop_after_n_rows
+            Only read specified number of rows of the dataset. After `n` stops reading.
+        
+        has_headers
+            Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`, `x` being an enumeration over every column in the dataset.
+        
+        encoding
+            Allowed encodings: `utf8`, `utf8-lossy`. Lossy means that invalid utf8 values are replaced with `�` character.
 
         Example
         ---
@@ -231,14 +234,17 @@ class DataFrame:
 
         Parameters
         ---
-        - file `str`, `TextIO`  
+        file
             Write location
-        - batch_size `int`  
+
+        batch_size
             Size of the write buffer. Increase to have faster io.
-        - has_headers `bool`  
+
+        has_headers
             Whether or not to include header in the CSV output.
-        - delimiter `str`  
-            Space elements with this symbol. default = `,`
+        
+        delimiter
+            Space elements with this symbol.
 
         Example
         ---
