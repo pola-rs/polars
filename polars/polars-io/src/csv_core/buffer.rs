@@ -100,16 +100,24 @@ where
 /// memory we first store the utf8 locations and only create the utf8 arrays on the end.
 #[derive(Debug)]
 pub(crate) struct Utf8Field {
+    // during the first pass it is determined if the field
+    // has got characters that should be escaped.
+    pub(crate) escape: bool,
     start_pos: usize,
     pub(crate) len: u32,
 }
 
 impl Utf8Field {
     /// find the string slice in the original slice that was used to create this Utf8Field
-    pub(crate) fn find<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
+    pub(crate) fn get_long_subslice<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
         // the +1 adds the trailing separator (often a ','). this is needed for the rust csv_core crate
         // that will parse this to escape the input.
         &bytes[self.start_pos..self.start_pos + self.len as usize + 1]
+    }
+
+    /// find the string slice in the original slice that was used to create this Utf8Field
+    pub(crate) unsafe fn get_subslice<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
+        bytes.get_unchecked(self.start_pos..self.start_pos + self.len as usize)
     }
 }
 
@@ -117,6 +125,7 @@ impl ParsedBuffer<Utf8Type> for Vec<Utf8Field> {
     #[inline]
     fn parse_bytes(&mut self, bytes: &[u8], _ignore_errors: bool, start_pos: usize) -> Result<()> {
         self.push(Utf8Field {
+            escape: bytes.contains(&b'"'),
             start_pos,
             len: bytes.len() as u32,
         });
@@ -371,19 +380,33 @@ where
 
             buffers.into_iter().try_for_each(|(v, _)| {
                 v.into_iter().try_for_each(|utf8_field| {
-                    // find the original str location
-                    let bytes = utf8_field.find(bytes);
+                    let out_slice = if !utf8_field.escape {
+                        unsafe {
+                            // in debug we check if don't have out of bounds access
+                            #[cfg(debug_assertions)]
+                            {
+                                utf8_field.get_long_subslice(bytes);
+                            }
+                            // SAFETY:
+                            // we already know by the first pass that this is in bounds
+                            utf8_field.get_subslice(bytes)
+                        }
+                    } else {
+                        // find the original str location
+                        let bytes = utf8_field.get_long_subslice(bytes);
 
-                    if utf8_field.len as usize > string_buf.len() {
-                        string_buf.reserve(string_buf.capacity())
-                    }
-                    // proper escape the str field by copying to output buffer
-                    let (_, _, n_end) = reader.read_field(bytes, &mut string_buf);
-                    let out_slice = unsafe {
-                        // SAFETY
-                        // we know that n_end never will be larger than our output buffer
-                        string_buf.get_unchecked(..n_end)
+                        if utf8_field.len as usize > string_buf.len() {
+                            string_buf.reserve(string_buf.capacity())
+                        }
+                        // proper escape the str field by copying to output buffer
+                        let (_, _, n_end) = reader.read_field(bytes, &mut string_buf);
+                        unsafe {
+                            // SAFETY
+                            // we know that n_end never will be larger than our output buffer
+                            string_buf.get_unchecked(..n_end)
+                        }
                     };
+
                     let parse_result = std::str::from_utf8(out_slice)
                         .map_err(|_| PolarsError::Other("invalid utf8 data".into()));
                     match parse_result {
@@ -392,7 +415,7 @@ where
                         }
                         Err(err) => {
                             if matches!(encoding, CsvEncoding::LossyUtf8) {
-                                let s = String::from_utf8_lossy(&string_buf[..n_end]);
+                                let s = String::from_utf8_lossy(&out_slice);
                                 builder.append_value(s.as_ref());
                             } else if ignore_errors {
                                 builder.append_null();

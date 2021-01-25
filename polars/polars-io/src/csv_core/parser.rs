@@ -262,7 +262,7 @@ mod test {
             let v = buf
                 .iter()
                 .map(|utf8_field| {
-                    let sub_slice = utf8_field.find(bytes);
+                    let sub_slice = utf8_field.get_long_subslice(bytes);
                     std::str::from_utf8(&sub_slice[..sub_slice.len() - 1]).unwrap()
                 })
                 .collect::<Vec<_>>();
