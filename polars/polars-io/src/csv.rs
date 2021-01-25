@@ -464,9 +464,9 @@ mod test {
             .unwrap();
 
         let col = df.column("variety").unwrap();
+        dbg!(&df);
         assert_eq!(col.get(0), AnyValue::Utf8("Setosa"));
         assert_eq!(col.get(2), AnyValue::Utf8("Setosa"));
-        dbg!(&df);
 
         assert_eq!("sepal.length", df.get_columns()[0].name());
         assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
