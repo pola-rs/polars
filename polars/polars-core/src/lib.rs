@@ -18,9 +18,22 @@ pub(crate) mod vector_hasher;
 
 use ahash::AHashMap;
 use lazy_static::lazy_static;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::cell::Cell;
 use std::sync::{Mutex, MutexGuard};
 
+// this is re-exported in utils for polars child crates
+lazy_static! {
+    pub static ref POOL: ThreadPool = ThreadPoolBuilder::new()
+        .num_threads(num_cpus::get())
+        .build()
+        .expect("could not spawn threads");
+}
+
+/// Used by categorical data that need to share global categories.
+/// In *eager* you need to specifically toggle global string cache to have a global effect.
+/// In *lazy* it is toggled on at the start of a computation run and turned of (deleted) when a
+/// result is produced.
 pub(crate) struct StringCache(pub(crate) Mutex<AHashMap<String, u32>>);
 
 impl StringCache {
