@@ -7,10 +7,7 @@ use crate::csv_core::{buffer::*, parser::*};
 use crate::PhysicalIOExpr;
 use crate::ScanAggregation;
 use csv::ByteRecordsIntoIter;
-use polars_core::{
-    POOL,
-    prelude::*
-};
+use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;
 use std::fmt;
 use std::io::{Read, Seek};
@@ -151,76 +148,81 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         let file_chunks = get_file_chunks(bytes, n_threads);
 
-        let parsed_dfs = POOL.install(|| {
-            file_chunks
-                .into_par_iter()
-                .enumerate()
-                .map(|(thread_no, (mut total_bytes_offset, stop_at_nbytes))| {
-                    let delimiter = self.delimiter;
-                    let batch_size = self.batch_size;
-                    let schema = self.schema.clone();
-                    let ignore_parser_errors = self.ignore_parser_errors;
-                    let encoding = self.encoding;
-                    let projection = &projection;
+        let parsed_dfs = POOL
+            .install(|| {
+                file_chunks
+                    .into_par_iter()
+                    .enumerate()
+                    .map(|(thread_no, (mut total_bytes_offset, stop_at_nbytes))| {
+                        let delimiter = self.delimiter;
+                        let batch_size = self.batch_size;
+                        let schema = self.schema.clone();
+                        let ignore_parser_errors = self.ignore_parser_errors;
+                        let encoding = self.encoding;
+                        let projection = &projection;
 
-                    // container to ammortize allocs
-                    let mut rows = Vec::with_capacity(batch_size);
-                    rows.resize_with(batch_size, Default::default);
+                        // container to ammortize allocs
+                        let mut rows = Vec::with_capacity(batch_size);
+                        rows.resize_with(batch_size, Default::default);
 
-                    let mut builders = init_builders(&projection, capacity, &schema).unwrap();
+                        let mut builders = init_builders(&projection, capacity, &schema).unwrap();
 
-                    #[cfg(target_os = "linux")]
+                        #[cfg(target_os = "linux")]
                         let has_utf8 = builders
-                        .iter()
-                        .any(|b| matches!(b, super::chunked_parser::Builder::Utf8(_)));
+                            .iter()
+                            .any(|b| matches!(b, super::chunked_parser::Builder::Utf8(_)));
 
-                    let mut local_parsed_dfs = Vec::with_capacity(16);
+                        let mut local_parsed_dfs = Vec::with_capacity(16);
 
-                    let mut local_bytes;
-                    let mut core_reader =
-                        csv_core::ReaderBuilder::new().delimiter(delimiter).build();
+                        let mut local_bytes;
+                        let mut core_reader =
+                            csv_core::ReaderBuilder::new().delimiter(delimiter).build();
 
-                    let mut count = 0;
-                    loop {
-                        count += 1;
-                        local_bytes = &bytes[total_bytes_offset..stop_at_nbytes];
-                        let (correctly_parsed, bytes_read) =
-                            next_rows_core(&mut rows, local_bytes, &mut core_reader, batch_size);
-                        total_bytes_offset += bytes_read;
+                        let mut count = 0;
+                        loop {
+                            count += 1;
+                            local_bytes = &bytes[total_bytes_offset..stop_at_nbytes];
+                            let (correctly_parsed, bytes_read) = next_rows_core(
+                                &mut rows,
+                                local_bytes,
+                                &mut core_reader,
+                                batch_size,
+                            );
+                            total_bytes_offset += bytes_read;
 
-                        if correctly_parsed < batch_size {
-                            if correctly_parsed == 0 {
+                            if correctly_parsed < batch_size {
+                                if correctly_parsed == 0 {
+                                    break;
+                                }
+                                // this only happens at the last batch if it doesn't fit a whole batch.
+                                rows.truncate(correctly_parsed);
+                            }
+                            add_to_builders_core(
+                                &mut builders,
+                                &projection,
+                                &rows,
+                                &schema,
+                                ignore_parser_errors,
+                                encoding,
+                            )?;
+
+                            if total_bytes_offset >= stop_at_nbytes {
                                 break;
                             }
-                            // this only happens at the last batch if it doesn't fit a whole batch.
-                            rows.truncate(correctly_parsed);
-                        }
-                        add_to_builders_core(
-                            &mut builders,
-                            &projection,
-                            &rows,
-                            &schema,
-                            ignore_parser_errors,
-                            encoding,
-                        )?;
 
-                        if total_bytes_offset >= stop_at_nbytes {
-                            break;
-                        }
-
-                        if count % CAPACITY_MULTIPLIER == 0 {
-                            let mut builders_tmp =
-                                init_builders(&projection, capacity, &schema).unwrap();
-                            std::mem::swap(&mut builders_tmp, &mut builders);
-                            finish_builder(
-                                builders_tmp,
-                                &mut local_parsed_dfs,
-                                predicate,
-                                aggregate,
-                            )
+                            if count % CAPACITY_MULTIPLIER == 0 {
+                                let mut builders_tmp =
+                                    init_builders(&projection, capacity, &schema).unwrap();
+                                std::mem::swap(&mut builders_tmp, &mut builders);
+                                finish_builder(
+                                    builders_tmp,
+                                    &mut local_parsed_dfs,
+                                    predicate,
+                                    aggregate,
+                                )
                                 .unwrap();
 
-                            #[cfg(target_os = "linux")]
+                                #[cfg(target_os = "linux")]
                                 {
                                     // linux global allocators don't return freed memory immediately to the OS.
                                     // macos and windows return more aggressively.
@@ -236,14 +238,17 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                         unsafe { malloc_trim(0) };
                                     }
                                 }
+                            }
                         }
-                    }
-                    finish_builder(builders, &mut local_parsed_dfs, predicate, aggregate)?;
+                        finish_builder(builders, &mut local_parsed_dfs, predicate, aggregate)?;
 
-                    Ok(local_parsed_dfs)
-                })
-                .collect::<Result<Vec<_>>>()
-        })?.into_iter().flatten().collect::<Vec<_>>();
+                        Ok(local_parsed_dfs)
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
         Ok(parsed_dfs)
     }
@@ -296,8 +301,9 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         // all the buffers returned from the threads
         // Structure:
         //      the inner vec has got buffers from all the columns.
-        let mut buffers = POOL.install( || {
-            file_chunks.into_par_iter()
+        let mut buffers = POOL.install(|| {
+            file_chunks
+                .into_par_iter()
                 .map(|(bytes_offset_thread, stop_at_nbytes)| {
                     let delimiter = self.delimiter;
                     let schema = self.schema.clone();
@@ -317,8 +323,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         ignore_parser_errors,
                     )?;
                     Ok(buffers)
-
-                }).collect::<Result<Vec<_>>>()
+                })
+                .collect::<Result<Vec<_>>>()
         })?;
 
         // restructure the buffers so that they can be dropped as soon as processed;
