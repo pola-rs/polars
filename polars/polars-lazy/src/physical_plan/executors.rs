@@ -2,9 +2,8 @@ use super::*;
 use crate::logical_plan::{Context, FETCH_ROWS};
 use crate::utils::rename_expr_root_name;
 use itertools::Itertools;
-use polars_core::frame::hash_join::JoinType;
-use polars_core::utils::crossbeam::thread;
 use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
+use polars_core::{frame::hash_join::JoinType, POOL};
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
 use rayon::prelude::*;
@@ -579,67 +578,48 @@ impl Executor for PartitionGroupByExec {
         // splitted on several threads. Than the final result we apply the same groupby again.
         let dfs = split_df(&original_df, n_threads)?;
 
-        let dfs: Result<_> = thread::scope(|s| {
-
-            let handles = (0..n_threads)
-                .map(|i| {
-
-                    let df = &dfs[i];
+        let dfs = POOL.install(|| {
+            dfs.into_par_iter()
+                .map(|df| {
                     let keys = self
                         .keys
                         .iter()
                         .map(|e| e.evaluate(&df))
                         .collect::<Result<Vec<_>>>()?;
                     let phys_aggs = &self.phys_aggs;
+                    let gb = df.groupby_with_series(keys, false)?;
+                    let groups = gb.get_groups();
 
-                    let handle = s.spawn(move |_| {
-
-                        let gb = df.groupby_with_series(keys, false)?;
-                        let groups = gb.get_groups();
-
-                        let mut columns = gb.keys();
-                        let agg_columns = phys_aggs
-                            .iter()
-                            .map(|expr| {
-                                let agg_expr = expr.as_agg_expr()?;
-                                let opt_agg = agg_expr.evaluate_partitioned(&df, groups)?;
-                                if let Some(agg) = &opt_agg {
-                                    if agg[0].len() != groups.len() {
-                                        panic!(format!(
-                                            "returned aggregation is a different length: {} than the group lengths: {}",
-                                            agg.len(),
-                                            groups.len()
-                                        ))
-                                    }
-                                };
-                                Ok(opt_agg)
-                            }).collect::<Result<Vec<_>>>()?;
-
-                        for agg in agg_columns {
-                            if let Some(agg) = agg {
-                                for agg in agg {
-                                    columns.push(agg)
+                    let mut columns = gb.keys();
+                    let agg_columns = phys_aggs
+                        .iter()
+                        .map(|expr| {
+                            let agg_expr = expr.as_agg_expr()?;
+                            let opt_agg = agg_expr.evaluate_partitioned(&df, groups)?;
+                            if let Some(agg) = &opt_agg {
+                                if agg[0].len() != groups.len() {
+                                    panic!(format!(
+                                        "returned aggregation is a different length: {} than the group lengths: {}",
+                                        agg.len(),
+                                        groups.len()
+                                    ))
                                 }
+                            };
+                            Ok(opt_agg)
+                        }).collect::<Result<Vec<_>>>()?;
+
+                    for agg in agg_columns {
+                        if let Some(agg) = agg {
+                            for agg in agg {
+                                columns.push(agg)
                             }
                         }
+                    }
 
-                        let df = DataFrame::new_no_checks(columns);
-                        Ok(df)
-
-                    });
-
-                    Ok(handle)
-
-                }).collect::<Result<Vec<_>>>()?;
-
-            let dfs = handles.into_iter()
-                .map(|h| {
-                    h.join().unwrap()
-                }).collect::<Result<Vec<_>>>()?;
-            // the assignment is for readability
-            Ok(dfs)
-        }).unwrap();
-        let dfs = dfs?;
+                    let df = DataFrame::new_no_checks(columns);
+                    Ok(df)
+                })
+        }).collect::<Result<Vec<_>>>()?;
 
         let df = accumulate_dataframes_vertical(dfs)?;
 
@@ -717,15 +697,16 @@ impl Executor for JoinExec {
             // propagate the fetch_rows static value to the spawning threads.
             let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
 
-            let h_left = std::thread::spawn(move || {
-                FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                input_left.execute(&cache_left)
-            });
-            let h_right = std::thread::spawn(move || {
-                FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                input_right.execute(&cache_right)
-            });
-            (h_left.join().unwrap(), h_right.join().unwrap())
+            POOL.join(
+                move || {
+                    FETCH_ROWS.with(|fr| fr.set(fetch_rows));
+                    input_left.execute(&cache_left)
+                },
+                move || {
+                    FETCH_ROWS.with(|fr| fr.set(fetch_rows));
+                    input_right.execute(&cache_right)
+                },
+            )
         } else {
             (input_left.execute(&cache), input_right.execute(&cache))
         };
