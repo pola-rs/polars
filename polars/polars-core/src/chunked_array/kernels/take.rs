@@ -62,7 +62,7 @@ pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<La
 
     let offset_len_in_bytes = (data_len + 1) * mem::size_of::<i64>();
     let mut offset_buf = MutableBuffer::new(offset_len_in_bytes);
-    offset_buf.resize(offset_len_in_bytes);
+    offset_buf.resize(offset_len_in_bytes, 0);
     let offset_typed = offset_buf.typed_data_mut();
 
     let mut length_so_far = 0;
