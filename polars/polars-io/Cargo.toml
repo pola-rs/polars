@@ -18,8 +18,8 @@ lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
 
 [dependencies]
-arrow = {version="3.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
-parquet_lib = {version = "3.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
+arrow = "3.0.0"
+parquet_lib = {version = "3.0.0", optional = true, package="parquet"}
 csv = "1.1"
 lexical = "^5.2"
 num_cpus = "1.13.0"
@@ -28,8 +28,7 @@ memmap = { package = "memmap2", version = "0.2.0" }
 fast-float = "0.1.0"
 anyhow = "1.0"
 rayon = "1.5"
-crossbeam = "0.8"
-ahash = "0.5"
+ahash = "0.6"
 num = "^0.3.1"
 
 [dependencies.polars-core]

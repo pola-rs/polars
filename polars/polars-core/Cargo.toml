@@ -10,7 +10,7 @@ repository = "https://github.com/ritchie46/polars"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-simd = ["arrow/simd"]
+simd = ["arrow/avx512", "arrow/simd"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
@@ -23,8 +23,8 @@ strings = ["regex"]
 object = ["serde_json"]
 
 [dependencies]
-arrow = {version="3.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
-parquet = {version = "3.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
+arrow = {version = "3.0.0" }
+parquet = {version = "3.0.0", optional = true }
 thiserror = "^1.0.16"
 num = "^0.3.1"
 itertools = "^0.9.0"
@@ -38,14 +38,8 @@ ndarray = {version = "0.13", optional = true, default_features = false}
 regex = {version = "1.4", optional = true}
 serde_json = {version = "1.0", optional = true }
 anyhow = "1.0"
-ahash = "0.5"
-csv = "1.1"
-crossbeam = "0.8"
-lexical = "^5.2"
+ahash = "0.6"
 num_cpus = "1.13.0"
-csv-core = "0.1.10"
-memmap = "0.7.0"
 lazy_static = "1.4.0"
 hashbrown = {version = "0.9.1", features = ["rayon"] }
-fast-float = "0.1.0"
 polars-arrow = {version = "0.12.0-beta.0", path = "../polars-arrow"}
