@@ -23,6 +23,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install maturin pytest black==20.8b1 pdoc3 numpy ghp-import pandas
+          cargo install cargo-hack
       - name: Run formatting checks
         run: |
           cargo fmt --all -- --check
@@ -34,6 +35,9 @@ jobs:
           -p polars-io \
           -p polars-lazy \
           -- -D warnings
+      - name: Feature test
+        run: |
+          cd polars && cargo hack check --each-feature --no-dev-deps
       - name: Run tests
         run: |
           cd polars && make test
