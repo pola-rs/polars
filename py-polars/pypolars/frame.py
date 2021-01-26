@@ -266,6 +266,17 @@ class DataFrame:
         """
         self._df.to_ipc(file)
 
+    def to_parquet(self, file: str):
+        """
+        Write the DataFrame disk in parquet format.
+
+        Parameters
+        ----------
+        file
+            File path to which the file should be written.
+        """
+        self._df.to_parquet(file)
+
     def to_numpy(self) -> np.ndarray:
         """
         Convert DataFrame to a 2d numpy array.

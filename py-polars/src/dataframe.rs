@@ -164,6 +164,14 @@ impl PyDataFrame {
         Ok(())
     }
 
+    pub fn to_parquet(&mut self, path: &str) -> PyResult<()> {
+        let f = std::fs::File::create(path).expect("to open a new file");
+        ParquetWriter::new(f)
+            .finish(&mut self.df)
+            .map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
     pub fn add(&self, s: &PySeries) -> PyResult<Self> {
         let df = (&self.df + &s.series).map_err(PyPolarsEr::from)?;
         Ok(df.into())
