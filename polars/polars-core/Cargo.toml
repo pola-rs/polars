@@ -38,14 +38,8 @@ ndarray = {version = "0.13", optional = true, default_features = false}
 regex = {version = "1.4", optional = true}
 serde_json = {version = "1.0", optional = true }
 anyhow = "1.0"
-ahash = "0.5"
-csv = "1.1"
-crossbeam = "0.8"
-lexical = "^5.2"
+ahash = "0.6"
 num_cpus = "1.13.0"
-csv-core = "0.1.10"
-memmap = "0.7.0"
 lazy_static = "1.4.0"
 hashbrown = {version = "0.9.1", features = ["rayon"] }
-fast-float = "0.1.0"
 polars-arrow = {version = "0.12.0-beta.0", path = "../polars-arrow"}

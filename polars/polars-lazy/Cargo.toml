@@ -13,7 +13,7 @@ repository = "https://github.com/ritchie46/polars"
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 
 [dependencies]
-ahash = "0.5"
+ahash = "0.6"
 rayon = "1.5"
 itertools = "^0.9.0"
 

@@ -28,8 +28,7 @@ memmap = { package = "memmap2", version = "0.2.0" }
 fast-float = "0.1.0"
 anyhow = "1.0"
 rayon = "1.5"
-crossbeam = "0.8"
-ahash = "0.5"
+ahash = "0.6"
 num = "^0.3.1"
 
 [dependencies.polars-core]
