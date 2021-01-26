@@ -18,14 +18,17 @@ use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIOExpr, ScanAggregation};
 use arrow::record_batch::RecordBatchReader;
-use parquet_lib::arrow::{
-    arrow_reader::ParquetRecordBatchReader, ArrowReader as ParquetArrowReader,
-    ParquetFileArrowReader,
-};
 use parquet_lib::file::reader::{FileReader, SerializedFileReader};
 pub use parquet_lib::file::serialized_reader::SliceableCursor;
+use parquet_lib::{
+    arrow::{
+        arrow_reader::ParquetRecordBatchReader, arrow_writer::ArrowWriter as ParquetArrowWriter,
+        ArrowReader as ParquetArrowReader, ParquetFileArrowReader,
+    },
+    file::writer::TryClone,
+};
 use polars_core::prelude::*;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 fn set_batch_size(max_rows: usize, stop_after_n_rows: Option<usize>) -> usize {
@@ -142,6 +145,38 @@ where
         let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
         let record_reader = arrow_reader.get_record_reader(batch_size)?;
         finish_reader(record_reader, rechunk, self.stop_after_n_rows, None, None)
+    }
+}
+
+/// Write a DataFrame to parquet format
+pub struct ParquetWriter<W> {
+    writer: W,
+}
+
+impl<W> ParquetWriter<W>
+where
+    W: 'static + Write + Seek + TryClone,
+{
+    /// Create a new writer
+    pub fn new(writer: W) -> Self
+    where
+        W: 'static + Write + Seek + TryClone,
+    {
+        ParquetWriter { writer }
+    }
+
+    /// Write the given DataFrame in the the writer `W`.
+    pub fn finish(self, df: &mut DataFrame) -> Result<()> {
+        let mut parquet_writer =
+            ParquetArrowWriter::try_new(self.writer, Arc::new(df.schema().to_arrow()), None)?;
+
+        let iter = df.iter_record_batches(df.height());
+
+        for batch in iter {
+            parquet_writer.write(&batch)?
+        }
+        let _ = parquet_writer.close()?;
+        Ok(())
     }
 }
 

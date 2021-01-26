@@ -1,5 +1,4 @@
 #![feature(doc_cfg)]
-#![feature(split_inclusive)]
 pub mod csv;
 pub mod csv_core;
 #[cfg(feature = "ipc")]
