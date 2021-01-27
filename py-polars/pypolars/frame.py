@@ -49,6 +49,9 @@ class DataFrame:
     def __init__(
         self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = False
     ):
+        """
+        A DataFrame is a two dimensional data structure that represents data as a table with rows and columns. 
+        """
 
         columns = []
         if isinstance(data, dict):
@@ -107,7 +110,7 @@ class DataFrame:
         Parameters
         ---
         file
-            Any valid filepath can be used. Example: `file.csv`.
+            Path to a file or a file like object. Any valid filepath can be used. Example: `file.csv`.
         sep
             Character to use as delimiter in the file.
         stop_after_n_rows
@@ -121,6 +124,10 @@ class DataFrame:
         ---
         ```python
         dataframe = pl.read_csv('file.csv', sep=';', stop_after_n_rows=25)
+
+        Returns
+        ---
+        DataFrame
         ```
         """
         self = DataFrame.__new__(DataFrame)
@@ -164,14 +171,14 @@ class DataFrame:
         Read into a DataFrame from a parquet file.
 
         Parameters
-        ----------
+        ---
         file
-            Path to a file or a file like object.
+            Path to a file or a file like object. Any valid filepath can be used.
         stop_after_n_rows
-            After n rows are read from the parquet stops reading.
+            Only read specified number of rows of the dataset. After `n` stops reading.
 
         Returns
-        -------
+        ---
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
