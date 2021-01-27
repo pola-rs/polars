@@ -19,10 +19,7 @@ impl BooleanBufferBuilder {
     #[inline]
     pub fn new(capacity: usize) -> Self {
         let byte_capacity = bit_util::ceil(capacity, 8);
-        let actual_capacity = bit_util::round_upto_multiple_of_64(byte_capacity);
-        let mut buffer = MutableBuffer::new(actual_capacity);
-        buffer.set_null_bits(0, actual_capacity);
-
+        let buffer = MutableBuffer::from_len_zeroed(byte_capacity);
         Self { buffer, len: 0 }
     }
 
@@ -38,81 +35,71 @@ impl BooleanBufferBuilder {
         self.buffer.capacity() * 8
     }
 
-    pub fn shrink_to_fit(&mut self) {
-        let byte_len = bit_util::ceil(self.len(), 8);
-        self.buffer.resize(byte_len)
+    #[inline]
+    pub fn advance(&mut self, additional: usize) {
+        let new_len = self.len + additional;
+        let new_len_bytes = bit_util::ceil(new_len, 8);
+        if new_len_bytes > self.buffer.len() {
+            self.buffer.resize(new_len_bytes, 0);
+        }
+        self.len = new_len;
     }
 
+    /// Reserve space to at least `additional` new bits.
+    /// Capacity will be `>= self.len() + additional`.
+    /// New bytes are uninitialized and reading them is undefined behavior.
     #[inline]
-    pub fn advance(&mut self, i: usize) {
-        let new_buffer_len = bit_util::ceil(self.len + i, 8);
-        self.buffer.resize(new_buffer_len);
-        self.len += i;
-    }
-
-    #[inline]
-    pub fn reserve(&mut self, n: usize) {
-        let new_capacity = self.len + n;
-        if new_capacity > self.capacity() {
-            let new_byte_capacity = bit_util::ceil(new_capacity, 8);
-            let existing_capacity = self.buffer.capacity();
-            let new_capacity = self.buffer.reserve(new_byte_capacity);
-            self.buffer
-                .set_null_bits(existing_capacity, new_capacity - existing_capacity);
+    pub fn reserve(&mut self, additional: usize) {
+        let capacity = self.len + additional;
+        if capacity > self.capacity() {
+            // convert differential to bytes
+            let additional = bit_util::ceil(capacity, 8) - self.buffer.len();
+            self.buffer.reserve(additional);
         }
     }
 
     #[inline]
     pub fn append(&mut self, v: bool) {
-        self.reserve(1);
+        self.advance(1);
         if v {
-            let data = unsafe {
-                std::slice::from_raw_parts_mut(self.buffer.as_mut_ptr(), self.buffer.capacity())
-            };
-            bit_util::set_bit(data, self.len);
+            unsafe { bit_util::set_bit_raw(self.buffer.as_mut_ptr(), self.len - 1) };
         }
-        self.len += 1;
     }
 
     #[inline]
-    pub fn append_n(&mut self, n: usize, v: bool) {
-        self.reserve(n);
-        if n != 0 && v {
-            let data = unsafe {
-                std::slice::from_raw_parts_mut(self.buffer.as_mut_ptr(), self.buffer.capacity())
-            };
-            (self.len..self.len + n).for_each(|i| bit_util::set_bit(data, i))
+    pub fn append_n(&mut self, additional: usize, v: bool) {
+        self.advance(additional);
+        if additional > 0 && v {
+            let offset = self.len() - additional;
+            (0..additional).for_each(|i| unsafe {
+                bit_util::set_bit_raw(self.buffer.as_mut_ptr(), offset + i)
+            })
         }
-        self.len += n;
     }
 
     #[inline]
     pub fn append_slice(&mut self, slice: &[bool]) {
-        let array_slots = slice.len();
-        self.reserve(array_slots);
+        let additional = slice.len();
+        self.advance(additional);
 
-        for v in slice {
+        let offset = self.len() - additional;
+        for (i, v) in slice.iter().enumerate() {
             if *v {
-                // For performance the `len` of the buffer is not
-                // updated on each append but is updated in the
-                // `into` method instead.
-                unsafe {
-                    bit_util::set_bit_raw(self.buffer.as_mut_ptr(), self.len);
-                }
+                unsafe { bit_util::set_bit_raw(self.buffer.as_mut_ptr(), offset + i) }
             }
-            self.len += 1;
         }
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        let byte_len = bit_util::ceil(self.len(), 8);
+        self.buffer.resize(byte_len, 0)
     }
 
     #[inline]
     pub fn finish(&mut self) -> Buffer {
         self.shrink_to_fit();
-        // `append` does not update the buffer's `len` so do it before `into` is called.
-        let new_buffer_len = bit_util::ceil(self.len, 8);
-        debug_assert!(new_buffer_len >= self.buffer.len());
-        let mut buf = std::mem::replace(&mut self.buffer, MutableBuffer::new(0));
+        let buf = std::mem::replace(&mut self.buffer, MutableBuffer::new(0));
         self.len = 0;
-        buf.resize(new_buffer_len);
         buf.into()
     }
 }
