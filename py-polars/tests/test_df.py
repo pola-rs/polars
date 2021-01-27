@@ -66,6 +66,10 @@ def test_downsample():
     out = df.downsample("a", rule="minute", n=5).first()
     assert out.shape == (4, 2)
 
+    # test to_pandas as well.
+    out = df.to_pandas()
+    assert out["a"].dtype == "datetime64[ns]"
+
 
 def test_sort():
     df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
