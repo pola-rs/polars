@@ -124,11 +124,11 @@ class DataFrame:
         ---
         ```python
         dataframe = pl.read_csv('file.csv', sep=';', stop_after_n_rows=25)
+        ```
 
         Returns
         ---
         DataFrame
-        ```
         """
         self = DataFrame.__new__(DataFrame)
 
