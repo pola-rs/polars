@@ -173,6 +173,11 @@ impl<T> ChunkedArray<T> {
         self.chunks.iter().map(|arr| arr.data()).collect()
     }
 
+    /// Get a reference to the mapping of categorical types to the string values.
+    pub fn get_categorical_map(&self) -> Option<&Arc<AHashMap<u32, String>>> {
+        self.categorical_map.as_ref()
+    }
+
     /// Get the index of the first non null value in this ChunkedArray.
     pub fn first_non_null(&self) -> Option<usize> {
         if self.null_count() == self.len() {
