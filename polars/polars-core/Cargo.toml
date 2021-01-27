@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.12.0-beta.0"
+version = "0.12.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -42,4 +42,4 @@ ahash = "0.6"
 num_cpus = "1.13.0"
 lazy_static = "1.4"
 hashbrown = {version = "0.9.1", features = ["rayon"] }
-polars-arrow = {version = "0.12.0-beta.0", path = "../polars-arrow"}
+polars-arrow = {version = "0.12.0", path = "../polars-arrow"}
