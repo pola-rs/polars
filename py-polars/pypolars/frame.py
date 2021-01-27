@@ -50,7 +50,7 @@ class DataFrame:
         self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = False
     ):
         """
-        A DataFrame is a two dimensional data structure that represents data as a table with rows and columns. 
+        A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
         """
 
         columns = []
@@ -248,12 +248,12 @@ class DataFrame:
         Example
         ---
         ```python
-        dataframe = pl.DataFrame({
+        >>> dataframe = pl.DataFrame({
             "foo": np.random.rand(10),
             "bar": np.arange(10),
             "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
-        })
-        dataframe.to_csv('new_file.csv', sep=';')
+            })
+        >>> dataframe.to_csv('new_file.csv', sep=';')
         ```
         """
         self._df.to_csv(file, batch_size, has_headers, ord(delimiter))
@@ -499,7 +499,7 @@ class DataFrame:
 
         >>> dataframe.columns
         ['foo', 'bar', 'ham']
-        
+
         # Set column names
         >>> dataframe.columns = ['apple', 'banana', 'orange']
         ╭───────┬────────┬────────╮
@@ -512,7 +512,7 @@ class DataFrame:
         │ ...   ┆ ...    ┆ ...    │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 0.443 ┆ 5      ┆ a      │
-        ╰───────┴────────┴────────╯        
+        ╰───────┴────────┴────────╯
         ```
         """
         return self._df.columns()
@@ -590,7 +590,7 @@ class DataFrame:
             "foo": np.random.rand(3),
             "bar": np.arange(3),
             })
-        
+
         >>> dataframe.sort('foo', reverse=True)
         shape: (3, 2)
         ╭───────┬─────╮
@@ -603,7 +603,7 @@ class DataFrame:
         │ 0.792 ┆ 0   │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ 0.74  ┆ 1   │
-        ╰───────┴─────╯ 
+        ╰───────┴─────╯
 
         ```
         """
