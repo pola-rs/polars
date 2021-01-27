@@ -441,14 +441,26 @@ class DataFrame:
     @property
     def shape(self) -> Tuple[int, int]:
         """
-        Get shape of the DataFrame
+        Get shape of the DataFrame.
+
+        ```python
+        >>> dataframe = pl.DataFrame({"foo" : np.random(5)})
+        >>> dataframe.shape
+        shape: (5, 1)
+        ```
         """
         return self._df.shape()
 
     @property
     def height(self) -> int:
         """
-        Get height of the DataFrame
+        Get height of the DataFrame.
+
+        ```python
+        >>> dataframe = pl.DataFrame({'foo' : np.random(5)})
+        >>> dataframe.height
+        5
+        ```
         """
         return self._df.height()
 
@@ -456,13 +468,46 @@ class DataFrame:
     def width(self) -> int:
         """
         Get width of the DataFrame
+
+        ```python
+        >>> dataframe = pl.DataFrame({'foo' : np.random(5)})
+        >>> dataframe.width
+        1
+        ```
         """
         return self._df.width()
 
     @property
     def columns(self) -> "List[str]":
         """
-        get or set column names
+        Get or set column names
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": np.random.rand(10),
+            "bar": np.arange(10),
+            "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
+            })
+
+        >>> dataframe.columns
+        ['foo', 'bar', 'ham']
+        
+        # Set column names
+        >>> dataframe.columns = ['apple', 'banana', 'orange']
+        ╭───────┬────────┬────────╮
+        │ apple ┆ banana ┆ orange │
+        │ ---   ┆ ---    ┆ ---    │
+        │ f64   ┆ i64    ┆ str    │
+        ╞═══════╪════════╪════════╡
+        │ 0.262 ┆ 0      ┆ h      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ ...   ┆ ...    ┆ ...    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 0.443 ┆ 5      ┆ a      │
+        ╰───────┴────────┴────────╯        
+        ```
         """
         return self._df.columns()
 
@@ -473,7 +518,34 @@ class DataFrame:
     @property
     def dtypes(self) -> "List[type]":
         """
-        get dtypes
+        Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": np.random.rand(10),
+            "bar": np.arange(10),
+            "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
+            })
+
+        >>> dataframe.dtypes
+        [pypolars.datatypes.Float64, pypolars.datatypes.Int64, pypolars.datatypes.Utf8]
+
+        >>> dataframe
+        shape: (10, 3)
+        ╭───────┬─────┬─────╮
+        │ foo   ┆ bar ┆ ham │
+        │ ---   ┆ --- ┆ --- │
+        │ f64   ┆ i64 ┆ str │
+        ╞═══════╪═════╪═════╡
+        │ 0.262 ┆ 0   ┆ h   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ ...   ┆ ... ┆ ... │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0.742 ┆ 9   ┆ m   │
+        ╰───────┴─────┴─────╯
+        ```
         """
         return [dtypes[idx] for idx in self._df.dtypes()]
 
