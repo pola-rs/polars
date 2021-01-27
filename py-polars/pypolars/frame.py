@@ -571,11 +571,35 @@ class DataFrame:
         Parameters
         ----------
         by_column
-            by which column to sort
+            By which column to sort. Only accepts string.
         in_place
-            sort in place or return a sorted DataFrame
+            Perform operation in-place.
         reverse
-            reverse sort
+            Reverse/descending sort.
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": np.random.rand(3),
+            "bar": np.arange(3),
+            })
+        
+        >>> dataframe.sort('foo', reverse=True)
+        shape: (3, 2)
+        ╭───────┬─────╮
+        │ foo   ┆ bar │
+        │ ---   ┆ --- │
+        │ f64   ┆ i64 │
+        ╞═══════╪═════╡
+        │ 0.821 ┆ 2   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0.792 ┆ 0   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0.74  ┆ 1   │
+        ╰───────┴─────╯ 
+
+        ```
         """
         if in_place:
             self._df.sort_in_place(by_column, reverse)
