@@ -443,6 +443,8 @@ class DataFrame:
         """
         Get shape of the DataFrame.
 
+        Example
+        ---
         ```python
         >>> dataframe = pl.DataFrame({"foo" : np.random(5)})
         >>> dataframe.shape
@@ -456,6 +458,8 @@ class DataFrame:
         """
         Get height of the DataFrame.
 
+        Example
+        ---
         ```python
         >>> dataframe = pl.DataFrame({'foo' : np.random(5)})
         >>> dataframe.height
@@ -469,6 +473,8 @@ class DataFrame:
         """
         Get width of the DataFrame
 
+        Example
+        ---
         ```python
         >>> dataframe = pl.DataFrame({'foo' : np.random(5)})
         >>> dataframe.width
