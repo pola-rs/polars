@@ -12,10 +12,6 @@ pub(crate) fn skip_bom(input: &[u8]) -> &[u8] {
     }
 }
 
-pub(crate) fn all_digit(string: &str) -> bool {
-    string.chars().all(|c| c.is_ascii_digit())
-}
-
 pub(crate) fn next_line_position(input: &[u8]) -> Option<usize> {
     let pos = input.iter().position(|b| *b == b'\n')?;
     input.get(pos + 1).and_then(|&b| {
