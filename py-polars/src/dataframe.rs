@@ -4,14 +4,17 @@ use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
+use crate::npy::series_to_numpy_compatible_vec;
 use crate::utils::str_to_polarstype;
 use crate::{
     error::PyPolarsEr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
-use polars::frame::group_by::GroupBy;
-use polars::frame::resample::SampleRule;
+use numpy::PyArray1;
+use polars::frame::{group_by::GroupBy, resample::SampleRule};
+use polars_core::utils::rayon::prelude::*;
+use pyo3::types::PyDict;
 
 #[pyclass]
 #[repr(transparent)]
@@ -170,6 +173,88 @@ impl PyDataFrame {
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
+    }
+
+    /// Create a List of numpy arrays in parallel
+    pub fn to_pandas_helper(&self) -> PyResult<PyObject> {
+        let series = self.df.get_columns();
+
+        let vecs = series
+            .par_iter()
+            .map(|s| series_to_numpy_compatible_vec(s))
+            .collect::<Vec<_>>();
+
+        macro_rules! to_pyobject {
+            ($py: expr, $bxd: expr, $primitive_1: ty, $primitive_2: ty) => {{
+                let result = $bxd.downcast::<Vec<$primitive_1>>();
+
+                match result {
+                    Ok(a) => {
+                        let arr = PyArray1::from_vec($py, *a);
+                        let obj: PyObject = arr.to_owned().into_py($py);
+                        obj
+                    }
+                    Err(bxd) => {
+                        let a = bxd.downcast::<Vec<$primitive_2>>().unwrap();
+                        let arr = PyArray1::from_vec($py, *a);
+                        let obj: PyObject = arr.to_owned().into_py($py);
+                        obj
+                    }
+                }
+            }};
+        }
+
+        Python::with_gil(|py| {
+            let dict = PyDict::new(py);
+
+            vecs.into_iter().zip(series).try_for_each(|(bxd, s)| {
+                use DataType::*;
+                let obj = match s.dtype() {
+                    Boolean => {
+                        to_pyobject!(py, bxd, bool, bool)
+                    }
+                    Int8 => {
+                        to_pyobject!(py, bxd, i8, f32)
+                    }
+                    Int16 => {
+                        to_pyobject!(py, bxd, i16, f32)
+                    }
+                    Int32 | Date32 => {
+                        to_pyobject!(py, bxd, i32, f64)
+                    }
+                    Int64 | Date64 => {
+                        to_pyobject!(py, bxd, i64, f64)
+                    }
+                    UInt8 => {
+                        to_pyobject!(py, bxd, u8, f32)
+                    }
+                    UInt16 => {
+                        to_pyobject!(py, bxd, u16, f32)
+                    }
+                    UInt32 => {
+                        to_pyobject!(py, bxd, u32, f64)
+                    }
+                    UInt64 => {
+                        to_pyobject!(py, bxd, u64, f64)
+                    }
+                    Float32 => {
+                        to_pyobject!(py, bxd, f32, f32)
+                    }
+                    Float64 => {
+                        to_pyobject!(py, bxd, f64, f64)
+                    }
+                    Utf8 => {
+                        let vec = *bxd.downcast::<Vec<String>>().unwrap();
+                        vec.into_py(py)
+                    }
+                    _ => unimplemented!(),
+                };
+                dict.set_item(s.name(), obj)
+            })?;
+
+            let dict_obj = dict.into_py(py);
+            Ok(dict_obj)
+        })
     }
 
     pub fn add(&self, s: &PySeries) -> PyResult<Self> {

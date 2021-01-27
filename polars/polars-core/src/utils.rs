@@ -1,5 +1,6 @@
 use crate::prelude::*;
 pub use num_cpus;
+pub use rayon;
 use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
