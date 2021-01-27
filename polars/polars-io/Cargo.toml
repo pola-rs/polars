@@ -24,6 +24,8 @@ csv = "1.1"
 lexical = "^5.2"
 num_cpus = "1.13.0"
 csv-core = "0.1.10"
+regex = "1.4"
+lazy_static = "1.4"
 memmap = { package = "memmap2", version = "0.2.0" }
 fast-float = "0.1.0"
 anyhow = "1.0"

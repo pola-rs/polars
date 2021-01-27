@@ -1,7 +1,9 @@
 use crate::csv::CsvEncoding;
-use crate::csv_core::parser::{all_digit, next_line_position};
+use crate::csv_core::parser::next_line_position;
 use ahash::RandomState;
+use lazy_static::lazy_static;
 use polars_core::prelude::*;
+use regex::{Regex, RegexBuilder};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::io::{Read, Seek, SeekFrom};
@@ -42,6 +44,15 @@ pub(crate) fn get_file_chunks(bytes: &[u8], n_threads: usize) -> Vec<(usize, usi
     offsets
 }
 
+lazy_static! {
+    static ref DECIMAL_RE: Regex = Regex::new(r"^-?(\d+\.\d+)$").unwrap();
+    static ref INTEGER_RE: Regex = Regex::new(r"^-?(\d+)$").unwrap();
+    static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^(true)$|^(false)$")
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+}
+
 /// Infer the data type of a record
 fn infer_field_schema(string: &str) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
@@ -50,29 +61,15 @@ fn infer_field_schema(string: &str) -> DataType {
         return DataType::Utf8;
     }
     // match regex in a particular order
-    let lower = string.to_ascii_lowercase();
-    if lower == "true" || lower == "false" {
-        return DataType::Boolean;
+    if BOOLEAN_RE.is_match(string) {
+        DataType::Boolean
+    } else if DECIMAL_RE.is_match(string) {
+        DataType::Float64
+    } else if INTEGER_RE.is_match(string) {
+        DataType::Int64
+    } else {
+        DataType::Utf8
     }
-    let skip_minus = if string.starts_with('-') { 1 } else { 0 };
-
-    let mut parts = string[skip_minus..].split('.');
-    let (left, right) = (parts.next(), parts.next());
-    let left_is_number = left.map_or(false, all_digit);
-    if left_is_number && right.map_or(false, all_digit) {
-        return DataType::Float64;
-    } else if left_is_number {
-        // integers cannot start with leading zero's
-        // we can unwrap because the map above succeeded
-        let mut chars = left.unwrap().chars();
-        if let Some(lead) = chars.next() {
-            if lead == '0' && chars.next().is_some() {
-                return DataType::Utf8;
-            }
-        }
-        return DataType::Int64;
-    }
-    DataType::Utf8
 }
 
 #[inline]
