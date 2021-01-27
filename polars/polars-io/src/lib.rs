@@ -1,6 +1,6 @@
 #![feature(doc_cfg)]
 pub mod csv;
-pub mod fork;
+pub mod csv_core;
 #[cfg(feature = "ipc")]
 #[doc(cfg(feature = "ipc"))]
 pub mod ipc;

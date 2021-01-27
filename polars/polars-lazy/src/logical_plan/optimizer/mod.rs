@@ -310,7 +310,7 @@ pub enum AExpr {
     Explode(Node),
     Alias(Node, Arc<String>),
     Column(Arc<String>),
-    Literal(ScalarValue),
+    Literal(LiteralValue),
     BinaryExpr {
         left: Node,
         op: Operator,
@@ -841,6 +841,7 @@ fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             length,
         },
         Expr::Wildcard => AExpr::Wildcard,
+        Expr::Except(_) => panic!("should be no except expression at this point"),
     };
     arena.add(v)
 }

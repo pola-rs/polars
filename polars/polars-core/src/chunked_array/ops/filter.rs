@@ -140,6 +140,15 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             };
         }
         check_filter_len!(self, filter);
+        if self.chunk_id == filter.chunk_id {
+            let chunks = self
+                .downcast_chunks()
+                .iter()
+                .zip(filter.downcast_chunks())
+                .map(|(&left, mask)| filter_fn(left, mask).unwrap())
+                .collect();
+            return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        }
         let out = match (self.null_count(), filter.null_count()) {
             (0, 0) => Ok(impl_filter_no_nulls!(self, filter)),
             (0, _) => Ok(impl_filter_no_nulls_in_self!(self, filter)),
@@ -162,6 +171,15 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
             };
         }
         check_filter_len!(self, filter);
+        if self.chunk_id == filter.chunk_id {
+            let chunks = self
+                .downcast_chunks()
+                .iter()
+                .zip(filter.downcast_chunks())
+                .map(|(&left, mask)| filter_fn(left, mask).unwrap())
+                .collect();
+            return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        }
         let out: Result<Utf8Chunked> = match (self.null_count(), filter.null_count()) {
             (0, 0) => {
                 let ca = impl_filter_no_nulls!(self, filter);

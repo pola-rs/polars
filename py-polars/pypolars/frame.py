@@ -99,6 +99,7 @@ class DataFrame:
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
         dtype: "Optional[Dict[str, DataType]]" = None,
+        use_stable_parser: bool = False,
     ) -> "DataFrame":
         """
         Read a comma-seperated value file into a Dataframe.
@@ -151,6 +152,7 @@ class DataFrame:
             n_threads,
             path,
             dtype,
+            use_stable_parser,
         )
         return self
 
@@ -201,21 +203,17 @@ class DataFrame:
         """
         import pandas as pd
 
-        data = {}
+        data = self._df.to_pandas_helper()
         for col in self.columns:
             series = self[col]
-            if series.dtype == List:
-                data[col] = series.to_list()
-            elif series.dtype == Utf8:
-                data[col] = series.to_list()
-            else:
-                s = series.to_numpy()
-
-                if series.dtype == Date32:
-                    s = pd.to_datetime(s, unit="d")
-                elif series.dtype == Date64:
-                    s = pd.to_datetime(s, unit="ms")
-
+            if series.dtype == Date32:
+                # we need to make this extra copy because the numpy array is readonly
+                values = np.array(data[col])
+                s = pd.to_datetime(values, unit="d")
+                data[col] = s
+            elif series.dtype == Date64:
+                values = np.array(data[col])
+                s = pd.to_datetime(values, unit="ms")
                 data[col] = s
         return pd.DataFrame(data)
 
@@ -263,6 +261,17 @@ class DataFrame:
             write location
         """
         self._df.to_ipc(file)
+
+    def to_parquet(self, file: str):
+        """
+        Write the DataFrame disk in parquet format.
+
+        Parameters
+        ----------
+        file
+            File path to which the file should be written.
+        """
+        self._df.to_parquet(file)
 
     def to_numpy(self) -> np.ndarray:
         """

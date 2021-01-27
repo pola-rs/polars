@@ -5,6 +5,7 @@ use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{
     AllowedOptimizations, JoinOptions, LazyCsvReader, LazyFrame, LazyGroupBy,
 };
+use polars::lazy::prelude::col;
 use polars::prelude::{DataFrame, Field, JoinType, Schema};
 use pyo3::prelude::*;
 
@@ -293,7 +294,8 @@ impl PyLazyFrame {
 
     pub fn explode(&self, column: Vec<String>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.explode(column).into()
+        let column = column.into_iter().map(|s| col(&s)).collect::<Vec<_>>();
+        ldf.explode(&column).into()
     }
 
     pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
@@ -303,7 +305,8 @@ impl PyLazyFrame {
 
     pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_nulls(subset.as_ref().map(|v| v.as_ref())).into()
+        ldf.drop_nulls(subset.map(|v| v.into_iter().map(|s| col(&s)).collect()))
+            .into()
     }
 
     pub fn slice(&self, offset: usize, len: usize) -> Self {

@@ -1,6 +1,6 @@
 [package]
 name = "polars-lazy"
-version = "0.12.0-beta.0"
+version = "0.12.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -13,10 +13,10 @@ repository = "https://github.com/ritchie46/polars"
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 
 [dependencies]
-ahash = "0.5"
+ahash = "0.7"
 rayon = "1.5"
-itertools = "^0.9.0"
+itertools = "0.10"
 
-polars-io = {version = "0.12.0-beta.0", path = "../polars-io", features = ["lazy"]}
-polars-core = {version = "0.12.0-beta.0", path = "../polars-core", features = ["lazy"]}
-polars-arrow = {version = "0.12.0-beta.0", path = "../polars-arrow"}
+polars-io = {version = "0.12.0", path = "../polars-io", features = ["lazy"]}
+polars-core = {version = "0.12.0", path = "../polars-core", features = ["lazy"]}
+polars-arrow = {version = "0.12.0", path = "../polars-arrow"}

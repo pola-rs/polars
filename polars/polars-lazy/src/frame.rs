@@ -523,10 +523,19 @@ impl LazyFrame {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
+    /// /// This function selects column "foo" and column "bar".
+    /// /// Column "bar" is renamed to "ham".
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
     ///         .select(&[col("foo"),
     ///                   col("bar").alias("ham")])
+    /// }
+    ///
+    /// /// This function selects all columns except "foo"
+    /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .select(&[col("*"),
+    ///                   except("foo")])
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
@@ -659,6 +668,18 @@ impl LazyFrame {
     }
 
     /// Generic join function that can join on multiple columns.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    ///         ldf
+    ///         .join(other, vec![col("foo"), col("bar")], vec![col("foo"), col("bar")], None, JoinType::Inner)
+    /// }
+    /// ```
     pub fn join(
         self,
         other: LazyFrame,
@@ -767,7 +788,17 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode(self, columns: Vec<String>) -> LazyFrame {
+    pub fn explode(self, columns: &[Expr]) -> LazyFrame {
+        let columns = columns
+            .iter()
+            .map(|e| {
+                if let Expr::Column(name) = e {
+                    (**name).clone()
+                } else {
+                    panic!("expected column expression")
+                }
+            })
+            .collect();
         // Note: this operation affects multiple columns. Therefore it isn't implemented as expression.
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
@@ -787,11 +818,11 @@ impl LazyFrame {
     /// Drop null rows.
     ///
     /// Equal to `LazyFrame::filter(col("*").is_not_null())`
-    pub fn drop_nulls(self, subset: Option<&[String]>) -> LazyFrame {
+    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
         match subset {
             None => self.filter(col("*").is_not_null()),
             Some(subset) => {
-                let it = subset.iter().map(|name| col(name).is_not_null());
+                let it = subset.into_iter().map(|e| e.is_not_null());
                 let predicate = combine_predicates(it);
                 self.filter(predicate)
             }
@@ -901,6 +932,7 @@ impl LazyGroupBy {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::functions::pearson_corr;
     use crate::tests::get_df;
     use polars_core::*;
 
@@ -1240,7 +1272,7 @@ mod test {
                     )
                     .alias("diff_cases"),
             ])
-            .explode(vec!["day".to_string(), "diff_cases".to_string()])
+            .explode(&[col("day"), col("diff_cases")])
             .join(
                 base_df,
                 vec![col("uid"), col("day")],
@@ -1291,6 +1323,25 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_query_6() {
+        let df = df! {
+            "uid" => [0, 0, 0, 1, 1, 1],
+            "day" => [1, 2, 4, 1, 2, 3],
+            "cumcases" => [10, 12, 15, 25, 30, 41]
+        }
+        .unwrap();
+
+        let out = df
+            .lazy()
+            .groupby(vec![col("uid")])
+            // a double aggregation expression.
+            .agg(vec![pearson_corr(col("day"), col("cumcases")).pow(2.0)])
+            .collect()
+            .unwrap();
+        dbg!(out);
+    }
+
+    #[test]
     fn test_simplify_expr() {
         // Test if expression containing literals is simplified
         let df = get_df();
@@ -1309,7 +1360,7 @@ mod test {
         lp_top = optimizer.optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top);
         let plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         assert!(
-            matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(ScalarValue::Float32(2.0))))
+            matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
         );
     }
 
@@ -1564,5 +1615,23 @@ mod test {
                 Some(50),
             ]
         )
+    }
+
+    #[test]
+    fn test_select_except() {
+        let df = df! {
+            "foo" => &[1, 1, 2, 2, 3],
+            "bar" => &[1.0, 1.0, 2.0, 2.0, 3.0],
+            "ham" => &[1.0, 1.0, 2.0, 2.0, 3.0]
+        }
+        .unwrap();
+
+        let out = df
+            .lazy()
+            .select(&[col("*"), except("foo")])
+            .collect()
+            .unwrap();
+
+        assert_eq!(out.get_column_names(), &["ham", "bar"]);
     }
 }

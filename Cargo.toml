@@ -6,8 +6,5 @@ members = [
     "polars/polars-io",
     "polars/polars-lazy",
     "polars/polars-arrow",
-    "pandas_cmp",
     "py-polars",
-    "examples/iris_classifier",
-    "examples/aggregate_multiple_files_in_chunks",
 ]

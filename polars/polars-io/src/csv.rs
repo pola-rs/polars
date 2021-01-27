@@ -50,7 +50,7 @@
 //! assert_eq!("sepal.length", df.get_columns()[0].name());
 //! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
-use crate::fork::csv::{build_csv_reader, SequentialReader};
+use crate::csv_core::csv::{build_csv_reader, SequentialReader};
 use crate::{SerReader, SerWriter};
 pub use arrow::csv::WriterBuilder;
 use polars_core::prelude::*;
@@ -180,6 +180,8 @@ where
     n_threads: Option<usize>,
     path: Option<String>,
     schema_overwrite: Option<&'a Schema>,
+    sample_size: usize,
+    stable_parser: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -276,8 +278,24 @@ where
         self
     }
 
+    /// The preferred way to initialize this builder. This allows the CSV file to be memory mapped
+    /// and thereby greatly increases parsing performance.
     pub fn with_path(mut self, path: Option<String>) -> Self {
         self.path = path;
+        self
+    }
+
+    /// Sets the size of the sample taken from the CSV file. The sample is used to get statistic about
+    /// the file. These statistics are used to try to optimally allocate up front. Increasing this may
+    /// improve performance.
+    pub fn sample_size(mut self, size: usize) -> Self {
+        self.sample_size = size;
+        self
+    }
+
+    /// Use the older/ likely more stable parser.
+    pub fn with_stable_parser(mut self, stable_parser: bool) -> Self {
+        self.stable_parser = stable_parser;
         self
     }
 
@@ -298,6 +316,8 @@ where
             self.n_threads,
             self.path,
             self.schema_overwrite,
+            self.sample_size,
+            self.stable_parser,
         )
     }
 }
@@ -320,7 +340,7 @@ where
             reader,
             rechunk: true,
             stop_after_n_rows: None,
-            max_records: Some(100),
+            max_records: Some(128),
             skip_rows: 0,
             projection: None,
             batch_size: 32,
@@ -333,40 +353,36 @@ where
             n_threads: None,
             path: None,
             schema_overwrite: None,
+            sample_size: 1024,
+            stable_parser: false,
         }
     }
 
     /// Read the file and create the DataFrame.
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        // we use this scope so that everything gets dropped before calling malloc_trim
-        let df = {
-            let mut csv_reader = self.build_inner_reader()?;
-            let df = csv_reader.as_df(None, None)?;
+        let mut csv_reader = self.build_inner_reader()?;
+        let df = csv_reader.as_df(None, None)?;
 
-            match rechunk {
-                true => Ok(df.agg_chunks()),
-                false => Ok(df),
+        match rechunk {
+            true => {
+                if df.n_chunks()? > 1 {
+                    Ok(df.agg_chunks())
+                } else {
+                    Ok(df)
+                }
             }
-        };
-        #[cfg(target_os = "linux")]
-        {
-            if rechunk {
-                use polars_core::utils::malloc_trim;
-                // linux global allocators don't return freed memory immediately to the OS.
-                // macos and windows return more aggressively.
-                // We choose this location to do trim heap memory as this will be called after CSV read
-                // which may have some over-allocated utf8
-                unsafe { malloc_trim(0) };
-            }
+            false => Ok(df),
         }
-        df
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use polars_core::datatypes::AnyValue;
+    use polars_core::prelude::*;
+    use std::io::Cursor;
 
     #[test]
     fn write_csv() {
@@ -394,8 +410,6 @@ mod test {
 
     #[test]
     fn test_parser() {
-        use std::io::Cursor;
-
         let s = r#"
  "sepal.length","sepal.width","petal.length","petal.width","variety"
  5.1,3.5,1.4,.2,"Setosa"
@@ -450,7 +464,87 @@ mod test {
             .finish()
             .unwrap();
 
+        let col = df.column("variety").unwrap();
+        dbg!(&df);
+        assert_eq!(col.get(0), AnyValue::Utf8("Setosa"));
+        assert_eq!(col.get(2), AnyValue::Utf8("Setosa"));
+
         assert_eq!("sepal.length", df.get_columns()[0].name());
         assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
+        assert_eq!(df.height(), 7);
+
+        // test windows line endings
+        let s = "head_1,head_2\r\n1,2\r\n1,2\r\n1,2\r\n";
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file)
+            .infer_schema(Some(100))
+            .has_header(true)
+            .with_batch_size(100)
+            .finish()
+            .unwrap();
+
+        assert_eq!("head_1", df.get_columns()[0].name());
+        assert_eq!(df.shape(), (3, 2));
+    }
+
+    #[test]
+    fn test_tab_sep() {
+        let csv = br#"1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99217	Hospital observation care on day of discharge	N	68	67	68	73.821029412	381.30882353	57.880294118	58.2125
+1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99218	Hospital observation care, typically 30 minutes	N	19	19	19	100.88315789	476.94736842	76.795263158	77.469473684
+1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99220	Hospital observation care, typically 70 minutes	N	26	26	26	188.11076923	1086.9230769	147.47923077	147.79346154
+1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99221	Initial hospital inpatient care, typically 30 minutes per day	N	24	24	24	102.24	474.58333333	80.155	80.943333333
+1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99222	Initial hospital inpatient care, typically 50 minutes per day	N	17	17	17	138.04588235	625	108.22529412	109.22
+1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99223	Initial hospital inpatient care, typically 70 minutes per day	N	86	82	86	204.85395349	1093.5	159.25906977	161.78093023
+1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99232	Subsequent hospital inpatient care, typically 25 minutes per day	N	360	206	360	73.565666667	360.57222222	57.670305556	58.038833333
+1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99233	Subsequent hospital inpatient care, typically 35 minutes per day	N	284	148	284	105.34971831	576.98943662	82.512992958	82.805774648"#.as_ref();
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .infer_schema(Some(100))
+            .with_delimiter(b'\t')
+            .has_header(false)
+            .with_ignore_parser_errors(true)
+            .with_batch_size(100)
+            .finish()
+            .unwrap();
+
+        dbg!(df);
+    }
+
+    #[test]
+    fn test_projection() {
+        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let df = CsvReader::from_path(path)
+            .unwrap()
+            .with_projection(Some(vec![0, 2]))
+            .finish()
+            .unwrap();
+        dbg!(&df);
+        let col_1 = df.select_at_idx(0).unwrap();
+        assert_eq!(col_1.get(0), AnyValue::Utf8("vegetables"));
+    }
+
+    #[test]
+    fn test_missing_data() {
+        // missing data should not lead to parser error.
+        let csv = r#"column_1,column_2,column_3
+        1,2,3
+        1,,3"#;
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish().unwrap();
+        assert!(df
+            .column("column_1")
+            .unwrap()
+            .series_equal(&Series::new("column_1", &[1, 1])));
+        assert!(df
+            .column("column_2")
+            .unwrap()
+            .series_equal_missing(&Series::new("column_2", &[Some(2), None])));
+        assert!(df
+            .column("column_3")
+            .unwrap()
+            .series_equal(&Series::new("column_3", &[3, 3])));
     }
 }

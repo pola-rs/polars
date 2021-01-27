@@ -1,6 +1,8 @@
 use crate::prelude::*;
-pub use crossbeam;
+use crate::POOL;
 pub use num_cpus;
+pub use rayon;
+use rayon::prelude::*;
 use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
@@ -81,7 +83,7 @@ pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
 }
 
 macro_rules! split_array {
-    ($ca: ident, $n: expr) => {{
+    ($ca: expr, $n: expr) => {{
         if $n == 1 {
             return Ok(vec![$ca.clone()]);
         }
@@ -105,6 +107,10 @@ macro_rules! split_array {
 
 pub(crate) fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>> {
     split_array!(ca, n)
+}
+
+pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
+    split_array!(s, n)
 }
 
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
@@ -544,4 +550,25 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame
 extern "C" {
     #[allow(dead_code)]
     pub fn malloc_trim(__pad: usize) -> std::os::raw::c_int;
+}
+
+/// Simple wrapper to parallelize functions that can be divided over threads aggregated and
+/// finally aggregated in the main thread. This can be done for sum, min, max, etc.
+pub fn parallel_op<F>(f: F, s: Series, n_threads: Option<usize>) -> Result<Series>
+where
+    F: Fn(Series) -> Result<Series> + Send + Sync,
+{
+    let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
+    let slices = split_series(&s, n_threads)?;
+
+    let chunks = POOL.install(|| slices.into_par_iter().map(&f).collect::<Result<Vec<_>>>())?;
+
+    let mut iter = chunks.into_iter();
+    let first = iter.next().unwrap();
+    let out = iter.fold(first, |mut acc, s| {
+        acc.append(&s).unwrap();
+        acc
+    });
+
+    f(out)
 }

@@ -448,6 +448,10 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+pub fn except(name: &str) -> PyExpr {
+    dsl::except(name).into()
+}
+
 pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     let left = l.inner;
     let right = r.inner;
@@ -541,5 +545,15 @@ pub fn lit(value: &PyAny) -> PyExpr {
         .into()
     } else {
         panic!(format!("could not convert value {:?} as a Literal", value))
+    }
+}
+
+pub fn range(low: i64, high: i64, dtype: &PyAny) -> PyExpr {
+    let str_repr = dtype.str().unwrap().to_str().unwrap();
+    let dtype = str_to_polarstype(str_repr);
+    match dtype {
+        DataType::Int32 => dsl::range(low as i32, high as i32).into(),
+        DataType::UInt32 => dsl::range(low as u32, high as u32).into(),
+        _ => dsl::range(low, high).into(),
     }
 }

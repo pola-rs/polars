@@ -1,12 +1,14 @@
 [package]
 name = "polars-arrow"
-version = "0.12.0-beta.0"
+version = "0.12.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "Arrow interfaces for Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-arrow = {version="3.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "66d6223d6e793923b892753855cd2b1266dd8b06"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "ab5fc979c69ccc5dde07e1bc1467b02951b4b7e9"}
 thiserror = "^1.0.16"
 num = "^0.3.1"

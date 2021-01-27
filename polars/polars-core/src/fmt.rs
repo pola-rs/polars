@@ -327,9 +327,9 @@ fn prepare_row(row: Vec<AnyValue>, n_first: usize, n_last: usize) -> Vec<String>
         let string_limit = 32;
         if let AnyValue::Utf8(s) = v {
             if s.len() > string_limit {
-                format!("{}...", &s[..string_limit])
+                format!("\"{}...\"", &s[..string_limit])
             } else {
-                s.to_string()
+                format!("\"{}\"", s)
             }
         } else {
             format!("{}", v)

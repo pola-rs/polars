@@ -36,7 +36,7 @@ where
     let left_offset = left.offset();
 
     let mut target_buffer = MutableBuffer::new(left.len() * value_size);
-    target_buffer.resize(left.len() * value_size);
+    target_buffer.resize(left.len() * value_size, 0);
     let target_bytes = target_buffer.as_slice_mut();
 
     let all_ones = u64::MAX;

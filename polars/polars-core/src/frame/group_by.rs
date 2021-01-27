@@ -7,8 +7,8 @@ use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, df_rows_to_hashes, df_rows_to_hashes_threaded,
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
+use crate::POOL;
 use ahash::RandomState;
-use crossbeam::thread;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use num::{Num, NumCast, ToPrimitive, Zero};
@@ -194,64 +194,50 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    thread::scope(|s| {
-        let handles = (0..n_threads)
-            .map(|thread_no| {
-                let random_state = random_state.clone();
-                let hashes_and_keys = &hashes_and_keys;
-                let thread_no = thread_no as u64;
-                s.spawn(move |_| {
-                    let mut hash_tbl: HashMap<T, (usize, Vec<usize>), RandomState> =
-                        HashMap::with_capacity_and_hasher(size / (5 * n_threads), random_state);
+    POOL.install(|| {
+        (0..n_threads).into_par_iter().map(|thread_no| {
+            let random_state = random_state.clone();
+            let hashes_and_keys = &hashes_and_keys;
+            let thread_no = thread_no as u64;
 
-                    let n_threads = n_threads as u64;
-                    let mut offset = 0;
-                    for hashes_and_keys in hashes_and_keys {
-                        let len = hashes_and_keys.len();
-                        hashes_and_keys
-                            .iter()
-                            .enumerate()
-                            .for_each(|(idx, (h, k))| {
-                                // partition hashes by thread no.
-                                // So only a part of the hashes go to this hashmap
-                                if (h + thread_no) % n_threads == 0 {
-                                    let idx = idx + offset;
-                                    let entry = hash_tbl
-                                        .raw_entry_mut()
-                                        // uses the key to check equality to find and entry
-                                        .from_key_hashed_nocheck(*h, &k);
+            let mut hash_tbl: HashMap<T, (usize, Vec<usize>), RandomState> =
+                HashMap::with_capacity_and_hasher(size / n_threads, random_state);
 
-                                    match entry {
-                                        RawEntryMut::Vacant(entry) => {
-                                            entry.insert_hashed_nocheck(*h, *k, (idx, vec![idx]));
-                                        }
-                                        RawEntryMut::Occupied(mut entry) => {
-                                            let (_k, v) = entry.get_key_value_mut();
-                                            v.1.push(idx);
-                                        }
-                                    }
+            let n_threads = n_threads as u64;
+            let mut offset = 0;
+            for hashes_and_keys in hashes_and_keys {
+                let len = hashes_and_keys.len();
+                hashes_and_keys
+                    .iter()
+                    .enumerate()
+                    .for_each(|(idx, (h, k))| {
+                        // partition hashes by thread no.
+                        // So only a part of the hashes go to this hashmap
+                        if (h + thread_no) % n_threads == 0 {
+                            let idx = idx + offset;
+                            let entry = hash_tbl
+                                .raw_entry_mut()
+                                // uses the key to check equality to find and entry
+                                .from_key_hashed_nocheck(*h, &k);
+
+                            match entry {
+                                RawEntryMut::Vacant(entry) => {
+                                    entry.insert_hashed_nocheck(*h, *k, (idx, vec![idx]));
                                 }
-                            });
+                                RawEntryMut::Occupied(mut entry) => {
+                                    let (_k, v) = entry.get_key_value_mut();
+                                    v.1.push(idx);
+                                }
+                            }
+                        }
+                    });
 
-                        offset += len;
-                    }
-                    hash_tbl.shrink_to_fit();
-                    hash_tbl
-                })
-            })
-            .collect_vec();
-        handles
-            .into_iter()
-            .map(|handle| {
-                let hash_tbl = handle.join().unwrap();
-                hash_tbl
-                    .into_par_iter()
-                    .map(|(_k, v)| v)
-                    .collect::<Vec<_>>()
-            })
-            .collect_vec()
+                offset += len;
+            }
+            hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+        })
     })
-    .unwrap()
+    .collect()
 }
 
 fn populate_multiple_key_hashmap<'a, 'b>(
@@ -318,65 +304,47 @@ fn groupby_threaded_multiple_keys_flat(
 
     // We use a combination of a custom IdentityHasher and a uitility key IdxHash that stores
     // the index of the row and and the hash. The Hash function of this key just returns the hash it stores.
-    thread::scope(|s| {
-        let handles = (0..n_threads)
-            .map(|thread_no| {
-                let hashes = &hashes;
-                let thread_no = thread_no as u64;
+    POOL.install(|| {
+        (0..n_threads).into_par_iter().map(|thread_no| {
+            let hashes = &hashes;
+            let thread_no = thread_no as u64;
 
-                let keys = &keys;
-                // two row containers to amortize allocations;
-                let mut row_1 = row_1.clone();
-                let mut row_2 = row_1.clone();
+            let keys = &keys;
+            // two row containers to amortize allocations;
+            let mut row_1 = row_1.clone();
+            let mut row_2 = row_1.clone();
 
-                s.spawn(move |_| {
-                    // rather over allocate because rehashing is expensive
-                    let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
-                        HashMap::with_capacity_and_hasher(
-                            size / (2 * n_threads),
-                            IdBuildHasher::default(),
+            // rather over allocate because rehashing is expensive
+            let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
+                HashMap::with_capacity_and_hasher(size / n_threads, IdBuildHasher::default());
+
+            let n_threads = n_threads as u64;
+            let mut offset = 0;
+            for hashes in hashes {
+                let len = hashes.len();
+                hashes.into_no_null_iter().enumerate().for_each(|(idx, h)| {
+                    // partition hashes by thread no.
+                    // So only a part of the hashes go to this hashmap
+                    if (h + thread_no) % n_threads == 0 {
+                        let idx = idx + offset;
+                        populate_multiple_key_hashmap(
+                            &mut hash_tbl,
+                            &mut row_1,
+                            &mut row_2,
+                            idx,
+                            h,
+                            keys,
                         );
-
-                    let n_threads = n_threads as u64;
-                    let mut offset = 0;
-                    for hashes in hashes {
-                        let len = hashes.len();
-                        hashes.into_no_null_iter().enumerate().for_each(|(idx, h)| {
-                            // partition hashes by thread no.
-                            // So only a part of the hashes go to this hashmap
-                            if (h + thread_no) % n_threads == 0 {
-                                let idx = idx + offset;
-                                populate_multiple_key_hashmap(
-                                    &mut hash_tbl,
-                                    &mut row_1,
-                                    &mut row_2,
-                                    idx,
-                                    h,
-                                    keys,
-                                );
-                            }
-                        });
-
-                        offset += len;
                     }
-                    hash_tbl
-                })
-            })
-            .collect_vec();
+                });
 
-        handles
-            .into_iter()
-            .map(|handle| {
-                let hash_tbl = handle.join().unwrap();
-                hash_tbl
-                    .into_par_iter()
-                    .map(|(_k, v)| v)
-                    .collect::<Vec<_>>()
-            })
-            .flatten()
-            .collect_vec()
+                offset += len;
+            }
+            hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+        })
     })
-    .unwrap()
+    .flatten()
+    .collect()
 }
 
 /// Used to create the tuples for a groupby operation.
@@ -657,6 +625,14 @@ impl DataFrame {
     pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
         let selected_keys = self.select_series(by)?;
         self.groupby_with_series(selected_keys, true)
+    }
+
+    /// Group DataFrame using a Series column.
+    /// The groups are ordered by their smallest row index.
+    pub fn groupby_stable<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
+        let mut gb = self.groupby(by)?;
+        gb.groups.sort();
+        Ok(gb)
     }
 }
 

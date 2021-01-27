@@ -6,35 +6,35 @@ macro_rules! eval_binary_same_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
         return match (lit_left, lit_right) {
-            (ScalarValue::Float32(x), ScalarValue::Float32(y)) => {
-                Some(AExpr::Literal(ScalarValue::Float32(x $operand y)))
+            (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
+                Some(AExpr::Literal(LiteralValue::Float32(x $operand y)))
             }
-            (ScalarValue::Float64(x), ScalarValue::Float64(y)) => {
-                Some(AExpr::Literal(ScalarValue::Float64(x $operand y)))
+            (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
+                Some(AExpr::Literal(LiteralValue::Float64(x $operand y)))
             }
-            (ScalarValue::Int8(x), ScalarValue::Int8(y)) => {
-                Some(AExpr::Literal(ScalarValue::Int8(x $operand y)))
+            (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {
+                Some(AExpr::Literal(LiteralValue::Int8(x $operand y)))
             }
-            (ScalarValue::Int16(x), ScalarValue::Int16(y)) => {
-                Some(AExpr::Literal(ScalarValue::Int16(x $operand y)))
+            (LiteralValue::Int16(x), LiteralValue::Int16(y)) => {
+                Some(AExpr::Literal(LiteralValue::Int16(x $operand y)))
             }
-            (ScalarValue::Int32(x), ScalarValue::Int32(y)) => {
-                Some(AExpr::Literal(ScalarValue::Int32(x $operand y)))
+            (LiteralValue::Int32(x), LiteralValue::Int32(y)) => {
+                Some(AExpr::Literal(LiteralValue::Int32(x $operand y)))
             }
-            (ScalarValue::Int64(x), ScalarValue::Int64(y)) => {
-                Some(AExpr::Literal(ScalarValue::Int64(x $operand y)))
+            (LiteralValue::Int64(x), LiteralValue::Int64(y)) => {
+                Some(AExpr::Literal(LiteralValue::Int64(x $operand y)))
             }
-            (ScalarValue::UInt8(x), ScalarValue::UInt8(y)) => {
-                Some(AExpr::Literal(ScalarValue::UInt8(x $operand y)))
+            (LiteralValue::UInt8(x), LiteralValue::UInt8(y)) => {
+                Some(AExpr::Literal(LiteralValue::UInt8(x $operand y)))
             }
-            (ScalarValue::UInt16(x), ScalarValue::UInt16(y)) => {
-                Some(AExpr::Literal(ScalarValue::UInt16(x $operand y)))
+            (LiteralValue::UInt16(x), LiteralValue::UInt16(y)) => {
+                Some(AExpr::Literal(LiteralValue::UInt16(x $operand y)))
             }
-            (ScalarValue::UInt32(x), ScalarValue::UInt32(y)) => {
-                Some(AExpr::Literal(ScalarValue::UInt32(x $operand y)))
+            (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => {
+                Some(AExpr::Literal(LiteralValue::UInt32(x $operand y)))
             }
-            (ScalarValue::UInt64(x), ScalarValue::UInt64(y)) => {
-                Some(AExpr::Literal(ScalarValue::UInt64(x $operand y)))
+            (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => {
+                Some(AExpr::Literal(LiteralValue::UInt64(x $operand y)))
             }
             _ => None,
         };
@@ -48,38 +48,38 @@ macro_rules! eval_binary_bool_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
         return match (lit_left, lit_right) {
-            (ScalarValue::Float32(x), ScalarValue::Float32(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::Float64(x), ScalarValue::Float64(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::Int8(x), ScalarValue::Int8(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::Int16(x), ScalarValue::Int16(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::Int16(x), LiteralValue::Int16(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::Int32(x), ScalarValue::Int32(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::Int32(x), LiteralValue::Int32(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::Int64(x), ScalarValue::Int64(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::Int64(x), LiteralValue::Int64(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::UInt8(x), ScalarValue::UInt8(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::UInt8(x), LiteralValue::UInt8(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::UInt16(x), ScalarValue::UInt16(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::UInt16(x), LiteralValue::UInt16(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::UInt32(x), ScalarValue::UInt32(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::UInt64(x), ScalarValue::UInt64(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            (ScalarValue::Boolean(x), ScalarValue::Boolean(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(x $operand y)))
+            (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
             _ => None,
         };
@@ -108,7 +108,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(ScalarValue::Boolean(true))
+                AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
             {
                 Some(expr_arena.get(*right).clone())
@@ -120,7 +120,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*right),
-                AExpr::Literal(ScalarValue::Boolean(true))
+                AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
             {
                 Some(expr_arena.get(*left).clone())
@@ -132,10 +132,10 @@ impl OptimizationRule for SimplifyBooleanRule {
                 ..
             } if matches!(
                 expr_arena.get(*right),
-                AExpr::Literal(ScalarValue::Boolean(false))
+                AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
-                Some(AExpr::Literal(ScalarValue::Boolean(false)))
+                Some(AExpr::Literal(LiteralValue::Boolean(false)))
             }
             // false AND x -> false
             AExpr::BinaryExpr {
@@ -144,10 +144,10 @@ impl OptimizationRule for SimplifyBooleanRule {
                 ..
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(ScalarValue::Boolean(false))
+                AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
-                Some(AExpr::Literal(ScalarValue::Boolean(false)))
+                Some(AExpr::Literal(LiteralValue::Boolean(false)))
             }
             // false or x => x
             AExpr::BinaryExpr {
@@ -156,7 +156,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(ScalarValue::Boolean(false))
+                AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
                 Some(expr_arena.get(*right).clone())
@@ -168,7 +168,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 ..
             } if matches!(
                 expr_arena.get(*right),
-                AExpr::Literal(ScalarValue::Boolean(false))
+                AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
                 Some(expr_arena.get(*right).clone())
@@ -181,7 +181,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(ScalarValue::Boolean(false))
+                AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
                 Some(expr_arena.get(*right).clone())
@@ -194,10 +194,10 @@ impl OptimizationRule for SimplifyBooleanRule {
                 ..
             } if matches!(
                 expr_arena.get(*right),
-                AExpr::Literal(ScalarValue::Boolean(true))
+                AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
             {
-                Some(AExpr::Literal(ScalarValue::Boolean(false)))
+                Some(AExpr::Literal(LiteralValue::Boolean(false)))
             }
 
             // x OR true => true
@@ -207,10 +207,10 @@ impl OptimizationRule for SimplifyBooleanRule {
                 ..
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(ScalarValue::Boolean(true))
+                AExpr::Literal(LiteralValue::Boolean(true))
             ) =>
             {
-                Some(AExpr::Literal(ScalarValue::Boolean(false)))
+                Some(AExpr::Literal(LiteralValue::Boolean(false)))
             }
 
             AExpr::Not(x) => {
@@ -220,8 +220,8 @@ impl OptimizationRule for SimplifyBooleanRule {
                     // not(not x) => x
                     AExpr::Not(expr) => Some(expr_arena.get(*expr).clone()),
                     // not(lit x) => !x
-                    AExpr::Literal(ScalarValue::Boolean(b)) => {
-                        Some(AExpr::Literal(ScalarValue::Boolean(!b)))
+                    AExpr::Literal(LiteralValue::Boolean(b)) => {
+                        Some(AExpr::Literal(LiteralValue::Boolean(!b)))
                     }
                     _ => None,
                 }
@@ -234,8 +234,8 @@ impl OptimizationRule for SimplifyBooleanRule {
 fn eval_and(left: &AExpr, right: &AExpr) -> Option<AExpr> {
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right) {
         return match (lit_left, lit_right) {
-            (ScalarValue::Boolean(x), ScalarValue::Boolean(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(*x && *y)))
+            (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(*x && *y)))
             }
             _ => None,
         };
@@ -246,8 +246,8 @@ fn eval_and(left: &AExpr, right: &AExpr) -> Option<AExpr> {
 fn eval_or(left: &AExpr, right: &AExpr) -> Option<AExpr> {
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right) {
         return match (lit_left, lit_right) {
-            (ScalarValue::Boolean(x), ScalarValue::Boolean(y)) => {
-                Some(AExpr::Literal(ScalarValue::Boolean(*x || *y)))
+            (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(*x || *y)))
             }
             _ => None,
         };
@@ -270,10 +270,10 @@ impl OptimizationRule for SimplifyExprRule {
         match expr {
             // Null propagation
             AExpr::BinaryExpr { left, right, .. }
-                if matches!(expr_arena.get(*left), AExpr::Literal(ScalarValue::Null))
-                    || matches!(expr_arena.get(*right), AExpr::Literal(ScalarValue::Null)) =>
+                if matches!(expr_arena.get(*left), AExpr::Literal(LiteralValue::Null))
+                    || matches!(expr_arena.get(*right), AExpr::Literal(LiteralValue::Null)) =>
             {
-                Some(AExpr::Literal(ScalarValue::Null))
+                Some(AExpr::Literal(LiteralValue::Null))
             }
 
             // lit(left) + lit(right) => lit(left = right)
@@ -307,12 +307,12 @@ impl OptimizationRule for SimplifyExprRule {
 fn test_expr_to_aexp() {
     use super::*;
 
-    let expr = Expr::Literal(ScalarValue::Int8(0));
+    let expr = Expr::Literal(LiteralValue::Int8(0));
     let mut arena = Arena::new();
     let aexpr = to_aexpr(expr, &mut arena);
     assert_eq!(aexpr, Node(0));
     assert!(matches!(
         arena.get(aexpr),
-        AExpr::Literal(ScalarValue::Int8(0))
+        AExpr::Literal(LiteralValue::Int8(0))
     ))
 }

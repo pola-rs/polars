@@ -5,6 +5,7 @@ from pypolars import functions
 import pytest
 from io import BytesIO
 import numpy as np
+from builtins import range
 
 
 def test_init():
@@ -65,6 +66,10 @@ def test_downsample():
     df = DataFrame({"a": s, "b": s2})
     out = df.downsample("a", rule="minute", n=5).first()
     assert out.shape == (4, 2)
+
+    # test to_pandas as well.
+    out = df.to_pandas()
+    assert out["a"].dtype == "datetime64[ns]"
 
 
 def test_sort():

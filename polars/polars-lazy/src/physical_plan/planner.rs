@@ -4,8 +4,8 @@ use crate::prelude::*;
 use crate::utils::{agg_source_paths, expr_to_root_column_name};
 use ahash::RandomState;
 use itertools::Itertools;
-use polars_core::frame::group_by::GroupByMethod;
 use polars_core::prelude::*;
+use polars_core::{frame::group_by::GroupByMethod, utils::parallel_op};
 use polars_io::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -402,7 +402,9 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Min)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.min_as_series()));
+                                let function = Arc::new(move |s: Series| {
+                                    parallel_op(|s| Ok(s.min_as_series()), s, None)
+                                });
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -419,7 +421,9 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Max)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.max_as_series()));
+                                let function = Arc::new(move |s: Series| {
+                                    parallel_op(|s| Ok(s.max_as_series()), s, None)
+                                });
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -436,7 +440,9 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Sum)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.sum_as_series()));
+                                let function = Arc::new(move |s: Series| {
+                                    parallel_op(|s| Ok(s.sum_as_series()), s, None)
+                                });
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -487,7 +493,11 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Mean)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.mean_as_series()));
+                                let function = Arc::new(move |s: Series| {
+                                    let len = s.len() as f64;
+                                    parallel_op(|s| Ok(s.sum_as_series()), s, None)
+                                        .map(|s| s.cast::<Float64Type>().unwrap() / len)
+                                });
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -520,7 +530,15 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::First)))
                             }
-                            Context::Other => todo!(),
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.head(Some(1))));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
                         }
                     }
                     AggExpr::Last(expr) => {
@@ -529,7 +547,15 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Last)))
                             }
-                            Context::Other => todo!(),
+                            Context::Other => {
+                                let function = Arc::new(move |s: Series| Ok(s.tail(Some(1))));
+                                Ok(Arc::new(ApplyExpr {
+                                    input,
+                                    function,
+                                    output_type: None,
+                                    expr: expression,
+                                }))
+                            }
                         }
                     }
                     AggExpr::List(expr) => {
@@ -706,6 +732,7 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Wildcard => panic!("should be no wildcard at this point"),
+            Expr::Except(_) => panic!("should be no except expression at this point"),
         }
     }
 }

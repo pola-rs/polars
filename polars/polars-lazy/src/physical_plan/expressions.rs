@@ -8,10 +8,10 @@ use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use std::sync::Arc;
 
-pub struct LiteralExpr(pub ScalarValue, Expr);
+pub struct LiteralExpr(pub LiteralValue, Expr);
 
 impl LiteralExpr {
-    pub fn new(value: ScalarValue, expr: Expr) -> Self {
+    pub fn new(value: LiteralValue, expr: Expr) -> Self {
         Self(value, expr)
     }
 }
@@ -21,7 +21,7 @@ impl PhysicalExpr for LiteralExpr {
         &self.1
     }
     fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
-        use ScalarValue::*;
+        use LiteralValue::*;
         let s = match &self.0 {
             Int8(v) => Int8Chunked::full("literal", *v, 1).into_series(),
             Int16(v) => Int16Chunked::full("literal", *v, 1).into_series(),
@@ -35,13 +35,47 @@ impl PhysicalExpr for LiteralExpr {
             Float64(v) => Float64Chunked::full("literal", *v, 1).into_series(),
             Boolean(v) => BooleanChunked::full("literal", *v, 1).into_series(),
             Null => BooleanChunked::new_from_opt_slice("literal", &[None]).into_series(),
+            Range {
+                low,
+                high,
+                data_type,
+            } => match data_type {
+                DataType::Int32 => {
+                    let low = *low as i32;
+                    let high = *high as i32;
+                    let ca: NoNull<Int32Chunked> = (low..high).collect();
+                    ca.into_inner().into_series()
+                }
+                DataType::Int64 => {
+                    let low = *low as i64;
+                    let high = *high as i64;
+                    let ca: NoNull<Int64Chunked> = (low..high).collect();
+                    ca.into_inner().into_series()
+                }
+                DataType::UInt32 => {
+                    if *low >= 0 || *high <= u32::MAX as i64 {
+                        return Err(PolarsError::Other(
+                            "range not within bounds of u32 type".into(),
+                        ));
+                    }
+                    let low = *low as u32;
+                    let high = *high as u32;
+                    let ca: NoNull<UInt32Chunked> = (low..high).collect();
+                    ca.into_inner().into_series()
+                }
+                dt => {
+                    return Err(PolarsError::InvalidOperation(
+                        format!("datatype {:?} not supported as range", dt).into(),
+                    ))
+                }
+            },
             Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
         };
         Ok(s)
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
-        use ScalarValue::*;
+        use LiteralValue::*;
         let name = "literal";
         let field = match &self.0 {
             Int8(_) => Field::new(name, DataType::Int8),
@@ -57,6 +91,7 @@ impl PhysicalExpr for LiteralExpr {
             Boolean(_) => Field::new(name, DataType::Boolean),
             Utf8(_) => Field::new(name, DataType::Utf8),
             Null => Field::new(name, DataType::Null),
+            Range { data_type, .. } => Field::new(name, data_type.clone()),
         };
         Ok(field)
     }
@@ -650,17 +685,27 @@ impl PhysicalExpr for ApplyExpr {
 
 impl AggPhysicalExpr for ApplyExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let series = self.input.evaluate(df)?;
-        series
-            .agg_list(groups)
-            .map(|s| {
-                let s = self.function.call_udf(s);
-                s.map(|mut s| {
-                    s.rename(series.name());
-                    s
-                })
-            })
-            .map_or(Ok(None), |v| v.map(Some))
+        match self.input.as_agg_expr() {
+            // layer below is also an aggregation expr.
+            Ok(expr) => {
+                let aggregated = expr.evaluate(df, groups)?;
+                let out = aggregated.map(|s| self.function.call_udf(s));
+                out.transpose()
+            }
+            Err(_) => {
+                let series = self.input.evaluate(df)?;
+                series
+                    .agg_list(groups)
+                    .map(|s| {
+                        let s = self.function.call_udf(s);
+                        s.map(|mut s| {
+                            s.rename(series.name());
+                            s
+                        })
+                    })
+                    .map_or(Ok(None), |v| v.map(Some))
+            }
+        }
     }
 }
 

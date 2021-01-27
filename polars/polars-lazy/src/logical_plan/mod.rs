@@ -2,14 +2,15 @@ pub(crate) mod optimizer;
 use crate::logical_plan::optimizer::predicate::combine_predicates;
 use crate::logical_plan::LogicalPlan::CsvScan;
 use crate::utils::{
-    expr_to_root_column_exprs, expr_to_root_column_names, has_expr, rename_expr_root_name,
+    expr_to_root_column_exprs, expr_to_root_column_name, expr_to_root_column_names, has_expr,
+    rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
 use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
-use polars_io::fork::csv::infer_file_schema;
+use polars_io::csv_core::utils::infer_file_schema;
 use polars_io::prelude::*;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Write};
@@ -44,7 +45,7 @@ impl Debug for dyn DataFrameUdf {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ScalarValue {
+pub enum LiteralValue {
     Null,
     /// A binary true or false.
     Boolean(bool),
@@ -70,24 +71,30 @@ pub enum ScalarValue {
     Float32(f32),
     /// A 64-bit floating point number.
     Float64(f64),
+    Range {
+        low: i64,
+        high: i64,
+        data_type: DataType,
+    },
 }
 
-impl ScalarValue {
+impl LiteralValue {
     /// Getter for the `DataType` of the value
     pub fn get_datatype(&self) -> DataType {
-        match *self {
-            ScalarValue::Boolean(_) => DataType::Boolean,
-            ScalarValue::UInt8(_) => DataType::UInt8,
-            ScalarValue::UInt16(_) => DataType::UInt16,
-            ScalarValue::UInt32(_) => DataType::UInt32,
-            ScalarValue::UInt64(_) => DataType::UInt64,
-            ScalarValue::Int8(_) => DataType::Int8,
-            ScalarValue::Int16(_) => DataType::Int16,
-            ScalarValue::Int32(_) => DataType::Int32,
-            ScalarValue::Int64(_) => DataType::Int64,
-            ScalarValue::Float32(_) => DataType::Float32,
-            ScalarValue::Float64(_) => DataType::Float64,
-            ScalarValue::Utf8(_) => DataType::Utf8,
+        match self {
+            LiteralValue::Boolean(_) => DataType::Boolean,
+            LiteralValue::UInt8(_) => DataType::UInt8,
+            LiteralValue::UInt16(_) => DataType::UInt16,
+            LiteralValue::UInt32(_) => DataType::UInt32,
+            LiteralValue::UInt64(_) => DataType::UInt64,
+            LiteralValue::Int8(_) => DataType::Int8,
+            LiteralValue::Int16(_) => DataType::Int16,
+            LiteralValue::Int32(_) => DataType::Int32,
+            LiteralValue::Int64(_) => DataType::Int64,
+            LiteralValue::Float32(_) => DataType::Float32,
+            LiteralValue::Float64(_) => DataType::Float64,
+            LiteralValue::Utf8(_) => DataType::Utf8,
+            LiteralValue::Range { data_type, .. } => data_type.clone(),
             _ => panic!("Cannot treat {:?} as scalar value", self),
         }
     }
@@ -704,6 +711,7 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
         },
         Expr::Column(_) => expr,
         Expr::Literal(_) => expr,
+        Expr::Except(_) => expr,
     }
 }
 
@@ -711,9 +719,20 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
 /// In other cases replace the wildcard with an expression with all columns
 fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
+    let mut exclude = vec![];
     for expr in exprs {
-        let mut has_wildcard = false;
+        // Columns that are excepted are later removed from the projection.
+        // This can be ergonomical in combination with a wildcard expression.
+        if let Expr::Except(column) = &expr {
+            if let Expr::Column(name) = &**column {
+                exclude.push(name.clone());
+                continue;
+            } else {
+                panic!("Except expression should have column name")
+            }
+        }
 
+        let mut has_wildcard = false;
         let roots = expr_to_root_column_exprs(&expr);
         for e in roots {
             if matches!(e, Expr::Wildcard) {
@@ -747,6 +766,19 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
         } else {
             result.push(expr)
         };
+    }
+    if !exclude.is_empty() {
+        for name in exclude {
+            let idx = result
+                .iter()
+                .position(|expr| match expr_to_root_column_name(expr) {
+                    Ok(column_name) => column_name == name,
+                    Err(_) => false,
+                });
+            if let Some(idx) = idx {
+                result.swap_remove(idx);
+            }
+        }
     }
     result
 }

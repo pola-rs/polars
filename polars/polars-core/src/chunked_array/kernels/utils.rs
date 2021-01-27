@@ -113,7 +113,7 @@ impl BitMaskU64Prep {
         // note: the last % 8 is such that when the first part results to 8 -> output = 0
         let pad_additional_len = (8 - mask_bytes.len() % 8) % 8;
         u64_buffer.extend_from_slice(mask_bytes);
-        u64_buffer.extend(pad_additional_len);
+        u64_buffer.extend((0..pad_additional_len).map(|_| 0u8));
         // u64_buffer
         let mask_u64 = u64_buffer.typed_data_mut::<u64>();
 

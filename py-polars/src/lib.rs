@@ -30,8 +30,18 @@ fn col(name: &str) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn except_(name: &str) -> dsl::PyExpr {
+    dsl::except(name)
+}
+
+#[pyfunction]
 fn lit(value: &PyAny) -> dsl::PyExpr {
     dsl::lit(value)
+}
+
+#[pyfunction]
+fn range(low: i64, high: i64, dtype: &PyAny) -> dsl::PyExpr {
+    dsl::range(low, high, dtype)
 }
 
 #[pyfunction]
@@ -92,5 +102,7 @@ fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(except_)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(range)).unwrap();
     Ok(())
 }

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 readme = "README.md"
@@ -13,6 +13,7 @@ homepage = "https://github.com/ritchie46/polars"
 
 [dependencies]
 polars = {path = "../polars", features = ["parquet", "simd", "lazy", "strings", "temporal", "random", "object", "ipc"]}
+polars-core = {path = "../polars/polars-core"}
 pyo3 = {version = "0.13", features = ["extension-module"] }
 thiserror = "1.0.20"
 numpy = "0.13.0"

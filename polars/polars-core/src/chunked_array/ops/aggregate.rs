@@ -300,10 +300,10 @@ where
         ca.into_series()
     }
     fn mean_as_series(&self) -> Series {
-        let v = self.mean();
-        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
-        ca.rename(self.name());
-        ca.into_series()
+        let s = self.sum_as_series();
+        let mut out = s.cast::<Float64Type>().unwrap() / self.len() as f64;
+        out.rename(self.name());
+        out
     }
     fn median_as_series(&self) -> Series {
         let v = self.median();

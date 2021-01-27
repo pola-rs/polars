@@ -131,7 +131,7 @@ impl From<AggExpr> for Expr {
 pub enum Expr {
     Alias(Box<Expr>, Arc<String>),
     Column(Arc<String>),
-    Literal(ScalarValue),
+    Literal(LiteralValue),
     BinaryExpr {
         left: Box<Expr>,
         op: Operator,
@@ -189,6 +189,8 @@ pub enum Expr {
         /// Delays output type evaluation until input schema is known.
         output_field: Arc<dyn BinaryUdfOutputField>,
     },
+    /// Can be used in a select statement to exclude a column from selection
+    Except(Box<Expr>),
 }
 
 macro_rules! impl_partial_eq {
@@ -253,6 +255,7 @@ impl PartialEq for Expr {
             }
             Expr::Column(left) => impl_partial_eq!(Column, left, other),
             Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
+            Expr::Except(left) => impl_partial_eq!(Except, left, other),
             Expr::Wildcard => matches!(other, Expr::Wildcard),
             Expr::Udf { .. } => false,
             Expr::BinaryFunction { .. } => false,
@@ -532,6 +535,7 @@ impl Expr {
             Shift { input, .. } => input.to_field(schema, ctxt),
             Slice { input, .. } => input.to_field(schema, ctxt),
             Wildcard => panic!("should be no wildcard at this point"),
+            Except(_) => panic!("should be no except at this point"),
         }
     }
 }
@@ -604,7 +608,31 @@ impl fmt::Debug for Expr {
                 length,
             } => write!(f, "SLICE {:?} offset: {} len: {}", input, offset, length),
             Wildcard => write!(f, "*"),
+            Except(column) => write!(f, "EXCEPT {:?}", column),
         }
+    }
+}
+
+/// Exclude a column from selection.
+///
+/// # Example
+///
+/// ```rust
+/// use polars_core::prelude::*;
+/// use polars_lazy::prelude::*;
+///
+/// // Select all columns except foo.
+/// fn example(df: DataFrame) -> LazyFrame {
+///       df.lazy()
+///         .select(&[
+///                 col("*"), except("foo")
+///                 ])
+/// }
+/// ```
+pub fn except(name: &str) -> Expr {
+    match name {
+        "*" => panic!("cannot use a wildcard as a column exception"),
+        _ => Expr::Except(Box::new(col(name))),
     }
 }
 
@@ -1212,13 +1240,13 @@ pub trait Literal {
 
 impl Literal for String {
     fn lit(self) -> Expr {
-        Expr::Literal(ScalarValue::Utf8(self))
+        Expr::Literal(LiteralValue::Utf8(self))
     }
 }
 
 impl<'a> Literal for &'a str {
     fn lit(self) -> Expr {
-        Expr::Literal(ScalarValue::Utf8(self.to_owned()))
+        Expr::Literal(LiteralValue::Utf8(self.to_owned()))
     }
 }
 
@@ -1226,7 +1254,7 @@ macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
             fn lit(self) -> Expr {
-                Expr::Literal(ScalarValue::$SCALAR(self))
+                Expr::Literal(LiteralValue::$SCALAR(self))
             }
         }
     };
@@ -1270,6 +1298,33 @@ pub fn cast(expr: Expr, data_type: DataType) -> Expr {
         expr: Box::new(expr),
         data_type,
     }
+}
+
+pub trait Range<T> {
+    fn into_range(self, high: T) -> Expr;
+}
+
+macro_rules! impl_into_range {
+    ($dt: ty) => {
+        impl Range<$dt> for $dt {
+            fn into_range(self, high: $dt) -> Expr {
+                Expr::Literal(LiteralValue::Range {
+                    low: self as i64,
+                    high: high as i64,
+                    data_type: DataType::Int32,
+                })
+            }
+        }
+    };
+}
+
+impl_into_range!(i32);
+impl_into_range!(i64);
+impl_into_range!(u32);
+
+/// Create a range literal.
+pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
+    low.into_range(high)
 }
 
 // Arithmetic ops

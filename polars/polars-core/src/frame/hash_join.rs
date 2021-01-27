@@ -5,10 +5,11 @@ use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation,
     prepare_hashed_relation_threaded,
 };
+use crate::POOL;
 use ahash::RandomState;
-use crossbeam::thread;
 use hashbrown::HashMap;
 use itertools::Itertools;
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -73,73 +74,69 @@ where
     let hash_tbls = prepare_hashed_relation_threaded(b);
     let random_state = hash_tbls[0].hasher().clone();
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
-    // offset of the a indexes.
-    let mut offset = 0;
 
     let n_tables = hash_tbls.len() as u64;
+    let offsets = probe_hashes
+        .iter()
+        .map(|ph| ph.len())
+        .scan(0, |state, val| {
+            let out = *state;
+            *state += val;
+            Some(out)
+        })
+        .collect::<Vec<_>>();
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    thread::scope(|s| {
-        let handles = probe_hashes
-            .into_iter()
-            .map(|probe_hashes| {
+    POOL.install(|| {
+        probe_hashes
+            .into_par_iter()
+            .zip(offsets)
+            .map(|(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results = Vec::with_capacity(probe_hashes.len() / 10);
+                let mut results =
+                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
                 let local_offset = offset;
-                offset += probe_hashes.len();
+                // code duplication is to hoist swap out of the inner loop.
+                if swap {
+                    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                        let idx_a = idx_a + local_offset;
+                        // probe table that contains the hashed value
+                        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
-                s.spawn(move |_| {
-                    // code duplication is to hoist swap out of the inner loop.
-                    if swap {
-                        probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                            let idx_a = idx_a + local_offset;
-                            // probe table that contains the hashed value
-                            let current_probe_table =
-                                unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+                        let entry = current_probe_table
+                            .raw_entry()
+                            .from_key_hashed_nocheck(*h, k);
 
-                            let entry = current_probe_table
-                                .raw_entry()
-                                .from_key_hashed_nocheck(*h, k);
+                        if let Some((_, indexes_b)) = entry {
+                            let tuples = indexes_b.iter().map(|&idx_b| (idx_b, idx_a));
+                            results.extend(tuples);
+                        }
+                    });
+                } else {
+                    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                        let idx_a = idx_a + local_offset;
+                        // probe table that contains the hashed value
+                        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
-                            if let Some((_, indexes_b)) = entry {
-                                let tuples = indexes_b.iter().map(|&idx_b| (idx_b, idx_a));
-                                results.extend(tuples);
-                            }
-                        });
-                    } else {
-                        probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                            let idx_a = idx_a + local_offset;
-                            // probe table that contains the hashed value
-                            let current_probe_table =
-                                unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+                        let entry = current_probe_table
+                            .raw_entry()
+                            .from_key_hashed_nocheck(*h, k);
 
-                            let entry = current_probe_table
-                                .raw_entry()
-                                .from_key_hashed_nocheck(*h, k);
+                        if let Some((_, indexes_b)) = entry {
+                            let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
+                            results.extend(tuples);
+                        }
+                    });
+                }
 
-                            if let Some((_, indexes_b)) = entry {
-                                let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
-                                results.extend(tuples);
-                            }
-                        });
-                    }
-
-                    results
-                })
+                results
             })
-            .collect::<Vec<_>>();
-
-        handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap())
             .flatten()
-            .collect_vec()
+            .collect()
     })
-    .unwrap()
 }
 
-#[allow(clippy::needless_collect)]
 fn hash_join_tuples_left_threaded<T, I, J>(a: Vec<I>, b: Vec<J>) -> Vec<(usize, Option<usize>)>
 where
     I: Iterator<Item = T> + Send,
@@ -150,53 +147,54 @@ where
     let hash_tbls = prepare_hashed_relation_threaded(b);
     let random_state = hash_tbls[0].hasher().clone();
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
-    // offset of the a indexes.
-    let mut offset = 0;
+
+    let offsets = probe_hashes
+        .iter()
+        .map(|ph| ph.len())
+        .scan(0, |state, val| {
+            let out = *state;
+            *state += val;
+            Some(out)
+        })
+        .collect::<Vec<_>>();
 
     let n_tables = hash_tbls.len() as u64;
+
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    thread::scope(|s| {
-        let handles = probe_hashes
-            .into_iter()
-            .map(|probe_hashes| {
+    POOL.install(|| {
+        probe_hashes
+            .into_par_iter()
+            .zip(offsets)
+            .map(|(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results = Vec::with_capacity(probe_hashes.len() / 10);
-                let local_offset = offset;
-                offset += probe_hashes.len();
+                let mut results =
+                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
 
-                s.spawn(move |_| {
-                    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                        let idx_a = idx_a + local_offset;
-                        // probe table that contains the hashed value
-                        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+                probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                    let idx_a = idx_a + offset;
+                    // probe table that contains the hashed value
+                    let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
-                        let entry = current_probe_table
-                            .raw_entry()
-                            .from_key_hashed_nocheck(*h, k);
+                    let entry = current_probe_table
+                        .raw_entry()
+                        .from_key_hashed_nocheck(*h, k);
 
-                        match entry {
-                            // left and right matches
-                            Some((_, indexes_b)) => {
-                                results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
-                            }
-                            // only left values, right = null
-                            None => results.push((idx_a, None)),
+                    match entry {
+                        // left and right matches
+                        Some((_, indexes_b)) => {
+                            results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
                         }
-                    });
-                    results
-                })
+                        // only left values, right = null
+                        None => results.push((idx_a, None)),
+                    }
+                });
+                results
             })
-            .collect::<Vec<_>>();
-
-        handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap())
             .flatten()
-            .collect_vec()
+            .collect()
     })
-    .unwrap()
 }
 
 /// Hash join a and b.
@@ -821,7 +819,7 @@ impl DataFrame {
                     _ => todo!(),
                 };
 
-                let (df_left, df_right) = rayon::join(
+                let (df_left, df_right) = POOL.join(
                     || self.create_left_df(&join_tuples),
                     || unsafe {
                         // remove join columns
@@ -863,7 +861,7 @@ impl DataFrame {
                     _ => todo!(),
                 };
 
-                let (df_left, df_right) = rayon::join(
+                let (df_left, df_right) = POOL.join(
                     || self.create_left_df(&join_tuples),
                     || unsafe {
                         // remove join columns
@@ -911,7 +909,7 @@ impl DataFrame {
                 };
 
                 // Take the left and right dataframes by join tuples
-                let (mut df_left, df_right) = rayon::join(
+                let (mut df_left, df_right) = POOL.join(
                     || unsafe {
                         remove_selected(self, &selected_left).take_opt_iter_unchecked_bounds(
                             opt_join_tuples.iter().map(|(left, _right)| *left),
@@ -964,7 +962,7 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let join_tuples = s_left.hash_join_inner(s_right);
 
-        let (df_left, df_right) = rayon::join(
+        let (df_left, df_right) = POOL.join(
             || self.create_left_df(&join_tuples),
             || unsafe {
                 other
@@ -1002,7 +1000,7 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let opt_join_tuples = s_left.hash_join_left(s_right);
 
-        let (df_left, df_right) = rayon::join(
+        let (df_left, df_right) = POOL.join(
             || self.create_left_df(&opt_join_tuples),
             || unsafe {
                 other
@@ -1046,7 +1044,7 @@ impl DataFrame {
         let opt_join_tuples = s_left.hash_join_outer(s_right);
 
         // Take the left and right dataframes by join tuples
-        let (mut df_left, df_right) = rayon::join(
+        let (mut df_left, df_right) = POOL.join(
             || unsafe {
                 self.drop(s_left.name())
                     .unwrap()

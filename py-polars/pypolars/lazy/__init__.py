@@ -21,6 +21,8 @@ try:
         PyExpr,
         PyLazyGroupBy,
         when as pywhen,
+        except_ as pyexcept,
+        range as pyrange,
     )
 except:
     import warnings
@@ -1269,6 +1271,45 @@ def col(name: str) -> "Expr":
     return wrap_expr(pycol(name))
 
 
+def except_(name: str) -> "Expr":
+    """
+    Exclude a column from a selection
+
+    # Example
+    ```python
+    df = pl.DataFrame({
+        "ham": [1, 1, 2, 2, 3],
+        "foo": [1, 1, 2, 2, 3],
+        "bar": [1, 1, 2, 2, 3],
+    })
+
+    df.lazy()
+        .select(["*", except_("foo")])
+        .collect()
+    ```
+    Ouputs:
+
+    ```text
+    ╭─────┬─────╮
+    │ ham ┆ bar │
+    │ --- ┆ --- │
+    │ f64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 1   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 1   ┆ 1   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 2   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 2   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 3   │
+    ╰─────┴─────╯
+    ```
+    """
+    return wrap_expr(pyexcept(name))
+
+
 def count(name: str = "") -> "Expr":
     """
     Count the number of values in this column
@@ -1553,3 +1594,33 @@ class UDF:
 
 def udf(f: Callable[[Series], Series], output_type: "DataType"):
     return UDF(f, output_type)
+
+
+def range(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
+    """
+    Create a range expression. This can be used in a `select`, `with_column` etc.
+    Be sure that the range size is equal to the DataFrame you are collecting.
+
+    # Example
+
+    ```python
+    (df.lazy()
+        .filter(pl.col("foo") < pl.range(0, 100))
+        .collect())
+    ```
+
+    Parameters
+    ----------
+    low
+        lower bound of range.
+    high
+        upper bound of range.
+    dtype
+        DataType of the range. Valid dtypes:
+            * Int32
+            * Int64
+            * UInt32
+    """
+    if dtype is None:
+        dtype = datatypes.Int64
+    return pyrange(low, high, dtype)

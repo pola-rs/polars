@@ -6,9 +6,7 @@
 use crate::chunked_array::builder::{
     get_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
-use crate::chunked_array::kernels::take::{
-    take_no_null_boolean, take_no_null_primitive, take_utf8,
-};
+use crate::chunked_array::kernels::take::{take_no_null_primitive, take_utf8};
 use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::array::{
@@ -350,12 +348,7 @@ impl ChunkTake for BooleanChunked {
             let idx_arr = idx.downcast_chunks()[0];
             let arr = &self.chunks[0];
 
-            let new_arr = if self.null_count() == 0 {
-                let arr = arr.as_any().downcast_ref::<BooleanArray>().unwrap();
-                take_no_null_boolean(arr, idx_arr)
-            } else {
-                take(&**arr, idx_arr, None).unwrap()
-            };
+            let new_arr = take(&**arr, idx_arr, None).unwrap();
             Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
         } else {
             Err(PolarsError::NoSlice)
