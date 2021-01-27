@@ -480,6 +480,45 @@ impl GroupByExec {
     }
 }
 
+fn groupby_helper(
+    df: DataFrame,
+    keys: Vec<Series>,
+    aggs: &[Arc<dyn PhysicalExpr>],
+    apply: Option<&Arc<dyn DataFrameUdf>>,
+) -> Result<DataFrame> {
+    let gb = df.groupby_with_series(keys, true)?;
+    if let Some(f) = apply {
+        return gb.apply(|df| f.call_udf(df));
+    }
+
+    let groups = gb.get_groups();
+
+    let mut columns = gb.keys();
+
+    let agg_columns = aggs
+        .par_iter()
+        .map(|expr| {
+            let agg_expr = expr.as_agg_expr()?;
+            let opt_agg = agg_expr.evaluate(&df, groups)?;
+            if let Some(agg) = &opt_agg {
+                if agg.len() != groups.len() {
+                    panic!(format!(
+                        "returned aggregation is a different length: {} than the group lengths: {}",
+                        agg.len(),
+                        groups.len()
+                    ))
+                }
+            };
+            Ok(opt_agg)
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+
+    let df = DataFrame::new_no_checks(columns);
+    Ok(df)
+}
+
 impl Executor for GroupByExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let df = self.input.execute(cache)?;
@@ -488,37 +527,7 @@ impl Executor for GroupByExec {
             .iter()
             .map(|e| e.evaluate(&df))
             .collect::<Result<_>>()?;
-        let gb = df.groupby_with_series(keys, true)?;
-        if let Some(f) = &self.apply {
-            return gb.apply(|df| f.call_udf(df));
-        }
-
-        let groups = gb.get_groups();
-
-        let mut columns = gb.keys();
-
-        let agg_columns = self.aggs
-            .par_iter()
-            .map(|expr| {
-
-                let agg_expr = expr.as_agg_expr()?;
-                let opt_agg = agg_expr.evaluate(&df, groups)?;
-                if let Some(agg) = &opt_agg {
-                    if agg.len() != groups.len() {
-                        panic!(format!(
-                            "returned aggregation is a different length: {} than the group lengths: {}",
-                            agg.len(),
-                            groups.len()
-                        ))
-                    }
-                };
-                Ok(opt_agg)
-            }).collect::<Result<Vec<_>>>()?;
-
-        columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
-
-        let df = DataFrame::new_no_checks(columns);
-        Ok(df)
+        groupby_helper(df, keys, &self.aggs, self.apply.as_ref())
     }
 }
 
@@ -549,6 +558,29 @@ impl PartitionGroupByExec {
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let original_df = self.input.execute(cache)?;
+
+        // already get the keys. This is the very last minute decision which groupby method we choose.
+        // If the column is a categorical, we know the number of groups we have and can decide to continue
+        // partitioned or go for the standard groupby. The partitioned is likely to be faster on a small number
+        // of groups.
+        let keys = self
+            .keys
+            .iter()
+            .map(|e| e.evaluate(&original_df))
+            .collect::<Result<Vec<_>>>()?;
+
+        debug_assert_eq!(keys.len(), 1);
+        let s = &keys[0];
+        if let Ok(ca) = s.categorical() {
+            let cat_map = ca
+                .get_categorical_map()
+                .expect("categorical type has categorical_map");
+            let frac = cat_map.len() as f32 / ca.len() as f32;
+            // TODO! proper benchmark which boundary should be chosen.
+            if frac > 0.3 {
+                return groupby_helper(original_df, keys, &self.phys_aggs, None);
+            }
+        }
 
         // This will be the aggregation on the partition results. Due to the groupby
         // operation the column names have changed. This makes sure we can select the columns with
