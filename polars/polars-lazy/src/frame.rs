@@ -1300,8 +1300,6 @@ mod test {
         }
         .unwrap();
 
-        let out = df.lazy().unwrap();
-        // this failed in segfault
         let out = df
             .lazy()
             .groupby(vec![col("uid")])

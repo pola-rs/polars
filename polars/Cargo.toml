@@ -41,10 +41,15 @@ polars-lazy = {version = "0.12.0", path = "./polars-lazy"}
 
 [dev-dependencies]
 criterion = "0.3"
+lazy_static = "1.4"
 
 
 [[bench]]
 name = "csv"
+harness = false
+
+[[bench]]
+name = "groupby"
 harness = false
 
 [package.metadata.docs.rs]
