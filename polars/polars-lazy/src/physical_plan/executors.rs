@@ -495,23 +495,25 @@ fn groupby_helper(
 
     let mut columns = gb.keys();
 
-    let agg_columns = aggs
-        .par_iter()
-        .map(|expr| {
-            let agg_expr = expr.as_agg_expr()?;
-            let opt_agg = agg_expr.evaluate(&df, groups)?;
-            if let Some(agg) = &opt_agg {
-                if agg.len() != groups.len() {
-                    panic!(format!(
-                        "returned aggregation is a different length: {} than the group lengths: {}",
-                        agg.len(),
-                        groups.len()
-                    ))
-                }
-            };
-            Ok(opt_agg)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let agg_columns = POOL.install(|| {
+       aggs
+            .par_iter()
+            .map(|expr| {
+                let agg_expr = expr.as_agg_expr()?;
+                let opt_agg = agg_expr.evaluate(&df, groups)?;
+                if let Some(agg) = &opt_agg {
+                    if agg.len() != groups.len() {
+                        panic!(format!(
+                            "returned aggregation is a different length: {} than the group lengths: {}",
+                            agg.len(),
+                            groups.len()
+                        ))
+                    }
+                };
+                Ok(opt_agg)
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
 
     columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
 

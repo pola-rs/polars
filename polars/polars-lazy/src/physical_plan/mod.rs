@@ -44,7 +44,9 @@ pub trait PhysicalExpr: Send + Sync {
 
     fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
         let e = self.as_expression();
-        panic!(format!("{:?} is not an agg expression", e));
+        Err(PolarsError::InvalidOperation(
+            format!("{:?} is not an agg expression", e).into(),
+        ))
     }
 }
 
