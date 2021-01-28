@@ -901,6 +901,7 @@ impl LazyGroupBy {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::functions::pearson_corr;
     use crate::tests::get_df;
     use polars_core::*;
 
@@ -1288,6 +1289,27 @@ mod test {
             .get(0)
             .unwrap();
         assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn test_lazy_query_6() {
+        let df = df! {
+            "uid" => [0, 0, 0, 1, 1, 1],
+            "day" => [1, 2, 4, 1, 2, 3],
+            "cumcases" => [10, 12, 15, 25, 30, 41]
+        }
+        .unwrap();
+
+        let out = df.lazy().unwrap();
+        // this failed in segfault
+        let out = df
+            .lazy()
+            .groupby(vec![col("uid")])
+            // a double aggregation expression.
+            .agg(vec![pearson_corr(col("day"), col("cumcases")).pow(2.0)])
+            .collect()
+            .unwrap();
+        dbg!(out);
     }
 
     #[test]

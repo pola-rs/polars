@@ -649,18 +649,32 @@ impl PhysicalExpr for ApplyExpr {
 }
 
 impl AggPhysicalExpr for ApplyExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
-        let series = self.input.evaluate(df)?;
-        series
-            .agg_list(groups)
-            .map(|s| {
-                let s = self.function.call_udf(s);
-                s.map(|mut s| {
-                    s.rename(series.name());
-                    s
-                })
-            })
-            .map_or(Ok(None), |v| v.map(Some))
+    fn evaluate(
+        &self,
+        df: &DataFrame,
+        groups: &[(usize, SmallVec<GroupContainer>)],
+    ) -> Result<Option<Series>> {
+        match self.input.as_agg_expr() {
+            // layer below is also an aggregation expr.
+            Ok(expr) => {
+                let aggregated = expr.evaluate(df, groups)?;
+                let out = aggregated.map(|s| self.function.call_udf(s));
+                out.transpose()
+            }
+            Err(_) => {
+                let series = self.input.evaluate(df)?;
+                series
+                    .agg_list(groups)
+                    .map(|s| {
+                        let s = self.function.call_udf(s);
+                        s.map(|mut s| {
+                            s.rename(series.name());
+                            s
+                        })
+                    })
+                    .map_or(Ok(None), |v| v.map(Some))
+            }
+        }
     }
 }
 
