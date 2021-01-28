@@ -767,7 +767,17 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode(self, columns: Vec<String>) -> LazyFrame {
+    pub fn explode(self, columns: &[Expr]) -> LazyFrame {
+        let columns = columns
+            .iter()
+            .map(|e| {
+                if let Expr::Column(name) = e {
+                    (**name).clone()
+                } else {
+                    panic!("expected column expression")
+                }
+            })
+            .collect();
         // Note: this operation affects multiple columns. Therefore it isn't implemented as expression.
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
@@ -787,11 +797,11 @@ impl LazyFrame {
     /// Drop null rows.
     ///
     /// Equal to `LazyFrame::filter(col("*").is_not_null())`
-    pub fn drop_nulls(self, subset: Option<&[String]>) -> LazyFrame {
+    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
         match subset {
             None => self.filter(col("*").is_not_null()),
             Some(subset) => {
-                let it = subset.iter().map(|name| col(name).is_not_null());
+                let it = subset.into_iter().map(|e| e.is_not_null());
                 let predicate = combine_predicates(it);
                 self.filter(predicate)
             }
@@ -1241,7 +1251,7 @@ mod test {
                     )
                     .alias("diff_cases"),
             ])
-            .explode(vec!["day".to_string(), "diff_cases".to_string()])
+            .explode(&[col("day"), col("diff_cases")])
             .join(
                 base_df,
                 vec![col("uid"), col("day")],

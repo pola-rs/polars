@@ -649,11 +649,7 @@ impl PhysicalExpr for ApplyExpr {
 }
 
 impl AggPhysicalExpr for ApplyExpr {
-    fn evaluate(
-        &self,
-        df: &DataFrame,
-        groups: &[(usize, Vec<usize>)],
-    ) -> Result<Option<Series>> {
+    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>> {
         match self.input.as_agg_expr() {
             // layer below is also an aggregation expr.
             Ok(expr) => {

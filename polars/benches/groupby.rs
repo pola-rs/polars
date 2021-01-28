@@ -129,11 +129,11 @@ fn q8(c: &mut Criterion) {
             DATA.clone()
                 .lazy()
                 // todo! accept slice of str
-                .drop_nulls(Some(&["v3".into()]))
+                .drop_nulls(Some(vec![col("v3")]))
                 .sort("v3", true)
                 .groupby(vec![col("id6")])
                 .agg(vec![col("v3").head(Some(2)).alias("v3_top_2")])
-                .explode(vec!["v3_top_2".into()])
+                .explode(&[col("v3_top_2")])
                 .collect()
                 .unwrap();
         })
@@ -145,7 +145,7 @@ fn q9(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .drop_nulls(Some(&["v1".into(), "v2".into()]))
+                .drop_nulls(Some(vec![col("v1"), col("v2")]))
                 .groupby(vec![col("id2"), col("id4")])
                 .agg(vec![pearson_corr(col("v1"), col("v2"))
                     .alias("r2")
