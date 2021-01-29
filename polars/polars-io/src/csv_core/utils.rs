@@ -45,9 +45,9 @@ pub(crate) fn get_file_chunks(bytes: &[u8], n_threads: usize) -> Vec<(usize, usi
 }
 
 lazy_static! {
-    static ref DECIMAL_RE: Regex = Regex::new(r"^-?(\d+\.\d+)$").unwrap();
-    static ref INTEGER_RE: Regex = Regex::new(r"^-?(\d+)$").unwrap();
-    static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^(true)$|^(false)$")
+    static ref DECIMAL_RE: Regex = Regex::new(r"^\s*-?(\d+\.\d+)$").unwrap();
+    static ref INTEGER_RE: Regex = Regex::new(r"^\s*-?(\d+)$").unwrap();
+    static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^\s*(true)$|^(false)$")
         .case_insensitive(true)
         .build()
         .unwrap();

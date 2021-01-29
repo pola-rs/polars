@@ -1,9 +1,17 @@
 use crate::csv::CsvEncoding;
+use crate::csv_core::parser::skip_whitespace;
 use polars_core::prelude::*;
+use std::fmt::Debug;
 
-trait ToPolarsError {
+trait ToPolarsError: Debug {
     fn to_polars_err(&self) -> PolarsError {
-        PolarsError::Other("Could not parse primitive type during csv parsing".into())
+        PolarsError::Other(
+            format!(
+                "Could not parse primitive type during csv parsing: {:?}",
+                self
+            )
+            .into(),
+        )
     }
 }
 
@@ -85,12 +93,19 @@ where
     T: PolarsNumericType + PrimitiveParser,
 {
     fn parse_bytes(&mut self, bytes: &[u8], ignore_errors: bool, _start_pos: usize) -> Result<()> {
+        let (bytes, _) = skip_whitespace(bytes);
         let result = T::parse(bytes);
 
         match (result, ignore_errors) {
             (Ok(value), _) => self.push(Some(value)),
             (Err(_), true) => self.push(None),
-            (Err(err), _) => return Err(err),
+            (Err(err), _) => {
+                if bytes.is_empty() {
+                    self.push(None)
+                } else {
+                    return Err(err);
+                }
+            }
         };
         Ok(())
     }
@@ -141,7 +156,7 @@ impl ParsedBuffer<BooleanType> for Vec<Option<bool>> {
             self.push(Some(false));
         } else if bytes.eq_ignore_ascii_case(b"true") {
             self.push(Some(true));
-        } else if ignore_errors {
+        } else if ignore_errors || bytes.is_empty() {
             self.push(None);
         } else {
             return Err(PolarsError::Other(

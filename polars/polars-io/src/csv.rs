@@ -381,6 +381,7 @@ where
 mod test {
     use crate::prelude::*;
     use polars_core::datatypes::AnyValue;
+    use polars_core::prelude::*;
     use std::io::Cursor;
 
     #[test]
@@ -514,14 +515,36 @@ mod test {
     #[test]
     fn test_projection() {
         let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-        let file = std::fs::File::open(path).unwrap();
-        let df = CsvReader::new(file)
-            .with_path(Some(path.to_string()))
+        let df = CsvReader::from_path(path)
+            .unwrap()
             .with_projection(Some(vec![0, 2]))
             .finish()
             .unwrap();
         dbg!(&df);
         let col_1 = df.select_at_idx(0).unwrap();
         assert_eq!(col_1.get(0), AnyValue::Utf8("vegetables"));
+    }
+
+    #[test]
+    fn test_missing_data() {
+        // missing data should not lead to parser error.
+        let csv = r#"column_1,column_2,column_3
+        1,2,3
+        1,,3"#;
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish().unwrap();
+        assert!(df
+            .column("column_1")
+            .unwrap()
+            .series_equal(&Series::new("column_1", &[1, 1])));
+        assert!(df
+            .column("column_2")
+            .unwrap()
+            .series_equal_missing(&Series::new("column_2", &[Some(2), None])));
+        assert!(df
+            .column("column_3")
+            .unwrap()
+            .series_equal(&Series::new("column_3", &[3, 3])));
     }
 }

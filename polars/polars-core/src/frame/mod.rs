@@ -226,12 +226,6 @@ impl DataFrame {
         &self.columns
     }
 
-    /// Get the column labels of the DataFrame.
-    #[deprecated(since = "0.9.0", note = "please use get_column_names")]
-    pub fn columns(&self) -> Vec<&str> {
-        self.get_column_names()
-    }
-
     pub fn get_column_names(&self) -> Vec<&str> {
         self.columns.iter().map(|s| s.name()).collect()
     }
