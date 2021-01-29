@@ -37,6 +37,9 @@ fn skip_condition<F>(input: &[u8], f: F) -> (&[u8], usize)
 where
     F: Fn(u8) -> bool,
 {
+    if input.is_empty() {
+        return (input, 0);
+    }
     let mut read = 0;
     loop {
         let b = input[read];
@@ -61,6 +64,7 @@ pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
 }
 
 /// Remove whitespace and line endings from the start of file.
+#[inline]
 pub(crate) fn skip_whitespace(input: &[u8]) -> (&[u8], usize) {
     skip_condition(input, |b| is_whitespace(b) || is_line_ending(b))
 }
@@ -98,6 +102,15 @@ pub(crate) fn get_line_stats(mut bytes: &[u8], n_lines: usize) -> Option<(f32, f
     Some((mean, std))
 }
 
+/// Parse CSV.
+///
+/// # Arguments
+/// * `bytes` - input to parse
+/// * `offset` - offset in bytes in total input. This is 0 if single threaded. If multithreaded every
+///              thread has a different offset.
+/// * `projection` - Indices of the columns to project.
+/// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
+///               fields are written to the buffers. The UTF8 data will be parsed later.
 pub(crate) fn parse_lines(
     bytes: &[u8],
     offset: usize,
@@ -170,7 +183,17 @@ pub(crate) fn parse_lines(
                     buffers.get_unchecked_mut(processed_fields)
                 };
                 // let buf = &mut buffers[processed_fields];
-                buf.add(field, ignore_parser_errors, read)?;
+                buf.add(field, ignore_parser_errors, read).map_err(|e| {
+                    PolarsError::Other(
+                        format!(
+                            "{:?} on thread line {}; on input: {}",
+                            e,
+                            idx,
+                            String::from_utf8_lossy(field)
+                        )
+                        .into(),
+                    )
+                })?;
 
                 processed_fields += 1;
 
