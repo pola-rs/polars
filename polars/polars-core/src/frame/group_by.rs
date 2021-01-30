@@ -201,7 +201,7 @@ where
             let thread_no = thread_no as u64;
 
             let mut hash_tbl: HashMap<T, (usize, Vec<usize>), RandomState> =
-                HashMap::with_capacity_and_hasher(size / (5 * n_threads), random_state);
+                HashMap::with_capacity_and_hasher(size / n_threads, random_state);
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
@@ -316,7 +316,7 @@ fn groupby_threaded_multiple_keys_flat(
 
             // rather over allocate because rehashing is expensive
             let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(size / (2 * n_threads), IdBuildHasher::default());
+                HashMap::with_capacity_and_hasher(size / n_threads, IdBuildHasher::default());
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
