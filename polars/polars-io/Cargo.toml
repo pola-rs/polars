@@ -21,16 +21,16 @@ parquet = ["polars-core/parquet", "parquet_lib"]
 arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "ab5fc979c69ccc5dde07e1bc1467b02951b4b7e9"}
 parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "ab5fc979c69ccc5dde07e1bc1467b02951b4b7e9"}
 csv = "1.1"
-lexical = "^5.2"
+lexical = "5.2"
 num_cpus = "1.13.0"
 csv-core = "0.1.10"
 regex = "1.4"
 lazy_static = "1.4"
 memmap = { package = "memmap2", version = "0.2.0" }
-fast-float = "0.1.0"
+fast-float = "0.2.0"
 anyhow = "1.0"
 rayon = "1.5"
-ahash = "0.6"
+ahash = "0.7"
 num = "^0.3.1"
 
 [dependencies.polars-core]
