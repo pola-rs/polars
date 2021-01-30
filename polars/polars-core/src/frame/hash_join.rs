@@ -94,7 +94,7 @@ where
             .map(|(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results = Vec::with_capacity(probe_hashes.len() / 10);
+                let mut results = Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
                 let local_offset = offset;
                 // code duplication is to hoist swap out of the inner loop.
                 if swap {
@@ -168,7 +168,7 @@ where
             .map(|(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results = Vec::with_capacity(probe_hashes.len() / 10);
+                let mut results = Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
 
                 probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
                     let idx_a = idx_a + offset;
