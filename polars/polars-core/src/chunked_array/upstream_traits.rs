@@ -15,8 +15,8 @@ impl<T> Default for ChunkedArray<T> {
     fn default() -> Self {
         ChunkedArray {
             field: Arc::new(Field::new("default", DataType::Null)),
-            chunks: Vec::with_capacity(0),
-            chunk_id: Vec::with_capacity(0),
+            chunks: Default::default(),
+            chunk_id: Default::default(),
             phantom: PhantomData,
             categorical_map: None,
         }
