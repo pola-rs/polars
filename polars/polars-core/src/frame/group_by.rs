@@ -626,6 +626,14 @@ impl DataFrame {
         let selected_keys = self.select_series(by)?;
         self.groupby_with_series(selected_keys, true)
     }
+
+    /// Group DataFrame using a Series column.
+    /// The groups are ordered by their smallest row index.
+    pub fn groupby_stable<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
+        let mut gb = self.groupby(by)?;
+        gb.groups.sort();
+        Ok(gb)
+    }
 }
 
 /// Returned by a groupby operation on a DataFrame. This struct supports
