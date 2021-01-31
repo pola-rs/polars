@@ -189,6 +189,8 @@ pub enum Expr {
         /// Delays output type evaluation until input schema is known.
         output_field: Arc<dyn BinaryUdfOutputField>,
     },
+    /// Can be used in a select statement to exclude a column from selection
+    Except(Box<Expr>),
 }
 
 macro_rules! impl_partial_eq {
@@ -253,6 +255,7 @@ impl PartialEq for Expr {
             }
             Expr::Column(left) => impl_partial_eq!(Column, left, other),
             Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
+            Expr::Except(left) => impl_partial_eq!(Except, left, other),
             Expr::Wildcard => matches!(other, Expr::Wildcard),
             Expr::Udf { .. } => false,
             Expr::BinaryFunction { .. } => false,
@@ -532,6 +535,7 @@ impl Expr {
             Shift { input, .. } => input.to_field(schema, ctxt),
             Slice { input, .. } => input.to_field(schema, ctxt),
             Wildcard => panic!("should be no wildcard at this point"),
+            Except(_) => panic!("should be no except at this point"),
         }
     }
 }
@@ -604,7 +608,31 @@ impl fmt::Debug for Expr {
                 length,
             } => write!(f, "SLICE {:?} offset: {} len: {}", input, offset, length),
             Wildcard => write!(f, "*"),
+            Except(column) => write!(f, "EXCEPT {:?}", column),
         }
+    }
+}
+
+/// Exclude a column from selection.
+///
+/// # Example
+///
+/// ```rust
+/// use polars_core::prelude::*;
+/// use polars_lazy::prelude::*;
+///
+/// // Select all columns except foo.
+/// fn example(df: DataFrame) -> LazyFrame {
+///       df.lazy()
+///         .select(&[
+///                 col("*"), except("foo")
+///                 ])
+/// }
+/// ```
+pub fn except(name: &str) -> Expr {
+    match name {
+        "*" => panic!("cannot use a wildcard as a column exception"),
+        _ => Expr::Except(Box::new(col(name))),
     }
 }
 

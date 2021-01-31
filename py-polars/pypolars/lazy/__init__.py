@@ -21,6 +21,7 @@ try:
         PyExpr,
         PyLazyGroupBy,
         when as pywhen,
+        except_ as pyexcept,
     )
 except:
     import warnings
@@ -1267,6 +1268,45 @@ def col(name: str) -> "Expr":
     A column in a DataFrame
     """
     return wrap_expr(pycol(name))
+
+
+def except_(name: str) -> "Expr":
+    """
+    Exclude a column from a selection
+
+    # Example
+    ```python
+    df = pl.DataFrame({
+        "ham": [1, 1, 2, 2, 3],
+        "foo": [1, 1, 2, 2, 3],
+        "bar": [1, 1, 2, 2, 3],
+    })
+
+    df.lazy()
+        .select(["*", except_("foo")])
+        .collect()
+    ```
+    Ouputs:
+
+    ```text
+    ╭─────┬─────╮
+    │ ham ┆ bar │
+    │ --- ┆ --- │
+    │ f64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 1   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 1   ┆ 1   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 2   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 2   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 3   │
+    ╰─────┴─────╯
+    ```
+    """
+    return wrap_expr(pyexcept(name))
 
 
 def count(name: str = "") -> "Expr":

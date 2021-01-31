@@ -329,6 +329,13 @@ pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
                 has_expr(e, matching_expr)
             }
         }
+        Expr::Except(e) => {
+            if matches!(matching_expr, Expr::Except(_)) {
+                true
+            } else {
+                has_expr(e, matching_expr)
+            }
+        }
         Expr::Column(_) => {
             matches!(matching_expr, Expr::Column(_))
         }
@@ -748,6 +755,7 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
             }
             results
         }
+        Expr::Except(col) => expr_to_root_column_exprs(col),
         Expr::Wildcard => vec![Expr::Wildcard],
         Expr::Literal(_) => vec![],
     }
