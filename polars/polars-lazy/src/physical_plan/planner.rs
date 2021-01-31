@@ -732,6 +732,7 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Wildcard => panic!("should be no wildcard at this point"),
+            Expr::Except(_) => panic!("should be no except expression at this point"),
         }
     }
 }

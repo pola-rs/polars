@@ -448,6 +448,10 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+pub fn except(name: &str) -> PyExpr {
+    dsl::except(name).into()
+}
+
 pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     let left = l.inner;
     let right = r.inner;

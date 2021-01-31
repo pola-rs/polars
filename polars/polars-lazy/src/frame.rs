@@ -523,10 +523,19 @@ impl LazyFrame {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
+    /// /// This function selects column "foo" and column "bar".
+    /// /// Column "bar" is renamed to "ham".
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
     ///         .select(&[col("foo"),
     ///                   col("bar").alias("ham")])
+    /// }
+    ///
+    /// /// This function selects all columns except "foo"
+    /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .select(&[col("*"),
+    ///                   except("foo")])
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
@@ -659,6 +668,18 @@ impl LazyFrame {
     }
 
     /// Generic join function that can join on multiple columns.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    ///         ldf
+    ///         .join(other, vec![col("foo"), col("bar")], vec![col("foo"), col("bar")], None, JoinType::Inner)
+    /// }
+    /// ```
     pub fn join(
         self,
         other: LazyFrame,
@@ -1594,5 +1615,23 @@ mod test {
                 Some(50),
             ]
         )
+    }
+
+    #[test]
+    fn test_select_except() {
+        let df = df! {
+            "foo" => &[1, 1, 2, 2, 3],
+            "bar" => &[1.0, 1.0, 2.0, 2.0, 3.0],
+            "ham" => &[1.0, 1.0, 2.0, 2.0, 3.0]
+        }
+        .unwrap();
+
+        let out = df
+            .lazy()
+            .select(&[col("*"), except("foo")])
+            .collect()
+            .unwrap();
+
+        assert_eq!(out.get_column_names(), &["ham", "bar"]);
     }
 }

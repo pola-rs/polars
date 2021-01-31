@@ -2,7 +2,8 @@ pub(crate) mod optimizer;
 use crate::logical_plan::optimizer::predicate::combine_predicates;
 use crate::logical_plan::LogicalPlan::CsvScan;
 use crate::utils::{
-    expr_to_root_column_exprs, expr_to_root_column_names, has_expr, rename_expr_root_name,
+    expr_to_root_column_exprs, expr_to_root_column_name, expr_to_root_column_names, has_expr,
+    rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
 use ahash::RandomState;
@@ -704,6 +705,7 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
         },
         Expr::Column(_) => expr,
         Expr::Literal(_) => expr,
+        Expr::Except(_) => expr,
     }
 }
 
@@ -711,9 +713,20 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
 /// In other cases replace the wildcard with an expression with all columns
 fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
+    let mut exclude = vec![];
     for expr in exprs {
-        let mut has_wildcard = false;
+        // Columns that are excepted are later removed from the projection.
+        // This can be ergonomical in combination with a wildcard expression.
+        if let Expr::Except(column) = &expr {
+            if let Expr::Column(name) = &**column {
+                exclude.push(name.clone());
+                continue;
+            } else {
+                panic!("Except expression should have column name")
+            }
+        }
 
+        let mut has_wildcard = false;
         let roots = expr_to_root_column_exprs(&expr);
         for e in roots {
             if matches!(e, Expr::Wildcard) {
@@ -747,6 +760,19 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
         } else {
             result.push(expr)
         };
+    }
+    if !exclude.is_empty() {
+        for name in exclude {
+            let idx = result
+                .iter()
+                .position(|expr| match expr_to_root_column_name(expr) {
+                    Ok(column_name) => column_name == name,
+                    Err(_) => false,
+                });
+            if let Some(idx) = idx {
+                result.swap_remove(idx);
+            }
+        }
     }
     result
 }
