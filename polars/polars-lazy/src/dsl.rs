@@ -131,7 +131,7 @@ impl From<AggExpr> for Expr {
 pub enum Expr {
     Alias(Box<Expr>, Arc<String>),
     Column(Arc<String>),
-    Literal(ScalarValue),
+    Literal(LiteralValue),
     BinaryExpr {
         left: Box<Expr>,
         op: Operator,
@@ -1240,13 +1240,13 @@ pub trait Literal {
 
 impl Literal for String {
     fn lit(self) -> Expr {
-        Expr::Literal(ScalarValue::Utf8(self))
+        Expr::Literal(LiteralValue::Utf8(self))
     }
 }
 
 impl<'a> Literal for &'a str {
     fn lit(self) -> Expr {
-        Expr::Literal(ScalarValue::Utf8(self.to_owned()))
+        Expr::Literal(LiteralValue::Utf8(self.to_owned()))
     }
 }
 
@@ -1254,7 +1254,7 @@ macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
             fn lit(self) -> Expr {
-                Expr::Literal(ScalarValue::$SCALAR(self))
+                Expr::Literal(LiteralValue::$SCALAR(self))
             }
         }
     };
@@ -1298,6 +1298,33 @@ pub fn cast(expr: Expr, data_type: DataType) -> Expr {
         expr: Box::new(expr),
         data_type,
     }
+}
+
+pub trait Range<T> {
+    fn into_range(self, high: T) -> Expr;
+}
+
+macro_rules! impl_into_range {
+    ($dt: ty) => {
+        impl Range<$dt> for $dt {
+            fn into_range(self, high: $dt) -> Expr {
+                Expr::Literal(LiteralValue::Range {
+                    low: self as i64,
+                    high: high as i64,
+                    data_type: DataType::Int32,
+                })
+            }
+        }
+    };
+}
+
+impl_into_range!(i32);
+impl_into_range!(i64);
+impl_into_range!(u32);
+
+/// Create a range literal.
+pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
+    low.into_range(high)
 }
 
 // Arithmetic ops

@@ -547,3 +547,13 @@ pub fn lit(value: &PyAny) -> PyExpr {
         panic!(format!("could not convert value {:?} as a Literal", value))
     }
 }
+
+pub fn range(low: i64, high: i64, dtype: &PyAny) -> PyExpr {
+    let str_repr = dtype.str().unwrap().to_str().unwrap();
+    let dtype = str_to_polarstype(str_repr);
+    match dtype {
+        DataType::Int32 => dsl::range(low as i32, high as i32).into(),
+        DataType::UInt32 => dsl::range(low as u32, high as u32).into(),
+        _ => dsl::range(low, high).into(),
+    }
+}

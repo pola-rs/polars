@@ -40,6 +40,11 @@ fn lit(value: &PyAny) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn range(low: i64, high: i64, dtype: &PyAny) -> dsl::PyExpr {
+    dsl::range(low, high, dtype)
+}
+
+#[pyfunction]
 fn binary_expr(l: dsl::PyExpr, op: u8, r: dsl::PyExpr) -> dsl::PyExpr {
     dsl::binary_expr(l, op, r)
 }
@@ -98,5 +103,6 @@ fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(except_)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(range)).unwrap();
     Ok(())
 }

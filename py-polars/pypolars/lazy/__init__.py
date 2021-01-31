@@ -22,6 +22,7 @@ try:
         PyLazyGroupBy,
         when as pywhen,
         except_ as pyexcept,
+        range as pyrange,
     )
 except:
     import warnings
@@ -1593,3 +1594,33 @@ class UDF:
 
 def udf(f: Callable[[Series], Series], output_type: "DataType"):
     return UDF(f, output_type)
+
+
+def range(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
+    """
+    Create a range expression. This can be used in a `select`, `with_column` etc.
+    Be sure that the range size is equal to the DataFrame you are collecting.
+
+    # Example
+
+    ```python
+    (df.lazy()
+        .filter(pl.col("foo") < pl.range(0, 100))
+        .collect())
+    ```
+
+    Parameters
+    ----------
+    low
+        lower bound of range.
+    high
+        upper bound of range.
+    dtype
+        DataType of the range. Valid dtypes:
+            * Int32
+            * Int64
+            * UInt32
+    """
+    if dtype is None:
+        dtype = datatypes.Int64
+    return pyrange(low, high, dtype)

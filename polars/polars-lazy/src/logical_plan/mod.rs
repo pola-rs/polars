@@ -45,7 +45,7 @@ impl Debug for dyn DataFrameUdf {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ScalarValue {
+pub enum LiteralValue {
     Null,
     /// A binary true or false.
     Boolean(bool),
@@ -71,24 +71,30 @@ pub enum ScalarValue {
     Float32(f32),
     /// A 64-bit floating point number.
     Float64(f64),
+    Range {
+        low: i64,
+        high: i64,
+        data_type: DataType,
+    },
 }
 
-impl ScalarValue {
+impl LiteralValue {
     /// Getter for the `DataType` of the value
     pub fn get_datatype(&self) -> DataType {
-        match *self {
-            ScalarValue::Boolean(_) => DataType::Boolean,
-            ScalarValue::UInt8(_) => DataType::UInt8,
-            ScalarValue::UInt16(_) => DataType::UInt16,
-            ScalarValue::UInt32(_) => DataType::UInt32,
-            ScalarValue::UInt64(_) => DataType::UInt64,
-            ScalarValue::Int8(_) => DataType::Int8,
-            ScalarValue::Int16(_) => DataType::Int16,
-            ScalarValue::Int32(_) => DataType::Int32,
-            ScalarValue::Int64(_) => DataType::Int64,
-            ScalarValue::Float32(_) => DataType::Float32,
-            ScalarValue::Float64(_) => DataType::Float64,
-            ScalarValue::Utf8(_) => DataType::Utf8,
+        match self {
+            LiteralValue::Boolean(_) => DataType::Boolean,
+            LiteralValue::UInt8(_) => DataType::UInt8,
+            LiteralValue::UInt16(_) => DataType::UInt16,
+            LiteralValue::UInt32(_) => DataType::UInt32,
+            LiteralValue::UInt64(_) => DataType::UInt64,
+            LiteralValue::Int8(_) => DataType::Int8,
+            LiteralValue::Int16(_) => DataType::Int16,
+            LiteralValue::Int32(_) => DataType::Int32,
+            LiteralValue::Int64(_) => DataType::Int64,
+            LiteralValue::Float32(_) => DataType::Float32,
+            LiteralValue::Float64(_) => DataType::Float64,
+            LiteralValue::Utf8(_) => DataType::Utf8,
+            LiteralValue::Range { data_type, .. } => data_type.clone(),
             _ => panic!("Cannot treat {:?} as scalar value", self),
         }
     }
