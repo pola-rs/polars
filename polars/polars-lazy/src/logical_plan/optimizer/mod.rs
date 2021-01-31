@@ -310,7 +310,7 @@ pub enum AExpr {
     Explode(Node),
     Alias(Node, Arc<String>),
     Column(Arc<String>),
-    Literal(ScalarValue),
+    Literal(LiteralValue),
     BinaryExpr {
         left: Node,
         op: Operator,

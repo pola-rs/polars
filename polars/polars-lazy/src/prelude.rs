@@ -6,7 +6,7 @@ pub use crate::{
             predicate::PredicatePushDown, projection::ProjectionPushDown,
             type_coercion::TypeCoercionRule, Optimize, *,
         },
-        DataFrameUdf, LogicalPlan, LogicalPlanBuilder, ScalarValue,
+        DataFrameUdf, LiteralValue, LogicalPlan, LogicalPlanBuilder,
     },
     physical_plan::{
         executors::{CsvExec, DataFrameExec, FilterExec, GroupByExec, StandardExec},

@@ -5,6 +5,7 @@ from pypolars import functions
 import pytest
 from io import BytesIO
 import numpy as np
+from builtins import range
 
 
 def test_init():
