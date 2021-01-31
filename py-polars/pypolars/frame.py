@@ -49,6 +49,9 @@ class DataFrame:
     def __init__(
         self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = False
     ):
+        """
+        A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
+        """
 
         columns = []
         if isinstance(data, dict):
@@ -107,7 +110,7 @@ class DataFrame:
         Parameters
         ---
         file
-            Any valid filepath can be used. Example: `file.csv`.
+            Path to a file or a file like object. Any valid filepath can be used. Example: `file.csv`.
         sep
             Character to use as delimiter in the file.
         stop_after_n_rows
@@ -122,6 +125,10 @@ class DataFrame:
         ```python
         dataframe = pl.read_csv('file.csv', sep=';', stop_after_n_rows=25)
         ```
+
+        Returns
+        ---
+        DataFrame
         """
         self = DataFrame.__new__(DataFrame)
 
@@ -164,14 +171,14 @@ class DataFrame:
         Read into a DataFrame from a parquet file.
 
         Parameters
-        ----------
+        ---
         file
-            Path to a file or a file like object.
+            Path to a file or a file like object. Any valid filepath can be used.
         stop_after_n_rows
-            After n rows are read from the parquet stops reading.
+            Only read specified number of rows of the dataset. After `n` stops reading.
 
         Returns
-        -------
+        ---
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
@@ -241,12 +248,12 @@ class DataFrame:
         Example
         ---
         ```python
-        dataframe = pl.DataFrame({
+        >>> dataframe = pl.DataFrame({
             "foo": np.random.rand(10),
             "bar": np.arange(10),
             "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
-        })
-        dataframe.to_csv('new_file.csv', sep=';')
+            })
+        >>> dataframe.to_csv('new_file.csv', sep=';')
         ```
         """
         self._df.to_csv(file, batch_size, has_headers, ord(delimiter))
@@ -434,14 +441,30 @@ class DataFrame:
     @property
     def shape(self) -> Tuple[int, int]:
         """
-        Get shape of the DataFrame
+        Get shape of the DataFrame.
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({"foo" : np.random(5)})
+        >>> dataframe.shape
+        shape: (5, 1)
+        ```
         """
         return self._df.shape()
 
     @property
     def height(self) -> int:
         """
-        Get height of the DataFrame
+        Get height of the DataFrame.
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({'foo' : np.random(5)})
+        >>> dataframe.height
+        5
+        ```
         """
         return self._df.height()
 
@@ -449,13 +472,48 @@ class DataFrame:
     def width(self) -> int:
         """
         Get width of the DataFrame
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({'foo' : np.random(5)})
+        >>> dataframe.width
+        1
+        ```
         """
         return self._df.width()
 
     @property
     def columns(self) -> "List[str]":
         """
-        get or set column names
+        Get or set column names
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": np.random.rand(10),
+            "bar": np.arange(10),
+            "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
+            })
+
+        >>> dataframe.columns
+        ['foo', 'bar', 'ham']
+
+        # Set column names
+        >>> dataframe.columns = ['apple', 'banana', 'orange']
+        ╭───────┬────────┬────────╮
+        │ apple ┆ banana ┆ orange │
+        │ ---   ┆ ---    ┆ ---    │
+        │ f64   ┆ i64    ┆ str    │
+        ╞═══════╪════════╪════════╡
+        │ 0.262 ┆ 0      ┆ h      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ ...   ┆ ...    ┆ ...    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 0.443 ┆ 5      ┆ a      │
+        ╰───────┴────────┴────────╯
+        ```
         """
         return self._df.columns()
 
@@ -466,7 +524,34 @@ class DataFrame:
     @property
     def dtypes(self) -> "List[type]":
         """
-        get dtypes
+        Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": np.random.rand(10),
+            "bar": np.arange(10),
+            "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
+            })
+
+        >>> dataframe.dtypes
+        [pypolars.datatypes.Float64, pypolars.datatypes.Int64, pypolars.datatypes.Utf8]
+
+        >>> dataframe
+        shape: (10, 3)
+        ╭───────┬─────┬─────╮
+        │ foo   ┆ bar ┆ ham │
+        │ ---   ┆ --- ┆ --- │
+        │ f64   ┆ i64 ┆ str │
+        ╞═══════╪═════╪═════╡
+        │ 0.262 ┆ 0   ┆ h   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ ...   ┆ ... ┆ ... │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0.742 ┆ 9   ┆ m   │
+        ╰───────┴─────┴─────╯
+        ```
         """
         return [dtypes[idx] for idx in self._df.dtypes()]
 
@@ -492,11 +577,35 @@ class DataFrame:
         Parameters
         ----------
         by_column
-            by which column to sort
+            By which column to sort. Only accepts string.
         in_place
-            sort in place or return a sorted DataFrame
+            Perform operation in-place.
         reverse
-            reverse sort
+            Reverse/descending sort.
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": np.random.rand(3),
+            "bar": np.arange(3),
+            })
+
+        >>> dataframe.sort('foo', reverse=True)
+        shape: (3, 2)
+        ╭───────┬─────╮
+        │ foo   ┆ bar │
+        │ ---   ┆ --- │
+        │ f64   ┆ i64 │
+        ╞═══════╪═════╡
+        │ 0.821 ┆ 2   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0.792 ┆ 0   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0.74  ┆ 1   │
+        ╰───────┴─────╯
+
+        ```
         """
         if in_place:
             self._df.sort_in_place(by_column, reverse)
