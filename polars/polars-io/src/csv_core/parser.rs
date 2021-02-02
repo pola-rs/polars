@@ -241,7 +241,7 @@ mod test {
 
         // after a skip header, we should not have a new line char.
         assert_ne!(bytes[0], b'\n');
-        dbg!(std::str::from_utf8(bytes));
+        dbg!(std::str::from_utf8(bytes).unwrap());
 
         let mut buffers = vec![
             Buffer::Utf8(vec![], 0),
@@ -275,7 +275,7 @@ mod test {
             assert_eq!(len, 27);
         }
 
-        dbg!((&buffers[0]));
+        dbg!(&buffers[0]);
         // check if we can reconstruct the correct strings from the accumulated offsets.
         if let Buffer::Utf8(buf, len) = &buffers[0] {
             let v = buf

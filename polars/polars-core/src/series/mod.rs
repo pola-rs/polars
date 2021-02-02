@@ -1276,12 +1276,8 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Float64 => {
                 Ok(Float64Chunked::new_from_chunks(name, chunks).into_series())
             }
-            ArrowDataType::Date32(DateUnit::Day) => {
-                Ok(Date32Chunked::new_from_chunks(name, chunks).into_series())
-            }
-            ArrowDataType::Date64(DateUnit::Millisecond) => {
-                Ok(Date64Chunked::new_from_chunks(name, chunks).into_series())
-            }
+            ArrowDataType::Date32 => Ok(Date32Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Date64 => Ok(Date64Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                 Ok(Time64NanosecondChunked::new_from_chunks(name, chunks).into_series())
             }
