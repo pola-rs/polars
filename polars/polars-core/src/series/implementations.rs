@@ -695,8 +695,8 @@ macro_rules! impl_dyn_series {
                 self.0.as_single_ptr()
             }
 
-            fn shift(&self, periods: i32) -> Result<Series> {
-                ChunkShift::shift(&self.0, periods).map(|ca| ca.into_series())
+            fn shift(&self, periods: i64) -> Series {
+                ChunkShift::shift(&self.0, periods).into_series()
             }
 
             fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
@@ -1091,8 +1091,8 @@ where
         ChunkReverse::reverse(&self.0).into_series()
     }
 
-    fn shift(&self, periods: i32) -> Result<Series> {
-        ChunkShift::shift(&self.0, periods).map(|ca| ca.into_series())
+    fn shift(&self, periods: i64) -> Series {
+        ChunkShift::shift(&self.0, periods).into_series()
     }
 
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {

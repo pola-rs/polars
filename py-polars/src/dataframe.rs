@@ -661,9 +661,8 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn shift(&self, periods: i32) -> PyResult<Self> {
-        let df = self.df.shift(periods).map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
+    pub fn shift(&self, periods: i64) -> Self {
+        self.df.shift(periods).into()
     }
 
     pub fn drop_duplicates(

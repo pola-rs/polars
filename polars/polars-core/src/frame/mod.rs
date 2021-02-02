@@ -1311,13 +1311,9 @@ impl DataFrame {
     /// with `Nones`.
     ///
     /// See the method on [Series](../series/enum.Series.html#method.shift) for more info on the `shift` operation.
-    pub fn shift(&self, periods: i32) -> Result<Self> {
-        let col = self
-            .columns
-            .par_iter()
-            .map(|s| s.shift(periods))
-            .collect::<Result<Vec<_>>>()?;
-        Ok(DataFrame::new_no_checks(col))
+    pub fn shift(&self, periods: i64) -> Self {
+        let col = self.columns.par_iter().map(|s| s.shift(periods)).collect();
+        DataFrame::new_no_checks(col)
     }
 
     /// Replace None values with one of the following strategies:

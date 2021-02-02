@@ -695,7 +695,7 @@ impl DefaultPlanner {
             }
             Expr::Shift { input, periods } => {
                 let input = self.create_physical_expr(*input, ctxt)?;
-                let function = Arc::new(move |s: Series| s.shift(periods));
+                let function = Arc::new(move |s: Series| Ok(s.shift(periods)));
                 Ok(Arc::new(ApplyExpr::new(input, function, None, expression)))
             }
             Expr::Slice {

@@ -586,20 +586,20 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// fn example() -> Result<()> {
     ///     let s = Series::new("series", &[1, 2, 3]);
     ///
-    ///     let shifted = s.shift(1)?;
+    ///     let shifted = s.shift(1);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);
     ///
-    ///     let shifted = s.shift(-1)?;
+    ///     let shifted = s.shift(-1);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[Some(2), Some(3), None]);
     ///
-    ///     let shifted = s.shift(2)?;
+    ///     let shifted = s.shift(2);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, None, Some(1)]);
     ///
     ///     Ok(())
     /// }
     /// example();
     /// ```
-    fn shift(&self, _periods: i32) -> Result<Series> {
+    fn shift(&self, _periods: i64) -> Series {
         unimplemented!()
     }
 
