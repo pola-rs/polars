@@ -9,7 +9,7 @@
 use crate::prelude::*;
 pub use arrow::datatypes::DataType as ArrowDataType;
 pub use arrow::datatypes::{
-    ArrowNumericType, ArrowPrimitiveType, BooleanType, Date32Type, Date64Type, DateUnit,
+    ArrowNumericType, ArrowPrimitiveType, BooleanType, Date32Type, Date64Type,
     DurationMicrosecondType, DurationMillisecondType, DurationNanosecondType, DurationSecondType,
     Field as ArrowField, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
     IntervalDayTimeType, IntervalUnit, IntervalYearMonthType, Schema as ArrowSchema,
@@ -333,8 +333,8 @@ impl DataType {
             Float32 => ArrowDataType::Float32,
             Float64 => ArrowDataType::Float64,
             Utf8 => ArrowDataType::LargeUtf8,
-            Date32 => ArrowDataType::Date32(DateUnit::Day),
-            Date64 => ArrowDataType::Date64(DateUnit::Millisecond),
+            Date32 => ArrowDataType::Date32,
+            Date64 => ArrowDataType::Date64,
             Time64(tu) => ArrowDataType::Time64(tu.clone()),
             List(dt) => {
                 ArrowDataType::List(Box::new(arrow::datatypes::Field::new("", dt.clone(), true)))
@@ -502,8 +502,8 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             ArrowDataType::LargeList(f) => DataType::List(f.data_type().clone()),
-            ArrowDataType::Date32(DateUnit::Day) => DataType::Date32,
-            ArrowDataType::Date64(DateUnit::Millisecond) => DataType::Date64,
+            ArrowDataType::Date32 => DataType::Date32,
+            ArrowDataType::Date64 => DataType::Date64,
             ArrowDataType::Time64(TimeUnit::Nanosecond) => DataType::Time64(TimeUnit::Nanosecond),
             ArrowDataType::Duration(TimeUnit::Nanosecond) => {
                 DataType::Duration(TimeUnit::Nanosecond)
