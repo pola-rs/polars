@@ -641,9 +641,13 @@ impl ChunkFullNull for Utf8Chunked {
     }
 }
 
-impl ChunkFull<&dyn SeriesTrait> for ListChunked {
-    fn full(_name: &str, _value: &dyn SeriesTrait, _length: usize) -> ListChunked {
-        unimplemented!()
+impl ChunkFull<&Series> for ListChunked {
+    fn full(name: &str, value: &Series, length: usize) -> ListChunked {
+        let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
+        for _ in 0..length {
+            builder.append_series(value)
+        }
+        builder.finish()
     }
 }
 
@@ -788,11 +792,11 @@ impl<T> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
 pub trait ChunkShiftFill<T, V> {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `fill_value`.
-    fn shift_and_fill(&self, periods: i32, fill_value: V) -> Result<ChunkedArray<T>>;
+    fn shift_and_fill(&self, periods: i64, fill_value: V) -> ChunkedArray<T>;
 }
 
 pub trait ChunkShift<T> {
-    fn shift(&self, periods: i32) -> Result<ChunkedArray<T>>;
+    fn shift(&self, periods: i64) -> ChunkedArray<T>;
 }
 
 /// Combine 2 ChunkedArrays based on some predicate.
@@ -821,25 +825,6 @@ pub trait ChunkApplyKernel<A> {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-
-    #[test]
-    fn test_shift() {
-        let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
-        let shifted = ca.shift_and_fill(1, Some(0)).unwrap();
-        assert_eq!(shifted.cont_slice().unwrap(), &[0, 1, 2]);
-        let shifted = ca.shift_and_fill(1, None).unwrap();
-        assert_eq!(Vec::from(&shifted), &[None, Some(1), Some(2)]);
-        let shifted = ca.shift_and_fill(-1, None).unwrap();
-        assert_eq!(Vec::from(&shifted), &[Some(2), Some(3), None]);
-        assert!(ca.shift_and_fill(3, None).is_err());
-
-        let s = Series::new("a", ["a", "b", "c"]);
-        let shifted = s.shift(-1).unwrap();
-        assert_eq!(
-            Vec::from(shifted.utf8().unwrap()),
-            &[Some("b"), Some("c"), None]
-        );
-    }
 
     #[test]
     fn test_fill_none() {

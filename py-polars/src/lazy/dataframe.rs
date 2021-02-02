@@ -242,7 +242,7 @@ impl PyLazyFrame {
         ldf.reverse().into()
     }
 
-    pub fn shift(&self, periods: i32) -> Self {
+    pub fn shift(&self, periods: i64) -> Self {
         let ldf = self.ldf.clone();
         ldf.shift(periods).into()
     }

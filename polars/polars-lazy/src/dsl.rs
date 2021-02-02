@@ -162,7 +162,7 @@ pub enum Expr {
     },
     Shift {
         input: Box<Expr>,
-        periods: i32,
+        periods: i64,
     },
     Reverse(Box<Expr>),
     Duplicated(Box<Expr>),
@@ -915,7 +915,7 @@ impl Expr {
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
-    pub fn shift(self, periods: i32) -> Self {
+    pub fn shift(self, periods: i64) -> Self {
         Expr::Shift {
             input: Box::new(self),
             periods,

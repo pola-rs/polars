@@ -344,7 +344,7 @@ impl LazyFrame {
     /// with `Nones`.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift(self, periods: i32) -> Self {
+    pub fn shift(self, periods: i64) -> Self {
         self.select_local(vec![col("*").shift(periods)])
     }
 
@@ -1264,7 +1264,7 @@ mod test {
                                 .list()
                                 .unwrap()
                                 .into_iter()
-                                .map(|opt_s| opt_s.map(|s| &s - &(s.shift(1).unwrap())))
+                                .map(|opt_s| opt_s.map(|s| &s - &(s.shift(1))))
                                 .collect();
                             Ok(a.into_series())
                         },

@@ -813,9 +813,9 @@ impl PySeries {
         Ok(PySeries::new(out))
     }
 
-    pub fn shift(&self, periods: i32) -> PyResult<Self> {
-        let s = self.series.shift(periods).map_err(PyPolarsEr::from)?;
-        Ok(PySeries::new(s))
+    pub fn shift(&self, periods: i64) -> Self {
+        let s = self.series.shift(periods);
+        PySeries::new(s)
     }
 
     pub fn zip_with(&self, mask: &PySeries, other: &PySeries) -> PyResult<Self> {

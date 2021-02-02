@@ -340,7 +340,7 @@ pub enum AExpr {
     },
     Shift {
         input: Node,
-        periods: i32,
+        periods: i64,
     },
     Window {
         function: Node,
