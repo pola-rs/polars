@@ -16,6 +16,9 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Write};
 use std::{cell::Cell, fmt, sync::Arc};
 
+#[cfg(feature = "temporal")]
+use polars_core::utils::chrono::NaiveDateTime;
+
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
 
@@ -76,6 +79,8 @@ pub enum LiteralValue {
         high: i64,
         data_type: DataType,
     },
+    #[cfg(feature = "temporal")]
+    DateTime(NaiveDateTime),
 }
 
 impl LiteralValue {
@@ -95,6 +100,8 @@ impl LiteralValue {
             LiteralValue::Float64(_) => DataType::Float64,
             LiteralValue::Utf8(_) => DataType::Utf8,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
+            #[cfg(feature = "temporal")]
+            LiteralValue::DateTime(_) => DataType::Date64,
             _ => panic!("Cannot treat {:?} as scalar value", self),
         }
     }
