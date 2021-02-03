@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::POOL;
+pub use chrono;
 pub use num_cpus;
 pub use rayon;
 use rayon::prelude::*;

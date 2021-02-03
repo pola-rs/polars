@@ -13,7 +13,7 @@ readme = "../README.md"
 [features]
 simd = ["polars-core/simd"]
 docs = ["polars-core/docs"]
-temporal = ["polars-core/temporal"]
+temporal = ["polars-core/temporal", "polars-lazy/temporal"]
 random = ["polars-core/random"]
 default = ["docs",
     "temporal",

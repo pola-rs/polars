@@ -5,7 +5,10 @@ use crate::utils::{output_name, rename_field};
 use polars_core::{
     frame::group_by::{fmt_groupby_column, GroupByMethod},
     prelude::*,
-    utils::get_supertype,
+    utils::{
+        chrono::{NaiveDate, NaiveDateTime},
+        get_supertype,
+    },
 };
 use std::fmt::{Debug, Formatter};
 use std::ops::{BitAnd, BitOr};
@@ -1271,6 +1274,20 @@ make_literal!(u8, UInt8);
 make_literal!(u16, UInt16);
 make_literal!(u32, UInt32);
 make_literal!(u64, UInt64);
+
+#[cfg(feature = "temporal")]
+impl Literal for NaiveDateTime {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::DateTime(self))
+    }
+}
+
+#[cfg(feature = "temporal")]
+impl Literal for NaiveDate {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::DateTime(self.and_hms(0, 0, 0)))
+    }
+}
 
 /// Create a Literal Expression from `L`
 pub fn lit<L: Literal>(t: L) -> Expr {
