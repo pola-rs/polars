@@ -57,7 +57,6 @@ Want to know about all the features Polars support? Read the docs!
     * [Groupby, aggregations and pivots](https://ritchie46.github.io/polars/polars/frame/group_by/struct.GroupBy.html)
     * [Lazy DataFrame](https://ritchie46.github.io/polars/polars/lazy/frame/struct.LazyFrame.html)
 * [the book](https://ritchie46.github.io/polars-book/)
-* [10 minutes to Polars notebook](examples/10_minutes_to_polars.ipynb)
     
 #### Python
 * installation guide: `pip install py-polars`
