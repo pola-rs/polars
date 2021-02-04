@@ -192,7 +192,7 @@
 //!      )
 //! }
 //! ```
-#![feature(doc_cfg)]
+#[cfg_attr(docsrs, feature(doc_cfg))]
 pub mod dsl;
 pub mod frame;
 pub mod functions;

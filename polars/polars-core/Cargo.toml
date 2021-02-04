@@ -14,7 +14,7 @@ simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "simd", "lazy", "parquet"]
+default = ["docs", "temporal", "lazy", "parquet"]
 lazy = []
 parallel = []
 # extra utilities for Utf8Chunked
@@ -23,7 +23,7 @@ strings = ["regex"]
 object = ["serde_json"]
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "b0b622b3bc475350f838eacae70167b240ae348d"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "b0b622b3bc475350f838eacae70167b240ae348d", default-features=false}
 parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "b0b622b3bc475350f838eacae70167b240ae348d"}
 thiserror = "^1.0.16"
 num = "^0.3.1"
@@ -43,3 +43,8 @@ num_cpus = "1.13"
 lazy_static = "1.4"
 hashbrown = {version = "0.9.1", features = ["rayon"] }
 polars-arrow = {version = "0.12.0", path = "../polars-arrow"}
+
+[package.metadata.docs.rs]
+all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]

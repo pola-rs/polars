@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Write};
 use std::{cell::Cell, fmt, sync::Arc};
 
-#[cfg(feature = "temporal")]
+#[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 use polars_core::utils::chrono::NaiveDateTime;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
@@ -134,7 +134,7 @@ pub enum LogicalPlan {
         cache: bool,
     },
     #[cfg(feature = "parquet")]
-    #[doc(cfg(feature = "parquet"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     ParquetScan {
         path: String,
         schema: SchemaRef,
@@ -837,7 +837,7 @@ pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr
 
 impl LogicalPlanBuilder {
     #[cfg(feature = "parquet")]
-    #[doc(cfg(feature = "parquet"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
         let file = std::fs::File::open(&path).expect("could not open file");
         let schema = Arc::new(

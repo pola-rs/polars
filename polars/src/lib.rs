@@ -2,8 +2,7 @@
 //!
 //! Polars is a DataFrame library for Rust. It is based on [Apache Arrows](https://arrow.apache.org/) memory model.
 //! This means that operations on Polars array's *(called `Series` or `ChunkedArray<T>` {if the type `T` is known})* are
-//! optimally aligned cache friendly operations and SIMD. Sadly, Apache Arrow needs **nightly Rust**,
-//! which means that Polars cannot run on stable.
+//! optimally aligned cache friendly operations and SIMD.
 //!
 //! Polars supports an eager and a lazy api. The eager api is similar to [pandas](https://pandas.pydata.org/),
 //! the lazy api is similar to [Spark](https://spark.apache.org/).
@@ -182,7 +181,7 @@
 //!
 //! * `temporal (default)`
 //!     - Conversions between Chrono and Polars for temporal data
-//! * `simd (default)`
+//! * `simd (nightly only)`
 //!     - SIMD operations
 //! * `parquet`
 //!     - Read Apache Parquet format

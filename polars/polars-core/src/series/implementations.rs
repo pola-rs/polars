@@ -774,31 +774,31 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn hour(&self) -> Result<Series> {
                 self.date64().map(|ca| ca.hour().into_series())
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn minute(&self) -> Result<Series> {
                 self.date64().map(|ca| ca.minute().into_series())
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn second(&self) -> Result<Series> {
                 self.date64().map(|ca| ca.second().into_series())
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn nanosecond(&self) -> Result<Series> {
                 self.date64().map(|ca| ca.nanosecond().into_series())
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn day(&self) -> Result<Series> {
                 match self.0.dtype() {
                     DataType::Date32 => self.date32().map(|ca| ca.day().into_series()),
@@ -810,7 +810,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn ordinal_day(&self) -> Result<Series> {
                 match self.0.dtype() {
                     DataType::Date32 => self.date32().map(|ca| ca.ordinal().into_series()),
@@ -822,7 +822,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn month(&self) -> Result<Series> {
                 match self.0.dtype() {
                     DataType::Date32 => self.date32().map(|ca| ca.month().into_series()),
@@ -834,7 +834,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn year(&self) -> Result<Series> {
                 match self.0.dtype() {
                     DataType::Date32 => self.date32().map(|ca| ca.year().into_series()),
@@ -849,7 +849,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "random")]
-            #[doc(cfg(feature = "random"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
             fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
                 self.0
                     .sample_n(n, with_replacement)
@@ -857,7 +857,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "random")]
-            #[doc(cfg(feature = "random"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
             fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
                 self.0
                     .sample_frac(frac, with_replacement)
@@ -903,13 +903,13 @@ impl_dyn_series!(Time64NanosecondChunked);
 impl_dyn_series!(CategoricalChunked);
 
 #[cfg(feature = "object")]
-#[doc(cfg(feature = "object"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> PrivateSeries for Wrap<ObjectChunked<T>> where
     T: 'static + Debug + Clone + Send + Sync + Default
 {
 }
 #[cfg(feature = "object")]
-#[doc(cfg(feature = "object"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for Wrap<ObjectChunked<T>>
 where
     T: 'static + Debug + Clone + Send + Sync + Default,
@@ -1112,13 +1112,13 @@ where
     }
 
     #[cfg(feature = "random")]
-    #[doc(cfg(feature = "random"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
     fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
         ObjectChunked::sample_n(&self.0, n, with_replacement).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "random")]
-    #[doc(cfg(feature = "random"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
         ObjectChunked::sample_frac(&self.0, frac, with_replacement).map(|ca| ca.into_series())
     }

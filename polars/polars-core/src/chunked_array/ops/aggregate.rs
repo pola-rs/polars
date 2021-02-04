@@ -2,7 +2,7 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
-use crate::{datatypes::PolarsNumericType, prelude::*};
+use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use std::cmp::PartialOrd;
@@ -52,7 +52,7 @@ macro_rules! agg_float_with_nans {
             $self
                 .into_no_null_iter()
                 .map(|a| -> $precision { NumCast::from(a).unwrap() })
-                .fold_first(|a, b| a.$agg_method(b))
+                .fold_first_(|a, b| a.$agg_method(b))
                 .map(|a| NumCast::from(a).unwrap())
         } else {
             $self
@@ -60,7 +60,7 @@ macro_rules! agg_float_with_nans {
                 .filter(|opt| opt.is_some())
                 .map(|opt| opt.unwrap())
                 .map(|a| -> $precision { NumCast::from(a).unwrap() })
-                .fold_first(|a, b| a.$agg_method(b))
+                .fold_first_(|a, b| a.$agg_method(b))
                 .map(|a| NumCast::from(a).unwrap())
         }
     }};
@@ -108,7 +108,7 @@ where
                 .downcast_chunks()
                 .iter()
                 .filter_map(|&a| compute::min(a))
-                .fold_first(|acc, v| if acc < v { acc } else { v }),
+                .fold_first_(|acc, v| if acc < v { acc } else { v }),
         }
     }
 
@@ -120,7 +120,7 @@ where
                 .downcast_chunks()
                 .iter()
                 .filter_map(|&a| compute::max(a))
-                .fold_first(|acc, v| if acc > v { acc } else { v }),
+                .fold_first_(|acc, v| if acc > v { acc } else { v }),
         }
     }
 

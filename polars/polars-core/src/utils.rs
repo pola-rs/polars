@@ -368,7 +368,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
 fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     use DataType::*;
     if l == r {
-        return Some(l.clone())
+        return Some(l.clone());
     }
 
     // TODO! add list and temporal types
@@ -577,3 +577,16 @@ where
 
     f(out)
 }
+
+pub(crate) trait CustomIterTools: Iterator {
+    fn fold_first_<F>(mut self, f: F) -> Option<Self::Item>
+    where
+        Self: Sized,
+        F: FnMut(Self::Item, Self::Item) -> Self::Item,
+    {
+        let first = self.next()?;
+        Some(self.fold(first, f))
+    }
+}
+
+impl<T: ?Sized> CustomIterTools for T where T: Iterator {}

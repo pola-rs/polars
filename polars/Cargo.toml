@@ -17,7 +17,6 @@ temporal = ["polars-core/temporal", "polars-lazy/temporal"]
 random = ["polars-core/random"]
 default = ["docs",
     "temporal",
-    "simd",
     "lazy",
     "parquet"
 ]
@@ -37,7 +36,7 @@ ipc = ["polars-io/ipc"]
 [dependencies]
 polars-core = {version = "0.12.0", path = "./polars-core", default-features = false}
 polars-io = {version = "0.12.0", path = "./polars-io", default-features = false}
-polars-lazy = {version = "0.12.0", path = "./polars-lazy"}
+polars-lazy = {version = "0.12.0", path = "./polars-lazy", default-features = false}
 
 [dev-dependencies]
 criterion = "0.3"
@@ -54,3 +53,5 @@ harness = false
 
 [package.metadata.docs.rs]
 all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]

@@ -1,6 +1,4 @@
-#![feature(iterator_fold_self)]
-#![feature(doc_cfg)]
-
+#[cfg_attr(docsrs, feature(doc_cfg))]
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;
