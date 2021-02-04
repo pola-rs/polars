@@ -1,6 +1,7 @@
 use crate::datatypes::CategoricalChunked;
 use crate::prelude::{
-    BooleanChunked, ChunkedArray, Downcast, ListChunked, PolarsNumericType, Series, Utf8Chunked,
+    BooleanChunked, ChunkedArray, Downcast, ListChunked, PolarsNumericType, Series, UnsafeValue,
+    Utf8Chunked,
 };
 use arrow::array::{
     Array, ArrayDataRef, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
@@ -153,7 +154,9 @@ where
         if self.arr.is_null(index) {
             None
         } else {
-            Some(self.arr.value(index))
+            // Safety:
+            // Null is checked above.
+            unsafe { Some(self.arr.value_unchecked(index)) }
         }
     }
 }
@@ -661,7 +664,9 @@ macro_rules! impl_single_chunk_iterator {
                     return None;
                 }
 
-                let v = self.current_array.value(self.idx_left);
+                // Safety:
+                // Bounds are checked
+                let v = unsafe { self.current_array.value_unchecked(self.idx_left) };
                 self.idx_left += 1;
 
                 $(
@@ -695,7 +700,9 @@ macro_rules! impl_single_chunk_iterator {
                     return None;
                 }
                 self.idx_right -= 1;
-                let v = self.current_array.value(self.idx_right);
+                // Safety:
+                // Bounds are checked
+                let v = unsafe { self.current_array.value_unchecked(self.idx_right) };
 
                 $(
                     // If return function is provided, apply the next_back function to the value.
@@ -790,7 +797,7 @@ macro_rules! impl_single_chunk_null_check_iterator {
                 let ret = if self.current_data.is_null(self.idx_left) {
                     Some(None)
                 } else {
-                    let v = self.current_array.value(self.idx_left);
+                    let v = unsafe { self.current_array.value_unchecked(self.idx_left) };
 
                     $(
                         // If return function is provided, apply the next function to the value.
@@ -828,7 +835,7 @@ macro_rules! impl_single_chunk_null_check_iterator {
                 if self.current_data.is_null(self.idx_right) {
                     Some(None)
                 } else {
-                    let v = self.current_array.value(self.idx_right);
+                    let v = unsafe { self.current_array.value_unchecked(self.idx_right) };
 
                     $(
                         // If return function is provided, apply the next_back function to the value.
@@ -954,7 +961,9 @@ macro_rules! impl_many_chunk_iterator {
                 }
 
                 // return value
-                let ret = self.current_array_left.value(self.current_array_idx_left);
+                // Safety:
+                // Bounds are checked
+                let ret = unsafe { self.current_array_left.value_unchecked(self.current_array_idx_left) };
 
                 // increment index pointers
                 self.idx_left += 1;
@@ -1006,7 +1015,9 @@ macro_rules! impl_many_chunk_iterator {
                 self.idx_right -= 1;
                 self.current_array_idx_right -= 1;
 
-                let ret = self.current_array_right.value(self.current_array_idx_right);
+                // Safety:
+                // Bounds are checked
+                let ret = unsafe { self.current_array_right.value_unchecked(self.current_array_idx_right) };
 
                 // we've reached the end of the chunk from the right
                 if self.current_array_idx_right == 0 && self.idx_right > 0 {
@@ -1152,7 +1163,9 @@ macro_rules! impl_many_chunk_null_check_iterator {
                 if self.current_array_left.is_null(self.current_array_idx_left) {
                     ret = None
                 } else {
-                    let v = self.current_array_left.value(self.current_array_idx_left);
+                    // Safety:
+                    // Bounds are checked
+                    let v = unsafe { self.current_array_left.value_unchecked(self.current_array_idx_left) };
 
                     $(
                         // If return function is provided, apply the next function to the value.
@@ -1214,7 +1227,9 @@ macro_rules! impl_many_chunk_null_check_iterator {
                 {
                     Some(None)
                 } else {
-                    let v = self.current_array_right.value(self.current_array_idx_right);
+                    // Safety:
+                    // Bounds are checked
+                    let v = unsafe { self.current_array_right.value_unchecked(self.current_array_idx_right) };
 
                     $(
                         // If return function is provided, apply the next_back function to the value.
