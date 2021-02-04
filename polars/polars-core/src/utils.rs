@@ -501,11 +501,13 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Date32, Int64) => Some(Int64),
         (Date32, Float32) => Some(Float32),
         (Date32, Float64) => Some(Float64),
+        (Date32, Date32) => Some(Date32),
 
         (Date64, Int32) => Some(Int64),
         (Date64, Int64) => Some(Int64),
         (Date64, Float32) => Some(Float64),
         (Date64, Float64) => Some(Float64),
+        (Date64, Date64) => Some(Date64),
 
         (Utf8, _) => Some(Utf8),
         (_, Utf8) => Some(Utf8),
