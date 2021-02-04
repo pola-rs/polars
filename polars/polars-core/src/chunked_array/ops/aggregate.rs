@@ -5,7 +5,7 @@ use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*};
 use arrow::compute;
 use num::{Num, NumCast, ToPrimitive, Zero};
-use std::cmp::{Ordering, PartialOrd};
+use std::cmp::PartialOrd;
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -46,31 +46,22 @@ pub trait VarAggSeries {
     }
 }
 
-macro_rules! cmp_float_with_nans {
-    ($a:expr, $b:expr, $precision:ty) => {{
-        let a: $precision = NumCast::from($a).unwrap();
-        let b: $precision = NumCast::from($b).unwrap();
-        match (a.is_nan(), b.is_nan()) {
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-            (false, false) => a.partial_cmp(&b).unwrap(),
-        }
-    }};
-}
-
 macro_rules! agg_float_with_nans {
     ($self:ident, $agg_method:ident, $precision:ty) => {{
         if $self.null_count() == 0 {
             $self
                 .into_no_null_iter()
-                .$agg_method(|&a, &b| cmp_float_with_nans!(a, b, $precision))
+                .map(|a| -> $precision { NumCast::from(a).unwrap() })
+                .fold_first(|a, b| a.$agg_method(b))
+                .map(|a| NumCast::from(a).unwrap())
         } else {
             $self
                 .into_iter()
                 .filter(|opt| opt.is_some())
                 .map(|opt| opt.unwrap())
-                .$agg_method(|&a, &b| cmp_float_with_nans!(a, b, $precision))
+                .map(|a| -> $precision { NumCast::from(a).unwrap() })
+                .fold_first(|a, b| a.$agg_method(b))
+                .map(|a| NumCast::from(a).unwrap())
         }
     }};
 }
@@ -111,8 +102,8 @@ where
 
     fn min(&self) -> Option<T::Native> {
         match T::get_dtype() {
-            DataType::Float32 => agg_float_with_nans!(self, min_by, f32),
-            DataType::Float64 => agg_float_with_nans!(self, min_by, f64),
+            DataType::Float32 => agg_float_with_nans!(self, min, f32),
+            DataType::Float64 => agg_float_with_nans!(self, min, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
@@ -123,8 +114,8 @@ where
 
     fn max(&self) -> Option<T::Native> {
         match T::get_dtype() {
-            DataType::Float32 => agg_float_with_nans!(self, max_by, f32),
-            DataType::Float64 => agg_float_with_nans!(self, max_by, f64),
+            DataType::Float32 => agg_float_with_nans!(self, max, f32),
+            DataType::Float64 => agg_float_with_nans!(self, max, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
