@@ -3,17 +3,18 @@ use num::{abs, clamp};
 
 macro_rules! impl_shift_fill {
     ($self:ident, $periods:expr, $fill_value:expr) => {{
-        let slice_offset = clamp(-$periods, 0, $self.len() as i64) as usize;
-        let length = $self.len() - abs($periods) as usize;
+        let periods = clamp($periods, -($self.len() as i64), $self.len() as i64);
+        let slice_offset = (-periods).max(0) as usize;
+        let length = $self.len() - abs(periods) as usize;
         let mut slice = $self.slice(slice_offset, length).unwrap();
 
-        let fill_length = abs($periods) as usize;
+        let fill_length = abs(periods) as usize;
         let mut fill = match $fill_value {
             Some(val) => Self::full($self.name(), val, fill_length),
             None => Self::full_null($self.name(), fill_length),
         };
 
-        if $periods < 0 {
+        if periods < 0 {
             slice.append(&fill);
             slice
         } else {
