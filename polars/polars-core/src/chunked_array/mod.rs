@@ -313,7 +313,8 @@ impl<T> ChunkedArray<T> {
     /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
     pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
         if offset + length > self.len() {
-            return Err(PolarsError::OutOfBounds("offset and length was larger than the size of the ChunkedArray during slice operation".into()));
+            return Err(PolarsError::OutOfBounds(format!("offset {} + length {} > len {}", offset, length, self.len()).into()));
+            // return Err(PolarsError::OutOfBounds("offset and length was larger than the size of the ChunkedArray during slice operation".into()));
         }
         let mut remaining_length = length;
         let mut remaining_offset = offset;
