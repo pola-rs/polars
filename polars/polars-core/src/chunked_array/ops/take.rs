@@ -17,6 +17,7 @@ use polars_arrow::prelude::*;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
+use unsafe_unwrap::UnsafeUnwrap;
 
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{
@@ -50,10 +51,12 @@ where
 {
     type Item = T::Native;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         impl_take_random_get!(self, index, PrimitiveArray<T>)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         impl_take_random_get_unchecked!(self, index, PrimitiveArray<T>)
     }
@@ -65,10 +68,12 @@ where
 {
     type Item = T::Native;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         (*self).get(index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         (*self).get_unchecked(index)
     }
@@ -77,10 +82,12 @@ where
 impl TakeRandom for BooleanChunked {
     type Item = bool;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         impl_take_random_get!(self, index, BooleanArray)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         impl_take_random_get_unchecked!(self, index, BooleanArray)
     }
@@ -101,12 +108,19 @@ impl TakeRandom for CategoricalChunked {
 impl<'a> TakeRandom for &'a Utf8Chunked {
     type Item = &'a str;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         impl_take_random_get!(self, index, LargeStringArray)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, LargeStringArray)
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let arr = {
+            let arr = self.chunks.get_unchecked(chunk_idx);
+            &*(arr as *const ArrayRef as *const Arc<LargeStringArray>)
+        };
+        arr.value_unchecked(idx)
     }
 }
 
@@ -115,18 +129,26 @@ impl<'a> TakeRandom for &'a Utf8Chunked {
 impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
     type Item = &'a str;
 
+    #[inline]
     fn get(self, index: usize) -> Option<Self::Item> {
         impl_take_random_get!(self, index, LargeStringArray)
     }
 
+    #[inline]
     unsafe fn get_unchecked(self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, LargeStringArray)
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let arr = {
+            let arr = self.chunks.get_unchecked(chunk_idx);
+            &*(arr as *const ArrayRef as *const Arc<LargeStringArray>)
+        };
+        arr.value_unchecked(idx)
     }
 }
 
 impl TakeRandom for ListChunked {
     type Item = Series;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         let opt_arr = impl_take_random_get!(self, index, LargeListArray);
         opt_arr.map(|arr| {
@@ -135,10 +157,16 @@ impl TakeRandom for ListChunked {
         })
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let arr = {
+            let arr = self.chunks.get_unchecked(chunk_idx);
+            &*(arr as *const ArrayRef as *const Arc<LargeListArray>)
+        };
+        let arr = arr.value_unchecked(idx);
         let s = Series::try_from((self.name(), arr));
-        s.unwrap()
+        s.unsafe_unwrap()
     }
 }
 
@@ -893,10 +921,12 @@ where
 {
     type Item = T::Native;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         take_random_get_unchecked!(self, index)
     }
@@ -912,10 +942,12 @@ where
 {
     type Item = T;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         self.slice.get(index).copied()
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         *self.slice.get_unchecked(index)
     }
@@ -934,10 +966,12 @@ where
 {
     type Item = T::Native;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get_single!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         self.arr.value(index)
     }
@@ -951,12 +985,17 @@ pub struct Utf8TakeRandom<'a> {
 impl<'a> TakeRandom for Utf8TakeRandom<'a> {
     type Item = &'a str;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        take_random_get_unchecked!(self, index)
+        let (chunk_idx, arr_idx) = self.ca.index_to_chunked_index(index);
+        self.chunks
+            .get_unchecked(chunk_idx)
+            .value_unchecked(arr_idx)
     }
 }
 
@@ -967,12 +1006,14 @@ pub struct Utf8TakeRandomSingleChunk<'a> {
 impl<'a> TakeRandom for Utf8TakeRandomSingleChunk<'a> {
     type Item = &'a str;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get_single!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.arr.value(index)
+        self.arr.value_unchecked(index)
     }
 }
 
@@ -984,10 +1025,12 @@ pub struct BoolTakeRandom<'a> {
 impl<'a> TakeRandom for BoolTakeRandom<'a> {
     type Item = bool;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         take_random_get_unchecked!(self, index)
     }
@@ -1000,10 +1043,12 @@ pub struct BoolTakeRandomSingleChunk<'a> {
 impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
     type Item = bool;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get_single!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         self.arr.value(index)
     }
@@ -1016,6 +1061,7 @@ pub struct ListTakeRandom<'a> {
 impl<'a> TakeRandom for ListTakeRandom<'a> {
     type Item = Series;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get!(self, index);
         v.map(|v| {
@@ -1024,6 +1070,7 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
         })
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         let v = take_random_get_unchecked!(self, index);
         let s = Series::try_from((self.ca.name(), v));
@@ -1039,6 +1086,7 @@ pub struct ListTakeRandomSingleChunk<'a> {
 impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
     type Item = Series;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get_single!(self, index);
         v.map(|v| {
@@ -1047,9 +1095,10 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
         })
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let s = Series::try_from((self.name, self.arr.value(index)));
-        s.unwrap()
+        let s = Series::try_from((self.name, self.arr.value_unchecked(index)));
+        s.unsafe_unwrap()
     }
 }
 
