@@ -22,12 +22,18 @@ use unsafe_unwrap::UnsafeUnwrap;
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
-        let arr = unsafe {
-            let arr = $self.chunks.get_unchecked(chunk_idx);
-            &*(arr as *const ArrayRef as *const Arc<$array_type>)
-        };
+        // Safety:
+        // bounds are checked above
+        let arr = $self.chunks.get_unchecked(chunk_idx);
+
+        // Safety:
+        // caller should give right array type
+        let arr = &*(arr as *const ArrayRef as *const Arc<$array_type>);
+
+        // Safety:
+        // index should be in bounds
         if arr.is_valid(idx) {
-            Some(arr.value(idx))
+            Some(arr.value_unchecked(idx))
         } else {
             None
         }
@@ -41,7 +47,7 @@ macro_rules! impl_take_random_get_unchecked {
             let arr = $self.chunks.get_unchecked(chunk_idx);
             &*(arr as *const ArrayRef as *const Arc<$array_type>)
         };
-        arr.value(idx)
+        arr.value_unchecked(idx)
     }};
 }
 
@@ -53,7 +59,7 @@ where
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, PrimitiveArray<T>)
+        unsafe { impl_take_random_get!(self, index, PrimitiveArray<T>) }
     }
 
     #[inline]
@@ -84,7 +90,9 @@ impl TakeRandom for BooleanChunked {
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, BooleanArray)
+        // Safety:
+        // Out of bounds is checkedn and downcast is of correct type
+        unsafe { impl_take_random_get!(self, index, BooleanArray) }
     }
 
     #[inline]
@@ -110,7 +118,9 @@ impl<'a> TakeRandom for &'a Utf8Chunked {
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, LargeStringArray)
+        // Safety:
+        // Out of bounds is checkedn and downcast is of correct type
+        unsafe { impl_take_random_get!(self, index, LargeStringArray) }
     }
 
     #[inline]
@@ -131,7 +141,9 @@ impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
 
     #[inline]
     fn get(self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, LargeStringArray)
+        // Safety:
+        // Out of bounds is checkedn and downcast is of correct type
+        unsafe { impl_take_random_get!(self, index, LargeStringArray) }
     }
 
     #[inline]
@@ -150,7 +162,9 @@ impl TakeRandom for ListChunked {
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        let opt_arr = impl_take_random_get!(self, index, LargeListArray);
+        // Safety:
+        // Out of bounds is checked and downcast is of correct type
+        let opt_arr = unsafe { impl_take_random_get!(self, index, LargeListArray) };
         opt_arr.map(|arr| {
             let s = Series::try_from((self.name(), arr));
             s.unwrap()

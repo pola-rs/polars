@@ -1,4 +1,6 @@
-use arrow::array::{Array, ArrayData, ArrayDataRef, ArrayRef, ListArray, PrimitiveArray};
+use arrow::array::{
+    Array, ArrayData, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray,
+};
 use arrow::datatypes::{ArrowPrimitiveType, DataType};
 use num::Num;
 
@@ -95,5 +97,26 @@ impl ValueSize for ArrayData {
 impl ValueSize for ListArray {
     fn get_values_size(&self) -> usize {
         self.data_ref().get_values_size()
+    }
+}
+
+pub trait UnsafeValue<T> {
+    unsafe fn value_unchecked(&self, index: usize) -> T;
+}
+
+impl<T> UnsafeValue<T::Native> for PrimitiveArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    #[inline]
+    unsafe fn value_unchecked(&self, index: usize) -> T::Native {
+        self.value(index)
+    }
+}
+
+impl UnsafeValue<bool> for BooleanArray {
+    #[inline]
+    unsafe fn value_unchecked(&self, index: usize) -> bool {
+        self.value(index)
     }
 }
