@@ -34,7 +34,7 @@ json = ["polars-io/json"]
 ipc = ["polars-io/ipc"]
 
 [dependencies]
-polars-core = {version = "0.12.0", path = "./polars-core", default-features = false}
+polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}
 polars-io = {version = "0.12.0", path = "./polars-io", default-features = false}
 polars-lazy = {version = "0.12.0", path = "./polars-lazy", default-features = false}
 

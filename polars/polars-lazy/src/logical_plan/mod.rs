@@ -17,6 +17,7 @@ use std::fmt::{Debug, Formatter, Write};
 use std::{cell::Cell, fmt, sync::Arc};
 
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
+#[cfg(feature = "temporal")]
 use polars_core::utils::chrono::NaiveDateTime;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.

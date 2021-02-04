@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::POOL;
+#[cfg(feature = "temporal")]
 pub use chrono;
 pub use num_cpus;
 pub use rayon;
