@@ -42,7 +42,7 @@ pub enum PolarsError {
     #[error(transparent)]
     IO(#[from] std::io::Error),
     #[error(transparent)]
-    #[cfg(any(feature = "string", feature = "temporal"))]
+    #[cfg(any(feature = "strings", feature = "temporal"))]
     Regex(#[from] regex::Error),
     #[error("DuplicateError: {0}")]
     Duplicate(ErrString),

@@ -5,11 +5,11 @@ use crate::utils::{output_name, rename_field};
 use polars_core::{
     frame::group_by::{fmt_groupby_column, GroupByMethod},
     prelude::*,
-    utils::{
-        chrono::{NaiveDate, NaiveDateTime},
-        get_supertype,
-    },
+    utils::get_supertype,
 };
+
+#[cfg(feature = "temporal")]
+use polars_core::utils::chrono::{NaiveDate, NaiveDateTime};
 use std::fmt::{Debug, Formatter};
 use std::ops::{BitAnd, BitOr};
 use std::{
@@ -1061,43 +1061,51 @@ impl Expr {
     }
 
     /// Get the year of a Date32/Date64
+    #[cfg(feature = "temporal")]
     pub fn year(self) -> Expr {
         let function = move |s: Series| s.year();
         self.map(function, Some(DataType::UInt32))
     }
 
     /// Get the month of a Date32/Date64
+    #[cfg(feature = "temporal")]
     pub fn month(self) -> Expr {
         let function = move |s: Series| s.month();
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the month of a Date32/Date64
+    #[cfg(feature = "temporal")]
     pub fn day(self) -> Expr {
         let function = move |s: Series| s.day();
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the ordinal_day of a Date32/Date64
+    #[cfg(feature = "temporal")]
     pub fn ordinal_day(self) -> Expr {
         let function = move |s: Series| s.ordinal_day();
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the hour of a Date64/Time64
+    #[cfg(feature = "temporal")]
     pub fn hour(self) -> Expr {
         let function = move |s: Series| s.hour();
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the minute of a Date64/Time64
+    #[cfg(feature = "temporal")]
     pub fn minute(self) -> Expr {
         let function = move |s: Series| s.minute();
         self.map(function, Some(DataType::UInt32))
     }
 
     /// Get the second of a Date64/Time64
+    #[cfg(feature = "temporal")]
     pub fn second(self) -> Expr {
         let function = move |s: Series| s.second();
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the nanosecond of a Time64
+    #[cfg(feature = "temporal")]
     pub fn nanosecond(self) -> Expr {
         let function = move |s: Series| s.nanosecond();
         self.map(function, Some(DataType::UInt32))
