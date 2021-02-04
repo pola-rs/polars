@@ -8,7 +8,7 @@ use std::mem;
 use std::sync::Arc;
 
 /// Forked snippet from Arrow. Only does not write to a Vec, but directly to aligned memory.
-pub(crate) fn take_no_null_primitive<T: PolarsNumericType>(
+pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
     arr: &PrimitiveArray<T>,
     indices: &UInt32Array,
 ) -> Arc<PrimitiveArray<T>> {
@@ -17,8 +17,8 @@ pub(crate) fn take_no_null_primitive<T: PolarsNumericType>(
     let data_len = indices.len();
     let mut values = AlignedVec::<T::Native>::with_capacity_aligned(data_len);
     for i in 0..data_len {
-        let index = indices.value(i) as usize;
-        let v = arr.value(index);
+        let index = indices.value_unchecked(i) as usize;
+        let v = arr.value_unchecked(index);
         values.inner.push(v);
     }
     let nulls = indices.data_ref().null_buffer().cloned();
@@ -27,7 +27,7 @@ pub(crate) fn take_no_null_primitive<T: PolarsNumericType>(
     Arc::new(arr)
 }
 
-pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<LargeStringArray> {
+pub(crate) unsafe fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
     let offset_len_in_bytes = (data_len + 1) * mem::size_of::<i64>();
@@ -56,8 +56,8 @@ pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<La
             .skip(1)
             .enumerate()
             .for_each(|(idx, offset)| {
-                let index = indices.value(idx) as usize;
-                let s = arr.value(index);
+                let index = indices.value_unchecked(idx) as usize;
+                let s = arr.value_unchecked(index);
                 length_so_far += s.len() as i64;
                 *offset = length_so_far;
 
@@ -76,8 +76,8 @@ pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<La
             .enumerate()
             .for_each(|(idx, offset)| {
                 if indices.is_valid(idx) {
-                    let index = indices.value(idx) as usize;
-                    let s = arr.value(index);
+                    let index = indices.value_unchecked(idx) as usize;
+                    let s = arr.value_unchecked(index);
                     length_so_far += s.len() as i64;
 
                     if length_so_far as usize >= values_capacity {
@@ -95,9 +95,9 @@ pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<La
 
         if indices.null_count() == 0 {
             (0..data_len).for_each(|idx| {
-                let index = indices.value(idx) as usize;
+                let index = indices.value_unchecked(idx) as usize;
                 if arr.is_valid(index) {
-                    let s = arr.value(index);
+                    let s = arr.value_unchecked(index);
                     builder.append_value(s).unwrap();
                 } else {
                     builder.append_null().unwrap();
@@ -106,10 +106,10 @@ pub(crate) fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<La
         } else {
             (0..data_len).for_each(|idx| {
                 if indices.is_valid(idx) {
-                    let index = indices.value(idx) as usize;
+                    let index = indices.value_unchecked(idx) as usize;
 
                     if arr.is_valid(index) {
-                        let s = arr.value(index);
+                        let s = arr.value_unchecked(index);
                         builder.append_value(s).unwrap();
                     } else {
                         builder.append_null().unwrap();
