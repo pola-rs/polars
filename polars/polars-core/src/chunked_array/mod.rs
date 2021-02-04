@@ -494,22 +494,22 @@ where
         }
     }
 
-    fn arr_to_any_value(&self, arr: &dyn Array, idx: usize) -> AnyValue {
+    unsafe fn arr_to_any_value(&self, arr: &dyn Array, idx: usize) -> AnyValue {
         if arr.is_null(idx) {
             return AnyValue::Null;
         }
 
         macro_rules! downcast_and_pack {
             ($casttype:ident, $variant:ident) => {{
-                let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
-                let v = arr.value(idx);
+                let arr =  &*(arr as *const dyn Array as *const $casttype) ;
+                let v = arr.value_unchecked(idx);
                 AnyValue::$variant(v)
             }};
         }
         macro_rules! downcast {
             ($casttype:ident) => {{
-                let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
-                arr.value(idx)
+                let arr = &*(arr as *const dyn Array as *const $casttype) ;
+                arr.value_unchecked(idx)
             }};
         }
         // TODO: insert types
@@ -578,7 +578,9 @@ where
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let arr = &*self.chunks[chunk_idx];
         assert!(idx < arr.len());
-        self.arr_to_any_value(arr, idx)
+        // SAFETY
+        // bounds are checked
+        unsafe { self.arr_to_any_value(arr, idx) }
     }
 }
 

@@ -133,6 +133,7 @@ pub fn zip<T>(
 where
     T: PolarsNumericType,
 {
+    assert_eq!(mask.len(), a.len());
     if mask.offset() == 0 {
         return Ok(zip_impl(mask, a, b));
     }
@@ -148,7 +149,9 @@ where
 
     // fill the aligned vector
     for i in 0..mask.len() {
-        let take_a = mask.value(i);
+        // SAFETY
+        // Bounds checked above
+        let take_a = unsafe { mask.value_unchecked(i) };
         if take_a {
             unsafe {
                 values.push(*vals_a.get_unchecked(i));
