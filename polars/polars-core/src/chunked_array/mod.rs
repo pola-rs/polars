@@ -29,20 +29,20 @@ pub mod float;
 pub mod iterator;
 pub mod kernels;
 #[cfg(feature = "ndarray")]
-#[doc(cfg(feature = "ndarray"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
 mod ndarray;
 
 #[cfg(feature = "object")]
-#[doc(cfg(feature = "object"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 pub mod object;
 #[cfg(feature = "random")]
-#[doc(cfg(feature = "random"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "random")))]
 mod random;
 #[cfg(feature = "strings")]
-#[doc(cfg(feature = "strings"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
 pub mod strings;
 #[cfg(feature = "temporal")]
-#[doc(cfg(feature = "temporal"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
 pub mod upstream_traits;
 

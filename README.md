@@ -74,7 +74,7 @@ Additional cargo features:
 
 * `temporal (default)`
     - Conversions between Chrono and Polars for temporal data
-* `simd (default)`
+* `simd (nightly)`
     - SIMD operations
 * `parquet`
     - Read Apache Parquet format

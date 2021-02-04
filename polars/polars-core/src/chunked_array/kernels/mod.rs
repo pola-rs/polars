@@ -2,7 +2,7 @@ pub(crate) mod cast;
 pub mod set;
 pub(crate) mod take;
 #[cfg(feature = "temporal")]
-#[doc(cfg(feature = "temporal"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
 pub(crate) mod utils;
 pub mod zip_with;

@@ -18,6 +18,11 @@ ahash = "0.7"
 rayon = "1.5"
 itertools = "0.10"
 
-polars-io = {version = "0.12.0", path = "../polars-io", features = ["lazy"]}
-polars-core = {version = "0.12.0", path = "../polars-core", features = ["lazy"]}
+polars-io = {version = "0.12.0", path = "../polars-io", features = ["lazy"], default-features=false}
+polars-core = {version = "0.12.0", path = "../polars-core", features = ["lazy"], default-features=false}
 polars-arrow = {version = "0.12.0", path = "../polars-arrow"}
+
+[package.metadata.docs.rs]
+all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]

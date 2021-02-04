@@ -18,7 +18,7 @@ lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "b0b622b3bc475350f838eacae70167b240ae348d"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "b0b622b3bc475350f838eacae70167b240ae348d", default-features=false}
 parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "b0b622b3bc475350f838eacae70167b240ae348d"}
 csv = "1.1"
 lexical = "5.2"
@@ -37,3 +37,8 @@ num = "^0.3.1"
 version = "0.12.0"
 path = "../polars-core"
 default-features = false
+
+[package.metadata.docs.rs]
+all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]

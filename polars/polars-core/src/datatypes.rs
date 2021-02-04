@@ -91,13 +91,13 @@ impl PolarsDataType for CategoricalType {
 }
 
 #[cfg(feature = "object")]
-#[doc(cfg(feature = "object"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
 #[cfg(feature = "object")]
-#[doc(cfg(feature = "object"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T: Send + Sync> PolarsDataType for ObjectType<T> {
     fn get_dtype() -> DataType {
         DataType::Object

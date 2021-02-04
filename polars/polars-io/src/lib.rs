@@ -1,14 +1,14 @@
-#![feature(doc_cfg)]
+#[cfg_attr(docsrs, feature(doc_cfg))]
 pub mod csv;
 pub mod csv_core;
 #[cfg(feature = "ipc")]
-#[doc(cfg(feature = "ipc"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
 pub mod ipc;
 #[cfg(feature = "json")]
-#[doc(cfg(feature = "json"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod json;
 #[cfg(feature = "parquet")]
-#[doc(cfg(feature = "parquet"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
 pub mod prelude;
 
