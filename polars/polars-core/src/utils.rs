@@ -367,6 +367,10 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     use DataType::*;
+    if l == r {
+        return Some(l.clone())
+    }
+
     // TODO! add list and temporal types
     match (l, r) {
         (Duration(_), Int8) => Some(Int64),
@@ -501,13 +505,11 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Date32, Int64) => Some(Int64),
         (Date32, Float32) => Some(Float32),
         (Date32, Float64) => Some(Float64),
-        (Date32, Date32) => Some(Date32),
 
         (Date64, Int32) => Some(Int64),
         (Date64, Int64) => Some(Int64),
         (Date64, Float32) => Some(Float64),
         (Date64, Float64) => Some(Float64),
-        (Date64, Date64) => Some(Date64),
 
         (Utf8, _) => Some(Utf8),
         (_, Utf8) => Some(Utf8),
