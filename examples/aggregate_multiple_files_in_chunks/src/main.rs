@@ -105,7 +105,7 @@
 //! | "seafood"    | 156.8         | 5.788       | 1.25          |
 //! +--------------+---------------+-------------+---------------+
 use polars::prelude::{
-    ArrowDataType, CsvReader, DataFrame, Field, Result as PolarResult, Schema, SerReader, Series,
+    CsvReader, DataFrame, DataType, Field, Result as PolarResult, Schema, SerReader, Series,
 };
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::error::Error;
@@ -128,10 +128,10 @@ fn read_dir<P: AsRef<Path>>(directory: P) -> IoResult<Vec<PathBuf>> {
 // Return the schema of the DataFrame read from the CSV.
 fn get_schema() -> Schema {
     Schema::new(vec![
-        Field::new("category", ArrowDataType::Utf8, false),
-        Field::new("calories", ArrowDataType::UInt64, false),
-        Field::new("fats_g", ArrowDataType::Float64, false),
-        Field::new("sugars_g", ArrowDataType::Float64, false),
+        Field::new("category", DataType::Utf8),
+        Field::new("calories", DataType::UInt64),
+        Field::new("fats_g", DataType::Float64),
+        Field::new("sugars_g", DataType::Float64),
     ])
 }
 
@@ -168,12 +168,12 @@ fn compute_mean(
     // Get the sum column from dataframe as float.
     let sum_column = dataframe
         .drop_in_place(sum_column_name)?
-        .cast_with_data_type(&ArrowDataType::Float64)?;
+        .cast_with_datatype(&DataType::Float64)?;
 
     // Get the count column from dataframe as float.
     let count_column = dataframe
         .drop_in_place(count_column_name)?
-        .cast_with_data_type(&ArrowDataType::Float64)?;
+        .cast_with_datatype(&DataType::Float64)?;
 
     // Compute the mean serie and rename to the `mean_column_name` provided
     // as input.
