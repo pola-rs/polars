@@ -571,7 +571,7 @@ impl ChunkTake for Utf8Chunked {
             let idx_arr = idx.downcast_chunks()[0];
             let arr = self.downcast_chunks()[0];
             // TODO: mark this function as unsafe
-            let new_arr = unsafe { take_utf8(arr, idx_arr) as ArrayRef } ;
+            let new_arr = unsafe { take_utf8(arr, idx_arr) as ArrayRef };
             Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
         } else {
             Err(PolarsError::NoSlice)
@@ -906,9 +906,9 @@ macro_rules! take_random_get {
                 if arr.is_null(arr_idx) {
                     None
                 } else {
-                // SAFETY:
-                // bounds checked above
-                   unsafe { Some(arr.value_unchecked(arr_idx)) }
+                    // SAFETY:
+                    // bounds checked above
+                    unsafe { Some(arr.value_unchecked(arr_idx)) }
                 }
             }
             None => None,
@@ -919,7 +919,10 @@ macro_rules! take_random_get {
 macro_rules! take_random_get_unchecked {
     ($self:ident, $index:ident) => {{
         let (chunk_idx, arr_idx) = $self.ca.index_to_chunked_index($index);
-        $self.chunks.get_unchecked(chunk_idx).value_unchecked(arr_idx)
+        $self
+            .chunks
+            .get_unchecked(chunk_idx)
+            .value_unchecked(arr_idx)
     }};
 }
 
@@ -928,8 +931,8 @@ macro_rules! take_random_get_single {
         if $self.arr.is_null($index) {
             None
         } else {
-        // Safety:
-        // bound checked above
+            // Safety:
+            // bound checked above
             unsafe { Some($self.arr.value_unchecked($index)) }
         }
     }};

@@ -501,14 +501,14 @@ where
 
         macro_rules! downcast_and_pack {
             ($casttype:ident, $variant:ident) => {{
-                let arr =  &*(arr as *const dyn Array as *const $casttype) ;
+                let arr = &*(arr as *const dyn Array as *const $casttype);
                 let v = arr.value_unchecked(idx);
                 AnyValue::$variant(v)
             }};
         }
         macro_rules! downcast {
             ($casttype:ident) => {{
-                let arr = &*(arr as *const dyn Array as *const $casttype) ;
+                let arr = &*(arr as *const dyn Array as *const $casttype);
                 arr.value_unchecked(idx)
             }};
         }

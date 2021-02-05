@@ -7,6 +7,7 @@ use crate::series::SeriesTrait;
 use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, NoNull};
 use ahash::RandomState;
 use arrow::record_batch::RecordBatch;
+use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::iter::Iterator;
@@ -190,24 +191,7 @@ impl DataFrame {
 
     /// Ensure all the chunks in the DataFrame are aligned.
     pub fn rechunk(&mut self) -> Result<&mut Self> {
-        let mut all_equal = true;
-
-        let mut it = self.columns.iter();
-        let first_s = it
-            .next()
-            .ok_or_else(|| PolarsError::NoData("no data to rechunk".into()))?;
-        let id = first_s.chunk_lengths();
-
-        for s in it {
-            let current_id = s.chunk_lengths();
-            if current_id != id {
-                all_equal = false;
-                break;
-            }
-        }
-
-        // fast path
-        if all_equal {
+        if self.columns.iter().map(|s| s.chunks()).all_equal() {
             Ok(self)
         } else {
             Ok(self.as_single_chunk())
@@ -475,6 +459,7 @@ impl DataFrame {
     fn insert_at_idx_no_name_check(&mut self, index: usize, series: Series) -> Result<&mut Self> {
         if series.len() == self.height() {
             self.columns.insert(index, series);
+            self.rechunk()?;
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -501,6 +486,7 @@ impl DataFrame {
         self.has_column(series.name())?;
         if series.len() == self.height() {
             self.columns.push(series);
+            self.rechunk()?;
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
