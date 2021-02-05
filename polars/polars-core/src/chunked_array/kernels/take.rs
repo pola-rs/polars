@@ -27,7 +27,10 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
     Arc::new(arr)
 }
 
-pub(crate) unsafe fn take_utf8(arr: &LargeStringArray, indices: &UInt32Array) -> Arc<LargeStringArray> {
+pub(crate) unsafe fn take_utf8(
+    arr: &LargeStringArray,
+    indices: &UInt32Array,
+) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
     let offset_len_in_bytes = (data_len + 1) * mem::size_of::<i64>();
@@ -141,14 +144,16 @@ mod test {
     #[test]
     fn test_utf8_kernel() {
         let s = LargeStringArray::from(vec![Some("foo"), None, Some("bar")]);
-        let out = take_utf8(&s, &UInt32Array::from(vec![1, 2]));
-        assert!(out.is_null(0));
-        assert!(out.is_valid(1));
-        let out = take_utf8(&s, &UInt32Array::from(vec![None, Some(2)]));
-        assert!(out.is_null(0));
-        assert!(out.is_valid(1));
-        let out = take_utf8(&s, &UInt32Array::from(vec![None, None]));
-        assert!(out.is_null(0));
-        assert!(out.is_null(1));
+        unsafe {
+            let out = take_utf8(&s, &UInt32Array::from(vec![1, 2]));
+            assert!(out.is_null(0));
+            assert!(out.is_valid(1));
+            let out = take_utf8(&s, &UInt32Array::from(vec![None, Some(2)]));
+            assert!(out.is_null(0));
+            assert!(out.is_valid(1));
+            let out = take_utf8(&s, &UInt32Array::from(vec![None, None]));
+            assert!(out.is_null(0));
+            assert!(out.is_null(1));
+        }
     }
 }

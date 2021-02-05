@@ -1183,8 +1183,7 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_join_multiple_columns() {
+    fn get_dfs() -> (DataFrame, DataFrame) {
         let df_a = df! {
             "a" => &[1, 2, 1, 1],
             "b" => &["a", "b", "c", "c"],
@@ -1198,6 +1197,12 @@ mod test {
             "ham" => &["let", "var", "const"]
         }
         .unwrap();
+        (df_a, df_b)
+    }
+
+    #[test]
+    fn test_join_multiple_columns() {
+        let (df_a, df_b) = get_dfs();
 
         // First do a hack with concatenated string dummy column
         let mut s = df_a
@@ -1266,19 +1271,7 @@ mod test {
     fn test_join_categorical() {
         toggle_string_cache(true);
 
-        let mut df_a = df! {
-            "a" => &[1, 2, 1, 1],
-            "b" => &["a", "b", "c", "c"],
-            "c" => &[0, 1, 2, 3]
-        }
-        .unwrap();
-
-        let mut df_b = df! {
-            "foo" => &[1, 1, 1],
-            "bar" => &["a", "c", "c"],
-            "ham" => &["let", "var", "const"]
-        }
-        .unwrap();
+        let (mut df_a, mut df_b) = get_dfs();
 
         df_a.may_apply("b", |s| s.cast_with_datatype(&DataType::Categorical))
             .unwrap();
