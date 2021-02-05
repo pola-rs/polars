@@ -1,5 +1,4 @@
 pub(crate) mod cast;
-pub mod set;
 pub(crate) mod take;
 #[cfg(feature = "temporal")]
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]

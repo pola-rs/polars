@@ -14,6 +14,7 @@ where
     T: ArrowNumericType,
     T::Native: ArrowNativeType,
 {
+    debug_assert!(mask.null_count() == 0);
     let values = array.values();
 
     if array.null_count() == 0 {
