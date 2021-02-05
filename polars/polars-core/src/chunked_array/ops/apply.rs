@@ -31,17 +31,6 @@ impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    /// Chooses the fastest path for closure application.
-    /// Null values remain null.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// fn double(ca: &UInt32Chunked) -> UInt32Chunked {
-    ///     ca.apply(|v| v * 2)
-    /// }
-    /// ```
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(T::Native) -> T::Native + Copy,

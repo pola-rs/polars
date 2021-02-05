@@ -10,3 +10,5 @@ pub enum PolarsError {
     #[error("{0}")]
     Other(ErrString),
 }
+
+pub type Result<T> = std::result::Result<T, PolarsError>;
