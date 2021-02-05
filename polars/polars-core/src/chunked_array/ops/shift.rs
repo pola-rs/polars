@@ -112,18 +112,52 @@ mod test {
 
     #[test]
     fn test_shift() {
+        // n = 0
         let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
-        let shifted = ca.shift_and_fill(1, Some(0));
-        assert_eq!(Vec::from(&shifted), &[Some(0), Some(1), Some(2)]);
+        let shifted = ca.shift_and_fill(0, None);
+        assert_eq!(Vec::from(&shifted), &[]);
+        let shifted = ca.shift_and_fill(2, None);
+        assert_eq!(Vec::from(&shifted), &[]);
+        let shifted = ca.shift_and_fill(-2, None);
+        assert_eq!(Vec::from(&shifted), &[]);
+        let shifted = ca.shift_and_fill(-2, Some(4));
+        assert_eq!(Vec::from(&shifted), &[]);
+        let shifted = ca.shift_and_fill(22, Some(4));
+        assert_eq!(Vec::from(&shifted), &[]);
+
+        let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
+
+        // shift by 0, 1, 2, 3, 4
+        let shifted = ca.shift_and_fill(0, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(1), Some(2), Some(3)]);
+        let shifted = ca.shift_and_fill(1, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(5), Some(1), Some(2)]);
+        let shifted = ca.shift_and_fill(2, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(5), Some(5), Some(2)]);
+        let shifted = ca.shift_and_fill(3, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(5), Some(5), Some(5)]);
+        let shifted = ca.shift_and_fill(4, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(5), Some(5), Some(5)]);
+
+        // shift by -1, -2, -3, -4
+        let shifted = ca.shift_and_fill(-1, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(2), Some(3), Some(5)]);
+        let shifted = ca.shift_and_fill(-2, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(3), Some(5), Some(5)]);
+        let shifted = ca.shift_and_fill(-3, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(5), Some(5), Some(5)]);
+        let shifted = ca.shift_and_fill(-4, Some(5));
+        assert_eq!(Vec::from(&shifted), &[Some(5), Some(5), Some(5)]);
+
+        // fill with None
         let shifted = ca.shift_and_fill(1, None);
         assert_eq!(Vec::from(&shifted), &[None, Some(1), Some(2)]);
-        let shifted = ca.shift_and_fill(-1, None);
-        assert_eq!(Vec::from(&shifted), &[Some(2), Some(3), None]);
-
-        // shift overflow
-        let shifted = ca.shift_and_fill(3, None);
+        let shifted = ca.shift_and_fill(10, None);
         assert_eq!(Vec::from(&shifted), &[None, None, None]);
+        let shifted = ca.shift_and_fill(-2, None);
+        assert_eq!(Vec::from(&shifted), &[Some(3), None, None]);
 
+        // string
         let s = Series::new("a", ["a", "b", "c"]);
         let shifted = s.shift(-1);
         assert_eq!(
