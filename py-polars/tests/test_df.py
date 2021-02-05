@@ -308,3 +308,23 @@ def test_concat():
     df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
     assert functions.concat([df, df]).shape == (6, 3)
+
+
+def test_to_pandas():
+    df = DataFrame(
+        {
+            "bools": [False, True, False],
+            "bools_nulls": [None, True, False],
+            "int": [1, 2, 3],
+            "int_nulls": [1, None, 3],
+            "floats": [1.0, 2.0, 3.0],
+            "floats_nulls": [1.0, None, 3.0],
+        }
+    )
+    df.to_pandas()
+
+    # test shifted df
+    df.shift(2).to_pandas()
+    df = DataFrame({"col": Series([True, False, True])})
+    print(df)
+    df.shift(2).to_pandas()
