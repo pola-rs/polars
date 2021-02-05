@@ -18,8 +18,8 @@ lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "b0b622b3bc475350f838eacae70167b240ae348d", default-features=false}
-parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "b0b622b3bc475350f838eacae70167b240ae348d"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "5a7c245c5430d0f8196f6941d1e0cfda9ddf4d2c", default-features=false}
+parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "5a7c245c5430d0f8196f6941d1e0cfda9ddf4d2c"}
 csv = "1.1"
 lexical = "5.2"
 num_cpus = "1.13.0"

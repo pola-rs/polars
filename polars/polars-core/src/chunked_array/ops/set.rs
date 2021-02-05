@@ -58,12 +58,16 @@ where
                 let mut av = self.into_no_null_iter().collect::<AlignedVec<_>>();
                 let data = av.as_mut_slice();
 
-                idx.as_take_iter()
-                    .try_for_each::<_, Result<_>>(|idx| {
-                        let val = data.get_mut(idx).ok_or_else(|| PolarsError::OutOfBounds(format!("{} out of bounds on array of lenght: {}", idx, self.len()).into()))?;
-                        *val = value;
-                        Ok(())
+                idx.as_take_iter().try_for_each::<_, Result<_>>(|idx| {
+                    let val = data.get_mut(idx).ok_or_else(|| {
+                        PolarsError::OutOfBounds(
+                            format!("{} out of bounds on array of lenght: {}", idx, self.len())
+                                .into(),
+                        )
                     })?;
+                    *val = value;
+                    Ok(())
+                })?;
                 Ok(Self::new_from_aligned_vec(self.name(), av))
             } else {
                 self.set_at_idx_with(idx, |_| value)
