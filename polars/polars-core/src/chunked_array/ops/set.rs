@@ -53,24 +53,37 @@ where
     T: PolarsNumericType,
 {
     fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<T::Native>) -> Result<Self> {
-        self.set_at_idx_with(idx, |_| value)
+        if self.null_count() == 0 {
+            if let Some(value) = value {
+                let mut av = self.into_no_null_iter().collect::<AlignedVec<_>>();
+                let data = av.as_mut_slice();
+
+                idx.as_take_iter()
+                    .try_for_each::<_, Result<_>>(|idx| {
+                        let val = data.get_mut(idx).ok_or_else(|| PolarsError::OutOfBounds(format!("{} out of bounds on array of lenght: {}", idx, self.len()).into()))?;
+                        *val = value;
+                        Ok(())
+                    })?;
+                Ok(Self::new_from_aligned_vec(self.name(), av))
+            } else {
+                self.set_at_idx_with(idx, |_| value)
+            }
+        } else {
+            self.set_at_idx_with(idx, |_| value)
+        }
     }
 
     fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
     where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
-        // TODO: implement fast path
         let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
         impl_set_at_idx_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
-        if mask.len() != self.len() {
-            Err(PolarsError::ShapeMisMatch(
-                "mask should have the same length as the array".into(),
-            ))
-        } else if self.null_count() == 0 {
+        check_bounds!(self, mask);
+        if self.null_count() == 0 {
             if let Some(value) = value {
                 if T::get_dtype() != DataType::Boolean && self.chunk_id() == mask.chunk_id() {
                     let chunks = self
@@ -143,15 +156,16 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         impl_set_at_idx_with!(self, builder, idx, f)
     }
 
-    fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> Result<Self> {
-        let mask = mask.take_rand();
-        Ok(self.apply_with_idx_on_opt(|(idx, val)| {
-            if unsafe { mask.get_unchecked(idx) } {
-                value
-            } else {
-                val
-            }
-        }))
+    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<bool>) -> Result<Self> {
+        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
+        self.into_iter()
+            .zip(mask)
+            .for_each(|(opt_val_self, opt_mask)| match opt_mask {
+                None => builder.append_null(),
+                Some(true) => builder.append_option(opt_value),
+                Some(false) => builder.append_option(opt_val_self),
+            });
+        Ok(builder.finish())
     }
 
     fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
@@ -159,14 +173,15 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         F: Fn(Option<bool>) -> Option<bool>,
     {
         check_bounds!(self, mask);
-        let mask = mask.take_rand();
-        Ok(self.apply_with_idx_on_opt(|(idx, val)| {
-            if unsafe { mask.get_unchecked(idx) } {
-                f(val)
-            } else {
-                val
-            }
-        }))
+        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
+        self.into_iter()
+            .zip(mask)
+            .for_each(|(opt_val, opt_mask)| match opt_mask {
+                None => builder.append_null(),
+                Some(true) => builder.append_option(f(opt_val)),
+                Some(false) => builder.append_option(opt_val),
+            });
+        Ok(builder.finish())
     }
 }
 
@@ -226,7 +241,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         self.into_iter()
             .zip(mask)
             .for_each(|(opt_val_self, opt_mask)| match opt_mask {
-                None => builder.append_option(opt_val_self),
+                None => builder.append_null(),
                 Some(true) => builder.append_option(opt_value),
                 Some(false) => builder.append_option(opt_val_self),
             });
@@ -243,7 +258,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         self.into_iter()
             .zip(mask)
             .for_each(|(opt_val, opt_mask)| match opt_mask {
-                None => builder.append_option(opt_val),
+                None => builder.append_null(),
                 Some(true) => builder.append_option(f(opt_val)),
                 Some(false) => builder.append_option(opt_val),
             });
@@ -300,5 +315,13 @@ mod test {
         let mask = BooleanChunked::new_from_opt_slice("mask", &[Some(false), Some(true), None]);
         let ca = ca.set(&mask, Some(2)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(2), None]);
+
+        let ca = Utf8Chunked::new_from_opt_slice("a", &[Some("foo"), None, Some("bar")]);
+        let ca = ca.set(&mask, Some("foo")).unwrap();
+        assert_eq!(Vec::from(&ca), &[Some("foo"), Some("foo"), None]);
+
+        let ca = BooleanChunked::new_from_opt_slice("a", &[Some(false), None, Some(true)]);
+        let ca = ca.set(&mask, Some(true)).unwrap();
+        assert_eq!(Vec::from(&ca), &[Some(false), Some(true), None]);
     }
 }
