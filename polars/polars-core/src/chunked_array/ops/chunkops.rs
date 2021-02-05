@@ -76,12 +76,16 @@ impl ChunkOps for ListChunked {
             Ok(self.clone())
         } else {
             let values_capacity = self.get_values_size();
-            let mut builder =
-                get_list_builder(&self.dtype(), values_capacity, self.len(), self.name());
-            for v in self {
-                builder.append_opt_series(v.as_ref())
+            if let DataType::List(dt) = self.dtype() {
+                let mut builder =
+                    get_list_builder(&dt.into(), values_capacity, self.len(), self.name());
+                for v in self {
+                    builder.append_opt_series(v.as_ref())
+                }
+                Ok(builder.finish())
+            } else {
+                panic!("implementation error")
             }
-            Ok(builder.finish())
         }
     }
 }
