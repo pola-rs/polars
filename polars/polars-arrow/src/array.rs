@@ -101,6 +101,8 @@ impl ValueSize for ListArray {
 }
 
 pub trait UnsafeValue<T> {
+    /// # Safety
+    /// no bounds check
     unsafe fn value_unchecked(&self, index: usize) -> T;
 }
 
