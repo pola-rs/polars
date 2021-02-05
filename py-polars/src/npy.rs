@@ -106,7 +106,21 @@ pub fn series_to_numpy_compatible_vec(s: &Series) -> Box<dyn Any + Send> {
             if ca.null_count() == 0 {
                 Box::new(ca.into_no_null_iter().collect::<Vec<_>>())
             } else {
-                Box::new(s.bool().unwrap().into_iter().collect::<Vec<_>>())
+                // if nulls we use f32 to represent the floats.
+                Box::new(
+                    ca.into_iter()
+                        .map(|opt_b| match opt_b {
+                            Some(b) => {
+                                if b {
+                                    1.0
+                                } else {
+                                    0.0
+                                }
+                            }
+                            None => f32::NAN,
+                        })
+                        .collect::<Vec<_>>(),
+                )
             }
         }
         dt => panic!(format!("{:?} not supported", dt)),

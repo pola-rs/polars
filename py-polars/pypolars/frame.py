@@ -47,7 +47,7 @@ def prepare_other(other: Any) -> Series:
 
 class DataFrame:
     def __init__(
-        self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = False
+        self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = True
     ):
         """
         A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.

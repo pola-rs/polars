@@ -211,7 +211,8 @@ impl PyDataFrame {
                 use DataType::*;
                 let obj = match s.dtype() {
                     Boolean => {
-                        to_pyobject!(py, bxd, bool, bool)
+                        dbg!(&bxd);
+                        to_pyobject!(py, bxd, bool, f32)
                     }
                     Int8 => {
                         to_pyobject!(py, bxd, i8, f32)
