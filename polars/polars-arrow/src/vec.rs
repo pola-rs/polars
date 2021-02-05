@@ -219,6 +219,21 @@ impl<T> AlignedVec<T> {
 
         PrimitiveArray::<A>::from(data)
     }
+
+    /// # Panic
+    /// Must be a trusted len iterator or else it will panic
+    pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        let iter = iter.into_iter();
+        let cap = iter.size_hint().1.unwrap();
+        let (extra_cap, overflow) = cap.overflowing_sub(self.capacity());
+        if extra_cap > 0 && !overflow {
+            self.reserve(extra_cap);
+        }
+        let len_before = self.len();
+        self.inner.extend(iter);
+        let added = self.len() - len_before;
+        assert_eq!(added, cap)
+    }
 }
 
 impl<T> Default for AlignedVec<T> {
