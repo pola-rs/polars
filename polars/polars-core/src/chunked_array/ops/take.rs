@@ -772,9 +772,9 @@ pub trait AsTakeIndex {
 
 impl AsTakeIndex for &UInt32Chunked {
     fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
-        match self.cont_slice() {
-            Ok(slice) => Box::new(slice.iter().map(|&val| val as usize)),
-            Err(_) => Box::new(
+        match self.null_count() {
+            0 => Box::new(self.into_no_null_iter().map(|val| val as usize)),
+            _ => Box::new(
                 self.into_iter()
                     .filter_map(|opt_val| opt_val.map(|val| val as usize)),
             ),

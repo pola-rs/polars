@@ -66,29 +66,51 @@ where
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
-        if let Some(value) = value {
-            if T::get_dtype() != DataType::Boolean && self.chunk_id() == mask.chunk_id() {
-                let chunks = self
-                    .downcast_chunks()
-                    .into_iter()
-                    .zip(mask.downcast_chunks())
-                    .map(|(arr, mask)| {
-                        let a = set_with_value(mask, arr, value);
-                        Arc::new(a) as ArrayRef
-                    })
-                    .collect();
-                return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+        if mask.len() != self.len() {
+            Err(PolarsError::ShapeMisMatch(
+                "mask should have the same length as the array".into(),
+            ))
+        } else if self.null_count() == 0 {
+            if let Some(value) = value {
+                if T::get_dtype() != DataType::Boolean && self.chunk_id() == mask.chunk_id() {
+                    let chunks = self
+                        .downcast_chunks()
+                        .into_iter()
+                        .zip(mask.downcast_chunks())
+                        .map(|(arr, mask)| {
+                            let a = set_with_value(mask, arr, value);
+                            Arc::new(a) as ArrayRef
+                        })
+                        .collect();
+                    return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
+                }
             }
-        }
-        let mask = mask.take_rand();
+            let mask = mask.take_rand();
 
-        Ok(self.apply_with_idx_on_opt(|(idx, val)| {
-            if unsafe { mask.get_unchecked(idx) } {
-                value
-            } else {
-                val
-            }
-        }))
+            Ok(self.apply_with_idx_on_opt(|(idx, val)| {
+                if unsafe { mask.get_unchecked(idx) } {
+                    value
+                } else {
+                    val
+                }
+            }))
+        } else {
+            let ca = mask
+                .into_iter()
+                .zip(self.into_iter())
+                .map(|(mask_val, opt_val)| match mask_val {
+                    Some(bool) => {
+                        if bool {
+                            value
+                        } else {
+                            opt_val
+                        }
+                    }
+                    None => None,
+                })
+                .collect();
+            Ok(ca)
+        }
     }
 
     fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
@@ -270,5 +292,13 @@ mod test {
         let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
         let ca = ca.set(&mask, Some("bar")).unwrap();
         assert_eq!(Vec::from(&ca), &[Some("foo"), Some("bar"), Some("foo")]);
+    }
+
+    #[test]
+    fn test_set_null_values() {
+        let ca = Int32Chunked::new_from_opt_slice("a", &[Some(1), None, Some(3)]);
+        let mask = BooleanChunked::new_from_opt_slice("mask", &[Some(false), Some(true), None]);
+        let ca = ca.set(&mask, Some(2)).unwrap();
+        assert_eq!(Vec::from(&ca), &[Some(1), Some(2), None]);
     }
 }

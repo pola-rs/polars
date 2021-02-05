@@ -372,7 +372,19 @@ pub trait ChunkCast {
 
 /// Fastest way to do elementwise operations on a ChunkedArray<T>
 pub trait ChunkApply<'a, A, B> {
-    /// Apply a closure `F` elementwise.
+    /// Apply a closure elementwise. This is fastest when the null check branching is more expensive
+    /// than the closure application. Often it is.
+    ///
+    /// Null values remain null.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars_core::prelude::*;
+    /// fn double(ca: &UInt32Chunked) -> UInt32Chunked {
+    ///     ca.apply(|v| v * 2)
+    /// }
+    /// ```
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(A) -> B + Copy;
