@@ -1,10 +1,66 @@
-use crate::error::{PolarsError, Result};
-use arrow::array::{Array, ArrayData, PrimitiveArray, UInt32Array};
-use arrow::buffer::{Buffer, MutableBuffer};
-use arrow::datatypes::{ArrowNativeType, ArrowPrimitiveType};
-use arrow::util::bit_util;
-use std::sync::Arc;
+use crate::builder::PrimitiveArrayBuilder;
+use crate::kernels::BinaryMaskedSliceIterator;
+use crate::vec::AlignedVec;
+use arrow::array::*;
+use arrow::datatypes::{ArrowNativeType, ArrowNumericType};
 
+/// Set values in a primitive array based on a mask array. This is fast when large chunks of bits are set or unset.
+pub fn set_with_mask<T>(
+    array: &PrimitiveArray<T>,
+    mask: &BooleanArray,
+    value: T::Native,
+) -> PrimitiveArray<T>
+where
+    T: ArrowNumericType,
+    T::Native: ArrowNativeType,
+{
+    let values = array.values();
+
+    if array.null_count() == 0 {
+        let mut av = AlignedVec::with_capacity_aligned(array.len());
+        BinaryMaskedSliceIterator::new(mask)
+            .into_iter()
+            .for_each(|(lower, upper, truthy)| {
+                if truthy {
+                    av.extend((lower..upper).map(|_| value))
+                } else {
+                    av.extend_from_slice(&values[lower..upper])
+                }
+            });
+        av.into_primitive_array(None)
+    } else {
+        let mask_values = &mask.data_ref().buffers()[0];
+
+        // this operation is performed before iteration
+        // because it is fast and allows reserving all the needed memory
+        let pop_count = mask_values.count_set_bits_offset(mask.offset(), mask.len());
+
+        let mut builder = PrimitiveArrayBuilder::new(pop_count);
+        BinaryMaskedSliceIterator::new(mask)
+            .into_iter()
+            .for_each(|(lower, upper, truthy)| {
+                if truthy {
+                    for _ in lower..upper {
+                        builder.append_value(value)
+                    }
+                } else {
+                    for idx in lower..upper {
+                        if array.is_valid(idx) {
+                            // Safety
+                            // idx is within bounds
+                            builder.append_value(unsafe { *values.get_unchecked(idx) })
+                        } else {
+                            builder.append_null()
+                        }
+                    }
+                }
+            });
+
+        builder.finish()
+    }
+}
+
+#[cfg(feature = "future")]
 pub fn set_at_idx<T>(
     array: &PrimitiveArray<T>,
     idx: UInt32Array,
@@ -14,6 +70,10 @@ where
     T: ArrowPrimitiveType,
     T::Native: ArrowNativeType,
 {
+    use crate::error::{PolarsError, Result};
+    use arrow::buffer::{Buffer, MutableBuffer};
+    use arrow::util::bit_util;
+    use std::sync::Arc;
     let data = array.data_ref();
 
     // Clone the data.
@@ -67,13 +127,21 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use arrow::array::{Int32Array, UInt32Array};
+    use arrow::array::UInt32Array;
 
     #[test]
-    fn test_set_kernel() {
-        let idx = UInt32Array::from(vec![Some(1), None, Some(2)]);
-        let values = Int32Array::from(vec![Some(1), None, None]);
-        let out = set_at_idx(&values, idx, 4).unwrap();
-        dbg!(out);
+    fn test_set_mask() {
+        let mask = BooleanArray::from((0..86).map(|v| v > 68 && v != 85).collect::<Vec<bool>>());
+        let val = UInt32Array::from((0..86).collect::<Vec<_>>());
+        let a = set_with_mask(&val, &mask, 100);
+        let slice = a.values();
+
+        dbg!(&slice, slice.len());
+        assert_eq!(slice[a.len() - 1], 85);
+        assert_eq!(slice[a.len() - 2], 100);
+        assert_eq!(slice[67], 67);
+        assert_eq!(slice[68], 68);
+        assert_eq!(slice[1], 1);
+        assert_eq!(slice[0], 0);
     }
 }
