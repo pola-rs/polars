@@ -113,7 +113,7 @@ mod test {
     #[test]
     fn test_shift() {
         // n = 0
-        let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
+        let ca = Int32Chunked::new_from_slice("", &[]);
         let shifted = ca.shift_and_fill(0, None);
         assert_eq!(Vec::from(&shifted), &[]);
         let shifted = ca.shift_and_fill(2, None);
