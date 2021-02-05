@@ -1995,10 +1995,13 @@ where
         agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         // TODO: save an allocation by creating a random access struct for the Groupable utility type.
+        let pivot_unique = pivot_series.unique()?;
+        let pivot_vec_unique: Vec<_> = pivot_unique.as_groupable_iter()?.collect();
         let pivot_vec: Vec<_> = pivot_series.as_groupable_iter()?.collect();
         let values_taker = self.take_rand();
         // create a hash map that will be filled with the results of the aggregation.
-        let mut columns_agg_map_main = create_new_column_builder_map::<T>(&pivot_vec, groups);
+        let mut columns_agg_map_main =
+            create_new_column_builder_map::<T>(&pivot_vec_unique, groups);
 
         // iterate over the groups that need to be aggregated
         // idxes are the indexes of the groups in the keys, pivot, and values columns
@@ -2006,7 +2009,7 @@ where
             // for every group do the aggregation by adding them to the vector belonging by that column
             // the columns are hashed with the pivot values
             let mut columns_agg_map_group =
-                create_column_values_map::<T::Native>(&pivot_vec, idx.len());
+                create_column_values_map::<T::Native>(&pivot_vec_unique, idx.len());
             for &i in idx {
                 let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
 
