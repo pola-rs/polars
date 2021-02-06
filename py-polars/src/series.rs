@@ -1105,7 +1105,7 @@ macro_rules! impl_set_at_idx {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
         fn $name(series: &Series, idx: &[usize], value: Option<$native>) -> Result<Series> {
             let ca = series.$cast()?;
-            let new = ca.set_at_idx(&idx, value)?;
+            let new = ca.set_at_idx(idx.iter().copied(), value)?;
             Ok(new.into_series())
         }
 

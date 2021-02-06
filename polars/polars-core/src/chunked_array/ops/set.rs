@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 macro_rules! impl_set_at_idx_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
-        let mut idx_iter = $idx.as_take_iter();
+        let mut idx_iter = $idx.into_iter();
         let mut ca_iter = $self.into_iter().enumerate();
 
         while let Some(current_idx) = idx_iter.next() {
@@ -52,13 +52,17 @@ impl<'a, T> ChunkSet<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<T::Native>) -> Result<Self> {
+    fn set_at_idx<I: IntoIterator<Item = usize>>(
+        &'a self,
+        idx: I,
+        value: Option<T::Native>,
+    ) -> Result<Self> {
         if self.null_count() == 0 {
             if let Some(value) = value {
                 // fast path uses kernel
                 if self.chunks.len() == 1 {
                     let arr =
-                        set_at_idx_no_null(self.downcast_chunks()[0], idx.as_take_iter(), value)?;
+                        set_at_idx_no_null(self.downcast_chunks()[0], idx.into_iter(), value)?;
                     return Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]));
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy
@@ -66,7 +70,7 @@ where
                     let mut av = self.into_no_null_iter().collect::<AlignedVec<_>>();
                     let data = av.as_mut_slice();
 
-                    idx.as_take_iter().try_for_each::<_, Result<_>>(|idx| {
+                    idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
                         let val = data.get_mut(idx).ok_or_else(|| {
                             PolarsError::OutOfBounds(
                                 format!("{} out of bounds on array of length: {}", idx, self.len())
@@ -83,7 +87,7 @@ where
         self.set_at_idx_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
     where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
@@ -149,11 +153,15 @@ where
 }
 
 impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
-    fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<bool>) -> Result<Self> {
+    fn set_at_idx<I: IntoIterator<Item = usize>>(
+        &'a self,
+        idx: I,
+        value: Option<bool>,
+    ) -> Result<Self> {
         self.set_at_idx_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
     where
         F: Fn(Option<bool>) -> Option<bool>,
     {
@@ -193,11 +201,15 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
 }
 
 impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
-    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<&'a str>) -> Result<Self>
+    fn set_at_idx<I: IntoIterator<Item = usize>>(
+        &'a self,
+        idx: I,
+        opt_value: Option<&'a str>,
+    ) -> Result<Self>
     where
         Self: Sized,
     {
-        let idx_iter = idx.as_take_iter();
+        let idx_iter = idx.into_iter();
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
@@ -230,7 +242,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         Ok(ca)
     }
 
-    fn set_at_idx_with<T: AsTakeIndex, F>(&'a self, idx: &T, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
     where
         Self: Sized,
         F: Fn(Option<&'a str>) -> Option<String>,
