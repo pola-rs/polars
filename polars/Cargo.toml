@@ -51,6 +51,10 @@ harness = false
 name = "groupby"
 harness = false
 
+[[bench]]
+name = "collect"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
 # defines the configuration attribute `docsrs`
