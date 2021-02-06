@@ -6,6 +6,8 @@ type ErrString = Cow<'static, str>;
 #[derive(Debug, ThisError)]
 pub enum PolarsError {
     #[error(transparent)]
+    PolarsArrowError(#[from] polars_arrow::error::PolarsError),
+    #[error(transparent)]
     ArrowError(#[from] arrow::error::ArrowError),
     #[error("Invalid operation {0}")]
     InvalidOperation(ErrString),

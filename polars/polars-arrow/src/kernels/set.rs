@@ -1,8 +1,9 @@
 use crate::builder::PrimitiveArrayBuilder;
+use crate::error::{PolarsError, Result};
 use crate::kernels::BinaryMaskedSliceIterator;
 use crate::vec::AlignedVec;
 use arrow::array::*;
-use arrow::datatypes::{ArrowNativeType, ArrowNumericType};
+use arrow::datatypes::{ArrowNativeType, ArrowNumericType, ArrowPrimitiveType};
 
 /// Set values in a primitive array based on a mask array. This is fast when large chunks of bits are set or unset.
 pub fn set_with_mask<T>(
@@ -61,68 +62,29 @@ where
     }
 }
 
-#[cfg(feature = "future")]
-pub fn set_at_idx<T>(
+/// Efficiently sets value at the indices from the iterator to `set_value`.
+/// The new array is initialized with a `memcpy` from the old values.
+pub fn set_at_idx_no_null<T, I>(
     array: &PrimitiveArray<T>,
-    idx: UInt32Array,
+    idx: I,
     set_value: T::Native,
 ) -> Result<PrimitiveArray<T>>
 where
     T: ArrowPrimitiveType,
     T::Native: ArrowNativeType,
+    I: IntoIterator<Item = usize>,
 {
-    use crate::error::{PolarsError, Result};
-    use arrow::buffer::{Buffer, MutableBuffer};
-    use arrow::util::bit_util;
-    use std::sync::Arc;
-    let data = array.data_ref();
-
-    // Clone the data.
-    let new_buf = unsafe { Buffer::from_trusted_len_iter(array.values().into_iter().map(|v| *v)) };
-
-    // Create a writable slice from the buffer
-    let new_buf_data = unsafe {
-        let ptr = new_buf.as_ptr() as *mut T::Native;
-        std::slice::from_raw_parts_mut(ptr, array.len())
-    };
-
-    let mut null_bits = MutableBuffer::new(0);
-
-    if let Some(buf) = data.null_buffer() {
-        null_bits.extend_from_slice(buf.as_slice())
-    } else {
-        // set all values to valid
-        let num_bytes = bit_util::ceil(array.len(), 8);
-        null_bits.extend((0..num_bytes).map(|_| u8::MAX))
-    }
-    let null_bits_data = null_bits.as_mut();
-
-    idx.into_iter().try_for_each::<_, Result<_>>(|opt_idx| {
-        if let Some(idx) = opt_idx {
-            let idx = idx as usize;
-            let value = new_buf_data
-                .get_mut(idx)
-                .ok_or_else(|| PolarsError::Other("out of bounds".into()))?;
-            *value = set_value;
-            bit_util::set_bit(null_bits_data, idx);
-        }
+    debug_assert_eq!(array.null_count(), 0);
+    let mut av = AlignedVec::new_from_slice(array.values());
+    idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
+        let val = av
+            .inner
+            .get_mut(idx)
+            .ok_or_else(|| PolarsError::OutOfBounds("idx is out of bounds".into()))?;
+        *val = set_value;
         Ok(())
     })?;
-
-    let null_bit_buffer: Buffer = null_bits.into();
-    let len = array.len();
-    let null_count = Some(len - null_bit_buffer.count_set_bits());
-
-    let data = ArrayData::new(
-        T::DATA_TYPE,
-        len,
-        null_count,
-        Some(null_bit_buffer),
-        0,
-        vec![new_buf],
-        vec![],
-    );
-    Ok(PrimitiveArray::from(Arc::new(data)))
+    Ok(av.into_primitive_array(None))
 }
 
 #[cfg(test)]
@@ -144,5 +106,14 @@ mod test {
         assert_eq!(slice[68], 68);
         assert_eq!(slice[1], 1);
         assert_eq!(slice[0], 0);
+    }
+
+    #[test]
+    fn test_set_at_idx() {
+        let val = UInt32Array::from(vec![1, 2, 3]);
+        let out = set_at_idx_no_null(&val, std::iter::once(1), 100).unwrap();
+        assert_eq!(out.values(), &[1, 100, 3]);
+        let out = set_at_idx_no_null(&val, std::iter::once(100), 100);
+        assert!(out.is_err())
     }
 }

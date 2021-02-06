@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use arrow::array::ArrayRef;
-use polars_arrow::kernels::set::set_with_mask;
+use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
 use std::sync::Arc;
 
 macro_rules! impl_set_at_idx_with {
@@ -55,26 +55,32 @@ where
     fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<T::Native>) -> Result<Self> {
         if self.null_count() == 0 {
             if let Some(value) = value {
-                let mut av = self.into_no_null_iter().collect::<AlignedVec<_>>();
-                let data = av.as_mut_slice();
+                // fast path uses kernel
+                if self.chunks.len() == 1 {
+                    let arr =
+                        set_at_idx_no_null(self.downcast_chunks()[0], idx.as_take_iter(), value)?;
+                    return Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]));
+                }
+                // Other fast path. Slightly slower as it does not do a memcpy
+                else {
+                    let mut av = self.into_no_null_iter().collect::<AlignedVec<_>>();
+                    let data = av.as_mut_slice();
 
-                idx.as_take_iter().try_for_each::<_, Result<_>>(|idx| {
-                    let val = data.get_mut(idx).ok_or_else(|| {
-                        PolarsError::OutOfBounds(
-                            format!("{} out of bounds on array of lenght: {}", idx, self.len())
-                                .into(),
-                        )
+                    idx.as_take_iter().try_for_each::<_, Result<_>>(|idx| {
+                        let val = data.get_mut(idx).ok_or_else(|| {
+                            PolarsError::OutOfBounds(
+                                format!("{} out of bounds on array of length: {}", idx, self.len())
+                                    .into(),
+                            )
+                        })?;
+                        *val = value;
+                        Ok(())
                     })?;
-                    *val = value;
-                    Ok(())
-                })?;
-                Ok(Self::new_from_aligned_vec(self.name(), av))
-            } else {
-                self.set_at_idx_with(idx, |_| value)
+                    return Ok(Self::new_from_aligned_vec(self.name(), av));
+                }
             }
-        } else {
-            self.set_at_idx_with(idx, |_| value)
         }
+        self.set_at_idx_with(idx, |_| value)
     }
 
     fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
