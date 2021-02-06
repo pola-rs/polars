@@ -99,13 +99,20 @@ mod test {
         let a = set_with_mask(&val, &mask, 100);
         let slice = a.values();
 
-        dbg!(&slice, slice.len());
         assert_eq!(slice[a.len() - 1], 85);
         assert_eq!(slice[a.len() - 2], 100);
         assert_eq!(slice[67], 67);
         assert_eq!(slice[68], 68);
         assert_eq!(slice[1], 1);
         assert_eq!(slice[0], 0);
+
+        let mask = BooleanArray::from(vec![
+            false, true, false, true, false, true, false, true, false, false,
+        ]);
+        let val = UInt32Array::from(vec![0; 10]);
+        let out = set_with_mask(&val, &mask, 1);
+        dbg!(&out);
+        assert_eq!(out.values(), &[0, 1, 0, 1, 0, 1, 0, 1, 0, 0]);
     }
 
     #[test]
