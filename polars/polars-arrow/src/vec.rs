@@ -46,6 +46,21 @@ impl<T> FromIterator<T> for AlignedVec<T> {
     }
 }
 
+impl<T: Copy> AlignedVec<T> {
+    /// Uses a memcpy to initialize this AlignedVec
+    pub fn new_from_slice(other: &[T]) -> Self {
+        let len = other.len();
+        let mut av = Self::with_capacity_aligned(len);
+        unsafe {
+            // Safety:
+            // we set initiate the memory after this with a memcpy.
+            av.set_len(len);
+        }
+        av.inner.copy_from_slice(other);
+        av
+    }
+}
+
 impl<T: Clone> AlignedVec<T> {
     pub fn resize(&mut self, new_len: usize, value: T) {
         self.inner.resize(new_len, value)
