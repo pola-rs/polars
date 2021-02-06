@@ -310,10 +310,10 @@ mod test {
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(5), Some(2), Some(3)]);
 
-        let ca = ca.set_at_idx(&[0, 1], Some(10)).unwrap();
+        let ca = ca.set_at_idx(vec![0, 1], Some(10)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(10), Some(10), Some(3)]);
 
-        assert!(ca.set_at_idx(&[0, 10], Some(0)).is_err());
+        assert!(ca.set_at_idx(vec![0, 10], Some(0)).is_err());
 
         // test booleans
         let ca = BooleanChunked::new_from_slice("a", &[true, true, true]);

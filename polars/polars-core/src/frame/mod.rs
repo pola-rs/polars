@@ -1109,7 +1109,7 @@ impl DataFrame {
     /// let s1 = Series::new("values", &[1, 2, 3, 4, 5]);
     /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
     ///
-    /// let idx = &[0, 1, 4];
+    /// let idx = vec![0, 1, 4];
     ///
     /// df.may_apply("foo", |s| {
     ///     s.utf8()?
