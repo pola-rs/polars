@@ -195,37 +195,35 @@ impl<'a> Iterator for BinaryMaskedSliceIterator<'a> {
         use BinaryMaskedState::*;
 
         match self.state {
-            Start => match self.slice_iter.next() {
-                Some((low, high)) => {
-                    self.low = low;
-                    self.high = high;
+            Start => {
+                // first iteration
+                if self.low == 0 && self.high == 0 {
+                    match self.slice_iter.next() {
+                        Some((low, high)) => {
+                            self.low = low;
+                            self.high = high;
 
-                    if low > 0 {
-                        self.state = LastFalse;
-                        self.filled = low;
-                        Some((0, low, false))
-                    } else {
-                        self.state = LastTrue;
-                        self.filled = high;
-                        Some((low, high, true))
+                            if low > 0 {
+                                // do another start iteration.
+                                Some((0, low, false))
+                            } else {
+                                self.state = LastTrue;
+                                self.filled = high;
+                                Some((low, high, true))
+                            }
+                        }
+                        None => None,
                     }
+                } else {
+                    self.filled = self.high;
+                    self.state = LastTrue;
+                    Some((self.low, self.high, true))
                 }
-                None => None,
-            },
+            }
             LastFalse => {
                 self.state = LastTrue;
-                match self.slice_iter.next() {
-                    Some((low, high)) => {
-                        self.low = low;
-                        self.high = high;
-                        self.filled = self.high;
-                        Some((low, high, true))
-                    }
-                    None => {
-                        self.filled = self.high;
-                        Some((self.low, self.high, true))
-                    }
-                }
+                self.filled = self.high;
+                Some((self.low, self.high, true))
             }
             LastTrue => match self.slice_iter.next() {
                 Some((low, high)) => {
@@ -233,7 +231,7 @@ impl<'a> Iterator for BinaryMaskedSliceIterator<'a> {
                     self.high = high;
                     self.state = LastFalse;
                     let last_filled = self.filled;
-                    self.filled = high;
+                    self.filled = low;
                     Some((last_filled, low, false))
                 }
                 None => {
