@@ -3,6 +3,7 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use crate::utils::NoNull;
+use arrow::array::BooleanArray;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -42,13 +43,8 @@ where
 
 impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
     fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
-
-        for opt_val in iter {
-            builder.append_option(opt_val);
-        }
-        builder.finish()
+        let arr = BooleanArray::from_iter(iter);
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -72,25 +68,16 @@ where
 
 impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
-
-        for val in iter {
-            builder.append_value(val);
-        }
-        builder.finish()
+        // this was ~70% faster than with the builder, even with the extra Option<T> added.
+        let arr = BooleanArray::from_iter(iter.into_iter().map(Some));
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
 impl FromIterator<bool> for NoNull<BooleanChunked> {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let mut builder = BooleanChunkedBuilder::new("", get_iter_capacity(&iter));
-
-        for val in iter {
-            builder.append_value(val);
-        }
-        NoNull::new(builder.finish())
+        let ca = iter.into_iter().collect::<BooleanChunked>();
+        NoNull::new(ca)
     }
 }
 
