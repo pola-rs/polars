@@ -326,6 +326,7 @@ pub fn cast(array: &ArrayRef, to_type: &ArrowDataType) -> Result<ArrayRef> {
 
         // temporal casts
         (Int32, Date32) => cast_array_data::<Date32Type>(array, to_type.clone()),
+        (Int32, Date64) => cast(&cast(array, &ArrowDataType::Int64).unwrap(), to_type),
         (Int32, Time32(_)) => cast_array_data::<Date32Type>(array, to_type.clone()),
         (Date32, Int32) => cast_array_data::<Int32Type>(array, to_type.clone()),
         (Time32(_), Int32) => cast_array_data::<Int32Type>(array, to_type.clone()),
