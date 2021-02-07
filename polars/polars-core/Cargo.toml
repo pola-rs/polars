@@ -14,9 +14,10 @@ simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "lazy", "parquet"]
+default = ["docs", "temporal", "lazy", "parquet", "performant"]
 lazy = []
 parallel = []
+performant = []
 # extra utilities for Utf8Chunked
 strings = ["regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)

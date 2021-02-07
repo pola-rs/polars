@@ -32,9 +32,28 @@ where
     T: PolarsPrimitiveType,
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
-        // 2021-02-07: ~1.5% slower than builder. Will still use this as it is more idiomatic and will
-        // likely improve over time.
-        let arr: PrimitiveArray<T> = PrimitiveArray::from_iter(iter);
+        let iter = iter.into_iter();
+
+        let arr: PrimitiveArray<T> = match iter.size_hint() {
+            (a, Some(b)) if a == b => {
+                // 2021-02-07: ~40% faster than builder.
+                // It is unsafe because we cannot be certain that the iterators length can be trusted.
+                // For most iterators that report the same upper bound as lower bound it is, but still
+                // somebody can create an iterator that incorrectly gives those bounds.
+                // This will not lead to UB, but will panic.
+                #[cfg(feature = "performant")]
+                unsafe {
+                    PrimitiveArray::from_trusted_len_iter(iter)
+                }
+                #[cfg(not(feature = "performant"))]
+                PrimitiveArray::from_iter(iter)
+            }
+            _ => {
+                // 2021-02-07: ~1.5% slower than builder. Will still use this as it is more idiomatic and will
+                // likely improve over time.
+                PrimitiveArray::from_iter(iter)
+            }
+        };
         ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
