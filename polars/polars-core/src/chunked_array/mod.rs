@@ -1067,7 +1067,7 @@ pub(crate) mod test {
             sorted.into_iter().collect::<Vec<_>>(),
             &[Some("z"), Some("b"), Some("a")]
         );
-        let s: Utf8Chunked = [Some("b"), None, Some("z")].iter().collect();
+        let s: Utf8Chunked = [Some("b"), None, Some("z")].iter().copied().collect();
         let sorted = s.sort(false);
         assert_eq!(
             sorted.into_iter().collect::<Vec<_>>(),

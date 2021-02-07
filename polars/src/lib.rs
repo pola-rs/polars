@@ -194,7 +194,7 @@
 //! * `ndarray`
 //!     - Convert from `DataFrame` to `ndarray`
 //! * `parallel`
-//!     - Parallel variants of operations
+//!     - ChunkedArrays can be used by rayon::par_iter()
 //! * `lazy`
 //!     - Lazy api
 //! * `strings`

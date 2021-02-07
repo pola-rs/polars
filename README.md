@@ -93,6 +93,8 @@ Additional cargo features:
 * `object`
     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`). 
       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
+* `parallel`
+    - ChunkedArrays can be used by rayon::par_iter()
 
 ## Contribution
 Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).

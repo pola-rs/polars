@@ -4,9 +4,10 @@ use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use crate::utils::NoNull;
 use arrow::array::{BooleanArray, LargeStringArray, PrimitiveArray};
+use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::LinkedList;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
@@ -31,7 +32,8 @@ where
     T: PolarsPrimitiveType,
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
-        // 2021-02-07: ~45% faster than builder.
+        // 2021-02-07: ~1.5% slower than builder. Will still use this as it is more idiomatic and will
+        // likely improve over time.
         let arr: PrimitiveArray<T> = PrimitiveArray::from_iter(iter);
         ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
     }
@@ -93,6 +95,8 @@ pub trait PolarsAsRef<T: ?Sized>: AsRef<T> {}
 
 impl PolarsAsRef<str> for String {}
 impl PolarsAsRef<str> for &str {}
+// &["foo", "bar"]
+impl PolarsAsRef<str> for &&str {}
 impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
 
 impl<Ptr> FromIterator<Ptr> for Utf8Chunked
@@ -105,50 +109,34 @@ where
     }
 }
 
-impl<'a> FromIterator<&'a Series> for ListChunked {
-    fn from_iter<I: IntoIterator<Item = &'a Series>>(iter: I) -> Self {
+impl<Ptr> FromIterator<Ptr> for ListChunked
+where
+    Ptr: Borrow<Series>,
+{
+    fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let mut it = iter.into_iter();
         let capacity = get_iter_capacity(&it);
 
         // first take one to get the dtype. We panic if we have an empty iterator
         let v = it.next().unwrap();
         // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
-        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
+        let mut builder = get_list_builder(v.borrow().dtype(), capacity * 5, capacity, "collected");
 
-        builder.append_opt_series(Some(v));
+        builder.append_series(v.borrow());
         for s in it {
-            builder.append_opt_series(Some(s));
+            builder.append_series(s.borrow());
         }
         builder.finish()
     }
 }
 
-impl FromIterator<Series> for ListChunked {
-    fn from_iter<I: IntoIterator<Item = Series>>(iter: I) -> Self {
+impl<Ptr> FromIterator<Option<Ptr>> for ListChunked
+where
+    Ptr: Borrow<Series>,
+{
+    fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let mut it = iter.into_iter();
-        let capacity = get_iter_capacity(&it);
-
-        // first take one to get the dtype. We panic if we have an empty iterator
-        let v = it.next().unwrap();
-        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
-
-        builder.append_opt_series(Some(&v));
-        for s in it {
-            builder.append_opt_series(Some(&s));
-        }
-        builder.finish()
-    }
-}
-
-macro_rules! impl_from_iter_opt_series {
-    ($iter:expr) => {{
-        // we don't know the type of the series until we get Some(Series) from the iterator.
-        // until that happens we count the number of None's so that we can first fill the None's until
-        // we know the type
-
-        let mut it = $iter;
-
-        let v;
+        let owned_v;
         let mut cnt = 0;
 
         loop {
@@ -157,7 +145,7 @@ macro_rules! impl_from_iter_opt_series {
             match opt_v {
                 Some(opt_v) => match opt_v {
                     Some(val) => {
-                        v = val;
+                        owned_v = val;
                         break;
                     }
                     None => cnt += 1,
@@ -169,6 +157,7 @@ macro_rules! impl_from_iter_opt_series {
                 }
             }
         }
+        let v = owned_v.borrow();
         let capacity = get_iter_capacity(&it);
         let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
 
@@ -183,66 +172,10 @@ macro_rules! impl_from_iter_opt_series {
 
         // now we have added all Nones, we can consume the rest of the iterator.
         for opt_s in it {
-            builder.append_opt_series(opt_s.as_ref());
-        }
-
-        builder.finish()
-
-    }}
-}
-
-impl FromIterator<Option<Arc<dyn SeriesTrait>>> for ListChunked {
-    fn from_iter<I: IntoIterator<Item = Option<Arc<dyn SeriesTrait>>>>(iter: I) -> Self {
-        let iter = iter.into_iter().map(|opt_a| opt_a.map(|a| Series(a)));
-        impl_from_iter_opt_series!(iter)
-    }
-}
-
-impl FromIterator<Option<Series>> for ListChunked {
-    fn from_iter<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
-        impl_from_iter_opt_series!(iter.into_iter())
-    }
-}
-
-impl<'a> FromIterator<Option<&'a Series>> for ListChunked {
-    fn from_iter<I: IntoIterator<Item = Option<&'a Series>>>(iter: I) -> Self {
-        let mut it = iter.into_iter();
-        let v;
-        let mut cnt = 0;
-
-        loop {
-            let opt_v = it.next();
-
-            match opt_v {
-                Some(opt_v) => match opt_v {
-                    Some(val) => {
-                        v = val;
-                        break;
-                    }
-                    None => cnt += 1,
-                },
-                // end of iterator
-                None => {
-                    // type is not known
-                    panic!("Type of Series cannot be determined as they are all null")
-                }
+            match opt_s {
+                Some(s) => builder.append_series(s.borrow()),
+                None => builder.append_null(),
             }
-        }
-        let capacity = get_iter_capacity(&it);
-        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
-
-        // first fill all None's we encountered
-        while cnt > 0 {
-            builder.append_opt_series(None);
-            cnt -= 1;
-        }
-
-        // now the first non None
-        builder.append_series(&v);
-
-        // now we have added all Nones, we can consume the rest of the iterator.
-        for opt_s in it {
-            builder.append_opt_series(opt_s);
         }
 
         builder.finish()
@@ -250,7 +183,6 @@ impl<'a> FromIterator<Option<&'a Series>> for ListChunked {
 }
 
 /// FromParallelIterator trait
-
 // Code taken from https://docs.rs/rayon/1.3.1/src/rayon/iter/extend.rs.html#356-366
 fn vec_push<T>(mut vec: Vec<T>, elem: T) -> Vec<T> {
     vec.push(elem);
@@ -292,15 +224,9 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut builder = PrimitiveChunkedBuilder::new("", capacity);
-        // Unpack all these results and append them single threaded
-        vectors.iter().for_each(|vec| {
-            for val in vec {
-                builder.append_value(*val);
-            }
-        });
-
-        NoNull::new(builder.finish())
+        let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity).map(Some);
+        let arr: PrimitiveArray<T> = unsafe { PrimitiveArray::from_trusted_len_iter(iter) };
+        NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
     }
 }
 
@@ -313,21 +239,16 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut builder = PrimitiveChunkedBuilder::new("", capacity);
-        // Unpack all these results and append them single threaded
-        vectors.iter().for_each(|vec| {
-            for opt_val in vec {
-                builder.append_option(*opt_val);
-            }
-        });
-
-        builder.finish()
+        let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity);
+        let arr: PrimitiveArray<T> = unsafe { PrimitiveArray::from_trusted_len_iter(iter) };
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
 impl FromParallelIterator<bool> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
+
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
         let mut builder = BooleanChunkedBuilder::new("", capacity);
@@ -342,72 +263,25 @@ impl FromParallelIterator<bool> for BooleanChunked {
     }
 }
 
-impl FromParallelIterator<String> for Utf8Chunked {
-    fn from_par_iter<I: IntoParallelIterator<Item = String>>(iter: I) -> Self {
+impl<Ptr> FromParallelIterator<Ptr> for Utf8Chunked
+where
+    Ptr: PolarsAsRef<str> + Send + Sync,
+{
+    fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
-        let capacity: usize = get_capacity_from_par_results(&vectors);
-        let values_cap = capacity * 5;
-
-        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
-        // Unpack all these results and append them single threaded
-        vectors.iter().for_each(|vec| {
-            for val in vec {
-                builder.append_value(val.as_str());
-            }
-        });
-
-        builder.finish()
+        let arr = LargeStringArray::from_iter_values(vectors.into_iter().flatten());
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
-impl FromParallelIterator<Option<String>> for Utf8Chunked {
-    fn from_par_iter<I: IntoParallelIterator<Item = Option<String>>>(iter: I) -> Self {
+impl<Ptr> FromParallelIterator<Option<Ptr>> for Utf8Chunked
+where
+    Ptr: AsRef<str> + Send + Sync,
+{
+    fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
-        let capacity: usize = get_capacity_from_par_results(&vectors);
-        let values_cap = capacity * 5;
-
-        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
-        // Unpack all these results and append them single threaded
-        vectors.iter().for_each(|vec| {
-            for val in vec {
-                builder.append_option(val.as_ref());
-            }
-        });
-        builder.finish()
-    }
-}
-
-impl<'a> FromParallelIterator<Option<&'a str>> for Utf8Chunked {
-    fn from_par_iter<I: IntoParallelIterator<Item = Option<&'a str>>>(iter: I) -> Self {
-        let vectors = collect_into_linked_list(iter);
-        let capacity: usize = get_capacity_from_par_results(&vectors);
-        let values_cap = capacity * 5;
-
-        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
-        // Unpack all these results and append them single threaded
-        vectors.iter().for_each(|vec| {
-            for val in vec {
-                builder.append_option(val.as_ref());
-            }
-        });
-        builder.finish()
-    }
-}
-
-impl<'a> FromParallelIterator<&'a str> for Utf8Chunked {
-    fn from_par_iter<I: IntoParallelIterator<Item = &'a str>>(iter: I) -> Self {
-        let vectors = collect_into_linked_list(iter);
-        let capacity: usize = get_capacity_from_par_results(&vectors);
-        let values_cap = capacity * 5;
-
-        let mut builder = Utf8ChunkedBuilder::new("", capacity, values_cap);
-        // Unpack all these results and append them single threaded
-        vectors.iter().for_each(|vec| {
-            for val in vec {
-                builder.append_value(val);
-            }
-        });
-        builder.finish()
+        let arr = LargeStringArray::from_iter(vectors.into_iter().flatten());
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -420,18 +294,15 @@ impl<'a> From<&'a Utf8Chunked> for Vec<Option<&'a str>> {
 
 impl From<Utf8Chunked> for Vec<Option<String>> {
     fn from(ca: Utf8Chunked) -> Self {
-        let mut vec = Vec::with_capacity(ca.len());
         ca.into_iter()
-            .for_each(|opt| vec.push(opt.map(|s| s.to_string())));
-        vec
+            .map(|opt| opt.map(|s| s.to_string()))
+            .collect()
     }
 }
 
 impl<'a> From<&'a BooleanChunked> for Vec<Option<bool>> {
     fn from(ca: &'a BooleanChunked) -> Self {
-        let mut vec = Vec::with_capacity(ca.len());
-        ca.into_iter().for_each(|opt| vec.push(opt));
-        vec
+        ca.into_iter().collect()
     }
 }
 
@@ -444,17 +315,11 @@ impl From<BooleanChunked> for Vec<Option<bool>> {
 impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Native>>
 where
     T: PolarsNumericType,
-    &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
-    ChunkedArray<T>: ChunkOps,
 {
     fn from(ca: &'a ChunkedArray<T>) -> Self {
-        let mut vec = Vec::with_capacity(ca.len());
-        ca.into_iter().for_each(|opt| vec.push(opt));
-        vec
+        ca.into_iter().collect()
     }
 }
-// TODO: macro implementation of Vec From for all types. ChunkedArray<T> (no reference) doesn't implement
-//    &'a ChunkedArray<T>: IntoIterator<Item = Option<T::Native>>,
 
 #[cfg(test)]
 mod test {
@@ -468,7 +333,7 @@ mod test {
         let ll: ListChunked = [&s1, &s2].iter().copied().collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 0);
-        let ll: ListChunked = [None, Some(s2)].iter().collect();
+        let ll: ListChunked = [None, Some(s2)].iter().map(|opt| opt.as_ref()).collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 1);
     }
