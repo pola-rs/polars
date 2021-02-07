@@ -41,7 +41,11 @@ polars-lazy = {version = "0.12.0", path = "./polars-lazy", default-features = fa
 [dev-dependencies]
 criterion = "0.3"
 lazy_static = "1.4"
+rand = "0.8"
 
+# see: https://bheisler.github.io/criterion.rs/book/faq.html
+[lib]
+bench = false
 
 [[bench]]
 name = "csv"
