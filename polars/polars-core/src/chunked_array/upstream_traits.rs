@@ -3,7 +3,7 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use crate::utils::NoNull;
-use arrow::array::BooleanArray;
+use arrow::array::{BooleanArray, PrimitiveArray};
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -31,13 +31,9 @@ where
     T: PolarsPrimitiveType,
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let mut builder = PrimitiveChunkedBuilder::new("", get_iter_capacity(&iter));
-
-        for opt_val in iter {
-            builder.append_option(opt_val);
-        }
-        builder.finish()
+        // 2021-02-07: ~45% faster than builder.
+        let arr: PrimitiveArray<T> = PrimitiveArray::from_iter(iter);
+        ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -56,19 +52,17 @@ where
     // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
+        // 2021-02-07: aligned vec was ~2x faster than arrow collect.
         let iter = iter.into_iter();
-        let mut v = AlignedVec::with_capacity_aligned(get_iter_capacity(&iter));
-
-        for val in iter {
-            v.push(val)
-        }
-        NoNull::new(ChunkedArray::new_from_aligned_vec("", v))
+        let mut av = AlignedVec::with_capacity_aligned(0);
+        av.extend(iter);
+        NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
     }
 }
 
 impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        // this was ~70% faster than with the builder, even with the extra Option<T> added.
+        // 2021-02-07: this was ~70% faster than with the builder, even with the extra Option<T> added.
         let arr = BooleanArray::from_iter(iter.into_iter().map(Some));
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
