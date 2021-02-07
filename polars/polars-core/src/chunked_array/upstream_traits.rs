@@ -37,13 +37,6 @@ where
     }
 }
 
-impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
-    fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        let arr = BooleanArray::from_iter(iter);
-        Self::new_from_chunks("", vec![Arc::new(arr)])
-    }
-}
-
 // NoNull is only a wrapper needed for specialization
 impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
@@ -57,6 +50,13 @@ where
         let mut av = AlignedVec::with_capacity_aligned(0);
         av.extend(iter);
         NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
+    }
+}
+
+impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
+    fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
+        let arr = BooleanArray::from_iter(iter);
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -82,19 +82,13 @@ where
     Ptr: AsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let cap = get_iter_capacity(&iter);
-        let values_cap = cap * 5;
-        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
-
-        for val in iter {
-            builder.append_option(val);
-        }
-        builder.finish()
+        // 2021-02-07: this was ~30% faster than with the builder.
+        let arr = LargeStringArray::from_iter(iter);
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
-/// Needed to circumvent the orphan rule.
+/// Local AsRef<T> trait to circumvent the orphan rule.
 pub trait PolarsAsRef<T: ?Sized>: AsRef<T> {}
 
 impl PolarsAsRef<str> for String {}
@@ -106,15 +100,8 @@ where
     Ptr: PolarsAsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let cap = get_iter_capacity(&iter);
-        let values_cap = cap * 5;
-        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
-
-        for val in iter {
-            builder.append_value(val);
-        }
-        builder.finish()
+        let arr = LargeStringArray::from_iter_values(iter);
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -425,15 +412,9 @@ impl<'a> FromParallelIterator<&'a str> for Utf8Chunked {
 }
 
 /// From trait
-
-// TODO: use macro
-// Only the one which takes Utf8Chunked by reference is implemented.
-// We cannot return a & str owned by this function.
 impl<'a> From<&'a Utf8Chunked> for Vec<Option<&'a str>> {
     fn from(ca: &'a Utf8Chunked) -> Self {
-        let mut vec = Vec::with_capacity(ca.len());
-        ca.into_iter().for_each(|opt| vec.push(opt));
-        vec
+        ca.into_iter().collect()
     }
 }
 
@@ -456,9 +437,7 @@ impl<'a> From<&'a BooleanChunked> for Vec<Option<bool>> {
 
 impl From<BooleanChunked> for Vec<Option<bool>> {
     fn from(ca: BooleanChunked) -> Self {
-        let mut vec = Vec::with_capacity(ca.len());
-        ca.into_iter().for_each(|opt| vec.push(opt));
-        vec
+        ca.into_iter().collect()
     }
 }
 
