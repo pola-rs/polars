@@ -588,12 +588,12 @@ where
     where
         T::Native: Copy,
     {
-        let mut builder = PrimitiveChunkedBuilder::new(name, length);
-
-        for _ in 0..length {
-            builder.append_value(value)
-        }
-        builder.finish()
+        let mut ca = (0..length)
+            .map(|_| value)
+            .collect::<NoNull<ChunkedArray<T>>>()
+            .into_inner();
+        ca.rename(name);
+        ca
     }
 }
 
@@ -613,12 +613,9 @@ where
 }
 impl ChunkFull<bool> for BooleanChunked {
     fn full(name: &str, value: bool, length: usize) -> Self {
-        let mut builder = BooleanChunkedBuilder::new(name, length);
-
-        for _ in 0..length {
-            builder.append_value(value)
-        }
-        builder.finish()
+        let mut ca = (0..length).map(|_| value).collect::<BooleanChunked>();
+        ca.rename(name);
+        ca
     }
 }
 
@@ -671,7 +668,7 @@ impl ChunkFullNull for ListChunked {
     fn full_null(name: &str, length: usize) -> ListChunked {
         let mut builder = get_list_builder(&DataType::Null, 0, length, name);
         for _ in 0..length {
-            builder.append_opt_series(None)
+            builder.append_null()
         }
         builder.finish()
     }
@@ -695,7 +692,7 @@ where
             ca.rename(self.name());
             ca
         } else {
-            self.take((0..self.len()).rev(), None)
+            self.into_iter().rev().collect()
         }
     }
 }
@@ -836,41 +833,4 @@ pub trait ChunkApplyKernel<A> {
     where
         F: Fn(&A) -> ArrayRef,
         S: PolarsDataType;
-}
-
-#[cfg(test)]
-mod test {
-    use crate::prelude::*;
-
-    #[test]
-    fn test_fill_none() {
-        let ca =
-            Int32Chunked::new_from_opt_slice("", &[None, Some(2), Some(3), None, Some(4), None]);
-        let filled = ca.fill_none(FillNoneStrategy::Forward).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[None, Some(2), Some(3), Some(3), Some(4), Some(4)]
-        );
-        let filled = ca.fill_none(FillNoneStrategy::Backward).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[Some(2), Some(2), Some(3), Some(4), Some(4), None]
-        );
-        let filled = ca.fill_none(FillNoneStrategy::Min).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[Some(2), Some(2), Some(3), Some(2), Some(4), Some(2)]
-        );
-        let filled = ca.fill_none_with_value(10).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[Some(10), Some(2), Some(3), Some(10), Some(4), Some(10)]
-        );
-        let filled = ca.fill_none(FillNoneStrategy::Mean).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[Some(3), Some(2), Some(3), Some(3), Some(4), Some(3)]
-        );
-        println!("{:?}", filled);
-    }
 }

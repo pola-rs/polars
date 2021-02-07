@@ -49,8 +49,8 @@ pub mod upstream_traits;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
-    Array, ArrayDataRef, BooleanBuilder, Date32Array, DurationMillisecondArray,
-    DurationNanosecondArray, LargeListArray,
+    Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
+    LargeListArray,
 };
 
 use ahash::AHashMap;
@@ -350,16 +350,7 @@ impl<T> ChunkedArray<T> {
         let chunks = self
             .chunks
             .iter()
-            .map(|arr| {
-                let mut builder = BooleanBuilder::new(arr.len());
-                for i in 0..arr.len() {
-                    builder
-                        .append_value(arr.is_null(i))
-                        .expect("could not append");
-                }
-                let chunk: ArrayRef = Arc::new(builder.finish());
-                chunk
-            })
+            .map(|arr| Arc::new((&**arr).is_null_mask()) as ArrayRef)
             .collect_vec();
         BooleanChunked::new_from_chunks("is_null", chunks)
     }
@@ -372,16 +363,7 @@ impl<T> ChunkedArray<T> {
         let chunks = self
             .chunks
             .iter()
-            .map(|arr| {
-                let mut builder = BooleanBuilder::new(arr.len());
-                for i in 0..arr.len() {
-                    builder
-                        .append_value(arr.is_valid(i))
-                        .expect("could not append");
-                }
-                let chunk: ArrayRef = Arc::new(builder.finish());
-                chunk
-            })
+            .map(|arr| Arc::new((&**arr).is_not_null_mask()) as ArrayRef)
             .collect_vec();
         BooleanChunked::new_from_chunks("is_not_null", chunks)
     }

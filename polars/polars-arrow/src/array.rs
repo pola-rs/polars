@@ -122,3 +122,69 @@ impl UnsafeValue<bool> for BooleanArray {
         self.value(index)
     }
 }
+
+/// Cheaply get the null mask as BooleanArray.
+pub trait IsNull {
+    fn is_null_mask(&self) -> BooleanArray;
+    fn is_not_null_mask(&self) -> BooleanArray;
+}
+
+impl IsNull for &dyn Array {
+    fn is_null_mask(&self) -> BooleanArray {
+        if self.null_count() == 0 {
+            (0..self.len()).map(|_| Some(false)).collect()
+        } else {
+            let data = self.data();
+            let valid = data.null_buffer().unwrap();
+            let invert = !valid;
+
+            let array_data = ArrayData::builder(DataType::Boolean)
+                .len(self.len())
+                .offset(self.offset())
+                .add_buffer(invert)
+                .build();
+            BooleanArray::from(array_data)
+        }
+    }
+    fn is_not_null_mask(&self) -> BooleanArray {
+        if self.null_count() == 0 {
+            (0..self.len()).map(|_| Some(true)).collect()
+        } else {
+            let data = self.data();
+            let valid = data.null_buffer().unwrap().clone();
+
+            let array_data = ArrayData::builder(DataType::Boolean)
+                .len(self.len())
+                .offset(self.offset())
+                .add_buffer(valid)
+                .build();
+            BooleanArray::from(array_data)
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use arrow::array::{Array, Int32Array};
+
+    #[test]
+    fn test_is_null() {
+        let arr = Int32Array::from(vec![Some(0), None, Some(2)]);
+        let a: &dyn Array = &arr;
+        assert_eq!(
+            a.is_null_mask()
+                .iter()
+                .map(|v| v.unwrap())
+                .collect::<Vec<_>>(),
+            &[false, true, false]
+        );
+        assert_eq!(
+            a.is_not_null_mask()
+                .iter()
+                .map(|v| v.unwrap())
+                .collect::<Vec<_>>(),
+            &[true, false, true]
+        );
+    }
+}
