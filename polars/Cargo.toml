@@ -18,7 +18,8 @@ random = ["polars-core/random"]
 default = ["docs",
     "temporal",
     "lazy",
-    "parquet"
+    "parquet",
+    "performant"
 ]
 ndarray = ["polars-core/ndarray"]
 parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
@@ -32,6 +33,9 @@ object = ["polars-core/object"]
 json = ["polars-io/json"]
 # support for arrows ipc file parsing
 ipc = ["polars-io/ipc"]
+# ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
+# that fits a TrustedLen iterator.
+performant = ["polars-core/performant"]
 
 [dependencies]
 polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}
