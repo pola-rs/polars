@@ -557,6 +557,7 @@ where
 pub trait ListBuilderTrait {
     fn append_opt_series(&mut self, opt_s: Option<&Series>);
     fn append_series(&mut self, s: &Series);
+    fn append_null(&mut self);
     fn finish(&mut self) -> ListChunked;
 }
 
@@ -624,6 +625,12 @@ where
         }
     }
 
+    fn append_null(&mut self) {
+        let builder = self.builder.values();
+        builder.append_null();
+        self.builder.append(true).unwrap();
+    }
+
     fn append_series(&mut self, s: &Series) {
         let builder = self.builder.values();
         let arrays = s.chunks();
@@ -673,6 +680,12 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         }
     }
 
+    fn append_null(&mut self) {
+        let builder = self.builder.values();
+        builder.append_null();
+        self.builder.append(true).unwrap();
+    }
+
     fn append_series(&mut self, s: &Series) {
         let ca = s.utf8().unwrap();
         let value_builder = self.builder.values();
@@ -712,6 +725,12 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
                 self.builder.append(false).unwrap();
             }
         }
+    }
+
+    fn append_null(&mut self) {
+        let builder = self.builder.values();
+        builder.append_null();
+        self.builder.append(true).unwrap();
     }
 
     fn append_series(&mut self, s: &Series) {
