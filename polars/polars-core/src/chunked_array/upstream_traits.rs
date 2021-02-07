@@ -3,7 +3,7 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use crate::utils::NoNull;
-use arrow::array::{BooleanArray, PrimitiveArray};
+use arrow::array::{BooleanArray, LargeStringArray, PrimitiveArray};
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -77,8 +77,35 @@ impl FromIterator<bool> for NoNull<BooleanChunked> {
 
 // FromIterator for Utf8Chunked variants.
 
-impl<'a> FromIterator<&'a str> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
+impl<Ptr> FromIterator<Option<Ptr>> for Utf8Chunked
+where
+    Ptr: AsRef<str>,
+{
+    fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let cap = get_iter_capacity(&iter);
+        let values_cap = cap * 5;
+        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
+
+        for val in iter {
+            builder.append_option(val);
+        }
+        builder.finish()
+    }
+}
+
+/// Needed to circumvent the orphan rule.
+pub trait PolarsAsRef<T: ?Sized>: AsRef<T> {}
+
+impl PolarsAsRef<str> for String {}
+impl PolarsAsRef<str> for &str {}
+impl<'a> PolarsAsRef<str> for Cow<'a, str> {}
+
+impl<Ptr> FromIterator<Ptr> for Utf8Chunked
+where
+    Ptr: PolarsAsRef<str>,
+{
+    fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let cap = get_iter_capacity(&iter);
         let values_cap = cap * 5;
@@ -86,115 +113,6 @@ impl<'a> FromIterator<&'a str> for Utf8Chunked {
 
         for val in iter {
             builder.append_value(val);
-        }
-        builder.finish()
-    }
-}
-
-impl<'a> FromIterator<Cow<'a, str>> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = Cow<'a, str>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let cap = get_iter_capacity(&iter);
-        let values_cap = cap * 5;
-        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
-
-        for cow in iter {
-            match cow {
-                Cow::Borrowed(val) => builder.append_value(val),
-                Cow::Owned(val) => builder.append_value(&val),
-            }
-        }
-        builder.finish()
-    }
-}
-
-impl<'a> FromIterator<Option<Cow<'a, str>>> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = Option<Cow<'a, str>>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let cap = get_iter_capacity(&iter);
-        let values_cap = cap * 5;
-        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
-
-        for opt_val in iter {
-            match opt_val {
-                Some(cow) => match cow {
-                    Cow::Borrowed(val) => builder.append_value(val),
-                    Cow::Owned(val) => builder.append_value(&val),
-                },
-                None => builder.append_null(),
-            }
-        }
-        builder.finish()
-    }
-}
-
-impl<'a> FromIterator<&'a &'a str> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = &'a &'a str>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let cap = get_iter_capacity(&iter);
-        let values_cap = cap * 5;
-        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
-
-        for val in iter {
-            builder.append_value(val);
-        }
-        builder.finish()
-    }
-}
-
-macro_rules! impl_from_iter_utf8 {
-    ($iter:ident) => {{
-        let iter = $iter.into_iter();
-        let cap = get_iter_capacity(&iter);
-        let values_cap = cap * 5;
-        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
-
-        for opt_val in iter {
-            builder.append_option(opt_val.as_ref())
-        }
-        builder.finish()
-    }};
-}
-
-impl<'a> FromIterator<Option<&'a str>> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
-        impl_from_iter_utf8!(iter)
-    }
-}
-
-impl<'a> FromIterator<&'a Option<&'a str>> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = &'a Option<&'a str>>>(iter: I) -> Self {
-        impl_from_iter_utf8!(iter)
-    }
-}
-
-impl FromIterator<String> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let cap = get_iter_capacity(&iter);
-        let values_cap = cap * 5;
-        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
-
-        for val in iter {
-            builder.append_value(val.as_str());
-        }
-        builder.finish()
-    }
-}
-
-impl FromIterator<Option<String>> for Utf8Chunked {
-    fn from_iter<I: IntoIterator<Item = Option<String>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        let cap = get_iter_capacity(&iter);
-        let values_cap = cap * 5;
-
-        let mut builder = Utf8ChunkedBuilder::new("", cap, values_cap);
-
-        for opt_val in iter {
-            match opt_val {
-                None => builder.append_null(),
-                Some(val) => builder.append_value(val.as_str()),
-            }
         }
         builder.finish()
     }
@@ -341,12 +259,6 @@ impl<'a> FromIterator<Option<&'a Series>> for ListChunked {
         }
 
         builder.finish()
-    }
-}
-
-impl<'a> FromIterator<&'a Option<Series>> for ListChunked {
-    fn from_iter<I: IntoIterator<Item = &'a Option<Series>>>(iter: I) -> Self {
-        iter.into_iter().map(|s| s.as_ref()).collect()
     }
 }
 
