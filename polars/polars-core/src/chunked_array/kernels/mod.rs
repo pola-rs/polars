@@ -3,8 +3,6 @@ pub(crate) mod take;
 #[cfg(feature = "temporal")]
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
-pub(crate) mod utils;
-pub mod zip_with;
 use polars_arrow::builder::BooleanArrayBuilder;
 
 use crate::chunked_array::builder::{aligned_vec_to_primitive_array, get_bitmap};
@@ -18,7 +16,6 @@ use arrow::datatypes::{
 };
 use num::{Float, NumCast};
 use std::sync::Arc;
-pub use zip_with::*;
 
 pub(crate) unsafe fn transmute_array<S, T>(arr: &PrimitiveArray<S>) -> ArrayRef
 where
