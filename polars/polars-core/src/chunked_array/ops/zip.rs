@@ -1,8 +1,6 @@
-use crate::chunked_array::kernels;
 use crate::prelude::*;
 use crate::utils::NoNull;
-use arrow::array::ArrayRef;
-use std::sync::Arc;
+use arrow::compute::kernels::zip::zip;
 
 fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
     if predicate {
@@ -107,8 +105,9 @@ where
                 .iter()
                 .zip(&other.downcast_chunks())
                 .zip(&mask.downcast_chunks())
-                .map(|((left_c, right_c), mask_c)| {
-                    kernels::zip(mask_c, left_c, right_c).map(|arr| Arc::new(arr) as ArrayRef)
+                .map(|((&left_c, &right_c), mask_c)| {
+                    let arr = zip(mask_c, left_c, right_c)?;
+                    Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
             Ok(ChunkedArray::new_from_chunks(self.name(), chunks))

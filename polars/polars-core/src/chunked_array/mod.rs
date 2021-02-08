@@ -168,14 +168,6 @@ pub struct ChunkedArray<T> {
 }
 
 impl<T> ChunkedArray<T> {
-    pub(crate) fn match_chunks(&self, chunk_id: &[usize]) -> Self {
-        if self.chunks.len() != 1 {
-            // let out = self.rechunk();
-            todo!()
-        }
-        todo!()
-    }
-
     /// Get Arrow ArrayData
     pub fn array_data(&self) -> Vec<ArrayDataRef> {
         self.chunks.iter().map(|arr| arr.data()).collect()
@@ -454,6 +446,38 @@ impl<T> ChunkedArray<T> {
     /// Rename this ChunkedArray.
     pub fn rename(&mut self, name: &str) {
         self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkOps,
+{
+    /// Should be used to match the chunk_id of another ChunkedArray.
+    /// # Panics
+    /// It is the callers responsibility to ensure that this ChunkedArray has a single chunk.
+    pub(crate) fn match_chunks(&self, chunk_id: &[usize]) -> Self {
+        debug_assert!(self.chunks.len() == 1);
+        // Takes a ChunkedArray containing a single chunk
+        let slice = |ca: &Self| {
+            let array = &ca.chunks[0];
+
+            let mut chunks = Vec::with_capacity(chunk_id.len());
+            let mut offset = 0;
+            for len in chunk_id {
+                chunks.push(array.slice(offset, *len));
+                offset += *len;
+            }
+            Self::new_from_chunks(self.name(), chunks)
+        };
+
+        if self.chunks.len() != 1 {
+            let out = self.rechunk();
+            slice(&out)
+        } else {
+            slice(self)
+        }
     }
 }
 
