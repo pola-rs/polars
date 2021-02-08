@@ -14,7 +14,7 @@ use std::fmt::Debug;
 
 pub trait ChunkOps {
     /// Aggregate to contiguous memory.
-    fn rechunk(&self) -> Result<Self>
+    fn rechunk(&self) -> Self
     where
         Self: std::marker::Sized;
 }
@@ -23,57 +23,54 @@ impl<T> ChunkOps for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn rechunk(&self) -> Result<Self> {
+    fn rechunk(&self) -> Self {
         if self.chunks().len() == 1 {
-            Ok(self.clone())
+            self.clone()
         } else {
-            let chunks = vec![concat(
-                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
-            )?];
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            let chunks =
+                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+            ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
 }
 
 impl ChunkOps for BooleanChunked {
-    fn rechunk(&self) -> Result<Self> {
+    fn rechunk(&self) -> Self {
         if self.chunks().len() == 1 {
-            Ok(self.clone())
+            self.clone()
         } else {
-            let chunks = vec![concat(
-                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
-            )?];
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            let chunks =
+                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+            ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
 }
 
 impl ChunkOps for Utf8Chunked {
-    fn rechunk(&self) -> Result<Self> {
+    fn rechunk(&self) -> Self {
         if self.chunks().len() == 1 {
-            Ok(self.clone())
+            self.clone()
         } else {
-            let chunks = vec![concat(
-                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
-            )?];
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            let chunks =
+                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+            ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
 }
 
 impl ChunkOps for CategoricalChunked {
-    fn rechunk(&self) -> Result<Self>
+    fn rechunk(&self) -> Self
     where
         Self: std::marker::Sized,
     {
-        self.cast::<UInt32Type>()?.rechunk()?.cast()
+        self.cast::<UInt32Type>().unwrap().rechunk().cast().unwrap()
     }
 }
 
 impl ChunkOps for ListChunked {
-    fn rechunk(&self) -> Result<Self> {
+    fn rechunk(&self) -> Self {
         if self.chunks.len() == 1 {
-            Ok(self.clone())
+            self.clone()
         } else {
             let values_capacity = self.get_values_size();
             if let DataType::List(dt) = self.dtype() {
@@ -82,9 +79,9 @@ impl ChunkOps for ListChunked {
                 for v in self {
                     builder.append_opt_series(v.as_ref())
                 }
-                Ok(builder.finish())
+                builder.finish()
             } else {
-                panic!("implementation error")
+                unreachable!()
             }
         }
     }
@@ -95,12 +92,12 @@ impl<T> ChunkOps for ObjectChunked<T>
 where
     T: Any + Debug + Clone + Send + Sync + Default,
 {
-    fn rechunk(&self) -> Result<Self>
+    fn rechunk(&self) -> Self
     where
         Self: std::marker::Sized,
     {
         if self.chunks.len() == 1 {
-            Ok(self.clone())
+            self.clone()
         } else {
             let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
             let chunks = self.downcast_chunks();
@@ -124,7 +121,7 @@ where
                     }
                 }
             }
-            Ok(builder.finish())
+            builder.finish()
         }
     }
 }

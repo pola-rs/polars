@@ -426,7 +426,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
-    fn rechunk(&self) -> Result<Series> {
+    fn rechunk(&self) -> Series {
         unimplemented!()
     }
 

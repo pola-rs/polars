@@ -162,7 +162,7 @@ impl DataFrame {
         let mut df = DataFrame {
             columns: series_cols,
         };
-        df.rechunk()?;
+        df.rechunk();
         Ok(df)
     }
 
@@ -174,27 +174,23 @@ impl DataFrame {
 
     /// Aggregate all chunks to contiguous memory.
     pub fn agg_chunks(&self) -> Self {
-        let f = |s: &Series| s.rechunk().expect("can always rechunk to single");
+        let f = |s: &Series| s.rechunk();
         let cols = self.columns.par_iter().map(f).collect();
         DataFrame::new_no_checks(cols)
     }
 
     /// Aggregate all the chunks in the DataFrame to a single chunk.
     pub fn as_single_chunk(&mut self) -> &mut Self {
-        self.columns = self
-            .columns
-            .iter()
-            .map(|s| s.rechunk().expect("can always aggregate to single chunk"))
-            .collect();
+        self.columns = self.columns.iter().map(|s| s.rechunk()).collect();
         self
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
-    pub fn rechunk(&mut self) -> Result<&mut Self> {
+    pub fn rechunk(&mut self) -> &mut Self {
         if self.columns.iter().map(|s| s.chunks()).all_equal() {
-            Ok(self)
+            self
         } else {
-            Ok(self.as_single_chunk())
+            self.as_single_chunk()
         }
     }
 
@@ -254,12 +250,6 @@ impl DataFrame {
         columns.iter().map(|s| s.field().clone()).collect()
     }
 
-    /// This method should be called after every mutable addition/ deletion of columns
-    fn register_mutation(&mut self) -> Result<()> {
-        self.rechunk()?;
-        Ok(())
-    }
-
     /// Get a reference to the schema fields of the DataFrame.
     pub fn fields(&self) -> Vec<Field> {
         self.columns.iter().map(|s| s.field().clone()).collect()
@@ -312,12 +302,12 @@ impl DataFrame {
         self.shape().0
     }
 
-    pub(crate) fn hstack_mut_no_checks(&mut self, columns: &[Series]) -> Result<&mut Self> {
+    pub(crate) fn hstack_mut_no_checks(&mut self, columns: &[Series]) -> &mut Self {
         for col in columns {
             self.columns.push(col.clone());
         }
-        self.register_mutation()?;
-        Ok(self)
+        self.rechunk();
+        self
     }
 
     /// Add multiple Series to a DataFrame
@@ -354,7 +344,7 @@ impl DataFrame {
             }
             names.insert(name.to_string());
         }
-        self.hstack_mut_no_checks(columns)
+        Ok(self.hstack_mut_no_checks(columns))
     }
 
     /// Add multiple Series to a DataFrame
@@ -396,7 +386,7 @@ impl DataFrame {
             .for_each(|(left, right)| {
                 left.append(right).expect("should not fail");
             });
-        self.register_mutation()?;
+        self.rechunk();
         Ok(self)
     }
 
@@ -413,7 +403,7 @@ impl DataFrame {
     pub fn drop_in_place(&mut self, name: &str) -> Result<Series> {
         let idx = self.name_to_idx(name)?;
         let result = Ok(self.columns.remove(idx));
-        self.register_mutation()?;
+        self.rechunk();
         result
     }
 
@@ -459,7 +449,7 @@ impl DataFrame {
     fn insert_at_idx_no_name_check(&mut self, index: usize, series: Series) -> Result<&mut Self> {
         if series.len() == self.height() {
             self.columns.insert(index, series);
-            self.rechunk()?;
+            self.rechunk();
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -486,7 +476,7 @@ impl DataFrame {
         self.has_column(series.name())?;
         if series.len() == self.height() {
             self.columns.push(series);
-            self.rechunk()?;
+            self.rechunk();
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -1092,7 +1082,7 @@ impl DataFrame {
             let col = self.columns.get_unchecked_mut(idx);
             col.rename(&name);
         }
-        self.register_mutation()?;
+        self.rechunk();
         Ok(self)
     }
 
@@ -1159,7 +1149,7 @@ impl DataFrame {
             let col = self.columns.get_unchecked_mut(idx);
             col.rename(&name);
         }
-        self.register_mutation()?;
+        self.rechunk();
         Ok(self)
     }
 
@@ -1274,7 +1264,7 @@ impl DataFrame {
         match self.n_chunks() {
             Ok(1) => {}
             Ok(_) => {
-                self.columns = self.columns.iter().map(|s| s.rechunk().unwrap()).collect();
+                self.columns = self.columns.iter().map(|s| s.rechunk()).collect();
             }
             Err(_) => {} // no data. So iterator will be empty
         }

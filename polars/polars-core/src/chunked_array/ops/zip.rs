@@ -128,25 +128,11 @@ where
             impl_ternary!(mask, self, other, T)
         }
     }
-
-    fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>> {
-        let other = self.unpack_series_matching_type(other)?;
-        self.zip_with(mask, other)
-    }
 }
 
 impl ChunkZip<BooleanType> for BooleanChunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &BooleanChunked) -> Result<BooleanChunked> {
         impl_ternary!(mask, self, other, BooleanType)
-    }
-
-    fn zip_with_series(
-        &self,
-        mask: &BooleanChunked,
-        other: &Series,
-    ) -> Result<ChunkedArray<BooleanType>> {
-        let other = self.unpack_series_matching_type(other)?;
-        self.zip_with(mask, other)
     }
 }
 
@@ -162,15 +148,6 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
             impl_ternary!(mask, self, other, Utf8Type)
         }
     }
-
-    fn zip_with_series(
-        &self,
-        mask: &BooleanChunked,
-        other: &Series,
-    ) -> Result<ChunkedArray<Utf8Type>> {
-        let other = self.unpack_series_matching_type(other)?;
-        self.zip_with(mask, other)
-    }
 }
 impl ChunkZip<ListType> for ListChunked {
     fn zip_with(
@@ -180,16 +157,6 @@ impl ChunkZip<ListType> for ListChunked {
     ) -> Result<ChunkedArray<ListType>> {
         Err(PolarsError::InvalidOperation(
             "zip_with method not supported for ChunkedArray of type List".into(),
-        ))
-    }
-
-    fn zip_with_series(
-        &self,
-        _mask: &BooleanChunked,
-        _other: &Series,
-    ) -> Result<ChunkedArray<ListType>> {
-        Err(PolarsError::InvalidOperation(
-            "zip_with_series method not supported for ChunkedArray of type List".into(),
         ))
     }
 }
@@ -205,15 +172,6 @@ impl ChunkZip<CategoricalType> for CategoricalChunked {
             .zip_with(mask, &other.cast().unwrap())?
             .cast()
     }
-
-    fn zip_with_series(
-        &self,
-        mask: &BooleanChunked,
-        other: &Series,
-    ) -> Result<ChunkedArray<CategoricalType>> {
-        let other = self.unpack_series_matching_type(other)?;
-        self.zip_with(mask, other)
-    }
 }
 
 #[cfg(feature = "object")]
@@ -225,16 +183,6 @@ impl<T> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
     ) -> Result<ChunkedArray<ObjectType<T>>> {
         Err(PolarsError::InvalidOperation(
             "zip_with method not supported for ChunkedArray of type Object".into(),
-        ))
-    }
-
-    fn zip_with_series(
-        &self,
-        _mask: &BooleanChunked,
-        _other: &Series,
-    ) -> Result<ChunkedArray<ObjectType<T>>> {
-        Err(PolarsError::InvalidOperation(
-            "zip_with_series method not supported for ChunkedArray of type Object".into(),
         ))
     }
 }
