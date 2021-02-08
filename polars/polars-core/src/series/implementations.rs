@@ -564,8 +564,8 @@ macro_rules! impl_dyn_series {
                 self.0.len()
             }
 
-            fn rechunk(&self) -> Result<Series> {
-                ChunkOps::rechunk(&self.0).map(|ca| ca.into_series())
+            fn rechunk(&self) -> Series {
+                ChunkOps::rechunk(&self.0).into_series()
             }
 
             fn head(&self, length: Option<usize>) -> Series {
@@ -1001,8 +1001,8 @@ where
         ObjectChunked::len(&self.0)
     }
 
-    fn rechunk(&self) -> Result<Series> {
-        ChunkOps::rechunk(&self.0).map(|ca| ca.into_series())
+    fn rechunk(&self) -> Series {
+        ChunkOps::rechunk(&self.0).into_series()
     }
 
     fn head(&self, length: Option<usize>) -> Series {

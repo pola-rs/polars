@@ -106,7 +106,7 @@ where
             if mask.null_count() == 0 {
                 // chunks should match
                 if self.chunk_id() != mask.chunk_id() && self.chunks().len() == 1 {
-                    owned_mask = mask.rechunk().unwrap();
+                    owned_mask = mask.rechunk();
                     mask = &owned_mask;
                 }
 

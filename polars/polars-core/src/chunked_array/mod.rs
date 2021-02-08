@@ -168,6 +168,14 @@ pub struct ChunkedArray<T> {
 }
 
 impl<T> ChunkedArray<T> {
+    pub(crate) fn match_chunks(&self, chunk_id: &[usize]) -> Self {
+        if self.chunks.len() != 1 {
+            // let out = self.rechunk();
+            todo!()
+        }
+        todo!()
+    }
+
     /// Get Arrow ArrayData
     pub fn array_data(&self) -> Vec<ArrayDataRef> {
         self.chunks.iter().map(|arr| arr.data()).collect()
@@ -633,7 +641,7 @@ where
     T: PolarsNumericType,
 {
     fn as_single_ptr(&mut self) -> Result<usize> {
-        let mut ca = self.rechunk().expect("should not fail");
+        let mut ca = self.rechunk();
         mem::swap(&mut ca, self);
         let a = self.data_views()[0];
         let ptr = a.as_ptr();
