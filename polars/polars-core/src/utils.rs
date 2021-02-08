@@ -5,6 +5,7 @@ pub use chrono;
 pub use num_cpus;
 pub use rayon;
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
@@ -591,3 +592,105 @@ pub(crate) trait CustomIterTools: Iterator {
 }
 
 impl<T: ?Sized> CustomIterTools for T where T: Iterator {}
+
+pub(crate) fn align_chunks_binary<'a, T, B>(
+    left: &'a ChunkedArray<T>,
+    right: &'a ChunkedArray<B>,
+) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<B>>)
+where
+    ChunkedArray<B>: ChunkOps,
+    ChunkedArray<T>: ChunkOps,
+    B: PolarsDataType,
+    T: PolarsDataType,
+{
+    match (left.chunks.len(), right.chunks.len()) {
+        (1, 1) => (Cow::Borrowed(left), Cow::Borrowed(right)),
+        (_, 1) => (
+            Cow::Borrowed(left),
+            Cow::Owned(right.match_chunks(left.chunk_id())),
+        ),
+        (1, _) => (
+            Cow::Owned(left.match_chunks(right.chunk_id())),
+            Cow::Borrowed(right),
+        ),
+        (_, _) => {
+            // could optimize to choose to rechunk a primitive and not a string or list type
+            let left = left.rechunk();
+            (
+                Cow::Owned(left.match_chunks(right.chunk_id())),
+                Cow::Borrowed(right),
+            )
+        }
+    }
+}
+
+pub(crate) fn align_chunks_ternary<'a, A, B, C>(
+    a: &'a ChunkedArray<A>,
+    b: &'a ChunkedArray<B>,
+    c: &'a ChunkedArray<C>,
+) -> (
+    Cow<'a, ChunkedArray<A>>,
+    Cow<'a, ChunkedArray<B>>,
+    Cow<'a, ChunkedArray<C>>,
+)
+where
+    ChunkedArray<A>: ChunkOps,
+    ChunkedArray<B>: ChunkOps,
+    ChunkedArray<C>: ChunkOps,
+    A: PolarsDataType,
+    B: PolarsDataType,
+    C: PolarsDataType,
+{
+    match (a.chunks.len(), b.chunks.len(), c.chunks.len()) {
+        (1, 1, 1) => (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c)),
+        (_, 1, 1) => (
+            Cow::Borrowed(a),
+            Cow::Owned(b.match_chunks(a.chunk_id())),
+            Cow::Owned(c.match_chunks(a.chunk_id())),
+        ),
+        (1, 1, _) => (
+            Cow::Owned(a.match_chunks(c.chunk_id())),
+            Cow::Owned(b.match_chunks(c.chunk_id())),
+            Cow::Borrowed(c),
+        ),
+        (1, _, 1) => (
+            Cow::Owned(a.match_chunks(b.chunk_id())),
+            Cow::Borrowed(b),
+            Cow::Owned(c.match_chunks(b.chunk_id())),
+        ),
+        (1, _, _) => {
+            let b = b.rechunk();
+            (
+                Cow::Owned(a.match_chunks(c.chunk_id())),
+                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Borrowed(c),
+            )
+        }
+        (_, 1, _) => {
+            let a = a.rechunk();
+            (
+                Cow::Owned(a.match_chunks(c.chunk_id())),
+                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Borrowed(c),
+            )
+        }
+        (_, _, 1) => {
+            let b = b.rechunk();
+            (
+                Cow::Borrowed(a),
+                Cow::Owned(b.match_chunks(a.chunk_id())),
+                Cow::Owned(c.match_chunks(a.chunk_id())),
+            )
+        }
+        _ => {
+            // could optimize to choose to rechunk a primitive and not a string or list type
+            let a = a.rechunk();
+            let b = b.rechunk();
+            (
+                Cow::Owned(a.match_chunks(c.chunk_id())),
+                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Borrowed(c),
+            )
+        }
+    }
+}
