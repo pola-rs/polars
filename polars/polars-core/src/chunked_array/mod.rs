@@ -798,15 +798,6 @@ where
     }
 }
 
-impl ListChunked {
-    pub(crate) fn get_inner_dtype(&self) -> &ArrowDataType {
-        match self.dtype() {
-            DataType::List(dt) => dt,
-            _ => panic!("should not happen"),
-        }
-    }
-}
-
 impl<T> Clone for ChunkedArray<T> {
     fn clone(&self) -> Self {
         ChunkedArray {

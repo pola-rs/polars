@@ -217,7 +217,7 @@ impl PySeries {
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
-        let series = self.series.rechunk().expect("should not fail");
+        let series = self.series.rechunk();
         if in_place {
             self.series = series;
             None
