@@ -460,34 +460,21 @@ pub trait Pow {
     }
 }
 
-macro_rules! power {
-    ($self:ident, $exp:ident, $to_primitive:ident, $return:ident) => {{
-        if let Ok(slice) = $self.cont_slice() {
-            slice
-                .iter()
-                .map(|&val| val.$to_primitive().unwrap().powf($exp))
-                .collect::<NoNull<$return>>()
-                .into_inner()
-        } else {
-            $self
-                .into_iter()
-                .map(|val| val.map(|val| val.$to_primitive().unwrap().powf($exp)))
-                .collect()
-        }
-    }};
-}
-
 impl<T> Pow for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: ToPrimitive,
+    ChunkedArray<T>: ChunkCast,
 {
     fn pow_f32(&self, exp: f32) -> Float32Chunked {
-        power!(self, exp, to_f32, Float32Chunked)
+        self.cast::<Float32Type>()
+            .expect("f32 array")
+            .apply_kernel(|arr| Arc::new(compute::powf_scalar(arr, exp).unwrap()))
     }
 
     fn pow_f64(&self, exp: f64) -> Float64Chunked {
-        power!(self, exp, to_f64, Float64Chunked)
+        self.cast::<Float64Type>()
+            .expect("f64 array")
+            .apply_kernel(|arr| Arc::new(compute::powf_scalar(arr, exp).unwrap()))
     }
 }
 
