@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::utils::align_chunks_binary;
 use arrow::array::ArrayRef;
 use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
 use std::sync::Arc;
@@ -97,21 +98,15 @@ where
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
         check_bounds!(self, mask);
-        let mut mask = mask;
-        let owned_mask;
 
         // Fast path uses the kernel in polars-arrow
         if let Some(value) = value {
             // kernel expects no null values in mask
             if mask.null_count() == 0 {
-                // chunks should match
-                if self.chunk_id() != mask.chunk_id() && self.chunks().len() == 1 {
-                    owned_mask = mask.rechunk();
-                    mask = &owned_mask;
-                }
+                let (left, mask) = align_chunks_binary(self, mask);
 
                 // apply binary kernel.
-                let chunks = self
+                let chunks = left
                     .downcast_chunks()
                     .into_iter()
                     .zip(mask.downcast_chunks())

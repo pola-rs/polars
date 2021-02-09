@@ -624,6 +624,7 @@ where
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub(crate) fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
     b: &'a ChunkedArray<B>,
