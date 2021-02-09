@@ -636,7 +636,10 @@ where
         let arrays = s.chunks();
         for a in arrays {
             let values = a.get_values::<T>();
-            if a.null_count() == 0 {
+            // we would like to check if array has no null values.
+            // however at the time of writing there is a bug in append_slice, because it does not update
+            // the null bitmap
+            if s.null_count() == 0 {
                 builder.append_slice(values);
             } else {
                 values.iter().enumerate().for_each(|(idx, v)| {
