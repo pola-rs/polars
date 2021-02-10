@@ -3,6 +3,7 @@ use crate::POOL;
 #[cfg(feature = "temporal")]
 pub use chrono;
 pub use num_cpus;
+pub use polars_arrow::utils::TrustMyLength;
 pub use rayon;
 use rayon::prelude::*;
 use std::borrow::Cow;

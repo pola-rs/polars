@@ -343,9 +343,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             .into_par_iter()
             .zip(projection)
             .map(|(buffers, idx)| {
+                let length = buffers.iter().map(|buf| buf.len()).sum();
                 let iter = buffers.into_iter();
                 let mut s = buffers_to_series(
                     iter,
+                    length,
                     bytes,
                     self.ignore_parser_errors,
                     self.encoding,

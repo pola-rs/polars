@@ -43,7 +43,9 @@ where
                 // This will not lead to UB, but will panic.
                 #[cfg(feature = "performant")]
                 unsafe {
-                    PrimitiveArray::from_trusted_len_iter(iter)
+                    let arr = PrimitiveArray::from_trusted_len_iter(iter);
+                    assert_eq!(arr.len(), a);
+                    arr
                 }
                 #[cfg(not(feature = "performant"))]
                 PrimitiveArray::from_iter(iter)
