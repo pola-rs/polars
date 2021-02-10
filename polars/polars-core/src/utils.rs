@@ -1,14 +1,14 @@
 use crate::prelude::*;
 use crate::POOL;
-use rayon::prelude::*;
-use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
+pub use arrow;
 #[cfg(feature = "temporal")]
 pub use chrono;
 pub use num_cpus;
 pub use polars_arrow::utils::TrustMyLength;
 pub use rayon;
-pub use arrow;
+use rayon::prelude::*;
+use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
 
 /// Used to split the mantissa and exponent of floating point numbers
 /// https://stackoverflow.com/questions/39638363/how-can-i-use-a-hashmap-with-f64-as-key-in-rust
