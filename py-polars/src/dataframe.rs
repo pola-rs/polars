@@ -245,7 +245,7 @@ impl PyDataFrame {
                         to_pyobject!(py, bxd, f64, f64)
                     }
                     Utf8 => {
-                        let vec = *bxd.downcast::<Vec<String>>().unwrap();
+                        let vec = *bxd.downcast::<Vec<Option<String>>>().unwrap();
                         vec.into_py(py)
                     }
                     _ => unimplemented!(),
