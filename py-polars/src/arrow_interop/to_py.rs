@@ -13,7 +13,7 @@ pub fn to_py_array(array: &ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult
 }
 
 /// RecordBatch to Python.
-fn to_py_rb(rb: &RecordBatch, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
+pub fn to_py_rb(rb: &RecordBatch, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
     let mut arrays = Vec::with_capacity(rb.num_columns());
     let mut names = Vec::with_capacity(rb.num_columns());
 

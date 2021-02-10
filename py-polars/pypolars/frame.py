@@ -26,6 +26,7 @@ from typing import (
 )
 from .series import Series, wrap_s
 from .datatypes import *
+import pyarrow as pa
 import numpy as np
 
 
@@ -203,26 +204,29 @@ class DataFrame:
         self._df = PyDataFrame.read_ipc(file)
         return self
 
-    def to_pandas(self) -> "pd.DataFrame":
+    def to_arrow(self) -> pa.Table:
+        """
+        Collect the underlying arrow arrays in an Arrow Table.
+        This operation is zero copy.
+        """
+        record_batches = self._df.to_arrow()
+        return pa.Table.from_batches(record_batches)
+
+    def to_pandas(self, *args, date_as_object=False, **kwargs) -> "pd.DataFrame":
         """
         Cast to a Pandas DataFrame. This requires that Pandas is installed.
         This operation clones data.
-        """
-        import pandas as pd
 
-        data = self._df.to_pandas_helper()
-        for col in self.columns:
-            series = self[col]
-            if series.dtype == Date32:
-                # we need to make this extra copy because the numpy array is readonly
-                values = np.array(data[col])
-                s = pd.to_datetime(values, unit="d")
-                data[col] = s
-            elif series.dtype == Date64:
-                values = np.array(data[col])
-                s = pd.to_datetime(values, unit="ms")
-                data[col] = s
-        return pd.DataFrame(data)
+        Parameters
+        ----------
+        args
+            arguments will be sent to pyarrow.Table.to_pandas
+        date_as_object
+            Cast dates to objects. If False, convert to datetime64[ns] dtype
+        kwargs
+            arguments will be sent to pyarrow.Table.to_pandas
+        """
+        return self.to_arrow().to_pandas(*args, date_as_object, **kwargs)
 
     def to_csv(
         self,

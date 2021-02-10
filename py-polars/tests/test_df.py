@@ -323,8 +323,8 @@ def test_to_pandas():
             "strings_nulls": ["foo", None, "ham"],
         }
     )
+    df.to_arrow()
     df.to_pandas()
-
     # test shifted df
     df.shift(2).to_pandas()
     df = DataFrame({"col": Series([True, False, True])})
