@@ -241,7 +241,7 @@ class DataFrame:
         kwargs
             arguments will be sent to pyarrow.Table.to_pandas
         """
-        return self.to_arrow().to_pandas(*args, date_as_object, **kwargs)
+        return self.to_arrow().to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
     def to_csv(
         self,
