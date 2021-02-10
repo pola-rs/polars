@@ -120,7 +120,7 @@ mod test {
         let shifted = ca.shift_and_fill(1, Some(5));
         assert_eq!(Vec::from(&shifted), &[Some(5), Some(1), Some(2)]);
         let shifted = ca.shift_and_fill(2, Some(5));
-        assert_eq!(Vec::from(&shifted), &[Some(5), Some(5), Some(2)]);
+        assert_eq!(Vec::from(&shifted), &[Some(5), Some(5), Some(1)]);
         let shifted = ca.shift_and_fill(3, Some(5));
         assert_eq!(Vec::from(&shifted), &[Some(5), Some(5), Some(5)]);
         let shifted = ca.shift_and_fill(4, Some(5));
