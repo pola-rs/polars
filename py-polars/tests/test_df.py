@@ -319,6 +319,8 @@ def test_to_pandas():
             "int_nulls": [1, None, 3],
             "floats": [1.0, 2.0, 3.0],
             "floats_nulls": [1.0, None, 3.0],
+            "strings": ["foo", "bar", "ham"],
+            "strings_nulls": ["foo", None, "ham"],
         }
     )
     df.to_pandas()
