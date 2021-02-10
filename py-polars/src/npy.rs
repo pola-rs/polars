@@ -5,9 +5,7 @@ use numpy::{
 };
 use numpy::{Element, PyArray1};
 use polars::chunked_array::builder::memory;
-use polars::prelude::*;
 use pyo3::prelude::*;
-use std::any::Any;
 use std::{mem, ptr};
 
 /// Create an empty numpy array arrows 64 byte alignment
@@ -49,80 +47,4 @@ pub unsafe fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArra
 pub unsafe fn vec_from_ptr<T>(ptr: usize, len: usize) -> Vec<T> {
     let ptr = ptr as *mut T;
     Vec::from_raw_parts(ptr, len, len)
-}
-
-pub fn series_to_numpy_compatible_vec(s: &Series) -> Box<dyn Any + Send> {
-    // if has null values we use floats and np.nan to represent missing values
-    macro_rules! impl_to_vec {
-        ($ca:expr, $float_type:ty) => {{
-            match $ca.cont_slice() {
-                Ok(slice) => Box::new(Vec::from(slice)),
-                Err(_) => {
-                    if $ca.null_count() == 0 {
-                        Box::new($ca.into_no_null_iter().collect::<Vec<_>>())
-                    } else {
-                        Box::new(
-                            $ca.into_iter()
-                                .map(|opt_v| match opt_v {
-                                    Some(v) => v as $float_type,
-                                    None => <$float_type>::NAN,
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                    }
-                }
-            }
-        }};
-    }
-
-    // we use floating types only if null values
-    match s.dtype() {
-        DataType::Utf8 => Box::new(
-            s.utf8()
-                .unwrap()
-                .into_iter()
-                .map(|opt_s| opt_s.map(|s| s.to_string()))
-                .collect::<Vec<_>>(),
-        ),
-        DataType::List(_) => Box::new(s.list().unwrap().into_iter().collect::<Vec<_>>()),
-        DataType::UInt8 => impl_to_vec!(s.u8().unwrap(), f32),
-        DataType::UInt16 => impl_to_vec!(s.u16().unwrap(), f32),
-        DataType::UInt32 => impl_to_vec!(s.u32().unwrap(), f64),
-        DataType::UInt64 => impl_to_vec!(s.u64().unwrap(), f64),
-        DataType::Int8 => impl_to_vec!(s.i8().unwrap(), f32),
-        DataType::Int16 => impl_to_vec!(s.i16().unwrap(), f32),
-        DataType::Int32 => impl_to_vec!(s.i32().unwrap(), f64),
-        DataType::Int64 => impl_to_vec!(s.i64().unwrap(), f64),
-        DataType::Float32 => impl_to_vec!(s.f32().unwrap(), f32),
-        DataType::Float64 => impl_to_vec!(s.f64().unwrap(), f64),
-        DataType::Date32 => {
-            impl_to_vec!(s.date32().unwrap(), f64)
-        }
-        DataType::Date64 => {
-            impl_to_vec!(s.date64().unwrap(), f64)
-        }
-        DataType::Boolean => {
-            let ca = s.bool().unwrap();
-            if ca.null_count() == 0 {
-                Box::new(ca.into_no_null_iter().collect::<Vec<_>>())
-            } else {
-                // if nulls we use f32 to represent the floats.
-                Box::new(
-                    ca.into_iter()
-                        .map(|opt_b| match opt_b {
-                            Some(b) => {
-                                if b {
-                                    1.0
-                                } else {
-                                    0.0
-                                }
-                            }
-                            None => f32::NAN,
-                        })
-                        .collect::<Vec<_>>(),
-                )
-            }
-        }
-        dt => panic!(format!("{:?} not supported", dt)),
-    }
 }

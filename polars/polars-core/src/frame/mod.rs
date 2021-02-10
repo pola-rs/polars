@@ -1517,6 +1517,16 @@ impl DataFrame {
         let groups = std::mem::take(&mut gb.groups);
         Ok(is_unique_helper(groups, self.height(), false, true))
     }
+
+    /// Create a new DataFrame that shows the null counts per column.
+    pub fn null_count(&self) -> Self {
+        let cols = self.columns
+            .iter()
+            .map(|s| {
+                Series::new(s.name(), &[s.null_count() as u32])
+            }).collect();
+        Self::new_no_checks(cols)
+    }
 }
 
 pub struct RecordBatchIter<'a> {
