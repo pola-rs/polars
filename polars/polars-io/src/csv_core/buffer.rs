@@ -1,6 +1,7 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::parser::skip_whitespace;
 use polars_core::prelude::*;
+use polars_core::utils::TrustMyLength;
 use std::fmt::Debug;
 
 trait ToPolarsError: Debug {
@@ -209,8 +210,8 @@ pub(crate) enum Buffer {
     Boolean(Vec<Option<bool>>),
     Int32(Vec<Option<i32>>),
     Int64(Vec<Option<i64>>),
-    UInt64(Vec<Option<u64>>),
     UInt32(Vec<Option<u32>>),
+    UInt64(Vec<Option<u64>>),
     Float32(Vec<Option<f32>>),
     Float64(Vec<Option<f64>>),
     /// Stores the Utf8 fields and the total string length seen for that column
@@ -224,6 +225,19 @@ impl Default for Buffer {
 }
 
 impl Buffer {
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Buffer::Boolean(v) => v.len(),
+            Buffer::Int32(v) => v.len(),
+            Buffer::Int64(v) => v.len(),
+            Buffer::UInt32(v) => v.len(),
+            Buffer::UInt64(v) => v.len(),
+            Buffer::Float32(v) => v.len(),
+            Buffer::Float64(v) => v.len(),
+            Buffer::Utf8(v, _) => v.len(),
+        }
+    }
+
     #[inline]
     pub(crate) fn add(
         &mut self,
@@ -291,6 +305,8 @@ impl Buffer {
 
 pub(crate) fn buffers_to_series<I>(
     buffers: I,
+    // Cumulative length of the buffers
+    length: usize,
     bytes: &[u8],
     ignore_errors: bool,
     encoding: CsvEncoding,
@@ -303,80 +319,104 @@ where
 
     match &buffers[0] {
         Buffer::Boolean(_) => {
-            let ca: BooleanChunked = buffers
-                .into_iter()
-                .filter_map(|buf| match buf {
-                    Buffer::Boolean(buf) => Some(buf),
-                    _ => None,
-                })
-                .flat_map(|v| v.into_iter())
-                .collect();
+            let iter = TrustMyLength::new(
+                buffers
+                    .into_iter()
+                    .filter_map(|buf| match buf {
+                        Buffer::Boolean(buf) => Some(buf),
+                        _ => None,
+                    })
+                    .flat_map(|v| v.into_iter()),
+                length,
+            );
+
+            let ca: BooleanChunked = iter.collect();
             Ok(ca.into_series())
         }
         Buffer::Int32(_) => {
-            let ca: Int32Chunked = buffers
-                .into_iter()
-                .filter_map(|buf| match buf {
-                    Buffer::Int32(buf) => Some(buf),
-                    _ => None,
-                })
-                .flat_map(|v| v.into_iter())
-                .collect();
+            let iter = TrustMyLength::new(
+                buffers
+                    .into_iter()
+                    .filter_map(|buf| match buf {
+                        Buffer::Int32(buf) => Some(buf),
+                        _ => None,
+                    })
+                    .flat_map(|v| v.into_iter()),
+                length,
+            );
+
+            let ca: Int32Chunked = iter.collect();
             Ok(ca.into_series())
         }
         Buffer::Int64(_) => {
-            let ca: Int64Chunked = buffers
-                .into_iter()
-                .filter_map(|buf| match buf {
-                    Buffer::Int64(buf) => Some(buf),
-                    _ => None,
-                })
-                .flat_map(|v| v.into_iter())
-                .collect();
+            let iter = TrustMyLength::new(
+                buffers
+                    .into_iter()
+                    .filter_map(|buf| match buf {
+                        Buffer::Int64(buf) => Some(buf),
+                        _ => None,
+                    })
+                    .flat_map(|v| v.into_iter()),
+                length,
+            );
+
+            let ca: Int64Chunked = iter.collect();
             Ok(ca.into_series())
         }
         Buffer::UInt64(_) => {
-            let ca: UInt64Chunked = buffers
-                .into_iter()
-                .filter_map(|buf| match buf {
-                    Buffer::UInt64(buf) => Some(buf),
-                    _ => None,
-                })
-                .flat_map(|v| v.into_iter())
-                .collect();
+            let iter = TrustMyLength::new(
+                buffers
+                    .into_iter()
+                    .filter_map(|buf| match buf {
+                        Buffer::UInt64(buf) => Some(buf),
+                        _ => None,
+                    })
+                    .flat_map(|v| v.into_iter()),
+                length,
+            );
+            let ca: UInt64Chunked = iter.collect();
             Ok(ca.into_series())
         }
         Buffer::UInt32(_) => {
-            let ca: UInt32Chunked = buffers
-                .into_iter()
-                .filter_map(|buf| match buf {
-                    Buffer::UInt32(buf) => Some(buf),
-                    _ => None,
-                })
-                .flat_map(|v| v.into_iter())
-                .collect();
+            let iter = TrustMyLength::new(
+                buffers
+                    .into_iter()
+                    .filter_map(|buf| match buf {
+                        Buffer::UInt32(buf) => Some(buf),
+                        _ => None,
+                    })
+                    .flat_map(|v| v.into_iter()),
+                length,
+            );
+            let ca: UInt32Chunked = iter.collect();
             Ok(ca.into_series())
         }
         Buffer::Float32(_) => {
-            let ca: Float32Chunked = buffers
-                .into_iter()
-                .filter_map(|buf| match buf {
-                    Buffer::Float32(buf) => Some(buf),
-                    _ => None,
-                })
-                .flat_map(|v| v.into_iter())
-                .collect();
+            let iter = TrustMyLength::new(
+                buffers
+                    .into_iter()
+                    .filter_map(|buf| match buf {
+                        Buffer::Float32(buf) => Some(buf),
+                        _ => None,
+                    })
+                    .flat_map(|v| v.into_iter()),
+                length,
+            );
+            let ca: Float32Chunked = iter.collect();
             Ok(ca.into_series())
         }
         Buffer::Float64(_) => {
-            let ca: Float64Chunked = buffers
-                .into_iter()
-                .filter_map(|buf| match buf {
-                    Buffer::Float64(buf) => Some(buf),
-                    _ => None,
-                })
-                .flat_map(|v| v.into_iter())
-                .collect();
+            let iter = TrustMyLength::new(
+                buffers
+                    .into_iter()
+                    .filter_map(|buf| match buf {
+                        Buffer::Float64(buf) => Some(buf),
+                        _ => None,
+                    })
+                    .flat_map(|v| v.into_iter()),
+                length,
+            );
+            let ca: Float64Chunked = iter.collect();
             Ok(ca.into_series())
         }
         Buffer::Utf8(_, _) => {
@@ -388,7 +428,7 @@ where
                 })
                 .collect::<Vec<_>>();
             let values_size = buffers.iter().map(|(_, size)| *size).sum::<usize>();
-            let row_size = buffers.iter().map(|(v, _)| v.len()).sum::<usize>();
+            let row_size = length;
             let mut builder = Utf8ChunkedBuilder::new("", row_size, values_size);
             let mut reader = csv_core::ReaderBuilder::new().delimiter(delimiter).build();
             let mut string_buf = vec![0; 256];
