@@ -789,6 +789,7 @@ class Series:
         """
         Convert this Series to a Python List. This operation clones data.
         """
+
         if self.dtype == List:
             column = []
             for i in range(len(self)):
@@ -876,20 +877,20 @@ class Series:
         else:
             return NotImplemented
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self, *args, **kwargs) -> np.ndarray:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
-        """
-        if self.dtype == List:
-            return np.array(self.to_list())
 
-        a = self._s.to_numpy()
-        # strings are returned in lists
-        if isinstance(a, list):
-            return np.array(a)
-        return a
+        Parameters
+        ----------
+        args
+            args will be sent to pyarrow.Array.to_numpy
+        kwargs
+            kwargs will be sent to pyarrow.Array.to_numpy
+        """
+        return self.to_arrow().to_numpy(*args, **kwargs)
 
     def to_arrow(self) -> pa.Array:
         """
