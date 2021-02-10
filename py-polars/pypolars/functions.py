@@ -5,6 +5,7 @@ from .frame import DataFrame
 from .series import Series
 from .lazy import LazyFrame
 from . import datatypes
+import pyarrow as pa
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
@@ -213,6 +214,18 @@ def arg_where(mask: "Series"):
     return mask.arg_true()
 
 
+def from_arrow_table(table: pa.Table) -> "DataFrame":
+    """
+    Create a DataFrame from an arrow Table
+
+    Parameters
+    ----------
+    table
+        Arrow Table
+    """
+    return DataFrame.from_arrow(table)
+
+
 def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
     """
     Convert from pandas DataFrame to Polars DataFrame
@@ -226,19 +239,8 @@ def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
     -------
     A Polars DataFrame
     """
-
-    columns = []
-    for k in df.columns:
-        s = df[k].values
-        if s.dtype == np.dtype("datetime64[ns]"):
-            # ns to ms
-            s = s.astype(int) // int(1e6)
-            pl_s = Series(k, s, nullable=True).cast(datatypes.Date64)
-        else:
-            pl_s = Series(k, s, nullable=True)
-        columns.append(pl_s)
-
-    return DataFrame(columns, nullable=True)
+    table = pa.table(df)
+    return from_arrow_table(table)
 
 
 def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":

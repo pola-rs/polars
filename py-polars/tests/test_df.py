@@ -91,6 +91,11 @@ def test_slice():
     assert df.frame_equal(DataFrame({"a": [1, 3], "b": ["b", "c"]}))
 
 
+def test_null_count():
+    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", None]})
+    assert df.null_count().shape == (1, 2)
+
+
 def test_head_tail():
     df = DataFrame({"a": range(10), "b": range(10)})
     assert df.head(5).height == 5

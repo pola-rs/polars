@@ -204,6 +204,21 @@ class DataFrame:
         self._df = PyDataFrame.read_ipc(file)
         return self
 
+    @staticmethod
+    def from_arrow(table: pa.Table) -> "DataFrame":
+        """
+        Create DataFrame from arrow Table
+
+        Parameters
+        ----------
+        table
+            Arrow Table
+        """
+        batches = table.to_batches()
+        self = DataFrame.__new__(DataFrame)
+        self._df = PyDataFrame.from_arrow_record_batches(batches)
+        return self
+
     def to_arrow(self) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
@@ -1053,6 +1068,12 @@ class DataFrame:
         This will make sure all subsequent operations have optimal and predictable performance
         """
         return wrap_df(self._df.rechunk())
+
+    def null_count(self) -> "DataFrame":
+        """
+        Create a new DataFrame that shows the null counts per column.
+        """
+        return wrap_df(self._df.null_count())
 
     def sample(
         self,
