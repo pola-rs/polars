@@ -226,6 +226,7 @@ def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
     -------
     A Polars DataFrame
     """
+
     columns = []
     for k in df.columns:
         s = df[k].values
