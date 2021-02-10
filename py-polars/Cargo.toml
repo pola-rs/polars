@@ -15,6 +15,7 @@ homepage = "https://github.com/ritchie46/polars"
 polars = {path = "../polars", features = ["parquet", "simd", "lazy", "strings", "temporal", "random", "object", "ipc"]}
 polars-core = {path = "../polars/polars-core"}
 pyo3 = {version = "0.13", features = ["extension-module"] }
+libc = "0.2"
 thiserror = "1.0.20"
 numpy = "0.13.0"
 ndarray = "0.14.0"
@@ -25,7 +26,7 @@ crate-type = ["cdylib"]
 
 
 [package.metadata.maturin]
-requires-dist = ["numpy"]
+requires-dist = ["numpy", "pyarrow==3.0"]
 
 [profile.release]
 codegen-units = 1

@@ -2,7 +2,7 @@ use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::utils::str_to_polarstype;
-use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
+use crate::{arrow_interop, dispatch::ApplyLambda, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use pyo3::types::{PyList, PyTuple};
@@ -629,6 +629,14 @@ impl PySeries {
             }
             _ => unimplemented!(),
         }
+    }
+
+    pub fn to_arrow(&mut self) -> PyResult<PyObject> {
+        self.rechunk(true);
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let pyarrow = py.import("pyarrow")?;
+        arrow_interop::to_py::to_py_array(&self.series.chunks()[0], py, pyarrow)
     }
 
     pub fn clone(&self) -> Self {
