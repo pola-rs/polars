@@ -1,8 +1,8 @@
-import pytest
 from pypolars import Series
 from pypolars.datatypes import *
 import numpy as np
 import pytest
+import pyarrow as pa
 
 
 def create_series():
@@ -141,6 +141,12 @@ def test_rechunk():
     assert a.rechunk(in_place=False).n_chunks() == 1
     a.rechunk(in_place=True)
     assert a.n_chunks() == 1
+
+
+def test_arrow():
+    a = Series("a", [1, 2, 3, None])
+    out = a.to_arrow()
+    assert out == pa.array([1, 2, 3, None])
 
 
 def test_view():

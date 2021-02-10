@@ -12,6 +12,7 @@ use crate::{
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+pub mod arrow_interop;
 pub mod conversion;
 pub mod dataframe;
 pub mod datatypes;

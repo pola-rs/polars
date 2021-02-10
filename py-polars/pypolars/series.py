@@ -16,6 +16,7 @@ from .ffi import _ptr_to_numpy
 from .datatypes import *
 from numbers import Number
 import pypolars
+import pyarrow as pa
 
 
 class IdentityDict(dict):
@@ -71,7 +72,7 @@ class Series:
         self,
         name: str,
         values: "Union[np.array, List[Optional[Any]]]" = None,
-        nullable: bool = False,
+        nullable: bool = True,
     ):
         """
 
@@ -86,6 +87,7 @@ class Series:
                 None values in a list will be interpreted as missing.
                 NaN values in a numpy array will be interpreted as missing. Note that missing and NaNs are not the same
                 in Polars
+            Series creation may be faster if set to False and there are no null values.
         """
         # assume the first input were the values
         if values is None and not isinstance(name, str):
@@ -147,14 +149,15 @@ class Series:
         # list path
         else:
             dtype = find_first_non_none(values)
-            if isinstance(dtype, int):
+            # order is important as booleans are instance of int in python.
+            if isinstance(dtype, bool):
+                self._s = PySeries.new_opt_bool(name, values)
+            elif isinstance(dtype, int):
                 self._s = PySeries.new_opt_i64(name, values)
             elif isinstance(dtype, float):
                 self._s = PySeries.new_opt_f64(name, values)
             elif isinstance(dtype, str):
                 self._s = PySeries.new_str(name, values)
-            elif isinstance(dtype, bool):
-                self._s = PySeries.new_opt_bool(name, values)
             else:
                 self._s = PySeries.new_object(name, values)
 
@@ -887,6 +890,13 @@ class Series:
         if isinstance(a, list):
             return np.array(a)
         return a
+
+    def to_arrow(self) -> pa.Array:
+        """
+        Get the underlying arrow array. If the Series contains only a single chunk
+        this operation is zero copy.
+        """
+        return self._s.to_arrow()
 
     def set(self, filter: "Series", value: Union[int, float]) -> "Series":
         """
