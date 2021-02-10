@@ -7,6 +7,7 @@ use crate::lazy::dataframe::PyLazyFrame;
 use crate::npy::series_to_numpy_compatible_vec;
 use crate::utils::str_to_polarstype;
 use crate::{
+    arrow_interop,
     error::PyPolarsEr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
@@ -173,6 +174,20 @@ impl PyDataFrame {
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
+    }
+
+    pub fn to_arrow(&self) -> PyResult<Vec<PyObject>> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let pyarrow = py.import("pyarrow")?;
+        let rbs = self
+            .df
+            .as_record_batches()
+            .map_err(PyPolarsEr::from)?
+            .iter()
+            .map(|rb| arrow_interop::to_py::to_py_rb(rb, py, pyarrow))
+            .collect::<PyResult<_>>()?;
+        Ok(rbs)
     }
 
     /// Create a List of numpy arrays in parallel
