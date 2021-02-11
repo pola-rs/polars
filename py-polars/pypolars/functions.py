@@ -6,6 +6,7 @@ from .series import Series
 from .lazy import LazyFrame
 from . import datatypes
 import pyarrow as pa
+import builtins
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
@@ -256,7 +257,7 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
     """
     assert len(dfs) > 0
     df = dfs[0]
-    for i in range(1, len(dfs)):
+    for i in builtins.range(1, len(dfs)):
         try:
             df = df.vstack(dfs[i], in_place=False)
         # could have a double borrow (one mutable one ref)
@@ -266,3 +267,7 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
     if rechunk:
         return df.rechunk()
     return df
+
+
+def range(lower: int, upper: int, step: Optional[int] = None) -> Series:
+    return Series("range", np.arange(lower, upper, step), nullable=False)
