@@ -20,10 +20,10 @@ pub use crate::{
     datatypes,
     datatypes::*,
     error::{PolarsError, Result},
-    frame::{group_by::VecHash, hash_join::JoinType, DataFrame, IntoSeries},
+    frame::{group_by::VecHash, hash_join::JoinType, DataFrame},
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
-        NamedFrom, Series, SeriesTrait,
+        IntoSeries, NamedFrom, Series, SeriesTrait,
     },
     testing::*,
 };
