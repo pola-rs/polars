@@ -2,8 +2,6 @@
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::series::implementations::Wrap;
-use crate::series::SeriesTrait;
 use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, NoNull};
 use ahash::RandomState;
 use arrow::record_batch::RecordBatch;
@@ -11,7 +9,6 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::iter::Iterator;
-use std::marker::Sized;
 use std::mem;
 use std::sync::Arc;
 
@@ -23,64 +20,6 @@ pub mod resample;
 pub mod row;
 pub mod select;
 mod upstream_traits;
-
-pub trait IntoSeries {
-    fn into_series(self) -> Series
-    where
-        Self: Sized;
-}
-
-impl IntoSeries for Arc<dyn SeriesTrait> {
-    fn into_series(self) -> Series {
-        Series(self)
-    }
-}
-
-impl IntoSeries for Series {
-    fn into_series(self) -> Series {
-        self
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T> IntoSeries for ObjectChunked<T>
-where
-    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
-{
-    fn into_series(self) -> Series {
-        Series(Arc::new(Wrap(self)))
-    }
-}
-
-macro_rules! impl_into_series {
-    ($ca_type: ident) => {
-        impl IntoSeries for $ca_type {
-            fn into_series(self) -> Series {
-                Series(Arc::new(Wrap(self)))
-            }
-        }
-    };
-}
-
-impl_into_series!(Float32Chunked);
-impl_into_series!(Float64Chunked);
-impl_into_series!(Utf8Chunked);
-impl_into_series!(ListChunked);
-impl_into_series!(BooleanChunked);
-impl_into_series!(UInt8Chunked);
-impl_into_series!(UInt16Chunked);
-impl_into_series!(UInt32Chunked);
-impl_into_series!(UInt64Chunked);
-impl_into_series!(Int8Chunked);
-impl_into_series!(Int16Chunked);
-impl_into_series!(Int32Chunked);
-impl_into_series!(Int64Chunked);
-impl_into_series!(DurationNanosecondChunked);
-impl_into_series!(DurationMillisecondChunked);
-impl_into_series!(Date32Chunked);
-impl_into_series!(Date64Chunked);
-impl_into_series!(Time64NanosecondChunked);
-impl_into_series!(CategoricalChunked);
 
 #[derive(Clone)]
 pub struct DataFrame {

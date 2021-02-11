@@ -18,6 +18,12 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
 
+pub trait IntoSeries {
+    fn into_series(self) -> Series
+    where
+        Self: Sized;
+}
+
 pub(crate) mod private {
     use super::*;
     use crate::frame::group_by::PivotAgg;

@@ -1,4 +1,5 @@
 use super::private;
+use super::IntoSeries;
 use super::SeriesTrait;
 use crate::chunked_array::{
     ops::aggregate::{ChunkAggSeries, VarAggSeries},
@@ -18,6 +19,18 @@ use std::any::Any;
 #[cfg(feature = "object")]
 use std::fmt::Debug;
 use std::ops::Deref;
+
+impl IntoSeries for Arc<dyn SeriesTrait> {
+    fn into_series(self) -> Series {
+        Series(self)
+    }
+}
+
+impl IntoSeries for Series {
+    fn into_series(self) -> Series {
+        self
+    }
+}
 
 pub(crate) struct Wrap<T>(pub T);
 
@@ -57,6 +70,12 @@ where
 
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
+        impl IntoSeries for $ca {
+            fn into_series(self) -> Series {
+                Series(Arc::new(Wrap(self)))
+            }
+        }
+
         impl private::PrivateSeries for Wrap<$ca> {
             fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
                 self.0.vec_hash(random_state)
@@ -901,6 +920,16 @@ impl_dyn_series!(Date32Chunked);
 impl_dyn_series!(Date64Chunked);
 impl_dyn_series!(Time64NanosecondChunked);
 impl_dyn_series!(CategoricalChunked);
+
+#[cfg(feature = "object")]
+impl<T> IntoSeries for ObjectChunked<T>
+where
+    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
+{
+    fn into_series(self) -> Series {
+        Series(Arc::new(Wrap(self)))
+    }
+}
 
 #[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
