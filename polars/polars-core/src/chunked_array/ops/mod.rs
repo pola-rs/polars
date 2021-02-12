@@ -18,6 +18,7 @@ pub(crate) mod set;
 pub(crate) mod shift;
 pub(crate) mod sort;
 pub(crate) mod take;
+pub(crate) mod take_single;
 pub(crate) mod unique;
 pub(crate) mod window;
 pub(crate) mod zip;
@@ -719,7 +720,9 @@ impl_reverse!(ListType, ListChunked);
 #[cfg(feature = "object")]
 impl<T> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
     fn reverse(&self) -> Self {
-        self.take((0..self.len()).rev(), None)
+        // Safety
+        // we we know we don't get out of bounds
+        unsafe { self.take_unchecked((0..self.len()).rev(), None) }
     }
 }
 

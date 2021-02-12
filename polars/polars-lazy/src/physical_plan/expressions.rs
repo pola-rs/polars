@@ -544,7 +544,9 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 let mut builder =
                     get_list_builder(&values_type, ca.get_values_size(), ca.len(), &new_name);
                 for (_, idx) in groups {
-                    let ca = ca.take(idx.iter().copied(), None);
+                    // Safety
+                    // The indexes of the groupby operation are never out of bounds
+                    let ca = unsafe { ca.take_unchecked(idx.iter().copied(), None) };
                     let s = ca.explode_and_offsets()?.0;
                     builder.append_series(&s);
                 }
