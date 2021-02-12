@@ -1725,4 +1725,18 @@ mod test {
         dbg!(&df);
         assert!(df.frame_equal(&valid));
     }
+
+    #[test]
+    fn test_vstack() {
+        // check that it does not accidentally rechunks
+        let mut df = df! {
+            "flt" => [1., 1., 2., 2., 3., 3.],
+            "int" => [1, 1, 2, 2, 3, 3, ],
+            "str" => ["a", "a", "b", "b", "c", "c"]
+        }
+        .unwrap();
+
+        df.vstack_mut(&df.slice(0, 3).unwrap());
+        assert_eq!(df.n_chunks().unwrap(), 2)
+    }
 }
