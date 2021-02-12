@@ -7,7 +7,8 @@ use crate::chunked_array::builder::{
     get_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::chunked_array::kernels::take::{
-    take_no_null_primitive, take_no_null_primitive_iter, take_utf8,
+    take_no_null_primitive, take_no_null_primitive_iter, take_primitive_iter,
+    take_primitive_iter_n_chunks, take_utf8,
 };
 use crate::prelude::*;
 use crate::utils::NoNull;
@@ -105,20 +106,22 @@ where
     unsafe fn take_unchecked(
         &self,
         indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
+        _capacity: Option<usize>,
     ) -> Self {
         if self.is_empty() {
             return self.clone();
         }
         if self.chunks.len() == 1 {
-            if self.null_count() == 0 {
-                let arr = self.downcast_chunks()[0];
-                let arr = take_no_null_primitive_iter(arr, indices);
-                return Self::new_from_chunks(self.name(), vec![arr]);
-            }
-            return self.take_from_single_chunked_iter(indices).unwrap();
+            let arr = self.downcast_chunks()[0];
+            let arr = if self.null_count() == 0 {
+                take_no_null_primitive_iter(arr, indices)
+            } else {
+                take_primitive_iter(arr, indices)
+            };
+            return Self::new_from_chunks(self.name(), vec![arr]);
         }
-        impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
+        let arr = take_primitive_iter_n_chunks(self, indices);
+        return Self::new_from_chunks(self.name(), vec![arr]);
     }
 
     fn take_opt(
@@ -401,7 +404,6 @@ impl ChunkTake for Utf8Chunked {
         if self.chunks.len() == 1 && idx.chunks.len() == 1 {
             let idx_arr = idx.downcast_chunks()[0];
             let arr = self.downcast_chunks()[0];
-            // TODO: mark this function as unsafe
             let new_arr = unsafe { take_utf8(arr, idx_arr) as ArrayRef };
             Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
         } else {
@@ -487,7 +489,7 @@ impl ChunkTake for ListChunked {
                             let opt_s = taker.get(idx);
                             builder.append_opt_series(opt_s.as_ref())
                         }
-                        None => builder.append_opt_series(None),
+                        None => builder.append_null(),
                     };
                 }
                 builder.finish()

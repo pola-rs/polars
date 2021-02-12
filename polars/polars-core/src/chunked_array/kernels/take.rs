@@ -20,7 +20,7 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
 
     let mut values = AlignedVec::<T::Native>::with_capacity_aligned(data_len);
     let iter = index_values
-        .into_iter()
+        .iter()
         .map(|idx| *array_values.get_unchecked(*idx as usize));
     values.extend(iter);
 
@@ -49,6 +49,38 @@ pub(crate) unsafe fn take_no_null_primitive_iter<
     values.extend(iter);
 
     let arr = aligned_vec_to_primitive_array(values, None, None);
+    Arc::new(arr)
+}
+
+pub(crate) unsafe fn take_primitive_iter<T: PolarsNumericType, I: IntoIterator<Item = usize>>(
+    arr: &PrimitiveArray<T>,
+    indices: I,
+) -> Arc<PrimitiveArray<T>> {
+    let array_values = arr.values();
+
+    let iter = indices.into_iter().map(|idx| {
+        if arr.is_valid(idx) {
+            Some(*array_values.get_unchecked(idx))
+        } else {
+            None
+        }
+    });
+    let arr = PrimitiveArray::from_trusted_len_iter(iter);
+
+    Arc::new(arr)
+}
+
+pub(crate) unsafe fn take_primitive_iter_n_chunks<
+    T: PolarsNumericType,
+    I: IntoIterator<Item = usize>,
+>(
+    ca: &ChunkedArray<T>,
+    indices: I,
+) -> Arc<PrimitiveArray<T>> {
+    let taker = ca.take_rand();
+    let iter = indices.into_iter().map(|idx| taker.get(idx));
+    let arr = PrimitiveArray::from_trusted_len_iter(iter);
+
     Arc::new(arr)
 }
 
