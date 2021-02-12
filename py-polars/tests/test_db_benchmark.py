@@ -24,12 +24,22 @@ id053,id013,id0000073898,61,63,12387,4,7,29.949863"""
 
 f = io.BytesIO(csv)
 
-x = pl.read_csv(f, dtype={"id4":pl.Int32, "id5":pl.Int32, "id6":pl.Int32, "v1":pl.Int32, "v2":pl.Int32, "v3":pl.Float64})
+x = pl.read_csv(
+    f,
+    dtype={
+        "id4": pl.Int32,
+        "id5": pl.Int32,
+        "id6": pl.Int32,
+        "v1": pl.Int32,
+        "v2": pl.Int32,
+        "v3": pl.Float64,
+    },
+)
 x["id1"] = x["id1"].cast(pl.Categorical)
 x["id2"] = x["id2"].cast(pl.Categorical)
 x["id3"] = x["id3"].cast(pl.Categorical)
 x = x.lazy()
 
-question = "sum v1 by id1" # q1
+question = "sum v1 by id1"  # q1
 ans = x.groupby("id1").agg(pl.sum("v1")).collect()
 print(ans.shape, flush=True)

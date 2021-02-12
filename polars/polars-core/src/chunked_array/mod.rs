@@ -417,13 +417,11 @@ impl<T> ChunkedArray<T> {
     where
         Self: std::marker::Sized,
     {
-        if matches!(self.dtype(), DataType::Categorical) {
-            if !self.is_empty() {
-                assert!(Arc::ptr_eq(
-                    self.categorical_map.as_ref().unwrap(),
-                    other.categorical_map.as_ref().unwrap()
-                ));
-            }
+        if matches!(self.dtype(), DataType::Categorical) && !self.is_empty() {
+            assert!(Arc::ptr_eq(
+                self.categorical_map.as_ref().unwrap(),
+                other.categorical_map.as_ref().unwrap()
+            ));
         }
 
         // replace an empty array
