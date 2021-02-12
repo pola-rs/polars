@@ -541,6 +541,7 @@ where
     let mut iter = dfs.into_iter();
     let mut acc_df = iter.next().unwrap();
     for df in iter {
+        dbg!(&df.height());
         acc_df.vstack_mut(&df)?;
     }
     Ok(acc_df)

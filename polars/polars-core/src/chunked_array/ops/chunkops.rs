@@ -63,7 +63,10 @@ impl ChunkOps for CategoricalChunked {
     where
         Self: std::marker::Sized,
     {
-        self.cast::<UInt32Type>().unwrap().rechunk().cast().unwrap()
+        let cat_map = self.categorical_map.clone();
+        let mut ca = self.cast::<UInt32Type>().unwrap().rechunk().cast().unwrap();
+        ca.categorical_map = cat_map;
+        ca
     }
 }
 
