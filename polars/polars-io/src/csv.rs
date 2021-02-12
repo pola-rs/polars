@@ -547,4 +547,52 @@ mod test {
             .unwrap()
             .series_equal(&Series::new("column_3", &[3, 3])));
     }
+
+    #[test]
+    fn test_escape_comma() {
+        let csv = r#"column_1,column_2,column_3
+-86.64408227,"Autauga, Alabama, US",11
+-86.64408227,"Autauga, Alabama, US",12"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish().unwrap();
+        assert_eq!(df.shape(), (2, 3));
+        assert!(df
+            .column("column_3")
+            .unwrap()
+            .series_equal(&Series::new("column_3", &[11, 12])));
+    }
+
+    #[test]
+    fn test_escape_2() {
+        // this is is harder than it looks.
+        // Fields:
+        // * hello
+        // * ","
+        // * " "
+        // * world
+        // * "!"
+        let csv = r#"hello,","," ",world,"!"
+hello,","," ",world,"!"
+hello,","," ",world,"!"
+hello,","," ",world,"!""#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(false)
+            .with_n_threads(Some(1))
+            .finish()
+            .unwrap();
+
+        for (col, val) in &[
+            ("column_1", "hello"),
+            ("column_2", ","),
+            ("column_3", " "),
+            ("column_4", "world"),
+            ("column_5", "!"),
+        ] {
+            assert!(df
+                .column(col)
+                .unwrap()
+                .series_equal(&Series::new("", &[&**val; 4])));
+        }
+    }
 }
