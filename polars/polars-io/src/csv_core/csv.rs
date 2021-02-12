@@ -4,7 +4,7 @@ use crate::csv_core::chunked_parser::{
 };
 use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
-use crate::PhysicalIOExpr;
+use crate::PhysicalIoExpr;
 use crate::ScanAggregation;
 use csv::ByteRecordsIntoIter;
 use polars_core::{prelude::*, POOL};
@@ -134,7 +134,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
     fn parse_csv_chunked(
         &mut self,
-        predicate: Option<&Arc<dyn PhysicalIOExpr>>,
+        predicate: Option<&Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
         capacity: usize,
         n_threads: usize,
@@ -365,7 +365,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(
         &mut self,
-        predicate: Option<Arc<dyn PhysicalIOExpr>>,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
     ) -> Result<DataFrame> {
         let n_threads = self.n_threads.unwrap_or_else(num_cpus::get);

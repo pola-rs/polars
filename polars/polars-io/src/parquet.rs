@@ -16,7 +16,7 @@
 //!
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
-use crate::{PhysicalIOExpr, ScanAggregation};
+use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::record_batch::RecordBatchReader;
 use parquet_lib::file::reader::{FileReader, SerializedFileReader};
 pub use parquet_lib::file::serialized_reader::SliceableCursor;
@@ -56,7 +56,7 @@ where
     // todo! hoist to lazy crate
     pub fn finish_with_scan_ops(
         mut self,
-        predicate: Option<Arc<dyn PhysicalIOExpr>>,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
         projection: Option<&[usize]>,
     ) -> Result<DataFrame> {

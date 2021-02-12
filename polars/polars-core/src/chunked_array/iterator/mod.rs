@@ -1071,6 +1071,7 @@ macro_rules! impl_many_chunk_null_check_iterator {
         pub struct $iterator_name<'a> {
             ca: &'a $ca_type,
             chunks: Vec<&'a $arrow_array>,
+            #[allow(dead_code)]
             current_data_left: ArrayDataRef,
             current_array_left: &'a $arrow_array,
             current_data_right: ArrayDataRef,

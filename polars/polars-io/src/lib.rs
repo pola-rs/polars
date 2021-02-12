@@ -22,7 +22,7 @@ use std::convert::TryFrom;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
-pub trait PhysicalIOExpr: Send + Sync {
+pub trait PhysicalIoExpr: Send + Sync {
     fn evaluate(&self, df: &DataFrame) -> Result<Series>;
 }
 
@@ -82,7 +82,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
     stop_after_n_rows: Option<usize>,
-    predicate: Option<Arc<dyn PhysicalIOExpr>>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
 ) -> Result<DataFrame> {
     let mut n_rows = 0;

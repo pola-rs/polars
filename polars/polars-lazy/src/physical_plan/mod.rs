@@ -5,7 +5,7 @@ pub mod planner;
 use crate::prelude::*;
 use ahash::RandomState;
 use polars_core::prelude::*;
-use polars_io::PhysicalIOExpr;
+use polars_io::PhysicalIoExpr;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -50,27 +50,27 @@ pub trait PhysicalExpr: Send + Sync {
     }
 }
 
-trait ToPhysicalIOExpr {
-    fn into_physical_io_expr(self) -> Arc<dyn PhysicalIOExpr>;
+trait ToPhysicalIoExpr {
+    fn into_physical_io_expr(self) -> Arc<dyn PhysicalIoExpr>;
 }
 
-pub struct PhysicalIOHelper {
+pub struct PhysicalIoHelper {
     expr: Arc<dyn PhysicalExpr>,
 }
 
-impl PhysicalIOHelper {
+impl PhysicalIoHelper {
     fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        PhysicalIOHelper { expr }
+        PhysicalIoHelper { expr }
     }
 }
 
-impl PhysicalIOExpr for PhysicalIOHelper {
+impl PhysicalIoExpr for PhysicalIoHelper {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         self.expr.evaluate(df)
     }
 }
 
-impl PhysicalIOExpr for dyn PhysicalExpr {
+impl PhysicalIoExpr for dyn PhysicalExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         <Self as PhysicalExpr>::evaluate(self, df)
     }

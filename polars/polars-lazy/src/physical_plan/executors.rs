@@ -26,7 +26,7 @@ impl<'a, R: 'static + Read + Seek + Sync + Send> FinishScanOps for CsvReader<'a,
         aggregate: Option<&[ScanAggregation]>,
     ) -> Result<DataFrame> {
         let predicate =
-            predicate.map(|expr| Arc::new(PhysicalIOHelper::new(expr)) as Arc<dyn PhysicalIOExpr>);
+            predicate.map(|expr| Arc::new(PhysicalIoHelper::new(expr)) as Arc<dyn PhysicalIoExpr>);
 
         let rechunk = self.rechunk;
         let mut csv_reader = self.build_inner_reader()?;
@@ -153,7 +153,7 @@ impl Executor for ParquetExec {
         let predicate = self
             .predicate
             .clone()
-            .map(|expr| Arc::new(PhysicalIOHelper::new(expr)) as Arc<dyn PhysicalIOExpr>);
+            .map(|expr| Arc::new(PhysicalIoHelper::new(expr)) as Arc<dyn PhysicalIoExpr>);
 
         let df = ParquetReader::new(file)
             .with_stop_after_n_rows(stop_after_n_rows)
@@ -503,11 +503,11 @@ fn groupby_helper(
                 let opt_agg = agg_expr.evaluate(&df, groups)?;
                 if let Some(agg) = &opt_agg {
                     if agg.len() != groups.len() {
-                        panic!(format!(
+                        panic!(
                             "returned aggregation is a different length: {} than the group lengths: {}",
                             agg.len(),
                             groups.len()
-                        ))
+                        )
                     }
                 };
                 Ok(opt_agg)
@@ -632,11 +632,11 @@ impl Executor for PartitionGroupByExec {
                             let opt_agg = agg_expr.evaluate_partitioned(&df, groups)?;
                             if let Some(agg) = &opt_agg {
                                 if agg[0].len() != groups.len() {
-                                    panic!(format!(
+                                    panic!(
                                         "returned aggregation is a different length: {} than the group lengths: {}",
                                         agg.len(),
                                         groups.len()
-                                    ))
+                                    )
                                 }
                             };
                             Ok(opt_agg)

@@ -59,11 +59,11 @@ where
         {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {
-            panic!(format!(
+            panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
                 T::get_dtype(),
                 self.dtype()
-            ))
+            )
         }
     }
 }

@@ -255,7 +255,7 @@ impl Display for DataType {
             #[cfg(feature = "object")]
             DataType::Object => "object",
             DataType::Categorical => "cat",
-            _ => panic!(format!("{:?} not implemented", self)),
+            _ => panic!("{:?} not implemented", self),
         };
         f.write_str(s)
     }
@@ -511,7 +511,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Duration(TimeUnit::Millisecond) => {
                 DataType::Duration(TimeUnit::Millisecond)
             }
-            dt => panic!(format!("Arrow datatype {:?} not supported by Polars", dt)),
+            dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }
     }
 }

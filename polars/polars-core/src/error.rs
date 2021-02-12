@@ -42,7 +42,7 @@ pub enum PolarsError {
     #[error(transparent)]
     Various(#[from] anyhow::Error),
     #[error(transparent)]
-    IO(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
     #[cfg(any(feature = "strings", feature = "temporal"))]
     Regex(#[from] regex::Error),

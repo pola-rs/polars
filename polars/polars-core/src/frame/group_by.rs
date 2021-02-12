@@ -1711,7 +1711,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                             let ca = builder.finish();
                             cols.push(ca.into_series());
                         }
-                        a => panic!(format!("aggregation: {:?} is not supported", a)),
+                        a => panic!("aggregation: {:?} is not supported", a),
                     }
                 }
             }

@@ -1,7 +1,7 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::buffer::PrimitiveParser;
 use crate::csv_core::utils::parse_bytes_with_encoding;
-use crate::PhysicalIOExpr;
+use crate::PhysicalIoExpr;
 use crate::ScanAggregation;
 use polars_core::prelude::*;
 
@@ -279,7 +279,7 @@ pub(crate) fn next_rows_core(
 pub(crate) fn finish_builder(
     builders: Vec<Builder>,
     parsed_dfs: &mut Vec<DataFrame>,
-    predicate: Option<&Arc<dyn PhysicalIOExpr>>,
+    predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
 ) -> Result<()> {
     let mut df = builders_to_df(builders);

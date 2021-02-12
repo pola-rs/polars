@@ -23,13 +23,13 @@
 //! let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
 //!
 //! // write to the in memory buffer
-//! IPCWriter::new(&mut buf).finish(&mut df).expect("ipc writer");
+//! IpcWriter::new(&mut buf).finish(&mut df).expect("ipc writer");
 //!
 //! // reset the buffers index after writing to the beginning of the buffer
 //! buf.set_position(0);
 //!
 //! // read the buffer into a DataFrame
-//! let df_read = IPCReader::new(buf).finish().unwrap();
+//! let df_read = IpcReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
@@ -42,7 +42,7 @@ use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 /// Read Arrows IPC format into a DataFrame
-pub struct IPCReader<R> {
+pub struct IpcReader<R> {
     /// File or Stream object
     reader: R,
     /// Aggregates chunks afterwards to a single chunk.
@@ -62,12 +62,12 @@ where
     }
 }
 
-impl<R> SerReader<R> for IPCReader<R>
+impl<R> SerReader<R> for IpcReader<R>
 where
     R: Read + Seek,
 {
     fn new(reader: R) -> Self {
-        IPCReader {
+        IpcReader {
             reader,
             rechunk: true,
         }
@@ -85,16 +85,16 @@ where
 }
 
 /// Write a DataFrame to Arrow's IPC format
-pub struct IPCWriter<'a, W> {
+pub struct IpcWriter<'a, W> {
     writer: &'a mut W,
 }
 
-impl<'a, W> SerWriter<'a, W> for IPCWriter<'a, W>
+impl<'a, W> SerWriter<'a, W> for IpcWriter<'a, W>
 where
     W: Write,
 {
     fn new(writer: &'a mut W) -> Self {
-        IPCWriter { writer }
+        IpcWriter { writer }
     }
 
     fn finish(self, df: &mut DataFrame) -> Result<()> {
@@ -122,13 +122,13 @@ mod test {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let mut df = create_df();
 
-        IPCWriter::new(&mut buf)
+        IpcWriter::new(&mut buf)
             .finish(&mut df)
             .expect("ipc writer");
 
         buf.set_position(0);
 
-        let df_read = IPCReader::new(buf).finish().unwrap();
+        let df_read = IpcReader::new(buf).finish().unwrap();
         assert!(df.frame_equal(&df_read));
     }
 }
