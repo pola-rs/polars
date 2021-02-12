@@ -535,7 +535,7 @@ impl PySeries {
                 }
                 v
             }
-            dt => panic!(format!("to_list() not implemented for {:?}", dt)),
+            dt => panic!("to_list() not implemented for {:?}", dt),
         };
         pylist.to_object(python)
     }

@@ -18,6 +18,6 @@ pub fn str_to_polarstype(s: &str) -> DataType {
         "<class 'pypolars.datatypes.Date64'>" => DataType::Date64,
         "<class 'pypolars.datatypes.List'>" => DataType::List(ArrowDataType::Null),
         "<class 'pypolars.datatypes.Categorical'>" => DataType::Categorical,
-        tp => panic!(format!("Type {} not implemented in str_to_polarstype", tp)),
+        tp => panic!("Type {} not implemented in str_to_polarstype", tp),
     }
 }
