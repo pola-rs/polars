@@ -15,15 +15,40 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
     assert_eq!(arr.null_count(), 0);
 
     let data_len = indices.len();
+    let array_values = arr.values();
+    let index_values = indices.values();
+
     let mut values = AlignedVec::<T::Native>::with_capacity_aligned(data_len);
-    for i in 0..data_len {
-        let index = indices.value_unchecked(i) as usize;
-        let v = arr.value_unchecked(index);
-        values.inner.push(v);
-    }
+    let iter = index_values
+        .into_iter()
+        .map(|idx| *array_values.get_unchecked(*idx as usize));
+    values.extend(iter);
+
     let nulls = indices.data_ref().null_buffer().cloned();
 
     let arr = aligned_vec_to_primitive_array(values, nulls, Some(indices.null_count()));
+    Arc::new(arr)
+}
+
+pub(crate) unsafe fn take_no_null_primitive_iter<
+    T: PolarsNumericType,
+    I: IntoIterator<Item = usize>,
+>(
+    arr: &PrimitiveArray<T>,
+    indices: I,
+) -> Arc<PrimitiveArray<T>> {
+    assert_eq!(arr.null_count(), 0);
+
+    let array_values = arr.values();
+
+    let iter = indices
+        .into_iter()
+        .map(|idx| *array_values.get_unchecked(idx));
+
+    let mut values = AlignedVec::<T::Native>::with_capacity_aligned(iter.size_hint().0);
+    values.extend(iter);
+
+    let arr = aligned_vec_to_primitive_array(values, None, None);
     Arc::new(arr)
 }
 

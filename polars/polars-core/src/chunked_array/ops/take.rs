@@ -6,7 +6,9 @@
 use crate::chunked_array::builder::{
     get_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
-use crate::chunked_array::kernels::take::{take_no_null_primitive, take_utf8};
+use crate::chunked_array::kernels::take::{
+    take_no_null_primitive, take_no_null_primitive_iter, take_utf8,
+};
 use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::array::{
@@ -110,12 +112,8 @@ where
         }
         if self.chunks.len() == 1 {
             if self.null_count() == 0 {
-                let idx_ca: NoNull<UInt32Chunked> =
-                    indices.into_iter().map(|idx| idx as u32).collect();
-                let idx_ca = idx_ca.into_inner();
-                let idx_arr = idx_ca.downcast_chunks()[0];
                 let arr = self.downcast_chunks()[0];
-                let arr = take_no_null_primitive(arr, idx_arr);
+                let arr = take_no_null_primitive_iter(arr, indices);
                 return Self::new_from_chunks(self.name(), vec![arr]);
             }
             return self.take_from_single_chunked_iter(indices).unwrap();
@@ -154,7 +152,6 @@ where
 
             let new_arr = if self.null_count() == 0 {
                 let arr = self.downcast_chunks()[0];
-                // TODO mark function as unsafe
                 unsafe { take_no_null_primitive(arr, idx_arr) as ArrayRef }
             } else {
                 let arr = &self.chunks[0];
