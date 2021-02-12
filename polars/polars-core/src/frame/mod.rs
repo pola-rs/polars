@@ -673,54 +673,6 @@ impl DataFrame {
 
     /// Take DataFrame values by indexes from an iterator that may contain None values.
     ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> DataFrame {
-    ///     let iterator = (0..9).into_iter().map(Some);
-    ///     df.take_opt_iter(iterator, None)
-    /// }
-    /// ```
-    /// # Safety
-    ///
-    /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
-    /// Null validity is checked
-    pub fn take_opt_iter<I>(&self, iter: I, capacity: Option<usize>) -> Self
-    where
-        I: Iterator<Item = Option<usize>> + Clone + Sync,
-    {
-        let n_chunks = match self.n_chunks() {
-            Err(_) => return self.clone(),
-            Ok(n) => n,
-        };
-
-        if n_chunks == 1 {
-            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
-            let cols = self
-                .columns
-                .par_iter()
-                .map(|s| unsafe {
-                    s.take_from_single_chunked(&idx_ca)
-                        .expect("already checked single chunk")
-                })
-                .collect();
-            return DataFrame::new_no_checks(cols);
-        }
-
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_opt_iter(&mut i, capacity)
-            })
-            .collect();
-        DataFrame::new_no_checks(new_col)
-    }
-
-    /// Take DataFrame values by indexes from an iterator that may contain None values.
-    ///
     /// # Safety
     ///
     /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
