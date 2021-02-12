@@ -49,7 +49,7 @@ impl From<&DataType> for PyDataType {
             DataType::Duration(TimeUnit::Millisecond) => DurationMillisecond,
             DataType::Object => Object,
             DataType::Categorical => Categorical,
-            dt => panic!(format!("datatype: {:?} not supported", dt)),
+            dt => panic!("datatype: {:?} not supported", dt),
         }
     }
 }

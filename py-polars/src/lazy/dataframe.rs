@@ -42,7 +42,7 @@ impl PyLazyGroupBy {
             // call the lambda and get a python side DataFrame wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
@@ -336,7 +336,7 @@ impl PyLazyFrame {
             // call the lambda and get a python side Series wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(

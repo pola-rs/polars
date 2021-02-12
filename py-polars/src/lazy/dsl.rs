@@ -383,7 +383,7 @@ impl PyExpr {
             // call the lambda and get a python side Series wrapper
             let result_series_wrapper = match lambda.call1(py, (python_series_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
             // unpack the wrapper in a PySeries
             let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
@@ -514,7 +514,7 @@ pub fn binary_function(
         let result_series_wrapper =
             match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
         // unpack the wrapper in a PySeries
         let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
@@ -544,7 +544,7 @@ pub fn lit(value: &PyAny) -> PyExpr {
         )
         .into()
     } else {
-        panic!(format!("could not convert value {:?} as a Literal", value))
+        panic!("could not convert value {:?} as a Literal", value)
     }
 }
 
