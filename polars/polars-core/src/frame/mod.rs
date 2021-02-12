@@ -126,7 +126,7 @@ impl DataFrame {
 
     /// Ensure all the chunks in the DataFrame are aligned.
     pub fn rechunk(&mut self) -> &mut Self {
-        if self.columns.iter().map(|s| s.chunks()).all_equal() {
+        if self.columns.iter().map(|s| s.chunk_lengths()).all_equal() {
             self
         } else {
             self.as_single_chunk()
@@ -325,7 +325,7 @@ impl DataFrame {
             .for_each(|(left, right)| {
                 left.append(right).expect("should not fail");
             });
-        self.rechunk();
+        // don't rechunk here. Chunks in columns always match.
         Ok(self)
     }
 

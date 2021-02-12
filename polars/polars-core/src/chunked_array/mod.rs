@@ -418,17 +418,19 @@ impl<T> ChunkedArray<T> {
         Self: std::marker::Sized,
     {
         if matches!(self.dtype(), DataType::Categorical) {
-            assert!(Arc::ptr_eq(
-                self.categorical_map.as_ref().unwrap(),
-                other.categorical_map.as_ref().unwrap()
-            ));
+            if !self.is_empty() {
+                assert!(Arc::ptr_eq(
+                    self.categorical_map.as_ref().unwrap(),
+                    other.categorical_map.as_ref().unwrap()
+                ));
+            }
         }
 
         // replace an empty array
         if self.chunks.len() == 1 && self.is_empty() {
             self.chunks = other.chunks.clone();
         } else {
-            self.chunks.extend(other.chunks.clone())
+            self.chunks.extend_from_slice(&other.chunks)
         }
         self.chunk_id = create_chunk_id(&self.chunks);
     }
