@@ -136,7 +136,7 @@ impl PyDataFrame {
     #[staticmethod]
     pub fn read_ipc(py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
-        let df = IPCReader::new(file).finish().map_err(PyPolarsEr::from)?;
+        let df = IpcReader::new(file).finish().map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -166,7 +166,7 @@ impl PyDataFrame {
 
     pub fn to_ipc(&mut self, py_f: PyObject) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
-        IPCWriter::new(&mut buf)
+        IpcWriter::new(&mut buf)
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())

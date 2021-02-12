@@ -223,7 +223,7 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
 
     fn finish(mut self) -> ChunkedArray<CategoricalType> {
         if self.mapping.len() > u32::MAX as usize {
-            panic!(format!("not more than {} categories supported", u32::MAX))
+            panic!("not more than {} categories supported", u32::MAX)
         };
         let arr = Arc::new(self.array_builder.finish());
         let len = arr.len();
