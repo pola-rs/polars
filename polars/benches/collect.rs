@@ -43,7 +43,7 @@ fn create_string_array(
 ) -> Vec<Option<String>> {
     let mut rng = StdRng::seed_from_u64(0);
     (0..size)
-        .map(|i| {
+        .map(|_| {
             if rng.gen::<f32>() < null_percentage {
                 None
             } else {
