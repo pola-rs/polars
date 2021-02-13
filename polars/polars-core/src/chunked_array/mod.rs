@@ -1009,7 +1009,7 @@ pub(crate) mod test {
     #[test]
     fn take() {
         let a = get_chunked_array();
-        let new = a.take([0usize, 1].into_iter().copied(), None);
+        let new = a.take([0usize, 1].iter().copied().into());
         assert_eq!(new.len(), 2)
     }
 

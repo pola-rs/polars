@@ -546,7 +546,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 for (_, idx) in groups {
                     // Safety
                     // The indexes of the groupby operation are never out of bounds
-                    let ca = unsafe { ca.take_unchecked(idx.iter().copied(), None) };
+                    let ca = unsafe { ca.take_unchecked(idx.iter().copied().into()) };
                     let s = ca.explode_and_offsets()?.0;
                     builder.append_series(&s);
                 }

@@ -136,9 +136,7 @@ where
 macro_rules! impl_value_counts {
     ($self:expr) => {{
         let group_tuples = $self.group_tuples(true);
-        let values = unsafe {
-            $self.take_unchecked(group_tuples.iter().map(|t| t.0), Some(group_tuples.len()))
-        };
+        let values = unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0).into()) };
         let mut counts: NoNull<UInt32Chunked> = group_tuples
             .into_iter()
             .map(|(_, groups)| groups.len() as u32)
