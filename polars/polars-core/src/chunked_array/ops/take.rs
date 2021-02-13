@@ -7,10 +7,17 @@ use crate::chunked_array::builder::{
     get_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
 use crate::chunked_array::kernels::take::{
-    take_no_null_primitive, take_no_null_primitive_iter, take_primitive_iter,
-    take_primitive_iter_n_chunks, take_utf8,
+    take_bool_iter, take_bool_iter_unchecked, take_bool_opt_iter_unchecked, take_no_null_bool_iter,
+    take_no_null_bool_iter_unchecked, take_no_null_bool_opt_iter_unchecked, take_no_null_primitive,
+    take_no_null_primitive_iter, take_no_null_primitive_iter_unchecked,
+    take_no_null_primitive_opt_iter_unchecked, take_no_null_utf8_iter,
+    take_no_null_utf8_iter_unchecked, take_no_null_utf8_opt_iter_unchecked, take_primitive_iter,
+    take_primitive_iter_n_chunks, take_primitive_iter_unchecked, take_primitive_opt_iter_n_chunks,
+    take_primitive_opt_iter_unchecked, take_utf8, take_utf8_iter, take_utf8_iter_unchecked,
+    take_utf8_opt_iter_unchecked,
 };
 use crate::prelude::*;
+use crate::series::implementations::Wrap;
 use crate::utils::NoNull;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
@@ -20,6 +27,23 @@ use polars_arrow::prelude::*;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use unsafe_unwrap::UnsafeUnwrap;
+
+macro_rules! take_iter_n_chunks {
+    ($ca:expr, $indices:expr) => {{
+        let taker = $ca.take_rand();
+        $indices.into_iter().map(|idx| taker.get(idx)).collect()
+    }};
+}
+
+macro_rules! take_opt_iter_n_chunks {
+    ($ca:expr, $indices:expr) => {{
+        let taker = $ca.take_rand();
+        $indices
+            .into_iter()
+            .map(|opt_idx| opt_idx.and_then(|idx| taker.get(idx)))
+            .collect()
+    }};
+}
 
 macro_rules! impl_take {
     ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
@@ -89,6 +113,366 @@ macro_rules! impl_take_unchecked {
     }};
 }
 
+impl<T> ChunkTakeNew for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    unsafe fn take_unchecked_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_primitive(chunks[0], array) as ArrayRef,
+                    (_, 1) => take(chunks[0], array, None).unwrap(),
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let idx_iter = array.values().iter().map(|i| *i as usize).into();
+                            self.take_unchecked_new(idx_iter)
+                        } else {
+                            let idx_iter = Wrap(
+                                array
+                                    .into_iter()
+                                    .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
+                            )
+                            .into();
+                            self.take_unchecked_new(idx_iter)
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_primitive_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_primitive_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca = take_primitive_iter_n_chunks(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => {
+                        take_no_null_primitive_opt_iter_unchecked(chunks[0], iter) as ArrayRef
+                    }
+                    (_, 1) => take_primitive_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca = take_primitive_opt_iter_n_chunks(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+        }
+    }
+
+    fn take_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap(),
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let idx_iter = array.values().iter().map(|i| *i as usize).into();
+                            self.take_new(idx_iter)
+                        } else {
+                            let idx_iter = Wrap(
+                                array
+                                    .into_iter()
+                                    .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
+                            )
+                            .into();
+                            self.take_new(idx_iter)
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_primitive_iter(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_primitive_iter(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca = take_primitive_iter_n_chunks(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(_) => {
+                panic!("not supported in take, only supported in take_unchecked for the join operation")
+            }
+        }
+    }
+}
+
+impl ChunkTakeNew for BooleanChunked {
+    unsafe fn take_unchecked_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap(),
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let idx_iter = array.values().iter().map(|i| *i as usize).into();
+                            self.take_unchecked_new(idx_iter)
+                        } else {
+                            let idx_iter = Wrap(
+                                array
+                                    .into_iter()
+                                    .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
+                            )
+                            .into();
+                            self.take_unchecked_new(idx_iter)
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_bool_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_bool_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_bool_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_bool_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+        }
+    }
+
+    fn take_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap(),
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let idx_iter = array.values().iter().map(|i| *i as usize).into();
+                            self.take_new(idx_iter)
+                        } else {
+                            let idx_iter = Wrap(
+                                array
+                                    .into_iter()
+                                    .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
+                            )
+                            .into();
+                            self.take_new(idx_iter)
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_bool_iter(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_bool_iter(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(_) => {
+                panic!("not supported in take, only supported in take_unchecked for the join operation")
+            }
+        }
+    }
+}
+
+impl ChunkTakeNew for Utf8Chunked {
+    unsafe fn take_unchecked_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take_utf8(chunks[0], array) as ArrayRef,
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let idx_iter = array.values().iter().map(|i| *i as usize).into();
+                            self.take_unchecked_new(idx_iter)
+                        } else {
+                            let idx_iter = Wrap(
+                                array
+                                    .into_iter()
+                                    .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
+                            )
+                            .into();
+                            self.take_unchecked_new(idx_iter)
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_utf8_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_utf8_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_utf8_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_utf8_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: Utf8Chunked = take_opt_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+        }
+    }
+
+    fn take_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap() as ArrayRef,
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let idx_iter = array.values().iter().map(|i| *i as usize).into();
+                            self.take_new(idx_iter)
+                        } else {
+                            let idx_iter = Wrap(
+                                array
+                                    .into_iter()
+                                    .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
+                            )
+                            .into();
+                            self.take_new(idx_iter)
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_utf8_iter(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_utf8_iter(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(_) => {
+                panic!("not supported in take, only supported in take_unchecked for the join operation")
+            }
+        }
+    }
+}
+
+impl ChunkTakeNew for ListChunked {
+    unsafe fn take_unchecked_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        self.take_new(indices)
+    }
+
+    fn take_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap() as ArrayRef,
+                    _ => {
+                        let ca = self.rechunk();
+                        return ca.take_new(indices);
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let idx_ca = iter
+                    .map(|idx| idx as u32)
+                    .collect::<NoNull<UInt32Chunked>>()
+                    .into_inner();
+                self.take_new((&idx_ca).into())
+            }
+            TakeIdx::IterNulls(iter) => {
+                let idx_ca = iter
+                    .map(|opt_idx| opt_idx.map(|idx| idx as u32))
+                    .collect::<UInt32Chunked>();
+                self.take_new((&idx_ca).into())
+            }
+        }
+    }
+}
+
 impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -114,14 +498,15 @@ where
         if self.chunks.len() == 1 {
             let arr = self.downcast_chunks()[0];
             let arr = if self.null_count() == 0 {
-                take_no_null_primitive_iter(arr, indices)
+                take_no_null_primitive_iter_unchecked(arr, indices)
             } else {
-                take_primitive_iter(arr, indices)
+                take_primitive_iter_unchecked(arr, indices)
             };
             return Self::new_from_chunks(self.name(), vec![arr]);
         }
-        let arr = take_primitive_iter_n_chunks(self, indices);
-        return Self::new_from_chunks(self.name(), vec![arr]);
+        let mut ca = take_primitive_iter_n_chunks(self, indices);
+        ca.rename(self.name());
+        ca
     }
 
     fn take_opt(

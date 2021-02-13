@@ -3,8 +3,9 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
+use crate::series::implementations::Wrap;
 use crate::utils::NoNull;
-use arrow::array::ArrayRef;
+use arrow::array::{ArrayRef, UInt32Array};
 use std::marker::Sized;
 
 pub(crate) mod aggregate;
@@ -231,6 +232,61 @@ pub trait TakeRandomUtf8 {
     unsafe fn get_unchecked(self, index: usize) -> Self::Item;
 }
 
+pub enum TakeIdx<'a, I, INulls>
+where
+    I: Iterator<Item = usize>,
+    INulls: Iterator<Item = Option<usize>>,
+{
+    Array(&'a UInt32Array),
+    Iter(I),
+    // will return a null where None
+    IterNulls(INulls),
+}
+
+pub type Dummy<T> = std::iter::Once<T>;
+
+impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
+    fn from(ca: &'a UInt32Chunked) -> Self {
+        if ca.chunks.len() == 1 {
+            TakeIdx::Array(ca.downcast_chunks()[0])
+        } else {
+            panic!("implementation error, should be transformed to an iterator by the caller")
+        }
+    }
+}
+
+impl<'a, I> From<I> for TakeIdx<'a, I, Dummy<Option<usize>>>
+where
+    I: Iterator<Item = usize>,
+{
+    fn from(iter: I) -> Self {
+        TakeIdx::Iter(iter)
+    }
+}
+
+impl<'a, INulls> From<Wrap<INulls>> for TakeIdx<'a, Dummy<usize>, INulls>
+where
+    INulls: Iterator<Item = Option<usize>>,
+{
+    fn from(iter: Wrap<INulls>) -> Self {
+        TakeIdx::IterNulls(iter.0)
+    }
+}
+
+pub trait ChunkTakeNew {
+    unsafe fn take_unchecked_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>;
+
+    fn take_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>;
+}
+
 /// Fast access by index.
 pub trait ChunkTake {
     /// Take values from ChunkedArray by index.
@@ -246,7 +302,7 @@ pub trait ChunkTake {
     ///
     /// # Safety
     ///
-    /// Runs without checking bounds or null validity.
+    /// Runs without checking bounds. Null validity is checked
     unsafe fn take_unchecked(
         &self,
         indices: impl Iterator<Item = usize>,
@@ -272,7 +328,7 @@ pub trait ChunkTake {
     ///
     /// # Safety
     ///
-    /// Doesn't do any bound or null validity checking.
+    /// Doesn't do any bound checking. Null validity is checked
     unsafe fn take_opt_unchecked(
         &self,
         indices: impl Iterator<Item = Option<usize>>,

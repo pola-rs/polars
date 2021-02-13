@@ -665,36 +665,6 @@ impl DataFrame {
         DataFrame::new_no_checks(new_col)
     }
 
-    /// Take DataFrame values by indexes from an iterator that may contain None values.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// unsafe fn example(df: &DataFrame) -> DataFrame {
-    ///     let iterator = (0..9).into_iter().map(Some);
-    ///     df.take_opt_iter_unchecked(iterator, None)
-    /// }
-    /// ```
-    ///
-    /// # Safety
-    ///
-    /// This doesn't do any bound or null validity checking.
-    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
-    where
-        I: Iterator<Item = Option<usize>> + Clone + Sync,
-    {
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_opt_iter_unchecked(&mut i, capacity)
-            })
-            .collect::<Vec<_>>();
-        DataFrame::new_no_checks(new_col)
-    }
-
     /// Take DataFrame rows by index values.
     ///
     /// # Example
