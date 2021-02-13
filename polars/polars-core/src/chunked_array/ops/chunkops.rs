@@ -138,7 +138,7 @@ mod test {
         let s = Series::new("", &["foo", "bar", "spam"]);
         let mut a = s.cast::<CategoricalType>().unwrap();
 
-        let _ = a.append(&a.slice(0, 2).unwrap());
+        a.append(&a.slice(0, 2).unwrap()).unwrap();
         a.rechunk();
         assert!(a.categorical().unwrap().categorical_map.is_some());
     }

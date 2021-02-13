@@ -581,55 +581,6 @@ impl DataFrame {
 
     /// Take DataFrame values by indexes from an iterator.
     ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// unsafe fn example(df: &DataFrame) -> DataFrame {
-    ///     let iterator = (0..9).into_iter();
-    ///     df.take_iter_unchecked(iterator, None)
-    /// }
-    /// ```
-    ///
-    /// # Safety
-    ///
-    /// This doesn't do any bound or null validity checking.
-    pub unsafe fn take_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
-    where
-        I: Iterator<Item = usize> + Clone + Sync,
-    {
-        let n_chunks = match self.n_chunks() {
-            Err(_) => return self.clone(),
-            Ok(n) => n,
-        };
-
-        if n_chunks == 1 {
-            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
-            let idx_ca = idx_ca.into_inner();
-            let cols = self
-                .columns
-                .par_iter()
-                .map(|s| {
-                    s.take_from_single_chunked(&idx_ca)
-                        .expect("already checked single chunk")
-                })
-                .collect();
-            return DataFrame::new_no_checks(cols);
-        }
-
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_iter_unchecked(&mut i, capacity)
-            })
-            .collect::<Vec<_>>();
-        DataFrame::new_no_checks(new_col)
-    }
-
-    /// Take DataFrame values by indexes from an iterator.
-    ///
     /// # Safety
     ///
     /// This doesn't do any bound checking but checks null validity.
@@ -1386,10 +1337,10 @@ impl DataFrame {
             let mut groups = groups.collect::<Vec<_>>();
             groups.sort_unstable();
             let cap = Some(groups.len());
-            unsafe { self.take_iter_unchecked(groups.into_iter(), cap) }
+            unsafe { self.take_iter_unchecked_bounds(groups.into_iter(), cap) }
         } else {
             let cap = Some(groups.size_hint().0);
-            unsafe { self.take_iter_unchecked(groups, cap) }
+            unsafe { self.take_iter_unchecked_bounds(groups, cap) }
         };
 
         Ok(df)
@@ -1688,7 +1639,7 @@ mod test {
         }
         .unwrap();
 
-        let _ = df.vstack_mut(&df.slice(0, 3).unwrap());
+        df.vstack_mut(&df.slice(0, 3).unwrap()).unwrap();
         assert_eq!(df.n_chunks().unwrap(), 2)
     }
 }
