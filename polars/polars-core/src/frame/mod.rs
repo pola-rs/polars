@@ -1688,7 +1688,7 @@ mod test {
         }
         .unwrap();
 
-        df.vstack_mut(&df.slice(0, 3).unwrap());
+        let _ = df.vstack_mut(&df.slice(0, 3).unwrap());
         assert_eq!(df.n_chunks().unwrap(), 2)
     }
 }

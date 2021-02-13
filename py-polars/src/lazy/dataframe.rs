@@ -86,7 +86,7 @@ impl PyLazyFrame {
     ) -> Self {
         let delimiter = sep.as_bytes()[0];
 
-        let overwrite_dtype = overwrite_dtype.and_then(|overwrite_dtype| {
+        let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype
                 .iter()
                 .map(|(name, dtype)| {
@@ -95,7 +95,7 @@ impl PyLazyFrame {
                     Field::new(name, dtype)
                 })
                 .collect();
-            Some(Schema::new(fields))
+            Schema::new(fields)
         });
 
         LazyCsvReader::new(path)

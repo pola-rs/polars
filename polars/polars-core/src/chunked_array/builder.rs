@@ -865,18 +865,15 @@ mod test {
             // many chunks are aggregated to one in the ListArray
             assert_eq!(s.len(), 6)
         } else {
-            assert!(false)
+            panic!()
         }
         if let AnyValue::List(s) = ls.get_any_value(1) {
             assert_eq!(s.len(), 3)
         } else {
-            assert!(false)
+            panic!()
         }
         // test list collect
-        let out = [&s1, &s2]
-            .iter()
-            .map(|s| s.clone())
-            .collect::<ListChunked>();
+        let out = [&s1, &s2].iter().copied().collect::<ListChunked>();
         assert_eq!(out.get(0).unwrap().len(), 6);
         assert_eq!(out.get(1).unwrap().len(), 3);
     }

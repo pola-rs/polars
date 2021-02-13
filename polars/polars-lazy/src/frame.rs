@@ -1566,7 +1566,7 @@ mod test {
                 assert!(matches!(&**left, Expr::Cast { .. }));
                 assert!(matches!(&**right, Expr::Cast { .. }));
             } else {
-                assert!(false)
+                panic!()
             }
         };
     }

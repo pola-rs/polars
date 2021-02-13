@@ -75,7 +75,7 @@ fn when(predicate: PyExpr) -> dsl::When {
     dsl::when(predicate)
 }
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[pyfunction]
 fn version() -> &'static str {
     VERSION

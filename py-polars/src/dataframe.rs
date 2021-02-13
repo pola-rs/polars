@@ -71,7 +71,7 @@ impl PyDataFrame {
             }
         };
 
-        let overwrite_dtype = overwrite_dtype.and_then(|overwrite_dtype| {
+        let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype
                 .iter()
                 .map(|(name, dtype)| {
@@ -80,7 +80,7 @@ impl PyDataFrame {
                     Field::new(name, dtype)
                 })
                 .collect();
-            Some(Schema::new(fields))
+            Schema::new(fields)
         });
 
         let file = get_either_file(py_f, false)?;
