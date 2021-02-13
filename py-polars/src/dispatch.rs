@@ -1021,7 +1021,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         return Ok(PySeries::new(ca.into_series()));
                     }
 
-                    while let Some(series) = it.next() {
+                    for series in it {
                         append_series(pypolars, &mut *builder, lambda, series)?;
                     }
                     builder.finish()
@@ -1047,7 +1047,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         builder.append_opt_series(None);
                     }
 
-                    while let Some(opt_series) = it.next() {
+                    for opt_series in it {
                         if let Some(series) = opt_series {
                             append_series(pypolars, &mut *builder, lambda, series)?;
                         } else {

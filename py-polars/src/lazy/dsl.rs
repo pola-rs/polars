@@ -207,8 +207,7 @@ impl PyExpr {
     pub fn str_parse_date32(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_date32(fmt.as_ref().map(|s| s.as_str()))
-                .map(|ca| ca.into_series())
+            ca.as_date32(fmt.as_deref()).map(|ca| ca.into_series())
         };
         self.clone()
             .inner
@@ -219,8 +218,7 @@ impl PyExpr {
     pub fn str_parse_date64(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_date64(fmt.as_ref().map(|s| s.as_str()))
-                .map(|ca| ca.into_series())
+            ca.as_date64(fmt.as_deref()).map(|ca| ca.into_series())
         };
         self.clone()
             .inner
