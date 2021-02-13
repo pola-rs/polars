@@ -16,6 +16,7 @@ use arrow::array::{ArrayDataRef, ArrayRef};
 use arrow::buffer::Buffer;
 #[cfg(feature = "object")]
 use std::any::Any;
+use std::borrow::Cow;
 #[cfg(feature = "object")]
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -539,44 +540,45 @@ macro_rules! impl_dyn_series {
                 ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
             }
 
-            fn take_iter(
-                &self,
-                iter: &mut dyn Iterator<Item = usize>,
-                capacity: Option<usize>,
-            ) -> Series {
-                ChunkTake::take(&self.0, iter, capacity).into_series()
+            fn take(&self, indices: &UInt32Chunked) -> Series {
+                let indices = if indices.chunks.len() > 1 {
+                    Cow::Owned(indices.rechunk())
+                } else {
+                    Cow::Borrowed(indices)
+                };
+                ChunkTakeNew::take_new(&self.0, (&*indices).into()).into_series()
+            }
+
+            fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
+                ChunkTakeNew::take_new(&self.0, iter.into()).into_series()
             }
 
             fn take_every(&self, n: usize) -> Series {
                 self.0.take_every(n).into_series()
             }
 
-            unsafe fn take_iter_unchecked(
-                &self,
-                iter: &mut dyn Iterator<Item = usize>,
-                capacity: Option<usize>,
-            ) -> Series {
-                ChunkTake::take_unchecked(&self.0, iter, capacity).into_series()
+            unsafe fn take_iter_unchecked(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
+                ChunkTakeNew::take_unchecked_new(&self.0, iter.into()).into_series()
             }
 
-            unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Series> {
-                ChunkTake::take_from_single_chunked(&self.0, idx).map(|ca| ca.into_series())
+            unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+                let idx = if idx.chunks.len() > 1 {
+                    Cow::Owned(idx.rechunk())
+                } else {
+                    Cow::Borrowed(idx)
+                };
+                Ok(ChunkTakeNew::take_unchecked_new(&self.0, (&*idx).into()).into_series())
             }
 
             unsafe fn take_opt_iter_unchecked(
                 &self,
                 iter: &mut dyn Iterator<Item = Option<usize>>,
-                capacity: Option<usize>,
             ) -> Series {
-                ChunkTake::take_opt_unchecked(&self.0, iter, capacity).into_series()
+                ChunkTakeNew::take_unchecked_new(&self.0, Wrap(iter).into()).into_series()
             }
 
-            fn take_opt_iter(
-                &self,
-                iter: &mut dyn Iterator<Item = Option<usize>>,
-                capacity: Option<usize>,
-            ) -> Series {
-                ChunkTake::take_opt(&self.0, iter, capacity).into_series()
+            fn take_opt_iter(&self, iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
+                ChunkTakeNew::take_new(&self.0, Wrap(iter).into()).into_series()
             }
 
             fn len(&self) -> usize {
@@ -661,7 +663,7 @@ macro_rules! impl_dyn_series {
                 ChunkSort::sort(&self.0, reverse).into_series()
             }
 
-            fn argsort(&self, reverse: bool) -> Vec<usize> {
+            fn argsort(&self, reverse: bool) -> UInt32Chunked {
                 ChunkSort::argsort(&self.0, reverse)
             }
 
@@ -994,36 +996,27 @@ where
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>, capacity: Option<usize>) -> Series {
-        ChunkTake::take(&self.0, iter, capacity).into_series()
+    fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
+        todo!()
     }
 
-    unsafe fn take_iter_unchecked(
-        &self,
-        iter: &mut dyn Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter, capacity).into_series()
+    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
+        todo!()
     }
 
-    unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Series> {
-        ChunkTake::take_from_single_chunked(&self.0, idx).map(|ca| ca.into_series())
+    unsafe fn take_unchecked(&self, _idx: &UInt32Chunked) -> Result<Series> {
+        todo!()
     }
 
     unsafe fn take_opt_iter_unchecked(
         &self,
-        iter: &mut dyn Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
+        _iter: &mut dyn Iterator<Item = Option<usize>>,
     ) -> Series {
-        ChunkTake::take_opt_unchecked(&self.0, iter, capacity).into_series()
+        todo!()
     }
 
-    fn take_opt_iter(
-        &self,
-        iter: &mut dyn Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Series {
-        ChunkTake::take_opt(&self.0, iter, capacity).into_series()
+    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
+        todo!()
     }
 
     fn len(&self) -> usize {
@@ -1076,7 +1069,7 @@ where
         ChunkSort::sort(&self.0, reverse).into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
+    fn argsort(&self, reverse: bool) -> UInt32Chunked {
         ChunkSort::argsort(&self.0, reverse)
     }
 

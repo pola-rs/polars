@@ -721,7 +721,7 @@ impl DataFrame {
 
     fn create_left_df<B: Sync>(&self, join_tuples: &[(usize, B)]) -> DataFrame {
         unsafe {
-            self.take_iter_unchecked_bounds(
+            self.take_iter_unchecked(
                 join_tuples.iter().map(|(left, _right)| *left),
                 Some(join_tuples.len()),
             )
@@ -823,7 +823,7 @@ impl DataFrame {
                     || self.create_left_df(&join_tuples),
                     || unsafe {
                         // remove join columns
-                        remove_selected(other, &selected_right).take_iter_unchecked_bounds(
+                        remove_selected(other, &selected_right).take_iter_unchecked(
                             join_tuples.iter().map(|(_left, right)| *right),
                             Some(join_tuples.len()),
                         )
@@ -865,7 +865,7 @@ impl DataFrame {
                     || self.create_left_df(&join_tuples),
                     || unsafe {
                         // remove join columns
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked_bounds(
+                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
                             join_tuples.iter().map(|(_left, right)| *right),
                             Some(join_tuples.len()),
                         )
@@ -911,13 +911,13 @@ impl DataFrame {
                 // Take the left and right dataframes by join tuples
                 let (mut df_left, df_right) = POOL.join(
                     || unsafe {
-                        remove_selected(self, &selected_left).take_opt_iter_unchecked_bounds(
+                        remove_selected(self, &selected_left).take_opt_iter_unchecked(
                             opt_join_tuples.iter().map(|(left, _right)| *left),
                             Some(opt_join_tuples.len()),
                         )
                     },
                     || unsafe {
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked_bounds(
+                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
                             opt_join_tuples.iter().map(|(_left, right)| *right),
                             Some(opt_join_tuples.len()),
                         )
@@ -965,13 +965,10 @@ impl DataFrame {
         let (df_left, df_right) = POOL.join(
             || self.create_left_df(&join_tuples),
             || unsafe {
-                other
-                    .drop(s_right.name())
-                    .unwrap()
-                    .take_iter_unchecked_bounds(
-                        join_tuples.iter().map(|(_left, right)| *right),
-                        Some(join_tuples.len()),
-                    )
+                other.drop(s_right.name()).unwrap().take_iter_unchecked(
+                    join_tuples.iter().map(|(_left, right)| *right),
+                    Some(join_tuples.len()),
+                )
             },
         );
         self.finish_join(df_left, df_right)
@@ -1003,13 +1000,10 @@ impl DataFrame {
         let (df_left, df_right) = POOL.join(
             || self.create_left_df(&opt_join_tuples),
             || unsafe {
-                other
-                    .drop(s_right.name())
-                    .unwrap()
-                    .take_opt_iter_unchecked_bounds(
-                        opt_join_tuples.iter().map(|(_left, right)| *right),
-                        Some(opt_join_tuples.len()),
-                    )
+                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples.iter().map(|(_left, right)| *right),
+                    Some(opt_join_tuples.len()),
+                )
             },
         );
         self.finish_join(df_left, df_right)
@@ -1046,21 +1040,16 @@ impl DataFrame {
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = POOL.join(
             || unsafe {
-                self.drop(s_left.name())
-                    .unwrap()
-                    .take_opt_iter_unchecked_bounds(
-                        opt_join_tuples.iter().map(|(left, _right)| *left),
-                        Some(opt_join_tuples.len()),
-                    )
+                self.drop(s_left.name()).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples.iter().map(|(left, _right)| *left),
+                    Some(opt_join_tuples.len()),
+                )
             },
             || unsafe {
-                other
-                    .drop(s_right.name())
-                    .unwrap()
-                    .take_opt_iter_unchecked_bounds(
-                        opt_join_tuples.iter().map(|(_left, right)| *right),
-                        Some(opt_join_tuples.len()),
-                    )
+                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples.iter().map(|(_left, right)| *right),
+                    Some(opt_join_tuples.len()),
+                )
             },
         );
         let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);

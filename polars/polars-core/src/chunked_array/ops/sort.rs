@@ -80,7 +80,7 @@ where
         self.chunks = sorted.chunks;
     }
 
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
+    fn argsort(&self, reverse: bool) -> UInt32Chunked {
         // if len larger than 1M we sort in paralllel
         if self.is_optimal_aligned()
             && self.len()
@@ -99,33 +99,39 @@ where
                 vals.as_mut_slice()
                     .par_sort_by(|(_idx, a), (_idx_b, b)| a.partial_cmp(b).unwrap());
             }
-            vals.into_par_iter().map(|(idx, _v)| idx).collect()
+            vals.into_par_iter()
+                .map(|(idx, _v)| Some(idx as u32))
+                .collect()
         } else if self.null_count() == 0 {
             if reverse {
                 self.into_no_null_iter()
                     .enumerate()
                     .sorted_by(|(_idx_a, a), (_idx_b, b)| b.partial_cmp(a).unwrap())
-                    .map(|(idx, _v)| idx)
-                    .collect()
+                    .map(|(idx, _v)| idx as u32)
+                    .collect::<NoNull<UInt32Chunked>>()
+                    .into_inner()
             } else {
                 self.into_no_null_iter()
                     .enumerate()
                     .sorted_by(|(_idx_a, a), (_idx_b, b)| a.partial_cmp(b).unwrap())
-                    .map(|(idx, _v)| idx)
-                    .collect()
+                    .map(|(idx, _v)| idx as u32)
+                    .collect::<NoNull<UInt32Chunked>>()
+                    .into_inner()
             }
         } else if reverse {
             self.into_iter()
                 .enumerate()
                 .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(b, a))
-                .map(|(idx, _v)| idx)
-                .collect()
+                .map(|(idx, _v)| idx as u32)
+                .collect::<NoNull<UInt32Chunked>>()
+                .into_inner()
         } else {
             self.into_iter()
                 .enumerate()
                 .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(a, b))
-                .map(|(idx, _v)| idx)
-                .collect()
+                .map(|(idx, _v)| idx as u32)
+                .collect::<NoNull<UInt32Chunked>>()
+                .into_inner()
         }
     }
 }
@@ -136,8 +142,9 @@ macro_rules! argsort {
             .into_iter()
             .enumerate()
             .sorted_by($closure)
-            .map(|(idx, _v)| idx)
-            .collect()
+            .map(|(idx, _v)| idx as u32)
+            .collect::<NoNull<UInt32Chunked>>()
+            .into_inner()
     }};
 }
 
@@ -161,7 +168,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         self.chunks = sorted.chunks;
     }
 
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
+    fn argsort(&self, reverse: bool) -> UInt32Chunked {
         if reverse {
             argsort!(self, |(_idx_a, a), (_idx_b, b)| b.cmp(a))
         } else {
@@ -179,42 +186,37 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
         self.deref_mut().sort_in_place(reverse)
     }
 
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
+    fn argsort(&self, reverse: bool) -> UInt32Chunked {
         self.deref().argsort(reverse)
     }
 }
 
-// TODO! return errors
 impl ChunkSort<ListType> for ListChunked {
     fn sort(&self, _reverse: bool) -> Self {
-        println!("A ListChunked cannot be sorted. Doing nothing");
-        self.clone()
+        unimplemented!()
     }
 
     fn sort_in_place(&mut self, _reverse: bool) {
-        println!("A ListChunked cannot be sorted. Doing nothing");
+        unimplemented!()
     }
 
-    fn argsort(&self, _reverse: bool) -> Vec<usize> {
-        println!("A ListChunked cannot be sorted. Doing nothing");
-        (0..self.len()).collect()
+    fn argsort(&self, _reverse: bool) -> UInt32Chunked {
+        unimplemented!()
     }
 }
 
 #[cfg(feature = "object")]
 impl<T> ChunkSort<ObjectType<T>> for ObjectChunked<T> {
     fn sort(&self, _reverse: bool) -> Self {
-        println!("An object cannot be sorted. Doing nothing");
-        self.clone()
+        unimplemented!()
     }
 
     fn sort_in_place(&mut self, _reverse: bool) {
-        println!("An object cannot be sorted. Doing nothing");
+        unimplemented!()
     }
 
-    fn argsort(&self, _reverse: bool) -> Vec<usize> {
-        println!("An object cannot be sorted. Doing nothing");
-        (0..self.len()).collect()
+    fn argsort(&self, _reverse: bool) -> UInt32Chunked {
+        unimplemented!()
     }
 }
 
@@ -228,7 +230,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         self.chunks = sorted.chunks;
     }
 
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
+    fn argsort(&self, reverse: bool) -> UInt32Chunked {
         if reverse {
             argsort!(self, |(_idx_a, a), (_idx_b, b)| b.cmp(a))
         } else {

@@ -7,6 +7,7 @@ use ahash::RandomState;
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::iter::Iterator;
 use std::mem;
@@ -573,7 +574,7 @@ impl DataFrame {
             .par_iter()
             .map(|s| {
                 let mut i = iter.clone();
-                s.take_iter(&mut i, capacity)
+                s.take_iter(&mut i)
             })
             .collect();
         DataFrame::new_no_checks(new_col)
@@ -584,7 +585,7 @@ impl DataFrame {
     /// # Safety
     ///
     /// This doesn't do any bound checking but checks null validity.
-    pub unsafe fn take_iter_unchecked_bounds<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    pub unsafe fn take_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -600,7 +601,7 @@ impl DataFrame {
                 .columns
                 .par_iter()
                 .map(|s| {
-                    s.take_from_single_chunked(&idx_ca)
+                    s.take_unchecked(&idx_ca)
                         .expect("already checked single chunk")
                 })
                 .collect();
@@ -613,9 +614,9 @@ impl DataFrame {
             .map(|s| {
                 let mut i = iter.clone();
                 if s.null_count() == 0 {
-                    s.take_iter_unchecked(&mut i, capacity)
+                    s.take_iter_unchecked(&mut i)
                 } else {
-                    s.take_iter(&mut i, capacity)
+                    s.take_iter(&mut i)
                 }
             })
             .collect();
@@ -628,7 +629,7 @@ impl DataFrame {
     ///
     /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
     /// Null validity is checked
-    pub unsafe fn take_opt_iter_unchecked_bounds<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
@@ -643,7 +644,7 @@ impl DataFrame {
                 .columns
                 .par_iter()
                 .map(|s| {
-                    s.take_from_single_chunked(&idx_ca)
+                    s.take_unchecked(&idx_ca)
                         .expect("already checked single chunk")
                 })
                 .collect();
@@ -656,9 +657,9 @@ impl DataFrame {
             .map(|s| {
                 let mut i = iter.clone();
                 if s.null_count() == 0 {
-                    s.take_opt_iter_unchecked(&mut i, capacity)
+                    s.take_opt_iter_unchecked(&mut i)
                 } else {
-                    s.take_opt_iter(&mut i, capacity)
+                    s.take_opt_iter(&mut i)
                 }
             })
             .collect::<Vec<_>>();
@@ -672,15 +673,20 @@ impl DataFrame {
     /// ```
     /// use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> DataFrame {
-    ///     let idx = vec![0, 1, 9];
+    ///     let idx = UInt32Chunked::new_from_slice("idx", &[0, 1, 9]);
     ///     df.take(&idx)
     /// }
     /// ```
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take<T: AsTakeIndex + Sync>(&self, indices: &T) -> Self {
-        let new_col = self.columns.par_iter().map(|s| s.take(indices)).collect();
+    pub fn take(&self, indices: &UInt32Chunked) -> Self {
+        let indices = if indices.chunks.len() > 1 {
+            Cow::Owned(indices.rechunk())
+        } else {
+            Cow::Borrowed(indices)
+        };
+        let new_col = self.columns.par_iter().map(|s| s.take(&indices)).collect();
 
         DataFrame::new_no_checks(new_col)
     }
@@ -1307,10 +1313,10 @@ impl DataFrame {
             let mut groups = groups.collect::<Vec<_>>();
             groups.sort_unstable();
             let cap = Some(groups.len());
-            unsafe { self.take_iter_unchecked_bounds(groups.into_iter(), cap) }
+            unsafe { self.take_iter_unchecked(groups.into_iter(), cap) }
         } else {
             let cap = Some(groups.size_hint().0);
-            unsafe { self.take_iter_unchecked_bounds(groups, cap) }
+            unsafe { self.take_iter_unchecked(groups, cap) }
         };
 
         Ok(df)

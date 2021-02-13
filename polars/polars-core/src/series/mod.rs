@@ -355,11 +355,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    fn take_iter(
-        &self,
-        _iter: &mut dyn Iterator<Item = usize>,
-        _capacity: Option<usize>,
-    ) -> Series {
+    fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
         unimplemented!()
     }
 
@@ -368,11 +364,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// This doesn't check any bounds or null validity.
-    unsafe fn take_iter_unchecked(
-        &self,
-        _iter: &mut dyn Iterator<Item = usize>,
-        _capacity: Option<usize>,
-    ) -> Series {
+    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
         unimplemented!()
     }
 
@@ -380,7 +372,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    unsafe fn take_from_single_chunked(&self, _idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, _idx: &UInt32Chunked) -> Result<Series> {
         unimplemented!()
     }
 
@@ -392,7 +384,6 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     unsafe fn take_opt_iter_unchecked(
         &self,
         _iter: &mut dyn Iterator<Item = Option<usize>>,
-        _capacity: Option<usize>,
     ) -> Series {
         unimplemented!()
     }
@@ -402,11 +393,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    fn take_opt_iter(
-        &self,
-        _iter: &mut dyn Iterator<Item = Option<usize>>,
-        _capacity: Option<usize>,
-    ) -> Series {
+    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
         unimplemented!()
     }
 
@@ -415,10 +402,8 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    fn take(&self, indices: &dyn AsTakeIndex) -> Series {
-        let mut iter = indices.as_take_iter();
-        let capacity = indices.take_index_len();
-        self.take_iter(&mut iter, Some(capacity))
+    fn take(&self, _indices: &UInt32Chunked) -> Series {
+        unimplemented!()
     }
 
     /// Get length of series.
@@ -510,7 +495,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Retrieve the indexes needed for a sort.
-    fn argsort(&self, _reverse: bool) -> Vec<usize> {
+    fn argsort(&self, _reverse: bool) -> UInt32Chunked {
         unimplemented!()
     }
 
