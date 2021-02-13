@@ -565,7 +565,7 @@ impl DataFrame {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_iter<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    pub fn take_iter<I>(&self, iter: I) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -585,7 +585,7 @@ impl DataFrame {
     /// # Safety
     ///
     /// This doesn't do any bound checking but checks null validity.
-    pub unsafe fn take_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    pub unsafe fn take_iter_unchecked<I>(&self, iter: I) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -629,7 +629,7 @@ impl DataFrame {
     ///
     /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
     /// Null validity is checked
-    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
@@ -1312,11 +1312,9 @@ impl DataFrame {
         let df = if maintain_order {
             let mut groups = groups.collect::<Vec<_>>();
             groups.sort_unstable();
-            let cap = Some(groups.len());
-            unsafe { self.take_iter_unchecked(groups.into_iter(), cap) }
+            unsafe { self.take_iter_unchecked(groups.into_iter()) }
         } else {
-            let cap = Some(groups.size_hint().0);
-            unsafe { self.take_iter_unchecked(groups, cap) }
+            unsafe { self.take_iter_unchecked(groups) }
         };
 
         Ok(df)

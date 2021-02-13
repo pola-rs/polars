@@ -25,14 +25,14 @@ where
                 let iter = (0..n).map(|_| Uniform::new(0, len).sample(&mut rng));
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
-                unsafe { Ok(self.take_unchecked(iter, Some(n))) }
+                unsafe { Ok(self.take_unchecked(iter.into())) }
             }
             false => {
                 // TODO! prevent allocation.
                 let iter = (0..len).choose_multiple(&mut rng, n).into_iter();
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
-                unsafe { Ok(self.take_unchecked(iter, Some(n))) }
+                unsafe { Ok(self.take_unchecked(iter.into())) }
             }
         }
     }

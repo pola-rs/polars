@@ -266,7 +266,7 @@ pub(crate) unsafe fn take_no_null_bool_opt_iter_unchecked<I: IntoIterator<Item =
 ) -> Arc<BooleanArray> {
     let iter = indices
         .into_iter()
-        .map(|opt_idx| opt_idx.and_then(|idx| Some(arr.value_unchecked(idx))));
+        .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
 
     Arc::new(iter.collect())
 }
@@ -303,7 +303,7 @@ pub(crate) unsafe fn take_no_null_utf8_opt_iter_unchecked<I: IntoIterator<Item =
 ) -> Arc<LargeStringArray> {
     let iter = indices
         .into_iter()
-        .map(|opt_idx| opt_idx.and_then(|idx| Some(arr.value_unchecked(idx))));
+        .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
 
     Arc::new(iter.collect())
 }

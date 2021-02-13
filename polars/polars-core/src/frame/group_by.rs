@@ -736,7 +736,7 @@ where
                 if idx.len() == 1 {
                     self.get(*first).map(|sum| sum.to_f64().unwrap())
                 } else {
-                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
                     let opt_sum: Option<T::Native> = take.sum();
                     opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                 }
@@ -753,8 +753,7 @@ where
                     if idx.len() == 1 {
                         self.get(*first)
                     } else {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                        let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
                         take.min()
                     }
                 })
@@ -771,8 +770,7 @@ where
                     if idx.len() == 1 {
                         self.get(*first)
                     } else {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                        let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
                         take.max()
                     }
                 })
@@ -789,8 +787,7 @@ where
                     if idx.len() == 1 {
                         self.get(*first)
                     } else {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                        let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
                         take.sum()
                     }
                 })
@@ -803,7 +800,7 @@ where
             groups
                 .par_iter()
                 .map(|(_first, idx)| {
-                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
                     take.into_series()
                         .var_as_series()
                         .unpack::<T>()
@@ -819,7 +816,7 @@ where
             groups
                 .par_iter()
                 .map(|(_first, idx)| {
-                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
                     take.into_series()
                         .std_as_series()
                         .unpack::<T>()
@@ -1100,8 +1097,7 @@ where
             groups
                 .into_par_iter()
                 .map(|(_first, idx)| {
-                    let group_vals =
-                        unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    let group_vals = unsafe { self.take_unchecked(idx.iter().copied().into()) };
                     let sorted_idx_ca = group_vals.argsort(false);
                     let sorted_idx = sorted_idx_ca.downcast_chunks()[0].values();
                     let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
@@ -1772,8 +1768,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             .get_groups()
             .par_iter()
             .map(|t| {
-                let cap = t.1.len();
-                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().copied(), Some(cap)) };
+                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().copied()) };
                 f(sub_df)
             })
             .collect::<Result<Vec<_>>>()?;

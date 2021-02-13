@@ -546,11 +546,11 @@ macro_rules! impl_dyn_series {
                 } else {
                     Cow::Borrowed(indices)
                 };
-                ChunkTakeNew::take_new(&self.0, (&*indices).into()).into_series()
+                ChunkTake::take(&self.0, (&*indices).into()).into_series()
             }
 
             fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
-                ChunkTakeNew::take_new(&self.0, iter.into()).into_series()
+                ChunkTake::take(&self.0, iter.into()).into_series()
             }
 
             fn take_every(&self, n: usize) -> Series {
@@ -558,7 +558,7 @@ macro_rules! impl_dyn_series {
             }
 
             unsafe fn take_iter_unchecked(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
-                ChunkTakeNew::take_unchecked_new(&self.0, iter.into()).into_series()
+                ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
             }
 
             unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
@@ -567,18 +567,18 @@ macro_rules! impl_dyn_series {
                 } else {
                     Cow::Borrowed(idx)
                 };
-                Ok(ChunkTakeNew::take_unchecked_new(&self.0, (&*idx).into()).into_series())
+                Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
             }
 
             unsafe fn take_opt_iter_unchecked(
                 &self,
                 iter: &mut dyn Iterator<Item = Option<usize>>,
             ) -> Series {
-                ChunkTakeNew::take_unchecked_new(&self.0, Wrap(iter).into()).into_series()
+                ChunkTake::take_unchecked(&self.0, Wrap(iter).into()).into_series()
             }
 
             fn take_opt_iter(&self, iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
-                ChunkTakeNew::take_new(&self.0, Wrap(iter).into()).into_series()
+                ChunkTake::take(&self.0, Wrap(iter).into()).into_series()
             }
 
             fn len(&self) -> usize {

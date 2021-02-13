@@ -275,82 +275,25 @@ where
     }
 }
 
-pub trait ChunkTakeNew {
-    unsafe fn take_unchecked_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
-    where
-        Self: std::marker::Sized,
-        I: Iterator<Item = usize>,
-        INulls: Iterator<Item = Option<usize>>;
-
-    fn take_new<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
-    where
-        Self: std::marker::Sized,
-        I: Iterator<Item = usize>,
-        INulls: Iterator<Item = Option<usize>>;
-}
-
 /// Fast access by index.
 pub trait ChunkTake {
     /// Take values from ChunkedArray by index.
     ///
     /// # Safety
     ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by index
-    ///
-    /// # Safety
-    ///
-    /// Runs without checking bounds. Null validity is checked
-    unsafe fn take_unchecked(
-        &self,
-        indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by Option<index>.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    fn take_opt(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by Option<index>.
-    ///
-    /// # Safety
-    ///
-    /// Doesn't do any bound checking. Null validity is checked
-    unsafe fn take_opt_unchecked(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized;
-
-    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self>
-    where
-        Self: std::marker::Sized;
-
-    fn take_from_single_chunked_iter(&self, indices: impl Iterator<Item = usize>) -> Result<Self>
+    /// Doesn't do any bound checking.
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
-    {
-        let idx_ca: NoNull<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
-        let idx_ca = idx_ca.into_inner();
-        self.take_from_single_chunked(&idx_ca)
-    }
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>;
+
+    /// Take values from ChunkedArray by index.
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>;
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
@@ -766,7 +709,7 @@ macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse<$arrow_type> for $ca_type {
             fn reverse(&self) -> Self {
-                self.take((0..self.len()).rev(), None)
+                self.take((0..self.len()).rev().into())
             }
         }
     };
@@ -780,7 +723,7 @@ impl<T> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
     fn reverse(&self) -> Self {
         // Safety
         // we we know we don't get out of bounds
-        unsafe { self.take_unchecked((0..self.len()).rev(), None) }
+        unsafe { self.take_unchecked((0..self.len()).rev().into()) }
     }
 }
 
