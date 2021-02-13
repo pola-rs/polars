@@ -558,7 +558,7 @@ impl DataFrame {
     /// use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> DataFrame {
     ///     let iterator = (0..9).into_iter();
-    ///     df.take_iter(iterator.into())
+    ///     df.take_iter(iterator)
     /// }
     /// ```
     ///

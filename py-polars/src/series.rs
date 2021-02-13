@@ -341,9 +341,15 @@ impl PySeries {
         PySeries::new(self.series.sort(reverse))
     }
 
-    pub fn argsort(&self, reverse: bool) -> Py<PyArray1<usize>> {
+    pub fn argsort(&self, reverse: bool) -> Py<PyArray1<u32>> {
         let gil = pyo3::Python::acquire_gil();
-        let pyarray = PyArray1::from_vec(gil.python(), self.series.argsort(reverse));
+        let pyarray = PyArray1::from_iter(
+            gil.python(),
+            self.series
+                .argsort(reverse)
+                .into_iter()
+                .filter_map(|opt_idx| opt_idx),
+        );
         pyarray.to_owned()
     }
 
@@ -365,7 +371,7 @@ impl PySeries {
     }
 
     pub fn take(&self, indices: Vec<usize>) -> Self {
-        let take = self.series.take(&indices);
+        let take = self.series.take_iter(&mut indices.iter().copied());
         PySeries::new(take)
     }
 
