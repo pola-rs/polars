@@ -511,6 +511,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Duration(TimeUnit::Millisecond) => {
                 DataType::Duration(TimeUnit::Millisecond)
             }
+            ArrowDataType::Utf8 => DataType::Utf8,
             dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }
     }

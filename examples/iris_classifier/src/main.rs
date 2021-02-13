@@ -86,18 +86,13 @@ fn read_csv() -> Result<DataFrame> {
 }
 
 fn rename_cols(mut df: DataFrame) -> Result<DataFrame> {
-    (0..5)
-        .zip(&[
-            "sepal.length",
-            "sepal.width",
-            "petal.width",
-            "petal.length",
-            "class",
-        ])
-        .for_each(|(idx, name)| {
-            df[idx].rename(name);
-        });
-
+    df.set_column_names(&[
+        "sepal.length",
+        "sepal.width",
+        "petal.width",
+        "petal.length",
+        "class",
+    ])?;
     Ok(df)
 }
 
@@ -155,20 +150,19 @@ fn one_hot_encode(mut df: DataFrame) -> Result<DataFrame> {
         .into_iter()
         .map(|opt_s| {
             let mut ohe = vec![0; n_unique];
-            let mut idx = 0;
             for i in 0..n_unique {
                 if unique.get(i) == opt_s {
-                    idx = i;
+                    ohe[i] = 1;
                     break;
                 }
             }
-            ohe[idx] = 1;
             match opt_s {
                 Some(s) => UInt32Chunked::new_from_slice(s, &ohe).into_series(),
                 None => UInt32Chunked::new_from_slice("null", &ohe).into_series(),
             }
         })
-        .collect::<Series>();
+        .collect::<ListChunked>()
+        .into_series();
     ohe.rename("ohe");
     df.add_column(ohe)?;
 
