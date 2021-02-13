@@ -396,7 +396,7 @@ impl PyDataFrame {
     }
 
     pub fn take(&self, indices: Vec<usize>) -> Self {
-        let df = self.df.take(&indices);
+        let df = self.df.take_iter(indices.iter().copied());
         PyDataFrame::new(df)
     }
 
