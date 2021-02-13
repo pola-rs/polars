@@ -354,7 +354,7 @@ where
             path: None,
             schema_overwrite: None,
             sample_size: 1024,
-            stable_parser: false,
+            stable_parser: true,
         }
     }
 
