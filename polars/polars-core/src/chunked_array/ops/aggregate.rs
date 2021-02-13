@@ -117,7 +117,7 @@ where
                 .downcast_chunks()
                 .iter()
                 .filter_map(|&a| compute::min(a))
-                .fold_first(|acc, v| if acc < v { acc } else { v }),
+                .reduce(|acc, v| if acc < v { acc } else { v }),
         }
     }
 
@@ -129,7 +129,7 @@ where
                 .downcast_chunks()
                 .iter()
                 .filter_map(|&a| compute::max(a))
-                .fold_first(|acc, v| if acc > v { acc } else { v }),
+                .reduce(|acc, v| if acc > v { acc } else { v }),
         }
     }
 

@@ -1,4 +1,3 @@
-#![feature(iterator_fold_self)]
 #![feature(doc_cfg)]
 
 #[macro_use]
