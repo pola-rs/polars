@@ -595,4 +595,21 @@ hello,","," ",world,"!""#;
                 .series_equal(&Series::new("", &[&**val; 4])));
         }
     }
+
+    #[test]
+    fn test_nulls_parser() {
+        // test it does not fail on the leading comma.
+        let csv = r#"id1,id2,id3,id4,id5,id6,v1,v2,v3
+id047,id023,id0000084849,90,96,35790,2,9,93.348148
+,id022,id0000031441,50,44,71525,3,11,81.013682
+id090,id048,id0000067778,24,2,51862,4,9,"#;
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(true)
+            .with_n_threads(Some(1))
+            .finish()
+            .unwrap();
+        assert_eq!(df.shape(), (3, 9));
+    }
 }

@@ -215,22 +215,6 @@ pub(crate) fn parse_lines(
         let read_sol = read;
         // // +1 is the split character
         // read += 1;
-        let leading_byte = line[0];
-
-        // Check if there are some leading character we don't expect on the start of the line.
-        //
-        // # Expected lines
-        //      'field_0,field_1\n'
-        //      'field_0,field_1\r\n'
-        //
-        // # Unexpected lines
-        //      leading delimiter
-        //      ',field_0,field_1'
-        //
-        if leading_byte == delimiter {
-            read += 1;
-            line = &line[1..]
-        }
 
         // Every line we only need to parse the columns that are projected.
         // Therefore we check if the idx of the field is in our projected columns.
