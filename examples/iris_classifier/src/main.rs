@@ -106,11 +106,10 @@ fn enforce_schema(mut df: DataFrame) -> Result<DataFrame> {
     ];
 
     df.schema()
-        .clone()
         .fields()
         .iter()
         .zip(dtypes)
-        .map(|(field, dtype)| {
+        .try_for_each::<_, Result<_>>(|(field, dtype)| {
             if field.data_type() != dtype {
                 df.may_apply(field.name(), |col| match dtype {
                     ArrowDataType::Float64 => col.cast::<Float64Type>(),
@@ -119,8 +118,7 @@ fn enforce_schema(mut df: DataFrame) -> Result<DataFrame> {
                 })?;
             }
             Ok(())
-        })
-        .collect::<Result<_>>()?;
+        })?;
     Ok(df)
 }
 
@@ -129,7 +127,7 @@ fn normalize(mut df: DataFrame) -> Result<DataFrame> {
 
     for &col in cols {
         df.may_apply(col, |s| {
-            let ca = s.f64().unwrap();
+            let ca = s.f64()?;
 
             match ca.sum() {
                 Some(sum) => Ok(ca / sum),
@@ -149,13 +147,9 @@ fn one_hot_encode(mut df: DataFrame) -> Result<DataFrame> {
     let mut ohe = y
         .into_iter()
         .map(|opt_s| {
-            let mut ohe = vec![0; n_unique];
-            for i in 0..n_unique {
-                if unique.get(i) == opt_s {
-                    ohe[i] = 1;
-                    break;
-                }
-            }
+            let ohe = (0..n_unique)
+                .map(|i| if unique.get(i) == opt_s { 1 } else { 0 })
+                .collect::<Vec<u32>>();
             match opt_s {
                 Some(s) => UInt32Chunked::new_from_slice(s, &ohe).into_series(),
                 None => UInt32Chunked::new_from_slice("null", &ohe).into_series(),
@@ -169,6 +163,7 @@ fn one_hot_encode(mut df: DataFrame) -> Result<DataFrame> {
     Ok(df)
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn print_state(df: DataFrame) -> Result<DataFrame> {
     println!("{:?}", df.head(Some(3)));
     Ok(df)
@@ -193,6 +188,7 @@ fn pipe() -> Result<DataFrame> {
         .expect("could not ohe")
         .pipe(print_state)
 }
+
 fn train(df: DataFrame) -> Result<()> {
     let _feat = df.select(&FEATURES)?.to_ndarray::<Float64Type>()?;
 
