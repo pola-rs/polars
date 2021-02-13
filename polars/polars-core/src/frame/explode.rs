@@ -86,7 +86,7 @@ impl DataFrame {
                 // expand all the other columns based the exploded first column
                 if i == 0 {
                     let row_idx = offsets_to_indexes(offsets, exploded.len());
-                    df = unsafe { df.take_iter_unchecked_bounds(row_idx.into_iter(), None) };
+                    df = unsafe { df.take_iter_unchecked(row_idx.into_iter(), None) };
                 }
                 if exploded.len() == df.height() {
                     df.columns.insert(col_idx, exploded);

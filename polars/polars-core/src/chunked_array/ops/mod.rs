@@ -244,6 +244,8 @@ where
 }
 
 pub type Dummy<T> = std::iter::Once<T>;
+pub type TakeIdxIter<'a, I> = TakeIdx<'a, I, Dummy<Option<usize>>>;
+pub type TakeIdxIterNull<'a, INull> = TakeIdx<'a, Dummy<usize>, INull>;
 
 impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
     fn from(ca: &'a UInt32Chunked) -> Self {
@@ -591,7 +593,7 @@ pub trait ChunkSort<T> {
     fn sort_in_place(&mut self, reverse: bool);
 
     /// Retrieve the indexes needed to sort this array.
-    fn argsort(&self, reverse: bool) -> Vec<usize>;
+    fn argsort(&self, reverse: bool) -> UInt32Chunked;
 }
 
 #[derive(Copy, Clone, Debug)]

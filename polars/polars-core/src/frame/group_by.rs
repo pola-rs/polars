@@ -1037,9 +1037,7 @@ where
                 let mut builder =
                     ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
-                    };
+                    let s = unsafe { $agg_col.take_iter_unchecked(&mut idx.into_iter().copied()) };
                     builder.append_opt_series(Some(&s))
                 }
                 builder.finish().into_series()
@@ -1051,9 +1049,7 @@ where
                 let values_builder = LargeStringBuilder::with_capacity(values_cap * 5, values_cap);
                 let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
-                    };
+                    let s = unsafe { $agg_col.take_iter_unchecked(&mut idx.into_iter().copied()) };
                     builder.append_series(&s)
                 }
                 builder.finish().into_series()
@@ -1065,9 +1061,7 @@ where
                 let values_builder = BooleanArrayBuilder::new(values_cap);
                 let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
-                    };
+                    let s = unsafe { $agg_col.take_iter_unchecked(&mut idx.into_iter().copied()) };
                     builder.append_series(&s)
                 }
                 builder.finish().into_series()
@@ -1108,10 +1102,11 @@ where
                 .map(|(_first, idx)| {
                     let group_vals =
                         unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
-                    let sorted_idx = group_vals.argsort(false);
+                    let sorted_idx_ca = group_vals.argsort(false);
+                    let sorted_idx = sorted_idx_ca.downcast_chunks()[0].values();
                     let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
                     let value_idx = sorted_idx[quant_idx];
-                    group_vals.get(value_idx)
+                    group_vals.get(value_idx as usize)
                 })
                 .collect::<ChunkedArray<T>>()
                 .into_series(),
@@ -1159,10 +1154,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let mut keys = Vec::with_capacity(size);
         unsafe {
             self.selected_keys.iter().for_each(|s| {
-                let key = s.take_iter_unchecked(
-                    &mut self.groups.iter().map(|(idx, _)| *idx),
-                    Some(self.groups.len()),
-                );
+                let key = s.take_iter_unchecked(&mut self.groups.iter().map(|(idx, _)| *idx));
                 keys.push(key)
             });
         }
@@ -1781,8 +1773,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             .par_iter()
             .map(|t| {
                 let cap = t.1.len();
-                let sub_df =
-                    unsafe { df.take_iter_unchecked_bounds(t.1.iter().copied(), Some(cap)) };
+                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().copied(), Some(cap)) };
                 f(sub_df)
             })
             .collect::<Result<Vec<_>>>()?;
