@@ -189,6 +189,11 @@ macro_rules! parse_temporal_from_str_slice {
 parse_temporal_from_str_slice!(parse_date32_from_str_slice, Date32Chunked);
 
 #[pymethods]
+#[allow(
+    clippy::wrong_self_convention,
+    clippy::should_implement_trait,
+    clippy::len_without_is_empty
+)]
 impl PySeries {
     #[staticmethod]
     pub fn new_str(name: &str, val: Wrap<Utf8Chunked>) -> Self {

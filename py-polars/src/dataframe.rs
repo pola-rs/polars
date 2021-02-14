@@ -34,6 +34,11 @@ impl From<DataFrame> for PyDataFrame {
 }
 
 #[pymethods]
+#[allow(
+    clippy::wrong_self_convention,
+    clippy::should_implement_trait,
+    clippy::len_without_is_empty
+)]
 impl PyDataFrame {
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
@@ -43,6 +48,7 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
     pub fn read_csv(
         py_f: PyObject,
         infer_schema_length: usize,

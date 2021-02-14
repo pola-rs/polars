@@ -445,6 +445,7 @@ pub(crate) mod test {
     }
 
     #[test]
+    #[allow(clippy::eq_op)]
     fn test_chunk_mismatch() {
         let (a1, a2) = create_two_chunked();
         // with different chunks
