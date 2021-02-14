@@ -534,7 +534,7 @@ impl PySeries {
                         .get_as_any(i)
                         .downcast_ref::<ObjectValue>()
                         .map(|obj| obj.inner.clone())
-                        .unwrap_or(python.None());
+                        .unwrap_or_else(|| python.None());
 
                     v.append(val).unwrap();
                 }
