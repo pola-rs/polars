@@ -988,7 +988,6 @@ mod test {
         println!("{:?}", new);
 
         let new = df
-            .clone()
             .lazy()
             .filter(not(col("sepal.width").lt(lit(3.5))))
             .collect()
@@ -1206,9 +1205,8 @@ mod test {
         // and a filter that is not in the projection
         let df_a = load_df();
         let df_b = df_a.clone();
-        df_a.clone()
-            .lazy()
-            .left_join(df_b.clone().lazy(), col("b"), col("b"), None)
+        df_a.lazy()
+            .left_join(df_b.lazy(), col("b"), col("b"), None)
             .filter(col("a").lt(lit(2)))
             .groupby(vec![col("b")])
             .agg(vec![col("b").first(), col("c").first()])
