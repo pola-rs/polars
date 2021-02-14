@@ -131,9 +131,9 @@ impl Read for PyFileLikeObject {
             .cast_as(py)
             .expect("Expecting to be able to downcast into bytes from read result.");
 
-        buf.write(bytes.as_bytes())?;
+        buf.write_all(bytes.as_bytes())?;
 
-        Ok(bytes.len().map_err(pyerr_to_io_err)?)
+        bytes.len().map_err(pyerr_to_io_err)
     }
 }
 
@@ -149,7 +149,7 @@ impl Write for PyFileLikeObject {
             .call_method(py, "write", (pybytes,), None)
             .map_err(pyerr_to_io_err)?;
 
-        Ok(number_bytes_written.extract(py).map_err(pyerr_to_io_err)?)
+        number_bytes_written.extract(py).map_err(pyerr_to_io_err)
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
@@ -180,7 +180,7 @@ impl Seek for PyFileLikeObject {
             .call_method(py, "seek", (offset, whence), None)
             .map_err(pyerr_to_io_err)?;
 
-        Ok(new_position.extract(py).map_err(pyerr_to_io_err)?)
+        new_position.extract(py).map_err(pyerr_to_io_err)
     }
 }
 

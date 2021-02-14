@@ -2565,7 +2565,7 @@ mod test {
         }
         .unwrap();
 
-        let out = df.groupby("a").unwrap().apply(|df| Ok(df)).unwrap();
+        let out = df.groupby("a").unwrap().apply(Ok).unwrap();
         assert!(out.sort("b", false).unwrap().frame_equal(&df));
     }
 

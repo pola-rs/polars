@@ -322,9 +322,11 @@ impl PyLazyFrame {
     }
 
     pub fn map(&self, lambda: PyObject, predicate_pd: bool, projection_pd: bool) -> Self {
-        let mut opt = AllowedOptimizations::default();
-        opt.projection_pushdown = projection_pd;
-        opt.predicate_pushdown = predicate_pd;
+        let opt = AllowedOptimizations {
+            predicate_pushdown: predicate_pd,
+            projection_pushdown: projection_pd,
+            ..Default::default()
+        };
 
         let function = move |s: DataFrame| {
             let gil = Python::acquire_gil();

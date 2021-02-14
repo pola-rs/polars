@@ -187,17 +187,12 @@ mod test {
 
     #[test]
     fn test_parquet() {
-        let r = File::open("data/simple.parquet");
-        match r {
-            // local run test
-            Ok(r) => {
-                let reader = ParquetReader::new(r);
-                let df = reader.finish().unwrap();
-                assert_eq!(df.get_column_names(), ["a", "b"]);
-                assert_eq!(df.shape(), (3, 2));
-            }
-            // in ci: pass
-            Err(_) => {}
+        // In CI: This test will be skipped because the file does not exist.
+        if let Ok(r) = File::open("data/simple.parquet") {
+            let reader = ParquetReader::new(r);
+            let df = reader.finish().unwrap();
+            assert_eq!(df.get_column_names(), ["a", "b"]);
+            assert_eq!(df.shape(), (3, 2));
         }
     }
 }
