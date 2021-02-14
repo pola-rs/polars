@@ -1223,7 +1223,6 @@ mod test {
     fn test_lazy_logical_plan_filter_and_alias_combined() {
         let df = get_df();
         let lf = df
-            .clone()
             .lazy()
             .filter(col("sepal.width").lt(lit(3.5)))
             .select(&[col("variety").alias("foo")]);
@@ -1339,9 +1338,8 @@ mod test {
         // column due to the join and an extra alias
         {
             let lf = left
-                .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"), None)
+                .left_join(right.lazy(), col("days"), col("days"), None)
                 .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")])
                 .filter(col("foo").lt(lit(0.3)));
 

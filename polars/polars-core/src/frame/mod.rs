@@ -1478,7 +1478,7 @@ mod test {
         .unwrap();
 
         let batch1 = RecordBatch::try_new(
-            schema.clone(),
+            schema,
             vec![
                 Arc::new(Float64Array::from(vec![4.0, 5.0])),
                 Arc::new(Int64Array::from(vec![4, 5])),
