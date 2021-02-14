@@ -1113,6 +1113,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn test_left_join() {
         for i in 1..8 {
             std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));

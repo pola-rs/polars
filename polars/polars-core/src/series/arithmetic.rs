@@ -450,6 +450,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
+    #[allow(clippy::eq_op)]
     fn test_arithmetic_series() {
         // Series +-/* Series
         let s: Series = [1, 2, 3].iter().collect();

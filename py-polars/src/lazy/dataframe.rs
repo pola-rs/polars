@@ -72,8 +72,10 @@ impl From<LazyFrame> for PyLazyFrame {
 }
 
 #[pymethods]
+#[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
     #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
     pub fn new_from_csv(
         path: String,
         sep: &str,
