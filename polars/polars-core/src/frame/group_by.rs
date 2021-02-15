@@ -2,7 +2,6 @@ use crate::chunked_array::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
-use crate::frame::row::Row;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_vertical, split_ca, split_df, NoNull};
@@ -243,13 +242,28 @@ where
     .collect()
 }
 
-fn populate_multiple_key_hashmap<'a, 'b>(
+/// Utility function used as comparison function in the hashmap.
+/// The rationale is that equality is an AND operation and therefore its probability of success
+/// declines rapidly with the number of keys. Instead of first copying an entire row from both
+/// sides and then do the comparison, we do the comparison value by value catching early failures
+/// eagerly.
+///
+/// # Safety
+/// Doesn't check any bounds
+unsafe fn compare_fn(keys: &DataFrame, idx_a: usize, idx_b: usize) -> bool {
+    for s in keys.get_columns() {
+        if !(s.get_unchecked(idx_a) == s.get_unchecked(idx_b)) {
+            return false;
+        }
+    }
+    true
+}
+
+fn populate_multiple_key_hashmap(
     hash_tbl: &mut HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher>,
-    row_1: &'b mut Row<'a>,
-    row_2: &'b mut Row<'a>,
     idx: usize,
     h: u64,
-    keys: &'a DataFrame,
+    keys: &DataFrame,
 ) {
     let entry = hash_tbl
         .raw_entry_mut()
@@ -257,11 +271,9 @@ fn populate_multiple_key_hashmap<'a, 'b>(
         // to check equality to find an entry
         .from_hash(h, |idx_hash| {
             let key_idx = idx_hash.idx;
-            unsafe {
-                keys.get_row_amortized_unchecked(key_idx, row_1);
-                keys.get_row_amortized_unchecked(idx, row_2);
-            }
-            row_1 == row_2
+            // Safety:
+            // indices in a join operation are always in bounds.
+            unsafe { compare_fn(keys, key_idx, idx) }
         });
     match entry {
         RawEntryMut::Vacant(entry) => {
@@ -280,11 +292,9 @@ fn groupby_multiple_keys(keys: DataFrame) -> Vec<(usize, Vec<usize>)> {
     // rather over allocate because rehashing is expensive
     let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
         HashMap::with_capacity_and_hasher(size, IdBuildHasher::default());
-    let mut row_1 = keys.get_row(0);
-    let mut row_2 = row_1.clone();
 
     for (idx, h) in hashes.into_no_null_iter().enumerate() {
-        populate_multiple_key_hashmap(&mut hash_tbl, &mut row_1, &mut row_2, idx, h, &keys);
+        populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys);
     }
     hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
 }
@@ -296,10 +306,6 @@ fn groupby_threaded_multiple_keys_flat(
     let dfs = split_df(&keys, n_threads).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let size = hashes.len();
-    // let (hashes, _random_state) = create_hash_threaded_vectorized(iters);
-    // let size = hashes.iter().fold(0, |acc, v| acc + v.len());
-    // two row containers to amortize allocations;
-    let row_1 = keys.get_row(0);
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -313,9 +319,6 @@ fn groupby_threaded_multiple_keys_flat(
             let thread_no = thread_no as u64;
 
             let keys = &keys;
-            // two row containers to amortize allocations;
-            let mut row_1 = row_1.clone();
-            let mut row_2 = row_1.clone();
 
             // rather over allocate because rehashing is expensive
             let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
@@ -330,14 +333,7 @@ fn groupby_threaded_multiple_keys_flat(
                     // So only a part of the hashes go to this hashmap
                     if (h + thread_no) % n_threads == 0 {
                         let idx = idx + offset;
-                        populate_multiple_key_hashmap(
-                            &mut hash_tbl,
-                            &mut row_1,
-                            &mut row_2,
-                            idx,
-                            h,
-                            keys,
-                        );
+                        populate_multiple_key_hashmap(&mut hash_tbl, idx, h, keys);
                     }
                 });
 
