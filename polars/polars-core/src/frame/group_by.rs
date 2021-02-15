@@ -1,3 +1,4 @@
+use crate::chunked_array::kernels::take_agg::take_agg_no_null_primitive_iter_unchecked;
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::row::Row;
 use crate::frame::select::Selection;
@@ -11,7 +12,7 @@ use crate::POOL;
 use ahash::RandomState;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
-use num::{Num, NumCast, ToPrimitive, Zero};
+use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -726,7 +727,7 @@ impl<T> NumericAggSync for ObjectChunked<T> {}
 impl<T> NumericAggSync for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
+    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast + Bounded,
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
@@ -736,9 +737,23 @@ where
                 if idx.len() == 1 {
                     self.get(*first).map(|sum| sum.to_f64().unwrap())
                 } else {
-                    let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
-                    let opt_sum: Option<T::Native> = take.sum();
-                    opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                    match (self.null_count(), self.chunks.len()) {
+                        (0, 1) => unsafe {
+                            take_agg_no_null_primitive_iter_unchecked(
+                                self.downcast_chunks()[0],
+                                idx.iter().copied(),
+                                |a, b| a + b,
+                                T::Native::zero(),
+                            )
+                        }
+                        .to_f64()
+                        .map(|sum| sum / idx.len() as f64),
+                        _ => {
+                            let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
+                            let opt_sum: Option<T::Native> = take.sum();
+                            opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                        }
+                    }
                 }
             })
             .collect();
@@ -753,8 +768,21 @@ where
                     if idx.len() == 1 {
                         self.get(*first)
                     } else {
-                        let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
-                        take.min()
+                        match (self.null_count(), self.chunks.len()) {
+                            (0, 1) => Some(unsafe {
+                                take_agg_no_null_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().copied(),
+                                    |a, b| if a < b { b } else { a },
+                                    T::Native::min_value(),
+                                )
+                            }),
+                            _ => {
+                                let take =
+                                    unsafe { self.take_unchecked(idx.iter().copied().into()) };
+                                take.min()
+                            }
+                        }
                     }
                 })
                 .collect::<ChunkedArray<T>>()
@@ -770,8 +798,21 @@ where
                     if idx.len() == 1 {
                         self.get(*first)
                     } else {
-                        let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
-                        take.max()
+                        match (self.null_count(), self.chunks.len()) {
+                            (0, 1) => Some(unsafe {
+                                take_agg_no_null_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().copied(),
+                                    |a, b| if a < b { a } else { b },
+                                    T::Native::max_value(),
+                                )
+                            }),
+                            _ => {
+                                let take =
+                                    unsafe { self.take_unchecked(idx.iter().copied().into()) };
+                                take.max()
+                            }
+                        }
                     }
                 })
                 .collect::<ChunkedArray<T>>()
@@ -787,8 +828,21 @@ where
                     if idx.len() == 1 {
                         self.get(*first)
                     } else {
-                        let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
-                        take.sum()
+                        match (self.null_count(), self.chunks.len()) {
+                            (0, 1) => Some(unsafe {
+                                take_agg_no_null_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().copied(),
+                                    |a, b| a + b,
+                                    T::Native::zero(),
+                                )
+                            }),
+                            _ => {
+                                let take =
+                                    unsafe { self.take_unchecked(idx.iter().copied().into()) };
+                                take.sum()
+                            }
+                        }
                     }
                 })
                 .collect::<ChunkedArray<T>>()

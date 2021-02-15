@@ -1,8 +1,10 @@
 pub(crate) mod cast;
 pub(crate) mod take;
+pub(crate) mod take_agg;
 #[cfg(feature = "temporal")]
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
+
 use polars_arrow::builder::BooleanArrayBuilder;
 
 use crate::chunked_array::builder::{aligned_vec_to_primitive_array, get_bitmap};
