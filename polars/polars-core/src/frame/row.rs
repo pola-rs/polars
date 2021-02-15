@@ -29,6 +29,7 @@ impl DataFrame {
     ///
     /// # Safety
     /// Does not do any bounds checking.
+    #[inline]
     pub unsafe fn get_row_amortized_unchecked<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
         self.columns
             .iter()
