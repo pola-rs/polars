@@ -205,7 +205,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def from_arrow(table: pa.Table) -> "DataFrame":
+    def from_arrow(table: pa.Table, rechunk: bool = True) -> "DataFrame":
         """
         Create DataFrame from arrow Table
 
@@ -213,10 +213,14 @@ class DataFrame:
         ----------
         table
             Arrow Table
+        rechunk
+            Make sure that all data is contiguous.
         """
         batches = table.to_batches()
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.from_arrow_record_batches(batches)
+        if rechunk:
+            return self.rechunk()
         return self
 
     def to_arrow(self) -> pa.Table:

@@ -23,7 +23,8 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
 }
 
 pub fn to_rust_rb(rb: &[&PyAny]) -> PyResult<Vec<RecordBatch>> {
-    let names = rb[0].getattr("name")?.extract::<Vec<String>>()?;
+    let schema = rb[0].getattr("schema")?;
+    let names = schema.getattr("names")?.extract::<Vec<String>>()?;
 
     let arrays = rb
         .iter()

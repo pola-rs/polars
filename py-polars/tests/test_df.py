@@ -6,6 +6,8 @@ import pytest
 from io import BytesIO
 import numpy as np
 from builtins import range
+import pyarrow as pa
+import pypolars as pl
 
 
 def test_init():
@@ -335,3 +337,11 @@ def test_to_pandas():
     df = DataFrame({"col": Series([True, False, True])})
     print(df)
     df.shift(2).to_pandas()
+
+
+def test_from_arrow_table():
+    data = {"a": [1, 2], "b": [1, 2]}
+    tbl = pa.table(data)
+
+    df = pl.from_arrow_table(tbl)
+    df.frame_equal(pl.DataFrame(data))

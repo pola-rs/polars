@@ -215,7 +215,7 @@ def arg_where(mask: "Series"):
     return mask.arg_true()
 
 
-def from_arrow_table(table: pa.Table) -> "DataFrame":
+def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "DataFrame":
     """
     Create a DataFrame from an arrow Table
 
@@ -223,8 +223,10 @@ def from_arrow_table(table: pa.Table) -> "DataFrame":
     ----------
     table
         Arrow Table
+    rechunk
+        Make sure that all data is contiguous.
     """
-    return DataFrame.from_arrow(table)
+    return DataFrame.from_arrow(table, rechunk)
 
 
 def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
