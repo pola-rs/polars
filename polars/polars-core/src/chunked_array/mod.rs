@@ -508,6 +508,7 @@ where
         }
     }
 
+    #[inline]
     unsafe fn arr_to_any_value(&self, arr: &dyn Array, idx: usize) -> AnyValue {
         if arr.is_null(idx) {
             return AnyValue::Null;
@@ -578,6 +579,7 @@ where
 
     /// Get a single value. Beware this is slow.
     /// If you need to use this slightly performant, cast Categorical to UInt32
+    #[inline]
     pub(crate) unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         debug_assert!(chunk_idx < self.chunks.len());
