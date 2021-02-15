@@ -1,4 +1,6 @@
-use crate::chunked_array::kernels::take_agg::take_agg_no_null_primitive_iter_unchecked;
+use crate::chunked_array::kernels::take_agg::{
+    take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
+};
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::row::Row;
 use crate::frame::select::Selection;
@@ -748,6 +750,15 @@ where
                         }
                         .to_f64()
                         .map(|sum| sum / idx.len() as f64),
+                        (_, 1) => unsafe {
+                            take_agg_primitive_iter_unchecked(
+                                self.downcast_chunks()[0],
+                                idx.iter().copied(),
+                                |a, b| a + b,
+                                T::Native::zero(),
+                            )
+                        }
+                        .map(|sum| sum.to_f64().map(|sum| sum / idx.len() as f64).unwrap()),
                         _ => {
                             let take = unsafe { self.take_unchecked(idx.iter().copied().into()) };
                             let opt_sum: Option<T::Native> = take.sum();
@@ -773,10 +784,18 @@ where
                                 take_agg_no_null_primitive_iter_unchecked(
                                     self.downcast_chunks()[0],
                                     idx.iter().copied(),
-                                    |a, b| if a < b { b } else { a },
-                                    T::Native::min_value(),
+                                    |a, b| if a < b { a } else { b },
+                                    T::Native::max_value(),
                                 )
                             }),
+                            (_, 1) => unsafe {
+                                take_agg_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().copied(),
+                                    |a, b| if a < b { a } else { b },
+                                    T::Native::max_value(),
+                                )
+                            },
                             _ => {
                                 let take =
                                     unsafe { self.take_unchecked(idx.iter().copied().into()) };
@@ -803,10 +822,18 @@ where
                                 take_agg_no_null_primitive_iter_unchecked(
                                     self.downcast_chunks()[0],
                                     idx.iter().copied(),
-                                    |a, b| if a < b { a } else { b },
-                                    T::Native::max_value(),
+                                    |a, b| if a > b { a } else { b },
+                                    T::Native::min_value(),
                                 )
                             }),
+                            (_, 1) => unsafe {
+                                take_agg_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().copied(),
+                                    |a, b| if a > b { a } else { b },
+                                    T::Native::min_value(),
+                                )
+                            },
                             _ => {
                                 let take =
                                     unsafe { self.take_unchecked(idx.iter().copied().into()) };
@@ -837,6 +864,14 @@ where
                                     T::Native::zero(),
                                 )
                             }),
+                            (_, 1) => unsafe {
+                                take_agg_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().copied(),
+                                    |a, b| a + b,
+                                    T::Native::zero(),
+                                )
+                            },
                             _ => {
                                 let take =
                                     unsafe { self.take_unchecked(idx.iter().copied().into()) };
