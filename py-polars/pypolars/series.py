@@ -877,7 +877,7 @@ class Series:
         else:
             return NotImplemented
 
-    def to_numpy(self, *args, **kwargs) -> np.ndarray:
+    def to_numpy(self, *args, zero_copy_only=False, **kwargs) -> np.ndarray:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
@@ -887,10 +887,14 @@ class Series:
         ----------
         args
             args will be sent to pyarrow.Array.to_numpy
+        zero_copy_only
+            If True, an exception will be raised if the conversion to a numpy
+            array would require copying the underlying data (e.g. in presence
+            of nulls, or for non-primitive types).
         kwargs
             kwargs will be sent to pyarrow.Array.to_numpy
         """
-        return self.to_arrow().to_numpy(*args, **kwargs)
+        return self.to_arrow().to_numpy(*args, zero_copy_only=zero_copy_only, **kwargs)
 
     def to_arrow(self) -> pa.Array:
         """
