@@ -33,47 +33,47 @@ pub(crate) mod private {
         fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
             unimplemented!()
         }
-        fn agg_mean(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_min(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_max(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_sum(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_std(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_var(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+        fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
             unimplemented!()
         }
-        fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+        fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
             unimplemented!()
         }
-        fn agg_n_unique(&self, _groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+        fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
             unimplemented!()
         }
-        fn agg_list(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_quantile(&self, _groups: &[(usize, Vec<usize>)], _quantile: f64) -> Option<Series> {
+        fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_median(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
         fn pivot<'a>(
             &self,
             _pivot_series: &'a (dyn SeriesTrait + 'a),
             _keys: Vec<Series>,
-            _groups: &[(usize, Vec<usize>)],
+            _groups: &[(u32, Vec<u32>)],
             _agg_type: PivotAgg,
         ) -> Result<DataFrame> {
             unimplemented!()
@@ -83,24 +83,24 @@ pub(crate) mod private {
             &self,
             _pivot_series: &'a (dyn SeriesTrait + 'a),
             _keys: Vec<Series>,
-            _groups: &[(usize, Vec<usize>)],
+            _groups: &[(u32, Vec<u32>)],
         ) -> Result<DataFrame> {
             unimplemented!()
         }
 
-        fn hash_join_inner(&self, _other: &Series) -> Vec<(usize, usize)> {
+        fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
             unimplemented!()
         }
-        fn hash_join_left(&self, _other: &Series) -> Vec<(usize, Option<usize>)> {
+        fn hash_join_left(&self, _other: &Series) -> Vec<(u32, Option<u32>)> {
             unimplemented!()
         }
-        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<usize>, Option<usize>)> {
+        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
             unimplemented!()
         }
         fn zip_outer_join_column(
             &self,
             _right_column: &Series,
-            _opt_join_tuples: &[(Option<usize>, Option<usize>)],
+            _opt_join_tuples: &[(Option<u32>, Option<u32>)],
         ) -> Series {
             unimplemented!()
         }
@@ -120,7 +120,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             unimplemented!()
         }
-        fn group_tuples(&self, _multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        fn group_tuples(&self, _multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
             unimplemented!()
         }
     }
@@ -515,7 +515,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Get first indexes of unique values.
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         unimplemented!()
     }
 
