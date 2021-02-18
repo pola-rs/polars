@@ -6,6 +6,7 @@ from .series import Series
 from .lazy import LazyFrame
 from . import datatypes
 import pyarrow as pa
+import pyarrow.parquet
 import builtins
 
 
@@ -180,7 +181,9 @@ def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
 
 
 def read_parquet(
-    file: Union[str, BinaryIO], stop_after_n_rows: "Optional[int]" = None
+    file: Union[str, BinaryIO],
+    stop_after_n_rows: "Optional[int]" = None,
+    memory_map=True,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a parquet file.
@@ -191,12 +194,17 @@ def read_parquet(
         Path to a file or a file like object.
     stop_after_n_rows
         After n rows are read from the parquet stops reading.
+    memory_map
+        Memory map underlying file. This will likely increase performance.
 
     Returns
     -------
     DataFrame
     """
-    return DataFrame.read_parquet(file, stop_after_n_rows=stop_after_n_rows)
+    if stop_after_n_rows is not None:
+        return DataFrame.read_parquet(file, stop_after_n_rows=stop_after_n_rows)
+    else:
+        return from_arrow_table(pa.parquet.read_table(file, memory_map=memory_map))
 
 
 def arg_where(mask: "Series"):
@@ -242,7 +250,15 @@ def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
     -------
     A Polars DataFrame
     """
-    table = pa.table(df)
+    schema = pa.Schema.from_pandas(df)
+    for i in range(len(schema)):
+        field = schema.field(i)
+        if field.type.is_string():
+            schema.set(
+                i, pa.field(field.name, pa.large_utf8(), field.nullable, field.metadata)
+            )
+
+    table = pa.table(df, schema=schema)
     return from_arrow_table(table)
 
 
