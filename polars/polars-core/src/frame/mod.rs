@@ -1312,9 +1312,9 @@ impl DataFrame {
         let df = if maintain_order {
             let mut groups = groups.collect::<Vec<_>>();
             groups.sort_unstable();
-            unsafe { self.take_iter_unchecked(groups.into_iter()) }
+            unsafe { self.take_iter_unchecked(groups.into_iter().map(|i| i as usize)) }
         } else {
-            unsafe { self.take_iter_unchecked(groups) }
+            unsafe { self.take_iter_unchecked(groups.into_iter().map(|i| i as usize)) }
         };
 
         Ok(df)
@@ -1324,14 +1324,14 @@ impl DataFrame {
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height(), true, false))
+        Ok(is_unique_helper(groups, self.height() as u32, true, false))
     }
 
     /// Get a mask of all the duplicated rows in the DataFrame.
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height(), false, true))
+        Ok(is_unique_helper(groups, self.height() as u32, false, true))
     }
 
     /// Create a new DataFrame that shows the null counts per column.
