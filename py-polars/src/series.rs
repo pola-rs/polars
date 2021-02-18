@@ -368,7 +368,7 @@ impl PySeries {
         Ok(df.into())
     }
 
-    pub fn arg_unique(&self) -> PyResult<Py<PyArray1<usize>>> {
+    pub fn arg_unique(&self) -> PyResult<Py<PyArray1<u32>>> {
         let gil = pyo3::Python::acquire_gil();
         let arg_unique = self.series.arg_unique().map_err(PyPolarsEr::from)?;
         let pyarray = PyArray1::from_vec(gil.python(), arg_unique);
