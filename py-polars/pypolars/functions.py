@@ -7,6 +7,7 @@ from .lazy import LazyFrame
 from . import datatypes
 import pyarrow as pa
 import pyarrow.parquet
+import pyarrow.csv
 import builtins
 
 
@@ -75,6 +76,20 @@ def read_csv(
     -------
     DataFrame
     """
+
+    if (
+        dtype is None
+        and has_headers
+        and projection is None
+        and sep == ","
+        and columns is None
+        and stop_after_n_rows is None
+        and not ignore_errors
+        and n_threads is None
+        and encoding == "utf8"
+    ):
+        tbl = pa.csv.read_csv(file, pa.csv.ReadOptions(skip_rows=skip_rows))
+        return from_arrow_table(tbl, rechunk)
 
     df = DataFrame.read_csv(
         file=file,
