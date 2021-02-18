@@ -26,8 +26,10 @@ from typing import (
 )
 from .series import Series, wrap_s
 from .datatypes import *
+from .html import NotebookFormatter
 import pyarrow as pa
 import numpy as np
+import os
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
@@ -457,6 +459,11 @@ class DataFrame:
 
     def __len__(self):
         return self.height
+
+    def _repr_html_(self) -> str:
+        max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
+        max_rows = int(os.environ.get("POLARS_FMT_MAX_rows", 25))
+        return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
     def insert_at_idx(self, index: int, series: Series):
         self._df.insert_at_idx(index, series._s)

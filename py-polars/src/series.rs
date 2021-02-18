@@ -221,6 +221,10 @@ impl PySeries {
         }
     }
 
+    pub fn get_fmt(&self, index: usize) -> String {
+        format!("{}", self.series.get(index))
+    }
+
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
         let series = self.series.rechunk();
         if in_place {
