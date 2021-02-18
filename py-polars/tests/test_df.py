@@ -8,6 +8,7 @@ import numpy as np
 from builtins import range
 import pyarrow as pa
 import pypolars as pl
+import pandas as pd
 
 
 def test_init():
@@ -278,10 +279,23 @@ def test_to_dummies():
 
 
 def test_from_pandas():
-    import pandas as pd
+    df = pd.DataFrame(
+        {
+            "bools": [False, True, False],
+            "bools_nulls": [None, True, False],
+            "int": [1, 2, 3],
+            "int_nulls": [1, None, 3],
+            "floats": [1.0, 2.0, 3.0],
+            "floats_nulls": [1.0, None, 3.0],
+            "strings": ["foo", "bar", "ham"],
+            "strings_nulls": ["foo", None, "ham"],
+            "strings-cat": ["foo", "bar", "ham"],
+        }
+    )
+    df["strings-cat"] = df["strings-cat"].astype("category")
 
-    df = pd.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
-    DataFrame(df)
+    out = pl.from_pandas(df)
+    assert out.shape == (3, 9)
 
 
 def test_custom_groupby():

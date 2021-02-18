@@ -266,9 +266,10 @@ def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
     A Polars DataFrame
     """
     schema = pa.Schema.from_pandas(df)
-    for i in range(len(schema)):
+    # we directly convert strings in the schema to large-strings to prevent a double clone
+    for i in builtins.range(len(schema)):
         field = schema.field(i)
-        if field.type.is_string():
+        if field.type == pa.string():
             schema.set(
                 i, pa.field(field.name, pa.large_utf8(), field.nullable, field.metadata)
             )
