@@ -1,3 +1,4 @@
+use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
@@ -206,6 +207,21 @@ impl PySeries {
     pub fn new_object(name: &str, val: Vec<ObjectValue>) -> Self {
         let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
         s.into()
+    }
+
+    #[staticmethod]
+    pub fn repeat(name: &str, val: &str, n: usize) -> Self {
+        let mut ca: Utf8Chunked = (0..n).map(|_| val).collect();
+        ca.rename(name);
+        ca.into_series().into()
+    }
+
+    #[staticmethod]
+    pub fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
+        let arr = array_to_rust(array)?;
+        let series: Series =
+            std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsEr::from)?;
+        Ok(series.into())
     }
 
     pub fn get_object(&self, index: usize) -> PyObject {
