@@ -95,6 +95,12 @@ Additional cargo features:
       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 * `parallel`
     - ChunkedArrays can be used by rayon::par_iter()
+* `[plain_fmt | pretty_fmt]` (mutually exclusive)
+  - one of them should be chosen to fmt DataFrames. 
+    `pretty_fmt` can deal with overflowing cells and looks nicer but has more dependencies.
+    `plain_fmt` is plain formatting.
+  
+
 
 ## Contribution
 Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).

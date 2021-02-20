@@ -14,7 +14,7 @@ simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "lazy", "parquet", "performant"]
+default = ["docs", "temporal", "lazy", "parquet", "performant", "plain_fmt"]
 lazy = []
 parallel = []
 performant = []
@@ -22,6 +22,9 @@ performant = []
 strings = ["regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
+# Cannot have mutually exclusive types. User should choose one of:
+pretty_fmt = ["comfy-table"]
+plain_fmt = ["prettytable-rs"]
 
 [dependencies]
 arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "f5e0a4e03372e8f073bbb4368274bad2e1ff303b", default-features=false}
@@ -31,7 +34,8 @@ num = "^0.3.1"
 itertools = "0.10"
 unsafe_unwrap = "^0.1.0"
 rayon = "1.5"
-comfy-table = { version="1"}
+comfy-table = { version="1", optional = true}
+prettytable-rs = {version = "0.8.0", optional = true }
 chrono = {version = "^0.4.13", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
