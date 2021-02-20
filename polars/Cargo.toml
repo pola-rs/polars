@@ -19,7 +19,8 @@ default = ["docs",
     "temporal",
     "lazy",
     "parquet",
-    "performant"
+    "performant",
+    "plain_fmt"
 ]
 ndarray = ["polars-core/ndarray"]
 parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
@@ -36,6 +37,8 @@ ipc = ["polars-io/ipc"]
 # ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
 # that fits a TrustedLen iterator.
 performant = ["polars-core/performant"]
+plain_fmt = ["polars-core/plain_fmt"]
+pretty_fmt = ["polars-core/pretty_fmt"]
 
 [dependencies]
 polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}
