@@ -1,5 +1,6 @@
 from pypolars import Series
 from pypolars.datatypes import *
+import pypolars as pl
 import numpy as np
 import pytest
 import pyarrow as pa
@@ -226,3 +227,12 @@ def test_object():
     assert a.dtype == Object
     assert a.to_list() == vals
     assert a[1] == "foo"
+
+
+def test_repeat():
+    s = pl.repeat(1, 10)
+    assert s.dtype == pl.Int64
+    assert s.len() == 10
+    s = pl.repeat("foo", 10)
+    assert s.dtype == pl.Utf8
+    assert s.len() == 10

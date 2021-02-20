@@ -252,30 +252,36 @@ def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "DataFrame":
     return DataFrame.from_arrow(table, rechunk)
 
 
-def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
+def from_pandas(df: "pandas.DataFrame", rechunk: bool = True) -> "DataFrame":
     """
-    Convert from pandas DataFrame to Polars DataFrame
+    Convert from a pandas DataFrame to a polars DataFrame
 
     Parameters
     ----------
     df
         DataFrame to convert
+    rechunk
+        Make sure that all data is contiguous.
 
     Returns
     -------
     A Polars DataFrame
     """
-    schema = pa.Schema.from_pandas(df)
-    # we directly convert strings in the schema to large-strings to prevent a double clone
-    for i in builtins.range(len(schema)):
-        field = schema.field(i)
-        if field.type == pa.string():
-            schema.set(
-                i, pa.field(field.name, pa.large_utf8(), field.nullable, field.metadata)
-            )
 
-    table = pa.table(df, schema=schema)
-    return from_arrow_table(table)
+    # Note: we first tried to infer the schema via pyarrow and then modify the schema if needed.
+    # However arrow 3.0 determines the type of a string like this:
+    #       pa.array(array).type
+    # needlessly allocating and failing when the string is too large for the string dtype.
+    data = {}
+
+    for (name, dtype) in zip(df.columns, df.dtypes):
+        if dtype == "object" and isinstance(df[name][0], str):
+            data[name] = pa.array(df[name], pa.large_utf8())
+        else:
+            data[name] = pa.array(df[name])
+
+    table = pa.table(data)
+    return from_arrow_table(table, rechunk)
 
 
 def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
@@ -303,5 +309,47 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
     return df
 
 
-def range(lower: int, upper: int, step: Optional[int] = None) -> Series:
-    return Series("range", np.arange(lower, upper, step), nullable=False)
+def range(
+    lower: int, upper: int, step: Optional[int] = None, name: Optional[str] = None
+) -> Series:
+    """
+    Create a Series that ranges from lower bound to upper bound.
+    Parameters
+    ----------
+    lower
+        Lower bound value.
+    upper
+        Upper bound value.
+    step
+        Optional step size. If none given, the step size will be 1.
+    name
+        Name of the Series
+    """
+    if name is None:
+        name = ""
+    return Series(name, np.arange(lower, upper, step), nullable=False)
+
+
+def repeat(
+    val: "Union[int, float, str]", n: int, name: Optional[str] = None
+) -> "Series":
+    """
+    Repeat a single value n times and collect into a Series.
+
+    Parameters
+    ----------
+    val
+        Value to repeat.
+    n
+        Number of repeats.
+    name
+        Optional name of the Series.
+    """
+    if name is None:
+        name = ""
+    if isinstance(val, str):
+        s = Series._repeat(name, val, n)
+        s.rename(name)
+        return s
+    else:
+        return Series.from_arrow(name, pa.repeat(val, n))

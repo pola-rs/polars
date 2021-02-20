@@ -107,6 +107,8 @@ class Series:
             raise ValueError(
                 f"Constructing a Series with a dict is not supported for {values}"
             )
+        elif isinstance(values, pa.Array):
+            return self.from_arrow(name, values)
 
         # castable to numpy
         if not isinstance(values, np.ndarray) and not nullable:
@@ -166,6 +168,27 @@ class Series:
         self = Series.__new__(Series)
         self._s = s
         return self
+
+    @staticmethod
+    def _repeat(name: str, val: str, n: int) -> "Series":
+        """
+        Only used for strings.
+        """
+        return Series._from_pyseries(PySeries.repeat(name, val, n))
+
+    @staticmethod
+    def from_arrow(name: str, array: "pa.Array"):
+        """
+        Create a Series from an arrow array.
+
+        Parameters
+        ----------
+        name
+            name of the Series.
+        array
+            Arrow array.
+        """
+        return Series._from_pyseries(PySeries.from_arrow(name, array))
 
     def inner(self) -> "PySeries":
         return self._s
