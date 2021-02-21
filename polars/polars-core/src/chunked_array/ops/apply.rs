@@ -2,6 +2,7 @@
 use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::array::{ArrayRef, LargeStringArray, PrimitiveArray};
+use std::borrow::Cow;
 
 macro_rules! apply {
     ($self:expr, $f:expr) => {{
@@ -99,23 +100,23 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     }
 }
 
-impl<'a> ChunkApply<'a, &'a str, String> for Utf8Chunked {
+impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     fn apply<F>(&'a self, f: F) -> Self
     where
-        F: Fn(&'a str) -> String + Copy,
+        F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
         apply!(self, f)
     }
     fn apply_with_idx<F>(&'a self, f: F) -> Self
     where
-        F: Fn((usize, &'a str)) -> String + Copy,
+        F: Fn((usize, &'a str)) -> Cow<'a, str> + Copy,
     {
         apply_enumerate!(self, f)
     }
 
     fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
     where
-        F: Fn((usize, Option<&'a str>)) -> Option<String> + Copy,
+        F: Fn((usize, Option<&'a str>)) -> Option<Cow<'a, str>> + Copy,
     {
         self.into_iter().enumerate().map(f).collect()
     }

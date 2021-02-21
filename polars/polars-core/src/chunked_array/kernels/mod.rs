@@ -1,4 +1,7 @@
 pub(crate) mod cast;
+#[cfg(feature = "strings")]
+#[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
+pub mod strings;
 pub(crate) mod take;
 pub(crate) mod take_agg;
 #[cfg(feature = "temporal")]
