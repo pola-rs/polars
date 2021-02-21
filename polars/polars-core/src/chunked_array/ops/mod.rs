@@ -830,6 +830,8 @@ pub trait ChunkApplyKernel<A> {
     fn apply_kernel<F>(&self, f: F) -> Self
     where
         F: Fn(&A) -> ArrayRef;
+
+    /// Apply a kernel that outputs an array of different type.
     fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
     where
         F: Fn(&A) -> ArrayRef,
