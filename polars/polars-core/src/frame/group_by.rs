@@ -264,8 +264,13 @@ fn groupby_multiple_keys(keys: DataFrame) -> Vec<(u32, Vec<u32>)> {
     let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
         HashMap::with_capacity_and_hasher(size, IdBuildHasher::default());
 
-    for (idx, h) in hashes.into_no_null_iter().enumerate() {
-        populate_multiple_key_hashmap(&mut hash_tbl, idx as u32, h, &keys);
+    // hashes has no nulls
+    let mut idx = 0;
+    for hashes_chunk in hashes.data_views() {
+        for &h in hashes_chunk {
+            populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys);
+            idx += 1;
+        }
     }
     hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
 }
@@ -295,15 +300,20 @@ fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> Vec
             let n_threads = n_threads as u64;
             let mut offset = 0;
             for hashes in hashes {
-                let len = hashes.len();
-                hashes.into_no_null_iter().enumerate().for_each(|(idx, h)| {
-                    // partition hashes by thread no.
-                    // So only a part of the hashes go to this hashmap
-                    if (h + thread_no) % n_threads == 0 {
-                        let idx = idx + offset;
-                        populate_multiple_key_hashmap(&mut hash_tbl, idx as u32, h, keys);
+                let len = hashes.len() as u32;
+
+                let mut idx = 0;
+                for hashes_chunk in hashes.data_views() {
+                    for &h in hashes_chunk {
+                        // partition hashes by thread no.
+                        // So only a part of the hashes go to this hashmap
+                        if (h + thread_no) % n_threads == 0 {
+                            let idx = idx + offset;
+                            populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys);
+                        }
+                        idx += 1;
                     }
-                });
+                }
 
                 offset += len;
             }
