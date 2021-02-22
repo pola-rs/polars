@@ -379,6 +379,15 @@ pub trait ChunkCast {
 /// Fastest way to do elementwise operations on a ChunkedArray<T> when the operation is cheaper than
 /// branching due to null checking
 pub trait ChunkApply<'a, A, B> {
+    /// Apply a closure elementwise and cast Self to `S`. This is fastest when the null check branching is more expensive
+    /// than the closure application.
+    ///
+    /// Null values remain null.
+    fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(A) -> S::Native + Copy,
+        S: PolarsNumericType;
+
     /// Apply a closure elementwise. This is fastest when the null check branching is more expensive
     /// than the closure application. Often it is.
     ///
