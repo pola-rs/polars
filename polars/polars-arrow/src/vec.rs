@@ -35,10 +35,7 @@ impl<T> FromIterator<T> for AlignedVec<T> {
         let size = sh.1.unwrap_or(sh.0);
 
         let mut av = Self::with_capacity_aligned(size);
-
-        for v in iter {
-            av.push(v)
-        }
+        av.extend(iter);
 
         // Iterator size hint wasn't correct and reallocation has occurred
         assert!(av.len() <= size);
@@ -239,7 +236,7 @@ impl<T> AlignedVec<T> {
     /// Must be a trusted len iterator or else it will panic
     pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         let iter = iter.into_iter();
-        let cap = iter.size_hint().1.unwrap();
+        let cap = iter.size_hint().1.expect("a trusted length iterator");
         let (extra_cap, overflow) = cap.overflowing_sub(self.capacity());
         if extra_cap > 0 && !overflow {
             self.reserve(extra_cap);
