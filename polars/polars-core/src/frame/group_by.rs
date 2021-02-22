@@ -39,23 +39,17 @@ where
 {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
@@ -63,23 +57,17 @@ where
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
@@ -87,23 +75,17 @@ impl VecHash for Utf8Chunked {
 impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
@@ -111,50 +93,38 @@ impl VecHash for BooleanChunked {
 impl VecHash for Float32Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let v = v.to_bits();
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let v = v.to_bits();
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let opt_v = opt_v.map(|v| v.to_bits());
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let opt_v = opt_v.map(|v| v.to_bits());
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
 impl VecHash for Float64Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let v = v.to_bits();
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let v = v.to_bits();
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let opt_v = opt_v.map(|v| v.to_bits());
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let opt_v = opt_v.map(|v| v.to_bits());
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }

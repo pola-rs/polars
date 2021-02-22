@@ -52,11 +52,12 @@ where
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
-        where
-            F: Fn(Option<T::Native>) -> S::Native + Copy,
-            S: PolarsNumericType,
+    where
+        F: Fn(Option<T::Native>) -> S::Native + Copy,
+        S: PolarsNumericType,
     {
-        let chunks = self.downcast_chunks()
+        let chunks = self
+            .downcast_chunks()
             .into_iter()
             .map(|array| {
                 let av: AlignedVec<_> = if array.null_count() == 0 {
@@ -65,7 +66,8 @@ where
                     array.into_iter().map(f).collect()
                 };
                 Arc::new(av.into_primitive_array::<S>(None)) as ArrayRef
-            }).collect();
+            })
+            .collect();
         ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
     }
 
@@ -124,20 +126,18 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
             let av: AlignedVec<_> = (0..array.len())
                 .map(|idx| unsafe { f(array.value_unchecked(idx)) })
                 .collect();
-            let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
+            let null_bit_buffer = array.data_ref().null_buffer().cloned();
             Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
         })
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
-        where
-            F: Fn(Option<bool>) -> S::Native + Copy,
-            S: PolarsNumericType,
+    where
+        F: Fn(Option<bool>) -> S::Native + Copy,
+        S: PolarsNumericType,
     {
         self.apply_kernel_cast(|array| {
-            let av: AlignedVec<_> = array.into_iter()
-                .map(f)
-                .collect();
+            let av: AlignedVec<_> = array.into_iter().map(f).collect();
             Arc::new(av.into_primitive_array::<S>(None)) as ArrayRef
         })
     }
@@ -176,7 +176,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
                 let av: AlignedVec<_> = (0..array.len())
                     .map(|idx| unsafe { f(array.value_unchecked(idx)) })
                     .collect();
-                let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
+                let null_bit_buffer = array.data_ref().null_buffer().cloned();
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
             })
             .collect();
@@ -184,18 +184,16 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
-        where
-            F: Fn(Option<&'a str>) -> S::Native + Copy,
-            S: PolarsNumericType,
+    where
+        F: Fn(Option<&'a str>) -> S::Native + Copy,
+        S: PolarsNumericType,
     {
         let chunks = self
             .downcast_chunks()
             .into_iter()
             .map(|array| {
-                let av: AlignedVec<_> = array.into_iter()
-                    .map(f)
-                    .collect();
-                let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
+                let av: AlignedVec<_> = array.into_iter().map(f).collect();
+                let null_bit_buffer = array.data_ref().null_buffer().cloned();
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
             })
             .collect();
@@ -305,7 +303,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                         f(series)
                     })
                     .collect();
-                let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
+                let null_bit_buffer = array.data_ref().null_buffer().cloned();
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
             })
             .collect();
@@ -313,9 +311,9 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
-        where
-            F: Fn(Option<Series>) -> S::Native + Copy,
-            S: PolarsNumericType,
+    where
+        F: Fn(Option<Series>) -> S::Native + Copy,
+        S: PolarsNumericType,
     {
         let chunks = self
             .downcast_chunks()
@@ -334,7 +332,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                         f(v)
                     })
                     .collect();
-                let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
+                let null_bit_buffer = array.data_ref().null_buffer().cloned();
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
             })
             .collect();
