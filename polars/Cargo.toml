@@ -49,6 +49,7 @@ polars-lazy = {version = "0.12.0", path = "./polars-lazy", default-features = fa
 criterion = "0.3"
 lazy_static = "1.4"
 rand = "0.8"
+ahash = "0.7.0"
 
 # see: https://bheisler.github.io/criterion.rs/book/faq.html
 [lib]
