@@ -51,6 +51,24 @@ where
         ca
     }
 
+    fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
+        where
+            F: Fn(Option<T::Native>) -> S::Native + Copy,
+            S: PolarsNumericType,
+    {
+        let chunks = self.downcast_chunks()
+            .into_iter()
+            .map(|array| {
+                let av: AlignedVec<_> = if array.null_count() == 0 {
+                    array.values().iter().map(|&v| f(Some(v))).collect()
+                } else {
+                    array.into_iter().map(f).collect()
+                };
+                Arc::new(av.into_primitive_array::<S>(None)) as ArrayRef
+            }).collect();
+        ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
+    }
+
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(T::Native) -> T::Native + Copy,
@@ -99,7 +117,7 @@ where
 impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     fn apply_cast_numeric<F, S>(&self, f: F) -> ChunkedArray<S>
     where
-        F: Fn(bool) -> S::Native,
+        F: Fn(bool) -> S::Native + Copy,
         S: PolarsNumericType,
     {
         self.apply_kernel_cast(|array| {
@@ -108,6 +126,19 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
                 .collect();
             let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
             Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
+        })
+    }
+
+    fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
+        where
+            F: Fn(Option<bool>) -> S::Native + Copy,
+            S: PolarsNumericType,
+    {
+        self.apply_kernel_cast(|array| {
+            let av: AlignedVec<_> = array.into_iter()
+                .map(f)
+                .collect();
+            Arc::new(av.into_primitive_array::<S>(None)) as ArrayRef
         })
     }
 
@@ -144,6 +175,25 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .map(|array| {
                 let av: AlignedVec<_> = (0..array.len())
                     .map(|idx| unsafe { f(array.value_unchecked(idx)) })
+                    .collect();
+                let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
+                Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
+            })
+            .collect();
+        ChunkedArray::new_from_chunks(self.name(), chunks)
+    }
+
+    fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
+        where
+            F: Fn(Option<&'a str>) -> S::Native + Copy,
+            S: PolarsNumericType,
+    {
+        let chunks = self
+            .downcast_chunks()
+            .into_iter()
+            .map(|array| {
+                let av: AlignedVec<_> = array.into_iter()
+                    .map(f)
                     .collect();
                 let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
@@ -253,6 +303,35 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                         let arrayref = unsafe { array.value_unchecked(idx) };
                         let series = Series::try_from(("", arrayref)).unwrap();
                         f(series)
+                    })
+                    .collect();
+                let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
+                Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
+            })
+            .collect();
+        ChunkedArray::new_from_chunks(self.name(), chunks)
+    }
+
+    fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
+        where
+            F: Fn(Option<Series>) -> S::Native + Copy,
+            S: PolarsNumericType,
+    {
+        let chunks = self
+            .downcast_chunks()
+            .into_iter()
+            .map(|array| {
+                let av: AlignedVec<_> = (0..array.len())
+                    .map(|idx| {
+                        let v = if array.is_valid(idx) {
+                            let arrayref = unsafe { array.value_unchecked(idx) };
+                            let series = Series::try_from(("", arrayref)).unwrap();
+                            Some(series)
+                        } else {
+                            None
+                        };
+
+                        f(v)
                     })
                     .collect();
                 let null_bit_buffer = array.data_ref().null_buffer().map(|buf| buf.clone());
