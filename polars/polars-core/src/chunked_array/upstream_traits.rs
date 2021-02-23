@@ -245,8 +245,9 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity).map(Some);
-        let arr: PrimitiveArray<T> = unsafe { PrimitiveArray::from_trusted_len_iter(iter) };
+        let av: AlignedVec<_> =
+            TrustMyLength::new(vectors.into_iter().flatten(), capacity).collect();
+        let arr = av.into_primitive_array::<T>(None);
         NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
     }
 }
@@ -258,6 +259,7 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads
         let vectors = collect_into_linked_list(iter);
+
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
         let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity);
