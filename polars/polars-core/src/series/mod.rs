@@ -1281,8 +1281,13 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::LargeList(_) => {
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }
+            ArrowDataType::Null => {
+                // we don't support null types yet so we use a small digit type filled with nulls
+                let len = chunks.iter().fold(0, |acc, array| acc + array.len());
+                Ok(Int8Chunked::full_null(name, len).into_series())
+            }
             dt => Err(PolarsError::InvalidOperation(
-                format!("Cannot create polars series from {:?}", dt).into(),
+                format!("Cannot create polars series from {:?} type", dt).into(),
             )),
         }
     }
