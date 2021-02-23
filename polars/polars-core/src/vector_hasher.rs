@@ -1,8 +1,8 @@
 use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
-use crate::utils::NoNull;
 use crate::POOL;
 use ahash::RandomState;
+use arrow::array::ArrayRef;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -241,14 +241,23 @@ pub(crate) fn df_rows_to_hashes(
     let first = iter.next().unwrap();
 
     // take the columns of hashes and create one hash from them.
+    // All columns have the same no. of chunks so we can take the fast path.
     (
         iter.fold(first, |acc, s| {
-            let ca: NoNull<UInt64Chunked> = acc
-                .into_no_null_iter()
-                .zip(s.into_no_null_iter())
-                .map(|(a, b)| combine_hashes(a, b))
+            let chunks = acc
+                .data_views()
+                .iter()
+                .zip(s.data_views())
+                .map(|(&array_left, array_right)| {
+                    let av: AlignedVec<_> = array_left
+                        .iter()
+                        .zip(array_right)
+                        .map(|(&l, &r)| combine_hashes(l, r))
+                        .collect();
+                    Arc::new(av.into_primitive_array::<UInt64Type>(None)) as ArrayRef
+                })
                 .collect();
-            ca.into_inner()
+            UInt64Chunked::new_from_chunks("", chunks)
         }),
         random_state,
     )
