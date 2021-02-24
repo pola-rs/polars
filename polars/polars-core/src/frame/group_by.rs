@@ -372,7 +372,43 @@ where
     T::Native: Eq + Hash + Send,
 {
     fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
-        group_tuples!(self, multithreaded)
+        if multithreaded && group_multithreaded(self) {
+            let n_threads = num_cpus::get();
+            let splitted = split_ca(self, n_threads).unwrap();
+
+            // use the arrays as iterators
+            if self.chunks.len() == 1 {
+                if self.null_count() == 0 {
+                    let iters = splitted
+                        .iter()
+                        .map(|ca| ca.downcast_chunks().into_iter().map(|array| array.values()))
+                        .flatten()
+                        .collect_vec();
+                    groupby_threaded_flat(iters)
+                } else {
+                    let iters = splitted
+                        .iter()
+                        .map(|ca| ca.downcast_chunks().into_iter())
+                        .flatten()
+                        .collect_vec();
+                    groupby_threaded_flat(iters)
+                }
+                // use the polars-iterators
+            } else if self.null_count() == 0 {
+                let iters = splitted
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                groupby_threaded_flat(iters)
+            } else {
+                let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
+                groupby_threaded_flat(iters)
+            }
+        } else if self.null_count() == 0 {
+            groupby(self.into_no_null_iter())
+        } else {
+            groupby(self.into_iter())
+        }
     }
 }
 impl IntoGroupTuples for BooleanChunked {
@@ -389,7 +425,9 @@ impl IntoGroupTuples for Utf8Chunked {
 
 impl IntoGroupTuples for CategoricalChunked {
     fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
-        group_tuples!(self, multithreaded)
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .group_tuples(multithreaded)
     }
 }
 
