@@ -146,15 +146,20 @@ where
         .collect()
 }
 
-fn groupby_threaded_flat<I, T>(iters: Vec<I>) -> Vec<(u32, Vec<u32>)>
+fn groupby_threaded_flat<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<(u32, Vec<u32>)>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
 {
-    groupby_threaded(iters).into_iter().flatten().collect()
+    groupby_threaded(iters, group_size_hint)
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
-fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<Vec<(u32, Vec<u32>)>>
+/// Determine groupby tuples from an iterator. The group_size_hint is used to pre-allocate the group vectors.
+/// When the grouping column is a categorical type we already have a good indication of the avg size of the groups.
+fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<Vec<(u32, Vec<u32>)>>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -195,7 +200,9 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    entry.insert_hashed_nocheck(*h, *k, (idx, vec![idx]));
+                                    let mut tuples = Vec::with_capacity(group_size_hint);
+                                    tuples.push(idx);
+                                    entry.insert_hashed_nocheck(*h, *k, (idx, tuples));
                                 }
                                 RawEntryMut::Occupied(mut entry) => {
                                     let (_k, v) = entry.get_key_value_mut();
@@ -351,10 +358,10 @@ macro_rules! group_tuples {
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect_vec();
-                groupby_threaded_flat(iters)
+                groupby_threaded_flat(iters, 0)
             } else {
                 let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-                groupby_threaded_flat(iters)
+                groupby_threaded_flat(iters, 0)
             }
         } else {
             if $ca.null_count() == 0 {
@@ -372,6 +379,11 @@ where
     T::Native: Eq + Hash + Send,
 {
     fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+        let group_size_hint = if let Some(m) = &self.categorical_map {
+            self.len() / m.len()
+        } else {
+            0
+        };
         if multithreaded && group_multithreaded(self) {
             let n_threads = num_cpus::get();
             let splitted = split_ca(self, n_threads).unwrap();
@@ -384,14 +396,14 @@ where
                         .map(|ca| ca.downcast_chunks().into_iter().map(|array| array.values()))
                         .flatten()
                         .collect_vec();
-                    groupby_threaded_flat(iters)
+                    groupby_threaded_flat(iters, group_size_hint)
                 } else {
                     let iters = splitted
                         .iter()
                         .map(|ca| ca.downcast_chunks().into_iter())
                         .flatten()
                         .collect_vec();
-                    groupby_threaded_flat(iters)
+                    groupby_threaded_flat(iters, group_size_hint)
                 }
                 // use the polars-iterators
             } else if self.null_count() == 0 {
@@ -399,10 +411,10 @@ where
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect_vec();
-                groupby_threaded_flat(iters)
+                groupby_threaded_flat(iters, group_size_hint)
             } else {
                 let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-                groupby_threaded_flat(iters)
+                groupby_threaded_flat(iters, group_size_hint)
             }
         } else if self.null_count() == 0 {
             groupby(self.into_no_null_iter())
@@ -442,14 +454,14 @@ macro_rules! impl_into_group_tpls_float {
                         .iter()
                         .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
                         .collect_vec();
-                    groupby_threaded_flat(iters)
+                    groupby_threaded_flat(iters, 0)
                 }
                 _ => {
                     let iters = splitted
                         .iter()
                         .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
                         .collect_vec();
-                    groupby_threaded_flat(iters)
+                    groupby_threaded_flat(iters, 0)
                 }
             }
         } else {
@@ -2698,7 +2710,7 @@ mod test {
             let splitted = split_ca(&ca, 4).unwrap();
 
             let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
-            let b = groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect())
+            let b = groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect(), 0)
                 .into_iter()
                 .sorted()
                 .collect_vec();
