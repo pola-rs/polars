@@ -1140,12 +1140,11 @@ macro_rules! impl_unsafe_from_ptr {
         impl PySeries {
             fn $name(&self, ptr: usize, len: usize) -> Self {
                 let av = unsafe { AlignedVec::from_ptr(ptr, len, len) };
-                let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
+                let (_null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
                 let ca = ChunkedArray::<$ca_type>::new_from_owned_with_null_bitmap(
                     self.name(),
                     av,
                     null_bitmap,
-                    null_count,
                 );
                 Self::new(ca.into_series())
             }

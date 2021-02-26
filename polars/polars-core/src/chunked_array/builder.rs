@@ -414,26 +414,6 @@ fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
     (num + (factor - 1)) & !(factor - 1)
 }
 
-/// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
-/// Can also take a null bit buffer into account.
-pub fn aligned_vec_to_primitive_array<T: PolarsPrimitiveType>(
-    values: AlignedVec<T::Native>,
-    null_bit_buffer: Option<Buffer>,
-    null_count: Option<usize>,
-) -> PrimitiveArray<T> {
-    let vec_len = values.len();
-    let buffer = values.into_arrow_buffer();
-
-    let builder = ArrayData::builder(T::DATA_TYPE)
-        .len(vec_len)
-        .add_buffer(buffer);
-
-    let builder = set_null_bits(builder, null_bit_buffer, null_count);
-    let data = builder.build();
-
-    PrimitiveArray::<T>::from(data)
-}
-
 pub trait NewChunkedArray<T, N> {
     fn new_from_slice(name: &str, v: &[N]) -> Self;
     fn new_from_opt_slice(name: &str, opt_v: &[Option<N>]) -> Self;
