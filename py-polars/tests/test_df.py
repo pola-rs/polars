@@ -331,8 +331,8 @@ def test_concat():
     assert functions.concat([df, df]).shape == (6, 3)
 
 
-def test_to_pandas():
-    df = DataFrame(
+def get_complete_df():
+    return DataFrame(
         {
             "bools": [False, True, False],
             "bools_nulls": [None, True, False],
@@ -344,6 +344,10 @@ def test_to_pandas():
             "strings_nulls": ["foo", None, "ham"],
         }
     )
+
+
+def test_to_pandas():
+    df = get_complete_df()
     df.to_arrow()
     df.to_pandas()
     # test shifted df
@@ -359,3 +363,15 @@ def test_from_arrow_table():
 
     df = pl.from_arrow_table(tbl)
     df.frame_equal(pl.DataFrame(data))
+
+
+def test_df_stats():
+    df = get_complete_df()
+    df.var()
+    df.std()
+    df.min()
+    df.max()
+    df.sum()
+    df.mean()
+    df.median()
+    df.quantile(0.4)

@@ -37,13 +37,9 @@ pub trait ChunkAggSeries {
 
 pub trait VarAggSeries {
     /// Get the variance of the ChunkedArray as a new Series of length 1.
-    fn var_as_series(&self) -> Series {
-        unimplemented!()
-    }
+    fn var_as_series(&self) -> Series;
     /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
-    fn std_as_series(&self) -> Series {
-        unimplemented!()
-    }
+    fn std_as_series(&self) -> Series;
 }
 
 macro_rules! agg_float_with_nans {
@@ -353,12 +349,52 @@ impl VarAggSeries for Float64Chunked {
     }
 }
 
-impl VarAggSeries for BooleanChunked {}
-impl VarAggSeries for CategoricalChunked {}
-impl VarAggSeries for ListChunked {}
+impl VarAggSeries for BooleanChunked {
+    fn var_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+
+    fn std_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
+impl VarAggSeries for CategoricalChunked {
+    fn var_as_series(&self) -> Series {
+        self.cast::<UInt32Type>().unwrap().var_as_series()
+    }
+
+    fn std_as_series(&self) -> Series {
+        self.cast::<UInt32Type>().unwrap().std_as_series()
+    }
+}
+impl VarAggSeries for ListChunked {
+    fn var_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+
+    fn std_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
 #[cfg(feature = "object")]
-impl<T> VarAggSeries for ObjectChunked<T> {}
-impl VarAggSeries for Utf8Chunked {}
+impl<T> VarAggSeries for ObjectChunked<T> {
+    fn var_as_series(&self) -> Series {
+        unimplemented!()
+    }
+
+    fn std_as_series(&self) -> Series {
+        unimplemented!()
+    }
+}
+impl VarAggSeries for Utf8Chunked {
+    fn var_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+
+    fn std_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
 
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {
