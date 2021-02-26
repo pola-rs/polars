@@ -1072,6 +1072,7 @@ impl_set_with_mask!(set_with_mask_i8, i8, i8, Int8);
 impl_set_with_mask!(set_with_mask_i16, i16, i16, Int16);
 impl_set_with_mask!(set_with_mask_i32, i32, i32, Int32);
 impl_set_with_mask!(set_with_mask_i64, i64, i64, Int64);
+impl_set_with_mask!(set_with_mask_bool, bool, bool, Boolean);
 
 macro_rules! impl_set_at_idx {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
