@@ -1,4 +1,3 @@
-use crate::chunked_array::builder::aligned_vec_to_primitive_array;
 use crate::prelude::*;
 use arrow::array::{
     Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray,
@@ -27,7 +26,7 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
 
     let nulls = indices.data_ref().null_buffer().cloned();
 
-    let arr = aligned_vec_to_primitive_array(values, nulls, Some(indices.null_count()));
+    let arr = values.into_primitive_array::<T>(nulls);
     Arc::new(arr)
 }
 
@@ -43,14 +42,12 @@ pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
 
     let array_values = arr.values();
 
-    let iter = indices
+    let av = indices
         .into_iter()
-        .map(|idx| *array_values.get_unchecked(idx));
+        .map(|idx| *array_values.get_unchecked(idx))
+        .collect::<AlignedVec<_>>();
 
-    let mut values = AlignedVec::<T::Native>::with_capacity_aligned(iter.size_hint().0);
-    values.extend(iter);
-
-    let arr = aligned_vec_to_primitive_array(values, None, None);
+    let arr = av.into_primitive_array::<T>(None);
     Arc::new(arr)
 }
 
@@ -63,12 +60,12 @@ pub(crate) fn take_no_null_primitive_iter<T: PolarsNumericType, I: IntoIterator<
 
     let array_values = arr.values();
 
-    let iter = indices.into_iter().map(|idx| array_values[idx]);
+    let av = indices
+        .into_iter()
+        .map(|idx| array_values[idx])
+        .collect::<AlignedVec<_>>();
+    let arr = av.into_primitive_array(None);
 
-    let mut values = AlignedVec::<T::Native>::with_capacity_aligned(iter.size_hint().0);
-    values.extend(iter);
-
-    let arr = aligned_vec_to_primitive_array(values, None, None);
     Arc::new(arr)
 }
 

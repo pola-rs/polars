@@ -1,7 +1,5 @@
 //! The typed heart of every Series column.
-use crate::chunked_array::builder::{
-    aligned_vec_to_primitive_array, build_with_existing_null_bitmap_and_slice, get_bitmap,
-};
+use crate::chunked_array::builder::{build_with_existing_null_bitmap_and_slice, get_bitmap};
 use crate::prelude::*;
 use arrow::{
     array::{
@@ -606,7 +604,7 @@ where
 {
     /// Create a new ChunkedArray by taking ownership of the AlignedVec. This operation is zero copy.
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
-        let arr = aligned_vec_to_primitive_array::<T>(v, None, Some(0));
+        let arr = v.into_primitive_array::<T>(None);
         Self::new_from_chunks(name, vec![Arc::new(arr)])
     }
 
@@ -635,14 +633,9 @@ where
         name: &str,
         values: AlignedVec<T::Native>,
         buffer: Option<Buffer>,
-        null_count: usize,
     ) -> Self {
         let len = values.len();
-        let arr = Arc::new(aligned_vec_to_primitive_array::<T>(
-            values,
-            buffer,
-            Some(null_count),
-        ));
+        let arr = Arc::new(values.into_primitive_array::<T>(buffer));
         ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
