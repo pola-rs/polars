@@ -620,13 +620,9 @@ where
     T: PolarsPrimitiveType,
 {
     fn full_null(name: &str, length: usize) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::new(name, length);
-
-        // todo: faster with null arrays or in one go allocation
-        for _ in 0..length {
-            builder.append_null()
-        }
-        builder.finish()
+        let mut ca = (0..length).map(|_| None).collect::<Self>();
+        ca.rename(name);
+        ca
     }
 }
 impl ChunkFull<bool> for BooleanChunked {
@@ -639,13 +635,9 @@ impl ChunkFull<bool> for BooleanChunked {
 
 impl ChunkFullNull for BooleanChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let mut builder = BooleanChunkedBuilder::new(name, length);
-
-        // todo: faster with null arrays or in one go allocation
-        for _ in 0..length {
-            builder.append_null()
-        }
-        builder.finish()
+        let mut ca = (0..length).map(|_| None).collect::<Self>();
+        ca.rename(name);
+        ca
     }
 }
 
@@ -662,13 +654,11 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 
 impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
-        // todo: faster with null arrays or in one go allocation
-        let mut builder = Utf8ChunkedBuilder::new(name, length, 0);
-
-        for _ in 0..length {
-            builder.append_null()
-        }
-        builder.finish()
+        let mut ca = (0..length)
+            .map::<Option<String>, _>(|_| None)
+            .collect::<Self>();
+        ca.rename(name);
+        ca
     }
 }
 
@@ -684,11 +674,11 @@ impl ChunkFull<&Series> for ListChunked {
 
 impl ChunkFullNull for ListChunked {
     fn full_null(name: &str, length: usize) -> ListChunked {
-        let mut builder = get_list_builder(&DataType::Null, 0, length, name);
-        for _ in 0..length {
-            builder.append_null()
-        }
-        builder.finish()
+        let mut ca = (0..length)
+            .map::<Option<Series>, _>(|_| None)
+            .collect::<Self>();
+        ca.rename(name);
+        ca
     }
 }
 
