@@ -174,6 +174,12 @@ def test_get():
     assert a[:2] == [1, 2]
 
 
+def test_set():
+    a = Series("a", [True, False, True])
+    mask = Series("msk", [True, False, True])
+    a[mask] = False
+
+
 def test_fill_none():
     a = Series("a", [1, 2, None], nullable=True)
     b = a.fill_none("forward")
