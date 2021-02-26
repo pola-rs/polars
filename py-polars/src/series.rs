@@ -984,6 +984,14 @@ impl PySeries {
         let s = self.series.nanosecond().map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
+
+    fn peak_max(&self) -> Self {
+        self.series.peak_max().into_series().into()
+    }
+
+    fn peak_min(&self) -> Self {
+        self.series.peak_min().into_series().into()
+    }
 }
 
 macro_rules! impl_ufuncs {

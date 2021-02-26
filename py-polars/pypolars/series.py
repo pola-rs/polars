@@ -1409,6 +1409,18 @@ class Series:
             return wrap_s(self._s.sample_n(n, with_replacement))
         return wrap_s(self._s.sample_frac(frac, with_replacement))
 
+    def peak_max(self):
+        """
+        Get a boolean mask of the local maximum peaks.
+        """
+        return wrap_s(self._s.peak_max())
+
+    def peak_min(self):
+        """
+        Get a boolean mask of the local minimum peaks.
+        """
+        return wrap_s(self._s.peak_min())
+
 
 def out_to_dtype(out: Any) -> "Union[Datatype, np.ndarray]":
     if isinstance(out, float):
