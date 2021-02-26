@@ -15,6 +15,7 @@ pub(crate) mod cum_agg;
 pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
+pub(crate) mod peaks;
 pub(crate) mod set;
 pub(crate) mod shift;
 pub(crate) mod sort;
@@ -841,4 +842,16 @@ pub trait ChunkApplyKernel<A> {
     where
         F: Fn(&A) -> ArrayRef,
         S: PolarsDataType;
+}
+
+pub trait ChunkPeaks {
+    /// Get a boolean mask of the local maximum peaks.
+    fn peak_max(&self) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    /// Get a boolean mask of the local minimum peaks.
+    fn peak_min(&self) -> BooleanChunked {
+        unimplemented!()
+    }
 }

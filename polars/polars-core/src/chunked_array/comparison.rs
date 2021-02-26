@@ -58,7 +58,7 @@ macro_rules! impl_eq_missing {
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + NumComp + ToPrimitive,
+    T::Native: NumComp,
 {
     fn eq_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         impl_eq_missing!(self, rhs)

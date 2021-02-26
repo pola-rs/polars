@@ -826,6 +826,16 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
             format!("power operation not supported on dtype {:?}", self.dtype()).into(),
         ))
     }
+
+    /// Get a boolean mask of the local maximum peaks.
+    fn peak_max(&self) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    /// Get a boolean mask of the local minimum peaks.
+    fn peak_min(&self) -> BooleanChunked {
+        unimplemented!()
+    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {
