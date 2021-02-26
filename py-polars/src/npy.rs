@@ -4,7 +4,7 @@ use numpy::{
     ToNpyDims, PY_ARRAY_API,
 };
 use numpy::{Element, PyArray1};
-use polars::chunked_array::builder::memory;
+use polars::chunked_array::builder::alloc;
 use pyo3::prelude::*;
 use std::{mem, ptr};
 
@@ -17,7 +17,7 @@ use std::{mem, ptr};
 pub unsafe fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArray1<T>, *mut T) {
     let t_size = std::mem::size_of::<T>();
     let capacity = size * t_size;
-    let ptr = memory::allocate_aligned(capacity).as_ptr() as *mut T;
+    let ptr = alloc::allocate_aligned::<u8>(capacity).as_ptr() as *mut T;
     let mut buf = Vec::from_raw_parts(ptr, 0, capacity);
     buf.set_len(size);
     // modified from

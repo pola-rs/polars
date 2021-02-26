@@ -27,8 +27,8 @@ pretty_fmt = ["comfy-table"]
 plain_fmt = ["prettytable-rs"]
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "f5e0a4e03372e8f073bbb4368274bad2e1ff303b", default-features=false}
-parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "f5e0a4e03372e8f073bbb4368274bad2e1ff303b"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "e10d2ea9bcaec54a3788c63c027b101c2dfab173", default-features=false}
+parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "e10d2ea9bcaec54a3788c63c027b101c2dfab173"}
 thiserror = "^1.0.16"
 num = "^0.3.1"
 itertools = "0.10"

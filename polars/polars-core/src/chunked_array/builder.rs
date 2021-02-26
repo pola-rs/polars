@@ -4,9 +4,9 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 use ahash::AHashMap;
+pub use arrow::alloc;
 use arrow::array::{ArrayDataBuilder, ArrayRef, LargeListBuilder};
 use arrow::datatypes::ToByteSlice;
-pub use arrow::memory;
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray},
     buffer::Buffer,
@@ -819,33 +819,6 @@ mod test {
         assert!(new_arr.is_valid(0));
         assert!(new_arr.is_null(1));
         assert!(new_arr.is_valid(2));
-    }
-
-    #[test]
-    fn test_aligned_vec_allocations() {
-        // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
-        // check if we can increase above initial capacity and keep the Arrow alignment
-        let mut v = AlignedVec::with_capacity_aligned(2);
-        v.push(1);
-        v.push(2);
-        v.push(3);
-        v.push(4);
-
-        let ptr = v.as_ptr();
-        assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
-
-        // check if we can shrink to fit
-        let mut v = AlignedVec::with_capacity_aligned(10);
-        v.push(1);
-        v.push(2);
-        v.shrink_to_fit();
-        assert_eq!(v.len(), 2);
-        assert_eq!(v.capacity(), 2);
-        let ptr = v.as_ptr();
-        assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
-
-        let a = aligned_vec_to_primitive_array::<Int32Type>(v, None, Some(0));
-        assert_eq!(&a.values()[..2], &[1, 2])
     }
 
     #[test]
