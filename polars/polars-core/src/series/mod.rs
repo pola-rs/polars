@@ -9,8 +9,8 @@ pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::float::IsNan;
-use crate::chunked_array::kernels::cast::cast;
 use arrow::array::ArrayDataRef;
+use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
 use std::any::Any;
