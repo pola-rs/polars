@@ -20,7 +20,8 @@ default = ["docs",
     "lazy",
     "parquet",
     "performant",
-    "plain_fmt"
+    "plain_fmt",
+    "mimalloc"
 ]
 ndarray = ["polars-core/ndarray"]
 parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
@@ -44,6 +45,7 @@ pretty_fmt = ["polars-core/pretty_fmt"]
 polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}
 polars-io = {version = "0.12.0", path = "./polars-io", default-features = false}
 polars-lazy = {version = "0.12.0", path = "./polars-lazy", default-features = false}
+mimalloc = { version = "*", default-features = false, optional = true}
 
 [dev-dependencies]
 criterion = "0.3"
