@@ -638,12 +638,10 @@ impl Executor for PartitionGroupByExec {
                             Ok(opt_agg)
                         }).collect::<Result<Vec<_>>>()?;
 
-                    for agg in agg_columns {
-                        if let Some(agg) = agg {
+                    for agg in agg_columns.into_iter().flatten() {
                             for agg in agg {
                                 columns.push(agg)
                             }
-                        }
                     }
 
                     let df = DataFrame::new_no_checks(columns);
