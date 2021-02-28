@@ -370,10 +370,7 @@ impl PySeries {
         let gil = pyo3::Python::acquire_gil();
         let pyarray = PyArray1::from_iter(
             gil.python(),
-            self.series
-                .argsort(reverse)
-                .into_iter()
-                .filter_map(|opt_idx| opt_idx),
+            self.series.argsort(reverse).into_iter().flatten(),
         );
         pyarray.to_owned()
     }

@@ -141,10 +141,10 @@ impl OptimizationRule for AggScanProjection {
                     cache,
                 } = lp
                 {
-                    let new_with_columns = match self.columns.get(&path) {
-                        Some(agg) => Some(agg.iter().cloned().collect()),
-                        None => None,
-                    };
+                    let new_with_columns = self
+                        .columns
+                        .get(&path)
+                        .map(|agg| agg.iter().cloned().collect());
                     // prevent infinite loop
                     if with_columns == new_with_columns {
                         let lp = ALogicalPlan::ParquetScan {
@@ -190,10 +190,10 @@ impl OptimizationRule for AggScanProjection {
                     cache,
                 } = lp
                 {
-                    let new_with_columns = match self.columns.get(&path) {
-                        Some(agg) => Some(agg.iter().cloned().collect()),
-                        None => None,
-                    };
+                    let new_with_columns = self
+                        .columns
+                        .get(&path)
+                        .map(|agg| agg.iter().cloned().collect());
                     if with_columns == new_with_columns {
                         let lp = ALogicalPlan::CsvScan {
                             path,
