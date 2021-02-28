@@ -2065,10 +2065,9 @@ fn create_column_values_map<'a, T>(
     size: usize,
 ) -> HashMap<&'a Groupable<'a>, Vec<Option<T>>, RandomState> {
     let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, RandomState::new());
-    for opt_column_name in pivot_vec {
-        if let Some(column_name) = opt_column_name {
-            columns_agg_map.entry(column_name).or_insert_with(Vec::new);
-        }
+
+    for column_name in pivot_vec.iter().flatten() {
+        columns_agg_map.entry(column_name).or_insert_with(Vec::new);
     }
 
     columns_agg_map
@@ -2085,12 +2084,10 @@ where
     // create a hash map that will be filled with the results of the aggregation.
     let mut columns_agg_map_main =
         HashMap::with_capacity_and_hasher(pivot_vec.len(), RandomState::new());
-    for opt_column_name in pivot_vec {
-        if let Some(column_name) = opt_column_name {
-            columns_agg_map_main.entry(column_name).or_insert_with(|| {
-                PrimitiveChunkedBuilder::<T>::new(&format!("{:?}", column_name), groups.len())
-            });
-        }
+    for column_name in pivot_vec.iter().flatten() {
+        columns_agg_map_main.entry(column_name).or_insert_with(|| {
+            PrimitiveChunkedBuilder::<T>::new(&format!("{:?}", column_name), groups.len())
+        });
     }
     columns_agg_map_main
 }
@@ -2314,14 +2311,12 @@ where
 {
     let mut min = None;
 
-    for opt_val in v {
-        if let Some(val) = opt_val {
-            match min {
-                None => min = Some(*val),
-                Some(minimum) => {
-                    if val < &minimum {
-                        min = Some(*val)
-                    }
+    for val in v.iter().flatten() {
+        match min {
+            None => min = Some(*val),
+            Some(minimum) => {
+                if val < &minimum {
+                    min = Some(*val)
                 }
             }
         }
@@ -2336,14 +2331,12 @@ where
 {
     let mut max = None;
 
-    for opt_val in v {
-        if let Some(val) = opt_val {
-            match max {
-                None => max = Some(*val),
-                Some(maximum) => {
-                    if val > &maximum {
-                        max = Some(*val)
-                    }
+    for val in v.iter().flatten() {
+        match max {
+            None => max = Some(*val),
+            Some(maximum) => {
+                if val > &maximum {
+                    max = Some(*val)
                 }
             }
         }
