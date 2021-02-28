@@ -133,16 +133,12 @@ impl Executor for ParquetExec {
         let with_columns = mem::take(&mut self.with_columns);
         let schema = mem::take(&mut self.schema);
 
-        let projection: Option<Vec<_>> = if let Some(with_columns) = with_columns {
-            Some(
-                with_columns
-                    .iter()
-                    .map(|name| schema.column_with_name(name).unwrap().0)
-                    .collect(),
-            )
-        } else {
-            None
-        };
+        let projection: Option<Vec<_>> = with_columns.map(|with_columns| {
+            with_columns
+                .iter()
+                .map(|name| schema.column_with_name(name).unwrap().0)
+                .collect()
+        });
 
         let stop_after_n_rows = set_n_rows(self.stop_after_n_rows);
         let aggregate = if self.aggregate.is_empty() {
@@ -517,7 +513,7 @@ fn groupby_helper(
             .collect::<Result<Vec<_>>>()
     })?;
 
-    columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+    columns.extend(agg_columns.into_iter().flatten());
 
     let df = DataFrame::new_no_checks(columns);
     Ok(df)
@@ -686,7 +682,7 @@ impl Executor for PartitionGroupByExec {
                 })
             });
 
-        columns.extend(agg_columns.filter_map(|opt| opt));
+        columns.extend(agg_columns.flatten());
 
         let df = DataFrame::new_no_checks(columns);
         Ok(df)
