@@ -246,6 +246,21 @@ class DataFrame:
             Cast dates to objects. If False, convert to datetime64[ns] dtype
         kwargs
             arguments will be sent to pyarrow.Table.to_pandas
+        
+        Example
+        ---
+        ```python
+        >>> import pandas
+        >>> dataframe = pl.DataFrame({
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ['a', 'b', 'c']
+            })
+        
+        >>> pandas_df = dataframe.to_pandas()
+        >>> type(pandas_df)
+        pandas.core.frame.DataFrame
+        ```
         """
         return self.to_arrow().to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
@@ -309,6 +324,21 @@ class DataFrame:
         """
         Convert DataFrame to a 2d numpy array.
         This operation clones data.
+
+        Example
+        ---
+        ```python
+        >>> import pandas
+        >>> dataframe = pl.DataFrame({
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ['a', 'b', 'c']
+            })
+        
+        >>> numpy_array = dataframe.to_numpy()
+        >>> type(numpy_array)
+        numpy.ndarray
+        ```
         """
         return np.vstack([self[:, i].to_numpy() for i in range(self.width)]).T
 
@@ -562,18 +592,18 @@ class DataFrame:
         ```python
         >>> dataframe = pl.DataFrame({
             "foo": [1, 2, 3],
-            "bar": [6, 7, 8],
+            "bar": [6.0, 7.0, 8.0],
             "ham": ['a', 'b', 'c']
             })
 
         >>> dataframe.dtypes
-        [pypolars.datatypes.Int64, pypolars.datatypes.Int64, pypolars.datatypes.Utf8]
+        [pypolars.datatypes.Int64, pypolars.datatypes.Float64, pypolars.datatypes.Utf8]
         >>> dataframe
         shape: (3, 3)
         ╭─────┬─────┬─────╮
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ str │
+        │ i64 ┆ f64 ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6   ┆ "a" │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
@@ -618,7 +648,7 @@ class DataFrame:
         ```python
         >>> pl.DataFrame({
             "foo": [1, 2, 3],
-            "bar": [6, 7, 8],
+            "bar": [6.0, 7.0, 8.0],
             "ham": ['a', 'b', 'c']
             })
 
@@ -627,7 +657,7 @@ class DataFrame:
         ╭─────┬─────┬─────╮
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ str │
+        │ i64 ┆ f64 ┆ str │
         ╞═════╪═════╪═════╡
         │ 3   ┆ 8   ┆ "c" │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
@@ -652,6 +682,28 @@ class DataFrame:
             DataFrame to compare with.
         null_equal
             Consider null values as equal.
+
+        Example
+        ---
+        ```python
+        >>> df1 = pl.DataFrame({
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ['a', 'b', 'c']
+            })
+        
+        >>> df2 = pl.DataFrame({
+            "foo": [3, 2, 1],
+            "bar": [8.0, 7.0, 6.0],
+            "ham": ['c', 'b', 'a']
+            })
+
+        >>> df1.frame_equal(df1)
+        True
+
+        >>> df1.frame_equal(df2)
+        False
+        ```
         """
         return self._df.frame_equal(other._df, null_equal)
 
@@ -689,6 +741,30 @@ class DataFrame:
         ----------
         length
             Length of the head
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": [1, 2, 3, 4, 5],
+            "bar": [6, 7, 8, 9, 10],
+            "ham": ['a', 'b', 'c', 'd','e']
+            })
+        
+        >>> dataframe.head(3)
+        shape: (3, 3)
+        ╭─────┬─────┬─────╮
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ "a" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7   ┆ "b" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   ┆ "c" │
+        ╰─────┴─────┴─────╯
+        ```
         """
         return wrap_df(self._df.head(length))
 
@@ -700,6 +776,30 @@ class DataFrame:
         ----------
         length
             Length of the tail
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": [1, 2, 3, 4, 5],
+            "bar": [6, 7, 8, 9, 10],
+            "ham": ['a', 'b', 'c', 'd','e']
+            })
+        
+        >>> dataframe.tail(3)
+        shape: (3, 3)
+        ╭─────┬─────┬─────╮
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 3   ┆ 8   ┆ "c" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 9   ┆ "d" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 5   ┆ 10  ┆ "e" │
+        ╰─────┴─────┴─────╯
+        ```
         """
         return wrap_df(self._df.tail(length))
 
@@ -789,6 +889,49 @@ class DataFrame:
                 - "left"
                 - "outer"
 
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ['a', 'b', 'c']
+            })
+        
+        >>> other_dataframe = pl.DataFrame({
+            "apple": ['x', 'y', 'z'],
+            "ham": ['a', 'b', 'd']
+            })
+        
+        >>> dataframe.join(other_dataframe, on='ham')
+        shape: (2, 4)
+        ╭─────┬─────┬─────┬───────╮
+        │ foo ┆ bar ┆ ham ┆ apple │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ i64 ┆ f64 ┆ str ┆ str   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ 1   ┆ 6   ┆ "a" ┆ "x"   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2   ┆ 7   ┆ "b" ┆ "y"   │
+        ╰─────┴─────┴─────┴───────╯
+
+        >>> dataframe.join(other_dataframe, on='ham', how='outer')
+        shape: (4, 4)
+        ╭──────┬──────┬─────┬───────╮
+        │ foo  ┆ bar  ┆ ham ┆ apple │
+        │ ---  ┆ ---  ┆ --- ┆ ---   │
+        │ i64  ┆ f64  ┆ str ┆ str   │
+        ╞══════╪══════╪═════╪═══════╡
+        │ 1    ┆ 6    ┆ "a" ┆ "x"   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2    ┆ 7    ┆ "b" ┆ "y"   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ null ┆ null ┆ "d" ┆ "z"   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3    ┆ 8    ┆ "c" ┆ null  │
+        ╰──────┴──────┴─────┴───────╯
+        ```
+
         Returns
         -------
             Joined DataFrame
@@ -855,6 +998,30 @@ class DataFrame:
         ----------
         name
             Column(s) to drop
+
+        Example
+        ---
+        ```python
+        >>> dataframe = pl.DataFrame({
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ['a', 'b', 'c']
+            })
+        
+        >>> dataframe.drop('ham')
+        shape: (3, 2)
+        ╭─────┬─────╮
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   │
+        ╰─────┴─────╯
+        ```
         """
         if isinstance(name, list):
             df = self.clone()
