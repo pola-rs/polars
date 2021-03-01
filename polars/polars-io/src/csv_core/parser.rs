@@ -74,16 +74,18 @@ pub(crate) fn skip_line_ending(input: &[u8]) -> (&[u8], usize) {
 }
 
 /// Get the mean and standard deviation of length of lines in bytes
-pub(crate) fn get_line_stats(mut bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
+pub(crate) fn get_line_stats(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
     let mut n_read = 0;
     let mut lengths = Vec::with_capacity(n_lines);
+    let file_len = bytes.len();
+    let mut bytes_trunc;
 
     for _ in 0..n_lines {
-        if n_read >= bytes.len() {
+        if n_read >= file_len {
             return None;
         }
-        bytes = &bytes[n_read..];
-        match bytes.iter().position(|&b| b == b'\n') {
+        bytes_trunc = &bytes[n_read..];
+        match bytes_trunc.iter().position(|&b| b == b'\n') {
             Some(position) => {
                 n_read += position + 1;
                 lengths.push(position + 1);

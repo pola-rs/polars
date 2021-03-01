@@ -450,7 +450,7 @@ where
                         // find the original str location
                         let bytes = utf8_field.get_long_subslice(bytes);
 
-                        if utf8_field.len as usize > string_buf.len() {
+                        if utf8_field.len as usize > string_buf.capacity() {
                             string_buf.reserve(string_buf.capacity())
                         }
                         // proper escape the str field by copying to output buffer
