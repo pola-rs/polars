@@ -1,6 +1,7 @@
 //! kernels that combine take and aggregations.
 use crate::prelude::*;
 use arrow::array::{Array, PrimitiveArray};
+use polars_arrow::buffer::IsValid;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 pub(crate) unsafe fn take_agg_no_null_primitive_iter_unchecked<
@@ -39,9 +40,13 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
     }
 
     let array_values = arr.values();
+    let buf = arr
+        .data_ref()
+        .null_buffer()
+        .expect("null buffer should be there");
 
     let out = indices.into_iter().fold(init, |acc, idx| {
-        if arr.is_valid(idx) {
+        if buf.is_valid_unchecked(idx) {
             f(acc, *array_values.get_unchecked(idx))
         } else {
             acc
