@@ -246,7 +246,7 @@ class DataFrame:
             Cast dates to objects. If False, convert to datetime64[ns] dtype
         kwargs
             arguments will be sent to pyarrow.Table.to_pandas
-        
+
         Example
         ---
         ```python
@@ -256,7 +256,7 @@ class DataFrame:
             "bar": [6, 7, 8],
             "ham": ['a', 'b', 'c']
             })
-        
+
         >>> pandas_df = dataframe.to_pandas()
         >>> type(pandas_df)
         pandas.core.frame.DataFrame
@@ -334,7 +334,7 @@ class DataFrame:
             "bar": [6, 7, 8],
             "ham": ['a', 'b', 'c']
             })
-        
+
         >>> numpy_array = dataframe.to_numpy()
         >>> type(numpy_array)
         numpy.ndarray
@@ -691,7 +691,7 @@ class DataFrame:
             "bar": [6.0, 7.0, 8.0],
             "ham": ['a', 'b', 'c']
             })
-        
+
         >>> df2 = pl.DataFrame({
             "foo": [3, 2, 1],
             "bar": [8.0, 7.0, 6.0],
@@ -750,7 +750,7 @@ class DataFrame:
             "bar": [6, 7, 8, 9, 10],
             "ham": ['a', 'b', 'c', 'd','e']
             })
-        
+
         >>> dataframe.head(3)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -785,7 +785,7 @@ class DataFrame:
             "bar": [6, 7, 8, 9, 10],
             "ham": ['a', 'b', 'c', 'd','e']
             })
-        
+
         >>> dataframe.tail(3)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -897,12 +897,12 @@ class DataFrame:
             "bar": [6.0, 7.0, 8.0],
             "ham": ['a', 'b', 'c']
             })
-        
+
         >>> other_dataframe = pl.DataFrame({
             "apple": ['x', 'y', 'z'],
             "ham": ['a', 'b', 'd']
             })
-        
+
         >>> dataframe.join(other_dataframe, on='ham')
         shape: (2, 4)
         ╭─────┬─────┬─────┬───────╮
@@ -1007,7 +1007,7 @@ class DataFrame:
             "bar": [6.0, 7.0, 8.0],
             "ham": ['a', 'b', 'c']
             })
-        
+
         >>> dataframe.drop('ham')
         shape: (3, 2)
         ╭─────┬─────╮

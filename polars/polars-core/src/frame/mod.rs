@@ -1529,6 +1529,32 @@ mod test {
     }
 
     #[test]
+    fn test_filter_broadcast_on_utf8_col() {
+        let col_name = "some_col";
+        let v = vec!["test".to_string()];
+        let s0 = Series::new(col_name, v);
+        let mut df = DataFrame::new(vec![s0]).unwrap();
+        println!("{}", df.column(col_name).unwrap());
+        println!("{:?}", df);
+
+        df = df.filter(&df.column(col_name).unwrap().eq("")).unwrap();
+        assert_eq!(df.column(col_name).unwrap().n_chunks(), 1);
+        println!("{:?}", df);
+    }
+
+    #[test]
+    fn test_filter_broadcast_on_list_col() {
+        let s1 = Series::new("", &[true, false, true]);
+        let ll: ListChunked = [&s1].iter().copied().collect();
+
+        let mask = BooleanChunked::new_from_slice("", &[false]);
+        let new = ll.filter(&mask).unwrap();
+
+        assert_eq!(new.chunks.len(), 1);
+        assert_eq!(new.len(), 0);
+    }
+
+    #[test]
     fn test_sort() {
         let mut df = create_frame();
         df.sort_in_place("temp", false).unwrap();
