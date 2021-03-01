@@ -274,9 +274,9 @@ class DataFrame:
         ---
         ```python
         >>> dataframe = pl.DataFrame({
-            "foo": np.random.rand(10),
-            "bar": np.arange(10),
-            "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
+            "foo": [1, 2, 3, 4, 5],
+            "bar": [6, 7, 8, 9, 10],
+            "ham": ['a', 'b', 'c', 'd','e']
             })
         >>> dataframe.to_csv('new_file.csv', sep=';')
         ```
@@ -476,7 +476,7 @@ class DataFrame:
         Example
         ---
         ```python
-        >>> dataframe = pl.DataFrame({"foo" : np.random(5)})
+        >>> dataframe = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
         >>> dataframe.shape
         shape: (5, 1)
         ```
@@ -491,7 +491,7 @@ class DataFrame:
         Example
         ---
         ```python
-        >>> dataframe = pl.DataFrame({'foo' : np.random(5)})
+        >>> dataframe = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
         >>> dataframe.height
         5
         ```
@@ -506,7 +506,7 @@ class DataFrame:
         Example
         ---
         ```python
-        >>> dataframe = pl.DataFrame({'foo' : np.random(5)})
+        >>> dataframe = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
         >>> dataframe.width
         1
         ```
@@ -522,9 +522,9 @@ class DataFrame:
         ---
         ```python
         >>> dataframe = pl.DataFrame({
-            "foo": np.random.rand(10),
-            "bar": np.arange(10),
-            "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ['a', 'b', 'c']
             })
 
         >>> dataframe.columns
@@ -532,16 +532,17 @@ class DataFrame:
 
         # Set column names
         >>> dataframe.columns = ['apple', 'banana', 'orange']
+        shape: (3, 3)
         ╭───────┬────────┬────────╮
         │ apple ┆ banana ┆ orange │
         │ ---   ┆ ---    ┆ ---    │
-        │ f64   ┆ i64    ┆ str    │
+        │ i64   ┆ i64    ┆ str    │
         ╞═══════╪════════╪════════╡
-        │ 0.262 ┆ 0      ┆ h      │
+        │ 1     ┆ 6      ┆ "a"    │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ ...   ┆ ...    ┆ ...    │
+        │ 2     ┆ 7      ┆ "b"    │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 0.443 ┆ 5      ┆ a      │
+        │ 3     ┆ 8      ┆ "c"    │
         ╰───────┴────────┴────────╯
         ```
         """
@@ -560,27 +561,26 @@ class DataFrame:
         ---
         ```python
         >>> dataframe = pl.DataFrame({
-            "foo": np.random.rand(10),
-            "bar": np.arange(10),
-            "ham": ["h"] * 3 + ["a"] * 3 + ["m"] * 4
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ['a', 'b', 'c']
             })
 
         >>> dataframe.dtypes
-        [pypolars.datatypes.Float64, pypolars.datatypes.Int64, pypolars.datatypes.Utf8]
-
+        [pypolars.datatypes.Int64, pypolars.datatypes.Int64, pypolars.datatypes.Utf8]
         >>> dataframe
-        shape: (10, 3)
-        ╭───────┬─────┬─────╮
-        │ foo   ┆ bar ┆ ham │
-        │ ---   ┆ --- ┆ --- │
-        │ f64   ┆ i64 ┆ str │
-        ╞═══════╪═════╪═════╡
-        │ 0.262 ┆ 0   ┆ h   │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ ...   ┆ ... ┆ ... │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 0.742 ┆ 9   ┆ m   │
-        ╰───────┴─────┴─────╯
+        shape: (3, 3)
+        ╭─────┬─────┬─────╮
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ "a" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7   ┆ "b" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   ┆ "c" │
+        ╰─────┴─────┴─────╯
         ```
         """
         return [dtypes[idx] for idx in self._df.dtypes()]
@@ -616,25 +616,25 @@ class DataFrame:
         Example
         ---
         ```python
-        >>> dataframe = pl.DataFrame({
-            "foo": np.random.rand(3),
-            "bar": np.arange(3),
+        >>> pl.DataFrame({
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ['a', 'b', 'c']
             })
 
         >>> dataframe.sort('foo', reverse=True)
-        shape: (3, 2)
-        ╭───────┬─────╮
-        │ foo   ┆ bar │
-        │ ---   ┆ --- │
-        │ f64   ┆ i64 │
-        ╞═══════╪═════╡
-        │ 0.821 ┆ 2   │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 0.792 ┆ 0   │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 0.74  ┆ 1   │
-        ╰───────┴─────╯
-
+        shape: (3, 3)
+        ╭─────┬─────┬─────╮
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 3   ┆ 8   ┆ "c" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7   ┆ "b" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1   ┆ 6   ┆ "a" │
+        ╰─────┴─────┴─────╯
         ```
         """
         if in_place:
