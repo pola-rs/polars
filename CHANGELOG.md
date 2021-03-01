@@ -2,6 +2,12 @@
 
 ## Future Polars v0.13
 
+### py-polars 0.6.7
+* performance
+  - \[python | rust\] use mimalloc global allocator
+* bug fix
+  - \[python\] fix accidental over-allocation in csv-parser
+
 ### py-polars 0.6.6
 * performance
   - \[python | rust\] categorical type groupby keys (use size hint)
@@ -22,7 +28,7 @@
 * feature
   - \[python\] render html tables
 * performance
-  - [\python\] default to pyarrow for parquet reading
+  - \[python\] default to pyarrow for parquet reading
   - \[python | rust\] use u32 instead of usize in groupby and join to increase cache coherence and reduce memory pressure.
 
 ## Polars v0.12
