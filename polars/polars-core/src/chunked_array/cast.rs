@@ -1,9 +1,9 @@
 //! Implementations of the ChunkCast Trait.
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
-use crate::chunked_array::kernels::cast::cast;
 use crate::chunked_array::kernels::{cast_numeric_from_dtype, transmute_array_from_dtype};
 use crate::prelude::*;
 use crate::use_string_cache;
+use arrow::compute::cast;
 use num::{NumCast, ToPrimitive};
 
 fn cast_ca<N, T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<N>>

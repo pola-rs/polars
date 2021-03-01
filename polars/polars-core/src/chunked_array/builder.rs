@@ -4,9 +4,9 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 use ahash::AHashMap;
+pub use arrow::alloc;
 use arrow::array::{ArrayDataBuilder, ArrayRef, LargeListBuilder};
 use arrow::datatypes::ToByteSlice;
-pub use arrow::memory;
 use arrow::{
     array::{Array, ArrayData, PrimitiveArray},
     buffer::Buffer,
@@ -223,7 +223,7 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
 
     fn finish(mut self) -> ChunkedArray<CategoricalType> {
         if self.mapping.len() > u32::MAX as usize {
-            panic!(format!("not more than {} categories supported", u32::MAX))
+            panic!("not more than {} categories supported", u32::MAX)
         };
         let arr = Arc::new(self.array_builder.finish());
         let len = arr.len();
@@ -414,26 +414,6 @@ fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
     (num + (factor - 1)) & !(factor - 1)
 }
 
-/// Take an owned Vec that is 64 byte aligned and create a zero copy PrimitiveArray
-/// Can also take a null bit buffer into account.
-pub fn aligned_vec_to_primitive_array<T: PolarsPrimitiveType>(
-    values: AlignedVec<T::Native>,
-    null_bit_buffer: Option<Buffer>,
-    null_count: Option<usize>,
-) -> PrimitiveArray<T> {
-    let vec_len = values.len();
-    let buffer = values.into_arrow_buffer();
-
-    let builder = ArrayData::builder(T::DATA_TYPE)
-        .len(vec_len)
-        .add_buffer(buffer);
-
-    let builder = set_null_bits(builder, null_bit_buffer, null_count);
-    let data = builder.build();
-
-    PrimitiveArray::<T>::from(data)
-}
-
 pub trait NewChunkedArray<T, N> {
     fn new_from_slice(name: &str, v: &[N]) -> Self;
     fn new_from_opt_slice(name: &str, opt_v: &[Option<N>]) -> Self;
@@ -557,6 +537,7 @@ where
 pub trait ListBuilderTrait {
     fn append_opt_series(&mut self, opt_s: Option<&Series>);
     fn append_series(&mut self, s: &Series);
+    fn append_null(&mut self);
     fn finish(&mut self) -> ListChunked;
 }
 
@@ -624,12 +605,21 @@ where
         }
     }
 
+    fn append_null(&mut self) {
+        let builder = self.builder.values();
+        builder.append_null();
+        self.builder.append(true).unwrap();
+    }
+
     fn append_series(&mut self, s: &Series) {
         let builder = self.builder.values();
         let arrays = s.chunks();
         for a in arrays {
             let values = a.get_values::<T>();
-            if a.null_count() == 0 {
+            // we would like to check if array has no null values.
+            // however at the time of writing there is a bug in append_slice, because it does not update
+            // the null bitmap
+            if s.null_count() == 0 {
                 builder.append_slice(values);
             } else {
                 values.iter().enumerate().for_each(|(idx, v)| {
@@ -673,6 +663,12 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         }
     }
 
+    fn append_null(&mut self) {
+        let builder = self.builder.values();
+        builder.append_null();
+        self.builder.append(true).unwrap();
+    }
+
     fn append_series(&mut self, s: &Series) {
         let ca = s.utf8().unwrap();
         let value_builder = self.builder.values();
@@ -712,6 +708,12 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
                 self.builder.append(false).unwrap();
             }
         }
+    }
+
+    fn append_null(&mut self) {
+        let builder = self.builder.values();
+        builder.append_null();
+        self.builder.append(true).unwrap();
     }
 
     fn append_series(&mut self, s: &Series) {
@@ -800,33 +802,6 @@ mod test {
     }
 
     #[test]
-    fn test_aligned_vec_allocations() {
-        // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
-        // check if we can increase above initial capacity and keep the Arrow alignment
-        let mut v = AlignedVec::with_capacity_aligned(2);
-        v.push(1);
-        v.push(2);
-        v.push(3);
-        v.push(4);
-
-        let ptr = v.as_ptr();
-        assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
-
-        // check if we can shrink to fit
-        let mut v = AlignedVec::with_capacity_aligned(10);
-        v.push(1);
-        v.push(2);
-        v.shrink_to_fit();
-        assert_eq!(v.len(), 2);
-        assert_eq!(v.capacity(), 2);
-        let ptr = v.as_ptr();
-        assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
-
-        let a = aligned_vec_to_primitive_array::<Int32Type>(v, None, Some(0));
-        assert_eq!(&a.values()[..2], &[1, 2])
-    }
-
-    #[test]
     fn test_list_builder() {
         let values_builder = PrimitiveArrayBuilder::<Int32Type>::new(10);
         let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
@@ -843,18 +818,15 @@ mod test {
             // many chunks are aggregated to one in the ListArray
             assert_eq!(s.len(), 6)
         } else {
-            assert!(false)
+            panic!()
         }
         if let AnyValue::List(s) = ls.get_any_value(1) {
             assert_eq!(s.len(), 3)
         } else {
-            assert!(false)
+            panic!()
         }
         // test list collect
-        let out = [&s1, &s2]
-            .iter()
-            .map(|s| s.clone())
-            .collect::<ListChunked>();
+        let out = [&s1, &s2].iter().copied().collect::<ListChunked>();
         assert_eq!(out.get(0).unwrap().len(), 6);
         assert_eq!(out.get(1).unwrap().len(), 3);
     }

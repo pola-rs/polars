@@ -12,6 +12,7 @@ use crate::{
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+pub mod arrow_interop;
 pub mod conversion;
 pub mod dataframe;
 pub mod datatypes;
@@ -74,7 +75,7 @@ fn when(predicate: PyExpr) -> dsl::When {
     dsl::when(predicate)
 }
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[pyfunction]
 fn version() -> &'static str {
     VERSION

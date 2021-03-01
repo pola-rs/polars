@@ -2,10 +2,10 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
-use crate::{datatypes::PolarsNumericType, prelude::*};
+use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
 use num::{Num, NumCast, ToPrimitive, Zero};
-use std::cmp::{Ordering, PartialOrd};
+use std::cmp::PartialOrd;
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -37,26 +37,9 @@ pub trait ChunkAggSeries {
 
 pub trait VarAggSeries {
     /// Get the variance of the ChunkedArray as a new Series of length 1.
-    fn var_as_series(&self) -> Series {
-        unimplemented!()
-    }
+    fn var_as_series(&self) -> Series;
     /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
-    fn std_as_series(&self) -> Series {
-        unimplemented!()
-    }
-}
-
-macro_rules! cmp_float_with_nans {
-    ($a:expr, $b:expr, $precision:ty) => {{
-        let a: $precision = NumCast::from($a).unwrap();
-        let b: $precision = NumCast::from($b).unwrap();
-        match (a.is_nan(), b.is_nan()) {
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-            (false, false) => a.partial_cmp(&b).unwrap(),
-        }
-    }};
+    fn std_as_series(&self) -> Series;
 }
 
 macro_rules! agg_float_with_nans {
@@ -64,13 +47,17 @@ macro_rules! agg_float_with_nans {
         if $self.null_count() == 0 {
             $self
                 .into_no_null_iter()
-                .$agg_method(|&a, &b| cmp_float_with_nans!(a, b, $precision))
+                .map(|a| -> $precision { NumCast::from(a).unwrap() })
+                .fold_first_(|a, b| a.$agg_method(b))
+                .map(|a| NumCast::from(a).unwrap())
         } else {
             $self
                 .into_iter()
                 .filter(|opt| opt.is_some())
                 .map(|opt| opt.unwrap())
-                .$agg_method(|&a, &b| cmp_float_with_nans!(a, b, $precision))
+                .map(|a| -> $precision { NumCast::from(a).unwrap() })
+                .fold_first_(|a, b| a.$agg_method(b))
+                .map(|a| NumCast::from(a).unwrap())
         }
     }};
 }
@@ -111,25 +98,25 @@ where
 
     fn min(&self) -> Option<T::Native> {
         match T::get_dtype() {
-            DataType::Float32 => agg_float_with_nans!(self, min_by, f32),
-            DataType::Float64 => agg_float_with_nans!(self, min_by, f64),
+            DataType::Float32 => agg_float_with_nans!(self, min, f32),
+            DataType::Float64 => agg_float_with_nans!(self, min, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
                 .filter_map(|&a| compute::min(a))
-                .fold_first(|acc, v| if acc < v { acc } else { v }),
+                .fold_first_(|acc, v| if acc < v { acc } else { v }),
         }
     }
 
     fn max(&self) -> Option<T::Native> {
         match T::get_dtype() {
-            DataType::Float32 => agg_float_with_nans!(self, max_by, f32),
-            DataType::Float64 => agg_float_with_nans!(self, max_by, f64),
+            DataType::Float32 => agg_float_with_nans!(self, max, f32),
+            DataType::Float64 => agg_float_with_nans!(self, max, f64),
             _ => self
                 .downcast_chunks()
                 .iter()
                 .filter_map(|&a| compute::max(a))
-                .fold_first(|acc, v| if acc > v { acc } else { v }),
+                .fold_first_(|acc, v| if acc > v { acc } else { v }),
         }
     }
 
@@ -362,12 +349,52 @@ impl VarAggSeries for Float64Chunked {
     }
 }
 
-impl VarAggSeries for BooleanChunked {}
-impl VarAggSeries for CategoricalChunked {}
-impl VarAggSeries for ListChunked {}
+impl VarAggSeries for BooleanChunked {
+    fn var_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+
+    fn std_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
+impl VarAggSeries for CategoricalChunked {
+    fn var_as_series(&self) -> Series {
+        self.cast::<UInt32Type>().unwrap().var_as_series()
+    }
+
+    fn std_as_series(&self) -> Series {
+        self.cast::<UInt32Type>().unwrap().std_as_series()
+    }
+}
+impl VarAggSeries for ListChunked {
+    fn var_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+
+    fn std_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
 #[cfg(feature = "object")]
-impl<T> VarAggSeries for ObjectChunked<T> {}
-impl VarAggSeries for Utf8Chunked {}
+impl<T> VarAggSeries for ObjectChunked<T> {
+    fn var_as_series(&self) -> Series {
+        unimplemented!()
+    }
+
+    fn std_as_series(&self) -> Series {
+        unimplemented!()
+    }
+}
+impl VarAggSeries for Utf8Chunked {
+    fn var_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+
+    fn std_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
 
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {

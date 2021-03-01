@@ -9,14 +9,20 @@ pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::float::IsNan;
-use crate::chunked_array::kernels::cast::cast;
 use arrow::array::ArrayDataRef;
+use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
 use std::any::Any;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
+
+pub trait IntoSeries {
+    fn into_series(self) -> Series
+    where
+        Self: Sized;
+}
 
 pub(crate) mod private {
     use super::*;
@@ -27,47 +33,47 @@ pub(crate) mod private {
         fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
             unimplemented!()
         }
-        fn agg_mean(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_min(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_max(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_sum(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_std(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_var(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+        fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
             unimplemented!()
         }
-        fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+        fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
             unimplemented!()
         }
-        fn agg_n_unique(&self, _groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+        fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
             unimplemented!()
         }
-        fn agg_list(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_quantile(&self, _groups: &[(usize, Vec<usize>)], _quantile: f64) -> Option<Series> {
+        fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_median(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+        fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
         fn pivot<'a>(
             &self,
             _pivot_series: &'a (dyn SeriesTrait + 'a),
             _keys: Vec<Series>,
-            _groups: &[(usize, Vec<usize>)],
+            _groups: &[(u32, Vec<u32>)],
             _agg_type: PivotAgg,
         ) -> Result<DataFrame> {
             unimplemented!()
@@ -77,24 +83,24 @@ pub(crate) mod private {
             &self,
             _pivot_series: &'a (dyn SeriesTrait + 'a),
             _keys: Vec<Series>,
-            _groups: &[(usize, Vec<usize>)],
+            _groups: &[(u32, Vec<u32>)],
         ) -> Result<DataFrame> {
             unimplemented!()
         }
 
-        fn hash_join_inner(&self, _other: &Series) -> Vec<(usize, usize)> {
+        fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
             unimplemented!()
         }
-        fn hash_join_left(&self, _other: &Series) -> Vec<(usize, Option<usize>)> {
+        fn hash_join_left(&self, _other: &Series) -> Vec<(u32, Option<u32>)> {
             unimplemented!()
         }
-        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<usize>, Option<usize>)> {
+        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
             unimplemented!()
         }
         fn zip_outer_join_column(
             &self,
             _right_column: &Series,
-            _opt_join_tuples: &[(Option<usize>, Option<usize>)],
+            _opt_join_tuples: &[(Option<u32>, Option<u32>)],
         ) -> Series {
             unimplemented!()
         }
@@ -114,7 +120,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             unimplemented!()
         }
-        fn group_tuples(&self, _multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+        fn group_tuples(&self, _multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
             unimplemented!()
         }
     }
@@ -349,11 +355,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    fn take_iter(
-        &self,
-        _iter: &mut dyn Iterator<Item = usize>,
-        _capacity: Option<usize>,
-    ) -> Series {
+    fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
         unimplemented!()
     }
 
@@ -362,11 +364,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// This doesn't check any bounds or null validity.
-    unsafe fn take_iter_unchecked(
-        &self,
-        _iter: &mut dyn Iterator<Item = usize>,
-        _capacity: Option<usize>,
-    ) -> Series {
+    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
         unimplemented!()
     }
 
@@ -374,7 +372,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    unsafe fn take_from_single_chunked(&self, _idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, _idx: &UInt32Chunked) -> Result<Series> {
         unimplemented!()
     }
 
@@ -386,7 +384,6 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     unsafe fn take_opt_iter_unchecked(
         &self,
         _iter: &mut dyn Iterator<Item = Option<usize>>,
-        _capacity: Option<usize>,
     ) -> Series {
         unimplemented!()
     }
@@ -396,11 +393,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    fn take_opt_iter(
-        &self,
-        _iter: &mut dyn Iterator<Item = Option<usize>>,
-        _capacity: Option<usize>,
-    ) -> Series {
+    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
         unimplemented!()
     }
 
@@ -409,10 +402,8 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    fn take(&self, indices: &dyn AsTakeIndex) -> Series {
-        let mut iter = indices.as_take_iter();
-        let capacity = indices.take_index_len();
-        self.take_iter(&mut iter, Some(capacity))
+    fn take(&self, _indices: &UInt32Chunked) -> Series {
+        unimplemented!()
     }
 
     /// Get length of series.
@@ -426,7 +417,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
-    fn rechunk(&self) -> Result<Series> {
+    fn rechunk(&self) -> Series {
         unimplemented!()
     }
 
@@ -504,7 +495,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Retrieve the indexes needed for a sort.
-    fn argsort(&self, _reverse: bool) -> Vec<usize> {
+    fn argsort(&self, _reverse: bool) -> UInt32Chunked {
         unimplemented!()
     }
 
@@ -524,7 +515,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Get first indexes of unique values.
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         unimplemented!()
     }
 
@@ -586,20 +577,20 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// fn example() -> Result<()> {
     ///     let s = Series::new("series", &[1, 2, 3]);
     ///
-    ///     let shifted = s.shift(1)?;
+    ///     let shifted = s.shift(1);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, Some(1), Some(2)]);
     ///
-    ///     let shifted = s.shift(-1)?;
+    ///     let shifted = s.shift(-1);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[Some(2), Some(3), None]);
     ///
-    ///     let shifted = s.shift(2)?;
+    ///     let shifted = s.shift(2);
     ///     assert_eq!(Vec::from(shifted.i32()?), &[None, None, Some(1)]);
     ///
     ///     Ok(())
     /// }
     /// example();
     /// ```
-    fn shift(&self, _periods: i32) -> Result<Series> {
+    fn shift(&self, _periods: i64) -> Series {
         unimplemented!()
     }
 
@@ -727,7 +718,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> Result<Series> {
@@ -735,7 +726,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
     fn minute(&self) -> Result<Series> {
@@ -743,7 +734,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
     fn second(&self) -> Result<Series> {
@@ -751,7 +742,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
@@ -760,7 +751,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract day from underlying NaiveDateTime representation.
     /// Returns the day of month starting from 1.
     ///
@@ -770,7 +761,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
@@ -779,7 +770,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the month number starting from 1.
     ///
@@ -789,7 +780,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Result<Series> {
@@ -797,7 +788,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
-    #[doc(cfg(feature = "temporal"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Format Date32/Date64 with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     fn datetime_str_fmt(&self, fmt: &str) -> Result<Series> {
         match self.dtype() {
@@ -815,12 +806,12 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "random")]
-    #[doc(cfg(feature = "random"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
     /// Sample n datapoints from this Series.
     fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series>;
 
     #[cfg(feature = "random")]
-    #[doc(cfg(feature = "random"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
     /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series>;
 
@@ -1276,12 +1267,8 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Float64 => {
                 Ok(Float64Chunked::new_from_chunks(name, chunks).into_series())
             }
-            ArrowDataType::Date32(DateUnit::Day) => {
-                Ok(Date32Chunked::new_from_chunks(name, chunks).into_series())
-            }
-            ArrowDataType::Date64(DateUnit::Millisecond) => {
-                Ok(Date64Chunked::new_from_chunks(name, chunks).into_series())
-            }
+            ArrowDataType::Date32 => Ok(Date32Chunked::new_from_chunks(name, chunks).into_series()),
+            ArrowDataType::Date64 => Ok(Date64Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                 Ok(Time64NanosecondChunked::new_from_chunks(name, chunks).into_series())
             }
@@ -1294,8 +1281,13 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::LargeList(_) => {
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }
+            ArrowDataType::Null => {
+                // we don't support null types yet so we use a small digit type filled with nulls
+                let len = chunks.iter().fold(0, |acc, array| acc + array.len());
+                Ok(Int8Chunked::full_null(name, len).into_series())
+            }
             dt => Err(PolarsError::InvalidOperation(
-                format!("Cannot create polars series from {:?}", dt).into(),
+                format!("Cannot create polars series from {:?} type", dt).into(),
             )),
         }
     }

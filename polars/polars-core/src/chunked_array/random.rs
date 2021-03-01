@@ -23,12 +23,16 @@ where
         match with_replacement {
             true => {
                 let iter = (0..n).map(|_| Uniform::new(0, len).sample(&mut rng));
-                Ok(self.take(iter, Some(n)))
+                // Safety we know that we never go out of bounds
+                debug_assert_eq!(len, self.len());
+                unsafe { Ok(self.take_unchecked(iter.into())) }
             }
             false => {
                 // TODO! prevent allocation.
                 let iter = (0..len).choose_multiple(&mut rng, n).into_iter();
-                Ok(self.take(iter, Some(n)))
+                // Safety we know that we never go out of bounds
+                debug_assert_eq!(len, self.len());
+                unsafe { Ok(self.take_unchecked(iter.into())) }
             }
         }
     }

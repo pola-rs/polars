@@ -43,9 +43,9 @@ pub enum JoinType {
 
 unsafe fn get_hash_tbl<T>(
     h: u64,
-    hash_tables: &[HashMap<T, Vec<usize>, RandomState>],
+    hash_tables: &[HashMap<T, Vec<u32>, RandomState>],
     len: u64,
-) -> &HashMap<T, Vec<usize>, RandomState>
+) -> &HashMap<T, Vec<u32>, RandomState>
 where
     T: Send + Hash + Eq + Sync + Copy,
 {
@@ -64,7 +64,7 @@ fn hash_join_tuples_inner_threaded<T, I, J>(
     b: Vec<J>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swap: bool,
-) -> Vec<(usize, usize)>
+) -> Vec<(u32, u32)>
 where
     I: Iterator<Item = T> + Send,
     J: Iterator<Item = T> + Send,
@@ -100,7 +100,7 @@ where
                 // code duplication is to hoist swap out of the inner loop.
                 if swap {
                     probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                        let idx_a = idx_a + local_offset;
+                        let idx_a = (idx_a + local_offset) as u32;
                         // probe table that contains the hashed value
                         let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
@@ -115,7 +115,7 @@ where
                     });
                 } else {
                     probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                        let idx_a = idx_a + local_offset;
+                        let idx_a = (idx_a + local_offset) as u32;
                         // probe table that contains the hashed value
                         let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
@@ -137,7 +137,7 @@ where
     })
 }
 
-fn hash_join_tuples_left_threaded<T, I, J>(a: Vec<I>, b: Vec<J>) -> Vec<(usize, Option<usize>)>
+fn hash_join_tuples_left_threaded<T, I, J>(a: Vec<I>, b: Vec<J>) -> Vec<(u32, Option<u32>)>
 where
     I: Iterator<Item = T> + Send,
     J: Iterator<Item = T> + Send,
@@ -173,7 +173,7 @@ where
                     Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
 
                 probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                    let idx_a = idx_a + offset;
+                    let idx_a = (idx_a + offset) as u32;
                     // probe table that contains the hashed value
                     let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
@@ -205,7 +205,7 @@ fn hash_join_tuples_inner<T>(
     b: impl Iterator<Item = T>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swap: bool,
-) -> Vec<(usize, usize)>
+) -> Vec<(u32, u32)>
 where
     T: Hash + Eq + Copy,
 {
@@ -217,6 +217,7 @@ where
     // code duplication is because we want to only do the swap check once
     if swap {
         a.enumerate().for_each(|(idx_a, key)| {
+            let idx_a = idx_a as u32;
             if let Some(indexes_b) = hash_tbl.get(&key) {
                 let tuples = indexes_b.iter().map(|&idx_b| (idx_b, idx_a));
                 results.extend(tuples)
@@ -224,6 +225,7 @@ where
         });
     } else {
         a.enumerate().for_each(|(idx_a, key)| {
+            let idx_a = idx_a as u32;
             if let Some(indexes_b) = hash_tbl.get(&key) {
                 let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
                 results.extend(tuples)
@@ -238,7 +240,7 @@ where
 fn hash_join_tuples_left<T>(
     a: impl Iterator<Item = T>,
     b: impl Iterator<Item = T>,
-) -> Vec<(usize, Option<usize>)>
+) -> Vec<(u32, Option<u32>)>
 where
     T: Hash + Eq + Copy,
 {
@@ -248,6 +250,7 @@ where
 
     // Next we probe the other relation in the hash table
     a.enumerate().for_each(|(idx_a, key)| {
+        let idx_a = idx_a as u32;
         match hash_tbl.get(&key) {
             // left and right matches
             Some(indexes_b) => results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b)))),
@@ -260,7 +263,7 @@ where
 
 /// Hash join outer. Both left and right can have no match so Options
 /// We accept a closure as we need to do two passes over the same iterators.
-fn hash_join_tuples_outer<T, I, J>(a: I, b: J, swap: bool) -> Vec<(Option<usize>, Option<usize>)>
+fn hash_join_tuples_outer<T, I, J>(a: I, b: J, swap: bool) -> Vec<(Option<u32>, Option<u32>)>
 where
     I: Iterator<Item = T>,
     J: Iterator<Item = T>,
@@ -278,6 +281,7 @@ where
     // code duplication is because we want to only do the swap check once
     if swap {
         a.enumerate().for_each(|(idx_a, key)| {
+            let idx_a = idx_a as u32;
             match hash_tbl.remove(&key) {
                 // left and right matches
                 Some(indexes_b) => {
@@ -295,6 +299,7 @@ where
         });
     } else {
         a.enumerate().for_each(|(idx_a, key)| {
+            let idx_a = idx_a as u32;
             match hash_tbl.remove(&key) {
                 // left and right matches
                 Some(indexes_b) => {
@@ -316,13 +321,13 @@ where
 }
 
 pub(crate) trait HashJoin<T> {
-    fn hash_join_inner(&self, _other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
+    fn hash_join_inner(&self, _other: &ChunkedArray<T>) -> Vec<(u32, u32)> {
         unimplemented!()
     }
-    fn hash_join_left(&self, _other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
+    fn hash_join_left(&self, _other: &ChunkedArray<T>) -> Vec<(u32, Option<u32>)> {
         unimplemented!()
     }
-    fn hash_join_outer(&self, _other: &ChunkedArray<T>) -> Vec<(Option<usize>, Option<usize>)> {
+    fn hash_join_outer(&self, _other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
         unimplemented!()
     }
 }
@@ -330,7 +335,7 @@ pub(crate) trait HashJoin<T> {
 macro_rules! impl_float_hash_join {
     ($type: ty, $ca: ty) => {
         impl HashJoin<$type> for $ca {
-            fn hash_join_inner(&self, other: &$ca) -> Vec<(usize, usize)> {
+            fn hash_join_inner(&self, other: &$ca) -> Vec<(u32, u32)> {
                 let (a, b, swap) = det_hash_prone_order!(self, other);
 
                 let n_threads = n_join_threads();
@@ -362,7 +367,7 @@ macro_rules! impl_float_hash_join {
                     }
                 }
             }
-            fn hash_join_left(&self, other: &$ca) -> Vec<(usize, Option<usize>)> {
+            fn hash_join_left(&self, other: &$ca) -> Vec<(u32, Option<u32>)> {
                 let n_threads = n_join_threads();
 
                 let a = self;
@@ -395,7 +400,7 @@ macro_rules! impl_float_hash_join {
                     }
                 }
             }
-            fn hash_join_outer(&self, other: &$ca) -> Vec<(Option<usize>, Option<usize>)> {
+            fn hash_join_outer(&self, other: &$ca) -> Vec<(Option<u32>, Option<u32>)> {
                 let (a, b, swap) = det_hash_prone_order!(self, other);
 
                 match (a.null_count() == 0, b.null_count() == 0) {
@@ -420,13 +425,13 @@ impl_float_hash_join!(Float64Type, Float64Chunked);
 
 impl HashJoin<ListType> for ListChunked {}
 impl HashJoin<CategoricalType> for CategoricalChunked {
-    fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(usize, usize)> {
+    fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(u32, u32)> {
         self.deref().hash_join_inner(&other.cast().unwrap())
     }
-    fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(usize, Option<usize>)> {
+    fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(u32, Option<u32>)> {
         self.deref().hash_join_left(&other.cast().unwrap())
     }
-    fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<usize>, Option<usize>)> {
+    fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<u32>, Option<u32>)> {
         self.deref().hash_join_outer(&other.cast().unwrap())
     }
 }
@@ -443,7 +448,7 @@ where
     T: PolarsIntegerType + Sync,
     T::Native: Eq + Hash,
 {
-    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(usize, usize)> {
+    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(u32, u32)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         let n_threads = n_join_threads();
@@ -470,7 +475,7 @@ where
         }
     }
 
-    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(usize, Option<usize>)> {
+    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(u32, Option<u32>)> {
         let n_threads = n_join_threads();
 
         let a = self;
@@ -498,7 +503,7 @@ where
         }
     }
 
-    fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<usize>, Option<usize>)> {
+    fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         match (a.null_count() == 0, b.null_count() == 0) {
@@ -511,7 +516,7 @@ where
 }
 
 impl HashJoin<BooleanType> for BooleanChunked {
-    fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(usize, usize)> {
+    fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(u32, u32)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         // Create the join tuples
@@ -523,7 +528,7 @@ impl HashJoin<BooleanType> for BooleanChunked {
         }
     }
 
-    fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(usize, Option<usize>)> {
+    fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(u32, Option<u32>)> {
         match (self.null_count() == 0, other.null_count() == 0) {
             (true, true) => {
                 hash_join_tuples_left(self.into_no_null_iter(), other.into_no_null_iter())
@@ -532,7 +537,7 @@ impl HashJoin<BooleanType> for BooleanChunked {
         }
     }
 
-    fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<usize>, Option<usize>)> {
+    fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
         match (a.null_count() == 0, b.null_count() == 0) {
             (true, true) => {
@@ -544,7 +549,7 @@ impl HashJoin<BooleanType> for BooleanChunked {
 }
 
 impl HashJoin<Utf8Type> for Utf8Chunked {
-    fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(usize, usize)> {
+    fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(u32, u32)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         let n_threads = n_join_threads();
@@ -571,7 +576,7 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         }
     }
 
-    fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(usize, Option<usize>)> {
+    fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(u32, Option<u32>)> {
         let n_threads = n_join_threads();
 
         let a = self;
@@ -599,7 +604,7 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         }
     }
 
-    fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<usize>, Option<usize>)> {
+    fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
         match (a.null_count() == 0, b.null_count() == 0) {
             (true, true) => {
@@ -614,7 +619,7 @@ pub trait ZipOuterJoinColumn {
     fn zip_outer_join_column(
         &self,
         _right_column: &Series,
-        _opt_join_tuples: &[(Option<usize>, Option<usize>)],
+        _opt_join_tuples: &[(Option<u32>, Option<u32>)],
     ) -> Series {
         unimplemented!()
     }
@@ -628,7 +633,7 @@ where
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<usize>, Option<usize>)],
+        opt_join_tuples: &[(Option<u32>, Option<u32>)],
     ) -> Series {
         let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -639,11 +644,11 @@ where
             .iter()
             .map(|(opt_left_idx, opt_right_idx)| {
                 if let Some(left_idx) = opt_left_idx {
-                    unsafe { left_rand_access.get_unchecked(*left_idx) }
+                    unsafe { left_rand_access.get_unchecked(*left_idx as usize) }
                 } else {
                     unsafe {
                         let right_idx = opt_right_idx.unsafe_unwrap();
-                        right_rand_access.get_unchecked(right_idx)
+                        right_rand_access.get_unchecked(right_idx as usize)
                     }
                 }
             })
@@ -666,7 +671,7 @@ macro_rules! impl_zip_outer_join {
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &[(Option<usize>, Option<usize>)],
+                opt_join_tuples: &[(Option<u32>, Option<u32>)],
             ) -> Series {
                 let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -677,11 +682,11 @@ macro_rules! impl_zip_outer_join {
                     .iter()
                     .map(|(opt_left_idx, opt_right_idx)| {
                         if let Some(left_idx) = opt_left_idx {
-                            unsafe { left_rand_access.get_unchecked(*left_idx) }
+                            unsafe { left_rand_access.get_unchecked(*left_idx as usize) }
                         } else {
                             unsafe {
                                 let right_idx = opt_right_idx.unsafe_unwrap();
-                                right_rand_access.get_unchecked(right_idx)
+                                right_rand_access.get_unchecked(right_idx as usize)
                             }
                         }
                     })
@@ -719,13 +724,8 @@ impl DataFrame {
         Ok(df_left)
     }
 
-    fn create_left_df<B: Sync>(&self, join_tuples: &[(usize, B)]) -> DataFrame {
-        unsafe {
-            self.take_iter_unchecked_bounds(
-                join_tuples.iter().map(|(left, _right)| *left),
-                Some(join_tuples.len()),
-            )
-        }
+    fn create_left_df<B: Sync>(&self, join_tuples: &[(u32, B)]) -> DataFrame {
+        unsafe { self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize)) }
     }
 
     /// Generic join method. Can be used to join on multiple columns.
@@ -823,9 +823,8 @@ impl DataFrame {
                     || self.create_left_df(&join_tuples),
                     || unsafe {
                         // remove join columns
-                        remove_selected(other, &selected_right).take_iter_unchecked_bounds(
-                            join_tuples.iter().map(|(_left, right)| *right),
-                            Some(join_tuples.len()),
+                        remove_selected(other, &selected_right).take_iter_unchecked(
+                            join_tuples.iter().map(|(_left, right)| *right as usize),
                         )
                     },
                 );
@@ -865,9 +864,10 @@ impl DataFrame {
                     || self.create_left_df(&join_tuples),
                     || unsafe {
                         // remove join columns
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked_bounds(
-                            join_tuples.iter().map(|(_left, right)| *right),
-                            Some(join_tuples.len()),
+                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
+                            join_tuples
+                                .iter()
+                                .map(|(_left, right)| right.map(|i| i as usize)),
                         )
                     },
                 );
@@ -911,15 +911,17 @@ impl DataFrame {
                 // Take the left and right dataframes by join tuples
                 let (mut df_left, df_right) = POOL.join(
                     || unsafe {
-                        remove_selected(self, &selected_left).take_opt_iter_unchecked_bounds(
-                            opt_join_tuples.iter().map(|(left, _right)| *left),
-                            Some(opt_join_tuples.len()),
+                        remove_selected(self, &selected_left).take_opt_iter_unchecked(
+                            opt_join_tuples
+                                .iter()
+                                .map(|(left, _right)| left.map(|i| i as usize)),
                         )
                     },
                     || unsafe {
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked_bounds(
-                            opt_join_tuples.iter().map(|(_left, right)| *right),
-                            Some(opt_join_tuples.len()),
+                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
+                            opt_join_tuples
+                                .iter()
+                                .map(|(_left, right)| right.map(|i| i as usize)),
                         )
                     },
                 );
@@ -968,10 +970,7 @@ impl DataFrame {
                 other
                     .drop(s_right.name())
                     .unwrap()
-                    .take_iter_unchecked_bounds(
-                        join_tuples.iter().map(|(_left, right)| *right),
-                        Some(join_tuples.len()),
-                    )
+                    .take_iter_unchecked(join_tuples.iter().map(|(_left, right)| *right as usize))
             },
         );
         self.finish_join(df_left, df_right)
@@ -1003,13 +1002,11 @@ impl DataFrame {
         let (df_left, df_right) = POOL.join(
             || self.create_left_df(&opt_join_tuples),
             || unsafe {
-                other
-                    .drop(s_right.name())
-                    .unwrap()
-                    .take_opt_iter_unchecked_bounds(
-                        opt_join_tuples.iter().map(|(_left, right)| *right),
-                        Some(opt_join_tuples.len()),
-                    )
+                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples
+                        .iter()
+                        .map(|(_left, right)| right.map(|i| i as usize)),
+                )
             },
         );
         self.finish_join(df_left, df_right)
@@ -1046,21 +1043,18 @@ impl DataFrame {
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = POOL.join(
             || unsafe {
-                self.drop(s_left.name())
-                    .unwrap()
-                    .take_opt_iter_unchecked_bounds(
-                        opt_join_tuples.iter().map(|(left, _right)| *left),
-                        Some(opt_join_tuples.len()),
-                    )
+                self.drop(s_left.name()).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples
+                        .iter()
+                        .map(|(left, _right)| left.map(|i| i as usize)),
+                )
             },
             || unsafe {
-                other
-                    .drop(s_right.name())
-                    .unwrap()
-                    .take_opt_iter_unchecked_bounds(
-                        opt_join_tuples.iter().map(|(_left, right)| *right),
-                        Some(opt_join_tuples.len()),
-                    )
+                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
+                    opt_join_tuples
+                        .iter()
+                        .map(|(_left, right)| right.map(|i| i as usize)),
+                )
             },
         );
         let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
@@ -1113,6 +1107,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn test_left_join() {
         for i in 1..8 {
             std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
@@ -1183,8 +1178,7 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_join_multiple_columns() {
+    fn get_dfs() -> (DataFrame, DataFrame) {
         let df_a = df! {
             "a" => &[1, 2, 1, 1],
             "b" => &["a", "b", "c", "c"],
@@ -1198,6 +1192,12 @@ mod test {
             "ham" => &["let", "var", "const"]
         }
         .unwrap();
+        (df_a, df_b)
+    }
+
+    #[test]
+    fn test_join_multiple_columns() {
+        let (df_a, df_b) = get_dfs();
 
         // First do a hack with concatenated string dummy column
         let mut s = df_a
@@ -1266,19 +1266,7 @@ mod test {
     fn test_join_categorical() {
         toggle_string_cache(true);
 
-        let mut df_a = df! {
-            "a" => &[1, 2, 1, 1],
-            "b" => &["a", "b", "c", "c"],
-            "c" => &[0, 1, 2, 3]
-        }
-        .unwrap();
-
-        let mut df_b = df! {
-            "foo" => &[1, 1, 1],
-            "bar" => &["a", "c", "c"],
-            "ham" => &["let", "var", "const"]
-        }
-        .unwrap();
+        let (mut df_a, mut df_b) = get_dfs();
 
         df_a.may_apply("b", |s| s.cast_with_datatype(&DataType::Categorical))
             .unwrap();

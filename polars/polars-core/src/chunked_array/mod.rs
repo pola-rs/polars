@@ -1,7 +1,5 @@
 //! The typed heart of every Series column.
-use crate::chunked_array::builder::{
-    aligned_vec_to_primitive_array, build_with_existing_null_bitmap_and_slice, get_bitmap,
-};
+use crate::chunked_array::builder::{build_with_existing_null_bitmap_and_slice, get_bitmap};
 use crate::prelude::*;
 use arrow::{
     array::{
@@ -29,28 +27,28 @@ pub mod float;
 pub mod iterator;
 pub mod kernels;
 #[cfg(feature = "ndarray")]
-#[doc(cfg(feature = "ndarray"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
 mod ndarray;
 
 #[cfg(feature = "object")]
-#[doc(cfg(feature = "object"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 pub mod object;
 #[cfg(feature = "random")]
-#[doc(cfg(feature = "random"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "random")))]
 mod random;
 #[cfg(feature = "strings")]
-#[doc(cfg(feature = "strings"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
 pub mod strings;
 #[cfg(feature = "temporal")]
-#[doc(cfg(feature = "temporal"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
 pub mod upstream_traits;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
-    Array, ArrayDataRef, BooleanBuilder, Date32Array, DurationMillisecondArray,
-    DurationNanosecondArray, LargeListArray,
+    Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
+    LargeListArray,
 };
 
 use ahash::AHashMap;
@@ -350,16 +348,7 @@ impl<T> ChunkedArray<T> {
         let chunks = self
             .chunks
             .iter()
-            .map(|arr| {
-                let mut builder = BooleanBuilder::new(arr.len());
-                for i in 0..arr.len() {
-                    builder
-                        .append_value(arr.is_null(i))
-                        .expect("could not append");
-                }
-                let chunk: ArrayRef = Arc::new(builder.finish());
-                chunk
-            })
+            .map(|arr| Arc::new((&**arr).is_null_mask()) as ArrayRef)
             .collect_vec();
         BooleanChunked::new_from_chunks("is_null", chunks)
     }
@@ -372,16 +361,7 @@ impl<T> ChunkedArray<T> {
         let chunks = self
             .chunks
             .iter()
-            .map(|arr| {
-                let mut builder = BooleanBuilder::new(arr.len());
-                for i in 0..arr.len() {
-                    builder
-                        .append_value(arr.is_valid(i))
-                        .expect("could not append");
-                }
-                let chunk: ArrayRef = Arc::new(builder.finish());
-                chunk
-            })
+            .map(|arr| Arc::new((&**arr).is_not_null_mask()) as ArrayRef)
             .collect_vec();
         BooleanChunked::new_from_chunks("is_not_null", chunks)
     }
@@ -435,7 +415,7 @@ impl<T> ChunkedArray<T> {
     where
         Self: std::marker::Sized,
     {
-        if matches!(self.dtype(), DataType::Categorical) {
+        if matches!(self.dtype(), DataType::Categorical) && !self.is_empty() {
             assert!(Arc::ptr_eq(
                 self.categorical_map.as_ref().unwrap(),
                 other.categorical_map.as_ref().unwrap()
@@ -446,7 +426,7 @@ impl<T> ChunkedArray<T> {
         if self.chunks.len() == 1 && self.is_empty() {
             self.chunks = other.chunks.clone();
         } else {
-            self.chunks.extend(other.chunks.clone())
+            self.chunks.extend_from_slice(&other.chunks)
         }
         self.chunk_id = create_chunk_id(&self.chunks);
     }
@@ -464,6 +444,38 @@ impl<T> ChunkedArray<T> {
     /// Rename this ChunkedArray.
     pub fn rename(&mut self, name: &str) {
         self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkOps,
+{
+    /// Should be used to match the chunk_id of another ChunkedArray.
+    /// # Panics
+    /// It is the callers responsibility to ensure that this ChunkedArray has a single chunk.
+    pub(crate) fn match_chunks(&self, chunk_id: &[usize]) -> Self {
+        debug_assert!(self.chunks.len() == 1);
+        // Takes a ChunkedArray containing a single chunk
+        let slice = |ca: &Self| {
+            let array = &ca.chunks[0];
+
+            let mut chunks = Vec::with_capacity(chunk_id.len());
+            let mut offset = 0;
+            for len in chunk_id {
+                chunks.push(array.slice(offset, *len));
+                offset += *len;
+            }
+            Self::new_from_chunks(self.name(), chunks)
+        };
+
+        if self.chunks.len() != 1 {
+            let out = self.rechunk();
+            slice(&out)
+        } else {
+            slice(self)
+        }
     }
 }
 
@@ -494,22 +506,23 @@ where
         }
     }
 
-    fn arr_to_any_value(&self, arr: &dyn Array, idx: usize) -> AnyValue {
+    #[inline]
+    unsafe fn arr_to_any_value(&self, arr: &dyn Array, idx: usize) -> AnyValue {
         if arr.is_null(idx) {
             return AnyValue::Null;
         }
 
         macro_rules! downcast_and_pack {
             ($casttype:ident, $variant:ident) => {{
-                let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
-                let v = arr.value(idx);
+                let arr = &*(arr as *const dyn Array as *const $casttype);
+                let v = arr.value_unchecked(idx);
                 AnyValue::$variant(v)
             }};
         }
         macro_rules! downcast {
             ($casttype:ident) => {{
-                let arr = unsafe { &*(arr as *const dyn Array as *const $casttype) };
-                arr.value(idx)
+                let arr = &*(arr as *const dyn Array as *const $casttype);
+                arr.value_unchecked(idx)
             }};
         }
         // TODO: insert types
@@ -564,6 +577,7 @@ where
 
     /// Get a single value. Beware this is slow.
     /// If you need to use this slightly performant, cast Categorical to UInt32
+    #[inline]
     pub(crate) unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         debug_assert!(chunk_idx < self.chunks.len());
@@ -578,7 +592,9 @@ where
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let arr = &*self.chunks[chunk_idx];
         assert!(idx < arr.len());
-        self.arr_to_any_value(arr, idx)
+        // SAFETY
+        // bounds are checked
+        unsafe { self.arr_to_any_value(arr, idx) }
     }
 }
 
@@ -588,7 +604,7 @@ where
 {
     /// Create a new ChunkedArray by taking ownership of the AlignedVec. This operation is zero copy.
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
-        let arr = aligned_vec_to_primitive_array::<T>(v, None, Some(0));
+        let arr = v.into_primitive_array::<T>(None);
         Self::new_from_chunks(name, vec![Arc::new(arr)])
     }
 
@@ -617,14 +633,9 @@ where
         name: &str,
         values: AlignedVec<T::Native>,
         buffer: Option<Buffer>,
-        null_count: usize,
     ) -> Self {
         let len = values.len();
-        let arr = Arc::new(aligned_vec_to_primitive_array::<T>(
-            values,
-            buffer,
-            Some(null_count),
-        ));
+        let arr = Arc::new(values.into_primitive_array::<T>(buffer));
         ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
@@ -649,7 +660,7 @@ where
     T: PolarsNumericType,
 {
     fn as_single_ptr(&mut self) -> Result<usize> {
-        let mut ca = self.rechunk().expect("should not fail");
+        let mut ca = self.rechunk();
         mem::swap(&mut ca, self);
         let a = self.data_views()[0];
         let ptr = a.as_ptr();
@@ -779,15 +790,6 @@ where
         F: Fn(B, Option<T::Native>) -> B,
     {
         self.into_iter().fold(init, f)
-    }
-}
-
-impl ListChunked {
-    pub(crate) fn get_inner_dtype(&self) -> &ArrowDataType {
-        match self.dtype() {
-            DataType::List(dt) => dt,
-            _ => panic!("should not happen"),
-        }
     }
 }
 
@@ -1002,7 +1004,7 @@ pub(crate) mod test {
     #[test]
     fn take() {
         let a = get_chunked_array();
-        let new = a.take([0u32, 1].as_ref().as_take_iter(), None);
+        let new = a.take([0usize, 1].iter().copied().into());
         assert_eq!(new.len(), 2)
     }
 
@@ -1065,7 +1067,7 @@ pub(crate) mod test {
             sorted.into_iter().collect::<Vec<_>>(),
             &[Some("z"), Some("b"), Some("a")]
         );
-        let s: Utf8Chunked = [Some("b"), None, Some("z")].iter().collect();
+        let s: Utf8Chunked = [Some("b"), None, Some("z")].iter().copied().collect();
         let sorted = s.sort(false);
         assert_eq!(
             sorted.into_iter().collect::<Vec<_>>(),

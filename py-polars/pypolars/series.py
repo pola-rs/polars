@@ -16,6 +16,7 @@ from .ffi import _ptr_to_numpy
 from .datatypes import *
 from numbers import Number
 import pypolars
+import pyarrow as pa
 
 
 class IdentityDict(dict):
@@ -71,7 +72,7 @@ class Series:
         self,
         name: str,
         values: "Union[np.array, List[Optional[Any]]]" = None,
-        nullable: bool = False,
+        nullable: bool = True,
     ):
         """
 
@@ -86,6 +87,7 @@ class Series:
                 None values in a list will be interpreted as missing.
                 NaN values in a numpy array will be interpreted as missing. Note that missing and NaNs are not the same
                 in Polars
+            Series creation may be faster if set to False and there are no null values.
         """
         # assume the first input were the values
         if values is None and not isinstance(name, str):
@@ -105,6 +107,8 @@ class Series:
             raise ValueError(
                 f"Constructing a Series with a dict is not supported for {values}"
             )
+        elif isinstance(values, pa.Array):
+            return self.from_arrow(name, values)
 
         # castable to numpy
         if not isinstance(values, np.ndarray) and not nullable:
@@ -147,14 +151,15 @@ class Series:
         # list path
         else:
             dtype = find_first_non_none(values)
-            if isinstance(dtype, int):
+            # order is important as booleans are instance of int in python.
+            if isinstance(dtype, bool):
+                self._s = PySeries.new_opt_bool(name, values)
+            elif isinstance(dtype, int):
                 self._s = PySeries.new_opt_i64(name, values)
             elif isinstance(dtype, float):
                 self._s = PySeries.new_opt_f64(name, values)
             elif isinstance(dtype, str):
                 self._s = PySeries.new_str(name, values)
-            elif isinstance(dtype, bool):
-                self._s = PySeries.new_opt_bool(name, values)
             else:
                 self._s = PySeries.new_object(name, values)
 
@@ -163,6 +168,27 @@ class Series:
         self = Series.__new__(Series)
         self._s = s
         return self
+
+    @staticmethod
+    def _repeat(name: str, val: str, n: int) -> "Series":
+        """
+        Only used for strings.
+        """
+        return Series._from_pyseries(PySeries.repeat(name, val, n))
+
+    @staticmethod
+    def from_arrow(name: str, array: "pa.Array"):
+        """
+        Create a Series from an arrow array.
+
+        Parameters
+        ----------
+        name
+            name of the Series.
+        array
+            Arrow array.
+        """
+        return Series._from_pyseries(PySeries.from_arrow(name, array))
 
     def inner(self) -> "PySeries":
         return self._s
@@ -786,6 +812,7 @@ class Series:
         """
         Convert this Series to a Python List. This operation clones data.
         """
+
         if self.dtype == List:
             column = []
             for i in range(len(self)):
@@ -873,20 +900,31 @@ class Series:
         else:
             return NotImplemented
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self, *args, zero_copy_only=False, **kwargs) -> np.ndarray:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
-        """
-        if self.dtype == List:
-            return np.array(self.to_list())
 
-        a = self._s.to_numpy()
-        # strings are returned in lists
-        if isinstance(a, list):
-            return np.array(a)
-        return a
+        Parameters
+        ----------
+        args
+            args will be sent to pyarrow.Array.to_numpy
+        zero_copy_only
+            If True, an exception will be raised if the conversion to a numpy
+            array would require copying the underlying data (e.g. in presence
+            of nulls, or for non-primitive types).
+        kwargs
+            kwargs will be sent to pyarrow.Array.to_numpy
+        """
+        return self.to_arrow().to_numpy(*args, zero_copy_only=zero_copy_only, **kwargs)
+
+    def to_arrow(self) -> pa.Array:
+        """
+        Get the underlying arrow array. If the Series contains only a single chunk
+        this operation is zero copy.
+        """
+        return self._s.to_arrow()
 
     def set(self, filter: "Series", value: Union[int, float]) -> "Series":
         """

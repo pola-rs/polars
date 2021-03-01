@@ -1,5 +1,7 @@
+use crate::chunked_array::kernels::take_agg::{
+    take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
+};
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
-use crate::frame::row::Row;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_vertical, split_ca, split_df, NoNull};
@@ -11,7 +13,7 @@ use crate::POOL;
 use ahash::RandomState;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
-use num::{Num, NumCast, ToPrimitive, Zero};
+use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -37,23 +39,17 @@ where
 {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
@@ -61,23 +57,17 @@ where
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
@@ -85,23 +75,17 @@ impl VecHash for Utf8Chunked {
 impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
@@ -109,57 +93,45 @@ impl VecHash for BooleanChunked {
 impl VecHash for Float32Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let v = v.to_bits();
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let v = v.to_bits();
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let opt_v = opt_v.map(|v| v.to_bits());
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let opt_v = opt_v.map(|v| v.to_bits());
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
 impl VecHash for Float64Chunked {
     fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
         if self.null_count() == 0 {
-            self.into_no_null_iter()
-                .map(|v| {
-                    let v = v.to_bits();
-                    let mut hasher = random_state.build_hasher();
-                    v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.apply_cast_numeric(|v| {
+                let v = v.to_bits();
+                let mut hasher = random_state.build_hasher();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
         } else {
-            self.into_iter()
-                .map(|opt_v| {
-                    let opt_v = opt_v.map(|v| v.to_bits());
-                    let mut hasher = random_state.build_hasher();
-                    opt_v.hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect::<NoNull<_>>()
-                .into_inner()
+            self.branch_apply_cast_numeric_no_null(|opt_v| {
+                let opt_v = opt_v.map(|v| v.to_bits());
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            })
         }
     }
 }
 
 impl VecHash for ListChunked {}
 
-fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(usize, Vec<usize>)>
+fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(u32, Vec<u32>)>
 where
     T: Hash + Eq,
 {
@@ -174,15 +146,20 @@ where
         .collect()
 }
 
-fn groupby_threaded_flat<I, T>(iters: Vec<I>) -> Vec<(usize, Vec<usize>)>
+fn groupby_threaded_flat<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<(u32, Vec<u32>)>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
 {
-    groupby_threaded(iters).into_iter().flatten().collect()
+    groupby_threaded(iters, group_size_hint)
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
-fn groupby_threaded<I, T>(iters: Vec<I>) -> Vec<Vec<(usize, Vec<usize>)>>
+/// Determine groupby tuples from an iterator. The group_size_hint is used to pre-allocate the group vectors.
+/// When the grouping column is a categorical type we already have a good indication of the avg size of the groups.
+fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<Vec<(u32, Vec<u32>)>>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -200,17 +177,18 @@ where
             let hashes_and_keys = &hashes_and_keys;
             let thread_no = thread_no as u64;
 
-            let mut hash_tbl: HashMap<T, (usize, Vec<usize>), RandomState> =
+            let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> =
                 HashMap::with_capacity_and_hasher(size / n_threads, random_state);
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
             for hashes_and_keys in hashes_and_keys {
-                let len = hashes_and_keys.len();
+                let len = hashes_and_keys.len() as u32;
                 hashes_and_keys
                     .iter()
                     .enumerate()
                     .for_each(|(idx, (h, k))| {
+                        let idx = idx as u32;
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
                         if (h + thread_no) % n_threads == 0 {
@@ -222,7 +200,9 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    entry.insert_hashed_nocheck(*h, *k, (idx, vec![idx]));
+                                    let mut tuples = Vec::with_capacity(group_size_hint);
+                                    tuples.push(idx);
+                                    entry.insert_hashed_nocheck(*h, *k, (idx, tuples));
                                 }
                                 RawEntryMut::Occupied(mut entry) => {
                                     let (_k, v) = entry.get_key_value_mut();
@@ -240,13 +220,28 @@ where
     .collect()
 }
 
-fn populate_multiple_key_hashmap<'a, 'b>(
-    hash_tbl: &mut HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher>,
-    row_1: &'b mut Row<'a>,
-    row_2: &'b mut Row<'a>,
-    idx: usize,
+/// Utility function used as comparison function in the hashmap.
+/// The rationale is that equality is an AND operation and therefore its probability of success
+/// declines rapidly with the number of keys. Instead of first copying an entire row from both
+/// sides and then do the comparison, we do the comparison value by value catching early failures
+/// eagerly.
+///
+/// # Safety
+/// Doesn't check any bounds
+unsafe fn compare_fn(keys: &DataFrame, idx_a: u32, idx_b: u32) -> bool {
+    for s in keys.get_columns() {
+        if !(s.get_unchecked(idx_a as usize) == s.get_unchecked(idx_b as usize)) {
+            return false;
+        }
+    }
+    true
+}
+
+fn populate_multiple_key_hashmap(
+    hash_tbl: &mut HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher>,
+    idx: u32,
     h: u64,
-    keys: &'a DataFrame,
+    keys: &DataFrame,
 ) {
     let entry = hash_tbl
         .raw_entry_mut()
@@ -254,11 +249,9 @@ fn populate_multiple_key_hashmap<'a, 'b>(
         // to check equality to find an entry
         .from_hash(h, |idx_hash| {
             let key_idx = idx_hash.idx;
-            unsafe {
-                keys.get_row_amortized_unchecked(key_idx, row_1);
-                keys.get_row_amortized_unchecked(idx, row_2);
-            }
-            row_1 == row_2
+            // Safety:
+            // indices in a join operation are always in bounds.
+            unsafe { compare_fn(keys, key_idx, idx) }
         });
     match entry {
         RawEntryMut::Vacant(entry) => {
@@ -271,32 +264,28 @@ fn populate_multiple_key_hashmap<'a, 'b>(
     }
 }
 
-fn groupby_multiple_keys(keys: DataFrame) -> Vec<(usize, Vec<usize>)> {
+fn groupby_multiple_keys(keys: DataFrame) -> Vec<(u32, Vec<u32>)> {
     let (hashes, _) = df_rows_to_hashes(&keys, None);
     let size = hashes.len();
     // rather over allocate because rehashing is expensive
-    let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
+    let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
         HashMap::with_capacity_and_hasher(size, IdBuildHasher::default());
-    let mut row_1 = keys.get_row(0);
-    let mut row_2 = row_1.clone();
 
-    for (idx, h) in hashes.into_no_null_iter().enumerate() {
-        populate_multiple_key_hashmap(&mut hash_tbl, &mut row_1, &mut row_2, idx, h, &keys);
+    // hashes has no nulls
+    let mut idx = 0;
+    for hashes_chunk in hashes.data_views() {
+        for &h in hashes_chunk {
+            populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys);
+            idx += 1;
+        }
     }
     hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
 }
 
-fn groupby_threaded_multiple_keys_flat(
-    keys: DataFrame,
-    n_threads: usize,
-) -> Vec<(usize, Vec<usize>)> {
+fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> Vec<(u32, Vec<u32>)> {
     let dfs = split_df(&keys, n_threads).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let size = hashes.len();
-    // let (hashes, _random_state) = create_hash_threaded_vectorized(iters);
-    // let size = hashes.iter().fold(0, |acc, v| acc + v.len());
-    // two row containers to amortize allocations;
-    let row_1 = keys.get_row(0);
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -310,33 +299,28 @@ fn groupby_threaded_multiple_keys_flat(
             let thread_no = thread_no as u64;
 
             let keys = &keys;
-            // two row containers to amortize allocations;
-            let mut row_1 = row_1.clone();
-            let mut row_2 = row_1.clone();
 
             // rather over allocate because rehashing is expensive
-            let mut hash_tbl: HashMap<IdxHash, (usize, Vec<usize>), IdBuildHasher> =
+            let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(size / n_threads, IdBuildHasher::default());
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
             for hashes in hashes {
-                let len = hashes.len();
-                hashes.into_no_null_iter().enumerate().for_each(|(idx, h)| {
-                    // partition hashes by thread no.
-                    // So only a part of the hashes go to this hashmap
-                    if (h + thread_no) % n_threads == 0 {
-                        let idx = idx + offset;
-                        populate_multiple_key_hashmap(
-                            &mut hash_tbl,
-                            &mut row_1,
-                            &mut row_2,
-                            idx,
-                            h,
-                            keys,
-                        );
+                let len = hashes.len() as u32;
+
+                let mut idx = 0;
+                for hashes_chunk in hashes.data_views() {
+                    for &h in hashes_chunk {
+                        // partition hashes by thread no.
+                        // So only a part of the hashes go to this hashmap
+                        if (h + thread_no) % n_threads == 0 {
+                            let idx = idx + offset;
+                            populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys);
+                        }
+                        idx += 1;
                     }
-                });
+                }
 
                 offset += len;
             }
@@ -352,7 +336,7 @@ pub trait IntoGroupTuples {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in te tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+    fn group_tuples(&self, _multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
         unimplemented!()
     }
 }
@@ -374,10 +358,10 @@ macro_rules! group_tuples {
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect_vec();
-                groupby_threaded_flat(iters)
+                groupby_threaded_flat(iters, 0)
             } else {
                 let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-                groupby_threaded_flat(iters)
+                groupby_threaded_flat(iters, 0)
             }
         } else {
             if $ca.null_count() == 0 {
@@ -394,25 +378,68 @@ where
     T: PolarsIntegerType,
     T::Native: Eq + Hash + Send,
 {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self, multithreaded)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+        let group_size_hint = if let Some(m) = &self.categorical_map {
+            self.len() / m.len()
+        } else {
+            0
+        };
+        if multithreaded && group_multithreaded(self) {
+            let n_threads = num_cpus::get();
+            let splitted = split_ca(self, n_threads).unwrap();
+
+            // use the arrays as iterators
+            if self.chunks.len() == 1 {
+                if self.null_count() == 0 {
+                    let iters = splitted
+                        .iter()
+                        .map(|ca| ca.downcast_chunks().into_iter().map(|array| array.values()))
+                        .flatten()
+                        .collect_vec();
+                    groupby_threaded_flat(iters, group_size_hint)
+                } else {
+                    let iters = splitted
+                        .iter()
+                        .map(|ca| ca.downcast_chunks().into_iter())
+                        .flatten()
+                        .collect_vec();
+                    groupby_threaded_flat(iters, group_size_hint)
+                }
+                // use the polars-iterators
+            } else if self.null_count() == 0 {
+                let iters = splitted
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                groupby_threaded_flat(iters, group_size_hint)
+            } else {
+                let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
+                groupby_threaded_flat(iters, group_size_hint)
+            }
+        } else if self.null_count() == 0 {
+            groupby(self.into_no_null_iter())
+        } else {
+            groupby(self.into_iter())
+        }
     }
 }
 impl IntoGroupTuples for BooleanChunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
         group_tuples!(self, multithreaded)
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
         group_tuples!(self, multithreaded)
     }
 }
 
 impl IntoGroupTuples for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
-        group_tuples!(self, multithreaded)
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .group_tuples(multithreaded)
     }
 }
 
@@ -427,14 +454,14 @@ macro_rules! impl_into_group_tpls_float {
                         .iter()
                         .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
                         .collect_vec();
-                    groupby_threaded_flat(iters)
+                    groupby_threaded_flat(iters, 0)
                 }
                 _ => {
                     let iters = splitted
                         .iter()
                         .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
                         .collect_vec();
-                    groupby_threaded_flat(iters)
+                    groupby_threaded_flat(iters, 0)
                 }
             }
         } else {
@@ -447,12 +474,12 @@ macro_rules! impl_into_group_tpls_float {
 }
 
 impl IntoGroupTuples for Float64Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
         impl_into_group_tpls_float!(self, multithreaded)
     }
 }
 impl IntoGroupTuples for Float32Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
         impl_into_group_tpls_float!(self, multithreaded)
     }
 }
@@ -690,28 +717,28 @@ pub struct GroupBy<'df, 'selection_str> {
     df: &'df DataFrame,
     pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
-    pub(crate) groups: Vec<(usize, Vec<usize>)>,
+    pub(crate) groups: Vec<(u32, Vec<u32>)>,
     // columns selected for aggregation
     selected_agg: Option<Vec<&'selection_str str>>,
 }
 
 pub(crate) trait NumericAggSync {
-    fn agg_mean(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
-    fn agg_min(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
-    fn agg_max(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
-    fn agg_sum(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
-    fn agg_std(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
-    fn agg_var(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
 }
@@ -726,36 +753,82 @@ impl<T> NumericAggSync for ObjectChunked<T> {}
 impl<T> NumericAggSync for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast,
+    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast + Bounded,
     ChunkedArray<T>: IntoSeries,
 {
-    fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         let ca: Float64Chunked = groups
             .par_iter()
             .map(|(first, idx)| {
                 if idx.len() == 1 {
-                    self.get(*first).map(|sum| sum.to_f64().unwrap())
+                    self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
                 } else {
-                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
-                    let opt_sum: Option<T::Native> = take.sum();
-                    opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                    match (self.null_count(), self.chunks.len()) {
+                        (0, 1) => unsafe {
+                            take_agg_no_null_primitive_iter_unchecked(
+                                self.downcast_chunks()[0],
+                                idx.iter().map(|i| *i as usize),
+                                |a, b| a + b,
+                                T::Native::zero(),
+                            )
+                        }
+                        .to_f64()
+                        .map(|sum| sum / idx.len() as f64),
+                        (_, 1) => unsafe {
+                            take_agg_primitive_iter_unchecked(
+                                self.downcast_chunks()[0],
+                                idx.iter().map(|i| *i as usize),
+                                |a, b| a + b,
+                                T::Native::zero(),
+                            )
+                        }
+                        .map(|sum| sum.to_f64().map(|sum| sum / idx.len() as f64).unwrap()),
+                        _ => {
+                            let take = unsafe {
+                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                            };
+                            let opt_sum: Option<T::Native> = take.sum();
+                            opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                        }
+                    }
                 }
             })
             .collect();
         Some(ca.into_series())
     }
 
-    fn agg_min(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         Some(
             groups
                 .par_iter()
                 .map(|(first, idx)| {
                     if idx.len() == 1 {
-                        self.get(*first)
+                        self.get(*first as usize)
                     } else {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
-                        take.min()
+                        match (self.null_count(), self.chunks.len()) {
+                            (0, 1) => Some(unsafe {
+                                take_agg_no_null_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().map(|i| *i as usize),
+                                    |a, b| if a < b { a } else { b },
+                                    T::Native::max_value(),
+                                )
+                            }),
+                            (_, 1) => unsafe {
+                                take_agg_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().map(|i| *i as usize),
+                                    |a, b| if a < b { a } else { b },
+                                    T::Native::max_value(),
+                                )
+                            },
+                            _ => {
+                                let take = unsafe {
+                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                                };
+                                take.min()
+                            }
+                        }
                     }
                 })
                 .collect::<ChunkedArray<T>>()
@@ -763,17 +836,38 @@ where
         )
     }
 
-    fn agg_max(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         Some(
             groups
                 .par_iter()
                 .map(|(first, idx)| {
                     if idx.len() == 1 {
-                        self.get(*first)
+                        self.get(*first as usize)
                     } else {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
-                        take.max()
+                        match (self.null_count(), self.chunks.len()) {
+                            (0, 1) => Some(unsafe {
+                                take_agg_no_null_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().map(|i| *i as usize),
+                                    |a, b| if a > b { a } else { b },
+                                    T::Native::min_value(),
+                                )
+                            }),
+                            (_, 1) => unsafe {
+                                take_agg_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().map(|i| *i as usize),
+                                    |a, b| if a > b { a } else { b },
+                                    T::Native::min_value(),
+                                )
+                            },
+                            _ => {
+                                let take = unsafe {
+                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                                };
+                                take.max()
+                            }
+                        }
                     }
                 })
                 .collect::<ChunkedArray<T>>()
@@ -781,29 +875,51 @@ where
         )
     }
 
-    fn agg_sum(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         Some(
             groups
                 .par_iter()
                 .map(|(first, idx)| {
                     if idx.len() == 1 {
-                        self.get(*first)
+                        self.get(*first as usize)
                     } else {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
-                        take.sum()
+                        match (self.null_count(), self.chunks.len()) {
+                            (0, 1) => Some(unsafe {
+                                take_agg_no_null_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().map(|i| *i as usize),
+                                    |a, b| a + b,
+                                    T::Native::zero(),
+                                )
+                            }),
+                            (_, 1) => unsafe {
+                                take_agg_primitive_iter_unchecked(
+                                    self.downcast_chunks()[0],
+                                    idx.iter().map(|i| *i as usize),
+                                    |a, b| a + b,
+                                    T::Native::zero(),
+                                )
+                            },
+                            _ => {
+                                let take = unsafe {
+                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                                };
+                                take.sum()
+                            }
+                        }
                     }
                 })
                 .collect::<ChunkedArray<T>>()
                 .into_series(),
         )
     }
-    fn agg_var(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         Some(
             groups
                 .par_iter()
                 .map(|(_first, idx)| {
-                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    let take =
+                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
                     take.into_series()
                         .var_as_series()
                         .unpack::<T>()
@@ -814,12 +930,13 @@ where
                 .into_series(),
         )
     }
-    fn agg_std(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         Some(
             groups
                 .par_iter()
                 .map(|(_first, idx)| {
-                    let take = unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
+                    let take =
+                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
                     take.into_series()
                         .std_as_series()
                         .unpack::<T>()
@@ -833,14 +950,14 @@ where
 }
 
 pub(crate) trait AggFirst {
-    fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series;
+    fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series;
 }
 
 macro_rules! impl_agg_first {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
         $groups
             .iter()
-            .map(|(first, _idx)| $self.get(*first))
+            .map(|(first, _idx)| $self.get(*first as usize))
             .collect::<$ca_type>()
             .into_series()
     }};
@@ -851,31 +968,31 @@ where
     T: PolarsPrimitiveType + Send,
     ChunkedArray<T>: IntoSeries,
 {
-    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         impl_agg_first!(self, groups, ChunkedArray<T>)
     }
 }
 
 impl AggFirst for BooleanChunked {
-    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         impl_agg_first!(self, groups, BooleanChunked)
     }
 }
 
 impl AggFirst for Utf8Chunked {
-    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         impl_agg_first!(self, groups, Utf8Chunked)
     }
 }
 
 impl AggFirst for ListChunked {
-    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         impl_agg_first!(self, groups, ListChunked)
     }
 }
 
 impl AggFirst for CategoricalChunked {
-    fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         self.cast::<UInt32Type>()
             .unwrap()
             .agg_first(groups)
@@ -886,20 +1003,20 @@ impl AggFirst for CategoricalChunked {
 
 #[cfg(feature = "object")]
 impl<T> AggFirst for ObjectChunked<T> {
-    fn agg_first(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
         todo!()
     }
 }
 
 pub(crate) trait AggLast {
-    fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series;
+    fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series;
 }
 
 macro_rules! impl_agg_last {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
         $groups
             .iter()
-            .map(|(_first, idx)| $self.get(idx[idx.len() - 1]))
+            .map(|(_first, idx)| $self.get(idx[idx.len() - 1] as usize))
             .collect::<$ca_type>()
             .into_series()
     }};
@@ -910,25 +1027,25 @@ where
     T: PolarsPrimitiveType + Send,
     ChunkedArray<T>: IntoSeries,
 {
-    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         impl_agg_last!(self, groups, ChunkedArray<T>)
     }
 }
 
 impl AggLast for BooleanChunked {
-    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         impl_agg_last!(self, groups, BooleanChunked)
     }
 }
 
 impl AggLast for Utf8Chunked {
-    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         impl_agg_last!(self, groups, Utf8Chunked)
     }
 }
 
 impl AggLast for CategoricalChunked {
-    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         self.cast::<UInt32Type>()
             .unwrap()
             .agg_last(groups)
@@ -938,20 +1055,20 @@ impl AggLast for CategoricalChunked {
 }
 
 impl AggLast for ListChunked {
-    fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         impl_agg_last!(self, groups, ListChunked)
     }
 }
 
 #[cfg(feature = "object")]
 impl<T> AggLast for ObjectChunked<T> {
-    fn agg_last(&self, _groups: &[(usize, Vec<usize>)]) -> Series {
+    fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
         todo!()
     }
 }
 
 pub(crate) trait AggNUnique {
-    fn agg_n_unique(&self, _groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+    fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
         None
     }
 }
@@ -964,14 +1081,14 @@ macro_rules! impl_agg_n_unique {
                 if $self.null_count() == 0 {
                     let mut set = HashSet::with_hasher(RandomState::new());
                     for i in idx {
-                        let v = unsafe { $self.get_unchecked(*i) };
+                        let v = unsafe { $self.get_unchecked(*i as usize) };
                         set.insert(v);
                     }
                     set.len() as u32
                 } else {
                     let mut set = HashSet::with_hasher(RandomState::new());
                     for i in idx {
-                        let opt_v = $self.get(*i);
+                        let opt_v = $self.get(*i as usize);
                         set.insert(opt_v);
                     }
                     set.len() as u32
@@ -987,7 +1104,7 @@ where
     T: PolarsIntegerType + Sync,
     T::Native: Hash + Eq,
 {
-    fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+    fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
         Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
@@ -997,7 +1114,7 @@ impl AggNUnique for Float32Chunked {}
 impl AggNUnique for Float64Chunked {}
 impl AggNUnique for ListChunked {}
 impl AggNUnique for CategoricalChunked {
-    fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+    fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
         self.cast::<UInt32Type>().unwrap().agg_n_unique(groups)
     }
 }
@@ -1006,19 +1123,19 @@ impl<T> AggNUnique for ObjectChunked<T> {}
 
 // TODO: could be faster as it can only be null, true, or false
 impl AggNUnique for BooleanChunked {
-    fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+    fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
         Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
 
 impl AggNUnique for Utf8Chunked {
-    fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+    fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
         Some(impl_agg_n_unique!(self, groups, NoNull<UInt32Chunked>))
     }
 }
 
 pub(crate) trait AggList {
-    fn agg_list(&self, _groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
 }
@@ -1027,7 +1144,7 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: IntoSeries,
 {
-    fn agg_list(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         // needed capacity for the list
         let values_cap = groups.iter().fold(0, |acc, g| acc + g.1.len());
 
@@ -1038,7 +1155,7 @@ where
                     ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))
                     };
                     builder.append_opt_series(Some(&s))
                 }
@@ -1052,7 +1169,7 @@ where
                 let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))
                     };
                     builder.append_series(&s)
                 }
@@ -1066,7 +1183,7 @@ where
                 let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().copied(), Some(idx.len()))
+                        $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))
                     };
                     builder.append_series(&s)
                 }
@@ -1086,11 +1203,11 @@ where
 }
 
 pub(crate) trait AggQuantile {
-    fn agg_quantile(&self, _groups: &[(usize, Vec<usize>)], _quantile: f64) -> Option<Series> {
+    fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
         None
     }
 
-    fn agg_median(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+    fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.agg_quantile(groups, 0.5)
     }
 }
@@ -1101,17 +1218,18 @@ where
     T::Native: PartialEq,
     ChunkedArray<T>: IntoSeries,
 {
-    fn agg_quantile(&self, groups: &[(usize, Vec<usize>)], quantile: f64) -> Option<Series> {
+    fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
         Some(
             groups
                 .into_par_iter()
                 .map(|(_first, idx)| {
                     let group_vals =
-                        unsafe { self.take_unchecked(idx.iter().copied(), Some(idx.len())) };
-                    let sorted_idx = group_vals.argsort(false);
+                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                    let sorted_idx_ca = group_vals.argsort(false);
+                    let sorted_idx = sorted_idx_ca.downcast_chunks()[0].values();
                     let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
                     let value_idx = sorted_idx[quant_idx];
-                    group_vals.get(value_idx)
+                    group_vals.get(value_idx as usize)
                 })
                 .collect::<ChunkedArray<T>>()
                 .into_series(),
@@ -1144,7 +1262,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// The Vec returned contains:
     ///     (first_idx, Vec<indexes>)
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups(&self) -> &Vec<(usize, Vec<usize>)> {
+    pub fn get_groups(&self) -> &Vec<(u32, Vec<u32>)> {
         &self.groups
     }
 
@@ -1159,10 +1277,8 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let mut keys = Vec::with_capacity(size);
         unsafe {
             self.selected_keys.iter().for_each(|s| {
-                let key = s.take_iter_unchecked(
-                    &mut self.groups.iter().map(|(idx, _)| *idx),
-                    Some(self.groups.len()),
-                );
+                let key =
+                    s.take_iter_unchecked(&mut self.groups.iter().map(|(idx, _)| *idx as usize));
                 keys.push(key)
             });
         }
@@ -1711,7 +1827,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                             let ca = builder.finish();
                             cols.push(ca.into_series());
                         }
-                        a => panic!(format!("aggregation: {:?} is not supported", a)),
+                        a => panic!("aggregation: {:?} is not supported", a),
                     }
                 }
             }
@@ -1780,9 +1896,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
             .get_groups()
             .par_iter()
             .map(|t| {
-                let cap = t.1.len();
-                let sub_df =
-                    unsafe { df.take_iter_unchecked_bounds(t.1.iter().copied(), Some(cap)) };
+                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
                 f(sub_df)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -1925,7 +2039,7 @@ pub(crate) trait ChunkPivot {
         &self,
         _pivot_series: &'a (dyn SeriesTrait + 'a),
         _keys: Vec<Series>,
-        _groups: &[(usize, Vec<usize>)],
+        _groups: &[(u32, Vec<u32>)],
         _agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
@@ -1937,7 +2051,7 @@ pub(crate) trait ChunkPivot {
         &self,
         _pivot_series: &'a (dyn SeriesTrait + 'a),
         _keys: Vec<Series>,
-        _groups: &[(usize, Vec<usize>)],
+        _groups: &[(u32, Vec<u32>)],
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
             "Pivot count operation not implemented for this type".into(),
@@ -1951,10 +2065,9 @@ fn create_column_values_map<'a, T>(
     size: usize,
 ) -> HashMap<&'a Groupable<'a>, Vec<Option<T>>, RandomState> {
     let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, RandomState::new());
-    for opt_column_name in pivot_vec {
-        if let Some(column_name) = opt_column_name {
-            columns_agg_map.entry(column_name).or_insert_with(Vec::new);
-        }
+
+    for column_name in pivot_vec.iter().flatten() {
+        columns_agg_map.entry(column_name).or_insert_with(Vec::new);
     }
 
     columns_agg_map
@@ -1963,7 +2076,7 @@ fn create_column_values_map<'a, T>(
 /// Create a hashmap that maps columns/keys to the result of the aggregation.
 fn create_new_column_builder_map<'a, T>(
     pivot_vec: &'a [Option<Groupable>],
-    groups: &[(usize, Vec<usize>)],
+    groups: &[(u32, Vec<u32>)],
 ) -> HashMap<&'a Groupable<'a>, PrimitiveChunkedBuilder<T>, RandomState>
 where
     T: PolarsNumericType,
@@ -1971,12 +2084,10 @@ where
     // create a hash map that will be filled with the results of the aggregation.
     let mut columns_agg_map_main =
         HashMap::with_capacity_and_hasher(pivot_vec.len(), RandomState::new());
-    for opt_column_name in pivot_vec {
-        if let Some(column_name) = opt_column_name {
-            columns_agg_map_main.entry(column_name).or_insert_with(|| {
-                PrimitiveChunkedBuilder::<T>::new(&format!("{:?}", column_name), groups.len())
-            });
-        }
+    for column_name in pivot_vec.iter().flatten() {
+        columns_agg_map_main.entry(column_name).or_insert_with(|| {
+            PrimitiveChunkedBuilder::<T>::new(&format!("{:?}", column_name), groups.len())
+        });
     }
     columns_agg_map_main
 }
@@ -1991,14 +2102,17 @@ where
         &self,
         pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
-        groups: &[(usize, Vec<usize>)],
+        groups: &[(u32, Vec<u32>)],
         agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         // TODO: save an allocation by creating a random access struct for the Groupable utility type.
+        let pivot_unique = pivot_series.unique()?;
+        let pivot_vec_unique: Vec<_> = pivot_unique.as_groupable_iter()?.collect();
         let pivot_vec: Vec<_> = pivot_series.as_groupable_iter()?.collect();
         let values_taker = self.take_rand();
         // create a hash map that will be filled with the results of the aggregation.
-        let mut columns_agg_map_main = create_new_column_builder_map::<T>(&pivot_vec, groups);
+        let mut columns_agg_map_main =
+            create_new_column_builder_map::<T>(&pivot_vec_unique, groups);
 
         // iterate over the groups that need to be aggregated
         // idxes are the indexes of the groups in the keys, pivot, and values columns
@@ -2006,8 +2120,9 @@ where
             // for every group do the aggregation by adding them to the vector belonging by that column
             // the columns are hashed with the pivot values
             let mut columns_agg_map_group =
-                create_column_values_map::<T::Native>(&pivot_vec, idx.len());
+                create_column_values_map::<T::Native>(&pivot_vec_unique, idx.len());
             for &i in idx {
+                let i = i as usize;
                 let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
 
                 if let Some(pivot_val) = opt_pivot_val {
@@ -2053,7 +2168,7 @@ where
         &self,
         pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
-        groups: &[(usize, Vec<usize>)],
+        groups: &[(u32, Vec<u32>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(self, pivot_series, keys, groups)
     }
@@ -2063,7 +2178,7 @@ fn pivot_count_impl<'a, CA: TakeRandom>(
     ca: &CA,
     pivot_series: &'a (dyn SeriesTrait + 'a),
     keys: Vec<Series>,
-    groups: &[(usize, Vec<usize>)],
+    groups: &[(u32, Vec<u32>)],
 ) -> Result<DataFrame> {
     let pivot_vec: Vec<_> = pivot_series.as_groupable_iter()?.collect();
     // create a hash map that will be filled with the results of the aggregation.
@@ -2076,6 +2191,7 @@ fn pivot_count_impl<'a, CA: TakeRandom>(
         // the columns are hashed with the pivot values
         let mut columns_agg_map_group = create_column_values_map::<CA::Item>(&pivot_vec, idx.len());
         for &i in idx {
+            let i = i as usize;
             let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
 
             if let Some(pivot_val) = opt_pivot_val {
@@ -2110,7 +2226,7 @@ impl ChunkPivot for BooleanChunked {
         &self,
         pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
-        groups: &[(usize, Vec<usize>)],
+        groups: &[(u32, Vec<u32>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(self, pivot_series, keys, groups)
     }
@@ -2120,7 +2236,7 @@ impl ChunkPivot for Utf8Chunked {
         &self,
         pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
-        groups: &[(usize, Vec<usize>)],
+        groups: &[(u32, Vec<u32>)],
     ) -> Result<DataFrame> {
         pivot_count_impl(&self, pivot_series, keys, groups)
     }
@@ -2131,7 +2247,7 @@ impl ChunkPivot for CategoricalChunked {
         &self,
         pivot_series: &'a (dyn SeriesTrait + 'a),
         keys: Vec<Series>,
-        groups: &[(usize, Vec<usize>)],
+        groups: &[(u32, Vec<u32>)],
     ) -> Result<DataFrame> {
         self.cast::<UInt32Type>()
             .unwrap()
@@ -2195,14 +2311,12 @@ where
 {
     let mut min = None;
 
-    for opt_val in v {
-        if let Some(val) = opt_val {
-            match min {
-                None => min = Some(*val),
-                Some(minimum) => {
-                    if val < &minimum {
-                        min = Some(*val)
-                    }
+    for val in v.iter().flatten() {
+        match min {
+            None => min = Some(*val),
+            Some(minimum) => {
+                if val < &minimum {
+                    min = Some(*val)
                 }
             }
         }
@@ -2217,14 +2331,12 @@ where
 {
     let mut max = None;
 
-    for opt_val in v {
-        if let Some(val) = opt_val {
-            match max {
-                None => max = Some(*val),
-                Some(maximum) => {
-                    if val > &maximum {
-                        max = Some(*val)
-                    }
+    for val in v.iter().flatten() {
+        match max {
+            None => max = Some(*val),
+            Some(maximum) => {
+                if val > &maximum {
+                    max = Some(*val)
                 }
             }
         }
@@ -2576,7 +2688,7 @@ mod test {
         }
         .unwrap();
 
-        let out = df.groupby("a").unwrap().apply(|df| Ok(df)).unwrap();
+        let out = df.groupby("a").unwrap().apply(Ok).unwrap();
         assert!(out.sort("b", false).unwrap().frame_equal(&df));
     }
 
@@ -2591,7 +2703,7 @@ mod test {
             let splitted = split_ca(&ca, 4).unwrap();
 
             let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
-            let b = groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect())
+            let b = groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect(), 0)
                 .into_iter()
                 .sorted()
                 .collect_vec();

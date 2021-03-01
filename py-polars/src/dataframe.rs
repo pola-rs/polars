@@ -4,17 +4,15 @@ use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::npy::series_to_numpy_compatible_vec;
 use crate::utils::str_to_polarstype;
 use crate::{
+    arrow_interop,
     error::PyPolarsEr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
-use numpy::PyArray1;
 use polars::frame::{group_by::GroupBy, resample::SampleRule};
-use polars_core::utils::rayon::prelude::*;
-use pyo3::types::PyDict;
+use std::convert::TryFrom;
 
 #[pyclass]
 #[repr(transparent)]
@@ -36,6 +34,11 @@ impl From<DataFrame> for PyDataFrame {
 }
 
 #[pymethods]
+#[allow(
+    clippy::wrong_self_convention,
+    clippy::should_implement_trait,
+    clippy::len_without_is_empty
+)]
 impl PyDataFrame {
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
@@ -45,6 +48,7 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
     pub fn read_csv(
         py_f: PyObject,
         infer_schema_length: usize,
@@ -73,7 +77,7 @@ impl PyDataFrame {
             }
         };
 
-        let overwrite_dtype = overwrite_dtype.and_then(|overwrite_dtype| {
+        let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype
                 .iter()
                 .map(|(name, dtype)| {
@@ -82,7 +86,7 @@ impl PyDataFrame {
                     Field::new(name, dtype)
                 })
                 .collect();
-            Some(Schema::new(fields))
+            Schema::new(fields)
         });
 
         let file = get_either_file(py_f, false)?;
@@ -138,8 +142,15 @@ impl PyDataFrame {
     #[staticmethod]
     pub fn read_ipc(py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
-        let df = IPCReader::new(file).finish().map_err(PyPolarsEr::from)?;
+        let df = IpcReader::new(file).finish().map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
+    }
+
+    #[staticmethod]
+    pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
+        let batches = arrow_interop::to_rust::to_rust_rb(&rb)?;
+        let df = DataFrame::try_from(batches).map_err(PyPolarsEr::from)?;
+        Ok(Self::from(df))
     }
 
     pub fn to_csv(
@@ -161,7 +172,7 @@ impl PyDataFrame {
 
     pub fn to_ipc(&mut self, py_f: PyObject) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
-        IPCWriter::new(&mut buf)
+        IpcWriter::new(&mut buf)
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
@@ -175,86 +186,18 @@ impl PyDataFrame {
         Ok(())
     }
 
-    /// Create a List of numpy arrays in parallel
-    pub fn to_pandas_helper(&self) -> PyResult<PyObject> {
-        let series = self.df.get_columns();
-
-        let vecs = series
-            .par_iter()
-            .map(|s| series_to_numpy_compatible_vec(s))
-            .collect::<Vec<_>>();
-
-        macro_rules! to_pyobject {
-            ($py: expr, $bxd: expr, $primitive_1: ty, $primitive_2: ty) => {{
-                let result = $bxd.downcast::<Vec<$primitive_1>>();
-
-                match result {
-                    Ok(a) => {
-                        let arr = PyArray1::from_vec($py, *a);
-                        let obj: PyObject = arr.to_owned().into_py($py);
-                        obj
-                    }
-                    Err(bxd) => {
-                        let a = bxd.downcast::<Vec<$primitive_2>>().unwrap();
-                        let arr = PyArray1::from_vec($py, *a);
-                        let obj: PyObject = arr.to_owned().into_py($py);
-                        obj
-                    }
-                }
-            }};
-        }
-
-        Python::with_gil(|py| {
-            let dict = PyDict::new(py);
-
-            vecs.into_iter().zip(series).try_for_each(|(bxd, s)| {
-                use DataType::*;
-                let obj = match s.dtype() {
-                    Boolean => {
-                        to_pyobject!(py, bxd, bool, bool)
-                    }
-                    Int8 => {
-                        to_pyobject!(py, bxd, i8, f32)
-                    }
-                    Int16 => {
-                        to_pyobject!(py, bxd, i16, f32)
-                    }
-                    Int32 | Date32 => {
-                        to_pyobject!(py, bxd, i32, f64)
-                    }
-                    Int64 | Date64 => {
-                        to_pyobject!(py, bxd, i64, f64)
-                    }
-                    UInt8 => {
-                        to_pyobject!(py, bxd, u8, f32)
-                    }
-                    UInt16 => {
-                        to_pyobject!(py, bxd, u16, f32)
-                    }
-                    UInt32 => {
-                        to_pyobject!(py, bxd, u32, f64)
-                    }
-                    UInt64 => {
-                        to_pyobject!(py, bxd, u64, f64)
-                    }
-                    Float32 => {
-                        to_pyobject!(py, bxd, f32, f32)
-                    }
-                    Float64 => {
-                        to_pyobject!(py, bxd, f64, f64)
-                    }
-                    Utf8 => {
-                        let vec = *bxd.downcast::<Vec<String>>().unwrap();
-                        vec.into_py(py)
-                    }
-                    _ => unimplemented!(),
-                };
-                dict.set_item(s.name(), obj)
-            })?;
-
-            let dict_obj = dict.into_py(py);
-            Ok(dict_obj)
-        })
+    pub fn to_arrow(&self) -> PyResult<Vec<PyObject>> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let pyarrow = py.import("pyarrow")?;
+        let rbs = self
+            .df
+            .as_record_batches()
+            .map_err(PyPolarsEr::from)?
+            .iter()
+            .map(|rb| arrow_interop::to_py::to_py_rb(rb, py, pyarrow))
+            .collect::<PyResult<_>>()?;
+        Ok(rbs)
     }
 
     pub fn add(&self, s: &PySeries) -> PyResult<Self> {
@@ -459,7 +402,7 @@ impl PyDataFrame {
     }
 
     pub fn take(&self, indices: Vec<usize>) -> Self {
-        let df = self.df.take(&indices);
+        let df = self.df.take_iter(indices.iter().copied());
         PyDataFrame::new(df)
     }
 
@@ -587,7 +530,7 @@ impl PyDataFrame {
             // call the lambda and get a python side DataFrame wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
@@ -661,9 +604,8 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn shift(&self, periods: i32) -> PyResult<Self> {
-        let df = self.df.shift(periods).map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
+    pub fn shift(&self, periods: i64) -> Self {
+        self.df.shift(periods).into()
     }
 
     pub fn drop_duplicates(
@@ -717,6 +659,11 @@ impl PyDataFrame {
     pub fn to_dummies(&self) -> PyResult<Self> {
         let df = self.df.to_dummies().map_err(PyPolarsEr::from)?;
         Ok(df.into())
+    }
+
+    pub fn null_count(&self) -> Self {
+        let df = self.df.null_count();
+        df.into()
     }
 }
 

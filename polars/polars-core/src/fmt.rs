@@ -4,15 +4,22 @@ use crate::prelude::*;
 use crate::chunked_array::temporal::{
     date32_as_datetime, date64_as_datetime, time64_nanosecond_as_time,
 };
-use comfy_table::modifiers::UTF8_ROUND_CORNERS;
-use comfy_table::presets::UTF8_FULL;
-use comfy_table::*;
 use num::{Num, NumCast};
 use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
 };
 const LIMIT: usize = 10;
+
+#[cfg(feature = "pretty_fmt")]
+use comfy_table::modifiers::UTF8_ROUND_CORNERS;
+#[cfg(feature = "pretty_fmt")]
+use comfy_table::presets::UTF8_FULL;
+#[cfg(feature = "pretty_fmt")]
+use comfy_table::*;
+
+#[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
+use prettytable::{Cell, Row, Table};
 
 /// Some unit functions that just pass the integer values if we don't want all chrono functionality
 #[cfg(not(feature = "temporal"))]
@@ -382,47 +389,88 @@ impl Display for DataFrame {
         for field in fields[self.width() - n_last..].iter() {
             names.push(field_to_str(field))
         }
-        let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic)
-            .apply_modifier(UTF8_ROUND_CORNERS)
-            .set_table_width(
-                std::env::var("POLARS_TABLE_WIDTH")
-                    .map(|s| {
-                        s.parse::<u16>()
-                            .expect("could not parse table width argument")
-                    })
-                    .unwrap_or(100),
-            )
-            .set_header(names);
-        let mut rows = Vec::with_capacity(max_n_rows);
-        if self.height() > max_n_rows {
-            for i in 0..(max_n_rows / 2) {
-                let row = self.get(i).unwrap();
-                rows.push(prepare_row(row, n_first, n_last));
-            }
-            let dots = rows[0].iter().map(|_| "...".to_string()).collect();
-            rows.push(dots);
-            for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
-                let row = self.get(i).unwrap();
-                rows.push(prepare_row(row, n_first, n_last));
-            }
-            for row in rows {
-                table.add_row(row);
-            }
-        } else {
-            for i in 0..max_n_rows {
-                let opt = self.get(i);
-                if let Some(row) = opt {
-                    table.add_row(prepare_row(row, n_first, n_last));
-                } else {
-                    break;
+        #[cfg(feature = "pretty_fmt")]
+        {
+            let mut table = Table::new();
+            table
+                .load_preset(UTF8_FULL)
+                .set_content_arrangement(ContentArrangement::Dynamic)
+                .apply_modifier(UTF8_ROUND_CORNERS)
+                .set_table_width(
+                    std::env::var("POLARS_TABLE_WIDTH")
+                        .map(|s| {
+                            s.parse::<u16>()
+                                .expect("could not parse table width argument")
+                        })
+                        .unwrap_or(100),
+                )
+                .set_header(names);
+            let mut rows = Vec::with_capacity(max_n_rows);
+            if self.height() > max_n_rows {
+                for i in 0..(max_n_rows / 2) {
+                    let row = self.get(i).unwrap();
+                    rows.push(prepare_row(row, n_first, n_last));
+                }
+                let dots = rows[0].iter().map(|_| "...".to_string()).collect();
+                rows.push(dots);
+                for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
+                    let row = self.get(i).unwrap();
+                    rows.push(prepare_row(row, n_first, n_last));
+                }
+                for row in rows {
+                    table.add_row(row);
+                }
+            } else {
+                for i in 0..max_n_rows {
+                    let opt = self.get(i);
+                    if let Some(row) = opt {
+                        table.add_row(prepare_row(row, n_first, n_last));
+                    } else {
+                        break;
+                    }
                 }
             }
+
+            write!(f, "shape: {:?}\n{}", self.shape(), table)?;
+        }
+        #[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
+        {
+            let mut table = Table::new();
+            table.set_titles(Row::new(names.into_iter().map(|s| Cell::new(&s)).collect()));
+            let mut rows = Vec::with_capacity(max_n_rows);
+            if self.height() > max_n_rows {
+                for i in 0..(max_n_rows / 2) {
+                    let row = self.get(i).unwrap();
+                    rows.push(prepare_row(row, n_first, n_last));
+                }
+                let dots = rows[0].iter().map(|_| "...".to_string()).collect();
+                rows.push(dots);
+                for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
+                    let row = self.get(i).unwrap();
+                    rows.push(prepare_row(row, n_first, n_last));
+                }
+                for row in rows {
+                    table.add_row(Row::new(row.into_iter().map(|s| Cell::new(&s)).collect()));
+                }
+            } else {
+                for i in 0..max_n_rows {
+                    let opt = self.get(i);
+                    if let Some(row) = opt {
+                        table.add_row(Row::new(
+                            prepare_row(row, n_first, n_last)
+                                .into_iter()
+                                .map(|s| Cell::new(&s))
+                                .collect(),
+                        ));
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         }
 
-        write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         Ok(())
     }
 }

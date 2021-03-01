@@ -6,6 +6,8 @@ type ErrString = Cow<'static, str>;
 #[derive(Debug, ThisError)]
 pub enum PolarsError {
     #[error(transparent)]
+    PolarsArrowError(#[from] polars_arrow::error::PolarsError),
+    #[error(transparent)]
     ArrowError(#[from] arrow::error::ArrowError),
     #[error("Invalid operation {0}")]
     InvalidOperation(ErrString),
@@ -40,9 +42,9 @@ pub enum PolarsError {
     #[error(transparent)]
     Various(#[from] anyhow::Error),
     #[error(transparent)]
-    IO(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
-    #[cfg(any(feature = "string", feature = "temporal"))]
+    #[cfg(any(feature = "strings", feature = "temporal"))]
     Regex(#[from] regex::Error),
     #[error("DuplicateError: {0}")]
     Duplicate(ErrString),

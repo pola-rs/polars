@@ -13,13 +13,15 @@ readme = "../README.md"
 [features]
 simd = ["polars-core/simd"]
 docs = ["polars-core/docs"]
-temporal = ["polars-core/temporal"]
+temporal = ["polars-core/temporal", "polars-lazy/temporal"]
 random = ["polars-core/random"]
 default = ["docs",
     "temporal",
-    "simd",
     "lazy",
-    "parquet"
+    "parquet",
+    "performant",
+    "plain_fmt",
+    "mimalloc"
 ]
 ndarray = ["polars-core/ndarray"]
 parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
@@ -33,16 +35,27 @@ object = ["polars-core/object"]
 json = ["polars-io/json"]
 # support for arrows ipc file parsing
 ipc = ["polars-io/ipc"]
+# ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
+# that fits a TrustedLen iterator.
+performant = ["polars-core/performant"]
+plain_fmt = ["polars-core/plain_fmt"]
+pretty_fmt = ["polars-core/pretty_fmt"]
 
 [dependencies]
-polars-core = {version = "0.12.0", path = "./polars-core", default-features = false}
+polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}
 polars-io = {version = "0.12.0", path = "./polars-io", default-features = false}
-polars-lazy = {version = "0.12.0", path = "./polars-lazy"}
+polars-lazy = {version = "0.12.0", path = "./polars-lazy", default-features = false}
+mimalloc = { version = "*", default-features = false, optional = true}
 
 [dev-dependencies]
 criterion = "0.3"
 lazy_static = "1.4"
+rand = "0.8"
+ahash = "0.7.0"
 
+# see: https://bheisler.github.io/criterion.rs/book/faq.html
+[lib]
+bench = false
 
 [[bench]]
 name = "csv"
@@ -52,5 +65,15 @@ harness = false
 name = "groupby"
 harness = false
 
+[[bench]]
+name = "collect"
+harness = false
+
+[[bench]]
+name = "take"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]

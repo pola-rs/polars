@@ -6,6 +6,9 @@ import pytest
 from io import BytesIO
 import numpy as np
 from builtins import range
+import pyarrow as pa
+import pypolars as pl
+import pandas as pd
 
 
 def test_init():
@@ -89,6 +92,11 @@ def test_slice():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
     df = df.slice(1, 2)
     assert df.frame_equal(DataFrame({"a": [1, 3], "b": ["b", "c"]}))
+
+
+def test_null_count():
+    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", None]})
+    assert df.null_count().shape == (1, 2)
 
 
 def test_head_tail():
@@ -271,10 +279,23 @@ def test_to_dummies():
 
 
 def test_from_pandas():
-    import pandas as pd
+    df = pd.DataFrame(
+        {
+            "bools": [False, True, False],
+            "bools_nulls": [None, True, False],
+            "int": [1, 2, 3],
+            "int_nulls": [1, None, 3],
+            "floats": [1.0, 2.0, 3.0],
+            "floats_nulls": [1.0, None, 3.0],
+            "strings": ["foo", "bar", "ham"],
+            "strings_nulls": ["foo", None, "ham"],
+            "strings-cat": ["foo", "bar", "ham"],
+        }
+    )
+    df["strings-cat"] = df["strings-cat"].astype("category")
 
-    df = pd.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
-    DataFrame(df)
+    out = pl.from_pandas(df)
+    assert out.shape == (3, 9)
 
 
 def test_custom_groupby():
@@ -308,3 +329,49 @@ def test_concat():
     df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
     assert functions.concat([df, df]).shape == (6, 3)
+
+
+def get_complete_df():
+    return DataFrame(
+        {
+            "bools": [False, True, False],
+            "bools_nulls": [None, True, False],
+            "int": [1, 2, 3],
+            "int_nulls": [1, None, 3],
+            "floats": [1.0, 2.0, 3.0],
+            "floats_nulls": [1.0, None, 3.0],
+            "strings": ["foo", "bar", "ham"],
+            "strings_nulls": ["foo", None, "ham"],
+        }
+    )
+
+
+def test_to_pandas():
+    df = get_complete_df()
+    df.to_arrow()
+    df.to_pandas()
+    # test shifted df
+    df.shift(2).to_pandas()
+    df = DataFrame({"col": Series([True, False, True])})
+    print(df)
+    df.shift(2).to_pandas()
+
+
+def test_from_arrow_table():
+    data = {"a": [1, 2], "b": [1, 2]}
+    tbl = pa.table(data)
+
+    df = pl.from_arrow_table(tbl)
+    df.frame_equal(pl.DataFrame(data))
+
+
+def test_df_stats():
+    df = get_complete_df()
+    df.var()
+    df.std()
+    df.min()
+    df.max()
+    df.sum()
+    df.mean()
+    df.median()
+    df.quantile(0.4)

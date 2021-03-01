@@ -344,7 +344,7 @@ impl LazyFrame {
     /// with `Nones`.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift(self, periods: i32) -> Self {
+    pub fn shift(self, periods: i64) -> Self {
         self.select_local(vec![col("*").shift(periods)])
     }
 
@@ -988,7 +988,6 @@ mod test {
         println!("{:?}", new);
 
         let new = df
-            .clone()
             .lazy()
             .filter(not(col("sepal.width").lt(lit(3.5))))
             .collect()
@@ -1206,9 +1205,8 @@ mod test {
         // and a filter that is not in the projection
         let df_a = load_df();
         let df_b = df_a.clone();
-        df_a.clone()
-            .lazy()
-            .left_join(df_b.clone().lazy(), col("b"), col("b"), None)
+        df_a.lazy()
+            .left_join(df_b.lazy(), col("b"), col("b"), None)
             .filter(col("a").lt(lit(2)))
             .groupby(vec![col("b")])
             .agg(vec![col("b").first(), col("c").first()])
@@ -1264,7 +1262,7 @@ mod test {
                                 .list()
                                 .unwrap()
                                 .into_iter()
-                                .map(|opt_s| opt_s.map(|s| &s - &(s.shift(1).unwrap())))
+                                .map(|opt_s| opt_s.map(|s| &s - &(s.shift(1))))
                                 .collect();
                             Ok(a.into_series())
                         },
@@ -1566,7 +1564,7 @@ mod test {
                 assert!(matches!(&**left, Expr::Cast { .. }));
                 assert!(matches!(&**right, Expr::Cast { .. }));
             } else {
-                assert!(false)
+                panic!()
             }
         };
     }

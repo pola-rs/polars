@@ -1,14 +1,14 @@
-#![feature(doc_cfg)]
+#[cfg_attr(docsrs, feature(doc_cfg))]
 pub mod csv;
 pub mod csv_core;
 #[cfg(feature = "ipc")]
-#[doc(cfg(feature = "ipc"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
 pub mod ipc;
 #[cfg(feature = "json")]
-#[doc(cfg(feature = "json"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod json;
 #[cfg(feature = "parquet")]
-#[doc(cfg(feature = "parquet"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
 pub mod prelude;
 
@@ -22,7 +22,7 @@ use std::convert::TryFrom;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
-pub trait PhysicalIOExpr: Send + Sync {
+pub trait PhysicalIoExpr: Send + Sync {
     fn evaluate(&self, df: &DataFrame) -> Result<Series>;
 }
 
@@ -82,7 +82,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
     stop_after_n_rows: Option<usize>,
-    predicate: Option<Arc<dyn PhysicalIOExpr>>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
 ) -> Result<DataFrame> {
     let mut n_rows = 0;

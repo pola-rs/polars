@@ -1,8 +1,8 @@
 use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
-use crate::utils::NoNull;
 use crate::POOL;
 use ahash::RandomState;
+use arrow::array::ArrayRef;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -40,7 +40,7 @@ pub(crate) type IdBuildHasher = BuildHasherDefault<IdHasher>;
 
 pub(crate) struct IdxHash {
     // idx in row of Series, DataFrame
-    pub(crate) idx: usize,
+    pub(crate) idx: u32,
     // precomputed hash of T
     hash: u64,
 }
@@ -53,7 +53,7 @@ impl Hash for IdxHash {
 
 impl IdxHash {
     #[inline]
-    pub(crate) fn new(idx: usize, hash: u64) -> Self {
+    pub(crate) fn new(idx: u32, hash: u64) -> Self {
         IdxHash { idx, hash }
     }
 }
@@ -66,9 +66,9 @@ pub(crate) fn this_thread(h: u64, thread_no: u64, n_threads: u64) -> bool {
 
 fn finish_table_from_key_hashes<T>(
     hashes_nd_keys: Vec<(u64, T)>,
-    mut hash_tbl: HashMap<T, Vec<usize>, RandomState>,
+    mut hash_tbl: HashMap<T, Vec<u32>, RandomState>,
     offset: usize,
-) -> HashMap<T, Vec<usize>, RandomState>
+) -> HashMap<T, Vec<u32>, RandomState>
 where
     T: Hash + Eq,
 {
@@ -76,7 +76,7 @@ where
         .into_iter()
         .enumerate()
         .for_each(|(idx, (h, t))| {
-            let idx = idx + offset;
+            let idx = (idx + offset) as u32;
             hash_tbl
                 .raw_entry_mut()
                 // uses the key to check equality to find and entry
@@ -93,7 +93,7 @@ where
 
 pub(crate) fn prepare_hashed_relation<T>(
     b: impl Iterator<Item = T>,
-) -> HashMap<T, Vec<usize>, RandomState>
+) -> HashMap<T, Vec<u32>, RandomState>
 where
     T: Hash + Eq,
 {
@@ -107,7 +107,7 @@ where
         })
         .collect::<Vec<_>>();
 
-    let hash_tbl: HashMap<T, Vec<usize>, RandomState> =
+    let hash_tbl: HashMap<T, Vec<u32>, RandomState> =
         HashMap::with_capacity_and_hasher(hashes_nd_keys.len(), random_state);
 
     finish_table_from_key_hashes(hashes_nd_keys, hash_tbl, 0)
@@ -115,7 +115,7 @@ where
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
-) -> Vec<HashMap<T, Vec<usize>, RandomState>>
+) -> Vec<HashMap<T, Vec<u32>, RandomState>>
 where
     I: Iterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -132,7 +132,7 @@ where
             let random_state = random_state.clone();
             let hashes_and_keys = &hashes_and_keys;
             let thread_no = thread_no as u64;
-            let mut hash_tbl: HashMap<T, Vec<usize>, RandomState> =
+            let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
                 HashMap::with_capacity_and_hasher(size / (5 * n_threads), random_state);
 
             let n_threads = n_threads as u64;
@@ -143,6 +143,7 @@ where
                     .iter()
                     .enumerate()
                     .for_each(|(idx, (h, k))| {
+                        let idx = idx as u32;
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
                         if this_thread(*h, thread_no, n_threads) {
@@ -164,7 +165,7 @@ where
                         }
                     });
 
-                offset += len;
+                offset += len as u32;
             }
             hash_tbl.shrink_to_fit();
             hash_tbl
@@ -240,14 +241,23 @@ pub(crate) fn df_rows_to_hashes(
     let first = iter.next().unwrap();
 
     // take the columns of hashes and create one hash from them.
+    // All columns have the same no. of chunks so we can take the fast path.
     (
         iter.fold(first, |acc, s| {
-            let ca: NoNull<UInt64Chunked> = acc
-                .into_no_null_iter()
-                .zip(s.into_no_null_iter())
-                .map(|(a, b)| combine_hashes(a, b))
+            let chunks = acc
+                .data_views()
+                .iter()
+                .zip(s.data_views())
+                .map(|(&array_left, array_right)| {
+                    let av: AlignedVec<_> = array_left
+                        .iter()
+                        .zip(array_right)
+                        .map(|(&l, &r)| combine_hashes(l, r))
+                        .collect();
+                    Arc::new(av.into_primitive_array::<UInt64Type>(None)) as ArrayRef
+                })
                 .collect();
-            ca.into_inner()
+            UInt64Chunked::new_from_chunks("", chunks)
         }),
         random_state,
     )

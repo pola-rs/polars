@@ -12,8 +12,8 @@ use std::fmt::Display;
 use std::hash::Hash;
 
 pub(crate) fn is_unique_helper(
-    mut groups: Vec<(usize, Vec<usize>)>,
-    len: usize,
+    mut groups: Vec<(u32, Vec<u32>)>,
+    len: u32,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
@@ -48,7 +48,7 @@ where
     ChunkedArray<T>: IntoGroupTuples,
 {
     let groups = ca.group_tuples(true);
-    let mut out = is_unique_helper(groups, ca.len(), true, false);
+    let mut out = is_unique_helper(groups, ca.len() as u32, true, false);
     out.rename(ca.name());
     out
 }
@@ -59,7 +59,7 @@ where
     ChunkedArray<T>: IntoGroupTuples,
 {
     let groups = ca.group_tuples(true);
-    let mut out = is_unique_helper(groups, ca.len(), false, true);
+    let mut out = is_unique_helper(groups, ca.len() as u32, false, true);
     out.rename(ca.name());
     out
 }
@@ -71,7 +71,7 @@ impl ChunkUnique<ListType> for ListChunked {
         ))
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for list".into(),
         ))
@@ -85,7 +85,7 @@ impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
         ))
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for object".into(),
         ))
@@ -105,7 +105,7 @@ where
     set
 }
 
-fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<usize>
+fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<u32>
 where
     T: Hash + Eq,
 {
@@ -113,14 +113,13 @@ where
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
-            unique.push(idx)
+            unique.push(idx as u32)
         }
     });
-
     unique
 }
 
-fn arg_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> Vec<usize>
+fn arg_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> Vec<u32>
 where
     &'a ChunkedArray<T>: IntoIterator + IntoNoNullIterator,
     T: 'a,
@@ -136,9 +135,8 @@ where
 macro_rules! impl_value_counts {
     ($self:expr) => {{
         let group_tuples = $self.group_tuples(true);
-        let values = unsafe {
-            $self.take_unchecked(group_tuples.iter().map(|t| t.0), Some(group_tuples.len()))
-        };
+        let values =
+            unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
         let mut counts: NoNull<UInt32Chunked> = group_tuples
             .into_iter()
             .map(|(_, groups)| groups.len() as u32)
@@ -161,7 +159,7 @@ where
         Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         Ok(arg_unique_ca(self))
     }
 
@@ -187,7 +185,7 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
         ))
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         Ok(arg_unique_ca(self))
     }
 
@@ -211,7 +209,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         ca.cast()
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         Ok(arg_unique_ca(self))
     }
 
@@ -227,7 +225,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
     }
 }
 
-fn dummies_helper(mut groups: Vec<usize>, len: usize, name: &str) -> UInt8Chunked {
+fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();
 
     // let mut group_member_iter = groups.into_iter();
@@ -237,7 +235,7 @@ fn dummies_helper(mut groups: Vec<usize>, len: usize, name: &str) -> UInt8Chunke
     }
 
     for idx in groups {
-        let elem = unsafe { av.inner.get_unchecked_mut(idx) };
+        let elem = unsafe { av.inner.get_unchecked_mut(idx as usize) };
         *elem = 1;
     }
 
@@ -259,7 +257,7 @@ impl ToDummies<Utf8Type> for Utf8Chunked {
         let columns = groups
             .into_par_iter()
             .map(|(first, groups)| {
-                let val = unsafe { self.get_unchecked(first) };
+                let val = unsafe { self.get_unchecked(first as usize) };
                 let name = format!("{}_{}", col_name, val);
                 let ca = dummies_helper(groups, self.len(), &name);
                 ca.into_series()
@@ -282,7 +280,7 @@ where
         let columns = groups
             .into_par_iter()
             .map(|(first, groups)| {
-                let val = unsafe { self.get_unchecked(first) };
+                let val = unsafe { self.get_unchecked(first as usize) };
                 let name = format!("{}_{}", col_name, val);
                 let ca = dummies_helper(groups, self.len(), &name);
                 ca.into_series()
@@ -316,7 +314,7 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
         Ok(ChunkedArray::new_from_opt_slice(self.name(), &unique))
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         Ok(arg_unique_ca(self))
     }
 
@@ -358,7 +356,7 @@ where
     )
 }
 
-fn float_arg_unique<T>(ca: &ChunkedArray<T>) -> Vec<usize>
+fn float_arg_unique<T>(ca: &ChunkedArray<T>) -> Vec<u32>
 where
     T: PolarsFloatType,
     T::Native: IntegerDecode,
@@ -378,7 +376,7 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
         Ok(float_unique(self))
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         Ok(float_arg_unique(self))
     }
 
@@ -398,7 +396,7 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
         Ok(float_unique(self))
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         Ok(float_arg_unique(self))
     }
 

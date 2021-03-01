@@ -1,4 +1,6 @@
-use arrow::array::{Array, ArrayData, ArrayDataRef, ArrayRef, ListArray, PrimitiveArray};
+use arrow::array::{
+    Array, ArrayData, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray,
+};
 use arrow::datatypes::{ArrowPrimitiveType, DataType};
 use num::Num;
 
@@ -95,5 +97,94 @@ impl ValueSize for ArrayData {
 impl ValueSize for ListArray {
     fn get_values_size(&self) -> usize {
         self.data_ref().get_values_size()
+    }
+}
+
+pub trait UnsafeValue<T> {
+    /// # Safety
+    /// no bounds check
+    unsafe fn value_unchecked(&self, index: usize) -> T;
+}
+
+impl<T> UnsafeValue<T::Native> for PrimitiveArray<T>
+where
+    T: ArrowPrimitiveType,
+{
+    #[inline]
+    unsafe fn value_unchecked(&self, index: usize) -> T::Native {
+        self.value(index)
+    }
+}
+
+impl UnsafeValue<bool> for BooleanArray {
+    #[inline]
+    unsafe fn value_unchecked(&self, index: usize) -> bool {
+        self.value(index)
+    }
+}
+
+/// Cheaply get the null mask as BooleanArray.
+pub trait IsNull {
+    fn is_null_mask(&self) -> BooleanArray;
+    fn is_not_null_mask(&self) -> BooleanArray;
+}
+
+impl IsNull for &dyn Array {
+    fn is_null_mask(&self) -> BooleanArray {
+        if self.null_count() == 0 {
+            (0..self.len()).map(|_| Some(false)).collect()
+        } else {
+            let data = self.data();
+            let valid = data.null_buffer().unwrap();
+            let invert = !valid;
+
+            let array_data = ArrayData::builder(DataType::Boolean)
+                .len(self.len())
+                .offset(self.offset())
+                .add_buffer(invert)
+                .build();
+            BooleanArray::from(array_data)
+        }
+    }
+    fn is_not_null_mask(&self) -> BooleanArray {
+        if self.null_count() == 0 {
+            (0..self.len()).map(|_| Some(true)).collect()
+        } else {
+            let data = self.data();
+            let valid = data.null_buffer().unwrap().clone();
+
+            let array_data = ArrayData::builder(DataType::Boolean)
+                .len(self.len())
+                .offset(self.offset())
+                .add_buffer(valid)
+                .build();
+            BooleanArray::from(array_data)
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use arrow::array::{Array, Int32Array};
+
+    #[test]
+    fn test_is_null() {
+        let arr = Int32Array::from(vec![Some(0), None, Some(2)]);
+        let a: &dyn Array = &arr;
+        assert_eq!(
+            a.is_null_mask()
+                .iter()
+                .map(|v| v.unwrap())
+                .collect::<Vec<_>>(),
+            &[false, true, false]
+        );
+        assert_eq!(
+            a.is_not_null_mask()
+                .iter()
+                .map(|v| v.unwrap())
+                .collect::<Vec<_>>(),
+            &[true, false, true]
+        );
     }
 }

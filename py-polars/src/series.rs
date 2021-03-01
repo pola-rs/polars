@@ -1,8 +1,9 @@
+use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::utils::str_to_polarstype;
-use crate::{dispatch::ApplyLambda, npy::aligned_array, prelude::*};
+use crate::{arrow_interop, dispatch::ApplyLambda, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use polars::chunked_array::builder::get_bitmap;
 use pyo3::types::{PyList, PyTuple};
@@ -189,6 +190,11 @@ macro_rules! parse_temporal_from_str_slice {
 parse_temporal_from_str_slice!(parse_date32_from_str_slice, Date32Chunked);
 
 #[pymethods]
+#[allow(
+    clippy::wrong_self_convention,
+    clippy::should_implement_trait,
+    clippy::len_without_is_empty
+)]
 impl PySeries {
     #[staticmethod]
     pub fn new_str(name: &str, val: Wrap<Utf8Chunked>) -> Self {
@@ -201,6 +207,21 @@ impl PySeries {
     pub fn new_object(name: &str, val: Vec<ObjectValue>) -> Self {
         let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
         s.into()
+    }
+
+    #[staticmethod]
+    pub fn repeat(name: &str, val: &str, n: usize) -> Self {
+        let mut ca: Utf8Chunked = (0..n).map(|_| val).collect();
+        ca.rename(name);
+        ca.into_series().into()
+    }
+
+    #[staticmethod]
+    pub fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
+        let arr = array_to_rust(array)?;
+        let series: Series =
+            std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsEr::from)?;
+        Ok(series.into())
     }
 
     pub fn get_object(&self, index: usize) -> PyObject {
@@ -216,8 +237,12 @@ impl PySeries {
         }
     }
 
+    pub fn get_fmt(&self, index: usize) -> String {
+        format!("{}", self.series.get(index))
+    }
+
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
-        let series = self.series.rechunk().expect("should not fail");
+        let series = self.series.rechunk();
         if in_place {
             self.series = series;
             None
@@ -341,9 +366,12 @@ impl PySeries {
         PySeries::new(self.series.sort(reverse))
     }
 
-    pub fn argsort(&self, reverse: bool) -> Py<PyArray1<usize>> {
+    pub fn argsort(&self, reverse: bool) -> Py<PyArray1<u32>> {
         let gil = pyo3::Python::acquire_gil();
-        let pyarray = PyArray1::from_vec(gil.python(), self.series.argsort(reverse));
+        let pyarray = PyArray1::from_iter(
+            gil.python(),
+            self.series.argsort(reverse).into_iter().flatten(),
+        );
         pyarray.to_owned()
     }
 
@@ -357,7 +385,7 @@ impl PySeries {
         Ok(df.into())
     }
 
-    pub fn arg_unique(&self) -> PyResult<Py<PyArray1<usize>>> {
+    pub fn arg_unique(&self) -> PyResult<Py<PyArray1<u32>>> {
         let gil = pyo3::Python::acquire_gil();
         let arg_unique = self.series.arg_unique().map_err(PyPolarsEr::from)?;
         let pyarray = PyArray1::from_vec(gil.python(), arg_unique);
@@ -365,7 +393,7 @@ impl PySeries {
     }
 
     pub fn take(&self, indices: Vec<usize>) -> Self {
-        let take = self.series.take(&indices);
+        let take = self.series.take_iter(&mut indices.iter().copied());
         PySeries::new(take)
     }
 
@@ -529,13 +557,13 @@ impl PySeries {
                         .get_as_any(i)
                         .downcast_ref::<ObjectValue>()
                         .map(|obj| obj.inner.clone())
-                        .unwrap_or(python.None());
+                        .unwrap_or_else(|| python.None());
 
                     v.append(val).unwrap();
                 }
                 v
             }
-            dt => panic!(format!("to_list() not implemented for {:?}", dt)),
+            dt => panic!("to_list() not implemented for {:?}", dt),
         };
         pylist.to_object(python)
     }
@@ -564,71 +592,12 @@ impl PySeries {
         Ok(PySeries::new(series))
     }
 
-    /// Attempts to copy data to numpy arrays. If integer types have missing values
-    /// they will be casted to floating point values, where NaNs are used to represent missing.
-    /// Strings will be converted to python lists and booleans will be a numpy array if there are no
-    /// missing values, otherwise a python list is made.
-    pub fn to_numpy(&self) -> PyObject {
+    pub fn to_arrow(&mut self) -> PyResult<PyObject> {
+        self.rechunk(true);
         let gil = Python::acquire_gil();
         let py = gil.python();
-        let series = &self.series;
-
-        // if has null values we use floats and np.nan to represent missing values
-        macro_rules! impl_to_np_array {
-            ($ca:expr, $float_type:ty) => {{
-                match $ca.cont_slice() {
-                    Ok(slice) => PyArray1::from_slice(py, slice).to_object(py),
-                    Err(_) => {
-                        if $ca.null_count() == 0 {
-                            let v = $ca.into_no_null_iter().collect::<Vec<_>>();
-                            PyArray1::from_vec(py, v).to_object(py)
-                        } else {
-                            let v = $ca
-                                .into_iter()
-                                .map(|opt_v| match opt_v {
-                                    Some(v) => v as $float_type,
-                                    None => <$float_type>::NAN,
-                                })
-                                .collect::<Vec<_>>();
-                            PyArray1::from_vec(py, v).to_object(py)
-                        }
-                    }
-                }
-            }};
-        }
-
-        // we use floating types only if null values
-        match series.dtype() {
-            DataType::Utf8 => self.to_list(),
-            DataType::List(_) => self.to_list(),
-            DataType::Object => self.to_list(),
-            DataType::UInt8 => impl_to_np_array!(series.u8().unwrap(), f32),
-            DataType::UInt16 => impl_to_np_array!(series.u16().unwrap(), f32),
-            DataType::UInt32 => impl_to_np_array!(series.u32().unwrap(), f32),
-            DataType::UInt64 => impl_to_np_array!(series.u64().unwrap(), f64),
-            DataType::Int8 => impl_to_np_array!(series.i8().unwrap(), f32),
-            DataType::Int16 => impl_to_np_array!(series.i16().unwrap(), f32),
-            DataType::Int32 => impl_to_np_array!(series.i32().unwrap(), f32),
-            DataType::Int64 => impl_to_np_array!(series.i64().unwrap(), f64),
-            DataType::Float32 => impl_to_np_array!(series.f32().unwrap(), f32),
-            DataType::Float64 => impl_to_np_array!(series.f64().unwrap(), f64),
-            DataType::Date32 => {
-                impl_to_np_array!(series.date32().unwrap(), f32)
-            }
-            DataType::Date64 => {
-                impl_to_np_array!(series.date64().unwrap(), f64)
-            }
-            DataType::Boolean => {
-                let ca = series.bool().unwrap();
-                if ca.null_count() == 0 {
-                    let v = ca.into_no_null_iter().collect::<Vec<_>>();
-                    PyArray1::from_vec(py, v).to_object(py)
-                } else {
-                    self.to_list()
-                }
-            }
-            _ => unimplemented!(),
-        }
+        let pyarrow = py.import("pyarrow")?;
+        arrow_interop::to_py::to_py_array(&self.series.chunks()[0], py, pyarrow)
     }
 
     pub fn clone(&self) -> Self {
@@ -813,9 +782,9 @@ impl PySeries {
         Ok(PySeries::new(out))
     }
 
-    pub fn shift(&self, periods: i32) -> PyResult<Self> {
-        let s = self.series.shift(periods).map_err(PyPolarsEr::from)?;
-        Ok(PySeries::new(s))
+    pub fn shift(&self, periods: i64) -> Self {
+        let s = self.series.shift(periods);
+        PySeries::new(s)
     }
 
     pub fn zip_with(&self, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
@@ -1100,12 +1069,13 @@ impl_set_with_mask!(set_with_mask_i8, i8, i8, Int8);
 impl_set_with_mask!(set_with_mask_i16, i16, i16, Int16);
 impl_set_with_mask!(set_with_mask_i32, i32, i32, Int32);
 impl_set_with_mask!(set_with_mask_i64, i64, i64, Int64);
+impl_set_with_mask!(set_with_mask_bool, bool, bool, Boolean);
 
 macro_rules! impl_set_at_idx {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
         fn $name(series: &Series, idx: &[usize], value: Option<$native>) -> Result<Series> {
             let ca = series.$cast()?;
-            let new = ca.set_at_idx(&idx, value)?;
+            let new = ca.set_at_idx(idx.iter().copied(), value)?;
             Ok(new.into_series())
         }
 
@@ -1167,12 +1137,11 @@ macro_rules! impl_unsafe_from_ptr {
         impl PySeries {
             fn $name(&self, ptr: usize, len: usize) -> Self {
                 let av = unsafe { AlignedVec::from_ptr(ptr, len, len) };
-                let (null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
+                let (_null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
                 let ca = ChunkedArray::<$ca_type>::new_from_owned_with_null_bitmap(
                     self.name(),
                     av,
                     null_bitmap,
-                    null_count,
                 );
                 Self::new(ca.into_series())
             }

@@ -6,10 +6,7 @@ fn prepare_reader() -> Result<CsvReader<'static, File>> {
     let path =
         std::env::var("CSV_SRC").expect("env var CSV_SRC pointing to the csv_file is not set");
 
-    Ok(CsvReader::from_path(&path)?
-        .with_ignore_parser_errors(true)
-        .with_delimiter(b'\t')
-        .with_stop_after_n_rows(Some(10000)))
+    Ok(CsvReader::from_path(&path)?.with_stop_after_n_rows(Some(10000)))
 }
 
 fn csv_parsing_benchmark(c: &mut Criterion) {

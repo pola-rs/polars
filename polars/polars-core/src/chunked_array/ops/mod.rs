@@ -3,8 +3,9 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
+use crate::series::implementations::Wrap;
 use crate::utils::NoNull;
-use arrow::array::ArrayRef;
+use arrow::array::{ArrayRef, UInt32Array};
 use std::marker::Sized;
 
 pub(crate) mod aggregate;
@@ -18,6 +19,7 @@ pub(crate) mod set;
 pub(crate) mod shift;
 pub(crate) mod sort;
 pub(crate) mod take;
+pub(crate) mod take_single;
 pub(crate) mod unique;
 pub(crate) mod window;
 pub(crate) mod zip;
@@ -230,68 +232,68 @@ pub trait TakeRandomUtf8 {
     unsafe fn get_unchecked(self, index: usize) -> Self::Item;
 }
 
+pub enum TakeIdx<'a, I, INulls>
+where
+    I: Iterator<Item = usize>,
+    INulls: Iterator<Item = Option<usize>>,
+{
+    Array(&'a UInt32Array),
+    Iter(I),
+    // will return a null where None
+    IterNulls(INulls),
+}
+
+pub type Dummy<T> = std::iter::Once<T>;
+pub type TakeIdxIter<'a, I> = TakeIdx<'a, I, Dummy<Option<usize>>>;
+pub type TakeIdxIterNull<'a, INull> = TakeIdx<'a, Dummy<usize>, INull>;
+
+impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
+    fn from(ca: &'a UInt32Chunked) -> Self {
+        if ca.chunks.len() == 1 {
+            TakeIdx::Array(ca.downcast_chunks()[0])
+        } else {
+            panic!("implementation error, should be transformed to an iterator by the caller")
+        }
+    }
+}
+
+impl<'a, I> From<I> for TakeIdx<'a, I, Dummy<Option<usize>>>
+where
+    I: Iterator<Item = usize>,
+{
+    fn from(iter: I) -> Self {
+        TakeIdx::Iter(iter)
+    }
+}
+
+impl<'a, INulls> From<Wrap<INulls>> for TakeIdx<'a, Dummy<usize>, INulls>
+where
+    INulls: Iterator<Item = Option<usize>>,
+{
+    fn from(iter: Wrap<INulls>) -> Self {
+        TakeIdx::IterNulls(iter.0)
+    }
+}
+
 /// Fast access by index.
 pub trait ChunkTake {
     /// Take values from ChunkedArray by index.
     ///
     /// # Safety
     ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by index
-    ///
-    /// # Safety
-    ///
-    /// Runs without checking bounds or null validity.
-    unsafe fn take_unchecked(
-        &self,
-        indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by Option<index>.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    fn take_opt(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized;
-
-    /// Take values from ChunkedArray by Option<index>.
-    ///
-    /// # Safety
-    ///
-    /// Doesn't do any bound or null validity checking.
-    unsafe fn take_opt_unchecked(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized;
-
-    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self>
-    where
-        Self: std::marker::Sized;
-
-    fn take_from_single_chunked_iter(&self, indices: impl Iterator<Item = usize>) -> Result<Self>
+    /// Doesn't do any bound checking.
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
-    {
-        let idx_ca: NoNull<UInt32Chunked> = indices.into_iter().map(|idx| idx as u32).collect();
-        let idx_ca = idx_ca.into_inner();
-        self.take_from_single_chunked(&idx_ca)
-    }
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>;
+
+    /// Take values from ChunkedArray by index.
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>;
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
@@ -305,11 +307,15 @@ pub trait ChunkSet<'a, A, B> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-    /// let new = ca.set_at_idx(&[0, 1], Some(10)).unwrap();
+    /// let new = ca.set_at_idx(vec![0, 1], Some(10)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
     /// ```
-    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<A>) -> Result<Self>
+    fn set_at_idx<I: IntoIterator<Item = usize>>(
+        &'a self,
+        idx: I,
+        opt_value: Option<A>,
+    ) -> Result<Self>
     where
         Self: Sized;
 
@@ -320,11 +326,11 @@ pub trait ChunkSet<'a, A, B> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-    /// let new = ca.set_at_idx_with(&[0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
+    /// let new = ca.set_at_idx_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
     /// ```
-    fn set_at_idx_with<T: AsTakeIndex, F>(&'a self, idx: &T, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
     where
         Self: Sized,
         F: Fn(Option<A>) -> Option<B>;
@@ -370,9 +376,37 @@ pub trait ChunkCast {
         N: PolarsDataType;
 }
 
-/// Fastest way to do elementwise operations on a ChunkedArray<T>
+/// Fastest way to do elementwise operations on a ChunkedArray<T> when the operation is cheaper than
+/// branching due to null checking
 pub trait ChunkApply<'a, A, B> {
-    /// Apply a closure `F` elementwise.
+    /// Apply a closure elementwise and cast to a Numeric ChunkedArray. This is fastest when the null check branching is more expensive
+    /// than the closure application.
+    ///
+    /// Null values remain null.
+    fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(A) -> S::Native + Copy,
+        S: PolarsNumericType;
+
+    /// Apply a closure on optional values and cast to Numeric ChunkedArray without null values.
+    fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(Option<A>) -> S::Native + Copy,
+        S: PolarsNumericType;
+
+    /// Apply a closure elementwise. This is fastest when the null check branching is more expensive
+    /// than the closure application. Often it is.
+    ///
+    /// Null values remain null.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars_core::prelude::*;
+    /// fn double(ca: &UInt32Chunked) -> UInt32Chunked {
+    ///     ca.apply(|v| v * 2)
+    /// }
+    /// ```
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(A) -> B + Copy;
@@ -472,7 +506,7 @@ pub trait ChunkUnique<T> {
 
     /// Get first index of the unique values in a `ChunkedArray`.
     /// This Vec is sorted.
-    fn arg_unique(&self) -> Result<Vec<usize>>;
+    fn arg_unique(&self) -> Result<Vec<u32>>;
 
     /// Number of unique values in the `ChunkedArray`
     fn n_unique(&self) -> Result<usize> {
@@ -518,7 +552,7 @@ pub trait ChunkSort<T> {
     fn sort_in_place(&mut self, reverse: bool);
 
     /// Retrieve the indexes needed to sort this array.
-    fn argsort(&self, reverse: bool) -> Vec<usize>;
+    fn argsort(&self, reverse: bool) -> UInt32Chunked;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -572,12 +606,12 @@ where
     where
         T::Native: Copy,
     {
-        let mut builder = PrimitiveChunkedBuilder::new(name, length);
-
-        for _ in 0..length {
-            builder.append_value(value)
-        }
-        builder.finish()
+        let mut ca = (0..length)
+            .map(|_| value)
+            .collect::<NoNull<ChunkedArray<T>>>()
+            .into_inner();
+        ca.rename(name);
+        ca
     }
 }
 
@@ -586,35 +620,24 @@ where
     T: PolarsPrimitiveType,
 {
     fn full_null(name: &str, length: usize) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::new(name, length);
-
-        // todo: faster with null arrays or in one go allocation
-        for _ in 0..length {
-            builder.append_null()
-        }
-        builder.finish()
+        let mut ca = (0..length).map(|_| None).collect::<Self>();
+        ca.rename(name);
+        ca
     }
 }
 impl ChunkFull<bool> for BooleanChunked {
     fn full(name: &str, value: bool, length: usize) -> Self {
-        let mut builder = BooleanChunkedBuilder::new(name, length);
-
-        for _ in 0..length {
-            builder.append_value(value)
-        }
-        builder.finish()
+        let mut ca = (0..length).map(|_| value).collect::<BooleanChunked>();
+        ca.rename(name);
+        ca
     }
 }
 
 impl ChunkFullNull for BooleanChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let mut builder = BooleanChunkedBuilder::new(name, length);
-
-        // todo: faster with null arrays or in one go allocation
-        for _ in 0..length {
-            builder.append_null()
-        }
-        builder.finish()
+        let mut ca = (0..length).map(|_| None).collect::<Self>();
+        ca.rename(name);
+        ca
     }
 }
 
@@ -631,29 +654,31 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 
 impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
-        // todo: faster with null arrays or in one go allocation
-        let mut builder = Utf8ChunkedBuilder::new(name, length, 0);
-
-        for _ in 0..length {
-            builder.append_null()
-        }
-        builder.finish()
+        let mut ca = (0..length)
+            .map::<Option<String>, _>(|_| None)
+            .collect::<Self>();
+        ca.rename(name);
+        ca
     }
 }
 
-impl ChunkFull<&dyn SeriesTrait> for ListChunked {
-    fn full(_name: &str, _value: &dyn SeriesTrait, _length: usize) -> ListChunked {
-        unimplemented!()
+impl ChunkFull<&Series> for ListChunked {
+    fn full(name: &str, value: &Series, length: usize) -> ListChunked {
+        let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
+        for _ in 0..length {
+            builder.append_series(value)
+        }
+        builder.finish()
     }
 }
 
 impl ChunkFullNull for ListChunked {
     fn full_null(name: &str, length: usize) -> ListChunked {
-        let mut builder = get_list_builder(&DataType::Null, 0, length, name);
-        for _ in 0..length {
-            builder.append_opt_series(None)
-        }
-        builder.finish()
+        let mut ca = (0..length)
+            .map::<Option<Series>, _>(|_| None)
+            .collect::<Self>();
+        ca.rename(name);
+        ca
     }
 }
 
@@ -675,7 +700,7 @@ where
             ca.rename(self.name());
             ca
         } else {
-            self.take((0..self.len()).rev(), None)
+            self.into_iter().rev().collect()
         }
     }
 }
@@ -690,7 +715,7 @@ macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse<$arrow_type> for $ca_type {
             fn reverse(&self) -> Self {
-                self.take((0..self.len()).rev(), None)
+                self.take((0..self.len()).rev().into())
             }
         }
     };
@@ -702,7 +727,9 @@ impl_reverse!(ListType, ListChunked);
 #[cfg(feature = "object")]
 impl<T> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
     fn reverse(&self) -> Self {
-        self.take((0..self.len()).rev(), None)
+        // Safety
+        // we we know we don't get out of bounds
+        unsafe { self.take_unchecked((0..self.len()).rev().into()) }
     }
 }
 
@@ -788,11 +815,11 @@ impl<T> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
 pub trait ChunkShiftFill<T, V> {
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with `fill_value`.
-    fn shift_and_fill(&self, periods: i32, fill_value: V) -> Result<ChunkedArray<T>>;
+    fn shift_and_fill(&self, periods: i64, fill_value: V) -> ChunkedArray<T>;
 }
 
 pub trait ChunkShift<T> {
-    fn shift(&self, periods: i32) -> Result<ChunkedArray<T>>;
+    fn shift(&self, periods: i64) -> ChunkedArray<T>;
 }
 
 /// Combine 2 ChunkedArrays based on some predicate.
@@ -800,10 +827,6 @@ pub trait ChunkZip<T> {
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
     /// from `other` where the mask evaluates `false`
     fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>>;
-
-    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
-    /// from `other` where the mask evaluates `false`
-    fn zip_with_series(&self, mask: &BooleanChunked, other: &Series) -> Result<ChunkedArray<T>>;
 }
 
 /// Apply kernels on the arrow array chunks in a ChunkedArray.
@@ -812,64 +835,10 @@ pub trait ChunkApplyKernel<A> {
     fn apply_kernel<F>(&self, f: F) -> Self
     where
         F: Fn(&A) -> ArrayRef;
+
+    /// Apply a kernel that outputs an array of different type.
     fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
     where
         F: Fn(&A) -> ArrayRef,
         S: PolarsDataType;
-}
-
-#[cfg(test)]
-mod test {
-    use crate::prelude::*;
-
-    #[test]
-    fn test_shift() {
-        let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
-        let shifted = ca.shift_and_fill(1, Some(0)).unwrap();
-        assert_eq!(shifted.cont_slice().unwrap(), &[0, 1, 2]);
-        let shifted = ca.shift_and_fill(1, None).unwrap();
-        assert_eq!(Vec::from(&shifted), &[None, Some(1), Some(2)]);
-        let shifted = ca.shift_and_fill(-1, None).unwrap();
-        assert_eq!(Vec::from(&shifted), &[Some(2), Some(3), None]);
-        assert!(ca.shift_and_fill(3, None).is_err());
-
-        let s = Series::new("a", ["a", "b", "c"]);
-        let shifted = s.shift(-1).unwrap();
-        assert_eq!(
-            Vec::from(shifted.utf8().unwrap()),
-            &[Some("b"), Some("c"), None]
-        );
-    }
-
-    #[test]
-    fn test_fill_none() {
-        let ca =
-            Int32Chunked::new_from_opt_slice("", &[None, Some(2), Some(3), None, Some(4), None]);
-        let filled = ca.fill_none(FillNoneStrategy::Forward).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[None, Some(2), Some(3), Some(3), Some(4), Some(4)]
-        );
-        let filled = ca.fill_none(FillNoneStrategy::Backward).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[Some(2), Some(2), Some(3), Some(4), Some(4), None]
-        );
-        let filled = ca.fill_none(FillNoneStrategy::Min).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[Some(2), Some(2), Some(3), Some(2), Some(4), Some(2)]
-        );
-        let filled = ca.fill_none_with_value(10).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[Some(10), Some(2), Some(3), Some(10), Some(4), Some(10)]
-        );
-        let filled = ca.fill_none(FillNoneStrategy::Mean).unwrap();
-        assert_eq!(
-            Vec::from(&filled),
-            &[Some(3), Some(2), Some(3), Some(3), Some(4), Some(3)]
-        );
-        println!("{:?}", filled);
-    }
 }

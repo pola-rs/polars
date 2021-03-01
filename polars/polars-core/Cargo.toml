@@ -14,23 +14,28 @@ simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "simd", "lazy", "parquet"]
+default = ["docs", "temporal", "lazy", "parquet", "performant", "plain_fmt"]
 lazy = []
 parallel = []
+performant = []
 # extra utilities for Utf8Chunked
 strings = ["regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
+# Cannot have mutually exclusive types. User should choose one of:
+pretty_fmt = ["comfy-table"]
+plain_fmt = ["prettytable-rs"]
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "ab5fc979c69ccc5dde07e1bc1467b02951b4b7e9"}
-parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "ab5fc979c69ccc5dde07e1bc1467b02951b4b7e9"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "0f647261058892289b1722e5883f8610cc5dd3d9", default-features=false}
+parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "0f647261058892289b1722e5883f8610cc5dd3d9"}
 thiserror = "^1.0.16"
 num = "^0.3.1"
 itertools = "0.10"
 unsafe_unwrap = "^0.1.0"
 rayon = "1.5"
-comfy-table = { version="1"}
+comfy-table = { version="1", optional = true}
+prettytable-rs = {version = "0.8.0", optional = true }
 chrono = {version = "^0.4.13", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
@@ -43,3 +48,8 @@ num_cpus = "1.13"
 lazy_static = "1.4"
 hashbrown = {version = "0.9.1", features = ["rayon"] }
 polars-arrow = {version = "0.12.0", path = "../polars-arrow"}
+
+[package.metadata.docs.rs]
+all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]

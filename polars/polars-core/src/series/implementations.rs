@@ -1,4 +1,5 @@
 use super::private;
+use super::IntoSeries;
 use super::SeriesTrait;
 use crate::chunked_array::{
     ops::aggregate::{ChunkAggSeries, VarAggSeries},
@@ -15,9 +16,22 @@ use arrow::array::{ArrayDataRef, ArrayRef};
 use arrow::buffer::Buffer;
 #[cfg(feature = "object")]
 use std::any::Any;
+use std::borrow::Cow;
 #[cfg(feature = "object")]
 use std::fmt::Debug;
 use std::ops::Deref;
+
+impl IntoSeries for Arc<dyn SeriesTrait> {
+    fn into_series(self) -> Series {
+        Series(self)
+    }
+}
+
+impl IntoSeries for Series {
+    fn into_series(self) -> Series {
+        self
+    }
+}
 
 pub(crate) struct Wrap<T>(pub T);
 
@@ -46,71 +60,73 @@ where
         {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {
-            panic!(format!(
+            panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
                 T::get_dtype(),
                 self.dtype()
-            ))
+            )
         }
     }
 }
 
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
+        impl IntoSeries for $ca {
+            fn into_series(self) -> Series {
+                Series(Arc::new(Wrap(self)))
+            }
+        }
+
         impl private::PrivateSeries for Wrap<$ca> {
             fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
                 self.0.vec_hash(random_state)
             }
 
-            fn agg_mean(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_mean(groups)
             }
 
-            fn agg_min(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_min(groups)
             }
 
-            fn agg_max(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_max(groups)
             }
 
-            fn agg_sum(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_sum(groups)
             }
 
-            fn agg_first(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+            fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
                 self.0.agg_first(groups)
             }
 
-            fn agg_last(&self, groups: &[(usize, Vec<usize>)]) -> Series {
+            fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
                 self.0.agg_last(groups)
             }
 
-            fn agg_std(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_std(groups)
             }
 
-            fn agg_var(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_var(groups)
             }
 
-            fn agg_n_unique(&self, groups: &[(usize, Vec<usize>)]) -> Option<UInt32Chunked> {
+            fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
                 self.0.agg_n_unique(groups)
             }
 
-            fn agg_list(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_list(groups)
             }
 
-            fn agg_quantile(
-                &self,
-                groups: &[(usize, Vec<usize>)],
-                quantile: f64,
-            ) -> Option<Series> {
+            fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
                 self.0.agg_quantile(groups, quantile)
             }
 
-            fn agg_median(&self, groups: &[(usize, Vec<usize>)]) -> Option<Series> {
+            fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_median(groups)
             }
 
@@ -118,7 +134,7 @@ macro_rules! impl_dyn_series {
                 &self,
                 pivot_series: &'a (dyn SeriesTrait + 'a),
                 keys: Vec<Series>,
-                groups: &[(usize, Vec<usize>)],
+                groups: &[(u32, Vec<u32>)],
                 agg_type: PivotAgg,
             ) -> Result<DataFrame> {
                 self.0.pivot(pivot_series, keys, groups, agg_type)
@@ -128,23 +144,23 @@ macro_rules! impl_dyn_series {
                 &self,
                 pivot_series: &'a (dyn SeriesTrait + 'a),
                 keys: Vec<Series>,
-                groups: &[(usize, Vec<usize>)],
+                groups: &[(u32, Vec<u32>)],
             ) -> Result<DataFrame> {
                 self.0.pivot_count(pivot_series, keys, groups)
             }
-            fn hash_join_inner(&self, other: &Series) -> Vec<(usize, usize)> {
+            fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
                 HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
             }
-            fn hash_join_left(&self, other: &Series) -> Vec<(usize, Option<usize>)> {
+            fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
                 HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
             }
-            fn hash_join_outer(&self, other: &Series) -> Vec<(Option<usize>, Option<usize>)> {
+            fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
                 HashJoin::hash_join_outer(&self.0, other.as_ref().as_ref())
             }
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &[(Option<usize>, Option<usize>)],
+                opt_join_tuples: &[(Option<u32>, Option<u32>)],
             ) -> Series {
                 ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
             }
@@ -163,7 +179,7 @@ macro_rules! impl_dyn_series {
             fn remainder(&self, rhs: &Series) -> Result<Series> {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
-            fn group_tuples(&self, multithreaded: bool) -> Vec<(usize, Vec<usize>)> {
+            fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
                 IntoGroupTuples::group_tuples(&self.0, multithreaded)
             }
         }
@@ -520,52 +536,53 @@ macro_rules! impl_dyn_series {
                 ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
             }
 
-            fn take_iter(
-                &self,
-                iter: &mut dyn Iterator<Item = usize>,
-                capacity: Option<usize>,
-            ) -> Series {
-                ChunkTake::take(&self.0, iter, capacity).into_series()
+            fn take(&self, indices: &UInt32Chunked) -> Series {
+                let indices = if indices.chunks.len() > 1 {
+                    Cow::Owned(indices.rechunk())
+                } else {
+                    Cow::Borrowed(indices)
+                };
+                ChunkTake::take(&self.0, (&*indices).into()).into_series()
+            }
+
+            fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
+                ChunkTake::take(&self.0, iter.into()).into_series()
             }
 
             fn take_every(&self, n: usize) -> Series {
                 self.0.take_every(n).into_series()
             }
 
-            unsafe fn take_iter_unchecked(
-                &self,
-                iter: &mut dyn Iterator<Item = usize>,
-                capacity: Option<usize>,
-            ) -> Series {
-                ChunkTake::take_unchecked(&self.0, iter, capacity).into_series()
+            unsafe fn take_iter_unchecked(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
+                ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
             }
 
-            unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Series> {
-                ChunkTake::take_from_single_chunked(&self.0, idx).map(|ca| ca.into_series())
+            unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+                let idx = if idx.chunks.len() > 1 {
+                    Cow::Owned(idx.rechunk())
+                } else {
+                    Cow::Borrowed(idx)
+                };
+                Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
             }
 
             unsafe fn take_opt_iter_unchecked(
                 &self,
                 iter: &mut dyn Iterator<Item = Option<usize>>,
-                capacity: Option<usize>,
             ) -> Series {
-                ChunkTake::take_opt_unchecked(&self.0, iter, capacity).into_series()
+                ChunkTake::take_unchecked(&self.0, Wrap(iter).into()).into_series()
             }
 
-            fn take_opt_iter(
-                &self,
-                iter: &mut dyn Iterator<Item = Option<usize>>,
-                capacity: Option<usize>,
-            ) -> Series {
-                ChunkTake::take_opt(&self.0, iter, capacity).into_series()
+            fn take_opt_iter(&self, iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
+                ChunkTake::take(&self.0, Wrap(iter).into()).into_series()
             }
 
             fn len(&self) -> usize {
                 self.0.len()
             }
 
-            fn rechunk(&self) -> Result<Series> {
-                ChunkOps::rechunk(&self.0).map(|ca| ca.into_series())
+            fn rechunk(&self) -> Series {
+                ChunkOps::rechunk(&self.0).into_series()
             }
 
             fn head(&self, length: Option<usize>) -> Series {
@@ -630,6 +647,7 @@ macro_rules! impl_dyn_series {
                 self.0.get_any_value(index)
             }
 
+            #[inline]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
                 self.0.get_any_value_unchecked(index)
             }
@@ -642,7 +660,7 @@ macro_rules! impl_dyn_series {
                 ChunkSort::sort(&self.0, reverse).into_series()
             }
 
-            fn argsort(&self, reverse: bool) -> Vec<usize> {
+            fn argsort(&self, reverse: bool) -> UInt32Chunked {
                 ChunkSort::argsort(&self.0, reverse)
             }
 
@@ -658,7 +676,7 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::n_unique(&self.0)
             }
 
-            fn arg_unique(&self) -> Result<Vec<usize>> {
+            fn arg_unique(&self) -> Result<Vec<u32>> {
                 ChunkUnique::arg_unique(&self.0)
             }
 
@@ -695,8 +713,8 @@ macro_rules! impl_dyn_series {
                 self.0.as_single_ptr()
             }
 
-            fn shift(&self, periods: i32) -> Result<Series> {
-                ChunkShift::shift(&self.0, periods).map(|ca| ca.into_series())
+            fn shift(&self, periods: i64) -> Series {
+                ChunkShift::shift(&self.0, periods).into_series()
             }
 
             fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
@@ -774,31 +792,31 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn hour(&self) -> Result<Series> {
                 self.date64().map(|ca| ca.hour().into_series())
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn minute(&self) -> Result<Series> {
                 self.date64().map(|ca| ca.minute().into_series())
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn second(&self) -> Result<Series> {
                 self.date64().map(|ca| ca.second().into_series())
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn nanosecond(&self) -> Result<Series> {
                 self.date64().map(|ca| ca.nanosecond().into_series())
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn day(&self) -> Result<Series> {
                 match self.0.dtype() {
                     DataType::Date32 => self.date32().map(|ca| ca.day().into_series()),
@@ -810,7 +828,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn ordinal_day(&self) -> Result<Series> {
                 match self.0.dtype() {
                     DataType::Date32 => self.date32().map(|ca| ca.ordinal().into_series()),
@@ -822,7 +840,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn month(&self) -> Result<Series> {
                 match self.0.dtype() {
                     DataType::Date32 => self.date32().map(|ca| ca.month().into_series()),
@@ -834,7 +852,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "temporal")]
-            #[doc(cfg(feature = "temporal"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
             fn year(&self) -> Result<Series> {
                 match self.0.dtype() {
                     DataType::Date32 => self.date32().map(|ca| ca.year().into_series()),
@@ -849,7 +867,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "random")]
-            #[doc(cfg(feature = "random"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
             fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
                 self.0
                     .sample_n(n, with_replacement)
@@ -857,7 +875,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "random")]
-            #[doc(cfg(feature = "random"))]
+            #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
             fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
                 self.0
                     .sample_frac(frac, with_replacement)
@@ -903,13 +921,23 @@ impl_dyn_series!(Time64NanosecondChunked);
 impl_dyn_series!(CategoricalChunked);
 
 #[cfg(feature = "object")]
-#[doc(cfg(feature = "object"))]
+impl<T> IntoSeries for ObjectChunked<T>
+where
+    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
+{
+    fn into_series(self) -> Series {
+        Series(Arc::new(Wrap(self)))
+    }
+}
+
+#[cfg(feature = "object")]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> PrivateSeries for Wrap<ObjectChunked<T>> where
     T: 'static + Debug + Clone + Send + Sync + Default
 {
 }
 #[cfg(feature = "object")]
-#[doc(cfg(feature = "object"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for Wrap<ObjectChunked<T>>
 where
     T: 'static + Debug + Clone + Send + Sync + Default,
@@ -965,44 +993,35 @@ where
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>, capacity: Option<usize>) -> Series {
-        ChunkTake::take(&self.0, iter, capacity).into_series()
+    fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
+        todo!()
     }
 
-    unsafe fn take_iter_unchecked(
-        &self,
-        iter: &mut dyn Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter, capacity).into_series()
+    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
+        todo!()
     }
 
-    unsafe fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Series> {
-        ChunkTake::take_from_single_chunked(&self.0, idx).map(|ca| ca.into_series())
+    unsafe fn take_unchecked(&self, _idx: &UInt32Chunked) -> Result<Series> {
+        todo!()
     }
 
     unsafe fn take_opt_iter_unchecked(
         &self,
-        iter: &mut dyn Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
+        _iter: &mut dyn Iterator<Item = Option<usize>>,
     ) -> Series {
-        ChunkTake::take_opt_unchecked(&self.0, iter, capacity).into_series()
+        todo!()
     }
 
-    fn take_opt_iter(
-        &self,
-        iter: &mut dyn Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Series {
-        ChunkTake::take_opt(&self.0, iter, capacity).into_series()
+    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
+        todo!()
     }
 
     fn len(&self) -> usize {
         ObjectChunked::len(&self.0)
     }
 
-    fn rechunk(&self) -> Result<Series> {
-        ChunkOps::rechunk(&self.0).map(|ca| ca.into_series())
+    fn rechunk(&self) -> Series {
+        ChunkOps::rechunk(&self.0).into_series()
     }
 
     fn head(&self, length: Option<usize>) -> Series {
@@ -1047,7 +1066,7 @@ where
         ChunkSort::sort(&self.0, reverse).into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> Vec<usize> {
+    fn argsort(&self, reverse: bool) -> UInt32Chunked {
         ChunkSort::argsort(&self.0, reverse)
     }
 
@@ -1063,7 +1082,7 @@ where
         ChunkUnique::n_unique(&self.0)
     }
 
-    fn arg_unique(&self) -> Result<Vec<usize>> {
+    fn arg_unique(&self) -> Result<Vec<u32>> {
         ChunkUnique::arg_unique(&self.0)
     }
 
@@ -1091,8 +1110,8 @@ where
         ChunkReverse::reverse(&self.0).into_series()
     }
 
-    fn shift(&self, periods: i32) -> Result<Series> {
-        ChunkShift::shift(&self.0, periods).map(|ca| ca.into_series())
+    fn shift(&self, periods: i64) -> Series {
+        ChunkShift::shift(&self.0, periods).into_series()
     }
 
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
@@ -1112,13 +1131,13 @@ where
     }
 
     #[cfg(feature = "random")]
-    #[doc(cfg(feature = "random"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
     fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
         ObjectChunked::sample_n(&self.0, n, with_replacement).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "random")]
-    #[doc(cfg(feature = "random"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
         ObjectChunked::sample_frac(&self.0, frac, with_replacement).map(|ca| ca.into_series())
     }

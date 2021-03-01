@@ -138,7 +138,7 @@ impl PyExpr {
     pub fn sort(&self, reverse: bool) -> PyExpr {
         self.clone().inner.sort(reverse).into()
     }
-    pub fn shift(&self, periods: i32) -> PyExpr {
+    pub fn shift(&self, periods: i64) -> PyExpr {
         self.clone().inner.shift(periods).into()
     }
     pub fn fill_none(&self, expr: PyExpr) -> PyResult<PyExpr> {
@@ -207,8 +207,7 @@ impl PyExpr {
     pub fn str_parse_date32(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_date32(fmt.as_ref().map(|s| s.as_str()))
-                .map(|ca| ca.into_series())
+            ca.as_date32(fmt.as_deref()).map(|ca| ca.into_series())
         };
         self.clone()
             .inner
@@ -219,8 +218,7 @@ impl PyExpr {
     pub fn str_parse_date64(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_date64(fmt.as_ref().map(|s| s.as_str()))
-                .map(|ca| ca.into_series())
+            ca.as_date64(fmt.as_deref()).map(|ca| ca.into_series())
         };
         self.clone()
             .inner
@@ -383,7 +381,7 @@ impl PyExpr {
             // call the lambda and get a python side Series wrapper
             let result_series_wrapper = match lambda.call1(py, (python_series_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
             // unpack the wrapper in a PySeries
             let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
@@ -514,7 +512,7 @@ pub fn binary_function(
         let result_series_wrapper =
             match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
         // unpack the wrapper in a PySeries
         let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
@@ -544,7 +542,7 @@ pub fn lit(value: &PyAny) -> PyExpr {
         )
         .into()
     } else {
-        panic!(format!("could not convert value {:?} as a Literal", value))
+        panic!("could not convert value {:?} as a Literal", value)
     }
 }
 

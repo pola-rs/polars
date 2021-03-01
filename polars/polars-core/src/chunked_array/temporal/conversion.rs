@@ -6,6 +6,7 @@ use crate::chunked_array::kernels::temporal::{
 };
 use crate::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
+pub use conversions_utils::*;
 use regex::Regex;
 
 pub trait FromNaiveTime<T, N> {

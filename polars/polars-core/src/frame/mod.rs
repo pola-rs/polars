@@ -2,15 +2,14 @@
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::series::implementations::Wrap;
-use crate::series::SeriesTrait;
 use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, NoNull};
 use ahash::RandomState;
 use arrow::record_batch::RecordBatch;
+use itertools::Itertools;
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::iter::Iterator;
-use std::marker::Sized;
 use std::mem;
 use std::sync::Arc;
 
@@ -22,64 +21,6 @@ pub mod resample;
 pub mod row;
 pub mod select;
 mod upstream_traits;
-
-pub trait IntoSeries {
-    fn into_series(self) -> Series
-    where
-        Self: Sized;
-}
-
-impl IntoSeries for Arc<dyn SeriesTrait> {
-    fn into_series(self) -> Series {
-        Series(self)
-    }
-}
-
-impl IntoSeries for Series {
-    fn into_series(self) -> Series {
-        self
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T> IntoSeries for ObjectChunked<T>
-where
-    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
-{
-    fn into_series(self) -> Series {
-        Series(Arc::new(Wrap(self)))
-    }
-}
-
-macro_rules! impl_into_series {
-    ($ca_type: ident) => {
-        impl IntoSeries for $ca_type {
-            fn into_series(self) -> Series {
-                Series(Arc::new(Wrap(self)))
-            }
-        }
-    };
-}
-
-impl_into_series!(Float32Chunked);
-impl_into_series!(Float64Chunked);
-impl_into_series!(Utf8Chunked);
-impl_into_series!(ListChunked);
-impl_into_series!(BooleanChunked);
-impl_into_series!(UInt8Chunked);
-impl_into_series!(UInt16Chunked);
-impl_into_series!(UInt32Chunked);
-impl_into_series!(UInt64Chunked);
-impl_into_series!(Int8Chunked);
-impl_into_series!(Int16Chunked);
-impl_into_series!(Int32Chunked);
-impl_into_series!(Int64Chunked);
-impl_into_series!(DurationNanosecondChunked);
-impl_into_series!(DurationMillisecondChunked);
-impl_into_series!(Date32Chunked);
-impl_into_series!(Date64Chunked);
-impl_into_series!(Time64NanosecondChunked);
-impl_into_series!(CategoricalChunked);
 
 #[derive(Clone)]
 pub struct DataFrame {
@@ -161,7 +102,7 @@ impl DataFrame {
         let mut df = DataFrame {
             columns: series_cols,
         };
-        df.rechunk()?;
+        df.rechunk();
         Ok(df)
     }
 
@@ -173,44 +114,23 @@ impl DataFrame {
 
     /// Aggregate all chunks to contiguous memory.
     pub fn agg_chunks(&self) -> Self {
-        let f = |s: &Series| s.rechunk().expect("can always rechunk to single");
+        let f = |s: &Series| s.rechunk();
         let cols = self.columns.par_iter().map(f).collect();
         DataFrame::new_no_checks(cols)
     }
 
     /// Aggregate all the chunks in the DataFrame to a single chunk.
     pub fn as_single_chunk(&mut self) -> &mut Self {
-        self.columns = self
-            .columns
-            .iter()
-            .map(|s| s.rechunk().expect("can always aggregate to single chunk"))
-            .collect();
+        self.columns = self.columns.iter().map(|s| s.rechunk()).collect();
         self
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
-    pub fn rechunk(&mut self) -> Result<&mut Self> {
-        let mut all_equal = true;
-
-        let mut it = self.columns.iter();
-        let first_s = it
-            .next()
-            .ok_or_else(|| PolarsError::NoData("no data to rechunk".into()))?;
-        let id = first_s.chunk_lengths();
-
-        for s in it {
-            let current_id = s.chunk_lengths();
-            if current_id != id {
-                all_equal = false;
-                break;
-            }
-        }
-
-        // fast path
-        if all_equal {
-            Ok(self)
+    pub fn rechunk(&mut self) -> &mut Self {
+        if self.columns.iter().map(|s| s.chunk_lengths()).all_equal() {
+            self
         } else {
-            Ok(self.as_single_chunk())
+            self.as_single_chunk()
         }
     }
 
@@ -270,12 +190,6 @@ impl DataFrame {
         columns.iter().map(|s| s.field().clone()).collect()
     }
 
-    /// This method should be called after every mutable addition/ deletion of columns
-    fn register_mutation(&mut self) -> Result<()> {
-        self.rechunk()?;
-        Ok(())
-    }
-
     /// Get a reference to the schema fields of the DataFrame.
     pub fn fields(&self) -> Vec<Field> {
         self.columns.iter().map(|s| s.field().clone()).collect()
@@ -328,12 +242,12 @@ impl DataFrame {
         self.shape().0
     }
 
-    pub(crate) fn hstack_mut_no_checks(&mut self, columns: &[Series]) -> Result<&mut Self> {
+    pub(crate) fn hstack_mut_no_checks(&mut self, columns: &[Series]) -> &mut Self {
         for col in columns {
             self.columns.push(col.clone());
         }
-        self.register_mutation()?;
-        Ok(self)
+        self.rechunk();
+        self
     }
 
     /// Add multiple Series to a DataFrame
@@ -370,7 +284,7 @@ impl DataFrame {
             }
             names.insert(name.to_string());
         }
-        self.hstack_mut_no_checks(columns)
+        Ok(self.hstack_mut_no_checks(columns))
     }
 
     /// Add multiple Series to a DataFrame
@@ -412,7 +326,7 @@ impl DataFrame {
             .for_each(|(left, right)| {
                 left.append(right).expect("should not fail");
             });
-        self.register_mutation()?;
+        // don't rechunk here. Chunks in columns always match.
         Ok(self)
     }
 
@@ -429,7 +343,7 @@ impl DataFrame {
     pub fn drop_in_place(&mut self, name: &str) -> Result<Series> {
         let idx = self.name_to_idx(name)?;
         let result = Ok(self.columns.remove(idx));
-        self.register_mutation()?;
+        self.rechunk();
         result
     }
 
@@ -475,6 +389,7 @@ impl DataFrame {
     fn insert_at_idx_no_name_check(&mut self, index: usize, series: Series) -> Result<&mut Self> {
         if series.len() == self.height() {
             self.columns.insert(index, series);
+            self.rechunk();
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -501,6 +416,7 @@ impl DataFrame {
         self.has_column(series.name())?;
         if series.len() == self.height() {
             self.columns.push(series);
+            self.rechunk();
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -642,14 +558,14 @@ impl DataFrame {
     /// use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> DataFrame {
     ///     let iterator = (0..9).into_iter();
-    ///     df.take_iter(iterator, None)
+    ///     df.take_iter(iterator)
     /// }
     /// ```
     ///
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_iter<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    pub fn take_iter<I>(&self, iter: I) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -658,58 +574,9 @@ impl DataFrame {
             .par_iter()
             .map(|s| {
                 let mut i = iter.clone();
-                s.take_iter(&mut i, capacity)
+                s.take_iter(&mut i)
             })
             .collect();
-        DataFrame::new_no_checks(new_col)
-    }
-
-    /// Take DataFrame values by indexes from an iterator.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// unsafe fn example(df: &DataFrame) -> DataFrame {
-    ///     let iterator = (0..9).into_iter();
-    ///     df.take_iter_unchecked(iterator, None)
-    /// }
-    /// ```
-    ///
-    /// # Safety
-    ///
-    /// This doesn't do any bound or null validity checking.
-    pub unsafe fn take_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
-    where
-        I: Iterator<Item = usize> + Clone + Sync,
-    {
-        let n_chunks = match self.n_chunks() {
-            Err(_) => return self.clone(),
-            Ok(n) => n,
-        };
-
-        if n_chunks == 1 {
-            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
-            let idx_ca = idx_ca.into_inner();
-            let cols = self
-                .columns
-                .par_iter()
-                .map(|s| {
-                    s.take_from_single_chunked(&idx_ca)
-                        .expect("already checked single chunk")
-                })
-                .collect();
-            return DataFrame::new_no_checks(cols);
-        }
-
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_iter_unchecked(&mut i, capacity)
-            })
-            .collect::<Vec<_>>();
         DataFrame::new_no_checks(new_col)
     }
 
@@ -718,7 +585,7 @@ impl DataFrame {
     /// # Safety
     ///
     /// This doesn't do any bound checking but checks null validity.
-    pub unsafe fn take_iter_unchecked_bounds<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    pub unsafe fn take_iter_unchecked<I>(&self, iter: I) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -734,7 +601,7 @@ impl DataFrame {
                 .columns
                 .par_iter()
                 .map(|s| {
-                    s.take_from_single_chunked(&idx_ca)
+                    s.take_unchecked(&idx_ca)
                         .expect("already checked single chunk")
                 })
                 .collect();
@@ -747,9 +614,9 @@ impl DataFrame {
             .map(|s| {
                 let mut i = iter.clone();
                 if s.null_count() == 0 {
-                    s.take_iter_unchecked(&mut i, capacity)
+                    s.take_iter_unchecked(&mut i)
                 } else {
-                    s.take_iter(&mut i, capacity)
+                    s.take_iter(&mut i)
                 }
             })
             .collect();
@@ -758,59 +625,11 @@ impl DataFrame {
 
     /// Take DataFrame values by indexes from an iterator that may contain None values.
     ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> DataFrame {
-    ///     let iterator = (0..9).into_iter().map(Some);
-    ///     df.take_opt_iter(iterator, None)
-    /// }
-    /// ```
     /// # Safety
     ///
     /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
     /// Null validity is checked
-    pub fn take_opt_iter<I>(&self, iter: I, capacity: Option<usize>) -> Self
-    where
-        I: Iterator<Item = Option<usize>> + Clone + Sync,
-    {
-        let n_chunks = match self.n_chunks() {
-            Err(_) => return self.clone(),
-            Ok(n) => n,
-        };
-
-        if n_chunks == 1 {
-            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
-            let cols = self
-                .columns
-                .par_iter()
-                .map(|s| unsafe {
-                    s.take_from_single_chunked(&idx_ca)
-                        .expect("already checked single chunk")
-                })
-                .collect();
-            return DataFrame::new_no_checks(cols);
-        }
-
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_opt_iter(&mut i, capacity)
-            })
-            .collect();
-        DataFrame::new_no_checks(new_col)
-    }
-
-    /// Take DataFrame values by indexes from an iterator that may contain None values.
-    ///
-    /// # Safety
-    ///
-    /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
-    /// Null validity is checked
-    pub unsafe fn take_opt_iter_unchecked_bounds<I>(&self, iter: I, capacity: Option<usize>) -> Self
+    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
@@ -825,7 +644,7 @@ impl DataFrame {
                 .columns
                 .par_iter()
                 .map(|s| {
-                    s.take_from_single_chunked(&idx_ca)
+                    s.take_unchecked(&idx_ca)
                         .expect("already checked single chunk")
                 })
                 .collect();
@@ -838,40 +657,10 @@ impl DataFrame {
             .map(|s| {
                 let mut i = iter.clone();
                 if s.null_count() == 0 {
-                    s.take_opt_iter_unchecked(&mut i, capacity)
+                    s.take_opt_iter_unchecked(&mut i)
                 } else {
-                    s.take_opt_iter(&mut i, capacity)
+                    s.take_opt_iter(&mut i)
                 }
-            })
-            .collect::<Vec<_>>();
-        DataFrame::new_no_checks(new_col)
-    }
-
-    /// Take DataFrame values by indexes from an iterator that may contain None values.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// unsafe fn example(df: &DataFrame) -> DataFrame {
-    ///     let iterator = (0..9).into_iter().map(Some);
-    ///     df.take_opt_iter_unchecked(iterator, None)
-    /// }
-    /// ```
-    ///
-    /// # Safety
-    ///
-    /// This doesn't do any bound or null validity checking.
-    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I, capacity: Option<usize>) -> Self
-    where
-        I: Iterator<Item = Option<usize>> + Clone + Sync,
-    {
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_opt_iter_unchecked(&mut i, capacity)
             })
             .collect::<Vec<_>>();
         DataFrame::new_no_checks(new_col)
@@ -884,15 +673,20 @@ impl DataFrame {
     /// ```
     /// use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> DataFrame {
-    ///     let idx = vec![0, 1, 9];
+    ///     let idx = UInt32Chunked::new_from_slice("idx", &[0, 1, 9]);
     ///     df.take(&idx)
     /// }
     /// ```
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take<T: AsTakeIndex + Sync>(&self, indices: &T) -> Self {
-        let new_col = self.columns.par_iter().map(|s| s.take(indices)).collect();
+    pub fn take(&self, indices: &UInt32Chunked) -> Self {
+        let indices = if indices.chunks.len() > 1 {
+            Cow::Owned(indices.rechunk())
+        } else {
+            Cow::Borrowed(indices)
+        };
+        let new_col = self.columns.par_iter().map(|s| s.take(&indices)).collect();
 
         DataFrame::new_no_checks(new_col)
     }
@@ -1106,7 +900,7 @@ impl DataFrame {
             let col = self.columns.get_unchecked_mut(idx);
             col.rename(&name);
         }
-        self.register_mutation()?;
+        self.rechunk();
         Ok(self)
     }
 
@@ -1123,7 +917,7 @@ impl DataFrame {
     /// let s1 = Series::new("values", &[1, 2, 3, 4, 5]);
     /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
     ///
-    /// let idx = &[0, 1, 4];
+    /// let idx = vec![0, 1, 4];
     ///
     /// df.may_apply("foo", |s| {
     ///     s.utf8()?
@@ -1173,7 +967,7 @@ impl DataFrame {
             let col = self.columns.get_unchecked_mut(idx);
             col.rename(&name);
         }
-        self.register_mutation()?;
+        self.rechunk();
         Ok(self)
     }
 
@@ -1288,7 +1082,7 @@ impl DataFrame {
         match self.n_chunks() {
             Ok(1) => {}
             Ok(_) => {
-                self.columns = self.columns.iter().map(|s| s.rechunk().unwrap()).collect();
+                self.columns = self.columns.iter().map(|s| s.rechunk()).collect();
             }
             Err(_) => {} // no data. So iterator will be empty
         }
@@ -1311,13 +1105,9 @@ impl DataFrame {
     /// with `Nones`.
     ///
     /// See the method on [Series](../series/enum.Series.html#method.shift) for more info on the `shift` operation.
-    pub fn shift(&self, periods: i32) -> Result<Self> {
-        let col = self
-            .columns
-            .par_iter()
-            .map(|s| s.shift(periods))
-            .collect::<Result<Vec<_>>>()?;
-        Ok(DataFrame::new_no_checks(col))
+    pub fn shift(&self, periods: i64) -> Self {
+        let col = self.columns.par_iter().map(|s| s.shift(periods)).collect();
+        DataFrame::new_no_checks(col)
     }
 
     /// Replace None values with one of the following strategies:
@@ -1522,11 +1312,9 @@ impl DataFrame {
         let df = if maintain_order {
             let mut groups = groups.collect::<Vec<_>>();
             groups.sort_unstable();
-            let cap = Some(groups.len());
-            unsafe { self.take_iter_unchecked(groups.into_iter(), cap) }
+            unsafe { self.take_iter_unchecked(groups.into_iter().map(|i| i as usize)) }
         } else {
-            let cap = Some(groups.size_hint().0);
-            unsafe { self.take_iter_unchecked(groups, cap) }
+            unsafe { self.take_iter_unchecked(groups.into_iter().map(|i| i as usize)) }
         };
 
         Ok(df)
@@ -1536,14 +1324,24 @@ impl DataFrame {
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height(), true, false))
+        Ok(is_unique_helper(groups, self.height() as u32, true, false))
     }
 
     /// Get a mask of all the duplicated rows in the DataFrame.
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height(), false, true))
+        Ok(is_unique_helper(groups, self.height() as u32, false, true))
+    }
+
+    /// Create a new DataFrame that shows the null counts per column.
+    pub fn null_count(&self) -> Self {
+        let cols = self
+            .columns
+            .iter()
+            .map(|s| Series::new(s.name(), &[s.null_count() as u32]))
+            .collect();
+        Self::new_no_checks(cols)
     }
 }
 
@@ -1680,7 +1478,7 @@ mod test {
         .unwrap();
 
         let batch1 = RecordBatch::try_new(
-            schema.clone(),
+            schema,
             vec![
                 Arc::new(Float64Array::from(vec![4.0, 5.0])),
                 Arc::new(Int64Array::from(vec![4, 5])),
@@ -1803,5 +1601,19 @@ mod test {
         .unwrap();
         dbg!(&df);
         assert!(df.frame_equal(&valid));
+    }
+
+    #[test]
+    fn test_vstack() {
+        // check that it does not accidentally rechunks
+        let mut df = df! {
+            "flt" => [1., 1., 2., 2., 3., 3.],
+            "int" => [1, 1, 2, 2, 3, 3, ],
+            "str" => ["a", "a", "b", "b", "c", "c"]
+        }
+        .unwrap();
+
+        df.vstack_mut(&df.slice(0, 3).unwrap()).unwrap();
+        assert_eq!(df.n_chunks().unwrap(), 2)
     }
 }

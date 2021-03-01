@@ -1,18 +1,19 @@
-pub(crate) mod cast;
-pub(crate) mod comparison;
-pub mod set;
+#[cfg(feature = "strings")]
+#[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
+pub mod strings;
 pub(crate) mod take;
+pub(crate) mod take_agg;
 #[cfg(feature = "temporal")]
-#[doc(cfg(feature = "temporal"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
-pub(crate) mod utils;
-pub mod zip_with;
+
 use polars_arrow::builder::BooleanArrayBuilder;
 
-use crate::chunked_array::builder::{aligned_vec_to_primitive_array, get_bitmap};
+use crate::chunked_array::builder::get_bitmap;
 use crate::datatypes::{
     ArrowDataType, Float64Type, PolarsFloatType, PolarsNumericType, PolarsPrimitiveType,
 };
+use crate::prelude::AlignedVec;
 use arrow::array::{Array, ArrayData, ArrayRef, PrimitiveArray};
 use arrow::datatypes::{
     Float32Type, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type, UInt32Type, UInt64Type,
@@ -20,7 +21,6 @@ use arrow::datatypes::{
 };
 use num::{Float, NumCast};
 use std::sync::Arc;
-pub use zip_with::*;
 
 pub(crate) unsafe fn transmute_array<S, T>(arr: &PrimitiveArray<S>) -> ArrayRef
 where
@@ -73,16 +73,12 @@ where
     S::Native: num::NumCast,
 {
     let vals = arr.values();
-    let (null_count, null_bit_buffer) = get_bitmap(arr);
+    let (_null_count, null_bit_buffer) = get_bitmap(arr);
     let av = vals
         .iter()
         .map(|v| num::cast::cast::<S::Native, T::Native>(*v).unwrap())
-        .collect();
-    Arc::new(aligned_vec_to_primitive_array::<T>(
-        av,
-        null_bit_buffer,
-        Some(null_count),
-    ))
+        .collect::<AlignedVec<T::Native>>();
+    Arc::new(av.into_primitive_array::<T>(null_bit_buffer))
 }
 
 pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef

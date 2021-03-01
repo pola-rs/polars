@@ -5,7 +5,7 @@ pub mod planner;
 use crate::prelude::*;
 use ahash::RandomState;
 use polars_core::prelude::*;
-use polars_io::PhysicalIOExpr;
+use polars_io::PhysicalIoExpr;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -50,39 +50,39 @@ pub trait PhysicalExpr: Send + Sync {
     }
 }
 
-trait ToPhysicalIOExpr {
-    fn into_physical_io_expr(self) -> Arc<dyn PhysicalIOExpr>;
+trait ToPhysicalIoExpr {
+    fn into_physical_io_expr(self) -> Arc<dyn PhysicalIoExpr>;
 }
 
-pub struct PhysicalIOHelper {
+pub struct PhysicalIoHelper {
     expr: Arc<dyn PhysicalExpr>,
 }
 
-impl PhysicalIOHelper {
+impl PhysicalIoHelper {
     fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        PhysicalIOHelper { expr }
+        PhysicalIoHelper { expr }
     }
 }
 
-impl PhysicalIOExpr for PhysicalIOHelper {
+impl PhysicalIoExpr for PhysicalIoHelper {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         self.expr.evaluate(df)
     }
 }
 
-impl PhysicalIOExpr for dyn PhysicalExpr {
+impl PhysicalIoExpr for dyn PhysicalExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         <Self as PhysicalExpr>::evaluate(self, df)
     }
 }
 
 pub trait AggPhysicalExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(usize, Vec<usize>)]) -> Result<Option<Series>>;
+    fn evaluate(&self, df: &DataFrame, groups: &[(u32, Vec<u32>)]) -> Result<Option<Series>>;
 
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &[(usize, Vec<usize>)],
+        groups: &[(u32, Vec<u32>)],
     ) -> Result<Option<Vec<Series>>> {
         // we return a vec, such that an implementor can return more information, such as a sum and count.
         self.evaluate(df, groups).map(|opt| opt.map(|s| vec![s]))
@@ -91,7 +91,7 @@ pub trait AggPhysicalExpr {
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,
-        groups: &[(usize, Vec<usize>)],
+        groups: &[(u32, Vec<u32>)],
     ) -> Result<Option<Series>> {
         self.evaluate(final_df, groups)
     }

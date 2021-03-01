@@ -80,28 +80,22 @@ impl PyFileLikeObject {
         let gil = Python::acquire_gil();
         let py = gil.python();
 
-        if read {
-            if let Err(_) = object.getattr(py, "read") {
-                return Err(PyErr::new::<PyTypeError, _>(
-                    "Object does not have a .read() method.",
-                ));
-            }
+        if read && object.getattr(py, "read").is_err() {
+            return Err(PyErr::new::<PyTypeError, _>(
+                "Object does not have a .read() method.",
+            ));
         }
 
-        if seek {
-            if let Err(_) = object.getattr(py, "seek") {
-                return Err(PyErr::new::<PyTypeError, _>(
-                    "Object does not have a .seek() method.",
-                ));
-            }
+        if seek && object.getattr(py, "seek").is_err() {
+            return Err(PyErr::new::<PyTypeError, _>(
+                "Object does not have a .seek() method.",
+            ));
         }
 
-        if write {
-            if let Err(_) = object.getattr(py, "write") {
-                return Err(PyErr::new::<PyTypeError, _>(
-                    "Object does not have a .write() method.",
-                ));
-            }
+        if write && object.getattr(py, "write").is_err() {
+            return Err(PyErr::new::<PyTypeError, _>(
+                "Object does not have a .write() method.",
+            ));
         }
 
         Ok(PyFileLikeObject::new(object))
@@ -137,9 +131,9 @@ impl Read for PyFileLikeObject {
             .cast_as(py)
             .expect("Expecting to be able to downcast into bytes from read result.");
 
-        &buf.write(bytes.as_bytes())?;
+        buf.write_all(bytes.as_bytes())?;
 
-        Ok(bytes.len().map_err(pyerr_to_io_err)?)
+        bytes.len().map_err(pyerr_to_io_err)
     }
 }
 
@@ -155,7 +149,7 @@ impl Write for PyFileLikeObject {
             .call_method(py, "write", (pybytes,), None)
             .map_err(pyerr_to_io_err)?;
 
-        Ok(number_bytes_written.extract(py).map_err(pyerr_to_io_err)?)
+        number_bytes_written.extract(py).map_err(pyerr_to_io_err)
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
@@ -186,7 +180,7 @@ impl Seek for PyFileLikeObject {
             .call_method(py, "seek", (offset, whence), None)
             .map_err(pyerr_to_io_err)?;
 
-        Ok(new_position.extract(py).map_err(pyerr_to_io_err)?)
+        new_position.extract(py).map_err(pyerr_to_io_err)
     }
 }
 

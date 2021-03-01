@@ -1,8 +1,9 @@
-import pytest
 from pypolars import Series
 from pypolars.datatypes import *
+import pypolars as pl
 import numpy as np
 import pytest
+import pyarrow as pa
 
 
 def create_series():
@@ -143,6 +144,12 @@ def test_rechunk():
     assert a.n_chunks() == 1
 
 
+def test_arrow():
+    a = Series("a", [1, 2, 3, None])
+    out = a.to_arrow()
+    assert out == pa.array([1, 2, 3, None])
+
+
 def test_view():
     a = Series("a", [1.0, 2.0, 3.0])
     assert isinstance(a.view(), np.ndarray)
@@ -165,6 +172,12 @@ def test_get():
     a = Series("a", [1, 2, 3])
     assert a[0] == 1
     assert a[:2] == [1, 2]
+
+
+def test_set():
+    a = Series("a", [True, False, True])
+    mask = Series("msk", [True, False, True])
+    a[mask] = False
 
 
 def test_fill_none():
@@ -220,3 +233,12 @@ def test_object():
     assert a.dtype == Object
     assert a.to_list() == vals
     assert a[1] == "foo"
+
+
+def test_repeat():
+    s = pl.repeat(1, 10)
+    assert s.dtype == pl.Int64
+    assert s.len() == 10
+    s = pl.repeat("foo", 10)
+    assert s.dtype == pl.Utf8
+    assert s.len() == 10

@@ -3,10 +3,16 @@
 //! IntoTakeRandom provides structs that implement the TakeRandom trait.
 //! There are several structs that implement the fastest path for random access.
 //!
-use crate::chunked_array::builder::{
-    get_list_builder, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
+use crate::chunked_array::kernels::take::{
+    take_bool_iter, take_bool_iter_unchecked, take_bool_opt_iter_unchecked, take_no_null_bool_iter,
+    take_no_null_bool_iter_unchecked, take_no_null_bool_opt_iter_unchecked, take_no_null_primitive,
+    take_no_null_primitive_iter, take_no_null_primitive_iter_unchecked,
+    take_no_null_primitive_opt_iter_unchecked, take_no_null_utf8_iter,
+    take_no_null_utf8_iter_unchecked, take_no_null_utf8_opt_iter_unchecked, take_primitive_iter,
+    take_primitive_iter_n_chunks, take_primitive_iter_unchecked, take_primitive_opt_iter_n_chunks,
+    take_primitive_opt_iter_unchecked, take_utf8, take_utf8_iter, take_utf8_iter_unchecked,
+    take_utf8_opt_iter_unchecked,
 };
-use crate::chunked_array::kernels::take::{take_no_null_primitive, take_utf8};
 use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::array::{
@@ -16,197 +22,22 @@ use arrow::compute::kernels::take::take;
 use polars_arrow::prelude::*;
 use std::convert::TryFrom;
 use std::ops::Deref;
-use std::sync::Arc;
+use unsafe_unwrap::UnsafeUnwrap;
 
-macro_rules! impl_take_random_get {
-    ($self:ident, $index:ident, $array_type:ty) => {{
-        let (chunk_idx, idx) = $self.index_to_chunked_index($index);
-        let arr = unsafe {
-            let arr = $self.chunks.get_unchecked(chunk_idx);
-            &*(arr as *const ArrayRef as *const Arc<$array_type>)
-        };
-        if arr.is_valid(idx) {
-            Some(arr.value(idx))
-        } else {
-            None
-        }
+macro_rules! take_iter_n_chunks {
+    ($ca:expr, $indices:expr) => {{
+        let taker = $ca.take_rand();
+        $indices.into_iter().map(|idx| taker.get(idx)).collect()
     }};
 }
 
-macro_rules! impl_take_random_get_unchecked {
-    ($self:ident, $index:ident, $array_type:ty) => {{
-        let (chunk_idx, idx) = $self.index_to_chunked_index($index);
-        let arr = {
-            let arr = $self.chunks.get_unchecked(chunk_idx);
-            &*(arr as *const ArrayRef as *const Arc<$array_type>)
-        };
-        arr.value(idx)
-    }};
-}
-
-impl<T> TakeRandom for ChunkedArray<T>
-where
-    T: PolarsPrimitiveType,
-{
-    type Item = T::Native;
-
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, PrimitiveArray<T>)
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, PrimitiveArray<T>)
-    }
-}
-
-impl<'a, T> TakeRandom for &'a ChunkedArray<T>
-where
-    T: PolarsPrimitiveType,
-{
-    type Item = T::Native;
-
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        (*self).get(index)
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        (*self).get_unchecked(index)
-    }
-}
-
-impl TakeRandom for BooleanChunked {
-    type Item = bool;
-
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, BooleanArray)
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, BooleanArray)
-    }
-}
-
-impl TakeRandom for CategoricalChunked {
-    type Item = u32;
-
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        self.deref().get(index)
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.deref().get_unchecked(index)
-    }
-}
-
-impl<'a> TakeRandom for &'a Utf8Chunked {
-    type Item = &'a str;
-
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, LargeStringArray)
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, LargeStringArray)
-    }
-}
-
-// extra trait such that it also works without extra reference.
-// Autoref will insert the reference and
-impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
-    type Item = &'a str;
-
-    fn get(self, index: usize) -> Option<Self::Item> {
-        impl_take_random_get!(self, index, LargeStringArray)
-    }
-
-    unsafe fn get_unchecked(self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, LargeStringArray)
-    }
-}
-
-impl TakeRandom for ListChunked {
-    type Item = Series;
-
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        let opt_arr = impl_take_random_get!(self, index, LargeListArray);
-        opt_arr.map(|arr| {
-            let s = Series::try_from((self.name(), arr));
-            s.unwrap()
-        })
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
-        let s = Series::try_from((self.name(), arr));
-        s.unwrap()
-    }
-}
-
-macro_rules! impl_take {
-    ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
-        let capacity = $capacity.unwrap_or($indices.size_hint().0);
-        let mut builder = $builder::new($self.name(), capacity);
-
-        let taker = $self.take_rand();
-        for idx in $indices {
-            match taker.get(idx) {
-                Some(v) => builder.append_value(v),
-                None => builder.append_null(),
-            }
-        }
-        builder.finish()
-    }};
-}
-
-macro_rules! impl_take_opt {
-    ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
-        let capacity = $capacity.unwrap_or($indices.size_hint().0);
-        let mut builder = $builder::new($self.name(), capacity);
-        let taker = $self.take_rand();
-
-        for opt_idx in $indices {
-            match opt_idx {
-                Some(idx) => match taker.get(idx) {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                },
-                None => builder.append_null(),
-            };
-        }
-        builder.finish()
-    }};
-}
-
-macro_rules! impl_take_opt_unchecked {
-    ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
-        let capacity = $capacity.unwrap_or($indices.size_hint().0);
-        let mut builder = $builder::new($self.name(), capacity);
-        let taker = $self.take_rand();
-
-        for opt_idx in $indices {
-            match opt_idx {
-                Some(idx) => {
-                    let v = taker.get_unchecked(idx);
-                    builder.append_value(v);
-                }
-                None => builder.append_null(),
-            };
-        }
-        builder.finish()
-    }};
-}
-
-macro_rules! impl_take_unchecked {
-    ($self:ident, $indices:ident, $capacity:ident, $builder:ident) => {{
-        let capacity = $capacity.unwrap_or($indices.size_hint().0);
-        let mut builder = $builder::new($self.name(), capacity);
-
-        let taker = $self.take_rand();
-        for idx in $indices {
-            let v = taker.get_unchecked(idx);
-            builder.append_value(v);
-        }
-        builder.finish()
+macro_rules! take_opt_iter_n_chunks {
+    ($ca:expr, $indices:expr) => {{
+        let taker = $ca.take_rand();
+        $indices
+            .into_iter()
+            .map(|opt_idx| opt_idx.and_then(|idx| taker.get(idx)))
+            .collect()
     }};
 }
 
@@ -214,505 +45,384 @@ impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        if self.chunks.len() == 1 {
-            return self.take_from_single_chunked_iter(indices).unwrap();
-        }
-        impl_take!(self, indices, capacity, PrimitiveChunkedBuilder)
-    }
-
-    unsafe fn take_unchecked(
-        &self,
-        indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        if self.chunks.len() == 1 {
-            if self.null_count() == 0 {
-                let idx_ca: NoNull<UInt32Chunked> =
-                    indices.into_iter().map(|idx| idx as u32).collect();
-                let idx_ca = idx_ca.into_inner();
-                let idx_arr = idx_ca.downcast_chunks()[0];
-                let arr = self.downcast_chunks()[0];
-                let arr = take_no_null_primitive(arr, idx_arr);
-                return Self::new_from_chunks(self.name(), vec![arr]);
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_primitive(chunks[0], array) as ArrayRef,
+                    (_, 1) => take(chunks[0], array, None).unwrap(),
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let iter = array.values().iter().map(|i| *i as usize);
+                            let mut ca = take_primitive_iter_n_chunks(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        } else {
+                            let iter = array
+                                .into_iter()
+                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            let mut ca = take_primitive_opt_iter_n_chunks(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
             }
-            return self.take_from_single_chunked_iter(indices).unwrap();
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_primitive_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_primitive_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca = take_primitive_iter_n_chunks(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => {
+                        take_no_null_primitive_opt_iter_unchecked(chunks[0], iter) as ArrayRef
+                    }
+                    (_, 1) => take_primitive_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca = take_primitive_opt_iter_n_chunks(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
         }
-        impl_take_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
     }
 
-    fn take_opt(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        impl_take_opt!(self, indices, capacity, PrimitiveChunkedBuilder)
-    }
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap(),
+                    _ => {
+                        let iter = array
+                            .into_iter()
+                            .filter_map(|opt_idx| opt_idx.map(|idx| idx as usize));
 
-    unsafe fn take_opt_unchecked(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        impl_take_opt_unchecked!(self, indices, capacity, PrimitiveChunkedBuilder)
-    }
-
-    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
-        if self.is_empty() {
-            return Ok(self.clone());
-        }
-        if self.chunks.len() == 1 && idx.chunks.len() == 1 {
-            let idx_arr = idx.downcast_chunks()[0];
-
-            let new_arr = if self.null_count() == 0 {
-                let arr = self.downcast_chunks()[0];
-                take_no_null_primitive(arr, idx_arr) as ArrayRef
-            } else {
-                let arr = &self.chunks[0];
-                take(&**arr, idx_arr, None).unwrap()
-            };
-            Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
-        } else {
-            Err(PolarsError::NoSlice)
+                        let mut ca = take_primitive_iter_n_chunks(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_primitive_iter(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_primitive_iter(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca = take_primitive_iter_n_chunks(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(_) => {
+                panic!("not supported in take, only supported in take_unchecked for the join operation")
+            }
         }
     }
 }
 
 impl ChunkTake for BooleanChunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
     {
-        if self.is_empty() {
-            return self.clone();
-        }
-        if self.chunks.len() == 1 {
-            return self.take_from_single_chunked_iter(indices).unwrap();
-        }
-        impl_take!(self, indices, capacity, BooleanChunkedBuilder)
-    }
-
-    unsafe fn take_unchecked(
-        &self,
-        indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        if self.chunks.len() == 1 {
-            return self.take_from_single_chunked_iter(indices).unwrap();
-        }
-        impl_take_unchecked!(self, indices, capacity, BooleanChunkedBuilder)
-    }
-
-    fn take_opt(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        impl_take_opt!(self, indices, capacity, BooleanChunkedBuilder)
-    }
-
-    unsafe fn take_opt_unchecked(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        impl_take_opt_unchecked!(self, indices, capacity, BooleanChunkedBuilder)
-    }
-
-    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
-        if self.is_empty() {
-            return Ok(self.clone());
-        }
-        if self.chunks.len() == 1 && idx.chunks.len() == 1 {
-            let idx_arr = idx.downcast_chunks()[0];
-            let arr = &self.chunks[0];
-
-            let new_arr = take(&**arr, idx_arr, None).unwrap();
-            Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
-        } else {
-            Err(PolarsError::NoSlice)
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap(),
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let iter = array.values().iter().map(|i| *i as usize);
+                            let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        } else {
+                            let iter = array
+                                .into_iter()
+                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_bool_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_bool_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_bool_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_bool_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
         }
     }
-}
 
-impl ChunkTake for CategoricalChunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
     {
-        let ca: CategoricalChunked = self.deref().take(indices, capacity).into();
-        ca.set_state(self)
-    }
-
-    unsafe fn take_unchecked(
-        &self,
-        indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        let ca: CategoricalChunked = self.deref().take_unchecked(indices, capacity).into();
-        ca.set_state(self)
-    }
-
-    fn take_opt(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        let ca: CategoricalChunked = self.deref().take_opt(indices, capacity).into();
-        ca.set_state(self)
-    }
-
-    unsafe fn take_opt_unchecked(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        let ca: CategoricalChunked = self.deref().take_opt_unchecked(indices, capacity).into();
-        ca.set_state(self)
-    }
-
-    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self>
-    where
-        Self: std::marker::Sized,
-    {
-        let ca: CategoricalChunked = self.deref().take_from_single_chunked(idx)?.into();
-        Ok(ca.set_state(self))
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap(),
+                    _ => {
+                        let iter = array.values().iter().map(|i| *i as usize);
+                        let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_bool_iter(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_bool_iter(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(_) => {
+                panic!("not supported in take, only supported in take_unchecked for the join operation")
+            }
+        }
     }
 }
 
 impl ChunkTake for Utf8Chunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
     {
-        if self.is_empty() {
-            return self.clone();
-        }
-        if self.chunks.len() == 1 {
-            return self.take_from_single_chunked_iter(indices).unwrap();
-        }
-
-        let capacity = capacity.unwrap_or(indices.size_hint().0);
-        let fact = capacity as f32 / self.len() as f32 * 1.2;
-        let values_cap = (capacity as f32 * fact) as usize;
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity, values_cap);
-
-        let taker = self.take_rand();
-        for idx in indices {
-            match taker.get(idx) {
-                Some(v) => builder.append_value(v),
-                None => builder.append_null(),
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take_utf8(chunks[0], array) as ArrayRef,
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let iter = array.values().iter().map(|i| *i as usize);
+                            let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        } else {
+                            let iter = array
+                                .into_iter()
+                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            let mut ca: Utf8Chunked = take_opt_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_utf8_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_utf8_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_utf8_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_utf8_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: Utf8Chunked = take_opt_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
             }
         }
-        builder.finish()
-    }
-    unsafe fn take_unchecked(
-        &self,
-        indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        if self.chunks.len() == 1 {
-            return self.take_from_single_chunked_iter(indices).unwrap();
-        }
-        let capacity = capacity.unwrap_or(indices.size_hint().0);
-        let fact = capacity as f32 / self.len() as f32 * 1.2;
-        let values_cap = (capacity as f32 * fact) as usize;
-
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity, values_cap);
-
-        let taker = self.take_rand();
-        for idx in indices {
-            let v = taker.get_unchecked(idx);
-            builder.append_value(v);
-        }
-        builder.finish()
     }
 
-    fn take_opt(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
     {
-        if self.is_empty() {
-            return self.clone();
-        }
-
-        let capacity = capacity.unwrap_or(indices.size_hint().0);
-        let fact = capacity as f32 / self.len() as f32 * 1.2;
-        let values_cap = (capacity as f32 * fact) as usize;
-
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity, values_cap);
-        let taker = self.take_rand();
-
-        for opt_idx in indices {
-            match opt_idx {
-                Some(idx) => match taker.get(idx) {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                },
-                None => builder.append_null(),
-            };
-        }
-        builder.finish()
-    }
-
-    unsafe fn take_opt_unchecked(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-
-        let capacity = capacity.unwrap_or(indices.size_hint().0);
-        let fact = capacity as f32 / self.len() as f32 * 1.2;
-        let values_cap = (capacity as f32 * fact) as usize;
-
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), capacity, values_cap);
-        let taker = self.take_rand();
-
-        for opt_idx in indices {
-            match opt_idx {
-                Some(idx) => {
-                    let v = taker.get_unchecked(idx);
-                    builder.append_value(v);
-                }
-                None => builder.append_null(),
-            };
-        }
-        builder.finish()
-    }
-
-    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
-        if self.is_empty() {
-            return Ok(self.clone());
-        }
-        if self.chunks.len() == 1 && idx.chunks.len() == 1 {
-            let idx_arr = idx.downcast_chunks()[0];
-            let arr = self.downcast_chunks()[0];
-            let new_arr = take_utf8(arr, idx_arr) as ArrayRef;
-            Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
-        } else {
-            Err(PolarsError::NoSlice)
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap() as ArrayRef,
+                    _ => {
+                        let iter = array.values().iter().map(|i| *i as usize);
+                        let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::Iter(iter) => {
+                let array = match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => take_no_null_utf8_iter(chunks[0], iter) as ArrayRef,
+                    (_, 1) => take_utf8_iter(chunks[0], iter) as ArrayRef,
+                    _ => {
+                        let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                        ca.rename(self.name());
+                        return ca;
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            TakeIdx::IterNulls(_) => {
+                panic!("not supported in take, only supported in take_unchecked for the join operation")
+            }
         }
     }
 }
 
 impl ChunkTake for ListChunked {
-    fn take(&self, indices: impl Iterator<Item = usize>, capacity: Option<usize>) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        if self.chunks.len() == 1 {
-            return self.take_from_single_chunked_iter(indices).unwrap();
-        }
-        let capacity = capacity.unwrap_or(indices.size_hint().0);
-        let value_cap =
-            (self.get_values_size() as f32 / self.len() as f32 * capacity as f32 * 1.4) as usize;
-
-        match self.dtype() {
-            DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), value_cap, capacity, self.name());
-                let taker = self.take_rand();
-
-                for idx in indices {
-                    builder.append_opt_series(taker.get(idx).as_ref());
-                }
-                builder.finish()
-            }
-            _ => unimplemented!(),
-        }
-    }
-    unsafe fn take_unchecked(
-        &self,
-        indices: impl Iterator<Item = usize>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        if self.chunks.len() == 1 {
-            return self.take_from_single_chunked_iter(indices).unwrap();
-        }
-        let capacity = capacity.unwrap_or(indices.size_hint().0);
-        let value_cap =
-            (self.get_values_size() as f32 / self.len() as f32 * capacity as f32 * 1.4) as usize;
-        match self.dtype() {
-            DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), value_cap, capacity, self.name());
-                let taker = self.take_rand();
-                for idx in indices {
-                    let v = taker.get_unchecked(idx);
-                    builder.append_opt_series(Some(&v));
-                }
-                builder.finish()
-            }
-            _ => unimplemented!(),
-        }
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        self.take(indices)
     }
 
-    fn take_opt(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        let capacity = capacity.unwrap_or(indices.size_hint().0);
-        let value_cap =
-            (self.get_values_size() as f32 / self.len() as f32 * capacity as f32 * 1.4) as usize;
-
-        match self.dtype() {
-            DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), value_cap, capacity, self.name());
-
-                let taker = self.take_rand();
-
-                for opt_idx in indices {
-                    match opt_idx {
-                        Some(idx) => {
-                            let opt_s = taker.get(idx);
-                            builder.append_opt_series(opt_s.as_ref())
-                        }
-                        None => builder.append_opt_series(None),
-                    };
-                }
-                builder.finish()
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let chunks = self.downcast_chunks();
+        match indices {
+            TakeIdx::Array(array) => {
+                let array = match self.chunks.len() {
+                    1 => take(chunks[0], array, None).unwrap() as ArrayRef,
+                    _ => {
+                        let ca = self.rechunk();
+                        return ca.take(indices);
+                    }
+                };
+                self.copy_with_chunks(vec![array])
             }
-            _ => unimplemented!(),
+            TakeIdx::Iter(iter) => {
+                let idx_ca = iter
+                    .map(|idx| idx as u32)
+                    .collect::<NoNull<UInt32Chunked>>()
+                    .into_inner();
+                self.take((&idx_ca).into())
+            }
+            TakeIdx::IterNulls(iter) => {
+                let idx_ca = iter
+                    .map(|opt_idx| opt_idx.map(|idx| idx as u32))
+                    .collect::<UInt32Chunked>();
+                self.take((&idx_ca).into())
+            }
         }
     }
+}
 
-    unsafe fn take_opt_unchecked(
-        &self,
-        indices: impl Iterator<Item = Option<usize>>,
-        capacity: Option<usize>,
-    ) -> Self {
-        if self.is_empty() {
-            return self.clone();
-        }
-        let capacity = capacity.unwrap_or(indices.size_hint().0);
-        let value_cap =
-            (self.get_values_size() as f32 / self.len() as f32 * capacity as f32 * 1.4) as usize;
-
-        match self.dtype() {
-            DataType::List(dt) => {
-                let mut builder = get_list_builder(&dt.into(), value_cap, capacity, self.name());
-                let taker = self.take_rand();
-
-                for opt_idx in indices {
-                    match opt_idx {
-                        Some(idx) => {
-                            let s = taker.get_unchecked(idx);
-                            builder.append_opt_series(Some(&s))
-                        }
-                        None => builder.append_opt_series(None),
-                    };
-                }
-                builder.finish()
-            }
-            _ => unimplemented!(),
-        }
+impl ChunkTake for CategoricalChunked {
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let ca: CategoricalChunked = self.deref().take_unchecked(indices).into();
+        ca.set_state(self)
     }
 
-    fn take_from_single_chunked(&self, idx: &UInt32Chunked) -> Result<Self> {
-        if self.is_empty() {
-            return Ok(self.clone());
-        }
-        if self.chunks.len() == 1 && idx.chunks.len() == 1 {
-            let idx_arr = idx.downcast_chunks()[0];
-            let arr = &self.chunks[0];
-
-            let new_arr = take(&**arr, idx_arr, None).unwrap();
-            Ok(Self::new_from_chunks(self.name(), vec![new_arr]))
-        } else {
-            Err(PolarsError::NoSlice)
-        }
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
+    {
+        let ca: CategoricalChunked = self.deref().take(indices).into();
+        ca.set_state(self)
     }
 }
 
 #[cfg(feature = "object")]
 impl<T> ChunkTake for ObjectChunked<T> {
-    fn take_from_single_chunked(&self, _idx: &UInt32Chunked) -> Result<Self> {
-        todo!()
-    }
-
-    fn take(&self, _indices: impl Iterator<Item = usize>, _capacity: Option<usize>) -> Self
+    unsafe fn take_unchecked<I, INulls>(&self, _indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
     {
-        todo!()
+        unimplemented!()
     }
 
-    unsafe fn take_unchecked(
-        &self,
-        _indices: impl Iterator<Item = usize>,
-        _capacity: Option<usize>,
-    ) -> Self
+    fn take<I, INulls>(&self, _indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
+        I: Iterator<Item = usize>,
+        INulls: Iterator<Item = Option<usize>>,
     {
-        todo!()
-    }
-
-    fn take_opt(
-        &self,
-        _indices: impl Iterator<Item = Option<usize>>,
-        _capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        todo!()
-    }
-
-    unsafe fn take_opt_unchecked(
-        &self,
-        _indices: impl Iterator<Item = Option<usize>>,
-        _capacity: Option<usize>,
-    ) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        todo!()
+        unimplemented!()
     }
 }
 
@@ -724,48 +434,6 @@ pub trait AsTakeIndex {
     }
 
     fn take_index_len(&self) -> usize;
-}
-
-impl AsTakeIndex for &UInt32Chunked {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
-        match self.cont_slice() {
-            Ok(slice) => Box::new(slice.iter().map(|&val| val as usize)),
-            Err(_) => Box::new(
-                self.into_iter()
-                    .filter_map(|opt_val| opt_val.map(|val| val as usize)),
-            ),
-        }
-    }
-    fn as_opt_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
-        Box::new(
-            self.into_iter()
-                .map(|opt_val| opt_val.map(|val| val as usize)),
-        )
-    }
-    fn take_index_len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl<T> AsTakeIndex for T
-where
-    T: AsRef<[usize]>,
-{
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
-        Box::new(self.as_ref().iter().copied())
-    }
-    fn take_index_len(&self) -> usize {
-        self.as_ref().len()
-    }
-}
-
-impl AsTakeIndex for [u32] {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a> {
-        Box::new(self.iter().map(|&v| v as usize))
-    }
-    fn take_index_len(&self) -> usize {
-        self.len()
-    }
 }
 
 /// Create a type that implements a faster `TakeRandom`.
@@ -862,7 +530,9 @@ macro_rules! take_random_get {
                 if arr.is_null(arr_idx) {
                     None
                 } else {
-                    Some(arr.value(arr_idx))
+                    // SAFETY:
+                    // bounds checked above
+                    unsafe { Some(arr.value_unchecked(arr_idx)) }
                 }
             }
             None => None,
@@ -873,7 +543,10 @@ macro_rules! take_random_get {
 macro_rules! take_random_get_unchecked {
     ($self:ident, $index:ident) => {{
         let (chunk_idx, arr_idx) = $self.ca.index_to_chunked_index($index);
-        $self.chunks.get_unchecked(chunk_idx).value(arr_idx)
+        $self
+            .chunks
+            .get_unchecked(chunk_idx)
+            .value_unchecked(arr_idx)
     }};
 }
 
@@ -882,7 +555,9 @@ macro_rules! take_random_get_single {
         if $self.arr.is_null($index) {
             None
         } else {
-            Some($self.arr.value($index))
+            // Safety:
+            // bound checked above
+            unsafe { Some($self.arr.value_unchecked($index)) }
         }
     }};
 }
@@ -893,10 +568,12 @@ where
 {
     type Item = T::Native;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         take_random_get_unchecked!(self, index)
     }
@@ -912,10 +589,12 @@ where
 {
     type Item = T;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         self.slice.get(index).copied()
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         *self.slice.get_unchecked(index)
     }
@@ -934,12 +613,14 @@ where
 {
     type Item = T::Native;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get_single!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.arr.value(index)
+        self.arr.value_unchecked(index)
     }
 }
 
@@ -951,12 +632,17 @@ pub struct Utf8TakeRandom<'a> {
 impl<'a> TakeRandom for Utf8TakeRandom<'a> {
     type Item = &'a str;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        take_random_get_unchecked!(self, index)
+        let (chunk_idx, arr_idx) = self.ca.index_to_chunked_index(index);
+        self.chunks
+            .get_unchecked(chunk_idx)
+            .value_unchecked(arr_idx)
     }
 }
 
@@ -967,12 +653,14 @@ pub struct Utf8TakeRandomSingleChunk<'a> {
 impl<'a> TakeRandom for Utf8TakeRandomSingleChunk<'a> {
     type Item = &'a str;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get_single!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.arr.value(index)
+        self.arr.value_unchecked(index)
     }
 }
 
@@ -984,10 +672,12 @@ pub struct BoolTakeRandom<'a> {
 impl<'a> TakeRandom for BoolTakeRandom<'a> {
     type Item = bool;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         take_random_get_unchecked!(self, index)
     }
@@ -1000,10 +690,12 @@ pub struct BoolTakeRandomSingleChunk<'a> {
 impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
     type Item = bool;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         take_random_get_single!(self, index)
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         self.arr.value(index)
     }
@@ -1016,6 +708,7 @@ pub struct ListTakeRandom<'a> {
 impl<'a> TakeRandom for ListTakeRandom<'a> {
     type Item = Series;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get!(self, index);
         v.map(|v| {
@@ -1024,6 +717,7 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
         })
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         let v = take_random_get_unchecked!(self, index);
         let s = Series::try_from((self.ca.name(), v));
@@ -1039,6 +733,7 @@ pub struct ListTakeRandomSingleChunk<'a> {
 impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
     type Item = Series;
 
+    #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get_single!(self, index);
         v.map(|v| {
@@ -1047,9 +742,10 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
         })
     }
 
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let s = Series::try_from((self.name, self.arr.value(index)));
-        s.unwrap()
+        let s = Series::try_from((self.name, self.arr.value_unchecked(index)));
+        s.unsafe_unwrap()
     }
 }
 

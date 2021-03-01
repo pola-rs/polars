@@ -102,6 +102,72 @@ pub(crate) fn get_line_stats(mut bytes: &[u8], n_lines: usize) -> Option<(f32, f
     Some((mean, std))
 }
 
+/// An adapted version of std::iter::Split.
+/// This exists solely because we cannot split the lines naively as
+///
+/// ```text
+///    lines.split(b',').for_each(do_stuff)
+/// ```
+///
+/// This will fail when strings have contained delimiters.
+/// For instance: "Street, City, Country" is a valid string field, that contains multiple delimiters.
+struct SplitFields<'a> {
+    v: &'a [u8],
+    delimiter: u8,
+    // escaped string field ",
+    str_delimiter: [u8; 2],
+    finished: bool,
+}
+
+impl<'a> SplitFields<'a> {
+    fn new(slice: &'a [u8], delimiter: u8) -> Self {
+        Self {
+            v: slice,
+            delimiter,
+            str_delimiter: [b'"', delimiter],
+            finished: false,
+        }
+    }
+
+    fn finish(&mut self) -> Option<&'a [u8]> {
+        if self.finished {
+            None
+        } else {
+            self.finished = true;
+            Some(self.v)
+        }
+    }
+}
+
+impl<'a> Iterator for SplitFields<'a> {
+    type Item = &'a [u8];
+
+    #[inline]
+    fn next(&mut self) -> Option<&'a [u8]> {
+        if self.finished {
+            return None;
+        }
+        // There can be strings with delimiters:
+        // "Street, City",
+        let pos = if !self.v.is_empty() && self.v[0] == b'"' {
+            // we offset 1 because "," is a valid field and we don't want to match position 0.
+            match self.v[1..].windows(2).position(|x| x == self.str_delimiter) {
+                None => return self.finish(),
+                Some(idx) => idx + 2,
+            }
+        } else {
+            match self.v.iter().position(|x| *x == self.delimiter) {
+                None => return self.finish(),
+                Some(idx) => idx,
+            }
+        };
+
+        let ret = Some(&self.v[..pos]);
+        self.v = &self.v[pos + 1..];
+        ret
+    }
+}
+
 /// Parse CSV.
 ///
 /// # Arguments
@@ -149,22 +215,6 @@ pub(crate) fn parse_lines(
         let read_sol = read;
         // // +1 is the split character
         // read += 1;
-        let leading_byte = line[0];
-
-        // Check if there are some leading character we don't expect on the start of the line.
-        //
-        // # Expected lines
-        //      'field_0,field_1\n'
-        //      'field_0,field_1\r\n'
-        //
-        // # Unexpected lines
-        //      leading delimiter
-        //      ',field_0,field_1'
-        //
-        if leading_byte == delimiter {
-            read += 1;
-            line = &line[1..]
-        }
 
         // Every line we only need to parse the columns that are projected.
         // Therefore we check if the idx of the field is in our projected columns.
@@ -175,7 +225,9 @@ pub(crate) fn parse_lines(
             .expect("at least one column should be projected");
         let mut processed_fields = 0;
 
-        for (idx, field) in line.split(|b| *b == delimiter).enumerate() {
+        let iter = SplitFields::new(line, delimiter);
+
+        for (idx, field) in iter.enumerate() {
             if idx == next_projected {
                 debug_assert!(processed_fields < buffers.len());
                 let buf = unsafe {
@@ -241,7 +293,7 @@ mod test {
 
         // after a skip header, we should not have a new line char.
         assert_ne!(bytes[0], b'\n');
-        dbg!(std::str::from_utf8(bytes));
+        dbg!(std::str::from_utf8(bytes).unwrap());
 
         let mut buffers = vec![
             Buffer::Utf8(vec![], 0),
@@ -275,7 +327,7 @@ mod test {
             assert_eq!(len, 27);
         }
 
-        dbg!((&buffers[0]));
+        dbg!(&buffers[0]);
         // check if we can reconstruct the correct strings from the accumulated offsets.
         if let Buffer::Utf8(buf, len) = &buffers[0] {
             let v = buf

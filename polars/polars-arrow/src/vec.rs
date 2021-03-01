@@ -1,7 +1,7 @@
+use arrow::alloc;
 use arrow::array::{ArrayData, PrimitiveArray};
 use arrow::buffer::Buffer;
 use arrow::datatypes::*;
-use arrow::memory;
 use std::iter::FromIterator;
 use std::mem;
 use std::mem::ManuallyDrop;
@@ -23,7 +23,7 @@ impl<T> Drop for AlignedVec<T> {
             let ptr: *mut T = me.as_mut_ptr();
             let ptr = ptr as *mut u8;
             let ptr = std::ptr::NonNull::new(ptr).unwrap();
-            unsafe { memory::free_aligned(ptr, self.capacity()) }
+            unsafe { alloc::free_aligned::<u8>(ptr, self.capacity()) }
         }
     }
 }
@@ -35,13 +35,25 @@ impl<T> FromIterator<T> for AlignedVec<T> {
         let size = sh.1.unwrap_or(sh.0);
 
         let mut av = Self::with_capacity_aligned(size);
-
-        for v in iter {
-            av.push(v)
-        }
+        av.extend(iter);
 
         // Iterator size hint wasn't correct and reallocation has occurred
         assert!(av.len() <= size);
+        av
+    }
+}
+
+impl<T: Copy> AlignedVec<T> {
+    /// Uses a memcpy to initialize this AlignedVec
+    pub fn new_from_slice(other: &[T]) -> Self {
+        let len = other.len();
+        let mut av = Self::with_capacity_aligned(len);
+        unsafe {
+            // Safety:
+            // we set initiate the memory after this with a memcpy.
+            av.set_len(len);
+        }
+        av.inner.copy_from_slice(other);
         av
     }
 }
@@ -71,7 +83,7 @@ impl<T> AlignedVec<T> {
         // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
         let t_size = std::mem::size_of::<T>();
         let capacity = size * t_size;
-        let ptr = memory::allocate_aligned(capacity).as_ptr() as *mut T;
+        let ptr = alloc::allocate_aligned::<u8>(capacity).as_ptr() as *mut T;
         let v = unsafe { Vec::from_raw_parts(ptr, 0, size) };
         AlignedVec {
             inner: v,
@@ -91,7 +103,7 @@ impl<T> AlignedVec<T> {
         let cap = me.capacity();
         let old_capacity = t_size * cap;
         let new_capacity = old_capacity + t_size * additional;
-        let ptr = unsafe { memory::reallocate(ptr, old_capacity, new_capacity) };
+        let ptr = unsafe { alloc::reallocate::<u8>(ptr, old_capacity, new_capacity) };
         let ptr = ptr.as_ptr() as *mut T;
         let v = unsafe { Vec::from_raw_parts(ptr, me.len(), cap + additional) };
         self.inner = v;
@@ -107,7 +119,7 @@ impl<T> AlignedVec<T> {
     /// # Safety
     /// The ptr should be 64 byte aligned and `len` and `capacity` should be correct otherwise it is UB.
     pub unsafe fn from_ptr(ptr: usize, len: usize, capacity: usize) -> Self {
-        assert_eq!((ptr as usize) % memory::ALIGNMENT, 0);
+        assert_eq!((ptr as usize) % alloc::ALIGNMENT, 0);
         let ptr = ptr as *mut T;
         let v = Vec::from_raw_parts(ptr, len, capacity);
         Self {
@@ -177,7 +189,7 @@ impl<T> AlignedVec<T> {
             let new_size = t_size * me.len();
             let old_size = t_size * me.capacity();
             let v = unsafe {
-                let ptr = memory::reallocate(ptr, old_size, new_size).as_ptr() as *mut T;
+                let ptr = alloc::reallocate::<u8>(ptr, old_size, new_size).as_ptr() as *mut T;
                 Vec::from_raw_parts(ptr, me.len(), me.len())
             };
 
@@ -219,6 +231,21 @@ impl<T> AlignedVec<T> {
 
         PrimitiveArray::<A>::from(data)
     }
+
+    /// # Panic
+    /// Must be a trusted len iterator or else it will panic
+    pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        let iter = iter.into_iter();
+        let cap = iter.size_hint().1.expect("a trusted length iterator");
+        let (extra_cap, overflow) = cap.overflowing_sub(self.capacity());
+        if extra_cap > 0 && !overflow {
+            self.reserve(extra_cap);
+        }
+        let len_before = self.len();
+        self.inner.extend(iter);
+        let added = self.len() - len_before;
+        assert_eq!(added, cap)
+    }
 }
 
 impl<T> Default for AlignedVec<T> {
@@ -226,5 +253,38 @@ impl<T> Default for AlignedVec<T> {
         // Be careful here. Don't initialize with a normal Vec as this will cause the wrong deallocator
         // to run and SIGSEGV
         Self::with_capacity_aligned(0)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use arrow::alloc;
+
+    #[test]
+    fn test_aligned_vec_allocations() {
+        // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
+        // check if we can increase above initial capacity and keep the Arrow alignment
+        let mut v = AlignedVec::with_capacity_aligned(2);
+        v.push(1);
+        v.push(2);
+        v.push(3);
+        v.push(4);
+
+        let ptr = v.as_ptr();
+        assert_eq!((ptr as usize) % alloc::ALIGNMENT, 0);
+
+        // check if we can shrink to fit
+        let mut v = AlignedVec::with_capacity_aligned(10);
+        v.push(1);
+        v.push(2);
+        v.shrink_to_fit();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v.capacity(), 2);
+        let ptr = v.as_ptr();
+        assert_eq!((ptr as usize) % alloc::ALIGNMENT, 0);
+
+        let a = v.into_primitive_array::<Int32Type>(None);
+        assert_eq!(&a.values()[..2], &[1, 2])
     }
 }

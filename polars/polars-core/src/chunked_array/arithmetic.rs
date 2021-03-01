@@ -1,27 +1,12 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
 use crate::prelude::*;
-use crate::utils::NoNull;
+use crate::utils::{align_chunks_binary, NoNull};
+use arrow::array::PrimitiveArray;
 use arrow::{array::ArrayRef, compute};
 use num::{Num, NumCast, ToPrimitive};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
-macro_rules! operand_on_primitive_arr {
-    ($_self:expr, $rhs:tt, $operator:expr, $expect:expr) => {{
-        let mut new_chunks = Vec::with_capacity($_self.chunks.len());
-        $_self
-            .downcast_chunks()
-            .iter()
-            .zip($rhs.downcast_chunks())
-            .for_each(|(left, right)| {
-                let res = Arc::new($operator(left, right).expect($expect)) as ArrayRef;
-                new_chunks.push(res);
-            });
-        $_self.copy_with_chunks(new_chunks)
-    }};
-}
-
-#[macro_export]
 macro_rules! apply_operand_on_chunkedarray_by_iter {
 
     ($self:ident, $rhs:ident, $operand:tt) => {
@@ -66,6 +51,54 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
     }
 }
 
+fn arithmetic_helper<T, Kernel, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<T>,
+    kernel: Kernel,
+    operation: F,
+) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + num::Zero,
+    Kernel: Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> arrow::error::Result<PrimitiveArray<T>>,
+    F: Fn(T::Native, T::Native) -> T::Native,
+{
+    let mut ca = match (lhs.len(), rhs.len()) {
+        (a, b) if a == b => {
+            let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+            let chunks = lhs
+                .downcast_chunks()
+                .iter()
+                .zip(rhs.downcast_chunks())
+                .map(|(lhs, rhs)| Arc::new(kernel(lhs, rhs).expect("output")) as ArrayRef)
+                .collect();
+            lhs.copy_with_chunks(chunks)
+        }
+        // broadcast right path
+        (_, 1) => {
+            let opt_rhs = rhs.get(0);
+            match opt_rhs {
+                None => ChunkedArray::full_null(lhs.name(), lhs.len()),
+                Some(rhs) => lhs.apply(|lhs| operation(lhs, rhs)),
+            }
+        }
+        (1, _) => {
+            let opt_lhs = lhs.get(0);
+            match opt_lhs {
+                None => ChunkedArray::full_null(lhs.name(), rhs.len()),
+                Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
+            }
+        }
+        _ => panic!("Cannot apply operation on arrays of different lengths"),
+    };
+    ca.rename(lhs.name());
+    ca
+}
+
 // Operands on ChunkedArray & ChunkedArray
 
 impl<T> Add for &ChunkedArray<T>
@@ -80,31 +113,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        // arrow simd path
-        let mut ca = if self.chunk_id == rhs.chunk_id {
-            let expect_str = "Could not add, check data types and length";
-            operand_on_primitive_arr![self, rhs, compute::add, expect_str]
-        // broadcasting and fast path
-        } else if rhs.len() == 1 {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(self.name(), self.len()),
-                Some(rhs) => self.apply(|val| val + rhs),
-            }
-        // left broadcast
-        } else if self.len() == 1 {
-            let opt_lhs = self.get(0);
-            match opt_lhs {
-                None => ChunkedArray::full_null(self.name(), rhs.len()),
-                Some(lhs) => rhs.apply(|val| val + lhs),
-            }
-        }
-        // slow path
-        else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, +)
-        };
-        ca.rename(self.name());
-        ca
+        arithmetic_helper(self, rhs, compute::add, |lhs, rhs| lhs + rhs)
     }
 }
 
@@ -121,29 +130,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        // arrow simd path
-        let mut ca = if self.chunk_id == rhs.chunk_id {
-            let expect_str = "Could not divide, check data types and length";
-            operand_on_primitive_arr!(self, rhs, compute::divide, expect_str)
-        // broadcasting and fast path
-        } else if rhs.len() == 1 {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(self.name(), self.len()),
-                Some(rhs) => self.apply(|val| val / rhs),
-            }
-        // slow path
-        } else if self.len() == 1 {
-            let opt_lhs = self.get(0);
-            match opt_lhs {
-                None => ChunkedArray::full_null(self.name(), rhs.len()),
-                Some(lhs) => rhs.apply(|val| val / lhs),
-            }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, /)
-        };
-        ca.rename(self.name());
-        ca
+        arithmetic_helper(self, rhs, compute::divide, |lhs, rhs| lhs / rhs)
     }
 }
 
@@ -159,27 +146,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let mut ca = if self.chunk_id == rhs.chunk_id {
-            let expect_str = "Could not multiply, check data types and length";
-            operand_on_primitive_arr!(self, rhs, compute::multiply, expect_str)
-        // broadcasting and fast path
-        } else if rhs.len() == 1 {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(self.name(), self.len()),
-                Some(rhs) => self.apply(|val| val * rhs),
-            }
-        } else if self.len() == 1 {
-            let opt_lhs = self.get(0);
-            match opt_lhs {
-                None => ChunkedArray::full_null(self.name(), rhs.len()),
-                Some(lhs) => rhs.apply(|val| val * lhs),
-            }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, *)
-        };
-        ca.rename(self.name());
-        ca
+        arithmetic_helper(self, rhs, compute::multiply, |lhs, rhs| lhs * rhs)
     }
 }
 
@@ -198,6 +165,7 @@ where
                 Some(rhs) => self.apply(|val| val % rhs),
             }
         } else {
+            // we will clean this mess up once there is a remainder kernel in arrow.
             apply_operand_on_chunkedarray_by_iter!(self, rhs, %)
         };
         ca.rename(self.name());
@@ -217,26 +185,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let mut ca = if self.chunk_id == rhs.chunk_id {
-            let expect_str = "Could not subtract, check data types and length";
-            operand_on_primitive_arr![self, rhs, compute::subtract, expect_str]
-        } else if rhs.len() == 1 {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(self.name(), self.len()),
-                Some(rhs) => self.apply(|val| val - rhs),
-            }
-        } else if self.len() == 1 {
-            let opt_lhs = self.get(0);
-            match opt_lhs {
-                None => ChunkedArray::full_null(self.name(), rhs.len()),
-                Some(lhs) => rhs.apply(|val| val - lhs),
-            }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, -)
-        };
-        ca.rename(self.name());
-        ca
+        arithmetic_helper(self, rhs, compute::subtract, |lhs, rhs| lhs - rhs)
     }
 }
 
@@ -460,34 +409,21 @@ pub trait Pow {
     }
 }
 
-macro_rules! power {
-    ($self:ident, $exp:ident, $to_primitive:ident, $return:ident) => {{
-        if let Ok(slice) = $self.cont_slice() {
-            slice
-                .iter()
-                .map(|&val| val.$to_primitive().unwrap().powf($exp))
-                .collect::<NoNull<$return>>()
-                .into_inner()
-        } else {
-            $self
-                .into_iter()
-                .map(|val| val.map(|val| val.$to_primitive().unwrap().powf($exp)))
-                .collect()
-        }
-    }};
-}
-
 impl<T> Pow for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: ToPrimitive,
+    ChunkedArray<T>: ChunkCast,
 {
     fn pow_f32(&self, exp: f32) -> Float32Chunked {
-        power!(self, exp, to_f32, Float32Chunked)
+        self.cast::<Float32Type>()
+            .expect("f32 array")
+            .apply_kernel(|arr| Arc::new(compute::powf_scalar(arr, exp).unwrap()))
     }
 
     fn pow_f64(&self, exp: f64) -> Float64Chunked {
-        power!(self, exp, to_f64, Float64Chunked)
+        self.cast::<Float64Type>()
+            .expect("f64 array")
+            .apply_kernel(|arr| Arc::new(compute::powf_scalar(arr, exp).unwrap()))
     }
 }
 
@@ -509,6 +445,7 @@ pub(crate) mod test {
     }
 
     #[test]
+    #[allow(clippy::eq_op)]
     fn test_chunk_mismatch() {
         let (a1, a2) = create_two_chunked();
         // with different chunks

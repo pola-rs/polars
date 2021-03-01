@@ -1,11 +1,12 @@
-use crate::chunked_array::kernels::set::set_with_value;
 use crate::prelude::*;
+use crate::utils::align_chunks_binary;
 use arrow::array::ArrayRef;
+use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
 use std::sync::Arc;
 
 macro_rules! impl_set_at_idx_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
-        let mut idx_iter = $idx.as_take_iter();
+        let mut idx_iter = $idx.into_iter();
         let mut ca_iter = $self.into_iter().enumerate();
 
         while let Some(current_idx) = idx_iter.next() {
@@ -52,43 +53,81 @@ impl<'a, T> ChunkSet<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<T::Native>) -> Result<Self> {
+    fn set_at_idx<I: IntoIterator<Item = usize>>(
+        &'a self,
+        idx: I,
+        value: Option<T::Native>,
+    ) -> Result<Self> {
+        if self.null_count() == 0 {
+            if let Some(value) = value {
+                // fast path uses kernel
+                if self.chunks.len() == 1 {
+                    let arr =
+                        set_at_idx_no_null(self.downcast_chunks()[0], idx.into_iter(), value)?;
+                    return Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]));
+                }
+                // Other fast path. Slightly slower as it does not do a memcpy
+                else {
+                    let mut av = self.into_no_null_iter().collect::<AlignedVec<_>>();
+                    let data = av.as_mut_slice();
+
+                    idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
+                        let val = data.get_mut(idx).ok_or_else(|| {
+                            PolarsError::OutOfBounds(
+                                format!("{} out of bounds on array of length: {}", idx, self.len())
+                                    .into(),
+                            )
+                        })?;
+                        *val = value;
+                        Ok(())
+                    })?;
+                    return Ok(Self::new_from_aligned_vec(self.name(), av));
+                }
+            }
+        }
         self.set_at_idx_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
     where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
-        // TODO: implement fast path
         let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
         impl_set_at_idx_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> Result<Self> {
+        check_bounds!(self, mask);
+
+        // Fast path uses the kernel in polars-arrow
         if let Some(value) = value {
-            if T::get_dtype() != DataType::Boolean && self.chunk_id() == mask.chunk_id() {
-                let chunks = self
+            // kernel expects no null values in mask
+            if mask.null_count() == 0 {
+                let (left, mask) = align_chunks_binary(self, mask);
+
+                // apply binary kernel.
+                let chunks = left
                     .downcast_chunks()
                     .into_iter()
                     .zip(mask.downcast_chunks())
                     .map(|(arr, mask)| {
-                        let a = set_with_value(mask, arr, value);
+                        let a = set_with_mask(arr, mask, value);
                         Arc::new(a) as ArrayRef
                     })
                     .collect();
                 return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
             }
         }
-        let mask = mask.take_rand();
-
-        Ok(self.apply_with_idx_on_opt(|(idx, val)| {
-            if unsafe { mask.get_unchecked(idx) } {
-                value
-            } else {
-                val
-            }
-        }))
+        // slow path, could be optimized.
+        let ca = mask
+            .into_iter()
+            .zip(self.into_iter())
+            .map(|(mask_val, opt_val)| match mask_val {
+                Some(true) => value,
+                _ => opt_val,
+            })
+            .collect();
+        Ok(ca)
     }
 
     fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
@@ -96,23 +135,28 @@ where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
         check_bounds!(self, mask);
-        let mask = mask.take_rand();
-        Ok(self.apply_with_idx_on_opt(|(idx, val)| {
-            if unsafe { mask.get_unchecked(idx) } {
-                f(val)
-            } else {
-                val
-            }
-        }))
+        let ca = mask
+            .into_iter()
+            .zip(self.into_iter())
+            .map(|(mask_val, opt_val)| match mask_val {
+                Some(true) => f(opt_val),
+                _ => opt_val,
+            })
+            .collect();
+        Ok(ca)
     }
 }
 
 impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
-    fn set_at_idx<I: AsTakeIndex>(&'a self, idx: &I, value: Option<bool>) -> Result<Self> {
+    fn set_at_idx<I: IntoIterator<Item = usize>>(
+        &'a self,
+        idx: I,
+        value: Option<bool>,
+    ) -> Result<Self> {
         self.set_at_idx_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: AsTakeIndex, F>(&'a self, idx: &I, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
     where
         F: Fn(Option<bool>) -> Option<bool>,
     {
@@ -122,14 +166,16 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> Result<Self> {
-        let mask = mask.take_rand();
-        Ok(self.apply_with_idx_on_opt(|(idx, val)| {
-            if unsafe { mask.get_unchecked(idx) } {
-                value
-            } else {
-                val
-            }
-        }))
+        check_bounds!(self, mask);
+        let ca = mask
+            .into_iter()
+            .zip(self.into_iter())
+            .map(|(mask_val, opt_val)| match mask_val {
+                Some(true) => value,
+                _ => opt_val,
+            })
+            .collect();
+        Ok(ca)
     }
 
     fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
@@ -137,23 +183,28 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         F: Fn(Option<bool>) -> Option<bool>,
     {
         check_bounds!(self, mask);
-        let mask = mask.take_rand();
-        Ok(self.apply_with_idx_on_opt(|(idx, val)| {
-            if unsafe { mask.get_unchecked(idx) } {
-                f(val)
-            } else {
-                val
-            }
-        }))
+        let ca = mask
+            .into_iter()
+            .zip(self.into_iter())
+            .map(|(mask_val, opt_val)| match mask_val {
+                Some(true) => f(opt_val),
+                _ => opt_val,
+            })
+            .collect();
+        Ok(ca)
     }
 }
 
 impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
-    fn set_at_idx<T: AsTakeIndex>(&'a self, idx: &T, opt_value: Option<&'a str>) -> Result<Self>
+    fn set_at_idx<I: IntoIterator<Item = usize>>(
+        &'a self,
+        idx: I,
+        opt_value: Option<&'a str>,
+    ) -> Result<Self>
     where
         Self: Sized,
     {
-        let idx_iter = idx.as_take_iter();
+        let idx_iter = idx.into_iter();
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
@@ -186,7 +237,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         Ok(ca)
     }
 
-    fn set_at_idx_with<T: AsTakeIndex, F>(&'a self, idx: &T, f: F) -> Result<Self>
+    fn set_at_idx_with<I: IntoIterator<Item = usize>, F>(&'a self, idx: I, f: F) -> Result<Self>
     where
         Self: Sized,
         F: Fn(Option<&'a str>) -> Option<String>,
@@ -195,20 +246,20 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         impl_set_at_idx_with!(self, builder, idx, f)
     }
 
-    fn set(&'a self, mask: &BooleanChunked, opt_value: Option<&'a str>) -> Result<Self>
+    fn set(&'a self, mask: &BooleanChunked, value: Option<&'a str>) -> Result<Self>
     where
         Self: Sized,
     {
         check_bounds!(self, mask);
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
-        self.into_iter()
-            .zip(mask)
-            .for_each(|(opt_val_self, opt_mask)| match opt_mask {
-                None => builder.append_option(opt_val_self),
-                Some(true) => builder.append_option(opt_value),
-                Some(false) => builder.append_option(opt_val_self),
-            });
-        Ok(builder.finish())
+        let ca = mask
+            .into_iter()
+            .zip(self.into_iter())
+            .map(|(mask_val, opt_val)| match mask_val {
+                Some(true) => value,
+                _ => opt_val,
+            })
+            .collect();
+        Ok(ca)
     }
 
     fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
@@ -221,9 +272,8 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         self.into_iter()
             .zip(mask)
             .for_each(|(opt_val, opt_mask)| match opt_mask {
-                None => builder.append_option(opt_val),
                 Some(true) => builder.append_option(f(opt_val)),
-                Some(false) => builder.append_option(opt_val),
+                _ => builder.append_option(opt_val),
             });
         Ok(builder.finish())
     }
@@ -239,6 +289,7 @@ mod test {
         let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(5), Some(3)]);
+
         let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
         let mask = BooleanChunked::new_from_opt_slice("mask", &[None, Some(true), None]);
         let ca = ca.set(&mask, Some(5)).unwrap();
@@ -254,10 +305,10 @@ mod test {
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(5), Some(2), Some(3)]);
 
-        let ca = ca.set_at_idx(&[0, 1], Some(10)).unwrap();
+        let ca = ca.set_at_idx(vec![0, 1], Some(10)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(10), Some(10), Some(3)]);
 
-        assert!(ca.set_at_idx(&[0, 10], Some(0)).is_err());
+        assert!(ca.set_at_idx(vec![0, 10], Some(0)).is_err());
 
         // test booleans
         let ca = BooleanChunked::new_from_slice("a", &[true, true, true]);
@@ -270,5 +321,21 @@ mod test {
         let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
         let ca = ca.set(&mask, Some("bar")).unwrap();
         assert_eq!(Vec::from(&ca), &[Some("foo"), Some("bar"), Some("foo")]);
+    }
+
+    #[test]
+    fn test_set_null_values() {
+        let ca = Int32Chunked::new_from_opt_slice("a", &[Some(1), None, Some(3)]);
+        let mask = BooleanChunked::new_from_opt_slice("mask", &[Some(false), Some(true), None]);
+        let ca = ca.set(&mask, Some(2)).unwrap();
+        assert_eq!(Vec::from(&ca), &[Some(1), Some(2), Some(3)]);
+
+        let ca = Utf8Chunked::new_from_opt_slice("a", &[Some("foo"), None, Some("bar")]);
+        let ca = ca.set(&mask, Some("foo")).unwrap();
+        assert_eq!(Vec::from(&ca), &[Some("foo"), Some("foo"), Some("bar")]);
+
+        let ca = BooleanChunked::new_from_opt_slice("a", &[Some(false), None, Some(true)]);
+        let ca = ca.set(&mask, Some(true)).unwrap();
+        assert_eq!(Vec::from(&ca), &[Some(false), Some(true), Some(true)]);
     }
 }

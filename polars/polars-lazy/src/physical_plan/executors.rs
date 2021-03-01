@@ -26,7 +26,7 @@ impl<'a, R: 'static + Read + Seek + Sync + Send> FinishScanOps for CsvReader<'a,
         aggregate: Option<&[ScanAggregation]>,
     ) -> Result<DataFrame> {
         let predicate =
-            predicate.map(|expr| Arc::new(PhysicalIOHelper::new(expr)) as Arc<dyn PhysicalIOExpr>);
+            predicate.map(|expr| Arc::new(PhysicalIoHelper::new(expr)) as Arc<dyn PhysicalIoExpr>);
 
         let rechunk = self.rechunk;
         let mut csv_reader = self.build_inner_reader()?;
@@ -133,16 +133,12 @@ impl Executor for ParquetExec {
         let with_columns = mem::take(&mut self.with_columns);
         let schema = mem::take(&mut self.schema);
 
-        let projection: Option<Vec<_>> = if let Some(with_columns) = with_columns {
-            Some(
-                with_columns
-                    .iter()
-                    .map(|name| schema.column_with_name(name).unwrap().0)
-                    .collect(),
-            )
-        } else {
-            None
-        };
+        let projection: Option<Vec<_>> = with_columns.map(|with_columns| {
+            with_columns
+                .iter()
+                .map(|name| schema.column_with_name(name).unwrap().0)
+                .collect()
+        });
 
         let stop_after_n_rows = set_n_rows(self.stop_after_n_rows);
         let aggregate = if self.aggregate.is_empty() {
@@ -153,7 +149,7 @@ impl Executor for ParquetExec {
         let predicate = self
             .predicate
             .clone()
-            .map(|expr| Arc::new(PhysicalIOHelper::new(expr)) as Arc<dyn PhysicalIOExpr>);
+            .map(|expr| Arc::new(PhysicalIoHelper::new(expr)) as Arc<dyn PhysicalIoExpr>);
 
         let df = ParquetReader::new(file)
             .with_stop_after_n_rows(stop_after_n_rows)
@@ -497,17 +493,19 @@ fn groupby_helper(
 
     let agg_columns = POOL.install(|| {
        aggs
-            .par_iter()
+           // benchmarked that using iter was 5% faster than par_iter on db-benchmark q4
+           // probably less congestion.
+            .iter()
             .map(|expr| {
                 let agg_expr = expr.as_agg_expr()?;
                 let opt_agg = agg_expr.evaluate(&df, groups)?;
                 if let Some(agg) = &opt_agg {
                     if agg.len() != groups.len() {
-                        panic!(format!(
+                        panic!(
                             "returned aggregation is a different length: {} than the group lengths: {}",
                             agg.len(),
                             groups.len()
-                        ))
+                        )
                     }
                 };
                 Ok(opt_agg)
@@ -515,7 +513,7 @@ fn groupby_helper(
             .collect::<Result<Vec<_>>>()
     })?;
 
-    columns.extend(agg_columns.into_iter().filter_map(|opt| opt));
+    columns.extend(agg_columns.into_iter().flatten());
 
     let df = DataFrame::new_no_checks(columns);
     Ok(df)
@@ -632,22 +630,20 @@ impl Executor for PartitionGroupByExec {
                             let opt_agg = agg_expr.evaluate_partitioned(&df, groups)?;
                             if let Some(agg) = &opt_agg {
                                 if agg[0].len() != groups.len() {
-                                    panic!(format!(
+                                    panic!(
                                         "returned aggregation is a different length: {} than the group lengths: {}",
                                         agg.len(),
                                         groups.len()
-                                    ))
+                                    )
                                 }
                             };
                             Ok(opt_agg)
                         }).collect::<Result<Vec<_>>>()?;
 
-                    for agg in agg_columns {
-                        if let Some(agg) = agg {
+                    for agg in agg_columns.into_iter().flatten() {
                             for agg in agg {
                                 columns.push(agg)
                             }
-                        }
                     }
 
                     let df = DataFrame::new_no_checks(columns);
@@ -684,7 +680,7 @@ impl Executor for PartitionGroupByExec {
                 })
             });
 
-        columns.extend(agg_columns.filter_map(|opt| opt));
+        columns.extend(agg_columns.flatten());
 
         let df = DataFrame::new_no_checks(columns);
         Ok(df)

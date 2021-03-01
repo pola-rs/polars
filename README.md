@@ -50,12 +50,12 @@ Want to know about all the features Polars support? Read the docs!
 * [Documentation (stable)](https://docs.rs/polars/latest/polars/). 
 * [Documentation (master branch)](https://ritchie46.github.io/polars). 
     * [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html) 
-    * [Series](https://ritchie46.github.io/polars/polars/series/enum.Series.html)
+    * [Series](https://ritchie46.github.io/polars/polars/series/struct.Series.html)
     * [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
     * [Traits for ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/ops/index.html)
     * [Time/ DateTime utilities](https://ritchie46.github.io/polars/polars/doc/time/index.html)
     * [Groupby, aggregations and pivots](https://ritchie46.github.io/polars/polars/frame/group_by/struct.GroupBy.html)
-    * [Lazy DataFrame](https://ritchie46.github.io/polars/polars/lazy/frame/struct.LazyFrame.html)
+    * [Lazy DataFrame](https://ritchie46.github.io/polars/polars_lazy/frame/struct.LazyFrame.html)
 * [the book](https://ritchie46.github.io/polars-book/)
 * [10 minutes to Polars notebook](examples/10_minutes_to_polars.ipynb)
     
@@ -74,7 +74,7 @@ Additional cargo features:
 
 * `temporal (default)`
     - Conversions between Chrono and Polars for temporal data
-* `simd (default)`
+* `simd (nightly)`
     - SIMD operations
 * `parquet`
     - Read Apache Parquet format
@@ -93,6 +93,14 @@ Additional cargo features:
 * `object`
     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`). 
       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
+* `parallel`
+    - ChunkedArrays can be used by rayon::par_iter()
+* `[plain_fmt | pretty_fmt]` (mutually exclusive)
+  - one of them should be chosen to fmt DataFrames. 
+    `pretty_fmt` can deal with overflowing cells and looks nicer but has more dependencies.
+    `plain_fmt` is plain formatting.
+  
+
 
 ## Contribution
 Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).

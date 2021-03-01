@@ -42,7 +42,7 @@ impl PyLazyGroupBy {
             // call the lambda and get a python side DataFrame wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
@@ -72,8 +72,10 @@ impl From<LazyFrame> for PyLazyFrame {
 }
 
 #[pymethods]
+#[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
     #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
     pub fn new_from_csv(
         path: String,
         sep: &str,
@@ -86,7 +88,7 @@ impl PyLazyFrame {
     ) -> Self {
         let delimiter = sep.as_bytes()[0];
 
-        let overwrite_dtype = overwrite_dtype.and_then(|overwrite_dtype| {
+        let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype
                 .iter()
                 .map(|(name, dtype)| {
@@ -95,7 +97,7 @@ impl PyLazyFrame {
                     Field::new(name, dtype)
                 })
                 .collect();
-            Some(Schema::new(fields))
+            Schema::new(fields)
         });
 
         LazyCsvReader::new(path)
@@ -242,7 +244,7 @@ impl PyLazyFrame {
         ldf.reverse().into()
     }
 
-    pub fn shift(&self, periods: i32) -> Self {
+    pub fn shift(&self, periods: i64) -> Self {
         let ldf = self.ldf.clone();
         ldf.shift(periods).into()
     }
@@ -320,9 +322,11 @@ impl PyLazyFrame {
     }
 
     pub fn map(&self, lambda: PyObject, predicate_pd: bool, projection_pd: bool) -> Self {
-        let mut opt = AllowedOptimizations::default();
-        opt.projection_pushdown = projection_pd;
-        opt.predicate_pushdown = predicate_pd;
+        let opt = AllowedOptimizations {
+            predicate_pushdown: predicate_pd,
+            projection_pushdown: projection_pd,
+            ..Default::default()
+        };
 
         let function = move |s: DataFrame| {
             let gil = Python::acquire_gil();
@@ -336,7 +340,7 @@ impl PyLazyFrame {
             // call the lambda and get a python side Series wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!(format!("UDF failed: {}", e.pvalue(py).to_string())),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(

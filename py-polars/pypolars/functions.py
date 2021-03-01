@@ -5,6 +5,10 @@ from .frame import DataFrame
 from .series import Series
 from .lazy import LazyFrame
 from . import datatypes
+import pyarrow as pa
+import pyarrow.parquet
+import pyarrow.csv
+import builtins
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
@@ -72,6 +76,20 @@ def read_csv(
     -------
     DataFrame
     """
+
+    if (
+        dtype is None
+        and has_headers
+        and projection is None
+        and sep == ","
+        and columns is None
+        and stop_after_n_rows is None
+        and not ignore_errors
+        and n_threads is None
+        and encoding == "utf8"
+    ):
+        tbl = pa.csv.read_csv(file, pa.csv.ReadOptions(skip_rows=skip_rows))
+        return from_arrow_table(tbl, rechunk)
 
     df = DataFrame.read_csv(
         file=file,
@@ -178,7 +196,9 @@ def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
 
 
 def read_parquet(
-    file: Union[str, BinaryIO], stop_after_n_rows: "Optional[int]" = None
+    file: Union[str, BinaryIO],
+    stop_after_n_rows: "Optional[int]" = None,
+    memory_map=True,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a parquet file.
@@ -189,12 +209,17 @@ def read_parquet(
         Path to a file or a file like object.
     stop_after_n_rows
         After n rows are read from the parquet stops reading.
+    memory_map
+        Memory map underlying file. This will likely increase performance.
 
     Returns
     -------
     DataFrame
     """
-    return DataFrame.read_parquet(file, stop_after_n_rows=stop_after_n_rows)
+    if stop_after_n_rows is not None:
+        return DataFrame.read_parquet(file, stop_after_n_rows=stop_after_n_rows)
+    else:
+        return from_arrow_table(pa.parquet.read_table(file, memory_map=memory_map))
 
 
 def arg_where(mask: "Series"):
@@ -213,31 +238,50 @@ def arg_where(mask: "Series"):
     return mask.arg_true()
 
 
-def from_pandas(df: "pandas.DataFrame") -> "DataFrame":
+def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "DataFrame":
     """
-    Convert from pandas DataFrame to Polars DataFrame
+    Create a DataFrame from an arrow Table
+
+    Parameters
+    ----------
+    table
+        Arrow Table
+    rechunk
+        Make sure that all data is contiguous.
+    """
+    return DataFrame.from_arrow(table, rechunk)
+
+
+def from_pandas(df: "pandas.DataFrame", rechunk: bool = True) -> "DataFrame":
+    """
+    Convert from a pandas DataFrame to a polars DataFrame
 
     Parameters
     ----------
     df
         DataFrame to convert
+    rechunk
+        Make sure that all data is contiguous.
 
     Returns
     -------
     A Polars DataFrame
     """
-    columns = []
-    for k in df.columns:
-        s = df[k].values
-        if s.dtype == np.dtype("datetime64[ns]"):
-            # ns to ms
-            s = s.astype(int) // int(1e6)
-            pl_s = Series(k, s, nullable=True).cast(datatypes.Date64)
-        else:
-            pl_s = Series(k, s, nullable=True)
-        columns.append(pl_s)
 
-    return DataFrame(columns, nullable=True)
+    # Note: we first tried to infer the schema via pyarrow and then modify the schema if needed.
+    # However arrow 3.0 determines the type of a string like this:
+    #       pa.array(array).type
+    # needlessly allocating and failing when the string is too large for the string dtype.
+    data = {}
+
+    for (name, dtype) in zip(df.columns, df.dtypes):
+        if dtype == "object" and isinstance(df[name][0], str):
+            data[name] = pa.array(df[name], pa.large_utf8())
+        else:
+            data[name] = pa.array(df[name])
+
+    table = pa.table(data)
+    return from_arrow_table(table, rechunk)
 
 
 def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
@@ -253,7 +297,7 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
     """
     assert len(dfs) > 0
     df = dfs[0]
-    for i in range(1, len(dfs)):
+    for i in builtins.range(1, len(dfs)):
         try:
             df = df.vstack(dfs[i], in_place=False)
         # could have a double borrow (one mutable one ref)
@@ -263,3 +307,49 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
     if rechunk:
         return df.rechunk()
     return df
+
+
+def range(
+    lower: int, upper: int, step: Optional[int] = None, name: Optional[str] = None
+) -> Series:
+    """
+    Create a Series that ranges from lower bound to upper bound.
+    Parameters
+    ----------
+    lower
+        Lower bound value.
+    upper
+        Upper bound value.
+    step
+        Optional step size. If none given, the step size will be 1.
+    name
+        Name of the Series
+    """
+    if name is None:
+        name = ""
+    return Series(name, np.arange(lower, upper, step), nullable=False)
+
+
+def repeat(
+    val: "Union[int, float, str]", n: int, name: Optional[str] = None
+) -> "Series":
+    """
+    Repeat a single value n times and collect into a Series.
+
+    Parameters
+    ----------
+    val
+        Value to repeat.
+    n
+        Number of repeats.
+    name
+        Optional name of the Series.
+    """
+    if name is None:
+        name = ""
+    if isinstance(val, str):
+        s = Series._repeat(name, val, n)
+        s.rename(name)
+        return s
+    else:
+        return Series.from_arrow(name, pa.repeat(val, n))

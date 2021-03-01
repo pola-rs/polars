@@ -26,7 +26,10 @@ from typing import (
 )
 from .series import Series, wrap_s
 from .datatypes import *
+from .html import NotebookFormatter
+import pyarrow as pa
 import numpy as np
+import os
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
@@ -47,7 +50,7 @@ def prepare_other(other: Any) -> Series:
 
 class DataFrame:
     def __init__(
-        self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = False
+        self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = True
     ):
         """
         A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
@@ -203,26 +206,48 @@ class DataFrame:
         self._df = PyDataFrame.read_ipc(file)
         return self
 
-    def to_pandas(self) -> "pd.DataFrame":
+    @staticmethod
+    def from_arrow(table: pa.Table, rechunk: bool = True) -> "DataFrame":
+        """
+        Create DataFrame from arrow Table
+
+        Parameters
+        ----------
+        table
+            Arrow Table
+        rechunk
+            Make sure that all data is contiguous.
+        """
+        batches = table.to_batches()
+        self = DataFrame.__new__(DataFrame)
+        self._df = PyDataFrame.from_arrow_record_batches(batches)
+        if rechunk:
+            return self.rechunk()
+        return self
+
+    def to_arrow(self) -> pa.Table:
+        """
+        Collect the underlying arrow arrays in an Arrow Table.
+        This operation is zero copy.
+        """
+        record_batches = self._df.to_arrow()
+        return pa.Table.from_batches(record_batches)
+
+    def to_pandas(self, *args, date_as_object=False, **kwargs) -> "pd.DataFrame":
         """
         Cast to a Pandas DataFrame. This requires that Pandas is installed.
         This operation clones data.
-        """
-        import pandas as pd
 
-        data = self._df.to_pandas_helper()
-        for col in self.columns:
-            series = self[col]
-            if series.dtype == Date32:
-                # we need to make this extra copy because the numpy array is readonly
-                values = np.array(data[col])
-                s = pd.to_datetime(values, unit="d")
-                data[col] = s
-            elif series.dtype == Date64:
-                values = np.array(data[col])
-                s = pd.to_datetime(values, unit="ms")
-                data[col] = s
-        return pd.DataFrame(data)
+        Parameters
+        ----------
+        args
+            arguments will be sent to pyarrow.Table.to_pandas
+        date_as_object
+            Cast dates to objects. If False, convert to datetime64[ns] dtype
+        kwargs
+            arguments will be sent to pyarrow.Table.to_pandas
+        """
+        return self.to_arrow().to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
     def to_csv(
         self,
@@ -434,6 +459,11 @@ class DataFrame:
 
     def __len__(self):
         return self.height
+
+    def _repr_html_(self) -> str:
+        max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
+        max_rows = int(os.environ.get("POLARS_FMT_MAX_rows", 25))
+        return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
     def insert_at_idx(self, index: int, series: Series):
         self._df.insert_at_idx(index, series._s)
@@ -1049,6 +1079,12 @@ class DataFrame:
         This will make sure all subsequent operations have optimal and predictable performance
         """
         return wrap_df(self._df.rechunk())
+
+    def null_count(self) -> "DataFrame":
+        """
+        Create a new DataFrame that shows the null counts per column.
+        """
+        return wrap_df(self._df.null_count())
 
     def sample(
         self,

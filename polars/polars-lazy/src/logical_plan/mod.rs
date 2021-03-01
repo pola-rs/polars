@@ -16,6 +16,10 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Write};
 use std::{cell::Cell, fmt, sync::Arc};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
+#[cfg(feature = "temporal")]
+use polars_core::utils::chrono::NaiveDateTime;
+
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
 
@@ -76,6 +80,8 @@ pub enum LiteralValue {
         high: i64,
         data_type: DataType,
     },
+    #[cfg(feature = "temporal")]
+    DateTime(NaiveDateTime),
 }
 
 impl LiteralValue {
@@ -95,6 +101,8 @@ impl LiteralValue {
             LiteralValue::Float64(_) => DataType::Float64,
             LiteralValue::Utf8(_) => DataType::Utf8,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
+            #[cfg(feature = "temporal")]
+            LiteralValue::DateTime(_) => DataType::Date64,
             _ => panic!("Cannot treat {:?} as scalar value", self),
         }
     }
@@ -127,7 +135,7 @@ pub enum LogicalPlan {
         cache: bool,
     },
     #[cfg(feature = "parquet")]
-    #[doc(cfg(feature = "parquet"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     ParquetScan {
         path: String,
         schema: SchemaRef,
@@ -830,7 +838,7 @@ pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr
 
 impl LogicalPlanBuilder {
     #[cfg(feature = "parquet")]
-    #[doc(cfg(feature = "parquet"))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
         let file = std::fs::File::open(&path).expect("could not open file");
         let schema = Arc::new(
@@ -1215,7 +1223,6 @@ mod test {
     fn test_lazy_logical_plan_filter_and_alias_combined() {
         let df = get_df();
         let lf = df
-            .clone()
             .lazy()
             .filter(col("sepal.width").lt(lit(3.5)))
             .select(&[col("variety").alias("foo")]);
@@ -1331,9 +1338,8 @@ mod test {
         // column due to the join and an extra alias
         {
             let lf = left
-                .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"), None)
+                .left_join(right.lazy(), col("days"), col("days"), None)
                 .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")])
                 .filter(col("foo").lt(lit(0.3)));
 
