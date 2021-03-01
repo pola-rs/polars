@@ -79,7 +79,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(Utf8Chunked::new_from_chunks(self.name(), vec![])),
+                _ => self.slice(0, 0),
             };
         }
         check_filter_len!(self, filter);
@@ -111,7 +111,7 @@ impl ChunkFilter<ListType> for ListChunked {
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ListChunked::new_from_chunks(self.name(), vec![])),
+                _ => self.slice(0, 0),
             };
         }
         let (left, filter) = align_chunks_binary(self, filter);
