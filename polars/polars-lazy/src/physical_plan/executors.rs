@@ -493,7 +493,9 @@ fn groupby_helper(
 
     let agg_columns = POOL.install(|| {
        aggs
-            .par_iter()
+           // benchmarked that using iter was 5% faster than par_iter on db-benchmark q4
+           // probably less congestion.
+            .iter()
             .map(|expr| {
                 let agg_expr = expr.as_agg_expr()?;
                 let opt_agg = agg_expr.evaluate(&df, groups)?;
