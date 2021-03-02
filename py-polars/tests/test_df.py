@@ -70,6 +70,12 @@ def test_downsample():
     out = df.downsample("a", rule="minute", n=5).first()
     assert out.shape == (4, 2)
 
+    # OLHC
+    out = df.downsample("a", rule="minute", n=5).agg(
+        {"b": ["first", "min", "max", "last"]}
+    )
+    assert out.shape == (4, 5)
+
     # test to_pandas as well.
     out = df.to_pandas()
     assert out["a"].dtype == "datetime64[ns]"

@@ -478,6 +478,28 @@ impl PyDataFrame {
         }
     }
 
+    pub fn downsample_agg(
+        &self,
+        by: &str,
+        rule: &str,
+        n: u32,
+        column_to_agg: Vec<(&str, Vec<&str>)>,
+    ) -> PyResult<Self> {
+        let rule = match rule {
+            "second" => SampleRule::Second(n),
+            "minute" => SampleRule::Minute(n),
+            "day" => SampleRule::Day(n),
+            "hour" => SampleRule::Hour(n),
+            a => {
+                return Err(PyPolarsEr::Other(format!("rule {} not supported", a)).into());
+            }
+        };
+        let gb = self.df.downsample(by, rule).map_err(PyPolarsEr::from)?;
+        let df = gb.agg(&column_to_agg).map_err(PyPolarsEr::from)?;
+        let out = df.sort(by, false).map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
+
     pub fn downsample(&self, by: &str, rule: &str, n: u32, agg: &str) -> PyResult<Self> {
         let rule = match rule {
             "second" => SampleRule::Second(n),
