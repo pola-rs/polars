@@ -5,6 +5,7 @@
 ### py-polars 0.6.7
 * performance
   - \[python | rust\] use mimalloc global allocator
+  - \[python | rust\] undo performance regression on large number of threads
 * bug fix
   - \[python\ | rust\] fix accidental over-allocation in csv-parser
   - \[python\] support agg (dictionary aggregation) for downsample
