@@ -6,7 +6,8 @@
 * performance
   - \[python | rust\] use mimalloc global allocator
 * bug fix
-  - \[python\] fix accidental over-allocation in csv-parser
+  - \[python\ | rust\] fix accidental over-allocation in csv-parser
+  - \[python\] support agg (dictionary aggregation) for downsample
 
 ### py-polars 0.6.6
 * performance

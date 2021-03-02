@@ -1328,8 +1328,6 @@ class GroupBy:
         -------
         Result of groupby split apply operations.
         """
-        if self.downsample:
-            raise ValueError("agg not suppore in downsample operation")
         if isinstance(column_to_agg, dict):
             column_to_agg = [
                 (column, [agg] if isinstance(agg, str) else agg)
@@ -1340,6 +1338,12 @@ class GroupBy:
                 (column, [agg] if isinstance(agg, str) else agg)
                 for (column, agg) in column_to_agg
             ]
+        if self.downsample:
+            return wrap_df(
+                self._df.downsample_agg(
+                    self.by, self.rule, self.downsample_n, column_to_agg
+                )
+            )
 
         return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
 
@@ -1353,7 +1357,7 @@ class GroupBy:
             One or multiple columns
         """
         if self.downsample:
-            raise ValueError("select not suppore in downsample operation")
+            raise ValueError("select not supported in downsample operation")
         if isinstance(columns, str):
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
@@ -1378,7 +1382,7 @@ class GroupBy:
             Column that will be aggregated
         """
         if self.downsample:
-            raise ValueError("pivot not suppore in downsample operation")
+            raise ValueError("pivot not supported in downsample operation")
         return PivotOps(self._df, self.by, pivot_column, values_column)
 
     def first(self) -> DataFrame:
