@@ -19,12 +19,17 @@ pub(crate) fn is_unique_helper(
     duplicated_val: bool,
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
-    groups.sort_unstable_by_key(|t| t.0);
+    groups.sort_unstable_by_key(|t| {
+        // Safety:
+        // all groups have at least one member
+        unsafe { *t.get_unchecked(0) }
+    });
 
-    let mut unique_idx_iter = groups
-        .into_iter()
-        .filter(|(_, g)| g.len() == 1)
-        .map(|(first, _)| first);
+    let mut unique_idx_iter = groups.into_iter().filter(|g| g.len() == 1).map(|g| {
+        // Safety:
+        // all groups have at least one member
+        unsafe { *g.get_unchecked(0) }
+    });
 
     let mut next_unique_idx = unique_idx_iter.next();
     (0..len)
@@ -137,10 +142,10 @@ macro_rules! impl_value_counts {
     ($self:expr) => {{
         let group_tuples = $self.group_tuples(true);
         let values =
-            unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
+            unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t[0] as usize).into()) };
         let mut counts: NoNull<UInt32Chunked> = group_tuples
             .into_iter()
-            .map(|(_, groups)| groups.len() as u32)
+            .map(|groups| groups.len() as u32)
             .collect();
         counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_inner().into_series()];
@@ -257,8 +262,11 @@ impl ToDummies<Utf8Type> for Utf8Chunked {
 
         let columns = groups
             .into_par_iter()
-            .map(|(first, groups)| {
-                let val = unsafe { self.get_unchecked(first as usize) };
+            .map(|groups| {
+                let val = unsafe {
+                    let first = *groups.get_unchecked(0);
+                    self.get_unchecked(first as usize)
+                };
                 let name = format!("{}_{}", col_name, val);
                 let ca = dummies_helper(groups, self.len(), &name);
                 ca.into_series()
@@ -280,8 +288,11 @@ where
 
         let columns = groups
             .into_par_iter()
-            .map(|(first, groups)| {
-                let val = unsafe { self.get_unchecked(first as usize) };
+            .map(|groups| {
+                let val = unsafe {
+                    let first = *groups.get_unchecked(0);
+                    self.get_unchecked(first as usize)
+                };
                 let name = format!("{}_{}", col_name, val);
                 let ca = dummies_helper(groups, self.len(), &name);
                 ca.into_series()

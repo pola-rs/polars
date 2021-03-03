@@ -33,47 +33,47 @@ pub(crate) mod private {
         fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
             unimplemented!()
         }
-        fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_mean(&self, _groups: &[Vec<u32>]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_min(&self, _groups: &[Vec<u32>]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_max(&self, _groups: &[Vec<u32>]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_sum(&self, _groups: &[Vec<u32>]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_std(&self, _groups: &[Vec<u32>]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_var(&self, _groups: &[Vec<u32>]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
+        fn agg_first(&self, _groups: &[Vec<u32>]) -> Series {
             unimplemented!()
         }
-        fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
+        fn agg_last(&self, _groups: &[Vec<u32>]) -> Series {
             unimplemented!()
         }
-        fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
+        fn agg_n_unique(&self, _groups: &[Vec<u32>]) -> Option<UInt32Chunked> {
             unimplemented!()
         }
-        fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_list(&self, _groups: &[Vec<u32>]) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
+        fn agg_quantile(&self, _groups: &[Vec<u32>], _quantile: f64) -> Option<Series> {
             unimplemented!()
         }
-        fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_median(&self, _groups: &[Vec<u32>]) -> Option<Series> {
             unimplemented!()
         }
         fn pivot<'a>(
             &self,
             _pivot_series: &'a (dyn SeriesTrait + 'a),
             _keys: Vec<Series>,
-            _groups: &[(u32, Vec<u32>)],
+            _groups: &[Vec<u32>],
             _agg_type: PivotAgg,
         ) -> Result<DataFrame> {
             unimplemented!()
@@ -83,7 +83,7 @@ pub(crate) mod private {
             &self,
             _pivot_series: &'a (dyn SeriesTrait + 'a),
             _keys: Vec<Series>,
-            _groups: &[(u32, Vec<u32>)],
+            _groups: &[Vec<u32>],
         ) -> Result<DataFrame> {
             unimplemented!()
         }
