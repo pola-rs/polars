@@ -1,5 +1,9 @@
 //! # (De)serializing CSV files
 //!
+//! ## Maximal performance
+//! Currently [CsvReader::new](CsvReader::new) has an extra copy. If you want optimal performance in CSV parsing/
+//! reading, it is adviced to use [CsvReader::from_path](CsvReader::from_path).
+//!
 //! ## Write a DataFrame to a csv file.
 //!
 //! ## Example
@@ -50,6 +54,7 @@
 //! assert_eq!("sepal.length", df.get_columns()[0].name());
 //! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
 //! ```
+//!
 use crate::csv_core::csv::{build_csv_reader, SequentialReader};
 use crate::{SerReader, SerWriter};
 pub use arrow::csv::WriterBuilder;
@@ -147,7 +152,6 @@ pub enum CsvEncoding {
 /// use std::fs::File;
 ///
 /// fn example() -> Result<DataFrame> {
-///
 ///     CsvReader::from_path("iris_csv")?
 ///             .infer_schema(None)
 ///             .has_header(true)
