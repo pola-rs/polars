@@ -179,7 +179,7 @@ macro_rules! impl_dyn_series {
             fn remainder(&self, rhs: &Series) -> Result<Series> {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
-            fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+            fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
                 IntoGroupTuples::group_tuples(&self.0, multithreaded)
             }
         }
