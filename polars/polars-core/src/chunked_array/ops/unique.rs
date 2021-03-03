@@ -1,5 +1,6 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
+use crate::frame::group_by::GroupTuples;
 use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode_f64, NoNull};
 use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
@@ -12,7 +13,7 @@ use std::fmt::Display;
 use std::hash::Hash;
 
 pub(crate) fn is_unique_helper(
-    mut groups: Vec<(u32, Vec<u32>)>,
+    mut groups: GroupTuples,
     len: u32,
     unique_val: bool,
     duplicated_val: bool,

@@ -26,7 +26,7 @@ pub trait IntoSeries {
 
 pub(crate) mod private {
     use super::*;
-    use crate::frame::group_by::PivotAgg;
+    use crate::frame::group_by::{GroupTuples, PivotAgg};
     use ahash::RandomState;
 
     pub trait PrivateSeries {
@@ -120,7 +120,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             unimplemented!()
         }
-        fn group_tuples(&self, _multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+        fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
             unimplemented!()
         }
     }

@@ -23,6 +23,8 @@ use std::{
     ops::Add,
 };
 
+pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+
 pub trait VecHash {
     /// Compute the hase for all values in the array.
     ///
@@ -131,7 +133,7 @@ impl VecHash for Float64Chunked {
 
 impl VecHash for ListChunked {}
 
-fn groupby<T>(a: impl Iterator<Item = T>) -> Vec<(u32, Vec<u32>)>
+fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
     T: Hash + Eq,
 {
@@ -146,7 +148,7 @@ where
         .collect()
 }
 
-fn groupby_threaded_flat<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<(u32, Vec<u32>)>
+fn groupby_threaded_flat<I, T>(iters: Vec<I>, group_size_hint: usize) -> GroupTuples
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -159,7 +161,7 @@ where
 
 /// Determine groupby tuples from an iterator. The group_size_hint is used to pre-allocate the group vectors.
 /// When the grouping column is a categorical type we already have a good indication of the avg size of the groups.
-fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<Vec<(u32, Vec<u32>)>>
+fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<GroupTuples>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -264,7 +266,7 @@ fn populate_multiple_key_hashmap(
     }
 }
 
-fn groupby_multiple_keys(keys: DataFrame) -> Vec<(u32, Vec<u32>)> {
+fn groupby_multiple_keys(keys: DataFrame) -> GroupTuples {
     let (hashes, _) = df_rows_to_hashes(&keys, None);
     let size = hashes.len();
     // rather over allocate because rehashing is expensive
@@ -282,7 +284,7 @@ fn groupby_multiple_keys(keys: DataFrame) -> Vec<(u32, Vec<u32>)> {
     hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
 }
 
-fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> Vec<(u32, Vec<u32>)> {
+fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> GroupTuples {
     let dfs = split_df(&keys, n_threads).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let size = hashes.len();
@@ -336,7 +338,7 @@ pub trait IntoGroupTuples {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in te tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
         unimplemented!()
     }
 }
@@ -378,7 +380,7 @@ where
     T: PolarsIntegerType,
     T::Native: Eq + Hash + Send,
 {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         let group_size_hint = if let Some(m) = &self.categorical_map {
             self.len() / m.len()
         } else {
@@ -424,19 +426,19 @@ where
     }
 }
 impl IntoGroupTuples for BooleanChunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         group_tuples!(self, multithreaded)
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         group_tuples!(self, multithreaded)
     }
 }
 
 impl IntoGroupTuples for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         self.cast::<UInt32Type>()
             .unwrap()
             .group_tuples(multithreaded)
@@ -474,12 +476,12 @@ macro_rules! impl_into_group_tpls_float {
 }
 
 impl IntoGroupTuples for Float64Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         impl_into_group_tpls_float!(self, multithreaded)
     }
 }
 impl IntoGroupTuples for Float32Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> Vec<(u32, Vec<u32>)> {
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         impl_into_group_tpls_float!(self, multithreaded)
     }
 }
@@ -717,7 +719,7 @@ pub struct GroupBy<'df, 'selection_str> {
     df: &'df DataFrame,
     pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
-    pub(crate) groups: Vec<(u32, Vec<u32>)>,
+    pub(crate) groups: GroupTuples,
     // columns selected for aggregation
     selected_agg: Option<Vec<&'selection_str str>>,
 }
@@ -1262,7 +1264,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// The Vec returned contains:
     ///     (first_idx, Vec<indexes>)
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups(&self) -> &Vec<(u32, Vec<u32>)> {
+    pub fn get_groups(&self) -> &GroupTuples {
         &self.groups
     }
 
