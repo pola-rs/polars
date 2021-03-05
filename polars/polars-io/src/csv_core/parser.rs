@@ -105,6 +105,65 @@ pub(crate) fn get_line_stats(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)>
 }
 
 /// An adapted version of std::iter::Split.
+/// This exists solely because we cannot split the file in lines naively as
+///
+/// ```text
+///    for line in bytes.split(b'\n') {
+/// ```
+///
+/// This will fail when strings fields are have embedded end line characters.
+/// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
+struct SplitLines<'a> {
+    v: &'a [u8],
+    end_line_char: u8,
+}
+
+impl<'a> SplitLines<'a> {
+    fn new(slice: &'a [u8], end_line_char: u8) -> Self {
+        Self {
+            v: slice,
+            end_line_char,
+        }
+    }
+}
+
+impl<'a> Iterator for SplitLines<'a> {
+    type Item = &'a [u8];
+
+    #[inline]
+    fn next(&mut self) -> Option<&'a [u8]> {
+        // denotes if we are in a string field
+        let mut in_field = false;
+        let len = self.v.len();
+        if len == 0 {
+            return None;
+        }
+
+        let mut pos = 0;
+        for i in 0..len {
+            pos = i;
+            let c = unsafe { *self.v.get_unchecked(i) };
+
+            if c == b'"' {
+                // toggle between string field enclosure
+                //      if we encounter a starting '"' -> in_field = true;
+                //      if we encounter a closing '"' -> in_field = false;
+                in_field = !in_field;
+            }
+            // if we are not in a string and we encounter '\n' we can stop at this position.
+            if !in_field && c == self.end_line_char {
+                break;
+            }
+        }
+        // return line up to this position
+        let ret = Some(&self.v[..pos]);
+        // skip the '\n' token and update slice.
+        self.v = &self.v[pos + 1..];
+        ret
+    }
+}
+
+/// An adapted version of std::iter::Split.
 /// This exists solely because we cannot split the lines naively as
 ///
 /// ```text
@@ -197,7 +256,10 @@ pub(crate) fn parse_lines(
     // String types are not parsed. We store strings the starting index in the bytes array and store
     // the length of the string field. We also store the total length of processed string fields per column.
     // Later we use that meta information to exactly allocate the required buffers and parse the strings.
-    for mut line in bytes.split(|b| *b == b'\n') {
+    // TODO iter_lines fixes embedded new line character in string fields/
+    //                 but this can still fail, because the threads naively split on new line characters.
+    let iter_lines = SplitLines::new(bytes, b'\n');
+    for mut line in iter_lines {
         let len = line.len();
 
         // two adjacent '\n\n' will lead to an empty line.
