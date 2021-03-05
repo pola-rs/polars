@@ -616,4 +616,20 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
             .unwrap();
         assert_eq!(df.shape(), (3, 9));
     }
+
+    #[test]
+    fn test_new_line_escape() {
+        let s = r#"
+ "sepal.length","sepal.width","petal.length","petal.width","variety"
+ 5.1,3.5,1.4,.2,"Setosa
+ texts after new line character"
+ 4.9,3,1.4,.2,"Setosa""#;
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file)
+            .has_header(true)
+            .with_n_threads(Some(1))
+            .finish()
+            .unwrap();
+    }
 }
