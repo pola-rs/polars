@@ -124,7 +124,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         if self.skip_rows > 0 {
             for _ in 0..self.skip_rows {
-                let pos = next_line_position(bytes)
+                let pos = next_line_position(bytes, self.schema.fields().len(), self.delimiter)
                     .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
                 bytes = &bytes[pos..];
             }
@@ -146,7 +146,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             .unwrap_or_else(|| (0..self.schema.fields().len()).collect());
         let bytes = self.find_starting_point(bytes)?;
 
-        let file_chunks = get_file_chunks(bytes, n_threads);
+        let file_chunks =
+            get_file_chunks(bytes, n_threads, self.schema.fields().len(), self.delimiter);
 
         let parsed_dfs = POOL
             .install(|| {
@@ -275,7 +276,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
                 if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position(&bytes[n_bytes..]) {
+                    if let Some(pos) = next_line_position(
+                        &bytes[n_bytes..],
+                        self.schema.fields().len(),
+                        self.delimiter,
+                    ) {
                         bytes = &bytes[..n_bytes + pos]
                     }
                 }
@@ -295,7 +300,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
-        let file_chunks = get_file_chunks(bytes, n_threads);
+        let file_chunks =
+            get_file_chunks(bytes, n_threads, self.schema.fields().len(), self.delimiter);
         let local_capacity = total_rows / n_threads;
 
         // all the buffers returned from the threads
