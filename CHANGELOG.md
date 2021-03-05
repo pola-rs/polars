@@ -1,13 +1,18 @@
 # Changelog polars/ py-polars
 
-## Future Polars v0.13
+## \[future\] Polars v0.13
+
+### \[future\] py-polars 0.6.8
+* bug fix
+  - \[python | rust\] fix csv-parser: allow new-line character in a string field
+  - \[python | rust\] don't let predicate-pushdown pass shift operation to maintain correctness.
 
 ### py-polars 0.6.7
 * performance
   - \[python | rust\] use mimalloc global allocator
   - \[python | rust\] undo performance regression on large number of threads
 * bug fix
-  - \[python\ | rust\] fix accidental over-allocation in csv-parser
+  - \[python | rust\] fix accidental over-allocation in csv-parser
   - \[python\] support agg (dictionary aggregation) for downsample
 
 ### py-polars 0.6.6
