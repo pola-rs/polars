@@ -19,7 +19,12 @@ pub(crate) fn init_csv_reader<R: Read>(
     reader_builder.from_reader(reader)
 }
 
-pub(crate) fn get_file_chunks(bytes: &[u8], n_threads: usize) -> Vec<(usize, usize)> {
+pub(crate) fn get_file_chunks(
+    bytes: &[u8],
+    n_threads: usize,
+    expected_fields: usize,
+    delimiter: u8,
+) -> Vec<(usize, usize)> {
     let mut last_pos = 0;
     let total_len = bytes.len();
     let chunk_size = total_len / n_threads;
@@ -31,7 +36,7 @@ pub(crate) fn get_file_chunks(bytes: &[u8], n_threads: usize) -> Vec<(usize, usi
             break;
         }
 
-        let end_pos = match next_line_position(&bytes[search_pos..]) {
+        let end_pos = match next_line_position(&bytes[search_pos..], expected_fields, delimiter) {
             Some(pos) => search_pos + pos,
             None => {
                 break;

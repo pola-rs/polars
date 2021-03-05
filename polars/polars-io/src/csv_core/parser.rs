@@ -12,7 +12,9 @@ pub(crate) fn skip_bom(input: &[u8]) -> &[u8] {
     }
 }
 
-pub(crate) fn next_line_position(input: &[u8]) -> Option<usize> {
+/// Find the nearest next line position.
+/// Does not check for new line characters embedded in String fields.
+pub(crate) fn next_line_position_naive(input: &[u8]) -> Option<usize> {
     let pos = input.iter().position(|b| *b == b'\n')?;
     input.get(pos + 1).and_then(|&b| {
         Option::from({
@@ -23,6 +25,43 @@ pub(crate) fn next_line_position(input: &[u8]) -> Option<usize> {
             }
         })
     })
+}
+
+/// Find the nearest next line position that is not embedded in a String field.
+pub(crate) fn next_line_position(
+    mut input: &[u8],
+    expected_fields: usize,
+    delimiter: u8,
+) -> Option<usize> {
+    let mut total_pos = 0;
+    if input.is_empty() {
+        return None;
+    }
+    loop {
+        let pos = input.iter().position(|b| *b == b'\n')?;
+        if input.len() - pos == 0 {
+            return None;
+        }
+        let line = SplitLines::new(&input[pos..], b'\n').next();
+        if let Some(line) = line {
+            if SplitFields::new(line, delimiter).into_iter().count() == expected_fields {
+                return input.get(pos + 1).and_then(|&b| {
+                    Option::from({
+                        if b == b'\r' {
+                            total_pos + pos + 1
+                        } else {
+                            total_pos + pos
+                        }
+                    })
+                });
+            } else {
+                input = &input[pos + 1..];
+                total_pos += pos + 1;
+            }
+        } else {
+            return None;
+        }
+    }
 }
 
 pub(crate) fn is_line_ending(b: u8) -> bool {
@@ -56,7 +95,7 @@ where
 /// and not with
 ///     '\nfield_1,field_1'
 pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
-    let mut pos = next_line_position(input).expect("no lines in the file");
+    let mut pos = next_line_position_naive(input).expect("no lines in the file");
     if input[pos + 1] == b'\n' {
         pos += 1;
     }
@@ -256,8 +295,6 @@ pub(crate) fn parse_lines(
     // String types are not parsed. We store strings the starting index in the bytes array and store
     // the length of the string field. We also store the total length of processed string fields per column.
     // Later we use that meta information to exactly allocate the required buffers and parse the strings.
-    // TODO iter_lines fixes embedded new line character in string fields/
-    //                 but this can still fail, because the threads naively split on new line characters.
     let iter_lines = SplitLines::new(bytes, b'\n');
     for mut line in iter_lines {
         let len = line.len();
