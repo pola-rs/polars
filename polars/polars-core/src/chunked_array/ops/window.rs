@@ -9,10 +9,7 @@ where
 {
     match acc {
         None => None,
-        Some(acc) => match opt_v {
-            None => None,
-            Some(v) => Some(acc + v),
-        },
+        Some(acc) => opt_v.map(|v| acc + v),
     }
 }
 
@@ -37,10 +34,7 @@ where
 {
     match acc {
         None => None,
-        Some(acc) => match opt_v {
-            None => None,
-            Some(v) => Some(if acc < v { acc } else { v }),
-        },
+        Some(acc) => opt_v.map(|v| if acc < v { acc } else { v }),
     }
 }
 
@@ -64,10 +58,7 @@ where
 {
     match acc {
         None => None,
-        Some(acc) => match opt_v {
-            None => None,
-            Some(v) => Some(if acc > v { acc } else { v }),
-        },
+        Some(acc) => opt_v.map(|v| if acc > v { acc } else { v }),
     }
 }
 

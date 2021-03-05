@@ -211,7 +211,7 @@ impl DefaultPlanner {
                     }
                 }
                 let input = self.create_initial_physical_plan(*input)?;
-                Ok(Box::new(CacheExec { input, key }))
+                Ok(Box::new(CacheExec { key, input }))
             }
             LogicalPlan::Distinct {
                 input,
