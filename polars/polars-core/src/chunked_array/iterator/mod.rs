@@ -268,11 +268,11 @@ where
 
         NumIterManyChunk {
             ca,
-            current_iter_left,
             chunks,
+            current_iter_left,
             current_iter_right,
-            idx_left,
             chunk_idx_left,
+            idx_left,
             idx_right,
             chunk_idx_right,
         }
