@@ -12,6 +12,8 @@ repository = "https://github.com/ritchie46/polars"
 [features]
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 temporal = ["polars-core/temporal"]
+# debugging purposesses
+fmt = ["polars-core/plain_fmt"]
 
 [dependencies]
 ahash = "0.7"

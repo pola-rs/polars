@@ -934,6 +934,7 @@ mod test {
     use super::*;
     use crate::functions::pearson_corr;
     use crate::tests::get_df;
+    use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
     use polars_core::*;
 
     fn scan_foods_csv() -> LazyFrame {
@@ -1337,6 +1338,35 @@ mod test {
             .collect()
             .unwrap();
         dbg!(out);
+    }
+
+    #[test]
+    fn test_lazy_query_7() {
+        let date = NaiveDate::from_ymd(2021, 3, 5);
+        let dates = vec![
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 1, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 3, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 4, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 5, 0)),
+        ];
+        let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
+        let df = DataFrame::new(vec![
+            Date64Chunked::new_from_naive_datetime("date", &*dates).into(),
+            Series::new("data", data),
+        ])
+        .unwrap();
+        // this tests if predicate pushdown not interferes with the shift data.
+        let out = df
+            .lazy()
+            .with_column(col("data").shift(-1).alias("output"))
+            .with_column(col("output").shift(2).alias("shifted"))
+            .filter(col("date").gt(lit(NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)))))
+            .collect()
+            .unwrap();
+        let a = out.column(&"shifted").unwrap().sum::<f64>().unwrap() - 7.0;
+        assert!(a < 0.01 && a > -0.01);
     }
 
     #[test]

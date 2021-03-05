@@ -42,6 +42,7 @@ pub struct PredicatePushDown {
     is_null_dummy: Expr,
     is_not_null_dummy: Expr,
     explode_dummy: Expr,
+    shift_dummy: Expr,
 }
 
 impl Default for PredicatePushDown {
@@ -53,6 +54,10 @@ impl Default for PredicatePushDown {
             is_null_dummy: lit("_").is_null(),
             is_not_null_dummy: lit("_").is_null(),
             explode_dummy: Expr::Explode(Box::new(Expr::Wildcard)),
+            shift_dummy: Expr::Shift {
+                input: Box::new(Expr::Wildcard),
+                periods: 0,
+            },
         }
     }
 }
@@ -472,20 +477,35 @@ impl PredicatePushDown {
                 Ok(self.finish_node(local_predicates, builder))
             }
             HStack { input, exprs, .. } => {
-                let mut local = Vec::with_capacity(acc_predicates.len());
-                let mut local_keys = Vec::with_capacity(acc_predicates.len());
+                // local predicates will be executed in this node of the LP
+                let len = acc_predicates.len();
+                let mut local = Vec::with_capacity(len);
+                let mut local_keys = Vec::with_capacity(len);
+
                 for (key, predicate) in &acc_predicates {
                     if !check_down_node(predicate, input.schema()) {
                         local_keys.push(key.clone());
                     }
                 }
 
-                // get all names of added columns in this HStack
-                let mut added_cols =
-                    HashSet::with_capacity_and_hasher(exprs.len(), RandomState::default());
+                // First we get all names of added columns in this HStack operation
+                // and then we remove the predicates from the elegible container if they are
+                // dependent on data we've added in this node.
+
+                // *use a vec instead of a set because of the low number of expected columns
+                let mut added_cols = Vec::with_capacity(exprs.len());
                 for e in &exprs {
+                    // shifts are influenced by a filter so we do all predicates before the shift
+                    if has_expr(e, &self.shift_dummy) {
+                        let mut lp_builder = LogicalPlanBuilder::from(*input).with_columns(exprs);
+                        let predicate =
+                            combine_predicates(acc_predicates.into_iter().map(|(_, v)| v));
+                        lp_builder = lp_builder.filter(predicate);
+                        return Ok(lp_builder.build());
+                    }
+
                     for name in expr_to_root_column_names(e) {
-                        added_cols.insert(name);
+                        added_cols.push(name);
                     }
                 }
                 // remove predicates that are dependent on columns added in this HStack.
