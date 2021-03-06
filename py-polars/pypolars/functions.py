@@ -10,6 +10,32 @@ import pyarrow as pa
 import pyarrow.parquet
 import pyarrow.csv
 import builtins
+import urllib.request
+import io
+
+
+def _process_http_file(path: str) -> io.BytesIO:
+    with urllib.request.urlopen(path) as f:
+        return io.BytesIO(f.read())
+
+
+def _prepare_file_arg(
+    file: Union[str, TextIO, Path, BinaryIO]
+) -> Union[str, TextIO, Path, BinaryIO]:
+    """
+    Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
+
+    Does one of:
+        - A path.Path object is converted to a string
+        - a raw file on the web is downloaded into a buffer.
+    """
+    if isinstance(file, Path):
+        file = str(file)
+
+    if isinstance(file, str) and file.startswith("http"):
+        file = _process_http_file(file)
+
+    return file
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
@@ -76,8 +102,7 @@ def read_csv(
     -------
     DataFrame
     """
-    if isinstance(file, Path):
-        file = str(file)
+    file = _prepare_file_arg(file)
 
     if (
         use_pyarrow
@@ -206,8 +231,7 @@ def read_ipc(file: Union[str, BinaryIO, Path]) -> "DataFrame":
     -------
     DataFrame
     """
-    if isinstance(file, Path):
-        file = str(file)
+    file = _prepare_file_arg(file)
     return DataFrame.read_ipc(file)
 
 
@@ -232,8 +256,7 @@ def read_parquet(
     -------
     DataFrame
     """
-    if isinstance(file, Path):
-        file = str(file)
+    file = _prepare_file_arg(file)
     if stop_after_n_rows is not None:
         return DataFrame.read_parquet(file, stop_after_n_rows=stop_after_n_rows)
     else:

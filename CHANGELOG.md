@@ -2,8 +2,13 @@
 
 ## \[future\] Polars v0.13
 
-### \[future\] py-polars 0.6.8
+### \[future\] py-polars 0.7.0
+* feature
+  - \[python\] add parquet compression
+  - \[python\] implicitly download raw files from the web in `read_parquet`, `read_csv`.
+  
 * bug fix
+  - \[python\] support file buffers for reading and writing csv and parquet
   - \[python | rust\] fix csv-parser: allow new-line character in a string field
   - \[python | rust\] don't let predicate-pushdown pass shift operation to maintain correctness.
 
