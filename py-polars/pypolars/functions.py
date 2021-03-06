@@ -32,7 +32,7 @@ def read_csv(
     n_threads: Optional[int] = None,
     dtype: "Optional[Dict[str, DataType]]" = None,
     new_columns: "Optional[List[str]]" = None,
-    use_stable_parser: bool = False,
+    use_pyarrow: bool = True,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a csv file.
@@ -69,9 +69,8 @@ def read_csv(
         Number of threads to use in csv parsing. Defaults to the number of physical cpu's of you system.
     dtype
         Overwrite the dtypes during inference
-    use_stable_parser
-        Use slower but more stable parser. The current default uses an experimental parser that
-        is faster and uses less memory.
+    use_pyarrow
+        Use pyarrow's native CSV parser.
 
     Returns
     -------
@@ -81,7 +80,8 @@ def read_csv(
         file = str(file)
 
     if (
-        dtype is None
+        use_pyarrow
+        and dtype is None
         and has_headers
         and projection is None
         and sep == ","
@@ -109,7 +109,6 @@ def read_csv(
         encoding=encoding,
         n_threads=n_threads,
         dtype=dtype,
-        use_stable_parser=use_stable_parser,
     )
     if new_columns:
         df.columns = new_columns

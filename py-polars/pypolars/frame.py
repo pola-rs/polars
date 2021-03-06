@@ -28,6 +28,7 @@ from .series import Series, wrap_s
 from .datatypes import *
 from .html import NotebookFormatter
 import pyarrow as pa
+import pyarrow.parquet
 import numpy as np
 import os
 from pathlib import Path
@@ -106,7 +107,6 @@ class DataFrame:
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
         dtype: "Optional[Dict[str, DataType]]" = None,
-        use_stable_parser: bool = False,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -163,7 +163,6 @@ class DataFrame:
             n_threads,
             path,
             dtype,
-            use_stable_parser,
         )
         return self
 
@@ -316,7 +315,13 @@ class DataFrame:
 
         self._df.to_ipc(file)
 
-    def to_parquet(self, file: Union[str, Path]):
+    def to_parquet(
+        self,
+        file: Union[str, Path],
+        compression: str = "snappy",
+        use_pyarrow: bool = True,
+        **kwargs,
+    ):
         """
         Write the DataFrame disk in parquet format.
 
@@ -324,11 +329,24 @@ class DataFrame:
         ----------
         file
             File path to which the file should be written.
+        compression
+            Compression method (only supported if `use_pyarrow`)
+        use_pyarrow
+            Use C++ parquet implementation vs rust parquet implementation.
+            At the moment C++ supports more features
+
+        **kwargs are passed to pyarrow.parquet.write_table
         """
         if isinstance(file, Path):
             file = str(file)
 
-        self._df.to_parquet(file)
+        if use_pyarrow:
+            tbl = self.to_arrow()
+            pa.parquet.write_table(
+                table=tbl, where=file, compression=compression, **kwargs
+            )
+        else:
+            self._df.to_parquet(file)
 
     def to_numpy(self) -> np.ndarray:
         """
