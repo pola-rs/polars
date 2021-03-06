@@ -30,6 +30,7 @@ from .html import NotebookFormatter
 import pyarrow as pa
 import numpy as np
 import os
+from pathlib import Path
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
@@ -108,7 +109,7 @@ class DataFrame:
         use_stable_parser: bool = False,
     ) -> "DataFrame":
         """
-        Read a comma-seperated value file into a Dataframe.
+        Read a CSV file into a Dataframe.
 
         Parameters
         ---
@@ -266,7 +267,7 @@ class DataFrame:
 
     def to_csv(
         self,
-        file: Union[TextIO, str],
+        file: Union[TextIO, str, Path],
         batch_size: int = 100000,
         has_headers: bool = True,
         delimiter: str = ",",
@@ -277,13 +278,13 @@ class DataFrame:
         Parameters
         ---
         file
-            Write location
+            File path to which the file should be written.
         batch_size
             Size of the write buffer. Increase to have faster io.
         has_headers
             Whether or not to include header in the CSV output.
         delimiter
-            Space elements with this symbol.
+            Separate CSV fields with this symbol.
 
         Example
         ---
@@ -293,23 +294,29 @@ class DataFrame:
             "bar": [6, 7, 8, 9, 10],
             "ham": ['a', 'b', 'c', 'd','e']
             })
-        >>> dataframe.to_csv('new_file.csv', sep=';')
+        >>> dataframe.to_csv('new_file.csv', sep=',')
         ```
         """
+        if isinstance(file, Path):
+            file = str(file)
+
         self._df.to_csv(file, batch_size, has_headers, ord(delimiter))
 
-    def to_ipc(self, file: Union[BinaryIO, str]):
+    def to_ipc(self, file: Union[BinaryIO, str, Path]):
         """
         Write to Arrow IPC binary stream, or a feather file.
 
         Parameters
         ----------
         file
-            write location
+            File path to which the file should be written.
         """
+        if isinstance(file, Path):
+            file = str(file)
+
         self._df.to_ipc(file)
 
-    def to_parquet(self, file: str):
+    def to_parquet(self, file: Union[str, Path]):
         """
         Write the DataFrame disk in parquet format.
 
@@ -318,6 +325,9 @@ class DataFrame:
         file
             File path to which the file should be written.
         """
+        if isinstance(file, Path):
+            file = str(file)
+
         self._df.to_parquet(file)
 
     def to_numpy(self) -> np.ndarray:

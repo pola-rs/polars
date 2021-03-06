@@ -1,5 +1,6 @@
 from typing import Union, TextIO, Optional, List, BinaryIO
 import numpy as np
+from pathlib import Path
 
 from .frame import DataFrame
 from .series import Series
@@ -16,7 +17,7 @@ def get_dummies(df: DataFrame) -> DataFrame:
 
 
 def read_csv(
-    file: Union[str, TextIO],
+    file: Union[str, TextIO, Path],
     infer_schema_length: int = 100,
     batch_size: int = 64,
     has_headers: bool = True,
@@ -76,6 +77,8 @@ def read_csv(
     -------
     DataFrame
     """
+    if isinstance(file, Path):
+        file = str(file)
 
     if (
         dtype is None
@@ -114,7 +117,7 @@ def read_csv(
 
 
 def scan_csv(
-    file: str,
+    file: Union[str, Path],
     has_headers: bool = True,
     ignore_errors: bool = False,
     sep: str = ",",
@@ -124,7 +127,10 @@ def scan_csv(
     dtype: "Optional[Dict[str, DataType]]" = None,
 ) -> "LazyFrame":
     """
-    Read into a DataFrame from a csv file.
+    Lazily read from a csv file.
+
+    This allows the query optimizer to push down predicates and projections to the scan level,
+    thereby potentially reducing memory overhead.
 
     Parameters
     ----------
@@ -147,6 +153,8 @@ def scan_csv(
     dtype
         Overwrite the dtypes during inference
     """
+    if isinstance(file, Path):
+        file = str(file)
     return LazyFrame.scan_csv(
         file=file,
         has_headers=has_headers,
@@ -160,10 +168,15 @@ def scan_csv(
 
 
 def scan_parquet(
-    file: str, stop_after_n_rows: "Optional[int]" = None, cache: bool = True
+    file: Union[str, Path],
+    stop_after_n_rows: "Optional[int]" = None,
+    cache: bool = True,
 ) -> "LazyFrame":
     """
-    Read into a DataFrame from a csv file.
+    Lazily read from a csv file.
+
+    This allows the query optimizer to push down predicates and projections to the scan level,
+    thereby potentially reducing memory overhead.
 
     Parameters
     ----------
@@ -174,12 +187,14 @@ def scan_parquet(
     cache
         Cache the result after reading
     """
+    if isinstance(file, Path):
+        file = str(file)
     return LazyFrame.scan_parquet(
         file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
     )
 
 
-def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
+def read_ipc(file: Union[str, BinaryIO, Path]) -> "DataFrame":
     """
     Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -192,11 +207,13 @@ def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
     -------
     DataFrame
     """
+    if isinstance(file, Path):
+        file = str(file)
     return DataFrame.read_ipc(file)
 
 
 def read_parquet(
-    file: Union[str, BinaryIO],
+    file: Union[str, BinaryIO, Path],
     stop_after_n_rows: "Optional[int]" = None,
     memory_map=True,
 ) -> "DataFrame":
@@ -216,6 +233,8 @@ def read_parquet(
     -------
     DataFrame
     """
+    if isinstance(file, Path):
+        file = str(file)
     if stop_after_n_rows is not None:
         return DataFrame.read_parquet(file, stop_after_n_rows=stop_after_n_rows)
     else:
