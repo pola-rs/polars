@@ -43,6 +43,7 @@ pub struct PredicatePushDown {
     is_not_null_dummy: Expr,
     explode_dummy: Expr,
     shift_dummy: Expr,
+    sort_dummy: Expr,
 }
 
 impl Default for PredicatePushDown {
@@ -57,6 +58,10 @@ impl Default for PredicatePushDown {
             shift_dummy: Expr::Shift {
                 input: Box::new(Expr::Wildcard),
                 periods: 0,
+            },
+            sort_dummy: Expr::Sort {
+                expr: Box::new(Expr::Wildcard),
+                reverse: false,
             },
         }
     }
@@ -495,8 +500,8 @@ impl PredicatePushDown {
                 // *use a vec instead of a set because of the low number of expected columns
                 let mut added_cols = Vec::with_capacity(exprs.len());
                 for e in &exprs {
-                    // shifts are influenced by a filter so we do all predicates before the shift
-                    if has_expr(e, &self.shift_dummy) {
+                    // shifts | sorts are influenced by a filter so we do all predicates before the shift | sort
+                    if has_expr(e, &self.shift_dummy) || has_expr(e, &self.sort_dummy) {
                         let mut lp_builder = LogicalPlanBuilder::from(*input).with_columns(exprs);
                         let predicate =
                             combine_predicates(acc_predicates.into_iter().map(|(_, v)| v));
