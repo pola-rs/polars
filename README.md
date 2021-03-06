@@ -98,7 +98,7 @@ Additional cargo features:
 * `[plain_fmt | pretty_fmt]` (mutually exclusive)
   - one of them should be chosen to fmt DataFrames. 
     `pretty_fmt` can deal with overflowing cells and looks nicer but has more dependencies.
-    `plain_fmt` is plain formatting.
+    `plain_fmt (default)` is plain formatting.
   
 
 
@@ -106,10 +106,19 @@ Additional cargo features:
 Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).
 
 
-## Env vars
+## ENV vars
 * `POLARS_PAR_SORT_BOUND` -> Sets the lower bound of rows at which Polars will use a parallel sorting algorithm.
                              Default is 1M rows.
 * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
 * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
 * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 * `POLARS_MAX_THREADS` -> maximum number of threads used in join algorithm. Default is unbounded.
+
+## \[Python\] compile py-polars from source
+If you want a bleeding edge release or maximal performance you should compile **py-polars** from source.
+
+This can be done by going through the following steps in sequence:
+
+1. install the latest [rust compiler](https://www.rust-lang.org/tools/install)
+2. `$ pip3 install maturin`
+4. `$ cd py-polars && maturin develop --release`
