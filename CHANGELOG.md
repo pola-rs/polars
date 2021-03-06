@@ -11,7 +11,7 @@
 * bug fix
   - \[python\] support file buffers for reading and writing csv and parquet
   - \[python | rust\] fix csv-parser: allow new-line character in a string field
-  - \[python | rust\] don't let predicate-pushdown pass shift operation to maintain correctness.
+  - \[python | rust\] don't let predicate-pushdown pass shift | sort operation to maintain correctness.
 
 ### py-polars 0.6.7
 * performance
