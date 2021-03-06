@@ -10,6 +10,8 @@ import pyarrow as pa
 import pypolars as pl
 import pandas as pd
 
+from utils import get_complete_df
+
 
 def test_init():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
@@ -335,21 +337,6 @@ def test_concat():
     df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
     assert functions.concat([df, df]).shape == (6, 3)
-
-
-def get_complete_df():
-    return DataFrame(
-        {
-            "bools": [False, True, False],
-            "bools_nulls": [None, True, False],
-            "int": [1, 2, 3],
-            "int_nulls": [1, None, 3],
-            "floats": [1.0, 2.0, 3.0],
-            "floats_nulls": [1.0, None, 3.0],
-            "strings": ["foo", "bar", "ham"],
-            "strings_nulls": ["foo", None, "ham"],
-        }
-    )
 
 
 def test_to_pandas():
