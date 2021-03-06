@@ -65,7 +65,6 @@ impl PyDataFrame {
         mut n_threads: Option<usize>,
         path: Option<String>,
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
-        use_stable_parser: bool,
     ) -> PyResult<Self> {
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
@@ -114,7 +113,6 @@ impl PyDataFrame {
             .with_n_threads(n_threads)
             .with_path(path)
             .with_dtype_overwrite(overwrite_dtype.as_ref())
-            .with_stable_parser(use_stable_parser)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
