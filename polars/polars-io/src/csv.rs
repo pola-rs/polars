@@ -422,7 +422,7 @@ mod test {
  4.6,3.1,1.5,.2,"Setosa"
  5,3.6,1.4,.2,"Setosa"
  5.4,3.9,1.7,.4,"Setosa"
- 4.6,3.4,1.4,.3,"Setosa"#;
+ 4.6,3.4,1.4,.3,"Setosa""#;
 
         let file = Cursor::new(s);
         let df = CsvReader::new(file)
@@ -437,7 +437,7 @@ mod test {
         let s = r#"
          "sepal.length","sepal.width","petal.length","petal.width","variety"
          5.1,3.5,1.4,.2,"Setosa"
-         5.1,3.5,1.4,.2,"Setosa"#;
+         5.1,3.5,1.4,.2,"Setosa""#;
 
         let file = Cursor::new(s);
 
@@ -458,7 +458,7 @@ mod test {
         4.6,3.1,1.5,.2,"Setosa"
         5,3.6,1.4,.2,"Setosa"
         5.4,3.9,1.7,.4,"Setosa"
-        4.6,3.4,1.4,.3,"Setosa"#;
+        4.6,3.4,1.4,.3,"Setosa""#;
 
         let file = Cursor::new(s);
         let df = CsvReader::new(file)
@@ -564,6 +564,23 @@ mod test {
             .column("column_3")
             .unwrap()
             .series_equal(&Series::new("column_3", &[11, 12])));
+    }
+
+    #[test]
+    fn test_escape_double_quotes() {
+        let csv = r#"column_1,column_2,column_3
+-86.64408227,"with ""double quotes"" US",11
+-86.64408227,"with ""double quotes followed"", by comma",12"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish().unwrap();
+        assert_eq!(df.shape(), (2, 3));
+        assert!(df.column("column_2").unwrap().series_equal(&Series::new(
+            "column_2",
+            &[
+                r#"with "double quotes" US"#,
+                r#"with "double quotes followed", by comma"#
+            ]
+        )));
     }
 
     #[test]

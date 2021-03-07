@@ -208,14 +208,9 @@ impl<'a> Iterator for SplitLines<'a> {
 /// ```text
 ///    lines.split(b',').for_each(do_stuff)
 /// ```
-///
-/// This will fail when strings have contained delimiters.
-/// For instance: "Street, City, Country" is a valid string field, that contains multiple delimiters.
 struct SplitFields<'a> {
     v: &'a [u8],
     delimiter: u8,
-    // escaped string field ",
-    str_delimiter: [u8; 2],
     finished: bool,
 }
 
@@ -224,7 +219,6 @@ impl<'a> SplitFields<'a> {
         Self {
             v: slice,
             delimiter,
-            str_delimiter: [b'"', delimiter],
             finished: false,
         }
     }
@@ -250,11 +244,39 @@ impl<'a> Iterator for SplitFields<'a> {
         // There can be strings with delimiters:
         // "Street, City",
         let pos = if !self.v.is_empty() && self.v[0] == b'"' {
-            // we offset 1 because "," is a valid field and we don't want to match position 0.
-            match self.v[1..].windows(2).position(|x| x == self.str_delimiter) {
-                None => return self.finish(),
-                Some(idx) => idx + 2,
+            // There can be pair of double-quotes within string.
+            // Each of the embedded double-quote characters must be represented
+            // by a pair of double-quote characters:
+            // e.g. 1997,Ford,E350,"Super, ""luxurious"" truck",20020
+
+            // To find the last double-quote we check for the last uneven double-quote
+            // character followed by a comma.
+            let mut previous_char = b'"';
+            let mut idx = 0;
+            for (current_idx, current_char) in self.v.iter().enumerate() {
+                if current_char == &self.delimiter && previous_char == b'"' {
+                    idx = current_idx;
+                    break;
+                }
+                if current_char == &b'"' && previous_char != b'"' {
+                    previous_char = b'"';
+                } else {
+                    // Replace previous char by '#' when the number of double-quote is even.
+                    previous_char = b'#';
+                }
             }
+
+            if idx == 0 && previous_char == b'"' {
+                return self.finish();
+            }
+
+            debug_assert!(
+                idx != 0,
+                "Field with non closing double-quote at: {}",
+                std::str::from_utf8(self.v).unwrap(),
+            );
+
+            idx
         } else {
             match self.v.iter().position(|x| *x == self.delimiter) {
                 None => return self.finish(),
