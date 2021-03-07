@@ -503,9 +503,11 @@ impl PredicatePushDown {
                     // shifts | sorts are influenced by a filter so we do all predicates before the shift | sort
                     if has_expr(e, &self.shift_dummy) || has_expr(e, &self.sort_dummy) {
                         let mut lp_builder = LogicalPlanBuilder::from(*input).with_columns(exprs);
-                        let predicate =
-                            combine_predicates(acc_predicates.into_iter().map(|(_, v)| v));
-                        lp_builder = lp_builder.filter(predicate);
+                        if !acc_predicates.is_empty() {
+                            let predicate =
+                                combine_predicates(acc_predicates.into_iter().map(|(_, v)| v));
+                            lp_builder = lp_builder.filter(predicate);
+                        }
                         return Ok(lp_builder.build());
                     }
 
