@@ -1370,6 +1370,20 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_shift_operation_no_filter() {
+        // check if predicate pushdown optimization does not fail
+        let df = df! {
+            "a" => &[1, 2, 3],
+            "b" => &[1, 2, 3]
+        }
+        .unwrap();
+        df.lazy()
+            .with_column(col("b").shift(1).alias("output"))
+            .collect()
+            .unwrap();
+    }
+
+    #[test]
     fn test_simplify_expr() {
         // Test if expression containing literals is simplified
         let df = get_df();
