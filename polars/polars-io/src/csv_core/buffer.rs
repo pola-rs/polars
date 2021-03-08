@@ -431,10 +431,11 @@ where
             let row_size = length;
             let mut builder = Utf8ChunkedBuilder::new("", row_size, values_size);
             let mut reader = csv_core::ReaderBuilder::new().delimiter(delimiter).build();
-            let mut string_buf = vec![0; 256];
 
             buffers.into_iter().try_for_each(|(v, _)| {
                 v.into_iter().try_for_each(|utf8_field| {
+                    let mut string_buf = vec![0; 256];
+
                     let out_slice = if !utf8_field.escape {
                         unsafe {
                             // in debug we check if don't have out of bounds access
@@ -451,7 +452,10 @@ where
                         let bytes = utf8_field.get_long_subslice(bytes);
 
                         if utf8_field.len as usize > string_buf.capacity() {
-                            string_buf.reserve(string_buf.capacity())
+                            string_buf.resize(
+                                std::cmp::max(utf8_field.len as usize, string_buf.capacity()),
+                                0,
+                            );
                         }
                         // proper escape the str field by copying to output buffer
                         let (_, _, n_end) = reader.read_field(bytes, &mut string_buf);
