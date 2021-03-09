@@ -4,20 +4,41 @@ use ahash::RandomState;
 use polars_core::prelude::*;
 use std::collections::HashMap;
 use std::rc::Rc;
-use crate::logical_plan::{EXPR_ARENA, map_aexpr, map_alp};
+use crate::logical_plan::{
+    optimizer::to_aexpr,
+    EXPR_ARENA, map_aexpr, map_alp, expr_arena_get};
+use std::borrow::BorrowMut;
+
+trait DSL {
+    fn and(self, right: Node) -> Node;
+}
+
+impl DSL for Node {
+    fn and(self, right: Node) -> Node {
+        let arena_ref = expr_arena_get();
+        let mut arena = (*arena_ref).borrow_mut();
+        arena.add(AExpr::BinaryExpr {
+            left: self,
+            op: Operator::And,
+            right
+        })
+    }
+}
 
 /// Don't overwrite predicates but combine them.
 fn insert_and_combine_predicate(
     predicates_map: &mut HashMap<Arc<String>, Node, RandomState>,
     name: Arc<String>,
     predicate: Node,
-    arena: &mut Arena<AExpr>
 
 ) {
-    // let existing_predicate = predicates_map.entry(name).or_insert_with(|| to_aexpr(lit(true), arena ));
-    // arena.get(*existing_predicate).and
-    // *existing_predicate = existing_predicate.clone().and(predicate)
-    todo!()
+    let existing_predicate = predicates_map.entry(name).or_insert_with(|| {
+        let arena_ref = expr_arena_get();
+        let mut arena = (*arena_ref).borrow_mut();
+        to_aexpr(lit(true), &mut *arena)
+    });
+
+    *existing_predicate = existing_predicate.and(predicate);
 }
 
 pub struct PredicatePushdown2 {}

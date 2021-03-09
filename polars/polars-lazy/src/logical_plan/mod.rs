@@ -14,7 +14,9 @@ use polars_io::csv_core::utils::infer_file_schema;
 use polars_io::prelude::*;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter, Write};
-use std::{cell::{
+use std::{
+    rc::Rc,
+    cell::{
     Cell,
     RefCell,
 }, fmt, sync::Arc};
@@ -22,18 +24,23 @@ use std::{cell::{
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 #[cfg(feature = "temporal")]
 use polars_core::utils::chrono::NaiveDateTime;
-use std::borrow::BorrowMut;
+use std::borrow::{BorrowMut, Borrow};
+use std::cell::{RefMut, Ref};
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
 
-thread_local! {pub(crate) static EXPR_ARENA: RefCell<Arena<AExpr>> = RefCell::new(Arena::default())}
+pub type ExprArenaRef = Rc<RefCell<Arena<AExpr>>>;
 
-thread_local! {pub(crate) static LP_ARENA: RefCell<Arena<ALogicalPlan>> = RefCell::new(Arena::default())}
+thread_local! {pub(crate) static EXPR_ARENA: ExprArenaRef = Rc::new(RefCell::new(Arena::default()))}
+
+pub type LPRef = Rc<RefCell<Arena<ALogicalPlan>>>;
+
+thread_local! {pub(crate) static LP_ARENA: LPRef = Rc::new(RefCell::new(Arena::default()))}
 
 pub(crate) fn assign_aexpr(aexpr: AExpr) -> Node {
     EXPR_ARENA.with(|arena| {
-        arena.borrow_mut().add(aexpr)
+        (**arena).borrow_mut().add(aexpr)
     })
 }
 
@@ -41,14 +48,14 @@ pub(crate) fn map_aexpr<F>(node: Node, f: F)
     where F: Fn(AExpr) -> AExpr
 {
     EXPR_ARENA.with(|arena| {
-        arena.borrow_mut().replace_with(node, f)
+        (**arena).borrow_mut().replace_with(node, f)
     })
 }
 
 
 pub(crate) fn assign_alp(alp: ALogicalPlan) -> Node {
     LP_ARENA.with(|arena| {
-        arena.borrow_mut().add(alp)
+        (**arena).borrow_mut().add(alp)
     })
 }
 
@@ -56,9 +63,16 @@ pub(crate) fn map_alp<F>(node: Node, f: F) -> Result<()>
     where F: FnMut(ALogicalPlan) -> Result<ALogicalPlan>
 {
     LP_ARENA.with(|arena| {
-        arena.borrow_mut().try_replace_with(node, f)
+        (**arena).borrow_mut().try_replace_with(node, f)
     })
+}
 
+pub (crate) fn expr_arena_get() -> ExprArenaRef {
+    EXPR_ARENA.with(|arena| arena.clone())
+}
+
+pub (crate) fn lp_arena_get() -> LPRef {
+    LP_ARENA.with(|arena| arena.clone())
 }
 
 #[derive(Clone, Copy)]
