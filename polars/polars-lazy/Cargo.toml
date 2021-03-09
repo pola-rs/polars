@@ -14,6 +14,7 @@ parquet = ["polars-core/parquet", "polars-io/parquet"]
 temporal = ["polars-core/temporal"]
 # debugging purposesses
 fmt = ["polars-core/plain_fmt"]
+future = []
 
 [dependencies]
 ahash = "0.7"

@@ -156,6 +156,10 @@ impl<T> Arena<T> {
         Arena { items: vec![] }
     }
 
+    pub fn with_capacity(cap: usize) -> Self {
+        Arena {items: Vec::with_capacity(cap)}
+    }
+
     #[inline]
     pub fn get(&self, idx: Node) -> &T {
         debug_assert!(idx.0 < self.items.len());
@@ -176,8 +180,24 @@ impl<T> Arena<T> {
 }
 
 impl<T: Default> Arena<T> {
+    #[inline]
     pub fn take(&mut self, idx: Node) -> T {
         std::mem::take(self.get_mut(idx))
+    }
+
+    pub fn replace_with<F>(&mut self, idx: Node, f: F)
+        where F: FnOnce(T) -> T
+    {
+        let val = self.take(idx);
+        self.assign(idx, val);
+    }
+
+    pub fn try_replace_with<F>(&mut self, idx: Node, mut f: F) -> Result<()>
+        where F: FnMut(T) -> Result<T>
+    {
+        let val = self.take(idx);
+        self.assign(idx, f(val)?);
+        Ok(())
     }
 }
 

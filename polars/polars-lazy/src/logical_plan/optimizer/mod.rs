@@ -14,6 +14,8 @@ pub(crate) mod predicate;
 pub(crate) mod projection;
 pub(crate) mod simplify_expr;
 pub(crate) mod type_coercion;
+#[cfg(feature = "future")]
+pub(crate) mod predicate2;
 
 // check if a selection/projection can be done on the downwards schema
 fn check_down_node(expr: &Expr, down_schema: &Schema) -> bool {
