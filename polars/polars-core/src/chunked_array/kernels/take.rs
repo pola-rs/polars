@@ -365,8 +365,11 @@ pub(crate) unsafe fn take_utf8(
     // The required size is yet unknown
     // Allocate 2.0 times the expected size.
     // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
-    let mut values_capacity =
-        ((arr.value_data().len() as f32 * 2.0) as usize) / arr.len() * indices.len() as usize;
+    let mut values_capacity = if arr.len() > 0 {
+        ((arr.value_data().len() as f32 * 2.0) as usize) / arr.len() * indices.len() as usize
+    } else {
+        0
+    };
 
     // 16 bytes per string as default alloc
     let mut values_buf = AlignedVec::<u8>::with_capacity_aligned(values_capacity);

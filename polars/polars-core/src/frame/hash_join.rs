@@ -1288,4 +1288,25 @@ mod test {
 
         assert_eq!(Vec::from(ca), correct_ham);
     }
+
+    #[test]
+    fn empty_df_join() {
+        let empty: Vec<String> = vec![];
+        let left = DataFrame::new(vec![
+            Series::new("key", &empty),
+            Series::new("lval", &empty),
+        ])
+        .unwrap();
+
+        let right = DataFrame::new(vec![
+            Series::new("key", &["foo"]),
+            Series::new("rval", &[4]),
+        ])
+        .unwrap();
+
+        let res = left.inner_join(&right, "key", "key");
+
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().height(), 0);
+    }
 }
