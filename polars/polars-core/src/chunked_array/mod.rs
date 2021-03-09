@@ -319,7 +319,7 @@ impl<T> ChunkedArray<T> {
 
         for chunk in &self.chunks {
             let chunk_len = chunk.len();
-            if remaining_offset >= chunk_len {
+            if remaining_offset > 0 && remaining_offset >= chunk_len {
                 remaining_offset -= chunk_len;
                 continue;
             }
