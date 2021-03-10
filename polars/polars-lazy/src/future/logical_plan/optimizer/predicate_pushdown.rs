@@ -161,6 +161,23 @@ impl PredicatePushdown {
         }
     }
 
+    fn finish_at_leaf(
+        &self,
+        lp: ALogicalPlan,
+        acc_predicates: HashMap<Arc<String>, Node, RandomState>,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> ALogicalPlan {
+        match acc_predicates.len() {
+            // No filter in the logical plan
+            0 => lp,
+            _ => {
+                let local_predicates = acc_predicates.into_iter().map(|t| t.1).collect();
+                self.apply_predicate(lp, local_predicates, lp_arena, expr_arena)
+            }
+        }
+    }
+
     fn pushdown_and_assign(
         &self,
         input: Node,
@@ -422,6 +439,25 @@ impl PredicatePushdown {
                     subset,
                 };
                 Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+            }
+            Aggregate {
+                input,
+                keys,
+                aggs,
+                schema,
+                apply,
+            } => {
+                self.pushdown_and_assign(input, optimizer::init_hashmap(), lp_arena, expr_arena)?;
+
+                // dont push down predicates. An aggregation needs all rows
+                let lp = Aggregate {
+                    input,
+                    keys,
+                    aggs,
+                    schema,
+                    apply,
+                };
+                Ok(self.finish_at_leaf(lp, acc_predicates, lp_arena, expr_arena))
             }
 
             lp => Ok(lp),
