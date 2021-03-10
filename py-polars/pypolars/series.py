@@ -397,9 +397,13 @@ class Series:
             elif key.dtype == UInt32:
                 self._s = self.set_at_idx(key.cast_u64(), value)._s
         # TODO: implement for these types without casting to series
-        if isinstance(key, (np.ndarray, list, tuple)):
+        elif isinstance(key, (np.ndarray, list, tuple)):
             s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
             self.__setitem__(s, value)
+        elif isinstance(key, int):
+            self.__setitem__([key], value)
+        else:
+            raise ValueError(f'cannot use "{key}" for indexing')
 
     def drop_nulls(self) -> "Series":
         return wrap_s(self._s.drop_nulls())
