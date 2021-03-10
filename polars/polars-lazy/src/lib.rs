@@ -196,8 +196,6 @@
 pub mod dsl;
 pub mod frame;
 pub mod functions;
-#[cfg(feature = "future")]
-pub mod future;
 mod logical_plan;
 pub mod physical_plan;
 pub mod prelude;

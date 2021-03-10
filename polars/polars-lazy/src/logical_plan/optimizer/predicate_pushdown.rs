@@ -1,11 +1,10 @@
-use crate::future::logical_plan::arena::{assign_alp, expr_arena_get, lp_arena_get, map_alp};
-use crate::future::logical_plan::ALogicalPlanBuilder;
-use crate::future::utils::{
-    aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node,
-};
 use crate::logical_plan::optimizer::to_aexpr;
+use crate::logical_plan::optimizer::ALogicalPlanBuilder;
 use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
+use crate::utils::{
+    aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node,
+};
 use crate::utils::{
     expr_to_root_column_name, expr_to_root_column_names, has_aexpr, has_expr,
     rename_aexpr_root_name, rename_expr_root_name,
@@ -756,53 +755,6 @@ impl PredicatePushdown {
 mod test {
     use super::*;
     use polars_core::df;
-
-    #[test]
-    fn test_arena_pushdown() {
-        let df = df! {
-            "a" => [1, 2, 3],
-            "b" => [1, 2, 3]
-        }
-        .unwrap();
-
-        let mut lps = Vec::with_capacity(10);
-
-        let lp = LogicalPlanBuilder::from_existing_df(df.clone())
-            .slice(0, 0)
-            .project(vec![col("a"), col("b")])
-            .build();
-        lps.push(lp);
-
-        let lp = LogicalPlanBuilder::from_existing_df(df)
-            .slice(0, 0)
-            .project(vec![col("a"), col("b")])
-            .filter(col("a").gt(col("b")))
-            .build();
-        lps.push(lp);
-
-        for lp in lps {
-            println!("\n\n");
-
-            let original_lp = lp.clone();
-
-            let mut expr_arena = Arena::with_capacity(10);
-            let mut lp_arena = Arena::with_capacity(10);
-            let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
-            let alp = lp_arena.take(root);
-
-            let opt = PredicatePushdown {};
-            let lp = opt.optimize(alp, &mut lp_arena, &mut expr_arena).unwrap();
-            let root = lp_arena.add(lp);
-            let lp = node_to_lp(root, &mut expr_arena, &mut lp_arena);
-
-            let opt = crate::prelude::PredicatePushDown::default();
-            let lp_expected = opt.optimize(original_lp).unwrap();
-
-            println!("lp:\n{:?}\n", lp);
-            println!("lp expected:\n{:?}\n", lp_expected);
-            assert_eq!(format!("{:?}", &lp), format!("{:?}", &lp_expected));
-        }
-    }
 
     #[test]
     fn test_insert_and_combine_predicate() {

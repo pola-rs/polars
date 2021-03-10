@@ -1,9 +1,8 @@
 pub(crate) mod optimizer;
-use crate::logical_plan::optimizer::predicate::combine_predicates;
 use crate::logical_plan::LogicalPlan::CsvScan;
 use crate::utils::{
-    expr_to_root_column_exprs, expr_to_root_column_name, expr_to_root_column_names, has_expr,
-    rename_expr_root_name,
+    combine_predicates_expr, expr_to_root_column_exprs, expr_to_root_column_name,
+    expr_to_root_column_names, has_expr, rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
 use ahash::RandomState;
@@ -988,7 +987,7 @@ impl LogicalPlanBuilder {
             let it = self.0.schema().fields().iter().map(|field| {
                 replace_wildcard_with_column(predicate.clone(), Arc::new(field.name().clone()))
             });
-            combine_predicates(it)
+            combine_predicates_expr(it)
         } else {
             predicate
         };

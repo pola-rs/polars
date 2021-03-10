@@ -3,9 +3,9 @@ use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 use crate::logical_plan::optimizer::aggregate_scan_projections::{
     agg_projection, AggScanProjection,
 };
-use crate::logical_plan::optimizer::predicate::combine_predicates;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
+use crate::utils::combine_predicates_expr;
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use ahash::RandomState;
 use polars_core::frame::hash_join::JoinType;
@@ -391,8 +391,7 @@ impl LazyFrame {
         let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
         let predicate_pushdown_opt =
-            crate::future::logical_plan::optimizer::predicate_pushdown::PredicatePushdown::default(
-            );
+            crate::logical_plan::optimizer::predicate_pushdown::PredicatePushdown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
 
         // during debug we check if the projection/predicate pushdown have not modified the final schema
@@ -822,7 +821,7 @@ impl LazyFrame {
             None => self.filter(col("*").is_not_null()),
             Some(subset) => {
                 let it = subset.into_iter().map(|e| e.is_not_null());
-                let predicate = combine_predicates(it);
+                let predicate = combine_predicates_expr(it);
                 self.filter(predicate)
             }
         }
