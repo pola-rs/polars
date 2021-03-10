@@ -223,7 +223,7 @@ impl PredicatePushdown {
                         // if this alias refers to one of the predicates in the upper nodes
                         // we rename the column of the predicate before we push it downwards.
                         if let Some(predicate) = acc_predicates.remove(&*name) {
-                            let new_name = aexpr_to_root_column_name(predicate, &*expr_arena)
+                            let new_name = aexpr_to_root_column_name(*e, &*expr_arena)
                                 .expect("more than one root");
                             rename_aexpr_root_name(*node, expr_arena, new_name.clone()).unwrap();
                             insert_and_combine_predicate(
@@ -322,6 +322,65 @@ impl PredicatePushdown {
                     input,
                     schema: Arc::new(schema),
                 })
+            }
+            #[cfg(feature = "parquet")]
+            ParquetScan {
+                path,
+                schema,
+                with_columns,
+                predicate,
+                aggregate,
+                stop_after_n_rows,
+                cache,
+            } => {
+                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
+
+                let lp = ParquetScan {
+                    path,
+                    schema,
+                    with_columns,
+                    predicate,
+                    aggregate,
+                    stop_after_n_rows,
+                    cache,
+                };
+                Ok(lp)
+            }
+
+            Sort {
+                input,
+                by_column,
+                reverse,
+            } => {
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                Ok(Sort {
+                    input,
+                    by_column,
+                    reverse,
+                })
+            }
+            Explode { input, columns } => {
+                // we remove predicates that are done in one of the exploded columns.
+                let mut remove_keys = Vec::with_capacity(acc_predicates.len());
+
+                for (key, predicate) in &acc_predicates {
+                    let root_names = aexpr_to_root_names(*predicate, expr_arena);
+                    for name in root_names {
+                        if columns.contains(&*name) {
+                            remove_keys.push(key.clone());
+                            continue;
+                        }
+                    }
+                }
+                let mut local_predicates = Vec::with_capacity(remove_keys.len());
+                for key in remove_keys {
+                    let pred = acc_predicates.remove(&*key).unwrap();
+                    local_predicates.push(pred)
+                }
+
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                let lp = Explode { input, columns };
+                Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
 
             lp => Ok(lp),
