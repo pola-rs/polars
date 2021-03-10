@@ -364,7 +364,36 @@ impl PredicatePushdown {
                 };
                 Ok(lp)
             }
+            CsvScan {
+                path,
+                schema,
+                has_header,
+                delimiter,
+                ignore_errors,
+                skip_rows,
+                stop_after_n_rows,
+                with_columns,
+                predicate,
+                aggregate,
+                cache,
+            } => {
+                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
+                let lp = CsvScan {
+                    path,
+                    schema,
+                    has_header,
+                    delimiter,
+                    ignore_errors,
+                    skip_rows,
+                    stop_after_n_rows,
+                    with_columns,
+                    predicate,
+                    aggregate,
+                    cache,
+                };
+                Ok(lp)
+            }
             Sort {
                 input,
                 by_column,
@@ -624,7 +653,12 @@ impl PredicatePushdown {
                             .build();
                         // do all predicates here
                         let local_predicates = acc_predicates.into_iter().map(|(_, v)| v).collect();
-                        return Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena));
+                        return Ok(self.apply_predicate(
+                            lp,
+                            local_predicates,
+                            lp_arena,
+                            expr_arena,
+                        ));
                     }
 
                     for name in aexpr_to_root_names(*e, expr_arena) {
@@ -652,7 +686,56 @@ impl PredicatePushdown {
                 Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
 
-            lp => Ok(lp),
+            Udf {
+                input,
+                function,
+                predicate_pd,
+                projection_pd,
+                schema,
+            } => {
+                if predicate_pd {
+                    let input_schema = lp_arena.get(input).schema(lp_arena);
+                    let mut pushdown_predicates = optimizer::init_hashmap();
+                    let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+                    for (_, predicate) in acc_predicates {
+                        if check_down_node(predicate, input_schema, expr_arena) {
+                            let name = Arc::new(
+                                expr_arena
+                                    .get(predicate)
+                                    .to_field(input_schema, Context::Other, expr_arena)
+                                    .unwrap()
+                                    .name()
+                                    .clone(),
+                            );
+                            insert_and_combine_predicate(
+                                &mut pushdown_predicates,
+                                name,
+                                predicate,
+                                expr_arena,
+                            )
+                        } else {
+                            local_predicates.push(predicate);
+                        }
+                    }
+                    self.pushdown_and_assign(input, pushdown_predicates, lp_arena, expr_arena)?;
+                    let lp = Udf {
+                        input,
+                        function,
+                        predicate_pd,
+                        projection_pd,
+                        schema,
+                    };
+
+                    return Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena));
+                }
+                Ok(Udf {
+                    input,
+                    function,
+                    predicate_pd,
+                    projection_pd,
+                    schema,
+                })
+            }
         }
     }
 
