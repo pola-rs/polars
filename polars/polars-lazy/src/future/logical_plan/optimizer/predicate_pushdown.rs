@@ -13,13 +13,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 trait DSL {
-    fn and(self, right: Node) -> Node;
+    fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;
 }
 
 impl DSL for Node {
-    fn and(self, right: Node) -> Node {
-        let arena_ref = expr_arena_get();
-        let mut arena = (*arena_ref).borrow_mut();
+    fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node {
         arena.add(AExpr::BinaryExpr {
             left: self,
             op: Operator::And,
@@ -64,6 +62,36 @@ where
         };
     }
     single_pred.expect("an empty iterator was passed")
+}
+
+fn predicate_at_scan(
+    acc_predicates: HashMap<Arc<String>, Node, RandomState>,
+    predicate: Option<Node>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    if !acc_predicates.is_empty() {
+        let mut new_predicate =
+            combine_predicates(acc_predicates.into_iter().map(|t| t.1), expr_arena);
+        if let Some(pred) = predicate {
+            new_predicate = new_predicate.and(pred, expr_arena)
+        }
+        Some(new_predicate)
+    } else {
+        None
+    }
+}
+
+/// Determine the hashmap key by combining all the root column names of a predicate
+fn roots_to_key(roots: &[Arc<String>]) -> Arc<String> {
+    if roots.len() == 1 {
+        roots[0].clone()
+    } else {
+        let mut new = String::with_capacity(32 * roots.len());
+        for name in roots {
+            new.push_str(name);
+        }
+        Arc::new(new)
+    }
 }
 
 pub struct PredicatePushdown {}
@@ -116,7 +144,7 @@ impl PredicatePushdown {
     fn pushdown_and_assign(
         &self,
         input: Node,
-        acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
+        acc_predicates: HashMap<Arc<String>, Node, RandomState>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<()> {
@@ -142,7 +170,7 @@ impl PredicatePushdown {
     fn push_down(
         &self,
         logical_plan: ALogicalPlan,
-        acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
+        mut acc_predicates: HashMap<Arc<String>, Node, RandomState>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
@@ -154,10 +182,10 @@ impl PredicatePushdown {
                 Ok(Slice { input, offset, len })
             }
             Selection { predicate, input } => {
-                todo!()
-                // let name = roots_to_key(&expr_to_root_column_names(&predicate));
-                // insert_and_combine_predicate(&mut acc_predicates, name, predicate);
-                // self.push_down(*input, acc_predicates)
+                let name = roots_to_key(&aexpr_to_root_names(predicate, expr_arena));
+                insert_and_combine_predicate(&mut acc_predicates, name, predicate, expr_arena);
+                let alp = lp_arena.take(input);
+                self.push_down(alp, acc_predicates, lp_arena, expr_arena)
             }
 
             Projection {
@@ -179,7 +207,7 @@ impl PredicatePushdown {
                                 .expect("more than one root");
                             rename_aexpr_root_name(*node, expr_arena, new_name.clone()).unwrap();
                             insert_and_combine_predicate(
-                                acc_predicates,
+                                &mut acc_predicates,
                                 new_name,
                                 *node,
                                 expr_arena,
@@ -194,7 +222,7 @@ impl PredicatePushdown {
                         &expr_arena,
                         &[AExpr::Explode(Default::default())],
                         &mut local_predicates,
-                        acc_predicates,
+                        &mut acc_predicates,
                     );
                 }
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
@@ -214,6 +242,22 @@ impl PredicatePushdown {
                 };
                 Ok(lp)
             }
+            DataFrameScan {
+                df,
+                schema,
+                projection,
+                selection,
+            } => {
+                let selection = predicate_at_scan(acc_predicates, selection, expr_arena);
+                let lp = DataFrameScan {
+                    df,
+                    schema,
+                    projection,
+                    selection,
+                };
+                Ok(lp)
+            }
+
             lp => Ok(lp),
         }
     }
@@ -225,7 +269,7 @@ impl PredicatePushdown {
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
         let mut acc_predicates = HashMap::with_capacity_and_hasher(100, RandomState::new());
-        self.push_down(logical_plan, &mut acc_predicates, lp_arena, expr_arena)
+        self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }
 
@@ -242,28 +286,43 @@ mod test {
         }
         .unwrap();
 
+        let mut lps = Vec::with_capacity(10);
+
+        let lp = LogicalPlanBuilder::from_existing_df(df.clone())
+            .slice(0, 0)
+            .project(vec![col("a"), col("b")])
+            .build();
+        lps.push(lp);
+
         let lp = LogicalPlanBuilder::from_existing_df(df)
             .slice(0, 0)
             .project(vec![col("a"), col("b")])
-            // .filter(col("a").gt(col("b")))
+            .filter(col("a").gt(col("b")))
             .build();
-        let original_lp = lp.clone();
+        lps.push(lp);
 
-        let mut expr_arena = Arena::with_capacity(10);
-        let mut lp_arena = Arena::with_capacity(10);
-        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
-        let alp = lp_arena.take(root);
+        for lp in lps {
+            println!("\n\n");
 
-        let opt = PredicatePushdown {};
-        let lp = opt.optimize(alp, &mut lp_arena, &mut expr_arena).unwrap();
-        let root = lp_arena.add(lp);
-        let lp = node_to_lp(root, &mut expr_arena, &mut lp_arena);
+            let original_lp = lp.clone();
 
-        let opt = crate::prelude::PredicatePushDown::default();
-        let lp_expected = opt.optimize(original_lp).unwrap();
+            let mut expr_arena = Arena::with_capacity(10);
+            let mut lp_arena = Arena::with_capacity(10);
+            let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+            let alp = lp_arena.take(root);
 
-        dbg!(&lp, &lp_expected);
-        assert_eq!(format!("{:?}", &lp), format!("{:?}", &lp_expected));
+            let opt = PredicatePushdown {};
+            let lp = opt.optimize(alp, &mut lp_arena, &mut expr_arena).unwrap();
+            let root = lp_arena.add(lp);
+            let lp = node_to_lp(root, &mut expr_arena, &mut lp_arena);
+
+            let opt = crate::prelude::PredicatePushDown::default();
+            let lp_expected = opt.optimize(original_lp).unwrap();
+
+            println!("lp:\n{:?}\n", lp);
+            println!("lp expected:\n{:?}\n", lp_expected);
+            assert_eq!(format!("{:?}", &lp), format!("{:?}", &lp_expected));
+        }
     }
 
     #[test]
