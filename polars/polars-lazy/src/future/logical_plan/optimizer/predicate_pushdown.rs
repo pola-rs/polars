@@ -459,6 +459,124 @@ impl PredicatePushdown {
                 };
                 Ok(self.finish_at_leaf(lp, acc_predicates, lp_arena, expr_arena))
             }
+            Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                how,
+                allow_par,
+                force_par,
+                schema,
+            } => {
+                let schema_left = lp_arena.get(input_left).schema(lp_arena);
+                let schema_right = lp_arena.get(input_right).schema(lp_arena);
+
+                let mut pushdown_left = optimizer::init_hashmap();
+                let mut pushdown_right = optimizer::init_hashmap();
+                let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+
+                for (_, predicate) in acc_predicates {
+                    // unique and duplicated can be caused by joins
+                    if has_aexpr(
+                        predicate,
+                        expr_arena,
+                        &AExpr::Unique(Default::default()),
+                        true,
+                    ) {
+                        local_predicates.push(predicate.clone());
+                        continue;
+                    }
+                    if has_aexpr(
+                        predicate,
+                        expr_arena,
+                        &AExpr::Duplicated(Default::default()),
+                        true,
+                    ) {
+                        local_predicates.push(predicate);
+                        continue;
+                    }
+                    let mut filter_left = false;
+                    let mut filter_right = false;
+
+                    // no else if. predicate can be in both tables.
+                    if check_down_node(predicate, schema_left, expr_arena) {
+                        let name = Arc::new(
+                            expr_arena
+                                .get(predicate)
+                                .to_field(schema_left, Context::Other, expr_arena)
+                                .unwrap()
+                                .name()
+                                .clone(),
+                        );
+                        insert_and_combine_predicate(
+                            &mut pushdown_left,
+                            name,
+                            predicate,
+                            expr_arena,
+                        );
+                        filter_left = true;
+                    }
+                    if check_down_node(predicate, schema_right, expr_arena) {
+                        let name = Arc::new(
+                            expr_arena
+                                .get(predicate)
+                                .to_field(schema_right, Context::Other, expr_arena)
+                                .unwrap()
+                                .name()
+                                .clone(),
+                        );
+                        insert_and_combine_predicate(
+                            &mut pushdown_right,
+                            name,
+                            predicate,
+                            expr_arena,
+                        );
+                        filter_right = true;
+                    }
+                    if !(filter_left & filter_right) {
+                        local_predicates.push(predicate);
+                        continue;
+                    }
+                    // An outer join or left join may create null values.
+                    // we also do it local
+                    if (how == JoinType::Outer) | (how == JoinType::Left) {
+                        if has_aexpr(
+                            predicate,
+                            expr_arena,
+                            &AExpr::IsNotNull(Default::default()),
+                            true,
+                        ) {
+                            local_predicates.push(predicate);
+                            continue;
+                        }
+                        if has_aexpr(
+                            predicate,
+                            expr_arena,
+                            &AExpr::IsNull(Default::default()),
+                            true,
+                        ) {
+                            local_predicates.push(predicate);
+                            continue;
+                        }
+                    }
+                }
+
+                self.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
+                self.pushdown_and_assign(input_right, pushdown_right, lp_arena, expr_arena)?;
+
+                let lp = Join {
+                    input_left,
+                    input_right,
+                    left_on,
+                    right_on,
+                    how,
+                    allow_par,
+                    force_par,
+                    schema,
+                };
+                Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+            }
 
             lp => Ok(lp),
         }
