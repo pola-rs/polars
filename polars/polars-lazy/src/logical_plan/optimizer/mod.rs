@@ -1088,7 +1088,7 @@ pub(crate) fn to_alp(
     lp_arena.add(v)
 }
 
-fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
+pub(crate) fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
     let expr = expr_arena.get_mut(node);
     let expr = std::mem::take(expr);
 

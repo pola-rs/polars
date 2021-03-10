@@ -39,7 +39,13 @@ fn insert_and_combine_predicate(
         .entry(name)
         .or_insert_with(|| arena.add(AExpr::Literal(LiteralValue::Boolean(true))));
 
-    *existing_predicate = existing_predicate.and(predicate);
+    let node = arena.add(AExpr::BinaryExpr {
+        left: *existing_predicate,
+        op: Operator::And,
+        right: predicate,
+    });
+
+    *existing_predicate = node;
 }
 
 pub fn combine_predicates<I>(iter: I, arena: &mut Arena<AExpr>) -> Node
@@ -106,13 +112,13 @@ fn no_pushdown_preds(
     }
 }
 
-
 impl PredicatePushdown {
-
-    fn pushdown_and_assign(&self, input: Node,
-               acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
-                lp_arena: &mut Arena<ALogicalPlan>,
-               expr_arena: &mut Arena<AExpr>,
+    fn pushdown_and_assign(
+        &self,
+        input: Node,
+        acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
     ) -> Result<()> {
         let alp = lp_arena.take(input);
         let lp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
@@ -147,6 +153,13 @@ impl PredicatePushdown {
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 Ok(Slice { input, offset, len })
             }
+            Selection { predicate, input } => {
+                todo!()
+                // let name = roots_to_key(&expr_to_root_column_names(&predicate));
+                // insert_and_combine_predicate(&mut acc_predicates, name, predicate);
+                // self.push_down(*input, acc_predicates)
+            }
+
             Projection {
                 expr,
                 mut input,
@@ -251,5 +264,26 @@ mod test {
 
         dbg!(&lp, &lp_expected);
         assert_eq!(format!("{:?}", &lp), format!("{:?}", &lp_expected));
+    }
+
+    #[test]
+    fn test_insert_and_combine_predicate() {
+        let mut acc_predicates = HashMap::with_capacity_and_hasher(10, RandomState::new());
+        let mut expr_arena = Arena::new();
+
+        let predicate_expr = col("foo").gt(col("bar"));
+        let predicate = to_aexpr(predicate_expr.clone(), &mut expr_arena);
+        insert_and_combine_predicate(
+            &mut acc_predicates,
+            Arc::new("foo".into()),
+            predicate,
+            &mut expr_arena,
+        );
+        let root = *acc_predicates.get(&String::from("foo")).unwrap();
+        let expr = node_to_exp(root, &mut expr_arena);
+        assert_eq!(
+            format!("{:?}", &expr),
+            format!("{:?}", &lit(true).and(predicate_expr))
+        );
     }
 }
