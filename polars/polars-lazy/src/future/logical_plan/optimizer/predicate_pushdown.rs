@@ -1,13 +1,15 @@
+use crate::future::logical_plan::arena::{expr_arena_get, map_alp};
+use crate::logical_plan::optimizer::to_aexpr;
 use crate::prelude::*;
-use crate::utils::{expr_to_root_column_name, expr_to_root_column_names, has_expr, rename_expr_root_name, aexpr_to_root_column_name, rename_aexpr_root_name};
+use crate::utils::{
+    aexpr_to_root_column_name, expr_to_root_column_name, expr_to_root_column_names, has_expr,
+    rename_aexpr_root_name, rename_expr_root_name,
+};
 use ahash::RandomState;
 use polars_core::prelude::*;
+use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::rc::Rc;
-use crate::logical_plan::{
-    optimizer::to_aexpr,
-    EXPR_ARENA, map_aexpr, map_alp, expr_arena_get};
-use std::borrow::BorrowMut;
 
 trait DSL {
     fn and(self, right: Node) -> Node;
@@ -20,7 +22,7 @@ impl DSL for Node {
         arena.add(AExpr::BinaryExpr {
             left: self,
             op: Operator::And,
-            right
+            right,
         })
     }
 }
@@ -30,26 +32,25 @@ fn insert_and_combine_predicate(
     predicates_map: &mut HashMap<Arc<String>, Node, RandomState>,
     name: Arc<String>,
     predicate: Node,
-
 ) {
     let existing_predicate = predicates_map.entry(name).or_insert_with(|| {
         let arena_ref = expr_arena_get();
         let mut arena = (*arena_ref).borrow_mut();
-        to_aexpr(lit(true), &mut *arena)
+        arena.add(AExpr::Literal(LiteralValue::Boolean(true)))
     });
 
     *existing_predicate = existing_predicate.and(predicate);
 }
 
-pub struct PredicatePushdown2 {}
+pub struct PredicatePushdown {}
 
-impl Default for PredicatePushdown2 {
+impl Default for PredicatePushdown {
     fn default() -> Self {
         Self {}
     }
 }
 
-impl PredicatePushdown2 {
+impl PredicatePushdown {
     /// Predicate pushdown optimizer
     ///
     /// # Arguments
@@ -108,15 +109,9 @@ impl PredicatePushdown2 {
         }
     }
 
-    pub fn optimize(
-        &self,
-        logical_plan: ALogicalPlan,
-    ) -> Result<ALogicalPlan> {
+    pub fn optimize(&self, logical_plan: ALogicalPlan) -> Result<ALogicalPlan> {
         let mut acc_predicates = HashMap::with_capacity_and_hasher(100, RandomState::new());
-        self.push_down(
-            logical_plan,
-            &mut acc_predicates
-        )
+        self.push_down(logical_plan, &mut acc_predicates)
     }
 }
 
@@ -133,7 +128,7 @@ mod test {
             "a" => [1, 2, 3],
             "b" => [1, 2, 3]
         }
-            .unwrap();
+        .unwrap();
         let schema = df.schema();
         let lp = ALogicalPlan::DataFrameScan {
             df: Arc::new(df),
@@ -148,7 +143,7 @@ mod test {
             len: 1,
         };
 
-        let opt = PredicatePushdown2 {};
+        let opt = PredicatePushdown {};
         let lp = opt.optimize(lp).unwrap();
     }
 }

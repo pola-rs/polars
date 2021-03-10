@@ -1,12 +1,15 @@
-use crate::logical_plan::{prepare_projection, Context};
-use crate::prelude::*;
-use crate::utils::{expr_to_root_column_exprs, rename_field};
+use std::collections::HashMap;
+
 use ahash::RandomState;
+
 use polars_core::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, Arena, Node};
-use std::collections::HashMap;
+
+use crate::logical_plan::{prepare_projection, Context};
+use crate::prelude::*;
+use crate::utils::{expr_to_root_column_exprs, rename_field};
 
 pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
@@ -14,8 +17,6 @@ pub(crate) mod predicate;
 pub(crate) mod projection;
 pub(crate) mod simplify_expr;
 pub(crate) mod type_coercion;
-#[cfg(feature = "future")]
-pub(crate) mod predicate2;
 
 // check if a selection/projection can be done on the downwards schema
 fn check_down_node(expr: &Expr, down_schema: &Schema) -> bool {
@@ -734,7 +735,7 @@ impl ALogicalPlan {
 }
 
 // converts expression to AExpr, which uses an arena (Vec) for allocation
-fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
+pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
         Expr::Unique(expr) => AExpr::Unique(to_aexpr(*expr, arena)),
         Expr::Duplicated(expr) => AExpr::Duplicated(to_aexpr(*expr, arena)),

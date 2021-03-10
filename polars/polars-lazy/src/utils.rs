@@ -684,11 +684,10 @@ pub(crate) fn aexpr_to_root_nodes(node: Node, arena: &Arena<AExpr>) -> Vec<Node>
 
 #[cfg(feature = "future")]
 pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<String>> {
-    aexpr_to_root_nodes(node, arena).into_iter().map(|node| {
-        aexpr_to_root_column_name(
-        node, arena
-        ).unwrap()
-    }).collect()
+    aexpr_to_root_nodes(node, arena)
+        .into_iter()
+        .map(|node| aexpr_to_root_column_name(node, arena).unwrap())
+        .collect()
 }
 
 /// unpack alias(col) to name of the root column name
@@ -712,21 +711,22 @@ pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Res
     }
 }
 
-pub(crate) fn rename_aexpr_root_name(node: Node, arena: &mut Arena<AExpr>, new_name: Arc<String>) -> Result<()> {
+pub(crate) fn rename_aexpr_root_name(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    new_name: Arc<String>,
+) -> Result<()> {
     let roots = aexpr_to_root_nodes(node, arena);
     match roots.len() {
         1 => {
             let node = roots[0];
-            arena.replace_with(node, |ae| {
-                match ae {
-                    AExpr::Column(name) => AExpr::Column(new_name),
-                    _ => panic!("should be only a column")
-                }
+            arena.replace_with(node, |ae| match ae {
+                AExpr::Column(name) => AExpr::Column(new_name),
+                _ => panic!("should be only a column"),
             });
             Ok(())
-
         }
-        _ => Err(PolarsError::Other("had more than one root columns".into()))
+        _ => Err(PolarsError::Other("had more than one root columns".into())),
     }
 }
 
