@@ -164,7 +164,9 @@ impl<T> Arena<T> {
     }
 
     pub fn with_capacity(cap: usize) -> Self {
-        Arena {items: Vec::with_capacity(cap)}
+        Arena {
+            items: Vec::with_capacity(cap),
+        }
     }
 
     #[inline]
@@ -193,14 +195,16 @@ impl<T: Default> Arena<T> {
     }
 
     pub fn replace_with<F>(&mut self, idx: Node, f: F)
-        where F: FnOnce(T) -> T
+    where
+        F: FnOnce(T) -> T,
     {
         let val = self.take(idx);
         self.replace(idx, f(val));
     }
 
     pub fn try_replace_with<F>(&mut self, idx: Node, mut f: F) -> Result<()>
-        where F: FnMut(T) -> Result<T>
+    where
+        F: FnMut(T) -> Result<T>,
     {
         let val = self.take(idx);
         self.replace(idx, f(val)?);

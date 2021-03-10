@@ -1,25 +1,19 @@
-use crate::logical_plan::optimizer::to_aexpr;
 use crate::logical_plan::optimizer::ALogicalPlanBuilder;
 use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
 use crate::utils::{
     aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node,
 };
-use crate::utils::{
-    expr_to_root_column_name, expr_to_root_column_names, has_aexpr, has_expr,
-    rename_aexpr_root_name, rename_expr_root_name,
-};
+use crate::utils::{has_aexpr, rename_aexpr_root_name};
 use ahash::RandomState;
 use polars_core::prelude::*;
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
-use std::rc::Rc;
 
-trait DSL {
+trait Dsl {
     fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;
 }
 
-impl DSL for Node {
+impl Dsl for Node {
     fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node {
         arena.add(AExpr::BinaryExpr {
             left: self,
@@ -227,7 +221,7 @@ impl PredicatePushdown {
 
             Projection {
                 expr,
-                mut input,
+                input,
                 schema,
             } => {
                 let mut local_predicates = Vec::with_capacity(acc_predicates.len());
@@ -515,7 +509,7 @@ impl PredicatePushdown {
                         &AExpr::Unique(Default::default()),
                         true,
                     ) {
-                        local_predicates.push(predicate.clone());
+                        local_predicates.push(predicate);
                         continue;
                     }
                     if has_aexpr(
@@ -746,7 +740,7 @@ impl PredicatePushdown {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
-        let mut acc_predicates = HashMap::with_capacity_and_hasher(100, RandomState::new());
+        let acc_predicates = HashMap::with_capacity_and_hasher(100, RandomState::new());
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }

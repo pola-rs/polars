@@ -2,7 +2,7 @@ use crate::logical_plan::Context;
 use crate::prelude::*;
 use ahash::RandomState;
 use polars_core::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub(crate) fn has_aexpr(
@@ -692,7 +692,7 @@ pub(crate) fn rename_aexpr_root_name(
         1 => {
             let node = roots[0];
             arena.replace_with(node, |ae| match ae {
-                AExpr::Column(name) => AExpr::Column(new_name),
+                AExpr::Column(_) => AExpr::Column(new_name),
                 _ => panic!("should be only a column"),
             });
             Ok(())
