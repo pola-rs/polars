@@ -1,3 +1,4 @@
+use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::aexpr_to_root_nodes;
 use polars_core::prelude::*;
@@ -27,4 +28,36 @@ pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Res
             "found more than one root column name".into(),
         )),
     }
+}
+
+/// check if a selection/projection can be done on the downwards schema
+pub(crate) fn check_down_node(node: Node, down_schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
+    let roots = aexpr_to_root_nodes(node, expr_arena);
+
+    match roots.is_empty() {
+        true => false,
+        false => roots
+            .iter()
+            .map(|e| {
+                expr_arena
+                    .get(*e)
+                    .to_field(down_schema, Context::Other, expr_arena)
+                    .is_ok()
+            })
+            .all(|b| b),
+    }
+}
+
+pub(crate) fn aexprs_to_schema(
+    expr: &[Node],
+    schema: &Schema,
+    ctxt: Context,
+    arena: &Arena<AExpr>,
+) -> Schema {
+    let fields = expr
+        .iter()
+        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena))
+        .collect::<Result<Vec<_>>>()
+        .unwrap();
+    Schema::new(fields)
 }

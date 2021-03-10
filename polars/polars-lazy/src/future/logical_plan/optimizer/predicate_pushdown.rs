@@ -1,6 +1,9 @@
 use crate::future::logical_plan::arena::{assign_alp, expr_arena_get, lp_arena_get, map_alp};
-use crate::future::utils::{aexpr_to_root_column_name, aexpr_to_root_names};
+use crate::future::utils::{
+    aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node,
+};
 use crate::logical_plan::optimizer::to_aexpr;
+use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{
     expr_to_root_column_name, expr_to_root_column_names, has_aexpr, has_expr,
@@ -302,6 +305,23 @@ impl PredicatePushdown {
                     schema,
                 };
                 Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+            }
+            LocalProjection { expr, input, .. } => {
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+
+                let schema = lp_arena.get(input).schema(lp_arena);
+                // projection from a wildcard may be dropped if the schema changes due to the optimization
+                let expr: Vec<_> = expr
+                    .into_iter()
+                    .filter(|e| check_down_node(*e, schema, expr_arena))
+                    .collect();
+
+                let schema = aexprs_to_schema(&expr, schema, Context::Other, expr_arena);
+                Ok(ALogicalPlan::LocalProjection {
+                    expr,
+                    input,
+                    schema: Arc::new(schema),
+                })
             }
 
             lp => Ok(lp),
