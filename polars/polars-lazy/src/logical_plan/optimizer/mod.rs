@@ -38,7 +38,7 @@ pub trait Optimize {
 // don't expect more than 100 predicates.
 const HASHMAP_SIZE: usize = 100;
 
-fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
+pub(crate) fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
     HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new())
 }
 

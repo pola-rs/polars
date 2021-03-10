@@ -3,7 +3,7 @@ use crate::future::utils::{
     aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node,
 };
 use crate::logical_plan::optimizer::to_aexpr;
-use crate::logical_plan::Context;
+use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
 use crate::utils::{
     expr_to_root_column_name, expr_to_root_column_names, has_aexpr, has_expr,
@@ -380,6 +380,47 @@ impl PredicatePushdown {
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 let lp = Explode { input, columns };
+                Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+            }
+            Cache { input } => {
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                Ok(Cache { input })
+            }
+            Distinct {
+                input,
+                subset,
+                maintain_order,
+            } => {
+                // currently the distinct operation only keeps the first occurrences.
+                // this may have influence on the pushed down predicates. If the pushed down predicates
+                // contain a binary expression (thus depending on values in multiple columns)
+                // the final result may differ if it is pushed down.
+                let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+                let mut new_acc_predicates = optimizer::init_hashmap();
+
+                for (name, predicate) in acc_predicates {
+                    if has_aexpr(
+                        predicate,
+                        expr_arena,
+                        &AExpr::BinaryExpr {
+                            left: Default::default(),
+                            op: Operator::And,
+                            right: Default::default(),
+                        },
+                        true,
+                    ) {
+                        local_predicates.push(predicate)
+                    } else {
+                        new_acc_predicates.insert(name, predicate);
+                    }
+                }
+
+                self.pushdown_and_assign(input, new_acc_predicates, lp_arena, expr_arena)?;
+                let lp = Distinct {
+                    input,
+                    maintain_order,
+                    subset,
+                };
                 Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
 
