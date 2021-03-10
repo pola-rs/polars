@@ -508,7 +508,7 @@ class DataFrame:
             # now find the location to place series
             # df[idx]
             if isinstance(col_selection, int):
-                self.replace_at_idx(0, s)
+                self.replace_at_idx(col_selection, s)
             # df["foo"]
             elif isinstance(col_selection, str):
                 self.replace(col_selection, s)
