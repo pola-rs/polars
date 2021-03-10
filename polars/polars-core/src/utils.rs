@@ -139,6 +139,7 @@ impl Default for Node {
     }
 }
 
+#[derive(Clone)]
 pub struct Arena<T> {
     items: Vec<T>,
 }

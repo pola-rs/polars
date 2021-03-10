@@ -243,11 +243,13 @@ impl PredicatePushdown {
                         if let Some(predicate) = acc_predicates.remove(&*name) {
                             let new_name = aexpr_to_root_column_name(*e, &*expr_arena)
                                 .expect("more than one root");
-                            rename_aexpr_root_name(*node, expr_arena, new_name.clone()).unwrap();
+                            rename_aexpr_root_name(predicate, expr_arena, new_name.clone())
+                                .unwrap();
+
                             insert_and_combine_predicate(
                                 &mut acc_predicates,
                                 new_name,
-                                *node,
+                                predicate,
                                 expr_arena,
                             );
                         }

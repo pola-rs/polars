@@ -1089,8 +1089,7 @@ pub(crate) fn to_alp(
 }
 
 pub(crate) fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
-    let expr = expr_arena.get_mut(node);
-    let expr = std::mem::take(expr);
+    let expr = expr_arena.get_mut(node).clone();
 
     match expr {
         AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_exp(node, expr_arena))),
