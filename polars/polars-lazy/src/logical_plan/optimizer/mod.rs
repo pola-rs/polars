@@ -70,7 +70,7 @@ impl StackOptimizer {
                 for rule in rules.iter_mut() {
                     // keep iterating over same rule
                     while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node) {
-                        lp_arena.assign(current_node, x);
+                        lp_arena.replace(current_node, x);
                         changed = true;
                     }
                 }
@@ -155,7 +155,7 @@ impl StackOptimizer {
                             &lp_arena,
                             current_lp_node,
                         ) {
-                            expr_arena.assign(current_expr_node, x);
+                            expr_arena.replace(current_expr_node, x);
                             changed = true;
                         }
                     }
@@ -589,7 +589,7 @@ impl AExpr {
 }
 
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ALogicalPlan {
     Melt {
         input: Node,

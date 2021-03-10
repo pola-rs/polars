@@ -59,7 +59,7 @@ impl AggregatePushdown {
             Some(lp)
         } else {
             // restore lp node
-            lp_arena.assign(
+            lp_arena.replace(
                 node,
                 ALogicalPlan::Projection {
                     expr,
@@ -97,7 +97,7 @@ impl OptimizationRule for AggregatePushdown {
             // todo! hstack should pushown not dependent columns
             Join { .. } | Aggregate { .. } | HStack { .. } | DataFrameScan { .. } => {
                 if self.state.is_empty() {
-                    lp_arena.assign(node, lp);
+                    lp_arena.replace(node, lp);
                     None
                 } else {
                     // we cannot pass a join or GroupBy so we do the projection here
@@ -136,7 +136,7 @@ impl OptimizationRule for AggregatePushdown {
                 cache,
             } => match self.state.is_empty() {
                 true => {
-                    lp_arena.assign(
+                    lp_arena.replace(
                         node,
                         CsvScan {
                             path,
@@ -182,7 +182,7 @@ impl OptimizationRule for AggregatePushdown {
                 cache,
             } => match self.state.is_empty() {
                 true => {
-                    lp_arena.assign(
+                    lp_arena.replace(
                         node,
                         ParquetScan {
                             path,
@@ -211,7 +211,7 @@ impl OptimizationRule for AggregatePushdown {
             },
             _ => {
                 // restore lp
-                lp_arena.assign(node, lp);
+                lp_arena.replace(node, lp);
                 None
             }
         }

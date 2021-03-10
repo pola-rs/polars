@@ -1,8 +1,9 @@
-use crate::future::logical_plan::arena::{expr_arena_get, map_alp};
+use crate::future::logical_plan::arena::{assign_alp, expr_arena_get, lp_arena_get, map_alp};
+use crate::future::utils::{aexpr_to_root_column_name, aexpr_to_root_names};
 use crate::logical_plan::optimizer::to_aexpr;
 use crate::prelude::*;
 use crate::utils::{
-    aexpr_to_root_column_name, expr_to_root_column_name, expr_to_root_column_names, has_expr,
+    expr_to_root_column_name, expr_to_root_column_names, has_aexpr, has_expr,
     rename_aexpr_root_name, rename_expr_root_name,
 };
 use ahash::RandomState;
@@ -32,14 +33,31 @@ fn insert_and_combine_predicate(
     predicates_map: &mut HashMap<Arc<String>, Node, RandomState>,
     name: Arc<String>,
     predicate: Node,
+    arena: &mut Arena<AExpr>,
 ) {
-    let existing_predicate = predicates_map.entry(name).or_insert_with(|| {
-        let arena_ref = expr_arena_get();
-        let mut arena = (*arena_ref).borrow_mut();
-        arena.add(AExpr::Literal(LiteralValue::Boolean(true)))
-    });
+    let existing_predicate = predicates_map
+        .entry(name)
+        .or_insert_with(|| arena.add(AExpr::Literal(LiteralValue::Boolean(true))));
 
     *existing_predicate = existing_predicate.and(predicate);
+}
+
+pub fn combine_predicates<I>(iter: I, arena: &mut Arena<AExpr>) -> Node
+where
+    I: Iterator<Item = Node>,
+{
+    let mut single_pred = None;
+    for node in iter {
+        single_pred = match single_pred {
+            None => Some(node),
+            Some(left) => Some(arena.add(AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right: node,
+            })),
+        };
+    }
+    single_pred.expect("an empty iterator was passed")
 }
 
 pub struct PredicatePushdown {}
@@ -50,7 +68,58 @@ impl Default for PredicatePushdown {
     }
 }
 
+fn no_pushdown_preds(
+    // node that is projected | hstacked
+    node: Node,
+    arena: &Arena<AExpr>,
+    matches: &[AExpr],
+    // predicates that will be filtered at this node in the LP
+    local_predicates: &mut Vec<Node>,
+    acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
+) {
+    // matching expr are typically explode, shift, etc. expressions that mess up predicates when pushed down
+    for matching_expr in matches {
+        if has_aexpr(node, &arena, matching_expr, true) {
+            // columns that are projected. We check if we can push down the predicates past this projection
+            let columns = aexpr_to_root_names(node, &arena);
+            debug_assert_eq!(columns.len(), 1);
+
+            // keep track of the predicates that should be removed from pushed down predicates
+            // these predicates will be added to local predicates
+            let mut remove_keys = Vec::with_capacity(acc_predicates.len());
+
+            for (key, predicate) in &*acc_predicates {
+                let root_names = aexpr_to_root_names(*predicate, arena);
+
+                for name in root_names {
+                    if columns.contains(&name) {
+                        remove_keys.push(key.clone());
+                        continue;
+                    }
+                }
+            }
+            for key in remove_keys {
+                let pred = acc_predicates.remove(&*key).expect("we know it exists");
+                local_predicates.push(pred);
+            }
+        }
+    }
+}
+
+
 impl PredicatePushdown {
+
+    fn pushdown_and_assign(&self, input: Node,
+               acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
+                lp_arena: &mut Arena<ALogicalPlan>,
+               expr_arena: &mut Arena<AExpr>,
+    ) -> Result<()> {
+        let alp = lp_arena.take(input);
+        let lp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+        lp_arena.replace(input, lp);
+        Ok(())
+    }
+
     /// Predicate pushdown optimizer
     ///
     /// # Arguments
@@ -67,51 +136,83 @@ impl PredicatePushdown {
     fn push_down(
         &self,
         logical_plan: ALogicalPlan,
-        acc_predicates: &mut HashMap<Rc<String>, Node, RandomState>,
+        acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
         use ALogicalPlan::*;
 
         match logical_plan {
             Slice { input, offset, len } => {
-                map_alp(input, |alp| self.push_down(alp, acc_predicates))?;
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 Ok(Slice { input, offset, len })
             }
-            Projection { expr, input, .. } => {
-                // lp_arena.replace_with(input, |lp| {
-                //     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
-                //     // maybe update predicate name if a projection is an alias
-                //     for node in expr {
-                //         let e = expr_arena.get(node);
-                //
-                //         if let AExpr::Alias(e, name) = e {
-                //             // if this alias refers to one of the predicates in the upper nodes
-                //             // we rename the column of the predicate before we push it downwards.
-                //             if let Some(predicate) = acc_predicates.remove(name) {
-                //                 let expr = expr_arena.get(predicate)
-                //                 let new_name = aexpr_to_root_column_name(predicate, arena).expect("more than one root");
-                //                 rename_aexpr_root_name(node, expr_arena, new_name).unwrap();
-                //                 insert_and_combine_predicate(
-                //                     &mut acc_predicates,
-                //                     new_name,
-                //                     node
-                //                 );
-                //             }
-                //         }
-                //     }
-                //
-                // });
-                // Ok(input)
-                todo!()
+            Projection {
+                expr,
+                mut input,
+                schema,
+            } => {
+                let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+
+                // maybe update predicate name if a projection is an alias
+                for node in &expr {
+                    let e = expr_arena.get(*node);
+
+                    if let AExpr::Alias(e, name) = e {
+                        // if this alias refers to one of the predicates in the upper nodes
+                        // we rename the column of the predicate before we push it downwards.
+                        if let Some(predicate) = acc_predicates.remove(&*name) {
+                            let new_name = aexpr_to_root_column_name(predicate, &*expr_arena)
+                                .expect("more than one root");
+                            rename_aexpr_root_name(*node, expr_arena, new_name.clone()).unwrap();
+                            insert_and_combine_predicate(
+                                acc_predicates,
+                                new_name,
+                                *node,
+                                expr_arena,
+                            );
+                        }
+                    }
+
+                    // remove predicates that are based on an exploded column
+                    // todo! add shift
+                    no_pushdown_preds(
+                        *node,
+                        &expr_arena,
+                        &[AExpr::Explode(Default::default())],
+                        &mut local_predicates,
+                        acc_predicates,
+                    );
+                }
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                let lp = ALogicalPlan::Projection {
+                    expr,
+                    input,
+                    schema,
+                };
+
+                let lp = if !local_predicates.is_empty() {
+                    let predicate = combine_predicates(local_predicates.into_iter(), expr_arena);
+                    let input = lp_arena.add(lp);
+
+                    ALogicalPlan::Selection { input, predicate }
+                } else {
+                    lp
+                };
+                Ok(lp)
             }
-            _ => {
-                todo!()
-            }
+            lp => Ok(lp),
         }
     }
 
-    pub fn optimize(&self, logical_plan: ALogicalPlan) -> Result<ALogicalPlan> {
+    pub fn optimize(
+        &self,
+        logical_plan: ALogicalPlan,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Result<ALogicalPlan> {
         let mut acc_predicates = HashMap::with_capacity_and_hasher(100, RandomState::new());
-        self.push_down(logical_plan, &mut acc_predicates)
+        self.push_down(logical_plan, &mut acc_predicates, lp_arena, expr_arena)
     }
 }
 
@@ -122,28 +223,33 @@ mod test {
 
     #[test]
     fn test_arena_pushdown() {
-        let mut arena = Arena::new();
-
         let df = df! {
             "a" => [1, 2, 3],
             "b" => [1, 2, 3]
         }
         .unwrap();
-        let schema = df.schema();
-        let lp = ALogicalPlan::DataFrameScan {
-            df: Arc::new(df),
-            schema: Arc::new(schema),
-            projection: None,
-            selection: None,
-        };
-        let node = arena.add(lp);
-        let lp = ALogicalPlan::Slice {
-            input: node,
-            offset: 0,
-            len: 1,
-        };
+
+        let lp = LogicalPlanBuilder::from_existing_df(df)
+            .slice(0, 0)
+            .project(vec![col("a"), col("b")])
+            // .filter(col("a").gt(col("b")))
+            .build();
+        let original_lp = lp.clone();
+
+        let mut expr_arena = Arena::with_capacity(10);
+        let mut lp_arena = Arena::with_capacity(10);
+        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+        let alp = lp_arena.take(root);
 
         let opt = PredicatePushdown {};
-        let lp = opt.optimize(lp).unwrap();
+        let lp = opt.optimize(alp, &mut lp_arena, &mut expr_arena).unwrap();
+        let root = lp_arena.add(lp);
+        let lp = node_to_lp(root, &mut expr_arena, &mut lp_arena);
+
+        let opt = crate::prelude::PredicatePushDown::default();
+        let lp_expected = opt.optimize(original_lp).unwrap();
+
+        dbg!(&lp, &lp_expected);
+        assert_eq!(format!("{:?}", &lp), format!("{:?}", &lp_expected));
     }
 }

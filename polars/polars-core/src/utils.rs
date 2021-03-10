@@ -133,6 +133,12 @@ pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Node(pub usize);
 
+impl Default for Node {
+    fn default() -> Self {
+        Node(usize::MAX)
+    }
+}
+
 pub struct Arena<T> {
     items: Vec<T>,
 }
@@ -173,7 +179,7 @@ impl<T> Arena<T> {
     }
 
     #[inline]
-    pub fn assign(&mut self, idx: Node, val: T) {
+    pub fn replace(&mut self, idx: Node, val: T) {
         let x = self.get_mut(idx);
         *x = val;
     }
@@ -189,14 +195,14 @@ impl<T: Default> Arena<T> {
         where F: FnOnce(T) -> T
     {
         let val = self.take(idx);
-        self.assign(idx, val);
+        self.replace(idx, f(val));
     }
 
     pub fn try_replace_with<F>(&mut self, idx: Node, mut f: F) -> Result<()>
         where F: FnMut(T) -> Result<T>
     {
         let val = self.take(idx);
-        self.assign(idx, f(val)?);
+        self.replace(idx, f(val)?);
         Ok(())
     }
 }
