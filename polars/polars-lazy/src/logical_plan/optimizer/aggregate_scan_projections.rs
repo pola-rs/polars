@@ -111,7 +111,7 @@ impl AggScanProjection {
                             .map(|s| Expr::Column(Arc::new(s)))
                             .collect(),
                     )
-                    .into_lp();
+                    .build();
             }
         }
         lp

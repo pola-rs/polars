@@ -1,4 +1,5 @@
 use crate::future::logical_plan::arena::{assign_alp, expr_arena_get, lp_arena_get, map_alp};
+use crate::future::logical_plan::ALogicalPlanBuilder;
 use crate::future::utils::{
     aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node,
 };
@@ -575,6 +576,79 @@ impl PredicatePushdown {
                     force_par,
                     schema,
                 };
+                Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+            }
+            HStack { input, exprs, .. } => {
+                // local predicates will be executed in this node of the LP
+                let len = acc_predicates.len();
+                let mut local_predicates = Vec::with_capacity(len);
+                let mut local_keys = Vec::with_capacity(len);
+
+                for (key, predicate) in &acc_predicates {
+                    if !check_down_node(
+                        *predicate,
+                        lp_arena.get(input).schema(lp_arena),
+                        expr_arena,
+                    ) {
+                        local_keys.push(key.clone());
+                    }
+                }
+
+                // First we get all names of added columns in this HStack operation
+                // and then we remove the predicates from the elegible container if they are
+                // dependent on data we've added in this node.
+
+                // *use a vec instead of a set because of the low number of expected columns
+                let mut added_cols = Vec::with_capacity(exprs.len());
+                for e in &exprs {
+                    // shifts | sorts are influenced by a filter so we do all predicates before the shift | sort
+                    if has_aexpr(
+                        *e,
+                        expr_arena,
+                        &AExpr::Shift {
+                            input: Default::default(),
+                            periods: Default::default(),
+                        },
+                        true,
+                    ) || has_aexpr(
+                        *e,
+                        expr_arena,
+                        &AExpr::Sort {
+                            expr: Default::default(),
+                            reverse: Default::default(),
+                        },
+                        true,
+                    ) {
+                        let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+                            .with_columns(exprs)
+                            .build();
+                        // do all predicates here
+                        let local_predicates = acc_predicates.into_iter().map(|(_, v)| v).collect();
+                        return Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena));
+                    }
+
+                    for name in aexpr_to_root_names(*e, expr_arena) {
+                        added_cols.push(name);
+                    }
+                }
+                // remove predicates that are dependent on columns added in this HStack.
+                for key in acc_predicates.keys() {
+                    if added_cols.contains(key) {
+                        local_keys.push(key.clone())
+                    }
+                }
+
+                for key in local_keys {
+                    if let Some(val) = acc_predicates.remove(&key) {
+                        local_predicates.push(val);
+                    }
+                }
+
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+                    .with_columns(exprs)
+                    .build();
+
                 Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
 

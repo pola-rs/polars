@@ -1551,7 +1551,7 @@ pub struct ALogicalPlanBuilder<'a> {
 }
 
 impl<'a> ALogicalPlanBuilder<'a> {
-    fn new(
+    pub(crate) fn new(
         root: Node,
         expr_arena: &'a mut Arena<AExpr>,
         lp_arena: &'a mut Arena<ALogicalPlan>,
@@ -1589,7 +1589,42 @@ impl<'a> ALogicalPlanBuilder<'a> {
         self.root
     }
 
-    pub fn into_lp(self) -> ALogicalPlan {
+    pub fn build(self) -> ALogicalPlan {
         self.lp_arena.take(self.root)
+    }
+
+    pub(crate) fn schema(&self) -> &Schema {
+        self.lp_arena.get(self.root).schema(self.lp_arena)
+    }
+
+    pub(crate) fn with_columns(self, exprs: Vec<Node>) -> Self {
+        // current schema
+        let schema = self.schema();
+
+        let mut new_fields = schema.fields().clone();
+
+        for e in &exprs {
+            let field = self
+                .expr_arena
+                .get(*e)
+                .to_field(schema, Context::Other, self.expr_arena)
+                .unwrap();
+            match schema.index_of(field.name()) {
+                Ok(idx) => {
+                    new_fields[idx] = field;
+                }
+                Err(_) => new_fields.push(field),
+            }
+        }
+
+        let new_schema = Schema::new(new_fields);
+
+        let lp = ALogicalPlan::HStack {
+            input: self.root,
+            exprs,
+            schema: Arc::new(new_schema),
+        };
+        let root = self.lp_arena.add(lp);
+        Self::new(root, self.expr_arena, self.lp_arena)
     }
 }
