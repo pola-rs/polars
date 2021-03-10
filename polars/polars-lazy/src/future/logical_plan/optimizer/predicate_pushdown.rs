@@ -141,6 +141,23 @@ fn no_pushdown_preds(
 }
 
 impl PredicatePushdown {
+    fn apply_predicate(
+        &self,
+        lp: ALogicalPlan,
+        local_predicates: Vec<Node>,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> ALogicalPlan {
+        if !local_predicates.is_empty() {
+            let predicate = combine_predicates(local_predicates.into_iter(), expr_arena);
+            let input = lp_arena.add(lp);
+
+            ALogicalPlan::Selection { input, predicate }
+        } else {
+            lp
+        }
+    }
+
     fn pushdown_and_assign(
         &self,
         input: Node,
@@ -232,15 +249,7 @@ impl PredicatePushdown {
                     schema,
                 };
 
-                let lp = if !local_predicates.is_empty() {
-                    let predicate = combine_predicates(local_predicates.into_iter(), expr_arena);
-                    let input = lp_arena.add(lp);
-
-                    ALogicalPlan::Selection { input, predicate }
-                } else {
-                    lp
-                };
-                Ok(lp)
+                Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             DataFrameScan {
                 df,
@@ -256,6 +265,43 @@ impl PredicatePushdown {
                     selection,
                 };
                 Ok(lp)
+            }
+
+            Melt {
+                input,
+                id_vars,
+                value_vars,
+                schema,
+            } => {
+                // predicates that will be done at this level
+                let mut remove_keys = Vec::with_capacity(acc_predicates.len());
+
+                for (key, predicate) in &acc_predicates {
+                    let root_names = aexpr_to_root_names(*predicate, expr_arena);
+                    for name in root_names {
+                        if (&*name == "variable")
+                            || (&*name == "value")
+                            || value_vars.contains(&*name)
+                        {
+                            remove_keys.push(key.clone());
+                        }
+                    }
+                }
+                let mut local_predicates = Vec::with_capacity(remove_keys.len());
+                for key in remove_keys {
+                    let pred = acc_predicates.remove(&*key).unwrap();
+                    local_predicates.push(pred)
+                }
+
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+
+                let lp = ALogicalPlan::Melt {
+                    input,
+                    id_vars,
+                    value_vars,
+                    schema,
+                };
+                Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
 
             lp => Ok(lp),
