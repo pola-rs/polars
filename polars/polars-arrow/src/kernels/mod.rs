@@ -212,7 +212,10 @@ impl<'a> Iterator for BinaryMaskedSliceIterator<'a> {
                                 Some((low, high, true))
                             }
                         }
-                        None => None,
+                        None => {
+                            self.state = Finish;
+                            Some((self.filled, self.slice_iter.total_len, false))
+                        }
                     }
                 } else {
                     self.filled = self.high;
@@ -277,5 +280,14 @@ mod test {
             .map(|(_, _, b)| b)
             .collect::<Vec<_>>();
         assert_eq!(out, &[true, false, true]);
+    }
+
+    #[test]
+    fn test_binary_slice_mask_iter_with_false() {
+        let mask = BooleanArray::from(vec![false, false]);
+        let out = BinaryMaskedSliceIterator::new(&mask)
+            .into_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[(0, 2, false)]);
     }
 }
