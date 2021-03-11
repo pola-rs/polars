@@ -5,6 +5,10 @@ use ahash::RandomState;
 use polars_core::prelude::*;
 use std::collections::HashSet;
 
+fn init_set() -> HashSet<Arc<String>, RandomState> {
+    HashSet::with_capacity_and_hasher(128, RandomState::default())
+}
+
 /// utility function to get names of the columns needed in projection at scan level
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
@@ -21,6 +25,38 @@ fn get_scan_columns(
         with_columns = Some(columns);
     }
     with_columns
+}
+
+/// split in a projection vec that can be pushed down and a projection vec that should be used
+/// in this node
+///
+/// # Returns
+/// accumulated_projections, local_projections, accumulated_names
+fn split_acc_projections(
+    acc_projections: Vec<Node>,
+    down_schema: &Schema,
+    expr_arena: &mut Arena<AExpr>,
+) -> (Vec<Node>, Vec<Node>, HashSet<Arc<String>, RandomState>) {
+    // If node above has as many columns as the projection there is nothing to pushdown.
+    if down_schema.fields().len() == acc_projections.len() {
+        let local_projections = acc_projections;
+        (
+            vec![],
+            local_projections,
+            HashSet::with_hasher(RandomState::default()),
+        )
+    } else {
+        let (acc_projections, local_projections): (Vec<Node>, Vec<Node>) = acc_projections
+            .into_iter()
+            .partition(|expr| check_down_node(*expr, down_schema, expr_arena));
+        let mut names = init_set();
+        for proj in &acc_projections {
+            for name in aexpr_to_root_names(*proj, expr_arena) {
+                names.insert(name);
+            }
+        }
+        (acc_projections, local_projections, names)
+    }
 }
 
 /// utility function such that we can recurse all binary expressions in the expression tree
@@ -327,6 +363,90 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
                 Ok(Cache { input })
+            }
+            Distinct {
+                input,
+                maintain_order,
+                subset,
+            } => {
+                // make sure that the set of unique columns is projected
+                if let Some(subset) = subset.as_ref() {
+                    if !acc_projections.is_empty() {
+                        for name in subset {
+                            let node = expr_arena.add(AExpr::Column(Arc::new(name.clone())));
+                            add_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
+                        }
+                    }
+                };
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                Ok(Distinct {
+                    input,
+                    maintain_order,
+                    subset,
+                })
+            }
+            Selection { predicate, input } => {
+                if !acc_projections.is_empty() {
+                    // make sure that the filter column is projected
+                    add_to_accumulated(predicate, &mut acc_projections, &mut names, expr_arena);
+                };
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                Ok(Selection { predicate, input })
+            }
+            Melt {
+                input,
+                id_vars,
+                value_vars,
+                ..
+            } => {
+                let (mut acc_projections, mut local_projections, names) = split_acc_projections(
+                    acc_projections,
+                    lp_arena.get(input).schema(lp_arena),
+                    expr_arena,
+                );
+
+                if !local_projections.is_empty() {
+                    local_projections.extend_from_slice(&acc_projections);
+                }
+
+                // make sure that the requested columns are projected
+                if !acc_projections.is_empty() {
+                    for name in id_vars.iter() {
+                        let node = expr_arena.add(AExpr::Column(Arc::new(name.clone())));
+                        acc_projections.push(node);
+                    }
+                    for name in value_vars.iter() {
+                        let node = expr_arena.add(AExpr::Column(Arc::new(name.clone())));
+                        acc_projections.push(node);
+                    }
+                }
+
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+
+                let mut builder =
+                    ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(id_vars, value_vars);
+                Ok(self.finish_node(local_projections, builder))
             }
 
             lp => Ok(lp),

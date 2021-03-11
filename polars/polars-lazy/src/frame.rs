@@ -839,7 +839,7 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .melt(Arc::new(id_vars), Arc::new(value_vars), None)
+            .melt(Arc::new(id_vars), Arc::new(value_vars))
             .build();
         Self::from_logical_plan(lp, opt_state)
     }

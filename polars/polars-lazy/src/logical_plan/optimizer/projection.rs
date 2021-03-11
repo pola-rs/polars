@@ -350,7 +350,7 @@ impl ProjectionPushDown {
                 }
 
                 let input = self.push_down(*input, acc_projections, names, projections_seen)?;
-                let mut builder = LogicalPlanBuilder::from(input).melt(id_vars, value_vars, None);
+                let mut builder = LogicalPlanBuilder::from(input).melt(id_vars, value_vars);
 
                 if !local_projections.is_empty() {
                     builder = builder.project(local_projections)

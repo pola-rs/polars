@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, Arena, Node};
 use std::collections::HashMap;
 
-use crate::logical_plan::{prepare_projection, Context};
+use crate::logical_plan::{det_melt_schema, prepare_projection, Context};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, expr_to_root_column_exprs, rename_field};
 
@@ -1558,6 +1558,19 @@ impl<'a> ALogicalPlanBuilder<'a> {
             expr_arena,
             lp_arena,
         }
+    }
+
+    pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
+        let schema = det_melt_schema(&value_vars, self.schema());
+
+        let lp = ALogicalPlan::Melt {
+            input: self.root,
+            id_vars,
+            value_vars,
+            schema,
+        };
+        let node = self.lp_arena.add(lp);
+        ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
     pub fn project_local(self, exprs: Vec<Node>) -> Self {
