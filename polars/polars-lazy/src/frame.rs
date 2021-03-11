@@ -391,7 +391,7 @@ impl LazyFrame {
         let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
         let predicate_pushdown_opt =
-            crate::logical_plan::optimizer::predicate_pushdown::PredicatePushdown::default();
+            crate::logical_plan::optimizer::predicate_pushdown::PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
 
         // during debug we check if the projection/predicate pushdown have not modified the final schema

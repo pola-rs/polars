@@ -91,9 +91,9 @@ fn roots_to_key(roots: &[Arc<String>]) -> Arc<String> {
     }
 }
 
-pub struct PredicatePushdown {}
+pub struct PredicatePushDown {}
 
-impl Default for PredicatePushdown {
+impl Default for PredicatePushDown {
     fn default() -> Self {
         Self {}
     }
@@ -137,7 +137,7 @@ fn no_pushdown_preds(
     }
 }
 
-impl PredicatePushdown {
+impl PredicatePushDown {
     fn apply_predicate(
         &self,
         lp: ALogicalPlan,
@@ -196,8 +196,6 @@ impl PredicatePushdown {
     ///                      The `Node`s are indexes in the `expr_arena`
     /// * `lp_arena` - The local memory arena for the logical plan.
     /// * `expr_arena` - The local memory arena for the expressions.
-    ///
-    /// The returned `Node` is an expression in the Tree.
     fn push_down(
         &self,
         logical_plan: ALogicalPlan,

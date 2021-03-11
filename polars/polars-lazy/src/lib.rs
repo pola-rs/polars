@@ -200,6 +200,8 @@ mod logical_plan;
 pub mod physical_plan;
 pub mod prelude;
 pub(crate) mod utils;
+#[cfg(feature = "future")]
+pub(crate) mod future;
 
 #[cfg(test)]
 mod tests {
