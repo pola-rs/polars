@@ -1,6 +1,6 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, has_aexpr};
+use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, check_down_node, has_aexpr};
 use ahash::RandomState;
 use polars_core::prelude::*;
 use std::collections::HashSet;
@@ -165,6 +165,27 @@ impl ProjectionPushDown {
 
                 let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena);
                 Ok(self.finish_node(local_projection, builder))
+            }
+            LocalProjection { expr, input, .. } => {
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                let lp = lp_arena.get(input);
+                let schema = lp.schema(lp_arena);
+
+                // projection from a wildcard may be dropped if the schema changes due to the optimization
+                let proj = expr
+                    .into_iter()
+                    .filter(|e| check_down_node(*e, schema, expr_arena))
+                    .collect();
+                Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+                    .project_local(proj)
+                    .build())
             }
 
             lp => Ok(lp),
