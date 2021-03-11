@@ -1368,6 +1368,21 @@ mod test {
     }
 
     #[test]
+    fn test_lazy_shift_and_fill() {
+        let data = &[1, 2, 3];
+        let df = DataFrame::new(vec![Series::new("data", data)]).unwrap();
+        let out = df
+            .lazy()
+            .with_column(col("data").shift(1).fill_none(lit(0)).alias("output"))
+            .collect()
+            .unwrap();
+        assert_eq!(
+            Vec::from(out.column("output").unwrap().i32().unwrap()),
+            vec![Some(0), Some(2), Some(3)]
+        );
+    }
+
+    #[test]
     fn test_lazy_shift_operation_no_filter() {
         // check if predicate pushdown optimization does not fail
         let df = df! {

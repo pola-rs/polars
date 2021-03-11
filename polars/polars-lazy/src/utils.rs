@@ -562,6 +562,7 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
         Expr::Ternary { truthy, .. } => output_name(truthy),
         Expr::Slice { input, .. } => output_name(input),
         Expr::Window { function, .. } => output_name(function),
+        Expr::Shift { input, .. } => output_name(input),
         a => Err(PolarsError::Other(
             format!(
                 "No root column name could be found for expr {:?} in output name utillity",
