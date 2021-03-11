@@ -91,7 +91,7 @@ fn roots_to_key(roots: &[Arc<String>]) -> Arc<String> {
     }
 }
 
-pub struct PredicatePushDown {}
+pub(crate) struct PredicatePushDown {}
 
 impl Default for PredicatePushDown {
     fn default() -> Self {

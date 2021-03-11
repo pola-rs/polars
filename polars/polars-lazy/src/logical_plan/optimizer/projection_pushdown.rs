@@ -131,8 +131,8 @@ impl ProjectionPushDown {
     fn pushdown_and_assign(
         &self,
         input: Node,
-        mut acc_projections: Vec<Node>,
-        mut names: HashSet<Arc<String>, RandomState>,
+        acc_projections: Vec<Node>,
+        names: HashSet<Arc<String>, RandomState>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
@@ -481,7 +481,7 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
 
-                let mut builder =
+                let builder =
                     ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(id_vars, value_vars);
                 Ok(self.finish_node(local_projections, builder))
             }
@@ -562,7 +562,7 @@ impl ProjectionPushDown {
                     pushdown_left.extend_from_slice(&left_on);
                     pushdown_right.extend_from_slice(&right_on);
 
-                    for mut proj in acc_projections {
+                    for proj in acc_projections {
                         let mut add_local = true;
 
                         // if it is an alias we want to project the root column name downwards
@@ -693,7 +693,7 @@ impl ProjectionPushDown {
             }
 
             Udf {
-                mut input,
+                input,
                 function,
                 predicate_pd,
                 projection_pd,

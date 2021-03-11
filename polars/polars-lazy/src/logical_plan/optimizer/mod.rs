@@ -1,32 +1,22 @@
+use std::collections::{HashMap, HashSet};
+
 use ahash::RandomState;
+
 use polars_core::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, Arena, Node};
-use std::collections::{HashMap, HashSet};
 
-use crate::logical_plan::{det_melt_schema, prepare_projection, Context};
+use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
-use crate::utils::{aexprs_to_schema, expr_to_root_column_exprs, rename_field};
+use crate::utils::{aexprs_to_schema, rename_field};
 
 pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
 pub(crate) mod predicate_pushdown;
-pub(crate) mod projection;
+pub(crate) mod projection_pushdown;
 pub(crate) mod simplify_expr;
 pub(crate) mod type_coercion;
-
-// check if a selection/projection can be done on the downwards schema
-fn check_down_node(expr: &Expr, down_schema: &Schema) -> bool {
-    let roots = expr_to_root_column_exprs(expr);
-    match roots.is_empty() {
-        true => false,
-        false => roots
-            .iter()
-            .map(|e| e.to_field(down_schema, Context::Other).is_ok())
-            .all(|b| b),
-    }
-}
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan>;
@@ -1086,8 +1076,8 @@ pub(crate) fn to_alp(
     lp_arena.add(v)
 }
 
-pub(crate) fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
-    let expr = expr_arena.get_mut(node).clone();
+pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
+    let expr = expr_arena.get(node).clone();
 
     match expr {
         AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_exp(node, expr_arena))),
@@ -1589,7 +1579,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
-    pub fn project(mut self, exprs: Vec<Node>) -> Self {
+    pub fn project(self, exprs: Vec<Node>) -> Self {
         let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
         let schema = aexprs_to_schema(&exprs, input_schema, Context::Other, self.expr_arena);
 
@@ -1661,7 +1651,8 @@ impl<'a> ALogicalPlanBuilder<'a> {
         // let aggs = rewrite_projections(aggs, current_schema);
 
         let schema1 = aexprs_to_schema(&keys, current_schema, Context::Other, self.expr_arena);
-        let schema2 = aexprs_to_schema(&aggs, current_schema, Context::Other, self.expr_arena);
+        let schema2 =
+            aexprs_to_schema(&aggs, current_schema, Context::Aggregation, self.expr_arena);
 
         let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
 
