@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::logical_plan::{prepare_projection, Context};
 use crate::prelude::*;
-use crate::utils::{expr_to_root_column_exprs, rename_field};
+use crate::utils::{aexprs_to_schema, expr_to_root_column_exprs, rename_field};
 
 pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
@@ -1560,14 +1560,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
-    pub fn project(mut self, exprs: Vec<Expr>) -> Self {
+    pub fn project(mut self, exprs: Vec<Node>) -> Self {
         let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        let (exprs, schema) = prepare_projection(exprs, input_schema);
-
-        let exprs = exprs
-            .into_iter()
-            .map(|e| to_aexpr(e, &mut self.expr_arena))
-            .collect::<Vec<_>>();
+        let schema = aexprs_to_schema(&exprs, input_schema, Context::Other, self.expr_arena);
 
         // if len == 0, no projection has to be done. This is a select all operation.
         if !exprs.is_empty() {

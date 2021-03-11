@@ -196,12 +196,12 @@
 pub mod dsl;
 pub mod frame;
 pub mod functions;
+#[cfg(feature = "future")]
+pub(crate) mod future;
 mod logical_plan;
 pub mod physical_plan;
 pub mod prelude;
 pub(crate) mod utils;
-#[cfg(feature = "future")]
-pub(crate) mod future;
 
 #[cfg(test)]
 mod tests {
