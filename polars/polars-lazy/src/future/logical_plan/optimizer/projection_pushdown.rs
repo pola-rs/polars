@@ -658,8 +658,65 @@ impl ProjectionPushDown {
                 );
                 Ok(self.finish_node(local_projection, builder))
             }
+            HStack { input, exprs, .. } => {
+                // Make sure that columns selected with_columns are available
+                // only if not empty. If empty we already select everything.
+                if !acc_projections.is_empty() {
+                    for expression in &exprs {
+                        add_to_accumulated(
+                            *expression,
+                            &mut acc_projections,
+                            &mut names,
+                            expr_arena,
+                        );
+                    }
+                }
 
-            lp => Ok(lp),
+                let (acc_projections, _, names) = split_acc_projections(
+                    acc_projections,
+                    lp_arena.get(input).schema(lp_arena),
+                    expr_arena,
+                );
+
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+                    .with_columns(exprs)
+                    .build();
+                Ok(lp)
+            }
+
+            Udf {
+                mut input,
+                function,
+                predicate_pd,
+                projection_pd,
+                schema,
+            } => {
+                if projection_pd {
+                    self.pushdown_and_assign(
+                        input,
+                        acc_projections,
+                        names,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                }
+                Ok(Udf {
+                    input,
+                    function,
+                    predicate_pd,
+                    projection_pd,
+                    schema,
+                })
+            }
         }
     }
 }
