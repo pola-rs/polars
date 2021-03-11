@@ -111,7 +111,7 @@ impl AggScanProjection {
                             .map(|s| Expr::Column(Arc::new(s)))
                             .collect(),
                     )
-                    .into_lp();
+                    .build();
             }
         }
         lp
@@ -156,7 +156,7 @@ impl OptimizationRule for AggScanProjection {
                             stop_after_n_rows,
                             cache,
                         };
-                        lp_arena.assign(node, lp);
+                        lp_arena.replace(node, lp);
                         return None;
                     }
 
@@ -208,7 +208,7 @@ impl OptimizationRule for AggScanProjection {
                             with_columns,
                             cache,
                         };
-                        lp_arena.assign(node, lp);
+                        lp_arena.replace(node, lp);
                         return None;
                     }
                     let lp = CsvScan {

@@ -3,9 +3,9 @@ use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 use crate::logical_plan::optimizer::aggregate_scan_projections::{
     agg_projection, AggScanProjection,
 };
-use crate::logical_plan::optimizer::predicate::combine_predicates;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
+use crate::utils::combine_predicates_expr;
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use ahash::RandomState;
 use polars_core::frame::hash_join::JoinType;
@@ -390,7 +390,8 @@ impl LazyFrame {
         // gradually fill the rules passed to the optimizer
         let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
-        let predicate_pushdown_opt = PredicatePushDown::default();
+        let predicate_pushdown_opt =
+            crate::logical_plan::optimizer::predicate_pushdown::PredicatePushdown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
 
         // during debug we check if the projection/predicate pushdown have not modified the final schema
@@ -401,12 +402,6 @@ impl LazyFrame {
                 logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
             }
             assert_eq!(&prev_schema, logical_plan.schema());
-
-            let prev_schema = logical_plan.schema().clone();
-            if predicate_pushdown {
-                logical_plan = predicate_pushdown_opt.optimize(logical_plan)?;
-            }
-            assert_eq!(&prev_schema, logical_plan.schema());
         } else {
             // NOTE: the order is important. Projection pushdown must be before predicate pushdown,
             // The projection may have aliases that interfere with the predicate expressions.
@@ -415,27 +410,20 @@ impl LazyFrame {
                     .optimize(logical_plan)
                     .expect("projection pushdown failed");
             }
-            if predicate_pushdown {
-                logical_plan = predicate_pushdown_opt
-                    .optimize(logical_plan)
-                    .expect("predicate pushdown failed");
-            }
         };
 
-        if agg_scan_projection {
-            // scan the LP to aggregate all the column used in scans
-            // these columns will be added to the state of the AggScanProjection rule
-            let mut columns = HashMap::with_capacity_and_hasher(32, RandomState::default());
-            agg_projection(&logical_plan, &mut columns);
-
-            let opt = AggScanProjection { columns };
-            rules.push(Box::new(opt));
-        }
-
         // initialize arena's
-        let mut expr_arena = Arena::new();
-        let mut lp_arena = Arena::new();
+        let mut expr_arena = Arena::with_capacity(512);
+        let mut lp_arena = Arena::with_capacity(512);
         let mut lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
+
+        if predicate_pushdown {
+            let alp = lp_arena.take(lp_top);
+            let alp = predicate_pushdown_opt
+                .optimize(alp, &mut lp_arena, &mut expr_arena)
+                .expect("predicate pushdown failed");
+            lp_arena.replace(lp_top, alp);
+        }
 
         if type_coercion {
             rules.push(Box::new(TypeCoercionRule {}))
@@ -453,6 +441,16 @@ impl LazyFrame {
         let opt = StackOptimizer {};
         lp_top = opt.optimize_loop(&mut rules, &mut expr_arena, &mut lp_arena, lp_top);
         let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+
+        if agg_scan_projection {
+            // scan the LP to aggregate all the column used in scans
+            // these columns will be added to the state of the AggScanProjection rule
+            let mut columns = HashMap::with_capacity_and_hasher(32, RandomState::default());
+            agg_projection(&lp, &mut columns);
+
+            let opt = AggScanProjection { columns };
+            rules.push(Box::new(opt));
+        }
 
         Ok(lp)
     }
@@ -823,7 +821,7 @@ impl LazyFrame {
             None => self.filter(col("*").is_not_null()),
             Some(subset) => {
                 let it = subset.into_iter().map(|e| e.is_not_null());
-                let predicate = combine_predicates(it);
+                let predicate = combine_predicates_expr(it);
                 self.filter(predicate)
             }
         }

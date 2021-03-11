@@ -1,6 +1,3 @@
-use crate::logical_plan::{prepare_projection, Context};
-use crate::prelude::*;
-use crate::utils::{expr_to_root_column_exprs, rename_field};
 use ahash::RandomState;
 use polars_core::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use polars_core::frame::hash_join::JoinType;
@@ -8,9 +5,13 @@ use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, Arena, Node};
 use std::collections::HashMap;
 
+use crate::logical_plan::{prepare_projection, Context};
+use crate::prelude::*;
+use crate::utils::{expr_to_root_column_exprs, rename_field};
+
 pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
-pub(crate) mod predicate;
+pub(crate) mod predicate_pushdown;
 pub(crate) mod projection;
 pub(crate) mod simplify_expr;
 pub(crate) mod type_coercion;
@@ -35,7 +36,7 @@ pub trait Optimize {
 // don't expect more than 100 predicates.
 const HASHMAP_SIZE: usize = 100;
 
-fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
+pub(crate) fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
     HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new())
 }
 
@@ -67,7 +68,7 @@ impl StackOptimizer {
                 for rule in rules.iter_mut() {
                     // keep iterating over same rule
                     while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node) {
-                        lp_arena.assign(current_node, x);
+                        lp_arena.replace(current_node, x);
                         changed = true;
                     }
                 }
@@ -152,7 +153,7 @@ impl StackOptimizer {
                             &lp_arena,
                             current_lp_node,
                         ) {
-                            expr_arena.assign(current_expr_node, x);
+                            expr_arena.replace(current_expr_node, x);
                             changed = true;
                         }
                     }
@@ -586,7 +587,7 @@ impl AExpr {
 }
 
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ALogicalPlan {
     Melt {
         input: Node,
@@ -732,7 +733,7 @@ impl ALogicalPlan {
 }
 
 // converts expression to AExpr, which uses an arena (Vec) for allocation
-fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
+pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
         Expr::Unique(expr) => AExpr::Unique(to_aexpr(*expr, arena)),
         Expr::Duplicated(expr) => AExpr::Duplicated(to_aexpr(*expr, arena)),
@@ -1085,9 +1086,8 @@ pub(crate) fn to_alp(
     lp_arena.add(v)
 }
 
-fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
-    let expr = expr_arena.get_mut(node);
-    let expr = std::mem::take(expr);
+pub(crate) fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
+    let expr = expr_arena.get_mut(node).clone();
 
     match expr {
         AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_exp(node, expr_arena))),
@@ -1548,7 +1548,7 @@ pub struct ALogicalPlanBuilder<'a> {
 }
 
 impl<'a> ALogicalPlanBuilder<'a> {
-    fn new(
+    pub(crate) fn new(
         root: Node,
         expr_arena: &'a mut Arena<AExpr>,
         lp_arena: &'a mut Arena<ALogicalPlan>,
@@ -1586,7 +1586,42 @@ impl<'a> ALogicalPlanBuilder<'a> {
         self.root
     }
 
-    pub fn into_lp(self) -> ALogicalPlan {
+    pub fn build(self) -> ALogicalPlan {
         self.lp_arena.take(self.root)
+    }
+
+    pub(crate) fn schema(&self) -> &Schema {
+        self.lp_arena.get(self.root).schema(self.lp_arena)
+    }
+
+    pub(crate) fn with_columns(self, exprs: Vec<Node>) -> Self {
+        // current schema
+        let schema = self.schema();
+
+        let mut new_fields = schema.fields().clone();
+
+        for e in &exprs {
+            let field = self
+                .expr_arena
+                .get(*e)
+                .to_field(schema, Context::Other, self.expr_arena)
+                .unwrap();
+            match schema.index_of(field.name()) {
+                Ok(idx) => {
+                    new_fields[idx] = field;
+                }
+                Err(_) => new_fields.push(field),
+            }
+        }
+
+        let new_schema = Schema::new(new_fields);
+
+        let lp = ALogicalPlan::HStack {
+            input: self.root,
+            exprs,
+            schema: Arc::new(new_schema),
+        };
+        let root = self.lp_arena.add(lp);
+        Self::new(root, self.expr_arena, self.lp_arena)
     }
 }
