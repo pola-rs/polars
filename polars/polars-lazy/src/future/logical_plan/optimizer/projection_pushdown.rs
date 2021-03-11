@@ -5,6 +5,24 @@ use ahash::RandomState;
 use polars_core::prelude::*;
 use std::collections::HashSet;
 
+/// utility function to get names of the columns needed in projection at scan level
+fn get_scan_columns(
+    acc_projections: &mut Vec<Node>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<Vec<String>> {
+    let mut with_columns = None;
+    if !acc_projections.is_empty() {
+        let mut columns = Vec::with_capacity(acc_projections.len());
+        for expr in acc_projections {
+            for name in aexpr_to_root_names(*expr, expr_arena) {
+                columns.push((*name).clone())
+            }
+        }
+        with_columns = Some(columns);
+    }
+    with_columns
+}
+
 /// utility function such that we can recurse all binary expressions in the expression tree
 fn add_to_accumulated(
     expr: Node,
@@ -186,6 +204,75 @@ impl ProjectionPushDown {
                 Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                     .project_local(proj)
                     .build())
+            }
+            DataFrameScan {
+                df,
+                schema,
+                selection,
+                ..
+            } => {
+                let mut projection = None;
+                if !acc_projections.is_empty() {
+                    projection = Some(acc_projections)
+                }
+                let lp = DataFrameScan {
+                    df,
+                    schema,
+                    projection,
+                    selection,
+                };
+                Ok(lp)
+            }
+            #[cfg(feature = "parquet")]
+            ParquetScan {
+                path,
+                schema,
+                predicate,
+                aggregate,
+                stop_after_n_rows,
+                cache,
+                ..
+            } => {
+                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let lp = ParquetScan {
+                    path,
+                    schema,
+                    with_columns,
+                    predicate,
+                    aggregate,
+                    stop_after_n_rows,
+                    cache,
+                };
+                Ok(lp)
+            }
+            CsvScan {
+                path,
+                schema,
+                has_header,
+                delimiter,
+                ignore_errors,
+                skip_rows,
+                stop_after_n_rows,
+                predicate,
+                aggregate,
+                cache,
+                ..
+            } => {
+                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let lp = CsvScan {
+                    path,
+                    schema,
+                    has_header,
+                    delimiter,
+                    ignore_errors,
+                    with_columns,
+                    skip_rows,
+                    stop_after_n_rows,
+                    predicate,
+                    aggregate,
+                    cache,
+                };
+                Ok(lp)
             }
 
             lp => Ok(lp),
