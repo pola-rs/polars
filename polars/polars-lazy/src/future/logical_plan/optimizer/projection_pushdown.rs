@@ -78,7 +78,7 @@ fn add_to_accumulated(
     }
 }
 
-pub struct ProjectionPushDown {}
+pub(crate) struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
     fn finish_node(
@@ -718,5 +718,16 @@ impl ProjectionPushDown {
                 })
             }
         }
+    }
+
+    pub fn optimize(
+        &self,
+        logical_plan: ALogicalPlan,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Result<ALogicalPlan> {
+        let acc_predicates = init_vec();
+        let names = init_set();
+        self.push_down(logical_plan, acc_predicates, names, 0, lp_arena, expr_arena)
     }
 }
