@@ -1648,4 +1648,31 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)
     }
+
+    pub fn groupby(
+        self,
+        keys: Vec<Node>,
+        aggs: Vec<Node>,
+        apply: Option<Arc<dyn DataFrameUdf>>,
+    ) -> Self {
+        debug_assert!(!keys.is_empty());
+        let current_schema = self.schema();
+        // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
+        // let aggs = rewrite_projections(aggs, current_schema);
+
+        let schema1 = aexprs_to_schema(&keys, current_schema, Context::Other, self.expr_arena);
+        let schema2 = aexprs_to_schema(&aggs, current_schema, Context::Other, self.expr_arena);
+
+        let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
+
+        let lp = ALogicalPlan::Aggregate {
+            input: self.root,
+            keys,
+            aggs,
+            schema: Arc::new(schema),
+            apply,
+        };
+        let root = self.lp_arena.add(lp);
+        Self::new(root, self.expr_arena, self.lp_arena)
+    }
 }

@@ -448,6 +448,58 @@ impl ProjectionPushDown {
                     ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(id_vars, value_vars);
                 Ok(self.finish_node(local_projections, builder))
             }
+            Aggregate {
+                input,
+                keys,
+                aggs,
+                apply,
+                schema,
+            } => {
+                // the custom function may need all columns so we do the projections here.
+                if let Some(f) = apply {
+                    let lp = Aggregate {
+                        input,
+                        keys,
+                        aggs,
+                        schema,
+                        apply: Some(f),
+                    };
+                    let input = lp_arena.add(lp);
+
+                    let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena);
+                    Ok(self.finish_node(acc_projections, builder))
+                } else {
+                    // todo! remove unnecessary vec alloc.
+                    let (mut acc_projections, _local_projections, mut names) =
+                        split_acc_projections(
+                            acc_projections,
+                            lp_arena.get(input).schema(lp_arena),
+                            expr_arena,
+                        );
+
+                    // add the columns used in the aggregations to the projection
+                    for agg in &aggs {
+                        add_to_accumulated(*agg, &mut acc_projections, &mut names, expr_arena);
+                    }
+
+                    // make sure the keys are projected
+                    for key in &*keys {
+                        add_to_accumulated(*key, &mut acc_projections, &mut names, expr_arena);
+                    }
+
+                    self.pushdown_and_assign(
+                        input,
+                        acc_projections,
+                        names,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                    let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+                        .groupby(keys, aggs, apply);
+                    Ok(builder.build())
+                }
+            }
 
             lp => Ok(lp),
         }
