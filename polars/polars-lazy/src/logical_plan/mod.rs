@@ -1179,6 +1179,32 @@ pub(crate) fn det_melt_schema(value_vars: &[String], input_schema: &Schema) -> S
     Arc::new(Schema::new(fields))
 }
 
+impl ALogicalPlan {
+    pub(crate) fn input_node(&self) -> (Option<Node>, Option<Node>) {
+        use ALogicalPlan::*;
+        match self {
+            Sort { input, .. } => (Some(*input), None),
+            Melt { input, .. } => (Some(*input), None),
+            Slice { input, .. } => (Some(*input), None),
+            Selection { input, .. } => (Some(*input), None),
+            Projection { input, .. } => (Some(*input), None),
+            LocalProjection { input, .. } => (Some(*input), None),
+            Explode { input, .. } => (Some(*input), None),
+            Cache { input, .. } => (Some(*input), None),
+            Aggregate { input, .. } => (Some(*input), None),
+            Distinct { input, .. } => (Some(*input), None),
+            Udf { input, .. } => (Some(*input), None),
+            HStack { input, .. } => (Some(*input), None),
+            Join {
+                input_left,
+                input_right,
+                ..
+            } => (Some(*input_left), Some(*input_right)),
+            DataFrameScan { .. } | ParquetScan { .. } | CsvScan { .. } => (None, None),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

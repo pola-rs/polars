@@ -5,6 +5,9 @@ use ahash::RandomState;
 use polars_core::prelude::*;
 use std::collections::HashSet;
 
+fn init_vec() -> Vec<Node> {
+    Vec::with_capacity(100)
+}
 fn init_set() -> HashSet<Arc<String>, RandomState> {
     HashSet::with_capacity_and_hasher(128, RandomState::default())
 }
@@ -88,6 +91,40 @@ impl ProjectionPushDown {
         } else {
             builder.build()
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn join_push_down(
+        &self,
+        schema_left: &Schema,
+        schema_right: &Schema,
+        proj: Node,
+        pushdown_left: &mut Vec<Node>,
+        pushdown_right: &mut Vec<Node>,
+        names_left: &mut HashSet<Arc<String>, RandomState>,
+        names_right: &mut HashSet<Arc<String>, RandomState>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> bool {
+        let mut pushed_at_least_one = false;
+        let names = aexpr_to_root_names(proj, expr_arena);
+        let root_projections = aexpr_to_root_nodes(proj, expr_arena);
+
+        for (name, root_projection) in names.into_iter().zip(root_projections) {
+            if check_down_node(root_projection, schema_left, expr_arena)
+                && names_left.insert(name.clone())
+            {
+                pushdown_left.push(proj);
+                pushed_at_least_one = true;
+            }
+            if check_down_node(root_projection, schema_right, expr_arena)
+                && names_right.insert(name)
+            {
+                pushdown_right.push(proj);
+                pushed_at_least_one = true;
+            }
+        }
+
+        pushed_at_least_one
     }
 
     /// Helper method. This pushes down current node and assigns the result to this node.
@@ -499,6 +536,127 @@ impl ProjectionPushDown {
                         .groupby(keys, aggs, apply);
                     Ok(builder.build())
                 }
+            }
+            Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                how,
+                allow_par,
+                force_par,
+                ..
+            } => {
+                let mut pushdown_left = init_vec();
+                let mut pushdown_right = init_vec();
+                let mut names_left = init_set();
+                let mut names_right = init_set();
+                let mut local_projection = init_vec();
+
+                // if there are no projections we don't have to do anything
+                if !acc_projections.is_empty() {
+                    let schema_left = lp_arena.get(input_left).schema(lp_arena);
+                    let schema_right = lp_arena.get(input_right).schema(lp_arena);
+
+                    // We need the join columns so we push the projection downwards
+                    pushdown_left.extend_from_slice(&left_on);
+                    pushdown_right.extend_from_slice(&right_on);
+
+                    for mut proj in acc_projections {
+                        let mut add_local = true;
+
+                        // if it is an alias we want to project the root column name downwards
+                        // but we don't want to project it a this level, otherwise we project both
+                        // the root and the alias, hence add_local = false.
+                        if let AExpr::Alias(expr, name) = expr_arena.get(proj).clone() {
+                            for root_name in aexpr_to_root_names(expr, expr_arena) {
+                                let node = expr_arena.add(AExpr::Column(root_name));
+                                let proj = expr_arena.add(AExpr::Alias(node, name.clone()));
+                                local_projection.push(proj)
+                            }
+                            // now we don
+                            add_local = false;
+                        }
+
+                        // Path for renamed columns due to the join. The column name of the left table
+                        // stays as is, the column of the right will have the "_right" suffix.
+                        // Thus joining two tables with both a foo column leads to ["foo", "foo_right"]
+                        if !self.join_push_down(
+                            schema_left,
+                            schema_right,
+                            proj,
+                            &mut pushdown_left,
+                            &mut pushdown_right,
+                            &mut names_left,
+                            &mut names_right,
+                            expr_arena,
+                        ) {
+                            // Column name of the projection without any alias.
+                            let root_column_name =
+                                aexpr_to_root_names(proj, expr_arena).pop().unwrap();
+
+                            // If _right suffix exists we need to push a projection down without this
+                            // suffix.
+                            if root_column_name.ends_with("_right") {
+                                // downwards name is the name without the _right i.e. "foo".
+                                let (downwards_name, _) = root_column_name
+                                    .split_at(root_column_name.len() - "_right".len());
+
+                                let downwards_name_column =
+                                    expr_arena.add(AExpr::Column(Arc::new(downwards_name.into())));
+                                // project downwards and locally immediately alias to prevent wrong projections
+                                if names_right.insert(Arc::new(downwards_name.to_string())) {
+                                    pushdown_right.push(downwards_name_column);
+                                }
+
+                                // locally we project and alias
+                                let projection = expr_arena.add(AExpr::Alias(
+                                    downwards_name_column,
+                                    Arc::new(format!("{}_right", downwards_name)),
+                                ));
+                                local_projection.push(projection);
+                            }
+                        } else if add_local {
+                            // always also do the projection locally, because the join columns may not be
+                            // included in the projection.
+                            // for instance:
+                            //
+                            // SELECT [COLUMN temp]
+                            // FROM
+                            // JOIN (["days", "temp"]) WITH (["days", "rain"]) ON (left: days right: days)
+                            //
+                            // should drop the days column after the join.
+                            local_projection.push(proj)
+                        }
+                    }
+                }
+
+                self.pushdown_and_assign(
+                    input_left,
+                    pushdown_left,
+                    names_left,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                self.pushdown_and_assign(
+                    input_right,
+                    pushdown_right,
+                    names_right,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+
+                let builder = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena).join(
+                    input_right,
+                    how,
+                    left_on,
+                    right_on,
+                    allow_par,
+                    force_par,
+                );
+                Ok(self.finish_node(local_projection, builder))
             }
 
             lp => Ok(lp),

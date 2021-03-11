@@ -417,6 +417,10 @@ impl Schema {
         Schema { fields }
     }
 
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
     /// Returns an immutable reference of the vector of `Field` instances
     pub fn fields(&self) -> &Vec<Field> {
         &self.fields
