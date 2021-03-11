@@ -902,19 +902,21 @@ pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema, ctxt: Contex
 
 /// Get a set of the data source paths in this LogicalPlan
 pub(crate) fn agg_source_paths(
-    logical_plan: &LogicalPlan,
+    root_lp: Node,
     paths: &mut HashSet<String, RandomState>,
+    lp_arena: &Arena<ALogicalPlan>,
 ) {
-    use LogicalPlan::*;
+    use ALogicalPlan::*;
+    let logical_plan = lp_arena.get(root_lp);
     match logical_plan {
         Slice { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Selection { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Cache { input } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         CsvScan { path, .. } => {
             paths.insert(path.clone());
@@ -925,39 +927,39 @@ pub(crate) fn agg_source_paths(
         }
         DataFrameScan { .. } => (),
         Projection { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         LocalProjection { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Sort { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Explode { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Distinct { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Aggregate { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Join {
             input_left,
             input_right,
             ..
         } => {
-            agg_source_paths(input_left, paths);
-            agg_source_paths(input_right, paths);
+            agg_source_paths(*input_left, paths, lp_arena);
+            agg_source_paths(*input_right, paths, lp_arena);
         }
         HStack { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Melt { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
         Udf { input, .. } => {
-            agg_source_paths(input, paths);
+            agg_source_paths(*input, paths, lp_arena);
         }
     }
 }

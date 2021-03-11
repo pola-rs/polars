@@ -15,7 +15,12 @@ pub enum ExprVal {
 }
 
 pub trait PhysicalPlanner {
-    fn create_physical_plan(&self, logical_plan: LogicalPlan) -> Result<Box<dyn Executor>>;
+    fn create_physical_plan(
+        &self,
+        root: Node,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Result<Box<dyn Executor>>;
 }
 
 // Executor are the executors of the physical plan and produce DataFrames. They

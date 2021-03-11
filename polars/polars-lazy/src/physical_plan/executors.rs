@@ -581,6 +581,7 @@ impl Executor for PartitionGroupByExec {
                 return groupby_helper(original_df, keys, &self.phys_aggs, None);
             }
         }
+        let mut expr_arena = Arena::with_capacity(64);
 
         // This will be the aggregation on the partition results. Due to the groupby
         // operation the column names have changed. This makes sure we can select the columns with
@@ -595,14 +596,15 @@ impl Executor for PartitionGroupByExec {
                 let out_field = e.to_field(&schema, Context::Aggregation)?;
                 let out_name = Arc::new(out_field.name().clone());
                 let e = rename_expr_root_name(e, out_name.clone())?;
-                Ok((e, out_name))
+                let node = to_aexpr(e, &mut expr_arena);
+                Ok((node, out_name))
             })
             .collect::<Result<Vec<_>>>()?;
 
         let planner = DefaultPlanner {};
         let outer_phys_aggs = aggs_and_names
             .iter()
-            .map(|(e, _)| planner.create_physical_expr(e.clone(), Context::Aggregation))
+            .map(|(e, _)| planner.create_physical_expr(*e, Context::Aggregation, &mut expr_arena))
             .collect::<Result<Vec<_>>>()?;
 
         let n_threads = num_cpus::get();

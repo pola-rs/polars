@@ -37,7 +37,7 @@ impl AggregatePushdown {
         let dummy_last = AExpr::Agg(AAggExpr::First(Node(dummy_node)));
         let dummy_sum = AExpr::Agg(AAggExpr::Sum(Node(dummy_node)));
 
-        // only do aggregation pushdown if all projections are aggreegations
+        // only do aggregation pushdown if all projections are aggregations
         #[allow(clippy::blocks_in_if_conditions)]
         if !self.processed_state
             && expr.iter().all(|node| {
