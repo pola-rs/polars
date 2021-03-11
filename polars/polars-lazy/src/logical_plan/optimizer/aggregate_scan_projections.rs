@@ -19,19 +19,20 @@ fn process_with_columns(
 
 /// Aggregate all the projections in an LP
 pub(crate) fn agg_projection(
-    logical_plan: &LogicalPlan,
+    root: Node,
     columns: &mut HashMap<String, HashSet<String, RandomState>, RandomState>,
+    lp_arena: &Arena<ALogicalPlan>,
 ) {
-    use LogicalPlan::*;
-    match logical_plan {
+    use ALogicalPlan::*;
+    match lp_arena.get(root) {
         Slice { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Selection { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Cache { input } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         CsvScan {
             path, with_columns, ..
@@ -46,39 +47,39 @@ pub(crate) fn agg_projection(
         }
         DataFrameScan { .. } => (),
         Projection { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         LocalProjection { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Sort { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Explode { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Distinct { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Aggregate { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Join {
             input_left,
             input_right,
             ..
         } => {
-            agg_projection(input_left, columns);
-            agg_projection(input_right, columns);
+            agg_projection(*input_left, columns, lp_arena);
+            agg_projection(*input_right, columns, lp_arena);
         }
         HStack { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Melt { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
         Udf { input, .. } => {
-            agg_projection(input, columns);
+            agg_projection(*input, columns, lp_arena);
         }
     }
 }

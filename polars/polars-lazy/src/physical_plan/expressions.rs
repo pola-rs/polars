@@ -847,14 +847,14 @@ impl AggPhysicalExpr for SliceExpr {
     }
 }
 
-pub(crate) struct BinaryFunction {
+pub(crate) struct BinaryFunctionExpr {
     pub(crate) input_a: Arc<dyn PhysicalExpr>,
     pub(crate) input_b: Arc<dyn PhysicalExpr>,
     pub(crate) function: Arc<dyn SeriesBinaryUdf>,
     pub(crate) output_field: Arc<dyn BinaryUdfOutputField>,
 }
 
-impl PhysicalExpr for BinaryFunction {
+impl PhysicalExpr for BinaryFunctionExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let series_a = self.input_a.evaluate(df)?;
         let series_b = self.input_b.evaluate(df)?;
@@ -877,7 +877,7 @@ impl PhysicalExpr for BinaryFunction {
     }
 }
 
-impl AggPhysicalExpr for BinaryFunction {
+impl AggPhysicalExpr for BinaryFunctionExpr {
     fn evaluate(&self, df: &DataFrame, groups: &[(u32, Vec<u32>)]) -> Result<Option<Series>> {
         let a = self.input_a.evaluate(df)?;
         let b = self.input_b.evaluate(df)?;

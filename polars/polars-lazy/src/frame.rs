@@ -1,8 +1,5 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
-use crate::logical_plan::optimizer::aggregate_scan_projections::{
-    agg_projection, AggScanProjection,
-};
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::combine_predicates_expr;
@@ -15,9 +12,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
 use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
+use crate::prelude::aggregate_scan_projections::agg_projection;
 
 #[derive(Clone)]
 pub struct LazyCsvReader<'a> {
@@ -215,7 +214,12 @@ impl LazyFrame {
 
         let mut logical_plan = self.clone().get_plan_builder().build();
         if optimized {
-            logical_plan = self.clone().optimize()?;
+            // initialize arena's
+            let mut expr_arena = Arena::with_capacity(512);
+            let mut lp_arena = Arena::with_capacity(512);
+
+            let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
+            logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         }
 
         logical_plan.dot(&mut s, 0, "").expect("io error");
@@ -281,7 +285,10 @@ impl LazyFrame {
 
     /// Describe the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> Result<String> {
-        let logical_plan = self.clone().optimize()?;
+        let mut expr_arena = Arena::with_capacity(512);
+        let mut lp_arena = Arena::with_capacity(512);
+        let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
+        let logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         Ok(logical_plan.describe())
     }
 
@@ -380,7 +387,11 @@ impl LazyFrame {
         res
     }
 
-    fn optimize(self) -> Result<LogicalPlan> {
+    fn optimize(
+        self,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Result<Node> {
         // get toggle values
         let predicate_pushdown = self.opt_state.predicate_pushdown;
         let projection_pushdown = self.opt_state.projection_pushdown;
@@ -401,15 +412,12 @@ impl LazyFrame {
         #[cfg(debug_assertions)]
         let prev_schema = logical_plan.schema().clone();
 
-        // initialize arena's
-        let mut expr_arena = Arena::with_capacity(512);
-        let mut lp_arena = Arena::with_capacity(512);
-        let mut lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
+        let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena);
 
         if projection_pushdown {
             let alp = lp_arena.take(lp_top);
             let alp = projection_pushdown_opt
-                .optimize(alp, &mut lp_arena, &mut expr_arena)
+                .optimize(alp, lp_arena, expr_arena)
                 .expect("projection pushdown failed");
             lp_arena.replace(lp_top, alp);
         }
@@ -417,7 +425,7 @@ impl LazyFrame {
         if predicate_pushdown {
             let alp = lp_arena.take(lp_top);
             let alp = predicate_pushdown_opt
-                .optimize(alp, &mut lp_arena, &mut expr_arena)
+                .optimize(alp, lp_arena, expr_arena)
                 .expect("predicate pushdown failed");
             lp_arena.replace(lp_top, alp);
         }
@@ -436,14 +444,13 @@ impl LazyFrame {
         }
 
         let opt = StackOptimizer {};
-        lp_top = opt.optimize_loop(&mut rules, &mut expr_arena, &mut lp_arena, lp_top);
-        let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+        lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
 
         if agg_scan_projection {
             // scan the LP to aggregate all the column used in scans
             // these columns will be added to the state of the AggScanProjection rule
             let mut columns = HashMap::with_capacity_and_hasher(32, RandomState::default());
-            agg_projection(&lp, &mut columns);
+            agg_projection(lp_top, &mut columns, lp_arena);
 
             let opt = AggScanProjection { columns };
             rules.push(Box::new(opt));
@@ -452,10 +459,10 @@ impl LazyFrame {
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]
         {
-            assert_eq!(&prev_schema, lp.schema());
+            assert_eq!(&prev_schema, lp_arena.get(lp_top).schema(lp_arena));
         };
 
-        Ok(lp)
+        Ok(lp_top)
     }
 
     /// Execute all the lazy operations and collect them into a [DataFrame](polars_core::frame::DataFrame).
@@ -477,11 +484,14 @@ impl LazyFrame {
     /// ```
     pub fn collect(self) -> Result<DataFrame> {
         let use_string_cache = self.opt_state.global_string_cache;
-        let logical_plan = self.optimize()?;
+        let mut expr_arena = Arena::with_capacity(512);
+        let mut lp_arena = Arena::with_capacity(512);
+        let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
 
         toggle_string_cache(use_string_cache);
         let planner = DefaultPlanner::default();
-        let mut physical_plan = planner.create_physical_plan(logical_plan)?;
+        let mut physical_plan =
+            planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
         let cache = Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
             64,
             RandomState::default(),
