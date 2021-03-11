@@ -1054,37 +1054,8 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn melt(
-        self,
-        id_vars: Arc<Vec<String>>,
-        value_vars: Arc<Vec<String>>,
-        schema: Option<Arc<Schema>>,
-    ) -> Self {
-        let schema = schema.unwrap_or_else(|| {
-            let mut fields = self
-                .0
-                .schema()
-                .fields()
-                .iter()
-                .filter(|field| !value_vars.contains(field.name()))
-                .cloned()
-                .collect_vec();
-
-            fields.reserve(2);
-
-            let value_dtype = self
-                .0
-                .schema()
-                .field_with_name(&value_vars[0])
-                .expect("field not found")
-                .data_type();
-
-            fields.push(Field::new("variable", DataType::Utf8));
-            fields.push(Field::new("value", value_dtype.clone()));
-
-            Arc::new(Schema::new(fields))
-        });
-
+    pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
+        let schema = det_melt_schema(&value_vars, self.0.schema());
         LogicalPlan::Melt {
             input: Box::new(self.0),
             id_vars,
@@ -1185,6 +1156,27 @@ impl LogicalPlanBuilder {
         }
         .into()
     }
+}
+
+pub(crate) fn det_melt_schema(value_vars: &[String], input_schema: &Schema) -> SchemaRef {
+    let mut fields = input_schema
+        .fields()
+        .iter()
+        .filter(|field| !value_vars.contains(field.name()))
+        .cloned()
+        .collect_vec();
+
+    fields.reserve(2);
+
+    let value_dtype = input_schema
+        .field_with_name(&value_vars[0])
+        .expect("field not found")
+        .data_type();
+
+    fields.push(Field::new("variable", DataType::Utf8));
+    fields.push(Field::new("value", value_dtype.clone()));
+
+    Arc::new(Schema::new(fields))
 }
 
 #[cfg(test)]

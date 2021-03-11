@@ -1,32 +1,22 @@
+use std::collections::{HashMap, HashSet};
+
 use ahash::RandomState;
+
 use polars_core::frame::group_by::{fmt_groupby_column, GroupByMethod};
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, Arena, Node};
-use std::collections::HashMap;
 
-use crate::logical_plan::{prepare_projection, Context};
+use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
-use crate::utils::{expr_to_root_column_exprs, rename_field};
+use crate::utils::{aexprs_to_schema, rename_field};
 
 pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
 pub(crate) mod predicate_pushdown;
-pub(crate) mod projection;
+pub(crate) mod projection_pushdown;
 pub(crate) mod simplify_expr;
 pub(crate) mod type_coercion;
-
-// check if a selection/projection can be done on the downwards schema
-fn check_down_node(expr: &Expr, down_schema: &Schema) -> bool {
-    let roots = expr_to_root_column_exprs(expr);
-    match roots.is_empty() {
-        true => false,
-        false => roots
-            .iter()
-            .map(|e| e.to_field(down_schema, Context::Other).is_ok())
-            .all(|b| b),
-    }
-}
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan>;
@@ -1086,8 +1076,8 @@ pub(crate) fn to_alp(
     lp_arena.add(v)
 }
 
-pub(crate) fn node_to_exp(node: Node, expr_arena: &mut Arena<AExpr>) -> Expr {
-    let expr = expr_arena.get_mut(node).clone();
+pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
+    let expr = expr_arena.get(node).clone();
 
     match expr {
         AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_exp(node, expr_arena))),
@@ -1560,14 +1550,38 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
-    pub fn project(mut self, exprs: Vec<Expr>) -> Self {
-        let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        let (exprs, schema) = prepare_projection(exprs, input_schema);
+    pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
+        let schema = det_melt_schema(&value_vars, self.schema());
 
-        let exprs = exprs
-            .into_iter()
-            .map(|e| to_aexpr(e, &mut self.expr_arena))
-            .collect::<Vec<_>>();
+        let lp = ALogicalPlan::Melt {
+            input: self.root,
+            id_vars,
+            value_vars,
+            schema,
+        };
+        let node = self.lp_arena.add(lp);
+        ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
+    }
+
+    pub fn project_local(self, exprs: Vec<Node>) -> Self {
+        let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
+        let schema = aexprs_to_schema(&exprs, input_schema, Context::Other, self.expr_arena);
+        if !exprs.is_empty() {
+            let lp = ALogicalPlan::LocalProjection {
+                expr: exprs,
+                input: self.root,
+                schema: Arc::new(schema),
+            };
+            let node = self.lp_arena.add(lp);
+            ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
+        } else {
+            self
+        }
+    }
+
+    pub fn project(self, exprs: Vec<Node>) -> Self {
+        let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
+        let schema = aexprs_to_schema(&exprs, input_schema, Context::Other, self.expr_arena);
 
         // if len == 0, no projection has to be done. This is a select all operation.
         if !exprs.is_empty() {
@@ -1620,6 +1634,97 @@ impl<'a> ALogicalPlanBuilder<'a> {
             input: self.root,
             exprs,
             schema: Arc::new(new_schema),
+        };
+        let root = self.lp_arena.add(lp);
+        Self::new(root, self.expr_arena, self.lp_arena)
+    }
+
+    pub fn groupby(
+        self,
+        keys: Vec<Node>,
+        aggs: Vec<Node>,
+        apply: Option<Arc<dyn DataFrameUdf>>,
+    ) -> Self {
+        debug_assert!(!keys.is_empty());
+        let current_schema = self.schema();
+        // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
+        // let aggs = rewrite_projections(aggs, current_schema);
+
+        let schema1 = aexprs_to_schema(&keys, current_schema, Context::Other, self.expr_arena);
+        let schema2 =
+            aexprs_to_schema(&aggs, current_schema, Context::Aggregation, self.expr_arena);
+
+        let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
+
+        let lp = ALogicalPlan::Aggregate {
+            input: self.root,
+            keys,
+            aggs,
+            schema: Arc::new(schema),
+            apply,
+        };
+        let root = self.lp_arena.add(lp);
+        Self::new(root, self.expr_arena, self.lp_arena)
+    }
+
+    pub fn join(
+        self,
+        other: Node,
+        how: JoinType,
+        left_on: Vec<Node>,
+        right_on: Vec<Node>,
+        allow_par: bool,
+        force_par: bool,
+    ) -> Self {
+        let schema_left = self.schema();
+        let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
+
+        // column names of left table
+        let mut names: HashSet<&String, RandomState> = HashSet::with_capacity_and_hasher(
+            schema_left.len() + schema_right.len(),
+            Default::default(),
+        );
+        // fields of new schema
+        let mut fields = Vec::with_capacity(schema_left.len() + schema_right.len());
+
+        for f in schema_left.fields() {
+            names.insert(f.name());
+            fields.push(f.clone());
+        }
+
+        let right_names: HashSet<_, RandomState> = right_on
+            .iter()
+            .map(|e| match self.expr_arena.get(*e) {
+                AExpr::Alias(_, name) => name.clone(),
+                AExpr::Column(name) => name.clone(),
+                _ => panic!("could not determine join column names"),
+            })
+            .collect();
+
+        for f in schema_right.fields() {
+            let name = f.name();
+            if !right_names.contains(name) {
+                if names.contains(name) {
+                    let new_name = format!("{}_right", name);
+                    let field = Field::new(&new_name, f.data_type().clone());
+                    fields.push(field)
+                } else {
+                    fields.push(f.clone())
+                }
+            }
+        }
+
+        let schema = Arc::new(Schema::new(fields));
+
+        let lp = ALogicalPlan::Join {
+            input_left: self.root,
+            input_right: other,
+            how,
+            schema,
+            left_on,
+            right_on,
+            allow_par,
+            force_par,
         };
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)

@@ -15,6 +15,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::logical_plan::optimizer::{
+    predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
+};
+
 #[derive(Clone)]
 pub struct LazyCsvReader<'a> {
     path: String,
@@ -385,37 +389,30 @@ impl LazyFrame {
         let agg_scan_projection = self.opt_state.agg_scan_projection;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
-        let mut logical_plan = self.get_plan_builder().build();
+        let logical_plan = self.get_plan_builder().build();
 
         // gradually fill the rules passed to the optimizer
         let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
-        let predicate_pushdown_opt =
-            crate::logical_plan::optimizer::predicate_pushdown::PredicatePushdown::default();
+        let predicate_pushdown_opt = PredicatePushDown::default();
         let projection_pushdown_opt = ProjectionPushDown {};
 
-        // during debug we check if the projection/predicate pushdown have not modified the final schema
-        if cfg!(debug_assertions) {
-            // check that the optimization don't interfere with the schema result.
-            let prev_schema = logical_plan.schema().clone();
-            if projection_pushdown {
-                logical_plan = projection_pushdown_opt.optimize(logical_plan)?;
-            }
-            assert_eq!(&prev_schema, logical_plan.schema());
-        } else {
-            // NOTE: the order is important. Projection pushdown must be before predicate pushdown,
-            // The projection may have aliases that interfere with the predicate expressions.
-            if projection_pushdown {
-                logical_plan = projection_pushdown_opt
-                    .optimize(logical_plan)
-                    .expect("projection pushdown failed");
-            }
-        };
+        // during debug we check if the optimizations have not modified the final schema
+        #[cfg(debug_assertions)]
+        let prev_schema = logical_plan.schema().clone();
 
         // initialize arena's
         let mut expr_arena = Arena::with_capacity(512);
         let mut lp_arena = Arena::with_capacity(512);
         let mut lp_top = to_alp(logical_plan, &mut expr_arena, &mut lp_arena);
+
+        if projection_pushdown {
+            let alp = lp_arena.take(lp_top);
+            let alp = projection_pushdown_opt
+                .optimize(alp, &mut lp_arena, &mut expr_arena)
+                .expect("projection pushdown failed");
+            lp_arena.replace(lp_top, alp);
+        }
 
         if predicate_pushdown {
             let alp = lp_arena.take(lp_top);
@@ -451,6 +448,12 @@ impl LazyFrame {
             let opt = AggScanProjection { columns };
             rules.push(Box::new(opt));
         }
+
+        // during debug we check if the optimizations have not modified the final schema
+        #[cfg(debug_assertions)]
+        {
+            assert_eq!(&prev_schema, lp.schema());
+        };
 
         Ok(lp)
     }
@@ -839,7 +842,7 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .melt(Arc::new(id_vars), Arc::new(value_vars), None)
+            .melt(Arc::new(id_vars), Arc::new(value_vars))
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -1032,7 +1035,7 @@ mod test {
         }
         .unwrap();
 
-        let new = df.lazy().drop_nulls(None).collect().unwrap();
+        let new = df.clone().lazy().drop_nulls(None).collect().unwrap();
         let out = df! {
             "foo" => &[Some(1)],
             "bar" => &[Some(1)]

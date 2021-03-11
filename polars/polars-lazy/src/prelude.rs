@@ -2,10 +2,7 @@ pub use crate::{
     dsl::*,
     frame::*,
     logical_plan::{
-        optimizer::{
-            predicate_pushdown::PredicatePushdown, projection::ProjectionPushDown,
-            type_coercion::TypeCoercionRule, Optimize, *,
-        },
+        optimizer::{type_coercion::TypeCoercionRule, Optimize, *},
         DataFrameUdf, LiteralValue, LogicalPlan, LogicalPlanBuilder,
     },
     physical_plan::{

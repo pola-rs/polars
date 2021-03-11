@@ -104,13 +104,14 @@ impl AggScanProjection {
             let agg = self.columns.get(path).unwrap();
             if with_columns.len() < agg.len() {
                 let node = lp_arena.add(lp);
+
+                let projections = with_columns
+                    .into_iter()
+                    .map(|s| expr_arena.add(AExpr::Column(Arc::new(s))))
+                    .collect();
+
                 lp = ALogicalPlanBuilder::new(node, expr_arena, lp_arena)
-                    .project(
-                        with_columns
-                            .into_iter()
-                            .map(|s| Expr::Column(Arc::new(s)))
-                            .collect(),
-                    )
+                    .project(projections)
                     .build();
             }
         }
