@@ -274,6 +274,60 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
+            Sort {
+                input,
+                by_column,
+                reverse,
+            } => {
+                if !acc_projections.is_empty() {
+                    // Make sure that the column used for the sort is projected
+                    let node = expr_arena.add(AExpr::Column(Arc::new(by_column.clone())));
+                    add_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
+                }
+
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                Ok(Sort {
+                    input,
+                    by_column,
+                    reverse,
+                })
+            }
+            Explode { input, columns } => {
+                if !acc_projections.is_empty() {
+                    // Make sure that the exploded columns are projected.
+                    for column in &columns {
+                        let node = expr_arena.add(AExpr::Column(Arc::new(column.clone())));
+                        add_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
+                    }
+                }
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                Ok(Explode { input, columns })
+            }
+            Cache { input } => {
+                self.pushdown_and_assign(
+                    input,
+                    acc_projections,
+                    names,
+                    projections_seen,
+                    lp_arena,
+                    expr_arena,
+                )?;
+                Ok(Cache { input })
+            }
 
             lp => Ok(lp),
         }
