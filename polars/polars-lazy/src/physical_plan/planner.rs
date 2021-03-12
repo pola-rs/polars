@@ -464,9 +464,10 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Min)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| {
+                                let function = NoEq::new(Arc::new(move |s: Series| {
                                     parallel_op(|s| Ok(s.min_as_series()), s, None)
-                                });
+                                })
+                                    as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -483,9 +484,10 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Max)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| {
+                                let function = NoEq::new(Arc::new(move |s: Series| {
                                     parallel_op(|s| Ok(s.max_as_series()), s, None)
-                                });
+                                })
+                                    as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -502,9 +504,10 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Sum)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| {
+                                let function = NoEq::new(Arc::new(move |s: Series| {
                                     parallel_op(|s| Ok(s.sum_as_series()), s, None)
-                                });
+                                })
+                                    as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -521,7 +524,9 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Std)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.std_as_series()));
+                                let function =
+                                    NoEq::new(Arc::new(move |s: Series| Ok(s.std_as_series()))
+                                        as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -538,7 +543,9 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Var)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.var_as_series()));
+                                let function =
+                                    NoEq::new(Arc::new(move |s: Series| Ok(s.var_as_series()))
+                                        as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -555,11 +562,12 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Mean)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| {
+                                let function = NoEq::new(Arc::new(move |s: Series| {
                                     let len = s.len() as f64;
                                     parallel_op(|s| Ok(s.sum_as_series()), s, None)
                                         .map(|s| s.cast::<Float64Type>().unwrap() / len)
-                                });
+                                })
+                                    as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -576,7 +584,9 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Median)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.median_as_series()));
+                                let function =
+                                    NoEq::new(Arc::new(move |s: Series| Ok(s.median_as_series()))
+                                        as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -593,7 +603,9 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::First)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.head(Some(1))));
+                                let function =
+                                    NoEq::new(Arc::new(move |s: Series| Ok(s.head(Some(1))))
+                                        as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -610,7 +622,9 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Last)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| Ok(s.tail(Some(1))));
+                                let function =
+                                    NoEq::new(Arc::new(move |s: Series| Ok(s.tail(Some(1))))
+                                        as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -641,12 +655,13 @@ impl DefaultPlanner {
                                 GroupByMethod::NUnique,
                             ))),
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| {
+                                let function = NoEq::new(Arc::new(move |s: Series| {
                                     s.n_unique().map(|count| {
                                         UInt32Chunked::new_from_slice(s.name(), &[count as u32])
                                             .into_series()
                                     })
-                                });
+                                })
+                                    as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -664,8 +679,10 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggQuantileExpr::new(input, quantile)))
                             }
                             Context::Other => {
-                                let function =
-                                    Arc::new(move |s: Series| s.quantile_as_series(quantile));
+                                let function = NoEq::new(Arc::new(move |s: Series| {
+                                    s.quantile_as_series(quantile)
+                                })
+                                    as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -692,11 +709,12 @@ impl DefaultPlanner {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Count)))
                             }
                             Context::Other => {
-                                let function = Arc::new(move |s: Series| {
+                                let function = NoEq::new(Arc::new(move |s: Series| {
                                     let count = s.len();
                                     Ok(UInt32Chunked::new_from_slice(s.name(), &[count as u32])
                                         .into_series())
-                                });
+                                })
+                                    as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
                                     input,
                                     function,
@@ -757,7 +775,9 @@ impl DefaultPlanner {
             }
             Shift { input, periods } => {
                 let input = self.create_physical_expr(input, ctxt, expr_arena)?;
-                let function = Arc::new(move |s: Series| Ok(s.shift(periods)));
+                let function = NoEq::new(
+                    Arc::new(move |s: Series| Ok(s.shift(periods))) as Arc<dyn SeriesUdf>
+                );
                 Ok(Arc::new(ApplyExpr::new(
                     input,
                     function,
@@ -779,7 +799,8 @@ impl DefaultPlanner {
             }
             Reverse(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = Arc::new(move |s: Series| Ok(s.reverse()));
+                let function =
+                    NoEq::new(Arc::new(move |s: Series| Ok(s.reverse())) as Arc<dyn SeriesUdf>);
                 Ok(Arc::new(ApplyExpr::new(
                     input,
                     function,
@@ -789,8 +810,9 @@ impl DefaultPlanner {
             }
             Duplicated(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function =
-                    Arc::new(move |s: Series| s.is_duplicated().map(|ca| ca.into_series()));
+                let function = NoEq::new(Arc::new(move |s: Series| {
+                    s.is_duplicated().map(|ca| ca.into_series())
+                }) as Arc<dyn SeriesUdf>);
                 Ok(Arc::new(ApplyExpr::new(
                     input,
                     function,
@@ -800,7 +822,11 @@ impl DefaultPlanner {
             }
             Unique(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = Arc::new(move |s: Series| s.is_unique().map(|ca| ca.into_series()));
+                let function =
+                    NoEq::new(
+                        Arc::new(move |s: Series| s.is_unique().map(|ca| ca.into_series()))
+                            as Arc<dyn SeriesUdf>,
+                    );
                 Ok(Arc::new(ApplyExpr::new(
                     input,
                     function,
@@ -810,7 +836,8 @@ impl DefaultPlanner {
             }
             Explode(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let function = Arc::new(move |s: Series| s.explode());
+                let function =
+                    NoEq::new(Arc::new(move |s: Series| s.explode()) as Arc<dyn SeriesUdf>);
                 Ok(Arc::new(ApplyExpr::new(
                     input,
                     function,

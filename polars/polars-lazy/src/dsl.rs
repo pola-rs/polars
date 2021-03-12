@@ -11,7 +11,7 @@ use polars_core::{
 #[cfg(feature = "temporal")]
 use polars_core::utils::chrono::{NaiveDate, NaiveDateTime};
 use std::fmt::{Debug, Formatter};
-use std::ops::{BitAnd, BitOr};
+use std::ops::{BitAnd, BitOr, Deref};
 use std::{
     fmt,
     ops::{Add, Div, Mul, Rem, Sub},
@@ -55,6 +55,30 @@ where
 impl Debug for dyn SeriesBinaryUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "SeriesBinaryUdf")
+    }
+}
+
+#[derive(Clone)]
+/// Wrapper type that indicates that the inner type is not equal to anything
+pub struct NoEq<T>(T);
+
+impl<T> NoEq<T> {
+    pub fn new(val: T) -> Self {
+        NoEq(val)
+    }
+}
+
+impl<T> PartialEq for NoEq<T> {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
+impl<T> Deref for NoEq<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -130,7 +154,7 @@ impl From<AggExpr> for Expr {
 }
 
 /// Queries consists of multiple expressions.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Expr {
     Alias(Box<Expr>, Arc<String>),
     Column(Arc<String>),
@@ -160,7 +184,7 @@ pub enum Expr {
     },
     Udf {
         input: Box<Expr>,
-        function: Arc<dyn SeriesUdf>,
+        function: NoEq<Arc<dyn SeriesUdf>>,
         output_type: Option<DataType>,
     },
     Shift {
@@ -188,180 +212,12 @@ pub enum Expr {
     BinaryFunction {
         input_a: Box<Expr>,
         input_b: Box<Expr>,
-        function: Arc<dyn SeriesBinaryUdf>,
+        function: NoEq<Arc<dyn SeriesBinaryUdf>>,
         /// Delays output type evaluation until input schema is known.
-        output_field: Arc<dyn BinaryUdfOutputField>,
+        output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
     },
     /// Can be used in a select statement to exclude a column from selection
     Except(Box<Expr>),
-}
-
-macro_rules! impl_partial_eq {
-    ($variant:ident, $left:expr, $other:expr) => {{
-        if let Expr::$variant(right) = $other {
-            $left.eq(right)
-        } else {
-            false
-        }
-    }};
-}
-macro_rules! impl_partial_eq_agg {
-    ($variant:ident, $left:expr, $other:expr) => {{
-        if let AggExpr::$variant(right) = $other {
-            $left.eq(right)
-        } else {
-            false
-        }
-    }};
-}
-
-impl PartialEq for Expr {
-    fn eq(&self, other: &Self) -> bool {
-        match self {
-            Expr::Duplicated(left) => impl_partial_eq!(Duplicated, left, other),
-            Expr::Unique(left) => impl_partial_eq!(Unique, left, other),
-            Expr::Reverse(left) => impl_partial_eq!(Reverse, left, other),
-            Expr::Explode(left) => impl_partial_eq!(Explode, left, other),
-            Expr::Agg(agg) => {
-                if let Expr::Agg(other) = other {
-                    match agg {
-                        AggExpr::Mean(left) => impl_partial_eq_agg!(Mean, left, other),
-                        AggExpr::Median(left) => impl_partial_eq_agg!(Median, left, other),
-                        AggExpr::First(left) => impl_partial_eq_agg!(First, left, other),
-                        AggExpr::Last(left) => impl_partial_eq_agg!(Last, left, other),
-                        AggExpr::AggGroups(left) => impl_partial_eq_agg!(AggGroups, left, other),
-                        AggExpr::NUnique(left) => impl_partial_eq_agg!(NUnique, left, other),
-                        AggExpr::Min(left) => impl_partial_eq_agg!(Min, left, other),
-                        AggExpr::Max(left) => impl_partial_eq_agg!(Max, left, other),
-                        AggExpr::Sum(left) => impl_partial_eq_agg!(Sum, left, other),
-                        AggExpr::List(left) => impl_partial_eq_agg!(List, left, other),
-                        AggExpr::Count(left) => impl_partial_eq_agg!(Count, left, other),
-                        AggExpr::Std(left) => impl_partial_eq_agg!(Std, left, other),
-                        AggExpr::Var(left) => impl_partial_eq_agg!(Var, left, other),
-                        AggExpr::Quantile { expr, quantile } => {
-                            let left = expr;
-                            let left_q = quantile;
-                            if let AggExpr::Quantile { expr, quantile } = other {
-                                if left_q == quantile {
-                                    left.eq(expr)
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            }
-                        }
-                    }
-                } else {
-                    false
-                }
-            }
-            Expr::Column(left) => impl_partial_eq!(Column, left, other),
-            Expr::Literal(left) => impl_partial_eq!(Literal, left, other),
-            Expr::Except(left) => impl_partial_eq!(Except, left, other),
-            Expr::Wildcard => matches!(other, Expr::Wildcard),
-            Expr::Udf { .. } => false,
-            Expr::BinaryFunction { .. } => false,
-            Expr::BinaryExpr { .. } => false, // todo: should it?
-            Expr::Ternary { .. } => false,
-            Expr::IsNull(left) => impl_partial_eq!(IsNull, left, other),
-            Expr::IsNotNull(left) => impl_partial_eq!(IsNotNull, left, other),
-            Expr::Not(left) => impl_partial_eq!(Not, left, other),
-            Expr::Alias(left, name) => {
-                if let Expr::Alias(right, r_name) = other {
-                    if name == r_name {
-                        left.eq(right)
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-            Expr::Cast { expr, data_type } => {
-                let left = expr;
-                let ldtype = data_type;
-                if let Expr::Cast { expr, data_type } = other {
-                    let right = expr;
-                    let rdtype = data_type;
-                    if ldtype == rdtype {
-                        left.eq(right)
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-            Expr::Sort { expr, reverse } => {
-                let left = expr;
-                let lreverse = reverse;
-                if let Expr::Sort { expr, reverse } = other {
-                    let right = expr;
-                    let rreverse = reverse;
-                    if lreverse == rreverse {
-                        left.eq(right)
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-            Expr::Window {
-                function,
-                partition_by,
-                order_by,
-            } => {
-                let function_left = function;
-                let partition_by_left = partition_by;
-                let order_by_left = order_by;
-                if let Expr::Window {
-                    function,
-                    partition_by,
-                    order_by,
-                } = other
-                {
-                    function_left.eq(function)
-                        && partition_by_left.eq(partition_by)
-                        && order_by_left.eq(order_by)
-                } else {
-                    false
-                }
-            }
-            Expr::Shift { input, periods } => {
-                let left = input;
-                let lperiods = periods;
-                if let Expr::Shift { input, periods } = other {
-                    let right = input;
-                    let rperiods = periods;
-                    if lperiods == rperiods {
-                        left.eq(right)
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-            Expr::Slice {
-                input: left,
-                offset: offset_left,
-                length: length_left,
-            } => {
-                if let Expr::Slice {
-                    input,
-                    offset,
-                    length,
-                } = other
-                {
-                    offset == offset_left && length == length_left && left.eq(input)
-                } else {
-                    false
-                }
-            }
-        }
-    }
 }
 
 impl Expr {
@@ -639,7 +495,7 @@ pub fn except(name: &str) -> Expr {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Operator {
     Eq,
     NotEq,
@@ -876,7 +732,7 @@ impl Expr {
     {
         Expr::Udf {
             input: Box::new(self),
-            function: Arc::new(function),
+            function: NoEq::new(Arc::new(function)),
             output_type,
         }
     }
@@ -1173,8 +1029,8 @@ where
     Expr::BinaryFunction {
         input_a: Box::new(a),
         input_b: Box::new(b),
-        function: Arc::new(f),
-        output_field: Arc::new(output_field),
+        function: NoEq::new(Arc::new(f)),
+        output_field: NoEq::new(Arc::new(output_field)),
     }
 }
 
@@ -1192,8 +1048,8 @@ where
     Expr::BinaryFunction {
         input_a: Box::new(a),
         input_b: Box::new(b),
-        function: Arc::new(f),
-        output_field: Arc::new(output_field),
+        function: NoEq::new(Arc::new(f)),
+        output_field: NoEq::new(Arc::new(output_field)),
     }
 }
 
