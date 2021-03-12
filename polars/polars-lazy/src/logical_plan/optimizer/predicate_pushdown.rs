@@ -110,7 +110,7 @@ fn no_pushdown_preds(
 ) {
     // matching expr are typically explode, shift, etc. expressions that mess up predicates when pushed down
     for matching_expr in matches {
-        if has_aexpr(node, &arena, matching_expr, true) {
+        if has_aexpr(node, &arena, matching_expr) {
             // columns that are projected. We check if we can push down the predicates past this projection
             let columns = aexpr_to_root_names(node, &arena);
             debug_assert_eq!(columns.len(), 1);
@@ -447,7 +447,6 @@ impl PredicatePushDown {
                             op: Operator::And,
                             right: Default::default(),
                         },
-                        true,
                     ) {
                         local_predicates.push(predicate)
                     } else {
@@ -501,12 +500,7 @@ impl PredicatePushDown {
 
                 for (_, predicate) in acc_predicates {
                     // unique and duplicated can be caused by joins
-                    if has_aexpr(
-                        predicate,
-                        expr_arena,
-                        &AExpr::Unique(Default::default()),
-                        true,
-                    ) {
+                    if has_aexpr(predicate, expr_arena, &AExpr::Unique(Default::default())) {
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -514,7 +508,6 @@ impl PredicatePushDown {
                         predicate,
                         expr_arena,
                         &AExpr::Duplicated(Default::default()),
-                        true,
                     ) {
                         local_predicates.push(predicate);
                         continue;
@@ -564,21 +557,11 @@ impl PredicatePushDown {
                     // An outer join or left join may create null values.
                     // we also do it local
                     if (how == JoinType::Outer) | (how == JoinType::Left) {
-                        if has_aexpr(
-                            predicate,
-                            expr_arena,
-                            &AExpr::IsNotNull(Default::default()),
-                            true,
-                        ) {
+                        if has_aexpr(predicate, expr_arena, &AExpr::IsNotNull(Default::default())) {
                             local_predicates.push(predicate);
                             continue;
                         }
-                        if has_aexpr(
-                            predicate,
-                            expr_arena,
-                            &AExpr::IsNull(Default::default()),
-                            true,
-                        ) {
+                        if has_aexpr(predicate, expr_arena, &AExpr::IsNull(Default::default())) {
                             local_predicates.push(predicate);
                             continue;
                         }
@@ -631,7 +614,6 @@ impl PredicatePushDown {
                             input: Default::default(),
                             periods: Default::default(),
                         },
-                        true,
                     ) || has_aexpr(
                         *e,
                         expr_arena,
@@ -639,7 +621,6 @@ impl PredicatePushDown {
                             expr: Default::default(),
                             reverse: Default::default(),
                         },
-                        true,
                     ) {
                         let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                             .with_columns(exprs)
