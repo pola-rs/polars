@@ -43,11 +43,13 @@ impl StackOptimizer {
     ) -> Node {
         let mut changed = true;
 
-        let mut plans = Vec::new();
+        let mut plans = Vec::with_capacity(64);
 
         // nodes of expressions and lp node from which the expressions are a member of
-        let mut exprs = Vec::new();
+        let mut exprs = Vec::with_capacity(64);
 
+        // used to get the nodes of an expression
+        let mut inter_mediate_stack = Vec::with_capacity(8);
         // run loop until reaching fixed point
         while changed {
             // recurse into sub plans and expressions and apply rules
@@ -151,121 +153,9 @@ impl StackOptimizer {
                     // traverse subexpressions and add to the stack
                     let expr = expr_arena.get(current_expr_node);
 
-                    match expr {
-                        AExpr::Duplicated(expr) => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::Unique(expr) => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::Reverse(expr) => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::Explode(expr) => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::BinaryExpr { left, right, .. } => {
-                            exprs.push((*left, current_lp_node));
-                            exprs.push((*right, current_lp_node));
-                        }
-                        AExpr::Alias(expr, ..) => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::Not(expr) => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::IsNotNull(expr) => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::IsNull(expr) => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::Cast { expr, .. } => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::Sort { expr, .. } => {
-                            exprs.push((*expr, current_lp_node));
-                        }
-                        AExpr::Agg(agg) => match agg {
-                            AAggExpr::Min(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Max(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Median(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::NUnique(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::First(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Last(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::List(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Mean(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Quantile { expr, .. } => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Sum(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::AggGroups(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Count(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Std(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                            AAggExpr::Var(expr) => {
-                                exprs.push((*expr, current_lp_node));
-                            }
-                        },
-                        AExpr::Shift { input, .. } => {
-                            exprs.push((*input, current_lp_node));
-                        }
-                        AExpr::Ternary {
-                            predicate,
-                            truthy,
-                            falsy,
-                        } => {
-                            exprs.push((*predicate, current_lp_node));
-                            exprs.push((*truthy, current_lp_node));
-                            exprs.push((*falsy, current_lp_node));
-                        }
-                        AExpr::Udf { input, .. } => {
-                            exprs.push((*input, current_lp_node));
-                        }
-                        AExpr::BinaryFunction {
-                            input_a, input_b, ..
-                        } => {
-                            exprs.push((*input_a, current_lp_node));
-                            exprs.push((*input_b, current_lp_node));
-                        }
-                        AExpr::Window {
-                            function,
-                            partition_by,
-                            order_by,
-                        } => {
-                            exprs.push((*function, current_lp_node));
-                            exprs.push((*partition_by, current_lp_node));
-                            if let Some(order_by) = order_by {
-                                exprs.push((*order_by, current_lp_node))
-                            }
-                        }
-                        AExpr::Slice { input, .. } => {
-                            exprs.push((*input, current_lp_node));
-                        }
-                        AExpr::Literal { .. } | AExpr::Column { .. } | AExpr::Wildcard => {}
+                    expr.nodes(&mut inter_mediate_stack);
+                    for node in inter_mediate_stack.drain(..) {
+                        exprs.push((node, current_lp_node))
                     }
                 }
             }
