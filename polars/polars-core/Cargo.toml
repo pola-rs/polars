@@ -36,7 +36,7 @@ unsafe_unwrap = "^0.1.0"
 rayon = "1.5"
 comfy-table = { version="1", optional = true}
 prettytable-rs = {version = "0.8.0", optional = true }
-chrono = {version = "^0.4.13", optional = true}
+chrono = {version = "0.4", optional = true}
 rand = {version = "0.7", optional = true}
 rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
