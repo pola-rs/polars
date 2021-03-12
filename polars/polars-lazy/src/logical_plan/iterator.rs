@@ -94,6 +94,80 @@ impl<'a> IntoIterator for &'a Expr {
     }
 }
 
+impl AExpr {
+    /// Push nodes to a pre-allocated stack
+    pub(crate) fn nodes<'a>(&'a self, container: &mut Vec<Node>) {
+        let mut push = |e: &'a Node| container.push(*e);
+        use AExpr::*;
+
+        match self {
+            Column(_) | Literal(_) | Wildcard => {}
+            Alias(e, _) => push(e),
+            Not(e) => push(e),
+            BinaryExpr { left, op: _, right } => {
+                push(left);
+                push(right);
+            }
+            IsNull(e) => push(e),
+            IsNotNull(e) => push(e),
+            Cast { expr, .. } => push(expr),
+            Sort { expr, .. } => push(expr),
+            Agg(agg_e) => {
+                use AAggExpr::*;
+                match agg_e {
+                    Max(e) => push(e),
+                    Min(e) => push(e),
+                    Mean(e) => push(e),
+                    Median(e) => push(e),
+                    NUnique(e) => push(e),
+                    First(e) => push(e),
+                    Last(e) => push(e),
+                    List(e) => push(e),
+                    Count(e) => push(e),
+                    Quantile { expr, .. } => push(expr),
+                    Sum(e) => push(e),
+                    AggGroups(e) => push(e),
+                    Std(e) => push(e),
+                    Var(e) => push(e),
+                }
+            }
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
+                push(truthy);
+                push(falsy);
+                push(predicate)
+            }
+            Udf { input, .. } => push(input),
+            Shift { input, .. } => push(input),
+            Reverse(e) => push(e),
+            Duplicated(e) => push(e),
+            Unique(e) => push(e),
+            Explode(e) => push(e),
+            Window {
+                function,
+                partition_by,
+                order_by,
+            } => {
+                push(function);
+                push(partition_by);
+                if let Some(e) = order_by {
+                    push(e);
+                }
+            }
+            Slice { input, .. } => push(input),
+            BinaryFunction {
+                input_a, input_b, ..
+            } => {
+                push(input_a);
+                push(input_b)
+            }
+        }
+    }
+}
+
 pub struct AExprIter<'a> {
     stack: Vec<Node>,
     arena: Option<&'a Arena<AExpr>>,
@@ -103,78 +177,12 @@ impl<'a> Iterator for AExprIter<'a> {
     type Item = (Node, &'a AExpr);
 
     fn next(&mut self) -> Option<Self::Item> {
-        use AExpr::*;
         self.stack.pop().map(|node| {
             // take the arena because the bchk doesn't allow a mutable borrow to the field.
             let arena = self.arena.unwrap();
-            let mut push = |e: &'a Node| self.stack.push(*e);
             let current_expr = arena.get(node);
-            match current_expr {
-                Column(_) | Literal(_) | Wildcard => {}
-                Alias(e, _) => push(e),
-                Not(e) => push(e),
-                BinaryExpr { left, op: _, right } => {
-                    push(left);
-                    push(right);
-                }
-                IsNull(e) => push(e),
-                IsNotNull(e) => push(e),
-                Cast { expr, .. } => push(expr),
-                Sort { expr, .. } => push(expr),
-                Agg(agg_e) => {
-                    use AAggExpr::*;
-                    match agg_e {
-                        Max(e) => push(e),
-                        Min(e) => push(e),
-                        Mean(e) => push(e),
-                        Median(e) => push(e),
-                        NUnique(e) => push(e),
-                        First(e) => push(e),
-                        Last(e) => push(e),
-                        List(e) => push(e),
-                        Count(e) => push(e),
-                        Quantile { expr, .. } => push(expr),
-                        Sum(e) => push(e),
-                        AggGroups(e) => push(e),
-                        Std(e) => push(e),
-                        Var(e) => push(e),
-                    }
-                }
-                Ternary {
-                    truthy,
-                    falsy,
-                    predicate,
-                } => {
-                    push(truthy);
-                    push(falsy);
-                    push(predicate)
-                }
-                Udf { input, .. } => push(input),
-                Shift { input, .. } => push(input),
-                Reverse(e) => push(e),
-                Duplicated(e) => push(e),
-                Unique(e) => push(e),
-                Explode(e) => push(e),
-                Window {
-                    function,
-                    partition_by,
-                    order_by,
-                } => {
-                    push(function);
-                    push(partition_by);
-                    if let Some(e) = order_by {
-                        push(e);
-                    }
-                }
-                Slice { input, .. } => push(input),
-                BinaryFunction {
-                    input_a, input_b, ..
-                } => {
-                    push(input_a);
-                    push(input_b)
-                }
-            }
-            // restore arena as struct field
+            current_expr.nodes(&mut self.stack);
+
             self.arena = Some(arena);
             (node, current_expr)
         })
