@@ -164,6 +164,7 @@ impl AExpr {
                 push(input_a);
                 push(input_b)
             }
+            Except(input) => push(input),
         }
     }
 }

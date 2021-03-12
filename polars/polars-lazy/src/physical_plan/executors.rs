@@ -1,6 +1,6 @@
 use super::*;
 use crate::logical_plan::{Context, FETCH_ROWS};
-use crate::utils::rename_expr_root_name;
+use crate::utils::rename_aexpr_root_name;
 use itertools::Itertools;
 use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
 use polars_core::{frame::hash_join::JoinType, POOL};
@@ -595,8 +595,8 @@ impl Executor for PartitionGroupByExec {
             .map(|e| {
                 let out_field = e.to_field(&schema, Context::Aggregation)?;
                 let out_name = Arc::new(out_field.name().clone());
-                let e = rename_expr_root_name(e, out_name.clone())?;
-                let node = to_aexpr(e, &mut expr_arena);
+                let node = to_aexpr(e.clone(), &mut expr_arena);
+                rename_aexpr_root_name(node, &mut expr_arena, out_name.clone())?;
                 Ok((node, out_name))
             })
             .collect::<Result<Vec<_>>>()?;

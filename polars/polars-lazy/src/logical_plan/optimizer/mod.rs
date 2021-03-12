@@ -241,6 +241,7 @@ pub enum AExpr {
         /// Delays output type evaluation until input schema is known.
         output_field: Arc<dyn BinaryUdfOutputField>,
     },
+    Except(Node),
 }
 
 impl Default for AExpr {
@@ -462,6 +463,7 @@ impl AExpr {
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
+            Except(_) => panic!("should be no except at this point"),
         }
     }
 }
@@ -722,7 +724,7 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             length,
         },
         Expr::Wildcard => AExpr::Wildcard,
-        Expr::Except(_) => panic!("should be no except expression at this point"),
+        Expr::Except(input) => AExpr::Except(to_aexpr(*input, arena)),
     };
     arena.add(v)
 }
@@ -1147,6 +1149,7 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length,
         },
         AExpr::Wildcard => Expr::Wildcard,
+        AExpr::Except(node) => Expr::Except(Box::new(node_to_exp(node, expr_arena))),
     }
 }
 
