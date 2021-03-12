@@ -247,7 +247,6 @@ impl ProjectionPushDown {
                             expr,
                             expr_arena,
                             &AExpr::Alias(Default::default(), Arc::new("".into())),
-                            true,
                         ) {
                             local_projection.push(expr)
                         }

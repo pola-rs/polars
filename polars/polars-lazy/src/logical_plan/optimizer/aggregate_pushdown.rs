@@ -41,11 +41,11 @@ impl AggregatePushdown {
         #[allow(clippy::blocks_in_if_conditions)]
         if !self.processed_state
             && expr.iter().all(|node| {
-                (has_aexpr(*node, expr_arena, &dummy_min, true)
-                    || has_aexpr(*node, expr_arena, &dummy_max, true)
-                    || has_aexpr(*node, expr_arena, &dummy_first, true)
-                    || has_aexpr(*node, expr_arena, &dummy_sum, true)
-                    || has_aexpr(*node, expr_arena, &dummy_last, true))
+                (has_aexpr(*node, expr_arena, &dummy_min)
+                    || has_aexpr(*node, expr_arena, &dummy_max)
+                    || has_aexpr(*node, expr_arena, &dummy_first)
+                    || has_aexpr(*node, expr_arena, &dummy_sum)
+                    || has_aexpr(*node, expr_arena, &dummy_last))
                     && {
                         let roots = aexpr_to_root_nodes(*node, expr_arena);
                         roots.len() == 1
