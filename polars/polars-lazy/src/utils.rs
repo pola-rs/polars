@@ -277,300 +277,28 @@ pub(crate) fn has_aexpr(
 ///
 /// Another option was to create a recursive macro but would increase code bloat.
 pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
-    match current_expr {
-        Expr::Window {
-            function,
-            partition_by,
-            order_by,
-        } => {
-            if matches!(matching_expr, Expr::Window { .. }) {
-                true
-            } else {
-                has_expr(function, matching_expr)
-                    || has_expr(partition_by, matching_expr)
-                    || order_by
-                        .as_ref()
-                        .map(|ob| has_expr(&*ob, matching_expr))
-                        .unwrap_or(false)
-            }
-        }
-        Expr::Duplicated(e) => {
-            if matches!(matching_expr, Expr::Duplicated(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Unique(e) => {
-            if matches!(matching_expr, Expr::Unique(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Explode(e) => {
-            if matches!(matching_expr, Expr::Explode(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Reverse(e) => {
-            if matches!(matching_expr, Expr::Reverse(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Alias(e, _) => {
-            if matches!(matching_expr, Expr::Alias(_, _)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Except(e) => {
-            if matches!(matching_expr, Expr::Except(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Column(_) => {
-            matches!(matching_expr, Expr::Column(_))
-        }
-        Expr::Literal(_) => {
-            matches!(matching_expr, Expr::Literal(_))
-        }
-        Expr::BinaryExpr { left, right, .. } => {
-            if matches!(matching_expr, Expr::BinaryExpr { .. }) {
-                true
-            } else {
-                has_expr(left, matching_expr) | has_expr(right, matching_expr)
-            }
-        }
-        Expr::Not(e) => {
-            if matches!(matching_expr, Expr::Not(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::IsNotNull(e) => {
-            if matches!(matching_expr, Expr::IsNotNull(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::IsNull(e) => {
-            if matches!(matching_expr, Expr::IsNull(_)) {
-                true
-            } else {
-                has_expr(e, matching_expr)
-            }
-        }
-        Expr::Cast { expr, .. } => {
-            if matches!(matching_expr, Expr::Cast { .. }) {
-                true
-            } else {
-                has_expr(expr, matching_expr)
-            }
-        }
-        Expr::Sort { expr, .. } => {
-            if matches!(matching_expr, Expr::Sort { .. }) {
-                true
-            } else {
-                has_expr(expr, matching_expr)
-            }
-        }
-        Expr::Agg(agg) => {
-            if let Expr::Agg(tmp_matching_expr) = matching_expr {
-                match agg {
-                    AggExpr::Min(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Min(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::Max(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Max(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::Median(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Median(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::NUnique(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::NUnique(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::First(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::First(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::Last(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Last(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::Mean(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Mean(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::List(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::List(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::Count(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Count(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::Quantile { expr, .. } => {
-                        if matches!(tmp_matching_expr, AggExpr::Quantile { .. }) {
-                            true
-                        } else {
-                            has_expr(expr, matching_expr)
-                        }
-                    }
-                    AggExpr::Sum(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Sum(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::Var(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Var(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::Std(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::Std(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                    AggExpr::AggGroups(e) => {
-                        if matches!(tmp_matching_expr, AggExpr::AggGroups(_)) {
-                            true
-                        } else {
-                            has_expr(e, matching_expr)
-                        }
-                    }
-                }
-            } else {
-                false
-            }
-        }
-        Expr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            if matches!(matching_expr, Expr::Ternary { .. }) {
-                true
-            } else {
-                has_expr(predicate, matching_expr)
-                    | has_expr(truthy, matching_expr)
-                    | has_expr(falsy, matching_expr)
-            }
-        }
-        Expr::BinaryFunction {
-            input_a, input_b, ..
-        } => {
-            if matches!(matching_expr, Expr::BinaryFunction { .. }) {
-                true
-            } else {
-                has_expr(input_a, matching_expr) | has_expr(input_b, matching_expr)
-            }
-        }
-        Expr::Udf { input, .. } => {
-            if matches!(matching_expr, Expr::Udf { .. }) {
-                true
-            } else {
-                has_expr(input, matching_expr)
-            }
-        }
-        Expr::Shift { input, .. } => {
-            if matches!(matching_expr, Expr::Shift { .. }) {
-                true
-            } else {
-                has_expr(input, matching_expr)
-            }
-        }
-        Expr::Slice { input, .. } => {
-            if matches!(matching_expr, Expr::Slice { .. }) {
-                true
-            } else {
-                has_expr(input, matching_expr)
-            }
-        }
-        Expr::Wildcard => {
-            matches!(matching_expr, Expr::Wildcard)
-        }
-    }
+    current_expr.into_iter().any(|e| match e {
+        Expr::Agg(_) => false,
+        _ => std::mem::discriminant(e) == std::mem::discriminant(matching_expr),
+    })
 }
 
 /// output name of expr
 pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
-    match expr {
-        Expr::Column(name) => Ok(name.clone()),
-        Expr::Alias(_, name) => Ok(name.clone()),
-        Expr::Sort { expr, .. } => output_name(expr),
-        Expr::Cast { expr, .. } => output_name(expr),
-        Expr::BinaryExpr { left, right, .. } => {
-            let left = output_name(left);
-            let right = output_name(right);
-
-            match (left, right) {
-                (Ok(_), Ok(_)) => Err(PolarsError::Other(
-                    "could not determine output name between two root columns".into(),
-                )),
-                (Ok(left), _) => Ok(left),
-                (_, Ok(right)) => Ok(right),
-                _ => panic!("no output name found for any expression?"),
-            }
+    for e in expr {
+        match e {
+            Expr::Column(name) => return Ok(name.clone()),
+            Expr::Alias(_, name) => return Ok(name.clone()),
+            _ => {}
         }
-        Expr::Ternary { truthy, .. } => output_name(truthy),
-        Expr::Slice { input, .. } => output_name(input),
-        Expr::Window { function, .. } => output_name(function),
-        Expr::Shift { input, .. } => output_name(input),
-        a => Err(PolarsError::Other(
-            format!(
-                "No root column name could be found for expr {:?} in output name utillity",
-                a
-            )
-            .into(),
-        )),
     }
+    Err(PolarsError::Other(
+        format!(
+            "No root column name could be found for expr {:?} in output name utillity",
+            expr
+        )
+        .into(),
+    ))
 }
 
 pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
@@ -704,81 +432,14 @@ pub(crate) fn rename_aexpr_root_name(
 
 /// Get all root column expressions in the expression tree.
 pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
-    match expr {
-        Expr::Column(_) => vec![expr.clone()],
-        Expr::Duplicated(expr) => expr_to_root_column_exprs(expr),
-        Expr::Unique(expr) => expr_to_root_column_exprs(expr),
-        Expr::Reverse(expr) => expr_to_root_column_exprs(expr),
-        Expr::Explode(expr) => expr_to_root_column_exprs(expr),
-        Expr::Alias(expr, _) => expr_to_root_column_exprs(expr),
-        Expr::Not(expr) => expr_to_root_column_exprs(expr),
-        Expr::IsNull(expr) => expr_to_root_column_exprs(expr),
-        Expr::IsNotNull(expr) => expr_to_root_column_exprs(expr),
-        Expr::Agg(agg) => match agg {
-            AggExpr::First(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Last(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::AggGroups(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::NUnique(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Quantile { expr, .. } => expr_to_root_column_exprs(expr),
-            AggExpr::Sum(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Min(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Max(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Median(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Mean(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Count(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::List(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Std(expr) => expr_to_root_column_exprs(expr),
-            AggExpr::Var(expr) => expr_to_root_column_exprs(expr),
-        },
-        Expr::BinaryExpr { left, right, .. } => {
-            let mut results = Vec::with_capacity(16);
-            results.extend(expr_to_root_column_exprs(left).into_iter());
-            results.extend(expr_to_root_column_exprs(right).into_iter());
-            results
+    let mut out = vec![];
+    expr.into_iter().for_each(|e| match e {
+        Expr::Column(_) | Expr::Wildcard => {
+            out.push(e.clone());
         }
-        Expr::Sort { expr, .. } => expr_to_root_column_exprs(expr),
-        Expr::Shift { input, .. } => expr_to_root_column_exprs(input),
-        Expr::Slice { input, .. } => expr_to_root_column_exprs(input),
-        Expr::Udf { input, .. } => expr_to_root_column_exprs(input),
-        Expr::BinaryFunction {
-            input_a, input_b, ..
-        } => {
-            let mut results = Vec::with_capacity(16);
-            results.extend(expr_to_root_column_exprs(input_a).into_iter());
-            results.extend(expr_to_root_column_exprs(input_b).into_iter());
-            results
-        }
-        Expr::Cast { expr, .. } => expr_to_root_column_exprs(expr),
-        Expr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            let mut results = Vec::with_capacity(16);
-            results.extend(expr_to_root_column_exprs(predicate).into_iter());
-            results.extend(expr_to_root_column_exprs(truthy).into_iter());
-            results.extend(expr_to_root_column_exprs(falsy).into_iter());
-            results
-        }
-        Expr::Window {
-            function,
-            partition_by,
-            order_by,
-        } => {
-            let mut results = Vec::with_capacity(16);
-            let order_by_res = order_by.as_ref().map(|ob| expr_to_root_column_exprs(&*ob));
-
-            results.extend(expr_to_root_column_exprs(function).into_iter());
-            results.extend(expr_to_root_column_exprs(partition_by).into_iter());
-            if let Some(exprs) = order_by_res {
-                results.extend(exprs.into_iter())
-            }
-            results
-        }
-        Expr::Except(col) => expr_to_root_column_exprs(col),
-        Expr::Wildcard => vec![Expr::Wildcard],
-        Expr::Literal(_) => vec![],
-    }
+        _ => {}
+    });
+    out
 }
 
 pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Result<Expr> {

@@ -1,4 +1,6 @@
+pub(crate) mod iterator;
 pub(crate) mod optimizer;
+
 use crate::logical_plan::LogicalPlan::CsvScan;
 use crate::utils::{
     combine_predicates_expr, expr_to_root_column_exprs, expr_to_root_column_name,
