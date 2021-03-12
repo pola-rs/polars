@@ -644,7 +644,7 @@ impl PhysicalExpr for TernaryExpr {
 
 pub struct ApplyExpr {
     pub input: Arc<dyn PhysicalExpr>,
-    pub function: Arc<dyn SeriesUdf>,
+    pub function: NoEq<Arc<dyn SeriesUdf>>,
     pub output_type: Option<DataType>,
     pub expr: Expr,
 }
@@ -652,7 +652,7 @@ pub struct ApplyExpr {
 impl ApplyExpr {
     pub fn new(
         input: Arc<dyn PhysicalExpr>,
-        function: Arc<dyn SeriesUdf>,
+        function: NoEq<Arc<dyn SeriesUdf>>,
         output_type: Option<DataType>,
         expr: Expr,
     ) -> Self {
@@ -850,8 +850,8 @@ impl AggPhysicalExpr for SliceExpr {
 pub(crate) struct BinaryFunctionExpr {
     pub(crate) input_a: Arc<dyn PhysicalExpr>,
     pub(crate) input_b: Arc<dyn PhysicalExpr>,
-    pub(crate) function: Arc<dyn SeriesBinaryUdf>,
-    pub(crate) output_field: Arc<dyn BinaryUdfOutputField>,
+    pub(crate) function: NoEq<Arc<dyn SeriesBinaryUdf>>,
+    pub(crate) output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
 }
 
 impl PhysicalExpr for BinaryFunctionExpr {

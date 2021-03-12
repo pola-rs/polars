@@ -216,7 +216,7 @@ pub enum AExpr {
     },
     Udf {
         input: Node,
-        function: Arc<dyn SeriesUdf>,
+        function: NoEq<Arc<dyn SeriesUdf>>,
         output_type: Option<DataType>,
     },
     Shift {
@@ -237,9 +237,9 @@ pub enum AExpr {
     BinaryFunction {
         input_a: Node,
         input_b: Node,
-        function: Arc<dyn SeriesBinaryUdf>,
+        function: NoEq<Arc<dyn SeriesBinaryUdf>>,
         /// Delays output type evaluation until input schema is known.
-        output_field: Arc<dyn BinaryUdfOutputField>,
+        output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
     },
     Except(Node),
 }
