@@ -17,8 +17,6 @@ temporal = ["polars-core/temporal", "polars-lazy/temporal"]
 random = ["polars-core/random"]
 default = ["docs",
     "temporal",
-    "lazy",
-    "parquet",
     "performant",
     "plain_fmt",
     "mimalloc"

@@ -1,21 +1,23 @@
 //! # DateTime related functionality
 //!
-//! Polars supports all data types in Arrow related to time and dates in any kind.
-//! In Arrow times and dates are stored as i32 or i64 integers. This can represent for instance
-//! a duration in seconds since the *Unix Epoch: 00:00:00 1 january 1970*.
+//! Polars supports most data types in Arrow related to time and dates.
+//! The datatypes that have most utility support are:
+//!
+//! * Date32
+//!     - A *Date* object representing the time in days since the unix epoch.
+//!     - Chrono support type: [NaiveDate](https://docs.rs/chrono/0.4.13/chrono/naive/struct.NaiveDate.html)
+//!     - Underlying data type: `i32`
+//! * Date64
+//!     - A *DateTime* object representing the time in milliseconds since the unix epoch.
+//!     - Chrono support type: [NaiveDateTime](https://docs.rs/chrono/0.4.13/chrono/naive/struct.NaiveDateTime.html)
+//!     - Underlying data type: `i64`
+//!
+//! ## Utility methods
+//! Given a `Date32` or `Date64` `ChunkedArray` one can extract various temporal information
 //!
 //! ## Chrono
-//! I can imagine that integer values aren't the most intuitive when dealing with dates and times.
-//! For this reason, Polars supports conversion from **chrono's** [NaiveTime](https://docs.rs/chrono/0.4.13/chrono/naive/struct.NaiveTime.html)
-//! and [NaiveDate](https://docs.rs/chrono/0.4.13/chrono/naive/struct.NaiveDate.html) structs to
-//! Polars and vice versa.
 //!
-//! `ChunkedArray<T>`'s initialization is represented by the the following traits:
-//! * [FromNaiveTime](../../chunked_array/temporal/trait.FromNaiveTime.html)
-//! * [FromNaiveDateTime](../../chunked_array/temporal/trait.FromNaiveDateTime.html)
-//!
-//! To cast a `ChunkedArray<T>` to a `Vec<NaiveTime>` or a `Vec<NaiveDateTime>` see:
-//! * [AsNaiveTime](../../chunked_array/temporal/trait.AsNaiveTime.html)
+//! Polars has interopatibilty with the `chrono` library.
 //!
 //! ### Example
 //!
@@ -43,7 +45,7 @@
 //!
 //! ### Examples
 //!
-//! #### NaiveTime
+//! #### Parsing from Utf8Chunked
 //!
 //! ```rust
 //! use polars_core::prelude::*;
@@ -54,15 +56,11 @@
 //! // Parsing fmt
 //! let fmt = "%H:%M:%S";
 //! // Create the ChunkedArray
-//! let ca = Time64NanosecondChunked::parse_from_str_slice("Time as ns since midnight", time_values, fmt);
-//!
-//! // Assert that we've got a ChunkedArray with a single None value.
-//! assert_eq!(ca.as_naive_time(),
-//!     &[NaiveTime::parse_from_str(time_values[0], fmt).ok(),
-//!     None,
-//!     NaiveTime::parse_from_str(time_values[2], fmt).ok()]);
+//! let ca = Utf8Chunked::new_from_slice("time", time_values, fmt);
+//! // Parse strings as DateTime objects
+//! let date_ca = ca.as_date64(fmt);
 //! ```
-//! #### NaiveDateTime
+//! #### Parsing directly from slice
 //!
 //! ```rust
 //! use polars_core::prelude::*;
@@ -84,18 +82,3 @@
 //! let ca = Date32Chunked::parse_from_str_slice("date as days since Epoch", datetime_values, fmt);
 //! ```
 //!
-//! ## Temporal Data Types
-//! Polars supports some of the time datatypes supported by Apache Arrow. These store the time values in
-//! different precisions and bytes:
-//!
-//! ### Time
-//! * **Time64NanosecondChunked**
-//!     - A ChunkedArray which stores time with nanosecond precision as 64 bit signed integer.
-//!
-//! ### Date
-//! * **Date32Chunked**
-//!     - A ChunkedArray storing the date as elapsed days since the Unix Epoch as 32 bit signed integer.
-//!
-//! ### DateTime
-//! * **Date64Chunked**
-//!     - A ChunkedArray storing the date as elapsed milliseconds since the Unix Epoch as 64 bit signed integer.

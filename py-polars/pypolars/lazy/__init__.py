@@ -261,6 +261,8 @@ class LazyFrame:
         return wrap_ldf(self._ldf.cache())
 
     def filter(self, predicate: "Expr") -> "LazyFrame":
+        if isinstance(predicate, str):
+            predicate = col(predicate)
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(self, exprs: "Union[str, Expr, List[str], List[Expr]]") -> "LazyFrame":
