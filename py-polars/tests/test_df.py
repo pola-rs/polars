@@ -368,3 +368,9 @@ def test_df_stats():
     df.mean()
     df.median()
     df.quantile(0.4)
+
+
+def test_from_pandas_datetime():
+    df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
+    df["datetime"] = pd.to_datetime(df["datetime"])
+    pl.from_pandas(df)
