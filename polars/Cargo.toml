@@ -39,6 +39,10 @@ performant = ["polars-core/performant"]
 plain_fmt = ["polars-core/plain_fmt"]
 pretty_fmt = ["polars-core/pretty_fmt"]
 
+## opt-in datatypes
+# Time64 Nanosecond
+dtype-tns = ["polars-core/dtype-tns"]
+
 [dependencies]
 polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}
 polars-io = {version = "0.12.0", path = "./polars-io", default-features = false}

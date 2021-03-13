@@ -271,6 +271,7 @@ macro_rules! match_arrow_data_type_apply_macro {
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
             DataType::Date32 => $macro!(Date32Type $(, $opt_args)*),
             DataType::Date64 => $macro!(Date64Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-tns")]
             DataType::Time64(TimeUnit::Nanosecond) => $macro!(Time64NanosecondType $(, $opt_args)*),
             DataType::Duration(TimeUnit::Nanosecond) => $macro!(DurationNanosecondType $(, $opt_args)*),
             DataType::Duration(TimeUnit::Millisecond) => $macro!(DurationMillisecondType $(, $opt_args)*),
@@ -297,6 +298,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Date32 => $self.date32().unwrap().$method($($args),*),
             DataType::Date64 => $self.date64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-tns")]
             DataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
             DataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
             DataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
@@ -324,6 +326,7 @@ macro_rules! apply_method_numeric_series {
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Date32 => $self.date32().unwrap().$method($($args),*),
             DataType::Date64 => $self.date64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-tns")]
             DataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
             DataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
             DataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
