@@ -847,6 +847,11 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Get the first row.
+    pub fn first(self) -> LazyFrame {
+        self.slice(0, 1)
+    }
+
     /// Melt the DataFrame from wide to long format
     pub fn melt(self, id_vars: Vec<String>, value_vars: Vec<String>) -> LazyFrame {
         let opt_state = self.get_opt_state();
