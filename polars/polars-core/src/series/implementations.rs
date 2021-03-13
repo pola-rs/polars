@@ -612,7 +612,9 @@ macro_rules! impl_dyn_series {
                     Int64 => ChunkCast::cast::<Int64Type>(&self.0).map(|ca| ca.into_series()),
                     Float32 => ChunkCast::cast::<Float32Type>(&self.0).map(|ca| ca.into_series()),
                     Float64 => ChunkCast::cast::<Float64Type>(&self.0).map(|ca| ca.into_series()),
+                    #[cfg(feature = "dtype-date32")]
                     Date32 => ChunkCast::cast::<Date32Type>(&self.0).map(|ca| ca.into_series()),
+                    #[cfg(feature = "dtype-date64")]
                     Date64 => ChunkCast::cast::<Date64Type>(&self.0).map(|ca| ca.into_series()),
                     #[cfg(feature = "dtype-time64-ns")]
                     Time64(TimeUnit::Nanosecond) => {
@@ -927,7 +929,9 @@ impl_dyn_series!(Int64Chunked);
 impl_dyn_series!(DurationNanosecondChunked);
 #[cfg(feature = "dtype-duration-ms")]
 impl_dyn_series!(DurationMillisecondChunked);
+#[cfg(feature = "dtype-date32")]
 impl_dyn_series!(Date32Chunked);
+#[cfg(feature = "dtype-date64")]
 impl_dyn_series!(Date64Chunked);
 #[cfg(feature = "dtype-time64-ns")]
 impl_dyn_series!(Time64NanosecondChunked);
