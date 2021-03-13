@@ -25,7 +25,11 @@ object = ["serde_json"]
 # Cannot have mutually exclusive types. User should choose one of:
 pretty_fmt = ["comfy-table"]
 plain_fmt = ["prettytable-rs"]
-dtype-tns = []
+
+# opt-in datatypes
+dtype-time64-ns = []
+dtype-duration-ns = []
+dtype-duration-ms = []
 
 [dependencies]
 arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "0f647261058892289b1722e5883f8610cc5dd3d9", default-features=false}

@@ -614,14 +614,16 @@ macro_rules! impl_dyn_series {
                     Float64 => ChunkCast::cast::<Float64Type>(&self.0).map(|ca| ca.into_series()),
                     Date32 => ChunkCast::cast::<Date32Type>(&self.0).map(|ca| ca.into_series()),
                     Date64 => ChunkCast::cast::<Date64Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-tns")]
+                    #[cfg(feature = "dtype-time64-ns")]
                     Time64(TimeUnit::Nanosecond) => {
                         ChunkCast::cast::<Time64NanosecondType>(&self.0).map(|ca| ca.into_series())
                     }
+                    #[cfg(feature = "dtype-duration-ns")]
                     Duration(TimeUnit::Nanosecond) => {
                         ChunkCast::cast::<DurationNanosecondType>(&self.0)
                             .map(|ca| ca.into_series())
                     }
+                    #[cfg(feature = "dtype-duration-ms")]
                     Duration(TimeUnit::Millisecond) => {
                         ChunkCast::cast::<DurationMillisecondType>(&self.0)
                             .map(|ca| ca.into_series())
@@ -921,11 +923,13 @@ impl_dyn_series!(Int8Chunked);
 impl_dyn_series!(Int16Chunked);
 impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);
+#[cfg(feature = "dtype-duration-ns")]
 impl_dyn_series!(DurationNanosecondChunked);
+#[cfg(feature = "dtype-duration-ms")]
 impl_dyn_series!(DurationMillisecondChunked);
 impl_dyn_series!(Date32Chunked);
 impl_dyn_series!(Date64Chunked);
-#[cfg(feature = "dtype-tns")]
+#[cfg(feature = "dtype-time64-ns")]
 impl_dyn_series!(Time64NanosecondChunked);
 impl_dyn_series!(CategoricalChunked);
 
