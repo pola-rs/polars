@@ -1,14 +1,13 @@
 from typing import Union, TextIO, Optional, List, BinaryIO
 import numpy as np
 from pathlib import Path
-
 from .frame import DataFrame
 from .series import Series
 from .lazy import LazyFrame
-from . import datatypes
 import pyarrow as pa
 import pyarrow.parquet
 import pyarrow.csv
+import pyarrow.compute
 import builtins
 import urllib.request
 import io
@@ -318,6 +317,10 @@ def from_pandas(df: "pandas.DataFrame", rechunk: bool = True) -> "DataFrame":
     for (name, dtype) in zip(df.columns, df.dtypes):
         if dtype == "object" and isinstance(df[name][0], str):
             data[name] = pa.array(df[name], pa.large_utf8())
+        elif dtype == "datetime64[ns]":
+            data[name] = pa.compute.cast(
+                pa.array(np.array(df[name].values, dtype="datetime64[ms]")), pa.date64()
+            )
         else:
             data[name] = pa.array(df[name])
 
