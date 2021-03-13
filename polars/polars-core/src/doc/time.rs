@@ -56,9 +56,9 @@
 //! // Parsing fmt
 //! let fmt = "%H:%M:%S";
 //! // Create the ChunkedArray
-//! let ca = Utf8Chunked::new_from_slice("time", time_values, fmt);
+//! let ca = Utf8Chunked::new_from_slice("time", time_values);
 //! // Parse strings as DateTime objects
-//! let date_ca = ca.as_date64(fmt);
+//! let date_ca = ca.as_date64(Some(fmt));
 //! ```
 //! #### Parsing directly from slice
 //!
