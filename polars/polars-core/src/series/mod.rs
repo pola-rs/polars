@@ -1279,13 +1279,15 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             }
             ArrowDataType::Date32 => Ok(Date32Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::Date64 => Ok(Date64Chunked::new_from_chunks(name, chunks).into_series()),
-            #[cfg(feature = "dtype-tns")]
+            #[cfg(feature = "dtype-time64-ns")]
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                 Ok(Time64NanosecondChunked::new_from_chunks(name, chunks).into_series())
             }
+            #[cfg(feature = "dtype-duration-ns")]
             ArrowDataType::Duration(TimeUnit::Nanosecond) => {
                 Ok(DurationNanosecondChunked::new_from_chunks(name, chunks).into_series())
             }
+            #[cfg(feature = "dtype-duration-ms")]
             ArrowDataType::Duration(TimeUnit::Millisecond) => {
                 Ok(DurationMillisecondChunked::new_from_chunks(name, chunks).into_series())
             }

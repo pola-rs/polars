@@ -271,9 +271,11 @@ macro_rules! match_arrow_data_type_apply_macro {
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
             DataType::Date32 => $macro!(Date32Type $(, $opt_args)*),
             DataType::Date64 => $macro!(Date64Type $(, $opt_args)*),
-            #[cfg(feature = "dtype-tns")]
+            #[cfg(feature = "dtype-time64-ns")]
             DataType::Time64(TimeUnit::Nanosecond) => $macro!(Time64NanosecondType $(, $opt_args)*),
+            #[cfg(feature = "dtype-duration-ns")]
             DataType::Duration(TimeUnit::Nanosecond) => $macro!(DurationNanosecondType $(, $opt_args)*),
+            #[cfg(feature = "dtype-duration-ms")]
             DataType::Duration(TimeUnit::Millisecond) => $macro!(DurationMillisecondType $(, $opt_args)*),
             _ => unimplemented!(),
         }
@@ -298,9 +300,11 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Date32 => $self.date32().unwrap().$method($($args),*),
             DataType::Date64 => $self.date64().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-tns")]
+            #[cfg(feature = "dtype-time64-ns")]
             DataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-duration-ns")]
             DataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-duration-ms")]
             DataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
             _ => unimplemented!()
@@ -326,9 +330,11 @@ macro_rules! apply_method_numeric_series {
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Date32 => $self.date32().unwrap().$method($($args),*),
             DataType::Date64 => $self.date64().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-tns")]
+            #[cfg(feature = "dtype-time64-ns")]
             DataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-duration-ns")]
             DataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-duration-ms")]
             DataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
 
             _ => unimplemented!(),
