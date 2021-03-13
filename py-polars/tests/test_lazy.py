@@ -61,11 +61,12 @@ def test_binary_function():
 
 def test_filter_str():
     # use a str instead of a column expr
-    df = pl.DataFrame({
-        "time" : ["11:11:00", "11:12:00", "11:13:00", "11:14:00"],
-        "bools": [True, False, True, False],
-
-    })
+    df = pl.DataFrame(
+        {
+            "time": ["11:11:00", "11:12:00", "11:13:00", "11:14:00"],
+            "bools": [True, False, True, False],
+        }
+    )
     q = df.lazy()
     # last row based on a filter
     q.filter(pl.col("bools")).select(pl.last("*"))

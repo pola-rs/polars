@@ -7,6 +7,8 @@
   - \[python\] add parquet compression
   - \[python\] implicitly download raw files from the web in `read_parquet`, `read_csv`.
   - \[python | rust\] methods for local peak finding in numerical series
+  - \[python | rust\] faster query optimization due to local memory arena's.
+  - \[rust\] reduce default compile time by making less features default.
   
 * bug fix
   - \[python\] support file buffers for reading and writing csv and parquet
