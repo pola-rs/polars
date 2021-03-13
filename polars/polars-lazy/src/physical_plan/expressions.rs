@@ -23,7 +23,9 @@ impl PhysicalExpr for LiteralExpr {
     fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
         use LiteralValue::*;
         let s = match &self.0 {
+            #[cfg(feature = "dtype-i8")]
             Int8(v) => Int8Chunked::full("literal", *v, 1).into_series(),
+            #[cfg(feature = "dtype-i16")]
             Int16(v) => Int16Chunked::full("literal", *v, 1).into_series(),
             Int32(v) => Int32Chunked::full("literal", *v, 1).into_series(),
             Int64(v) => Int64Chunked::full("literal", *v, 1).into_series(),
@@ -70,7 +72,7 @@ impl PhysicalExpr for LiteralExpr {
                 }
             },
             Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
-            #[cfg(feature = "temporal")]
+            #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
             DateTime(ndt) => {
                 use polars_core::chunked_array::temporal::conversion::*;
                 let timestamp = naive_datetime_to_date64(ndt);
@@ -84,7 +86,9 @@ impl PhysicalExpr for LiteralExpr {
         use LiteralValue::*;
         let name = "literal";
         let field = match &self.0 {
+            #[cfg(feature = "dtype-i8")]
             Int8(_) => Field::new(name, DataType::Int8),
+            #[cfg(feature = "dtype-i16")]
             Int16(_) => Field::new(name, DataType::Int16),
             Int32(_) => Field::new(name, DataType::Int32),
             Int64(_) => Field::new(name, DataType::Int64),
@@ -98,7 +102,7 @@ impl PhysicalExpr for LiteralExpr {
             Utf8(_) => Field::new(name, DataType::Utf8),
             Null => Field::new(name, DataType::Null),
             Range { data_type, .. } => Field::new(name, data_type.clone()),
-            #[cfg(feature = "temporal")]
+            #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
             DateTime(_) => Field::new(name, DataType::Date64),
         };
         Ok(field)

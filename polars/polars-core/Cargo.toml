@@ -32,6 +32,8 @@ dtype-duration-ns = []
 dtype-duration-ms = []
 dtype-date32 = []
 dtype-date64 = []
+dtype-i8 = []
+dtype-i16 = []
 
 [dependencies]
 arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "0f647261058892289b1722e5883f8610cc5dd3d9", default-features=false}

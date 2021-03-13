@@ -263,7 +263,9 @@ macro_rules! match_arrow_data_type_apply_macro {
             DataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
             DataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
             DataType::UInt64 => $macro!(UInt64Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $macro!(Int8Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-i16")]
             DataType::Int16 => $macro!(Int16Type $(, $opt_args)*),
             DataType::Int32 => $macro!(Int32Type $(, $opt_args)*),
             DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
@@ -294,7 +296,9 @@ macro_rules! apply_method_all_arrow_series {
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-i16")]
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
@@ -326,7 +330,9 @@ macro_rules! apply_method_numeric_series {
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-i16")]
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),

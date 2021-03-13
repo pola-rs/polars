@@ -31,7 +31,9 @@ from_iterator!(u8, UInt8Type);
 from_iterator!(u16, UInt16Type);
 from_iterator!(u32, UInt32Type);
 from_iterator!(u64, UInt64Type);
+#[cfg(feature = "dtype-i8")]
 from_iterator!(i8, Int8Type);
+#[cfg(feature = "dtype-i16")]
 from_iterator!(i16, Int16Type);
 from_iterator!(i32, Int32Type);
 from_iterator!(i64, Int64Type);

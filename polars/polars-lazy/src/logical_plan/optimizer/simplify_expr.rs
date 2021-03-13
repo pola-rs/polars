@@ -12,9 +12,11 @@ macro_rules! eval_binary_same_type {
             (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
                 Some(AExpr::Literal(LiteralValue::Float64(x $operand y)))
             }
+            #[cfg(feature = "dtype-i8")]
             (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {
                 Some(AExpr::Literal(LiteralValue::Int8(x $operand y)))
             }
+            #[cfg(feature = "dtype-i16")]
             (LiteralValue::Int16(x), LiteralValue::Int16(y)) => {
                 Some(AExpr::Literal(LiteralValue::Int16(x $operand y)))
             }
@@ -54,9 +56,11 @@ macro_rules! eval_binary_bool_type {
             (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
+            #[cfg(feature = "dtype-i8")]
             (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
+            #[cfg(feature = "dtype-i16")]
             (LiteralValue::Int16(x), LiteralValue::Int16(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }

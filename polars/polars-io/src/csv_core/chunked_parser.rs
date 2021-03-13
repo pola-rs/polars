@@ -22,10 +22,8 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
 
     let builder = match field.data_type() {
         &DataType::Boolean => Builder::Boolean(BooleanChunkedBuilder::new(name, capacity)),
-        &DataType::Int16 => Builder::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Int32 => Builder::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Int64 => Builder::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
-        &DataType::UInt16 => Builder::UInt16(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::UInt32 => Builder::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::UInt64 => Builder::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Float32 => Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
@@ -58,12 +56,8 @@ pub(crate) fn add_to_builders_core(
         let field = schema.field(*i).unwrap();
         match field.data_type() {
             DataType::Boolean => add_to_bool_core(rows, *i, builder.bool(), ignore_parser_error),
-            DataType::Int8 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
-            DataType::Int16 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
             DataType::Int32 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
             DataType::Int64 => add_to_primitive_core(rows, *i, builder.i64(), ignore_parser_error),
-            DataType::UInt8 => add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error),
-            DataType::UInt16 => add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error),
             DataType::UInt32 => add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error),
             DataType::UInt64 => add_to_primitive_core(rows, *i, builder.u64(), ignore_parser_error),
             DataType::Float32 => {
@@ -310,12 +304,10 @@ pub(crate) fn finish_builder(
 
 pub(crate) enum Builder {
     Boolean(BooleanChunkedBuilder),
-    Int16(PrimitiveChunkedBuilder<Int16Type>),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
-    UInt16(PrimitiveChunkedBuilder<UInt16Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
@@ -375,10 +367,8 @@ impl Builder {
         use Builder::*;
         match self {
             Utf8(b) => b.finish().into_series(),
-            Int16(b) => b.finish().into_series(),
             Int32(b) => b.finish().into_series(),
             Int64(b) => b.finish().into_series(),
-            UInt16(b) => b.finish().into_series(),
             UInt32(b) => b.finish().into_series(),
             UInt64(b) => b.finish().into_series(),
             Float32(b) => b.finish().into_series(),

@@ -1130,7 +1130,9 @@ macro_rules! make_literal {
 make_literal!(bool, Boolean);
 make_literal!(f32, Float32);
 make_literal!(f64, Float64);
+#[cfg(feature = "dtype-i8")]
 make_literal!(i8, Int8);
+#[cfg(feature = "dtype-i16")]
 make_literal!(i16, Int16);
 make_literal!(i32, Int32);
 make_literal!(i64, Int64);
@@ -1139,14 +1141,14 @@ make_literal!(u16, UInt16);
 make_literal!(u32, UInt32);
 make_literal!(u64, UInt64);
 
-#[cfg(feature = "temporal")]
+#[cfg(all(feature = "temporal", feature = "dtype-date64"))]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::DateTime(self))
     }
 }
 
-#[cfg(feature = "temporal")]
+#[cfg(all(feature = "temporal", feature = "dtype-date64"))]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::DateTime(self.and_hms(0, 0, 0)))
