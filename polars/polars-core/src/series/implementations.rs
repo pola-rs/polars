@@ -606,7 +606,9 @@ macro_rules! impl_dyn_series {
                     UInt16 => ChunkCast::cast::<UInt16Type>(&self.0).map(|ca| ca.into_series()),
                     UInt32 => ChunkCast::cast::<UInt32Type>(&self.0).map(|ca| ca.into_series()),
                     UInt64 => ChunkCast::cast::<UInt64Type>(&self.0).map(|ca| ca.into_series()),
+            #[cfg(feature = "dtype-i8")]
                     Int8 => ChunkCast::cast::<Int8Type>(&self.0).map(|ca| ca.into_series()),
+            #[cfg(feature = "dtype-i16")]
                     Int16 => ChunkCast::cast::<Int16Type>(&self.0).map(|ca| ca.into_series()),
                     Int32 => ChunkCast::cast::<Int32Type>(&self.0).map(|ca| ca.into_series()),
                     Int64 => ChunkCast::cast::<Int64Type>(&self.0).map(|ca| ca.into_series()),
@@ -921,7 +923,9 @@ impl_dyn_series!(UInt8Chunked);
 impl_dyn_series!(UInt16Chunked);
 impl_dyn_series!(UInt32Chunked);
 impl_dyn_series!(UInt64Chunked);
+#[cfg(feature = "dtype-i8")]
 impl_dyn_series!(Int8Chunked);
+#[cfg(feature = "dtype-i16")]
 impl_dyn_series!(Int16Chunked);
 impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);

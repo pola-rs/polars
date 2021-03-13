@@ -68,8 +68,10 @@ pub enum LiteralValue {
     /// An unsigned 64-bit integer number.
     UInt64(u64),
     /// An 8-bit integer number.
+    #[cfg(feature = "dtype-i8")]
     Int8(i8),
     /// A 16-bit integer number.
+    #[cfg(feature = "dtype-i16")]
     Int16(i16),
     /// A 32-bit integer number.
     Int32(i32),
@@ -84,7 +86,7 @@ pub enum LiteralValue {
         high: i64,
         data_type: DataType,
     },
-    #[cfg(feature = "temporal")]
+    #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
     DateTime(NaiveDateTime),
 }
 
@@ -97,7 +99,9 @@ impl LiteralValue {
             LiteralValue::UInt16(_) => DataType::UInt16,
             LiteralValue::UInt32(_) => DataType::UInt32,
             LiteralValue::UInt64(_) => DataType::UInt64,
+            #[cfg(feature = "dtype-i8")]
             LiteralValue::Int8(_) => DataType::Int8,
+            #[cfg(feature = "dtype-i16")]
             LiteralValue::Int16(_) => DataType::Int16,
             LiteralValue::Int32(_) => DataType::Int32,
             LiteralValue::Int64(_) => DataType::Int64,
@@ -105,7 +109,7 @@ impl LiteralValue {
             LiteralValue::Float64(_) => DataType::Float64,
             LiteralValue::Utf8(_) => DataType::Utf8,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
-            #[cfg(feature = "temporal")]
+            #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
             LiteralValue::DateTime(_) => DataType::Date64,
             _ => panic!("Cannot treat {:?} as scalar value", self),
         }
