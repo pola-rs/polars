@@ -16,7 +16,8 @@ temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "lazy", "parquet", "performant", "plain_fmt"]
 lazy = []
-parallel = []
+# commented out until UB is fixed
+#parallel = []
 performant = []
 # extra utilities for Utf8Chunked
 strings = ["regex"]

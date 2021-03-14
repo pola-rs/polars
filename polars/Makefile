@@ -17,7 +17,7 @@ clippy:
 	-p polars-arrow
 
 test:
-	cargo t \
+	cargo t --all-features \
 	-p polars-lazy \
     -p polars-io \
     -p polars-core \

@@ -123,17 +123,3 @@ where
         arr.value(idx)
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn object_series() {
-        let s = ObjectChunked::new_from_opt_slice("foo", &[Some(1), None, Some(3)]);
-        assert_eq!(
-            Vec::from(s.is_null()),
-            &[Some(false), Some(true), Some(false)]
-        )
-    }
-}
