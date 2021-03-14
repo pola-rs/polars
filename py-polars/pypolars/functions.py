@@ -196,7 +196,7 @@ def scan_parquet(
     cache: bool = True,
 ) -> "LazyFrame":
     """
-    Lazily read from a csv file.
+    Lazily read from a parquet file.
 
     This allows the query optimizer to push down predicates and projections to the scan level,
     thereby potentially reducing memory overhead.
