@@ -672,6 +672,6 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
  4.9,3,1.4,.2,"Setosa""#;
 
         let file = Cursor::new(s);
-        let df = CsvReader::new(file).has_header(true).finish().unwrap();
+        let _df = CsvReader::new(file).has_header(true).finish().unwrap();
     }
 }
