@@ -20,8 +20,8 @@
 //! the full query context so that the fastest algorithm can be chosen.
 //! Read more in the [lazy](polars_lazy) module
 //!
-//! ## Compile times
-//! Polars [DataFrames](crate::frame::DataFrame) hold [Series](crate::series::Series). These `Series`
+//! ## Compile times and opt-in data types
+//! Polars [DataFrames](crate::frame::DataFrame) wrap [Series](crate::series::Series). These `Series`
 //! are wrappers around [ChunkedArray<T>](crate::chunked_array::ChunkedArray) without the generic
 //! parameter `T`. To get rid of the generic parameter, all the possible value of `T` are compiled
 //! for `Series`. This gets more expensive the more types you want for a `Series`. In order to reduce
@@ -46,17 +46,17 @@
 //!
 //! * `dtype-full` - all opt-in dtypes.
 //!
+//! ## Performance and string data
+//! Large string data can really slow down your queries.
+//! Read more in the [performance section](crate::docs::performance)
+//!
 //! ## Read and write CSV/ JSON
 //!
 //! ```
 //! use polars::prelude::*;
-//! use std::fs::File;
 //!
 //! fn example() -> Result<DataFrame> {
-//!     let file = File::open("iris.csv")
-//!                     .expect("could not read file");
-//!
-//!     CsvReader::new(file)
+//!     CsvReader::from_path("iris.csv")?
 //!             .infer_schema(None)
 //!             .has_header(true)
 //!             .finish()
@@ -230,7 +230,11 @@
 //! * `object`
 //!     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
 //!       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
+//!
+//!
+pub mod docs;
 pub mod prelude;
+
 pub use polars_core::{
     chunked_array, datatypes, doc, error, frame, functions, series, testing, toggle_string_cache,
 };
