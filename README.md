@@ -122,6 +122,10 @@ This can be done by going through the following steps in sequence:
 2. `$ pip3 install maturin`
 4. `$ cd py-polars && maturin develop --release`
 
+Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped 
+Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
+can `pip install polars` and `import polars` (previously, these were called `py-polars` and `pypolars`).
+
 ## Acknowledgements
 Development of Polars is proudly powered by
 
