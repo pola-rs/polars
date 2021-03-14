@@ -2,7 +2,10 @@
 
 ## \[future\] Polars v0.13
 
-### \[future\] py-polars 0.7.0
+### \[future\] polars 0.7.0
+* name change: Python bindings module renamed from pypolars to polars
+* name change: Python bindings package renamed from py-polars to polars
+
 * feature
   - \[python\] add parquet compression
   - \[python\] implicitly download raw files from the web in `read_parquet`, `read_csv`.
