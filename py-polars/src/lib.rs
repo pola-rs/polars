@@ -87,7 +87,7 @@ fn toggle_string_cache(toggle: bool) {
 }
 
 #[pymodule]
-fn pypolars(_py: Python, m: &PyModule) -> PyResult<()> {
+fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();

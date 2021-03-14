@@ -1,5 +1,5 @@
 try:
-    from .pypolars import (
+    from .polars import (
         PyDataFrame,
         PySeries,
         PyLazyFrame,
@@ -625,7 +625,7 @@ class DataFrame:
             })
 
         >>> dataframe.dtypes
-        [pypolars.datatypes.Int64, pypolars.datatypes.Float64, pypolars.datatypes.Utf8]
+        [polars.datatypes.Int64, polars.datatypes.Float64, polars.datatypes.Utf8]
         >>> dataframe
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -1178,7 +1178,7 @@ class DataFrame:
         """
         return wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "pypolars.lazy.LazyFrame":
+    def lazy(self) -> "polars.lazy.LazyFrame":
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -1192,7 +1192,7 @@ class DataFrame:
 
         Lazy operations are advised because the allow for query optimization and more parallelization.
         """
-        from pypolars.lazy import wrap_ldf
+        from polars.lazy import wrap_ldf
 
         return wrap_ldf(self._df.lazy())
 

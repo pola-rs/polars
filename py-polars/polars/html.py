@@ -8,7 +8,7 @@ from typing import (
     List,
     Optional,
 )
-import pypolars as pl
+import polars as pl
 
 
 class Tag:
@@ -165,7 +165,7 @@ class NotebookFormatter(HTMLFormatter):
 
 
 if __name__ == "__main__":
-    import pypolars as pl
+    import polars as pl
 
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
 

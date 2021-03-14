@@ -1,6 +1,6 @@
-from pypolars import Series
-from pypolars.datatypes import *
-import pypolars as pl
+from polars import Series
+from polars.datatypes import *
+import polars as pl
 import numpy as np
 import pytest
 import pyarrow as pa

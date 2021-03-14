@@ -1,13 +1,13 @@
-from pypolars import DataFrame, Series
-from pypolars.datatypes import *
-from pypolars.lazy import *
-from pypolars import functions
+from polars import DataFrame, Series
+from polars.datatypes import *
+from polars.lazy import *
+from polars import functions
 import pytest
 from io import BytesIO
 import numpy as np
 from builtins import range
 import pyarrow as pa
-import pypolars as pl
+import polars as pl
 import pandas as pd
 
 from utils import get_complete_df

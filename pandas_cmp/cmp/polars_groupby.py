@@ -1,15 +1,15 @@
 import datetime
 import glob
-import pypolars as pl
-from pypolars.datatypes import Utf8
+import polars as pl
+from polars.datatypes import Utf8
 from cmp.utils import peak_memory
 
 files = glob.glob("../data/1*.csv")
 files.sort()
 
 with open("../data/mem_polars.txt", "w") as mem_f:
-    with open("../data/pypolars_bench.txt", "w") as fh:
-        with open("../data/pypolars_bench_str.txt", "w") as f_str:
+    with open("../data/polars_bench.txt", "w") as fh:
+        with open("../data/polars_bench_str.txt", "w") as f_str:
             for fn in files:
                 df = pl.read_csv(fn)
                 df["str"] = df["str"].cast(Utf8)

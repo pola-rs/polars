@@ -373,7 +373,7 @@ impl PyExpr {
             let gil = Python::acquire_gil();
             let py = gil.python();
             // get the pypolars module
-            let pypolars = PyModule::import(py, "pypolars").unwrap();
+            let pypolars = PyModule::import(py, "polars").unwrap();
             // create a PySeries struct/object for Python
             let pyseries = PySeries::new(s);
             // Wrap this PySeries object in the python side Series wrapper
@@ -499,7 +499,7 @@ pub fn binary_function(
         let gil = Python::acquire_gil();
         let py = gil.python();
         // get the pypolars module
-        let pypolars = PyModule::import(py, "pypolars").unwrap();
+        let pypolars = PyModule::import(py, "polars").unwrap();
         // create a PySeries struct/object for Python
         let pyseries_a = PySeries::new(a);
         let pyseries_b = PySeries::new(b);
