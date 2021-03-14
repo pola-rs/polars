@@ -31,7 +31,7 @@ impl PyLazyGroupBy {
             let gil = Python::acquire_gil();
             let py = gil.python();
             // get the pypolars module
-            let pypolars = PyModule::import(py, "pypolars").unwrap();
+            let pypolars = PyModule::import(py, "polars").unwrap();
 
             // create a PyDataFrame struct/object for Python
             let pydf = PyDataFrame::new(df);
@@ -332,7 +332,7 @@ impl PyLazyFrame {
             let gil = Python::acquire_gil();
             let py = gil.python();
             // get the pypolars module
-            let pypolars = PyModule::import(py, "pypolars").unwrap();
+            let pypolars = PyModule::import(py, "polars").unwrap();
             // create a PyDataFrame struct/object for Python
             let pyseries = PyDataFrame::new(s);
             // Wrap this PyDataFrame object in the python side DataFrame wrapper

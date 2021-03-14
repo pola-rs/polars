@@ -1,4 +1,4 @@
-import pypolars as pl
+import polars as pl
 
 
 def get_complete_df():

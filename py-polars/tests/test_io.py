@@ -1,6 +1,6 @@
 import io
 from utils import get_complete_df
-import pypolars as pl
+import polars as pl
 
 
 def test_to_from_buffer():

@@ -1,1 +1,1 @@
-<p>© Copyright 2021, pypolars development team</p>
+<p>© Copyright 2021, py-polars development team</p>

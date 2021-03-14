@@ -61,7 +61,7 @@ Want to know about all the features Polars support? Read the docs!
 #### Python
 * installation guide: `pip install py-polars`
 * [the book](https://ritchie46.github.io/polars-book/)
-* [Reference guide](https://ritchie46.github.io/polars/pypolars/index.html)
+* [Reference guide](https://ritchie46.github.io/polars/polars/index.html)
 
 ## Performance
 Polars is written to be performant, and it is! But don't take my word for it, take a look at the results in 

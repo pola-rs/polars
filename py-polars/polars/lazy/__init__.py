@@ -1,8 +1,8 @@
 from typing import Union, List, Callable, Optional, Dict
 
-from pypolars import Series
-from pypolars.frame import DataFrame, wrap_df
-from pypolars import datatypes
+from polars import Series
+from polars.frame import DataFrame, wrap_df
+from polars import datatypes
 import os
 import tempfile
 import subprocess
@@ -10,7 +10,7 @@ import shutil
 from datetime import datetime
 
 try:
-    from ..pypolars import (
+    from ..polars import (
         PyLazyFrame,
         col as pycol,
         lit as pylit,

@@ -11,10 +11,10 @@ with open("../data/python_bench.txt") as f:
 with open("../data/python_bench_str.txt") as f:
     pandas_str = parse_result(f)
 
-with open("../data/pypolars_bench.txt") as f:
-    pypolars = parse_result(f)
-with open("../data/pypolars_bench_str.txt") as f:
-    pypolars_str = parse_result(f)
+with open("../data/polars_bench.txt") as f:
+    polars = parse_result(f)
+with open("../data/polars_bench_str.txt") as f:
+    polars_str = parse_result(f)
 
 with open("../data/datatable_bench.txt") as f:
     datatable = parse_result(f)
@@ -22,7 +22,7 @@ with open("../data/datatable_bench_str.txt") as f:
     datatable_str = parse_result(f)
 
 sizes = [1e4, 1e5, 1e6, 1e7]
-lib = ["py-polars", "pydatatable", "pandas"]
+lib = ["polars", "pydatatable", "pandas"]
 x = np.arange(1, 4)
 
 fig, ax = plt.subplots(1, len(sizes), figsize=(14, 4))
@@ -30,21 +30,21 @@ plt.suptitle("Group by on 10 groups")
 plt.subplots_adjust(wspace=0.4)
 r = 0
 ax = ax[None, :]
-for i in range(len(pypolars)):
+for i in range(len(polars)):
     c = i
     ca = ax[r, c]
 
     ca.set_title(f"{int(sizes[i]):,} rows")
     ca.bar(
         x - 0.25 / 2,
-        [pypolars[i], datatable[i], pandas[i]],
+        [polars[i], datatable[i], pandas[i]],
         color=["C0", "C1", "C2"],
         width=0.25,
         label="int",
     )
     ca.bar(
         x + 0.25 / 2,
-        [pypolars_str[i], datatable_str[i], pandas_str[i]],
+        [polars_str[i], datatable_str[i], pandas_str[i]],
         color=["C0", "C1", "C2"],
         width=0.25,
         alpha=0.5,
@@ -62,21 +62,21 @@ with open("../data/mem_datatable.txt") as f:
     datatable = [float(a) for a in f.read().split("\n")[:-1]]
 
 with open("../data/mem_polars.txt") as f:
-    pypolars = [float(a) for a in f.read().split("\n")[:-1]]
+    polars = [float(a) for a in f.read().split("\n")[:-1]]
 
 fig, ax = plt.subplots(1, len(sizes), figsize=(14, 4))
 plt.suptitle("Memory usage during Groupby")
 plt.subplots_adjust(wspace=0.5, bottom=0.2)
 r = 0
 ax = ax[None, :]
-for i in range(len(pypolars)):
+for i in range(len(polars)):
     c = i
     ca = ax[r, c]
 
     ca.set_title(f"{int(sizes[i]):,} rows")
     ca.bar(
         x,
-        [pypolars[i], datatable[i], pandas[i]],
+        [polars[i], datatable[i], pandas[i]],
         color=["C0", "C1", "C2"],
         alpha=0.75,
         width=0.4,

@@ -1,5 +1,5 @@
 try:
-    from .pypolars import PySeries
+    from .polars import PySeries
 except:
     import warnings
 
@@ -15,7 +15,7 @@ from typing import Optional, List, Sequence, Union, Any, Callable
 from .ffi import _ptr_to_numpy
 from .datatypes import *
 from numbers import Number
-import pypolars
+import polars
 import pyarrow as pa
 
 
@@ -384,7 +384,7 @@ class Series:
         if f is None:
             return NotImplemented
         out = f(item)
-        if self.dtype == pypolars.datatypes.List:
+        if self.dtype == polars.datatypes.List:
             return wrap_s(out)
         return out
 
@@ -473,13 +473,13 @@ class Series:
         """
         Get dummy variables
         """
-        return pypolars.frame.wrap_df(self._s.to_dummies())
+        return polars.frame.wrap_df(self._s.to_dummies())
 
     def value_counts(self) -> "DataFrame":
         """
         Count the unique values in a Series
         """
-        return pypolars.frame.wrap_df(self._s.value_counts())
+        return polars.frame.wrap_df(self._s.value_counts())
 
     @property
     def name(self):

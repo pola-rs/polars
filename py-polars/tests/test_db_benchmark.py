@@ -1,4 +1,4 @@
-import pypolars as pl
+import polars as pl
 import io
 
 csv = rb"""id1,id2,id3,id4,id5,id6,v1,v2,v3
