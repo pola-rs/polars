@@ -12,7 +12,7 @@ homepage = "https://github.com/ritchie46/polars"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars = {path = "../polars", features = ["parquet", "simd", "lazy", "strings", "temporal", "random", "object", "ipc", "pretty_fmt", "mimalloc", "performant"]}
+polars = {path = "../polars", features = ["parquet", "simd", "lazy", "strings", "temporal", "random", "object", "ipc", "pretty_fmt", "mimalloc", "performant", "dtype-full"]}
 polars-core = {path = "../polars/polars-core", default-features = false}
 pyo3 = {version = "0.13", features = ["abi3-py36", "extension-module"] }
 libc = "0.2"

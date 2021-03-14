@@ -167,17 +167,3 @@ where
         Ok(builder.finish())
     }
 }
-
-#[cfg(test)]
-#[cfg(feature = "object")]
-mod test {
-    use super::*;
-
-    #[test]
-    fn object_filter() {
-        let ca = ObjectChunked::new_from_opt_slice("foo", &[Some(1), None, Some(3), None]);
-        let mask = BooleanChunked::new_from_slice("", &[true, false, false, true]);
-        let new = ca.filter(&mask).unwrap();
-        assert_eq!(Vec::from(new.is_null()), &[Some(false), Some(true)])
-    }
-}

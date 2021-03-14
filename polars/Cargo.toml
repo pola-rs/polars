@@ -24,7 +24,8 @@ default = ["docs",
 ndarray = ["polars-core/ndarray"]
 parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
 lazy = ["polars-core/lazy"]
-parallel = ["polars-core/parallel"]
+# commented out until UB is fixed
+#parallel = ["polars-core/parallel"]
 # extra utilities for Utf8Chunked
 strings = ["polars-core/strings"]
 # support for ObjectChunked<T> (downcastable Series of any type)
@@ -56,7 +57,7 @@ dtype-duration-ms = ["polars-core/dtype-duration-ms"]
 dtype-date32 = ["polars-core/dtype-date32"]
 dtype-date64 = ["polars-core/dtype-date64", "polars-lazy/dtype-date64"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
-dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
 
 [dependencies]
 polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}

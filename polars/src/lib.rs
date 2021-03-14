@@ -16,7 +16,35 @@
 //! * [ChunkedArray struct](crate::chunked_array::ChunkedArray)
 //!
 //! ### Lazy
+//! Unlock full potential with lazy computation. This allows query optimizations and provides Polars
+//! the full query context so that the fastest algorithm can be chosen.
 //! Read more in the [lazy](polars_lazy) module
+//!
+//! ## Compile times
+//! Polars [DataFrames](crate::frame::DataFrame) hold [Series](crate::series::Series). These `Series`
+//! are wrappers around [ChunkedArray<T>](crate::chunked_array::ChunkedArray) without the generic
+//! parameter `T`. To get rid of the generic parameter, all the possible value of `T` are compiled
+//! for `Series`. This gets more expensive the more types you want for a `Series`. In order to reduce
+//! the compile times, we have decided to default to a minimal set of types and make more `Series` types
+//! opt-in.
+//!
+//! Note that if you get strange compile time errors, you probably need to opt-in for that `Series` dtype.
+//! The opt-in dtypes are:
+//!
+//!     | data type               | feature flag      |
+//!     |-------------------------|-------------------|
+//!     | Time64NanoSecondType    | dtype-time64-ns   |
+//!     | DurationNanosecondType  | dtype-duration-ns |
+//!     | DurationMillisecondType | dtype-duration-ms |
+//!     | Date32Type              | dtype-date32      |
+//!     | Date64Type              | dtype-date64      |
+//!     | Int8Type                | dtype-i8          |
+//!     | Int16Type               | dtype-i16         |
+//!
+//!
+//! Or you can choose on of the preconfigured pre-sets.
+//!
+//! * `dtype-full` - all opt-in dtypes.
 //!
 //! ## Read and write CSV/ JSON
 //!
