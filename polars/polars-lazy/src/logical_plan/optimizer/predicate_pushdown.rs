@@ -727,7 +727,6 @@ impl PredicatePushDown {
 #[cfg(test)]
 mod test {
     use super::*;
-    use polars_core::df;
 
     #[test]
     fn test_insert_and_combine_predicate() {
