@@ -59,7 +59,7 @@ Want to know about all the features Polars support? Read the docs!
 * [the book](https://ritchie46.github.io/polars-book/)
     
 #### Python
-* installation guide: `pip install py-polars`
+* installation guide: `pip install polars`
 * [the book](https://ritchie46.github.io/polars-book/)
 * [Reference guide](https://ritchie46.github.io/polars/polars/index.html)
 
