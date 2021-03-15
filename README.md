@@ -121,3 +121,8 @@ This can be done by going through the following steps in sequence:
 1. install the latest [rust compiler](https://www.rust-lang.org/tools/install)
 2. `$ pip3 install maturin`
 4. `$ cd py-polars && maturin develop --release`
+
+## Acknowledgements
+Development of Polars is proudly powered by
+
+[![Xomnia](./py-polars/docs/img/xomnia_logo.png)](https://www.xomnia.com)
