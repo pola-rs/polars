@@ -13,6 +13,14 @@ Amongst more, Polars has the following functionalities.
 
 To learn more about the inner workings of Polars read the [WIP book](https://ritchie46.github.io/polars-book/).
 
+# Python users read this!
+Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name. 
+We're working towards a new `0.7.0` release. For the 
+mean time install a pre-release version. This will likely be more stable than `0.6.7`.
+
+Install the latest pre-release version with: 
+`$ pip install polars==0.7.0-beta.1`
+
 
 | Functionality                                     | Eager | Lazy (DataFrame) | Lazy (Series) |
 |---------------------------------------------------|-------|------------------|---------------|
