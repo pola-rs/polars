@@ -15,9 +15,10 @@ temporal = ["polars-core/temporal"]
 # debugging purposesses
 fmt = ["polars-core/plain_fmt"]
 future = []
-dtype-i8 = []
-dtype-i16 = []
-dtype-date64 = []
+dtype-i8 = ["polars-core/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16"]
+dtype-date32 = ["polars-core/dtype-date32"]
+dtype-date64 = ["polars-core/dtype-date64"]
 
 [dependencies]
 ahash = "0.7"
