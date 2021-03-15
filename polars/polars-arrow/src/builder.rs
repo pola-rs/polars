@@ -1,5 +1,6 @@
 use crate::bit_util;
 use crate::vec::AlignedVec;
+pub use arrow::array::LargeStringBuilder;
 use arrow::array::{
     ArrayBuilder, ArrayData, ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray,
 };
@@ -328,121 +329,6 @@ where
 
     fn finish(&mut self) -> ArrayRef {
         Arc::new(PrimitiveArrayBuilder::finish(self))
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn into_box_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-}
-
-#[derive(Debug)]
-pub struct LargeStringBuilder {
-    values: AlignedVec<u8>,
-    offsets: AlignedVec<i64>,
-    null_buffer: BooleanBufferBuilder,
-}
-
-impl LargeStringBuilder {
-    pub fn with_capacity(values_capacity: usize, list_capacity: usize) -> Self {
-        let mut offsets = AlignedVec::with_capacity_aligned(list_capacity + 1);
-        offsets.push(0);
-        Self {
-            values: AlignedVec::with_capacity_aligned(values_capacity),
-            offsets,
-            null_buffer: BooleanBufferBuilder::new(list_capacity),
-        }
-    }
-
-    /// Extends with values and offsets.
-    pub fn extend_from_slices(&mut self, values: &[u8], offsets: &[i64], valid: bool) {
-        self.null_buffer.append_n(offsets.len(), valid);
-        unsafe { self.extend_from_slices_ignore_nulls(values, offsets) }
-    }
-
-    /// Extends with values and offsets.
-    ///
-    /// # Safety
-    ///
-    /// It is the callers responsibility to later append the null values.
-    pub unsafe fn extend_from_slices_ignore_nulls(&mut self, values: &[u8], offsets: &[i64]) {
-        self.values.extend_from_slice(values);
-        self.offsets.extend_from_slice(offsets);
-    }
-
-    /// Add a null value
-    ///
-    /// # Safety
-    ///
-    /// This does not increase the values and offsets arrays. It is the callers responsibility
-    /// to do so.
-    #[inline]
-    pub unsafe fn append_null_ignore_values(&mut self, is_valid: bool) {
-        self.null_buffer.append(is_valid)
-    }
-
-    #[inline]
-    pub fn append_value(&mut self, value: &str) {
-        self.values.extend_from_slice(value.as_bytes());
-        self.offsets.push(self.values.len() as i64);
-        self.null_buffer.append(true);
-    }
-
-    /// Finish the current variable-length list array slot.
-    #[inline]
-    pub fn append(&mut self, is_valid: bool) {
-        self.offsets.push(self.values.len() as i64);
-        self.null_buffer.append(is_valid);
-    }
-
-    /// Append a null value to the array.
-    #[inline]
-    pub fn append_null(&mut self) {
-        self.append(false);
-    }
-
-    /// Builds the `StringArray` and reset this builder.
-    pub fn finish(&mut self) -> LargeStringArray {
-        // values are u8 typed
-        let values = mem::take(&mut self.values);
-        // offsets are i64 typed
-        let offsets = mem::take(&mut self.offsets);
-        let offsets_len = offsets.len() - 1;
-        // buffers are u8 typed
-        let buf_offsets = offsets.into_arrow_buffer();
-        let buf_values = values.into_arrow_buffer();
-        assert_eq!(buf_values.len(), buf_values.capacity());
-        assert_eq!(buf_offsets.len(), buf_offsets.capacity());
-
-        // note that the arrays are already shrinked when transformed to an arrow buffer.
-        let arraydata = ArrayData::builder(DataType::LargeUtf8)
-            .len(offsets_len)
-            .add_buffer(buf_offsets)
-            .add_buffer(buf_values)
-            .null_bit_buffer(self.null_buffer.finish())
-            .build();
-        LargeStringArray::from(arraydata)
-    }
-}
-
-impl ArrayBuilder for LargeStringBuilder {
-    fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
-
-    fn finish(&mut self) -> ArrayRef {
-        Arc::new(LargeStringBuilder::finish(self))
     }
 
     fn as_any(&self) -> &dyn Any {

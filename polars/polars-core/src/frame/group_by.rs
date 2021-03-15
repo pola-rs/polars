@@ -1147,6 +1147,7 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        // TODO! use collect, can be faster
         // needed capacity for the list
         let values_cap = groups.iter().fold(0, |acc, g| acc + g.1.len());
 
