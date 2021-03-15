@@ -28,7 +28,7 @@ jobs:
         run: |
           RUSTFLAGS="--cfg doc" cargo doc --all-features --package polars && \
           echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
-          pdoc --html py-polars/pypolars/ --output-dir target/doc --template-dir py-polars/docs/templates/ --force && \
+          pdoc --html py-polars/polars/ --output-dir target/doc --template-dir py-polars/docs/templates/ --force && \
           cp -r py-polars/docs/img target/doc/img && \
           ghp-import -n target/doc && \
           git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages

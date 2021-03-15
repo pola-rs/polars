@@ -4,8 +4,38 @@ on:
   - push
   - pull_request
 jobs:
-  test:
-    name: Build and test
+  test-rust:
+    name: Build and test Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2021-03-04
+          override: true
+          components: rustfmt, clippy
+      - name: Install dependencies
+        run: |
+          cargo install cargo-hack
+      - name: Run formatting checks
+        run: |
+          cargo fmt --all -- --check
+      - name: Run linting checks
+        run : |
+          cd polars && cargo clippy -Z unstable-options --all-features \
+          -p polars-core \
+          -p polars-io \
+          -p polars-lazy \
+          -- -D warnings
+      - name: Feature test
+        run: |
+          cd polars && cargo hack check --each-feature --no-dev-deps
+      - name: Run tests
+        run: |
+          cd polars && make test
+  test-python:
+    name: Build and test Python
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -23,22 +53,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install maturin pytest black==20.8b1 pdoc3 numpy ghp-import pandas
-          cargo install cargo-hack
       - name: Run formatting checks
         run: |
-          cargo fmt --all -- --check
           black --check .
-      - name: Run linting checks
-        run : |
-          cd polars && cargo clippy -Z unstable-options --all-features \
-          -p polars-core \
-          -p polars-io \
-          -p polars-lazy \
-          -- -D warnings
-      - name: Feature test
-        run: |
-          cd polars && cargo hack check --each-feature --no-dev-deps
       - name: Run tests
         run: |
-          cd polars && make test
-          cd ../py-polars && ./tasks.sh build-run-tests && cd ..
+          cd py-polars && ./tasks.sh build-run-tests && cd ..
