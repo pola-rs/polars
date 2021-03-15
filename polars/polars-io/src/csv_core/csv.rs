@@ -403,7 +403,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     let mut r = std::mem::take(&mut self.record_iter).unwrap().into_reader();
                     let mut bytes = Vec::with_capacity(1024 * 128);
                     r.get_mut().read_to_end(&mut bytes)?;
-                    if bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r' {
+                    if !bytes.is_empty() && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r') {
                         bytes.push(b'\n')
                     }
                     self.parse_csv_fast(n_threads, &bytes)?
