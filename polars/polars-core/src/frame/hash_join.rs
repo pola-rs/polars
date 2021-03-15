@@ -724,8 +724,14 @@ impl DataFrame {
         Ok(df_left)
     }
 
-    fn create_left_df<B: Sync>(&self, join_tuples: &[(u32, B)]) -> DataFrame {
-        unsafe { self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize)) }
+    fn create_left_df<B: Sync>(&self, join_tuples: &[(u32, B)], left_join: bool) -> DataFrame {
+        if left_join && join_tuples.len() == self.height() {
+            self.clone()
+        } else {
+            unsafe {
+                self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize))
+            }
+        }
     }
 
     /// Generic join method. Can be used to join on multiple columns.
@@ -820,7 +826,7 @@ impl DataFrame {
                 };
 
                 let (df_left, df_right) = POOL.join(
-                    || self.create_left_df(&join_tuples),
+                    || self.create_left_df(&join_tuples, false),
                     || unsafe {
                         // remove join columns
                         remove_selected(other, &selected_right).take_iter_unchecked(
@@ -861,7 +867,7 @@ impl DataFrame {
                 };
 
                 let (df_left, df_right) = POOL.join(
-                    || self.create_left_df(&join_tuples),
+                    || self.create_left_df(&join_tuples, true),
                     || unsafe {
                         // remove join columns
                         remove_selected(other, &selected_right).take_opt_iter_unchecked(
@@ -965,7 +971,7 @@ impl DataFrame {
         let join_tuples = s_left.hash_join_inner(s_right);
 
         let (df_left, df_right) = POOL.join(
-            || self.create_left_df(&join_tuples),
+            || self.create_left_df(&join_tuples, false),
             || unsafe {
                 other
                     .drop(s_right.name())
@@ -1000,7 +1006,7 @@ impl DataFrame {
         let opt_join_tuples = s_left.hash_join_left(s_right);
 
         let (df_left, df_right) = POOL.join(
-            || self.create_left_df(&opt_join_tuples),
+            || self.create_left_df(&opt_join_tuples, true),
             || unsafe {
                 other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples
