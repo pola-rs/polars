@@ -1137,7 +1137,7 @@ class Expr:
         (df
          .lazy()
          .groupby("b")
-         .agg([col("a").apply_groups(lambda x: x.sum())])
+         .agg([col("a").apply(lambda x: x.sum())])
          .collect()
         )
         ```

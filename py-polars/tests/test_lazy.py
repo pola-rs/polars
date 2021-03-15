@@ -70,3 +70,27 @@ def test_filter_str():
     q = df.lazy()
     # last row based on a filter
     q.filter(pl.col("bools")).select(pl.last("*"))
+
+
+def test_apply_custom_function():
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B": [5, 4, 3, 2, 1],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        }
+    )
+
+    # two ways to determine the length groups.
+    (
+        df.lazy()
+        .groupby("fruits")
+        .agg(
+            [
+                pl.col("cars").apply(lambda groups: groups.len()).alias("custom_1"),
+                pl.col("cars").apply(lambda groups: groups.len()).alias("custom_2"),
+                pl.count("cars"),
+            ]
+        )
+    ).collect()

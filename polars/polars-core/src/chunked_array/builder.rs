@@ -261,12 +261,12 @@ impl Utf8ChunkedBuilder {
 
     /// Appends a value of type `T` into the builder
     pub fn append_value<S: AsRef<str>>(&mut self, v: S) {
-        self.builder.append_value(v.as_ref());
+        self.builder.append_value(v.as_ref()).unwrap();
     }
 
     /// Appends a null slot into the builder
     pub fn append_null(&mut self) {
-        self.builder.append_null();
+        self.builder.append_null().unwrap();
     }
 
     pub fn append_option<S: AsRef<str>>(&mut self, opt: Option<S>) {
@@ -490,7 +490,7 @@ where
 
         let mut builder = LargeStringBuilder::with_capacity(values_size, v.len());
         v.iter().for_each(|val| {
-            builder.append_value(val.as_ref());
+            builder.append_value(val.as_ref()).unwrap();
         });
 
         let field = Arc::new(Field::new(name, DataType::Utf8));
@@ -665,7 +665,7 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
 
     fn append_null(&mut self) {
         let builder = self.builder.values();
-        builder.append_null();
+        builder.append_null().unwrap();
         self.builder.append(true).unwrap();
     }
 
@@ -674,8 +674,8 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         let value_builder = self.builder.values();
         for s in ca {
             match s {
-                Some(s) => value_builder.append_value(s),
-                None => value_builder.append_null(),
+                Some(s) => value_builder.append_value(s).unwrap(),
+                None => value_builder.append_null().unwrap(),
             };
         }
         self.builder.append(true).unwrap();
@@ -829,6 +829,15 @@ mod test {
         let out = [&s1, &s2].iter().copied().collect::<ListChunked>();
         assert_eq!(out.get(0).unwrap().len(), 6);
         assert_eq!(out.get(1).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_list_str_builder() {
+        let mut builder =
+            ListUtf8ChunkedBuilder::new("a", LargeStringBuilder::with_capacity(10, 10), 10);
+        builder.append_series(&Series::new("", &["foo", "bar"]));
+        let ca = builder.finish();
+        dbg!(ca);
     }
 
     #[test]

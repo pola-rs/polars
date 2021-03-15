@@ -1707,4 +1707,31 @@ mod test {
 
         assert_eq!(out.get_column_names(), &["ham", "bar"]);
     }
+
+    #[test]
+    fn test_lazy_groupby_apply() {
+        let df = df! {
+            "A" => &[1, 2, 3, 4, 5],
+            "fruits" => &["banana", "banana", "apple", "apple", "banana"],
+            "B" => &[5, 4, 3, 2, 1],
+            "cars" => &["beetle", "audi", "beetle", "beetle", "beetle"]
+        }
+        .unwrap();
+
+        df.lazy()
+            .groupby(vec![col("fruits")])
+            .agg(vec![col("cars").map(
+                |s: Series| {
+                    let ca: UInt32Chunked = s
+                        .list()?
+                        .into_iter()
+                        .map(|opt_s| opt_s.map(|s| s.len() as u32))
+                        .collect();
+                    Ok(ca.into_series())
+                },
+                None,
+            )])
+            .collect()
+            .unwrap();
+    }
 }
