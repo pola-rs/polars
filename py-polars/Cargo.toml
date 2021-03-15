@@ -11,6 +11,9 @@ homepage = "https://github.com/ritchie46/polars"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+# prevents package from thinking it's in the workspace
+
 [dependencies]
 polars = {path = "../polars", features = ["parquet", "simd", "lazy", "strings", "temporal", "random", "object", "ipc", "pretty_fmt", "mimalloc", "performant", "dtype-full"]}
 polars-core = {path = "../polars/polars-core", default-features = false}
@@ -24,7 +27,17 @@ ndarray = "0.14.0"
 name = "polars"
 crate-type = ["cdylib"]
 
-
 [package.metadata.maturin]
 name = "polars"
 requires-dist = ["numpy", "pyarrow==3.0"]
+
+[profile.release]
+codegen-units = 1
+
+# This is ignored here; would be set in .cargo/config.toml.
+# Should not be used when packaging
+# target-cpu = "native"
+lto = "fat"
+
+#[profile.dev]
+#opt-level = 1

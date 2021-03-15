@@ -8,8 +8,6 @@ description = "DataFrame library"
 repository = "https://github.com/ritchie46/polars"
 readme = "../README.md"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [features]
 simd = ["polars-core/simd"]
 docs = ["polars-core/docs"]
