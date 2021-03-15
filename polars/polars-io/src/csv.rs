@@ -674,4 +674,24 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
         let file = Cursor::new(s);
         let _df = CsvReader::new(file).has_header(true).finish().unwrap();
     }
+
+    #[test]
+    fn test_empty_bytes_to_dataframe() {
+        let fields = vec![Field::new("test_field", DataType::Utf8)];
+        let schema = Schema::new(fields);
+        let file = Cursor::new(vec![]);
+
+        let result = CsvReader::new(file)
+            .has_header(false)
+            .with_columns(Some(
+                schema
+                    .fields()
+                    .into_iter()
+                    .map(|s| s.name().to_string())
+                    .collect(),
+            ))
+            .with_schema(Arc::new(schema))
+            .finish();
+        assert!(result.is_ok())
+    }
 }
