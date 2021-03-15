@@ -29,6 +29,8 @@ crate-type = ["cdylib"]
 
 [package.metadata.maturin]
 name = "polars"
+# the Arrow memory format is stable between 3.0 and 4.0-SNAPSHOTS
+# (which the Rust libraries use to take advantage of Rust API changes).
 requires-dist = ["numpy", "pyarrow==3.0"]
 
 [profile.release]
