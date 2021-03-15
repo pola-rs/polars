@@ -54,6 +54,9 @@ where
         let chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), array.len());
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_primitive(chunks[0], array) as ArrayRef,
                     (_, 1) => take(chunks[0], array, None).unwrap(),
@@ -76,6 +79,9 @@ where
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::Iter(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_primitive_iter_unchecked(chunks[0], iter) as ArrayRef,
                     (_, 1) => take_primitive_iter_unchecked(chunks[0], iter) as ArrayRef,
@@ -88,6 +94,9 @@ where
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::IterNulls(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => {
                         take_no_null_primitive_opt_iter_unchecked(chunks[0], iter) as ArrayRef
@@ -113,6 +122,9 @@ where
         let chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), array.len());
+                }
                 let array = match self.chunks.len() {
                     1 => take(chunks[0], array, None).unwrap(),
                     _ => {
@@ -128,6 +140,9 @@ where
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::Iter(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_primitive_iter(chunks[0], iter) as ArrayRef,
                     (_, 1) => take_primitive_iter(chunks[0], iter) as ArrayRef,
@@ -156,6 +171,9 @@ impl ChunkTake for BooleanChunked {
         let chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), array.len());
+                }
                 let array = match self.chunks.len() {
                     1 => take(chunks[0], array, None).unwrap(),
                     _ => {
@@ -177,6 +195,9 @@ impl ChunkTake for BooleanChunked {
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::Iter(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_bool_iter_unchecked(chunks[0], iter) as ArrayRef,
                     (_, 1) => take_bool_iter_unchecked(chunks[0], iter) as ArrayRef,
@@ -189,6 +210,9 @@ impl ChunkTake for BooleanChunked {
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::IterNulls(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_bool_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
                     (_, 1) => take_bool_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
@@ -212,6 +236,9 @@ impl ChunkTake for BooleanChunked {
         let chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), array.len());
+                }
                 let array = match self.chunks.len() {
                     1 => take(chunks[0], array, None).unwrap(),
                     _ => {
@@ -224,6 +251,9 @@ impl ChunkTake for BooleanChunked {
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::Iter(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_bool_iter(chunks[0], iter) as ArrayRef,
                     (_, 1) => take_bool_iter(chunks[0], iter) as ArrayRef,
@@ -252,6 +282,9 @@ impl ChunkTake for Utf8Chunked {
         let chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), array.len());
+                }
                 let array = match self.chunks.len() {
                     1 => take_utf8(chunks[0], array) as ArrayRef,
                     _ => {
@@ -273,6 +306,9 @@ impl ChunkTake for Utf8Chunked {
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::Iter(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_utf8_iter_unchecked(chunks[0], iter) as ArrayRef,
                     (_, 1) => take_utf8_iter_unchecked(chunks[0], iter) as ArrayRef,
@@ -285,6 +321,9 @@ impl ChunkTake for Utf8Chunked {
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::IterNulls(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_utf8_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
                     (_, 1) => take_utf8_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
@@ -308,6 +347,9 @@ impl ChunkTake for Utf8Chunked {
         let chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), array.len());
+                }
                 let array = match self.chunks.len() {
                     1 => take(chunks[0], array, None).unwrap() as ArrayRef,
                     _ => {
@@ -320,6 +362,9 @@ impl ChunkTake for Utf8Chunked {
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::Iter(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_utf8_iter(chunks[0], iter) as ArrayRef,
                     (_, 1) => take_utf8_iter(chunks[0], iter) as ArrayRef,
@@ -357,6 +402,9 @@ impl ChunkTake for ListChunked {
         let chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), array.len());
+                }
                 let array = match self.chunks.len() {
                     1 => take(chunks[0], array, None).unwrap() as ArrayRef,
                     _ => {
@@ -367,6 +415,9 @@ impl ChunkTake for ListChunked {
                 self.copy_with_chunks(vec![array])
             }
             TakeIdx::Iter(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let idx_ca = iter
                     .map(|idx| idx as u32)
                     .collect::<NoNull<UInt32Chunked>>()
@@ -374,6 +425,9 @@ impl ChunkTake for ListChunked {
                 self.take((&idx_ca).into())
             }
             TakeIdx::IterNulls(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
                 let idx_ca = iter
                     .map(|opt_idx| opt_idx.map(|idx| idx as u32))
                     .collect::<UInt32Chunked>();

@@ -1308,5 +1308,8 @@ mod test {
 
         assert!(res.is_ok());
         assert_eq!(res.unwrap().height(), 0);
+        right.left_join(&left, "key", "key").unwrap();
+        right.inner_join(&left, "key", "key").unwrap();
+        right.outer_join(&left, "key", "key").unwrap();
     }
 }
