@@ -490,6 +490,18 @@ impl DataFrame {
         Ok(self.select_at_idx(idx).unwrap())
     }
 
+    /// Selected multiple columns by name.
+    pub fn columns<I, S>(&self, names: I) -> Result<Vec<&Series>>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        names
+            .into_iter()
+            .map(|name| self.column(name.as_ref()))
+            .collect()
+    }
+
     /// Select column(s) from this DataFrame and return a new DataFrame.
     ///
     /// # Examples
