@@ -412,7 +412,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.reverse())
 
-    def shift(self, periods: int):
+    def shift(self, periods: int) -> "LazyFrame":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with `Nones`.
@@ -423,6 +423,20 @@ class LazyFrame:
             Number of places to shift (may be negative).
         """
         return wrap_ldf(self._ldf.shift(periods))
+
+    def shift_and_fill(self, periods: int, fill_value: "Expr") -> "LazyFrame":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with the result of the `fill_value` expression.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        fill_value
+            fill None values with the result of this expression
+        """
+        return wrap_ldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
 
     def slice(self, offset: int, length: int):
         """

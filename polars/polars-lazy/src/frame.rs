@@ -360,6 +360,14 @@ impl LazyFrame {
         self.select_local(vec![col("*").shift(periods)])
     }
 
+    /// Shift the values by a given period and fill the parts that will be empty due to this operation
+    /// with the result of the `fill_value` expression.
+    ///
+    /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
+    pub fn shift_and_fill(self, periods: i64, fill_value: Expr) -> Self {
+        self.select_local(vec![col("*").shift_and_fill(periods, fill_value)])
+    }
+
     /// Fill none values in the DataFrame
     pub fn fill_none(self, fill_value: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
@@ -1766,6 +1774,14 @@ mod test {
             .clone()
             .lazy()
             .with_column(col("A").shift_and_fill(-2, col("B").mean()))
+            .collect()
+            .unwrap();
+        assert_eq!(out.column("A").unwrap().null_count(), 0);
+
+        let out = df
+            .clone()
+            .lazy()
+            .shift_and_fill(-1, col("B").std())
             .collect()
             .unwrap();
         assert_eq!(out.column("A").unwrap().null_count(), 0);

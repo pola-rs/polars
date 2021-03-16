@@ -789,32 +789,34 @@ impl Expr {
 
     /// Shift the valus in the array by some period and fill the resulting empty values.
     pub fn shift_and_fill(self, periods: i64, fill_value: Expr) -> Self {
-        let name = output_name(&self).unwrap();
+        // let name = output_name(&self).unwrap();
+        // Note:
+        // The order of the then | otherwise is im
         if periods > 0 {
             when(self.clone().map(
                 move |s: Series| {
-                    let ca: BooleanChunked = (0..s.len() as i64).map(|i| i < periods).collect();
+                    let ca: BooleanChunked = (0..s.len() as i64).map(|i| i >= periods).collect();
                     Ok(ca.into_series())
                 },
                 Some(DataType::Boolean),
             ))
-            .then(fill_value)
-            .otherwise(self.shift(periods))
-            .alias(&name)
+            .then(self.shift(periods))
+            .otherwise(fill_value)
+            // .alias(&name)
         } else {
             when(self.clone().map(
                 move |s: Series| {
                     let length = s.len() as i64;
                     // periods is negative, so subtraction.
                     let tipping_point = length + periods;
-                    let ca: BooleanChunked = (0..length).map(|i| i >= tipping_point).collect();
+                    let ca: BooleanChunked = (0..length).map(|i| i < tipping_point).collect();
                     Ok(ca.into_series())
                 },
                 Some(DataType::Boolean),
             ))
-            .then(fill_value)
-            .otherwise(self.shift(periods))
-            .alias(&name)
+            .then(self.shift(periods))
+            .otherwise(fill_value)
+            // .alias(&name)
         }
     }
 

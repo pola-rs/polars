@@ -3,8 +3,8 @@ pub(crate) mod optimizer;
 
 use crate::logical_plan::LogicalPlan::CsvScan;
 use crate::utils::{
-    combine_predicates_expr, expr_to_root_column_exprs, expr_to_root_column_name,
-    expr_to_root_column_names, has_expr, rename_expr_root_name,
+    combine_predicates_expr, expr_to_root_column_name, expr_to_root_column_names, has_expr,
+    rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
 use ahash::RandomState;
@@ -619,9 +619,12 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             truthy,
             falsy,
         } => Expr::Ternary {
-            predicate: Box::new(replace_wildcard_with_column(*predicate, column_name)),
-            truthy,
-            falsy,
+            predicate: Box::new(replace_wildcard_with_column(
+                *predicate,
+                column_name.clone(),
+            )),
+            truthy: Box::new(replace_wildcard_with_column(*truthy, column_name.clone())),
+            falsy: Box::new(replace_wildcard_with_column(*falsy, column_name)),
         },
         Expr::Udf {
             input,
@@ -748,14 +751,7 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             }
         }
 
-        let mut has_wildcard = false;
-        let roots = expr_to_root_column_exprs(&expr);
-        for e in roots {
-            if matches!(e, Expr::Wildcard) {
-                has_wildcard = true;
-                break;
-            }
-        }
+        let has_wildcard = has_expr(&expr, &Expr::Wildcard);
 
         if has_wildcard {
             // if count wildcard. count one column
