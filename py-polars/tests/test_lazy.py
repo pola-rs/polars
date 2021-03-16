@@ -94,3 +94,10 @@ def test_apply_custom_function():
             ]
         )
     ).collect()
+
+
+def test_shift_and_fill():
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
+
+    out = df.lazy().with_column(col("a").shift_and_fill(-2, col("b").mean())).collect()
+    assert out["a"].null_count() == 0

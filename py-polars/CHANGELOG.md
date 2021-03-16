@@ -8,6 +8,7 @@ The Rust crate `polars` has its own changelog.
 
 * feature
   - \[python\] add parquet compression
+  - \[python\] shift_and_fill expression
   - \[python\] implicitly download raw files from the web in `read_parquet`, `read_csv`.
   - \[python | rust\] methods for local peak finding in numerical series
   - \[python | rust\] faster query optimization due to local memory arena's.
