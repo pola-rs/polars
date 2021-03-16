@@ -376,6 +376,10 @@ impl Field {
         &self.data_type
     }
 
+    pub fn coerce(&mut self, dtype: DataType) {
+        self.data_type = dtype;
+    }
+
     pub fn to_arrow(&self) -> ArrowField {
         ArrowField::new(&self.name, self.data_type.to_arrow(), true)
     }

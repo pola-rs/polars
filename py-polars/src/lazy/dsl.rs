@@ -141,6 +141,13 @@ impl PyExpr {
     pub fn shift(&self, periods: i64) -> PyExpr {
         self.clone().inner.shift(periods).into()
     }
+    pub fn shift_and_fill(&self, periods: i64, fill_value: PyExpr) -> PyExpr {
+        self.clone()
+            .inner
+            .shift_and_fill(periods, fill_value.inner)
+            .into()
+    }
+
     pub fn fill_none(&self, expr: PyExpr) -> PyResult<PyExpr> {
         Ok(self.clone().inner.fill_none(expr.inner).into())
     }

@@ -353,7 +353,7 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
     return df
 
 
-def range(
+def arange(
     lower: int, upper: int, step: Optional[int] = None, name: Optional[str] = None
 ) -> Series:
     """

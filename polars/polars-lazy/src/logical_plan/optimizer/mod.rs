@@ -164,7 +164,7 @@ impl StackOptimizer {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum AAggExpr {
     Min(Node),
     Max(Node),
@@ -183,7 +183,7 @@ pub enum AAggExpr {
 }
 
 // AExpr representation of Nodes which are allocated in an Arena
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum AExpr {
     Unique(Node),
     Duplicated(Node),
@@ -363,11 +363,15 @@ impl AExpr {
                         ctxt,
                         GroupByMethod::Median,
                     ),
-                    Mean(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Mean,
-                    ),
+                    Mean(expr) => {
+                        let mut field = field_by_context(
+                            arena.get(*expr).to_field(schema, ctxt, arena)?,
+                            ctxt,
+                            GroupByMethod::Mean,
+                        );
+                        field.coerce(DataType::Float64);
+                        field
+                    }
                     First(expr) => field_by_context(
                         arena.get(*expr).to_field(schema, ctxt, arena)?,
                         ctxt,
@@ -386,12 +390,16 @@ impl AExpr {
                     Std(expr) => {
                         let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         let field = Field::new(field.name(), DataType::Float64);
-                        field_by_context(field, ctxt, GroupByMethod::Std)
+                        let mut field = field_by_context(field, ctxt, GroupByMethod::Std);
+                        field.coerce(DataType::Float64);
+                        field
                     }
                     Var(expr) => {
                         let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         let field = Field::new(field.name(), DataType::Float64);
-                        field_by_context(field, ctxt, GroupByMethod::Var)
+                        let mut field = field_by_context(field, ctxt, GroupByMethod::Var);
+                        field.coerce(DataType::Float64);
+                        field
                     }
                     NUnique(expr) => {
                         let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
@@ -427,11 +435,15 @@ impl AExpr {
                         let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
                         Field::new(&new_name, DataType::List(ArrowDataType::UInt32))
                     }
-                    Quantile { expr, quantile } => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Quantile(*quantile),
-                    ),
+                    Quantile { expr, quantile } => {
+                        let mut field = field_by_context(
+                            arena.get(*expr).to_field(schema, ctxt, arena)?,
+                            ctxt,
+                            GroupByMethod::Quantile(*quantile),
+                        );
+                        field.coerce(DataType::Float64);
+                        field
+                    }
                 };
                 Ok(field)
             }

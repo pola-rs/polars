@@ -17,6 +17,7 @@ use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
 use crate::prelude::aggregate_scan_projections::agg_projection;
+use itertools::Itertools;
 
 #[derive(Clone)]
 pub struct LazyCsvReader<'a> {
@@ -443,9 +444,6 @@ impl LazyFrame {
             rules.push(Box::new(AggregatePushdown::new()))
         }
 
-        let opt = StackOptimizer {};
-        lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
-
         if agg_scan_projection {
             // scan the LP to aggregate all the column used in scans
             // these columns will be added to the state of the AggScanProjection rule
@@ -456,10 +454,23 @@ impl LazyFrame {
             rules.push(Box::new(opt));
         }
 
+        let opt = StackOptimizer {};
+        lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
+
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]
         {
-            assert_eq!(&prev_schema, lp_arena.get(lp_top).schema(lp_arena));
+            // only check by names because we may supercast types.
+            assert_eq!(
+                prev_schema.fields().iter().map(|f| f.name()).collect_vec(),
+                lp_arena
+                    .get(lp_top)
+                    .schema(lp_arena)
+                    .fields()
+                    .iter()
+                    .map(|f| f.name())
+                    .collect_vec()
+            );
         };
 
         Ok(lp_top)
@@ -1386,7 +1397,7 @@ mod test {
     }
 
     #[test]
-    fn test_lazy_shift_and_fill() {
+    fn test_lazy_shift_and_fill_all() {
         let data = &[1, 2, 3];
         let df = DataFrame::new(vec![Series::new("data", data)]).unwrap();
         let out = df
@@ -1733,5 +1744,30 @@ mod test {
             )])
             .collect()
             .unwrap();
+    }
+
+    #[test]
+    fn test_lazy_shift_and_fill() {
+        let df = df! {
+            "A" => &[1, 2, 3, 4, 5],
+            "B" => &[5, 4, 3, 2, 1]
+        }
+        .unwrap();
+        let out = df
+            .clone()
+            .lazy()
+            .with_column(col("A").shift_and_fill(2, col("B").mean()))
+            .collect()
+            .unwrap();
+        assert_eq!(out.column("A").unwrap().null_count(), 0);
+
+        // shift from the other side
+        let out = df
+            .clone()
+            .lazy()
+            .with_column(col("A").shift_and_fill(-2, col("B").mean()))
+            .collect()
+            .unwrap();
+        assert_eq!(out.column("A").unwrap().null_count(), 0);
     }
 }

@@ -738,7 +738,30 @@ class Expr:
         return wrap_expr(self._pyexpr.sort(reverse))
 
     def shift(self, periods: int) -> "Expr":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with `Nones`
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        """
         return wrap_expr(self._pyexpr.shift(periods))
+
+    def shift_and_fill(self, periods: int, fill_value: "Expr") -> "Expr":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with the result of the `fill_value` expression.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        fill_value
+            fill None values with the result of this expression
+        """
+        return wrap_expr(self._pyexpr.shift_and_fill(periods, fill_value._pyexpr))
 
     def fill_none(self, fill_value: "Union[str, int, float, Expr]") -> "Expr":
         if not isinstance(fill_value, Expr):
@@ -1625,4 +1648,4 @@ def range(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
     """
     if dtype is None:
         dtype = datatypes.Int64
-    return pyrange(low, high, dtype)
+    return wrap_expr(pyrange(low, high, dtype))

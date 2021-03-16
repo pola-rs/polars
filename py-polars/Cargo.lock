@@ -1059,7 +1059,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.6.7"
+version = "0.7.0-beta.1"
 dependencies = [
  "libc",
  "ndarray",

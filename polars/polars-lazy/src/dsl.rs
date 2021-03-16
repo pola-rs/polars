@@ -74,6 +74,12 @@ impl<T> PartialEq for NoEq<T> {
     }
 }
 
+impl<T> Debug for NoEq<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "no_eq")
+    }
+}
+
 impl<T> Deref for NoEq<T> {
     type Target = T;
 
@@ -781,6 +787,37 @@ impl Expr {
         }
     }
 
+    /// Shift the valus in the array by some period and fill the resulting empty values.
+    pub fn shift_and_fill(self, periods: i64, fill_value: Expr) -> Self {
+        let name = output_name(&self).unwrap();
+        if periods > 0 {
+            when(self.clone().map(
+                move |s: Series| {
+                    let ca: BooleanChunked = (0..s.len() as i64).map(|i| i < periods).collect();
+                    Ok(ca.into_series())
+                },
+                Some(DataType::Boolean),
+            ))
+            .then(fill_value)
+            .otherwise(self.shift(periods))
+            .alias(&name)
+        } else {
+            when(self.clone().map(
+                move |s: Series| {
+                    let length = s.len() as i64;
+                    // periods is negative, so subtraction.
+                    let tipping_point = length + periods;
+                    let ca: BooleanChunked = (0..length).map(|i| i >= tipping_point).collect();
+                    Ok(ca.into_series())
+                },
+                Some(DataType::Boolean),
+            ))
+            .then(fill_value)
+            .otherwise(self.shift(periods))
+            .alias(&name)
+        }
+    }
+
     /// Get an array with the cumulative sum computed at every element
     pub fn cum_sum(self, reverse: bool) -> Self {
         self.map(move |s: Series| Ok(s.cum_sum(reverse)), None)
@@ -871,7 +908,6 @@ impl Expr {
             .otherwise(col(&*name))
             .alias(&*name)
     }
-
     /// Count the values of the Series
     /// or
     /// Get counts of the group by operation.
