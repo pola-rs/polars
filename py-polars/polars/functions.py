@@ -12,6 +12,9 @@ import builtins
 import urllib.request
 import io
 
+from typing import Dict
+from .datatypes import DataType
+
 
 def _process_http_file(path: str) -> io.BytesIO:
     with urllib.request.urlopen(path) as f:
@@ -292,7 +295,9 @@ def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "DataFrame":
     return DataFrame.from_arrow(table, rechunk)
 
 
-def from_pandas(df: "pandas.DataFrame", rechunk: bool = True) -> "DataFrame":
+def from_pandas(
+    df: "pandas.DataFrame", rechunk: bool = True  # noqa: F821
+) -> "DataFrame":
     """
     Convert from a pandas DataFrame to a polars DataFrame
 

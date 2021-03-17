@@ -3,119 +3,123 @@ import ctypes
 __pdoc__ = {"dtype_to_ctype": False, "dtype_to_int": False}
 
 
-class Int8:
+class DataType:
     pass
 
 
-class Int16:
+class Int8(DataType):
     pass
 
 
-class Int32:
+class Int16(DataType):
     pass
 
 
-class Int64:
+class Int32(DataType):
     pass
 
 
-class UInt8:
+class Int64(DataType):
     pass
 
 
-class UInt16:
+class UInt8(DataType):
     pass
 
 
-class UInt32:
+class UInt16(DataType):
     pass
 
 
-class UInt64:
+class UInt32(DataType):
     pass
 
 
-class Float32:
+class UInt64(DataType):
     pass
 
 
-class Float64:
+class Float32(DataType):
     pass
 
 
-class Boolean:
+class Float64(DataType):
     pass
 
 
-class Utf8:
+class Boolean(DataType):
     pass
 
 
-class List:
+class Utf8(DataType):
     pass
 
 
-class Date32:
+class List(DataType):
     pass
 
 
-class Date64:
+class Date32(DataType):
     pass
 
 
-class Time32Millisecond:
+class Date64(DataType):
     pass
 
 
-class Time32Second:
+class Time32Millisecond(DataType):
     pass
 
 
-class Time64Nanosecond:
+class Time32Second(DataType):
     pass
 
 
-class Time64Microsecond:
+class Time64Nanosecond(DataType):
     pass
 
 
-class DurationNanosecond:
+class Time64Microsecond(DataType):
     pass
 
 
-class DurationMicrosecond:
+class DurationNanosecond(DataType):
     pass
 
 
-class DurationMillisecond:
+class DurationMicrosecond(DataType):
     pass
 
 
-class DurationSecond:
+class DurationMillisecond(DataType):
     pass
 
 
-class TimestampNanosecond:
+class DurationSecond(DataType):
     pass
 
 
-class TimestampMicrosecond:
+class TimestampNanosecond(DataType):
     pass
 
 
-class TimestampMillisecond:
+class TimestampMicrosecond(DataType):
     pass
 
 
-class TimestampSecond:
+class TimestampMillisecond(DataType):
     pass
 
 
-class Object:
+class TimestampSecond(DataType):
     pass
 
 
-class Categorical:
+class Object(DataType):
+    pass
+
+
+class Categorical(DataType):
     pass
 
 
@@ -178,7 +182,7 @@ def dtype_to_primitive(dtype: "DataType") -> "DataType":
     return dtype
 
 
-def dtype_to_ctype(dtype: "DataType") -> "ctype":
+def dtype_to_ctype(dtype: "DataType") -> "ctype":  # noqa: F821
     if dtype == UInt8:
         ptr_type = ctypes.c_uint8
     elif dtype == UInt16:

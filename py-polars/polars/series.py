@@ -1,6 +1,6 @@
 try:
     from .polars import PySeries
-except:
+except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
@@ -13,10 +13,31 @@ except:
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any, Callable
 from .ffi import _ptr_to_numpy
-from .datatypes import *
+from .datatypes import (
+    Utf8,
+    Int64,
+    UInt64,
+    UInt32,
+    dtypes,
+    Boolean,
+    Float32,
+    Float64,
+    DTYPE_TO_FFINAME,
+    dtype_to_primitive,
+    UInt8,
+    dtype_to_ctype,
+    DataType,
+    Date32,
+    Date64,
+)
 from numbers import Number
 import polars
 import pyarrow as pa
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .frame import DataFrame
 
 
 class IdentityDict(dict):
@@ -1004,7 +1025,7 @@ class Series:
 
     def apply(
         self,
-        func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
+        func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",
         dtype_out: "Optional['DataType']" = None,
     ):
         """
@@ -1426,7 +1447,7 @@ class Series:
         return wrap_s(self._s.peak_min())
 
 
-def out_to_dtype(out: Any) -> "Union[Datatype, np.ndarray]":
+def out_to_dtype(out: Any) -> "Union[DataType, np.ndarray]":
     if isinstance(out, float):
         return Float64
     if isinstance(out, int):
