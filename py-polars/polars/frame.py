@@ -2,11 +2,9 @@ try:
     from .polars import (
         PyDataFrame,
         PySeries,
-        PyLazyFrame,
-        version,
         toggle_string_cache,
     )
-except:
+except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
@@ -25,13 +23,19 @@ from typing import (
     Any,
 )
 from .series import Series, wrap_s
-from .datatypes import *
+from . import datatypes
+from .datatypes import DataType, pytype_to_polars_type
 from .html import NotebookFormatter
 import pyarrow as pa
 import pyarrow.parquet
 import numpy as np
 import os
 from pathlib import Path
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .lazy import LazyFrame
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
@@ -233,7 +237,9 @@ class DataFrame:
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
 
-    def to_pandas(self, *args, date_as_object=False, **kwargs) -> "pd.DataFrame":
+    def to_pandas(
+        self, *args, date_as_object=False, **kwargs
+    ) -> "pd.DataFrame":  # noqa: F821
         """
         Cast to a Pandas DataFrame. This requires that Pandas is installed.
         This operation clones data.
@@ -479,9 +485,9 @@ class DataFrame:
                 else:
                     return wrap_df(self._df.take(item))
             dtype = item.dtype
-            if dtype == Boolean:
+            if dtype == datatypes.Boolean:
                 return wrap_df(self._df.filter(item.inner()))
-            if dtype == UInt32:
+            if dtype == datatypes.UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
 
     def __setitem__(self, key, value):
@@ -489,7 +495,7 @@ class DataFrame:
         if isinstance(key, str):
             try:
                 self.drop_in_place(key)
-            except:
+            except Exception:
                 pass
             self.hstack([Series(key, value)], in_place=True)
         # df[idx] = series
@@ -641,7 +647,7 @@ class DataFrame:
         ╰─────┴─────┴─────╯
         ```
         """
-        return [dtypes[idx] for idx in self._df.dtypes()]
+        return [datatypes.dtypes[idx] for idx in self._df.dtypes()]
 
     def replace_at_idx(self, index: int, series: Series):
         """
@@ -1178,7 +1184,7 @@ class DataFrame:
         """
         return wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "polars.lazy.LazyFrame":
+    def lazy(self) -> "LazyFrame":
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -1654,7 +1660,7 @@ class GBSelection:
 
     def apply(
         self,
-        func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
+        func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",
         dtype_out: "Optional['DataType']" = None,
     ) -> "DataFrame":
         """
