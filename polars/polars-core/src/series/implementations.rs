@@ -78,6 +78,11 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for Wrap<$ca> {
+            fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+                ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
+                    .map(|ca| ca.into_series())
+            }
+
             fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
                 self.0.vec_hash(random_state)
             }
@@ -728,11 +733,6 @@ macro_rules! impl_dyn_series {
                 ChunkFillNone::fill_none(&self.0, strategy).map(|ca| ca.into_series())
             }
 
-            fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-                ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
-                    .map(|ca| ca.into_series())
-            }
-
             fn sum_as_series(&self) -> Series {
                 ChunkAggSeries::sum_as_series(&self.0)
             }
@@ -1137,10 +1137,6 @@ where
 
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
         ChunkFillNone::fill_none(&self.0, strategy).map(|ca| ca.into_series())
-    }
-
-    fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-        ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
 
     fn fmt_list(&self) -> String {

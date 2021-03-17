@@ -1309,6 +1309,94 @@ class DataFrame:
             return wrap_df(self._df.sample_n(n, with_replacement))
         return wrap_df(self._df.sample_frac(frac, with_replacement))
 
+    def fold(
+        self, operation: "Callable[['Series', 'Series'], 'Series']"
+    ) -> "DataFrame":
+        """
+        Apply a horizontal reduction on a DataFrame. This can be used to effectively
+        determine aggregations on a row level, and can be applied to any DataType that
+        can be supercasted (casted to a similar parent type).
+
+        An example of the supercast rules when applying an arithmetic operation on two DataTypes are for instance:
+
+        Int8 + Utf8 = Utf8
+        Float32 + Int64 = Float32
+        Float32 + Float64 = Float64
+
+        # Examples
+
+        ## A horizontal sum operation
+        ```python
+        >>> df = pl.DataFrame(
+            {"a": [2, 1, 3],
+            "b": [1, 2, 3],
+            "c": [1.0, 2.0, 3.0]
+        })
+
+        >>> df.fold(lambda s1, s2: s1 + s2)
+        ```
+        ```text
+        Series: 'a' [f64]
+        [
+            4
+            5
+            9
+        ]
+        ```
+
+        ## A horizontal minimum operation
+
+        ```python
+        >>> df = pl.DataFrame(
+            {"a": [2, 1, 3],
+            "b": [1, 2, 3],
+            "c": [1.0, 2.0, 3.0]
+        })
+
+        >>> df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2))
+        ```
+        ```text
+        Series: 'a' [f64]
+        [
+            1
+            1
+            3
+        ]
+        ```
+
+        ## A horizontal string concattenation
+        ```python
+        >>> df = pl.DataFrame(
+            {"a": ["foo", "bar", 2],
+            "b": [1, 2, 3],
+            "c": [1.0, 2.0, 3.0]
+        })
+
+        >>> df.fold(lambda s1, s2: s1 + s2)
+        ```
+        ```text
+        Series: '' [f64]
+        [
+            "foo11"
+            "bar22
+            "233"
+        ]
+        ```
+
+        Parameters
+        ----------
+        operation
+            function that takes two `Series` and returns a `Series`
+        """
+        if self.width == 1:
+            return self
+        df = self
+        acc = operation(df[0], df[1])
+
+        for i in range(2, df.width):
+            acc = operation(acc, df[i])
+        return acc
+
 
 class GroupBy:
     def __init__(

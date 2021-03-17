@@ -374,3 +374,16 @@ def test_from_pandas_datetime():
     df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
     df["datetime"] = pd.to_datetime(df["datetime"])
     pl.from_pandas(df)
+
+
+def test_df_fold():
+    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+
+    assert df.fold(lambda s1, s2: s1 + s2).series_equal(Series("a", [4.0, 5.0, 9.0]))
+    assert df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2)).series_equal(
+        Series("a", [1.0, 1.0, 3.0])
+    )
+
+    df = DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    out = df.fold(lambda s1, s2: s1 + s2)
+    out.series_equal(Series("", ["foo11", "bar22", "233"]))

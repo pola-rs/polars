@@ -9,6 +9,7 @@ pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::float::IsNan;
+use crate::series::arithmetic::coerce_lhs_rhs;
 use arrow::array::ArrayDataRef;
 use arrow::compute::cast;
 use itertools::Itertools;
@@ -121,6 +122,11 @@ pub(crate) mod private {
             unimplemented!()
         }
         fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+            unimplemented!()
+        }
+        /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+        /// from `other` where the mask evaluates `false`
+        fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
             unimplemented!()
         }
     }
@@ -634,12 +640,6 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         unimplemented!()
     }
 
-    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
-    /// from `other` where the mask evaluates `false`
-    fn zip_with(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
-        unimplemented!()
-    }
-
     /// Get the sum of the Series as a new Series of length 1.
     fn sum_as_series(&self) -> Series {
         unimplemented!()
@@ -1129,6 +1129,13 @@ impl Series {
                 .into(),
             )),
         }
+    }
+
+    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+    /// from `other` where the mask evaluates `false`
+    pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+        let (lhs, rhs) = coerce_lhs_rhs(self, other)?;
+        lhs.zip_with_same_type(mask, rhs.as_ref())
     }
 }
 
