@@ -346,7 +346,6 @@ def test_to_pandas():
     # test shifted df
     df.shift(2).to_pandas()
     df = DataFrame({"col": Series([True, False, True])})
-    print(df)
     df.shift(2).to_pandas()
 
 
@@ -387,3 +386,10 @@ def test_df_fold():
     df = DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.fold(lambda s1, s2: s1 + s2)
     out.series_equal(Series("", ["foo11", "bar22", "233"]))
+
+
+def test_row_tuple():
+    df = DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    assert df.row(0) == ("foo", 1, 1.0)
+    assert df.row(1) == ("bar", 2, 2.0)
+    assert df.row(-1) == ("2", 3, 3.0)

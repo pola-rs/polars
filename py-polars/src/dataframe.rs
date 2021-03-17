@@ -1,6 +1,7 @@
 use polars::prelude::*;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
+use crate::conversion::Wrap;
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
@@ -12,6 +13,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::{group_by::GroupBy, resample::SampleRule};
+use pyo3::types::PyTuple;
 use std::convert::TryFrom;
 
 #[pyclass]
@@ -174,6 +176,24 @@ impl PyDataFrame {
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
+    }
+
+    pub fn row_tuple(&self, idx: i64) -> PyObject {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let idx = if idx < 0 {
+            (self.df.height() as i64 + idx) as usize
+        } else {
+            idx as usize
+        };
+        PyTuple::new(
+            py,
+            self.df
+                .get_columns()
+                .iter()
+                .map(|s| Wrap(s.get(idx)).into_py(py)),
+        )
+        .into_py(py)
     }
 
     pub fn to_parquet(&mut self, path: &str) -> PyResult<()> {
