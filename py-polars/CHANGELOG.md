@@ -15,6 +15,7 @@ The Rust crate `polars` has its own changelog.
   - \[python | rust\] faster query optimization due to local memory arena's.
   - \[rust\] reduce default compile time by making less features default.
   - \[python | rust\] Series zip_with implicitly cast to supertype.
+  - \[python | rust\] window functions have a `min_periods` argument to control when to compute a result
   
 * bug fix
   - \[python\] support file buffers for reading and writing csv and parquet

@@ -679,6 +679,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Series> {
         unimplemented!()
     }
@@ -689,6 +690,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Series> {
         unimplemented!()
     }
@@ -699,6 +701,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Series> {
         unimplemented!()
     }
@@ -709,6 +712,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Series> {
         unimplemented!()
     }
