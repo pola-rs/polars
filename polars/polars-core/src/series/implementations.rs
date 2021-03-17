@@ -762,8 +762,9 @@ macro_rules! impl_dyn_series {
                 window_size: usize,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
+                min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_mean(&self.0, window_size, weight, ignore_null)
+                ChunkWindow::rolling_mean(&self.0, window_size, weight, ignore_null, min_periods)
                     .map(|ca| ca.into_series())
             }
             fn rolling_sum(
@@ -771,8 +772,9 @@ macro_rules! impl_dyn_series {
                 window_size: usize,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
+                min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_sum(&self.0, window_size, weight, ignore_null)
+                ChunkWindow::rolling_sum(&self.0, window_size, weight, ignore_null, min_periods)
                     .map(|ca| ca.into_series())
             }
             fn rolling_min(
@@ -780,8 +782,9 @@ macro_rules! impl_dyn_series {
                 window_size: usize,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
+                min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_min(&self.0, window_size, weight, ignore_null)
+                ChunkWindow::rolling_min(&self.0, window_size, weight, ignore_null, min_periods)
                     .map(|ca| ca.into_series())
             }
             fn rolling_max(
@@ -789,8 +792,9 @@ macro_rules! impl_dyn_series {
                 window_size: usize,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
+                min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_max(&self.0, window_size, weight, ignore_null)
+                ChunkWindow::rolling_max(&self.0, window_size, weight, ignore_null, min_periods)
                     .map(|ca| ca.into_series())
             }
 

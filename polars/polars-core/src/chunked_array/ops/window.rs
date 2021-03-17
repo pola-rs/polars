@@ -87,16 +87,36 @@ where
         .collect()
 }
 
+// the state holds the window and the current idx of the operation.
+// The value at the end of the window is not always the latest value (i.e. the value at the idx)
+// otherwise we have to move all the values if we push one to the window
+// Therefore the oldest value in the window gets replaced by the new value and is determined by:
+// current_idx % window_size
+//
+// the latest state values is the amount of Some<T> values in the window
 fn update_state<T>(
-    state: &mut (Vec<Option<T>>, usize),
+    // (window , oldest_value_idx, amount_Some)
+    state: &mut (Vec<Option<T>>, usize, u32),
+    // count of the loop
     idx_count: usize,
+    // new value
     opt_v: Option<T>,
+    // size of the window
     window_size: usize,
 ) -> usize {
-    let (window, idx) = state;
+    let (window, idx, _) = state;
     let old_value = &mut window[*idx];
     let mut new_val = opt_v;
+
+    if new_val.is_some() {
+        state.2 += 1;
+    }
+    if old_value.is_some() {
+        state.2 -= 1;
+    }
+
     std::mem::swap(old_value, &mut new_val);
+
     let idx_count = idx_count + 1;
     state.1 = idx_count % window_size;
     idx_count
@@ -141,6 +161,7 @@ fn finish_rolling_method<T, F>(
     window_size: usize,
     weight: Option<&[f64]>,
     init_fold: InitFold,
+    min_periods: u32,
 ) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -158,19 +179,27 @@ where
     let mut idx_count = 0;
     if ca.null_count() == 0 {
         ca.into_no_null_iter()
-            .scan((window, 0usize), |state, v| {
+            .scan((window, 0usize, 0u32), |state, v| {
                 idx_count = update_state(state, idx_count, Some(v), window_size);
-                let (window, _) = state;
-                let sum = apply_window(weight.as_deref(), window, fold_fn, init_fold);
-                Some(sum)
+                let (window, _, some_count) = state;
+                if *some_count < min_periods {
+                    Some(None)
+                } else {
+                    let sum = apply_window(weight.as_deref(), window, fold_fn, init_fold);
+                    Some(sum)
+                }
             })
             .collect()
     } else {
         ca.into_iter()
-            .scan((window, 0usize), |state, opt_v| {
+            .scan((window, 0usize, 0u32), |state, opt_v| {
                 idx_count = update_state(state, idx_count, opt_v, window_size);
-                let (window, _) = state;
-                Some(apply_window(weight.as_deref(), window, fold_fn, init_fold))
+                let (window, _, some_count) = state;
+                if *some_count < min_periods {
+                    Some(None)
+                } else {
+                    Some(apply_window(weight.as_deref(), window, fold_fn, init_fold))
+                }
             })
             .collect()
     }
@@ -199,6 +228,7 @@ where
         window_size: usize,
         weight: Option<&[f64]>,
         ignore_null: bool,
+        min_periods: u32,
     ) -> Result<Self> {
         let fold_fn = if ignore_null {
             sum_fold_ignore_null::<T::Native>
@@ -212,6 +242,7 @@ where
             window_size,
             weight,
             InitFold::Zero,
+            min_periods,
         ))
     }
 
@@ -220,8 +251,9 @@ where
         window_size: usize,
         weight: Option<&[f64]>,
         ignore_null: bool,
+        min_periods: u32,
     ) -> Result<Self> {
-        let ca = self.rolling_sum(window_size, weight, ignore_null)?;
+        let ca = self.rolling_sum(window_size, weight, ignore_null, min_periods)?;
         Ok(&ca / window_size)
     }
 
@@ -230,6 +262,7 @@ where
         window_size: usize,
         weight: Option<&[f64]>,
         ignore_null: bool,
+        min_periods: u32,
     ) -> Result<Self> {
         let fold_fn = if ignore_null {
             min_fold_ignore_null::<T::Native>
@@ -243,6 +276,7 @@ where
             window_size,
             weight,
             InitFold::Max,
+            min_periods,
         ))
     }
 
@@ -251,6 +285,7 @@ where
         window_size: usize,
         weight: Option<&[f64]>,
         ignore_null: bool,
+        min_periods: u32,
     ) -> Result<Self> {
         let fold_fn = if ignore_null {
             max_fold_ignore_null::<T::Native>
@@ -264,6 +299,7 @@ where
             window_size,
             weight,
             InitFold::Min,
+            min_periods,
         ))
     }
 }
@@ -285,6 +321,7 @@ where
         weight: Option<&[f64]>,
         fold_fn: F,
         init_fold: InitFold,
+        min_periods: u32,
     ) -> Result<Self>
     where
         F: Fn(Option<T::Native>, Option<T::Native>) -> Option<T::Native> + Copy,
@@ -295,6 +332,7 @@ where
             window_size,
             weight,
             init_fold,
+            min_periods,
         ))
     }
 }
@@ -313,7 +351,7 @@ mod test {
     #[test]
     fn test_rolling() {
         let ca = Int32Chunked::new_from_slice("foo", &[1, 2, 3, 2, 1]);
-        let a = ca.rolling_sum(2, None, true).unwrap();
+        let a = ca.rolling_sum(2, None, true, 0).unwrap();
         assert_eq!(
             Vec::from(&a),
             [1, 3, 5, 5, 3]
@@ -322,7 +360,7 @@ mod test {
                 .map(Some)
                 .collect::<Vec<_>>()
         );
-        let a = ca.rolling_min(2, None, true).unwrap();
+        let a = ca.rolling_min(2, None, true, 0).unwrap();
         assert_eq!(
             Vec::from(&a),
             [1, 1, 2, 2, 1]
@@ -332,7 +370,7 @@ mod test {
                 .collect::<Vec<_>>()
         );
         let a = ca
-            .rolling_max(2, Some(&[1., 1., 1., 1., 1.]), true)
+            .rolling_max(2, Some(&[1., 1., 1., 1., 1.]), true, 0)
             .unwrap();
         assert_eq!(
             Vec::from(&a),
@@ -342,5 +380,12 @@ mod test {
                 .map(Some)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_rolling_min_periods() {
+        let ca = Int32Chunked::new_from_slice("foo", &[1, 2, 3, 2, 1]);
+        let a = ca.rolling_max(2, None, true, 2).unwrap();
+        assert_eq!(Vec::from(&a), &[None, Some(2), Some(3), Some(3), Some(2)]);
     }
 }

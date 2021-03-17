@@ -1165,7 +1165,9 @@ class Series:
         """
         return wrap_s(self._s.as_duration())
 
-    def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None):
+    def str_parse_date(
+        self, datatype: "DataType", fmt: Optional[str] = None
+    ) -> "Series":
         """
         Parse a Series of dtype Utf8 to a Date32/Date64 Series.
 
@@ -1178,19 +1180,20 @@ class Series:
 
         Returns
         -------
-
+        A Date32/ Date64 Series
         """
         if datatype == Date32:
             return wrap_s(self._s.str_parse_date32(fmt))
         if datatype == Date64:
             return wrap_s(self._s.str_parse_date64(fmt))
-        return NotImplemented
+        raise NotImplementedError
 
     def rolling_min(
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
+        min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
         apply a rolling min (moving min) over the values in this array.
@@ -1207,14 +1210,22 @@ class Series:
             Toggle behavior of aggregation regarding null values in the window.
               `True` -> Null values will be ignored.
               `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None it will be set equal to window size
         """
-        return wrap_s(self._s.rolling_min(window_size, weight, ignore_null))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(
+            self._s.rolling_min(window_size, weight, ignore_null, min_periods)
+        )
 
     def rolling_max(
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
+        min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
         apply a rolling max (moving max) over the values in this array.
@@ -1231,14 +1242,22 @@ class Series:
             Toggle behavior of aggregation regarding null values in the window.
               `True` -> Null values will be ignored.
               `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None it will be set equal to window size
         """
-        return wrap_s(self._s.rolling_max(window_size, weight, ignore_null))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(
+            self._s.rolling_max(window_size, weight, ignore_null, min_periods)
+        )
 
     def rolling_mean(
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
+        min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
         apply a rolling mean (moving mean) over the values in this array.
@@ -1255,14 +1274,22 @@ class Series:
             Toggle behavior of aggregation regarding null values in the window.
               `True` -> Null values will be ignored.
               `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None it will be set equal to window size
         """
-        return wrap_s(self._s.rolling_mean(window_size, weight, ignore_null))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(
+            self._s.rolling_mean(window_size, weight, ignore_null, min_periods)
+        )
 
     def rolling_sum(
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
+        min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
         apply a rolling sum (moving sum) over the values in this array.
@@ -1279,8 +1306,15 @@ class Series:
             Toggle behavior of aggregation regarding null values in the window.
               `True` -> Null values will be ignored.
               `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None it will be set equal to window size
         """
-        return wrap_s(self._s.rolling_sum(window_size, weight, ignore_null))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(
+            self._s.rolling_sum(window_size, weight, ignore_null, min_periods)
+        )
 
     def year(self):
         """
