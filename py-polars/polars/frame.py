@@ -1397,6 +1397,17 @@ class DataFrame:
             acc = operation(acc, df[i])
         return acc
 
+    def row(self, index: int) -> Tuple[Any]:
+        """
+        Get a row as tuple
+
+        Parameters
+        ----------
+        index
+            Row index
+        """
+        return self._df.row_tuple(index)
+
 
 class GroupBy:
     def __init__(
