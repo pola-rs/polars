@@ -4,20 +4,22 @@
 //! queries. This is especially true for large string data. The figure below shows how an Arrow UTF8
 //! array is laid out in memory.
 //!
-//! The array `["foo", "bar", "ham"]` is encoded by a concatenated string `"foobarham"`,
-//! a offset array indicating the start (and end) of eacht string `[0, 2, 5, 8]`. And a null bitmap,
-//! indicating null values.
+//! The array `["foo", "bar", "ham"]` is encoded by
+//!
+//! * a concatenated string `"foobarham"`
+//! * an offset array indicating the start (and end) of each string `[0, 2, 5, 8]`
+//! * a null bitmap, indicating null values
 //!
 //! ![](https://raw.githubusercontent.com/ritchie46/img/master/polars/arrow/arrow_string.svg)
 //!
 //! This memory structure is very cache efficient if we are to read the string values. Especially if
-//! we compare it to a `Vec<&str`.
+//! we compare it to a `Vec<String>`.
 //!
 //! ![](https://raw.githubusercontent.com/ritchie46/img/master/polars/arrow/pandas_string.svg)
 //!
-//! However if we need to reorder the Arrow UTF8 array, we need to swap around all the bytes of the
-//! string values, which can become very expensive when a we're dealing with large strings. On the
-//! other hand, for the `Vec<&str`, we only need to swap pointers around which is only 8 bytes data
+//! However, if we need to reorder the Arrow UTF8 array, we need to swap around all the bytes of the
+//! string values, which can become very expensive when we're dealing with large strings. On the
+//! other hand, for the `Vec<String>`, we only need to swap pointers around which is only 8 bytes data
 //! that have to be moved.
 //!
 //! If you have a [DataFrame](crate::frame::DataFrame) with a large number of
@@ -26,8 +28,8 @@
 //!
 //! ## Categorical type
 //! For this reason Polars has a [CategoricalType](https://ritchie46.github.io/polars/polars/datatypes/struct.CategoricalType.html).
-//! A `CategoricalChunked` is an array filled with `u32` values that each represent a unqiue string value.
-//! Keeping cache-efficiency, whilst also making it cheap to order values around.
+//! A `CategoricalChunked` is an array filled with `u32` values that each represent a unique string value.
+//! Thereby maintaining cache-efficiency, whilst also making it cheap to move values around.
 //!
 //! ### Example: Single DataFrame
 //!

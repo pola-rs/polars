@@ -2,7 +2,7 @@ try:
     from .polars import (
         PyDataFrame,
         PySeries,
-        toggle_string_cache,
+        toggle_string_cache as pytoggle_string_cache,
     )
 except ImportError:
     import warnings
@@ -1789,8 +1789,16 @@ class StringCache:
         pass
 
     def __enter__(self):
-        toggle_string_cache(True)
+        pytoggle_string_cache(True)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        toggle_string_cache(False)
+        pytoggle_string_cache(False)
+
+
+def toggle_string_cache(toggle: bool):
+    """
+    Turn on/off the global string cache. This ensures that casts to Categorical types have the categories when string
+    values are equal
+    """
+    pytoggle_string_cache(toggle)
