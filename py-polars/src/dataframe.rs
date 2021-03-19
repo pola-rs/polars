@@ -464,7 +464,7 @@ impl PyDataFrame {
     }
 
     pub fn slice(&self, offset: usize, length: usize) -> PyResult<Self> {
-        let df = self.df.slice(offset, length).map_err(PyPolarsEr::from)?;
+        let df = self.df.slice(offset as i64, length).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 

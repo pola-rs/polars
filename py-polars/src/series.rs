@@ -312,7 +312,7 @@ impl PySeries {
     pub fn slice(&self, offset: usize, length: usize) -> PyResult<Self> {
         let series = self
             .series
-            .slice(offset, length)
+            .slice(offset as i64, length)
             .map_err(PyPolarsEr::from)?;
         Ok(PySeries { series })
     }

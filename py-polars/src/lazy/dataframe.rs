@@ -318,7 +318,7 @@ impl PyLazyFrame {
 
     pub fn slice(&self, offset: usize, len: usize) -> Self {
         let ldf = self.ldf.clone();
-        ldf.slice(offset, len).into()
+        ldf.slice(offset as i64, len).into()
     }
 
     pub fn melt(&self, id_vars: Vec<String>, value_vars: Vec<String>) -> Self {
