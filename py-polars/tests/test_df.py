@@ -200,9 +200,13 @@ def test_groupby():
 
     assert df.groupby("a").groups().sort("a")["a"].series_equal(Series(["a", "b", "c"]))
 
-    for df in df.groupby("a"):
-        if df["a"][0] == "b":
-            assert df.shape == (3, 3)
+    for subdf in df.groupby("a"):
+        if subdf["a"][0] == "b":
+            assert subdf.shape == (3, 3)
+
+    assert df.groupby("a").get_group("c").shape == (1, 3)
+    assert df.groupby("a").get_group("b").shape == (3, 3)
+    assert df.groupby("a").get_group("a").shape == (2, 3)
 
 
 def test_join():
@@ -266,7 +270,6 @@ def test_file_buffer():
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     df = DataFrame.read_csv(f, has_headers=False)
-    print(df)
     assert df.shape == (2, 6)
     f.seek(0)
 
