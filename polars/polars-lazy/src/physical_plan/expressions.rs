@@ -789,28 +789,19 @@ impl PhysicalExpr for WindowExpr {
 
 pub struct SliceExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
-    pub(crate) offset: isize,
+    pub(crate) offset: i64,
     pub(crate) len: usize,
 }
 
 impl SliceExpr {
     fn slice_series(&self, series: &Series) -> Result<Series> {
-        let series_len = series.len() as isize;
+        let series_len = series.len() as i64;
         let offset = if self.offset >= 0 {
-            self.offset as usize
+            self.offset as i64
         } else {
-            series_len.checked_sub(self.offset).ok_or_else(|| {
-                PolarsError::OutOfBounds(
-                    format!(
-                        "offset {} is larger than Series length of {}",
-                        self.offset, series_len
-                    )
-                    .into(),
-                )
-            })? as usize
+            series_len - self.offset
         };
-        let len = std::cmp::min(series_len as usize - offset, self.len);
-        series.slice(offset, len)
+        series.slice(offset, self.len)
     }
 }
 

@@ -211,7 +211,7 @@ pub enum LogicalPlan {
     },
     Slice {
         input: Box<LogicalPlan>,
-        offset: usize,
+        offset: i64,
         len: usize,
     },
     Melt {
@@ -1076,7 +1076,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn slice(self, offset: usize, len: usize) -> Self {
+    pub fn slice(self, offset: i64, len: usize) -> Self {
         LogicalPlan::Slice {
             input: Box::new(self.0),
             offset,
