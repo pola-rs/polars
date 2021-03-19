@@ -860,7 +860,7 @@ impl LazyFrame {
     }
 
     /// Slice the DataFrame.
-    pub fn slice(self, offset: usize, len: usize) -> LazyFrame {
+    pub fn slice(self, offset: i64, len: usize) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().slice(offset, len).build();
         Self::from_logical_plan(lp, opt_state)
@@ -869,6 +869,17 @@ impl LazyFrame {
     /// Get the first row.
     pub fn first(self) -> LazyFrame {
         self.slice(0, 1)
+    }
+
+    /// Get the last row
+    pub fn last(self) -> LazyFrame {
+        self.slice(-1,1)
+    }
+
+    /// Get the n last rows
+    pub fn tail(self, n : usize) -> LazyFrame {
+        let neg_tail = -(n as i64);
+        self.slice(neg_tail, n)
     }
 
     /// Melt the DataFrame from wide to long format
@@ -1807,5 +1818,20 @@ mod test {
             out.column("a_mean").unwrap().f64().unwrap().get(0),
             Some(0.5)
         );
+
+    #[test]
+    fn test_lazy_tail() {
+        let df = df! {
+            "A" => &[1, 2, 3, 4, 5],
+            "B" => &[5, 4, 3, 2, 1]
+        }
+        .unwrap();
+
+        let _out = df
+            .clone()
+            .lazy()
+            .tail(3)
+            .collect()
+            .unwrap();
     }
 }

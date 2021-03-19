@@ -805,7 +805,7 @@ impl Executor for StackExec {
 
 pub struct SliceExec {
     pub input: Box<dyn Executor>,
-    pub offset: usize,
+    pub offset: i64,
     pub len: usize,
 }
 
