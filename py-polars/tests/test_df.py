@@ -131,6 +131,14 @@ def test_groupby():
         }
     )
 
+    # use __getitem__ to map to select
+    assert (
+        df.groupby("a")["b"]
+        .sum()
+        .sort(by_column="a")
+        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+    )
+
     assert (
         df.groupby("a")
         .select("b")

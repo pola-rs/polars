@@ -1,5 +1,5 @@
 try:
-    from .polars import (
+    from .polars import (  # noqa: F401
         PyDataFrame,
         PySeries,
         toggle_string_cache as pytoggle_string_cache,
@@ -1424,6 +1424,9 @@ class GroupBy:
         self.downsample = downsample
         self.rule = rule
         self.downsample_n = downsample_n
+
+    def __getitem__(self, item):
+        return self.select(item)
 
     def apply(self, f: "Callable[[DataFrame], DataFrame]"):
         """
