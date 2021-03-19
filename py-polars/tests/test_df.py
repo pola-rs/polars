@@ -199,6 +199,7 @@ def test_groupby():
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
     assert df.groupby("a").groups().sort("a")["a"].series_equal(Series(["a", "b", "c"]))
+
     for df in df.groupby("a"):
         if df["a"][0] == "b":
             assert df.shape == (3, 3)
