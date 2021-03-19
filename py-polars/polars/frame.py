@@ -1497,6 +1497,35 @@ class GroupBy:
         for i in range(groups_df.height):
             yield df[groups[i]]
 
+    def get_group(self, group_value: "Union[Any, Tuple[Any]]") -> DataFrame:
+        groups_df = self.groups()
+        groups = groups_df["groups"]
+
+        if not isinstance(group_value, list):
+            group_value = [group_value]
+
+        by = self.by
+        if not isinstance(by, list):
+            by = [by]
+
+        mask = None
+        for column, group_val in zip(by, group_value):
+            local_mask = groups_df[column] == group_val
+            print(local_mask)
+            if mask is None:
+                mask = local_mask
+            else:
+                mask = mask & local_mask
+
+        # should be only one match
+        try:
+            groups_idx = groups[mask][0]
+        except IndexError:
+            raise ValueError(f"no group: {group_value} found")
+
+        df = wrap_df(self._df)
+        return df[groups_idx]
+
     def groups(self) -> DataFrame:
         return wrap_df(self._df.groupby(self.by, None, "groups"))
 

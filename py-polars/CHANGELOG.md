@@ -8,6 +8,9 @@ The Rust crate `polars` has its own changelog.
 
 * feature
   - \[python\] eager: DataFrame fold for horizontal aggregation.
+  - \[python\] eager: Series methods: \[median, quantile\]
+  - \[python\] eager: iterate over groupby and yield groups' DataFrames
+  - \[python\] eager: groupby.get_group('value')
   - \[python\] add parquet compression
   - \[python\] shift_and_fill expression
   - \[python\] implicitly download raw files from the web in `read_parquet`, `read_csv`.
