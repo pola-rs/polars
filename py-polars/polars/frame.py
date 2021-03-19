@@ -3,6 +3,7 @@ try:
         PyDataFrame,
         PySeries,
         toggle_string_cache as pytoggle_string_cache,
+        version,
     )
 except ImportError:
     import warnings

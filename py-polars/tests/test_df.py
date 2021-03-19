@@ -13,6 +13,10 @@ import pandas as pd
 from utils import get_complete_df
 
 
+def test_version():
+    pl.__version__
+
+
 def test_init():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
 
