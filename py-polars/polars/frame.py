@@ -869,6 +869,68 @@ class DataFrame:
         ----------
         by
             Column(s) to group by.
+
+        # Example
+
+        Below we group by column `"a"`, and we sum column `"b"`.
+
+        ```python
+        >>> df = pl.DataFrame(
+            {
+                "a": ["a", "b", "a", "b", "b", "c"],
+                "b": [1, 2, 3, 4, 5, 6],
+                "c": [6, 5, 4, 3, 2, 1],
+            }
+        )
+
+        assert (
+            df.groupby("a")["b"]
+            .sum()
+            .sort(by_column="a")
+            .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+        )
+        ```
+
+        We can also loop over the grouped `DataFrame`
+
+        ```python
+        for sub_df in df.groupby("a"):
+            print(sub_df)
+        ```
+        Outputs:
+        ```text
+        shape: (3, 3)
+        ╭─────┬─────┬─────╮
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ "b" ┆ 2   ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b" ┆ 4   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b" ┆ 5   ┆ 2   │
+        ╰─────┴─────┴─────╯
+        shape: (1, 3)
+        ╭─────┬─────┬─────╮
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ "c" ┆ 6   ┆ 1   │
+        ╰─────┴─────┴─────╯
+        shape: (2, 3)
+        ╭─────┬─────┬─────╮
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ "a" ┆ 1   ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a" ┆ 3   ┆ 4   │
+        ╰─────┴─────┴─────╯
+        ```
+
         """
         if isinstance(by, str):
             by = [by]
@@ -1413,7 +1475,7 @@ class DataFrame:
 class GroupBy:
     def __init__(
         self,
-        df: DataFrame,
+        df: "PyDataFrame",
         by: "List[str]",
         downsample: bool = False,
         rule=None,
@@ -1427,6 +1489,16 @@ class GroupBy:
 
     def __getitem__(self, item):
         return self.select(item)
+
+    def __iter__(self):
+        groups_df = self.groups()
+        groups = groups_df["groups"]
+        df = wrap_df(self._df)
+        for i in range(groups_df.height):
+            yield df[groups[i]]
+
+    def groups(self) -> DataFrame:
+        return wrap_df(self._df.groupby(self.by, None, "groups"))
 
     def apply(self, f: "Callable[[DataFrame], DataFrame]"):
         """
