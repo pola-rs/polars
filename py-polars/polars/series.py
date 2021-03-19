@@ -490,6 +490,18 @@ class Series:
         """
         return np.var(self.drop_nulls().view())
 
+    def median(self) -> float:
+        """
+        Get median of this Series
+        """
+        return self._s.median()
+
+    def quantile(self, quantile: float) -> float:
+        """
+        Get quantile value of this Series
+        """
+        return self._s.quantile(quantile)
+
     def to_dummies(self) -> "DataFrame":
         """
         Get dummy variables
