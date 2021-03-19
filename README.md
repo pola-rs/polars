@@ -19,7 +19,7 @@ We're working towards a new `0.7.0` release. For the
 mean time install a pre-release version. This will likely be more stable than `0.6.7`.
 
 Install the latest pre-release version with: 
-`$ pip install polars==0.7.0-beta.2`
+`$ pip install polars==0.7.0-beta.4`
 
 
 | Functionality                                     | Eager | Lazy (DataFrame) | Lazy (Series) |
