@@ -242,3 +242,13 @@ def test_repeat():
     s = pl.repeat("foo", 10)
     assert s.dtype == pl.Utf8
     assert s.len() == 10
+
+
+def test_median():
+    s = Series([1, 2, 3])
+    assert s.median() == 2
+
+
+def test_quantile():
+    s = Series([1, 2, 3])
+    assert s.quantile(0.5) == 2
