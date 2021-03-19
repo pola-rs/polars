@@ -1022,7 +1022,8 @@ where
             ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series())
         } else {
             Err(PolarsError::OutOfBounds(
-                    "Slice indices are out of bound".into()))
+                "Slice indices are out of bound".into(),
+            ))
         }
     }
 
