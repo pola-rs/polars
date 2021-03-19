@@ -238,31 +238,42 @@ def read_ipc(file: Union[str, BinaryIO, Path]) -> "DataFrame":
 
 
 def read_parquet(
-    file: Union[str, BinaryIO, Path],
+    source: "Union[str, BinaryIO, Path, List[str]]",
     stop_after_n_rows: "Optional[int]" = None,
     memory_map=True,
+    columns: Optional[List[str]] = None,
+    **kwargs
 ) -> "DataFrame":
     """
     Read into a DataFrame from a parquet file.
 
     Parameters
     ----------
-    file
-        Path to a file or a file like object.
+    source
+        Path to a file | list of files, or a file like object. If the path is a directory, that directory will be used
+        as partition aware scan.
     stop_after_n_rows
-        After n rows are read from the parquet stops reading.
+        After n rows are read from the parquet stops reading. Note: this cannot be used in partition aware parquet reads.
     memory_map
         Memory map underlying file. This will likely increase performance.
+    columns
+        Columns to project / select
+    **kwargs
+        kwargs for [pyarrow.parquet.read_table](https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html)
 
     Returns
     -------
     DataFrame
     """
-    file = _prepare_file_arg(file)
+    source = _prepare_file_arg(source)
     if stop_after_n_rows is not None:
-        return DataFrame.read_parquet(file, stop_after_n_rows=stop_after_n_rows)
+        return DataFrame.read_parquet(source, stop_after_n_rows=stop_after_n_rows)
     else:
-        return from_arrow_table(pa.parquet.read_table(file, memory_map=memory_map))
+        return from_arrow_table(
+            pa.parquet.read_table(
+                source, memory_map=memory_map, columns=columns, **kwargs
+            )
+        )
 
 
 def arg_where(mask: "Series"):
