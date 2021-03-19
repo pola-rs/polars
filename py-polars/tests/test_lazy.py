@@ -83,7 +83,7 @@ def test_apply_custom_function():
     )
 
     # two ways to determine the length groups.
-    (
+    a = (
         df.lazy()
         .groupby("fruits")
         .agg(
@@ -94,6 +94,21 @@ def test_apply_custom_function():
             ]
         )
     ).collect()
+    expected = pl.DataFrame(
+        {
+            "fruits": ["banana", "apple"],
+            "custom_1": [3, 2],
+            "custom_2": [3, 2],
+            "cars_count": [3, 2],
+        }
+    )
+    expected["cars_count"] = expected["cars_count"].cast(pl.UInt32)
+    assert a.frame_equal(expected)
+
+
+def test_groupby():
+    df = pl.DataFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
+    out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
 
 
 def test_shift_and_fill():
