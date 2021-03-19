@@ -1016,13 +1016,13 @@ where
 
         if offset < 0 && offset_abs <= self.len() && offset_abs <= length {
             let raw_offset = self.len() - offset_abs;
-            return ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series());
-        }
-        if offset >= 0 && offset_abs + length < self.len() {
+            ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series())
+        } else if offset >= 0 && offset_abs + length < self.len() {
             let raw_offset = offset as usize;
-            return ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series());
+            ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series())
         } else {
-            return Err(PolarsError::OutOfBounds("Slice cannot be computed because combination of offset and length is out of bounds".into()));
+            Err(PolarsError::OutOfBounds(
+                    "Slice indices are out of bound".into()))
         }
     }
 
