@@ -74,6 +74,7 @@ pub trait ChunkWindow {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Self>
     where
         Self: std::marker::Sized,
@@ -95,11 +96,13 @@ pub trait ChunkWindow {
     /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
     ///                     `true` -> Null values will be ignored.
     ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    /// * `min_periods` -  Amount of elements in the window that should be filled before computing a result.
     fn rolling_mean(
         &self,
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Self>
     where
         Self: std::marker::Sized,
@@ -122,11 +125,13 @@ pub trait ChunkWindow {
     /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
     ///                     `true` -> Null values will be ignored.
     ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    /// * `min_periods` -  Amount of elements in the window that should be filled before computing a result.
     fn rolling_min(
         &self,
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Self>
     where
         Self: std::marker::Sized,
@@ -149,11 +154,13 @@ pub trait ChunkWindow {
     /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
     ///                     `true` -> Null values will be ignored.
     ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    /// * `min_periods` -  Amount of elements in the window that should be filled before computing a result.
     fn rolling_max(
         &self,
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Self>
     where
         Self: std::marker::Sized,
@@ -180,12 +187,14 @@ pub trait ChunkWindowCustom<T> {
     /// * `window_size` - The length of the window.
     /// * `weight` - An optional slice with the same length of the window that will be multiplied
     ///              elementwise with the values in the window.
+    /// * `min_periods` -  Amount of elements in the window that should be filled before computing a result.
     fn rolling_custom<F>(
         &self,
         _window_size: usize,
         _weight: Option<&[f64]>,
         _fold_fn: F,
         _init_fold: InitFold,
+        _min_periods: u32,
     ) -> Result<Self>
     where
         F: Fn(Option<T>, Option<T>) -> Option<T> + Copy,

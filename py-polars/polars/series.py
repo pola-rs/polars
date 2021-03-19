@@ -1,6 +1,6 @@
 try:
     from .polars import PySeries
-except:
+except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
@@ -13,10 +13,31 @@ except:
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any, Callable
 from .ffi import _ptr_to_numpy
-from .datatypes import *
+from .datatypes import (
+    Utf8,
+    Int64,
+    UInt64,
+    UInt32,
+    dtypes,
+    Boolean,
+    Float32,
+    Float64,
+    DTYPE_TO_FFINAME,
+    dtype_to_primitive,
+    UInt8,
+    dtype_to_ctype,
+    DataType,
+    Date32,
+    Date64,
+)
 from numbers import Number
 import polars
 import pyarrow as pa
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .frame import DataFrame
 
 
 class IdentityDict(dict):
@@ -59,10 +80,10 @@ def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
 
 
-def find_first_non_none(a: "List[Optional[Any]]") -> Any:
+def _find_first_non_none(a: "List[Optional[Any]]") -> Any:
     v = a[0]
     if v is None:
-        return find_first_non_none(a[1:])
+        return _find_first_non_none(a[1:])
     else:
         return v
 
@@ -150,7 +171,8 @@ class Series:
                 self._s = PySeries.new_object(name, values)
         # list path
         else:
-            dtype = find_first_non_none(values)
+            dtype = _find_first_non_none(values)
+            print(dtype)
             # order is important as booleans are instance of int in python.
             if isinstance(dtype, bool):
                 self._s = PySeries.new_opt_bool(name, values)
@@ -160,6 +182,29 @@ class Series:
                 self._s = PySeries.new_opt_f64(name, values)
             elif isinstance(dtype, str):
                 self._s = PySeries.new_str(name, values)
+            # make list array
+            elif isinstance(dtype, (list, tuple)):
+                value_dtype = _find_first_non_none(dtype)
+                print(value_dtype, "value dtype", values)
+
+                # we can expect a failure if we pass `[[12], "foo", 9]`
+                # in that case we catch the exception and create an object type
+                try:
+                    if isinstance(value_dtype, bool):
+                        arrow_array = pa.array(values, pa.large_list(pa.bool_()))
+                    elif isinstance(value_dtype, int):
+                        arrow_array = pa.array(values, pa.large_list(pa.int64()))
+                    elif isinstance(value_dtype, float):
+                        arrow_array = pa.array(values, pa.large_list(pa.float64()))
+                    elif isinstance(value_dtype, str):
+                        arrow_array = pa.array(values, pa.large_list(pa.large_utf8()))
+                    else:
+                        self._s = PySeries.new_object(name, values)
+                        return
+                    self._s = Series.from_arrow(name, arrow_array)._s
+
+                except pa.lib.ArrowInvalid:
+                    self._s = PySeries.new_object(name, values)
             else:
                 self._s = PySeries.new_object(name, values)
 
@@ -468,6 +513,18 @@ class Series:
         Get variance of this Series
         """
         return np.var(self.drop_nulls().view())
+
+    def median(self) -> float:
+        """
+        Get median of this Series
+        """
+        return self._s.median()
+
+    def quantile(self, quantile: float) -> float:
+        """
+        Get quantile value of this Series
+        """
+        return self._s.quantile(quantile)
 
     def to_dummies(self) -> "DataFrame":
         """
@@ -1004,7 +1061,7 @@ class Series:
 
     def apply(
         self,
-        func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
+        func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",
         dtype_out: "Optional['DataType']" = None,
     ):
         """
@@ -1144,7 +1201,9 @@ class Series:
         """
         return wrap_s(self._s.as_duration())
 
-    def str_parse_date(self, datatype: "DataType", fmt: Optional[str] = None):
+    def str_parse_date(
+        self, datatype: "DataType", fmt: Optional[str] = None
+    ) -> "Series":
         """
         Parse a Series of dtype Utf8 to a Date32/Date64 Series.
 
@@ -1157,19 +1216,20 @@ class Series:
 
         Returns
         -------
-
+        A Date32/ Date64 Series
         """
         if datatype == Date32:
             return wrap_s(self._s.str_parse_date32(fmt))
         if datatype == Date64:
             return wrap_s(self._s.str_parse_date64(fmt))
-        return NotImplemented
+        raise NotImplementedError
 
     def rolling_min(
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
+        min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
         apply a rolling min (moving min) over the values in this array.
@@ -1186,14 +1246,22 @@ class Series:
             Toggle behavior of aggregation regarding null values in the window.
               `True` -> Null values will be ignored.
               `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None it will be set equal to window size
         """
-        return wrap_s(self._s.rolling_min(window_size, weight, ignore_null))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(
+            self._s.rolling_min(window_size, weight, ignore_null, min_periods)
+        )
 
     def rolling_max(
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
+        min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
         apply a rolling max (moving max) over the values in this array.
@@ -1210,14 +1278,22 @@ class Series:
             Toggle behavior of aggregation regarding null values in the window.
               `True` -> Null values will be ignored.
               `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None it will be set equal to window size
         """
-        return wrap_s(self._s.rolling_max(window_size, weight, ignore_null))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(
+            self._s.rolling_max(window_size, weight, ignore_null, min_periods)
+        )
 
     def rolling_mean(
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
+        min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
         apply a rolling mean (moving mean) over the values in this array.
@@ -1234,14 +1310,22 @@ class Series:
             Toggle behavior of aggregation regarding null values in the window.
               `True` -> Null values will be ignored.
               `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None it will be set equal to window size
         """
-        return wrap_s(self._s.rolling_mean(window_size, weight, ignore_null))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(
+            self._s.rolling_mean(window_size, weight, ignore_null, min_periods)
+        )
 
     def rolling_sum(
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
         ignore_null: bool = False,
+        min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
         apply a rolling sum (moving sum) over the values in this array.
@@ -1258,8 +1342,15 @@ class Series:
             Toggle behavior of aggregation regarding null values in the window.
               `True` -> Null values will be ignored.
               `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None it will be set equal to window size
         """
-        return wrap_s(self._s.rolling_sum(window_size, weight, ignore_null))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(
+            self._s.rolling_sum(window_size, weight, ignore_null, min_periods)
+        )
 
     def year(self):
         """
@@ -1426,7 +1517,7 @@ class Series:
         return wrap_s(self._s.peak_min())
 
 
-def out_to_dtype(out: Any) -> "Union[Datatype, np.ndarray]":
+def out_to_dtype(out: Any) -> "Union[DataType, np.ndarray]":
     if isinstance(out, float):
         return Float64
     if isinstance(out, int):

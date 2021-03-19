@@ -34,7 +34,6 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
     f: F,
     init: T::Native,
 ) -> Option<T::Native> {
-    debug_assert_eq!(arr.null_count(), 0);
     if arr.null_count() == arr.len() {
         return None;
     }
@@ -55,6 +54,6 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
     if out == init {
         None
     } else {
-        Some(init)
+        Some(out)
     }
 }

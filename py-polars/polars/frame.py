@@ -1,12 +1,11 @@
 try:
-    from .polars import (
+    from .polars import (  # noqa: F401
         PyDataFrame,
         PySeries,
-        PyLazyFrame,
+        toggle_string_cache as pytoggle_string_cache,
         version,
-        toggle_string_cache,
     )
-except:
+except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
@@ -25,13 +24,19 @@ from typing import (
     Any,
 )
 from .series import Series, wrap_s
-from .datatypes import *
+from . import datatypes
+from .datatypes import DataType, pytype_to_polars_type
 from .html import NotebookFormatter
 import pyarrow as pa
 import pyarrow.parquet
 import numpy as np
 import os
 from pathlib import Path
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .lazy import LazyFrame
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
@@ -233,7 +238,9 @@ class DataFrame:
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
 
-    def to_pandas(self, *args, date_as_object=False, **kwargs) -> "pd.DataFrame":
+    def to_pandas(
+        self, *args, date_as_object=False, **kwargs
+    ) -> "pd.DataFrame":  # noqa: F821
         """
         Cast to a Pandas DataFrame. This requires that Pandas is installed.
         This operation clones data.
@@ -479,9 +486,9 @@ class DataFrame:
                 else:
                     return wrap_df(self._df.take(item))
             dtype = item.dtype
-            if dtype == Boolean:
+            if dtype == datatypes.Boolean:
                 return wrap_df(self._df.filter(item.inner()))
-            if dtype == UInt32:
+            if dtype == datatypes.UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
 
     def __setitem__(self, key, value):
@@ -489,7 +496,7 @@ class DataFrame:
         if isinstance(key, str):
             try:
                 self.drop_in_place(key)
-            except:
+            except Exception:
                 pass
             self.hstack([Series(key, value)], in_place=True)
         # df[idx] = series
@@ -641,7 +648,7 @@ class DataFrame:
         ╰─────┴─────┴─────╯
         ```
         """
-        return [dtypes[idx] for idx in self._df.dtypes()]
+        return [datatypes.dtypes[idx] for idx in self._df.dtypes()]
 
     def replace_at_idx(self, index: int, series: Series):
         """
@@ -862,6 +869,68 @@ class DataFrame:
         ----------
         by
             Column(s) to group by.
+
+        # Example
+
+        Below we group by column `"a"`, and we sum column `"b"`.
+
+        ```python
+        >>> df = pl.DataFrame(
+            {
+                "a": ["a", "b", "a", "b", "b", "c"],
+                "b": [1, 2, 3, 4, 5, 6],
+                "c": [6, 5, 4, 3, 2, 1],
+            }
+        )
+
+        assert (
+            df.groupby("a")["b"]
+            .sum()
+            .sort(by_column="a")
+            .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+        )
+        ```
+
+        We can also loop over the grouped `DataFrame`
+
+        ```python
+        for sub_df in df.groupby("a"):
+            print(sub_df)
+        ```
+        Outputs:
+        ```text
+        shape: (3, 3)
+        ╭─────┬─────┬─────╮
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ "b" ┆ 2   ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b" ┆ 4   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b" ┆ 5   ┆ 2   │
+        ╰─────┴─────┴─────╯
+        shape: (1, 3)
+        ╭─────┬─────┬─────╮
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ "c" ┆ 6   ┆ 1   │
+        ╰─────┴─────┴─────╯
+        shape: (2, 3)
+        ╭─────┬─────┬─────╮
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ "a" ┆ 1   ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a" ┆ 3   ┆ 4   │
+        ╰─────┴─────┴─────╯
+        ```
+
         """
         if isinstance(by, str):
             by = [by]
@@ -1178,7 +1247,7 @@ class DataFrame:
         """
         return wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "polars.lazy.LazyFrame":
+    def lazy(self) -> "LazyFrame":
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -1303,11 +1372,110 @@ class DataFrame:
             return wrap_df(self._df.sample_n(n, with_replacement))
         return wrap_df(self._df.sample_frac(frac, with_replacement))
 
+    def fold(
+        self, operation: "Callable[['Series', 'Series'], 'Series']"
+    ) -> "DataFrame":
+        """
+        Apply a horizontal reduction on a DataFrame. This can be used to effectively
+        determine aggregations on a row level, and can be applied to any DataType that
+        can be supercasted (casted to a similar parent type).
+
+        An example of the supercast rules when applying an arithmetic operation on two DataTypes are for instance:
+
+        Int8 + Utf8 = Utf8
+        Float32 + Int64 = Float32
+        Float32 + Float64 = Float64
+
+        # Examples
+
+        ## A horizontal sum operation
+        ```python
+        >>> df = pl.DataFrame(
+            {"a": [2, 1, 3],
+            "b": [1, 2, 3],
+            "c": [1.0, 2.0, 3.0]
+        })
+
+        >>> df.fold(lambda s1, s2: s1 + s2)
+        ```
+        ```text
+        Series: 'a' [f64]
+        [
+            4
+            5
+            9
+        ]
+        ```
+
+        ## A horizontal minimum operation
+
+        ```python
+        >>> df = pl.DataFrame(
+            {"a": [2, 1, 3],
+            "b": [1, 2, 3],
+            "c": [1.0, 2.0, 3.0]
+        })
+
+        >>> df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2))
+        ```
+        ```text
+        Series: 'a' [f64]
+        [
+            1
+            1
+            3
+        ]
+        ```
+
+        ## A horizontal string concattenation
+        ```python
+        >>> df = pl.DataFrame(
+            {"a": ["foo", "bar", 2],
+            "b": [1, 2, 3],
+            "c": [1.0, 2.0, 3.0]
+        })
+
+        >>> df.fold(lambda s1, s2: s1 + s2)
+        ```
+        ```text
+        Series: '' [f64]
+        [
+            "foo11"
+            "bar22
+            "233"
+        ]
+        ```
+
+        Parameters
+        ----------
+        operation
+            function that takes two `Series` and returns a `Series`
+        """
+        if self.width == 1:
+            return self
+        df = self
+        acc = operation(df[0], df[1])
+
+        for i in range(2, df.width):
+            acc = operation(acc, df[i])
+        return acc
+
+    def row(self, index: int) -> Tuple[Any]:
+        """
+        Get a row as tuple
+
+        Parameters
+        ----------
+        index
+            Row index
+        """
+        return self._df.row_tuple(index)
+
 
 class GroupBy:
     def __init__(
         self,
-        df: DataFrame,
+        df: "PyDataFrame",
         by: "List[str]",
         downsample: bool = False,
         rule=None,
@@ -1318,6 +1486,48 @@ class GroupBy:
         self.downsample = downsample
         self.rule = rule
         self.downsample_n = downsample_n
+
+    def __getitem__(self, item):
+        return self.select(item)
+
+    def __iter__(self):
+        groups_df = self.groups()
+        groups = groups_df["groups"]
+        df = wrap_df(self._df)
+        for i in range(groups_df.height):
+            yield df[groups[i]]
+
+    def get_group(self, group_value: "Union[Any, Tuple[Any]]") -> DataFrame:
+        groups_df = self.groups()
+        groups = groups_df["groups"]
+
+        if not isinstance(group_value, list):
+            group_value = [group_value]
+
+        by = self.by
+        if not isinstance(by, list):
+            by = [by]
+
+        mask = None
+        for column, group_val in zip(by, group_value):
+            local_mask = groups_df[column] == group_val
+            print(local_mask)
+            if mask is None:
+                mask = local_mask
+            else:
+                mask = mask & local_mask
+
+        # should be only one match
+        try:
+            groups_idx = groups[mask][0]
+        except IndexError:
+            raise ValueError(f"no group: {group_value} found")
+
+        df = wrap_df(self._df)
+        return df[groups_idx]
+
+    def groups(self) -> DataFrame:
+        return wrap_df(self._df.groupby(self.by, None, "groups"))
 
     def apply(self, f: "Callable[[DataFrame], DataFrame]"):
         """
@@ -1654,7 +1864,7 @@ class GBSelection:
 
     def apply(
         self,
-        func: "Union[Callable[['T'], 'T'], Callable[['T'], 'S']]",
+        func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",
         dtype_out: "Optional['DataType']" = None,
     ) -> "DataFrame":
         """
@@ -1684,8 +1894,16 @@ class StringCache:
         pass
 
     def __enter__(self):
-        toggle_string_cache(True)
+        pytoggle_string_cache(True)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        toggle_string_cache(False)
+        pytoggle_string_cache(False)
+
+
+def toggle_string_cache(toggle: bool):
+    """
+    Turn on/off the global string cache. This ensures that casts to Categorical types have the categories when string
+    values are equal
+    """
+    pytoggle_string_cache(toggle)

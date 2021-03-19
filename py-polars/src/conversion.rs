@@ -1,5 +1,7 @@
 use crate::prelude::*;
-use pyo3::conversion::FromPyObject;
+use crate::series::PySeries;
+use polars::prelude::AnyValue;
+use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
@@ -61,5 +63,36 @@ impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
             }
         }
         Ok(Wrap(builder.finish()))
+    }
+}
+
+impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
+    fn into_py(self, py: Python) -> PyObject {
+        match self.0 {
+            AnyValue::UInt8(v) => v.into_py(py),
+            AnyValue::UInt16(v) => v.into_py(py),
+            AnyValue::UInt32(v) => v.into_py(py),
+            AnyValue::UInt64(v) => v.into_py(py),
+            AnyValue::Int8(v) => v.into_py(py),
+            AnyValue::Int16(v) => v.into_py(py),
+            AnyValue::Int32(v) => v.into_py(py),
+            AnyValue::Int64(v) => v.into_py(py),
+            AnyValue::Float32(v) => v.into_py(py),
+            AnyValue::Float64(v) => v.into_py(py),
+            AnyValue::Null => py.None(),
+            AnyValue::Boolean(v) => v.into_py(py),
+            AnyValue::Utf8(v) => v.into_py(py),
+            AnyValue::Date32(v) => v.into_py(py),
+            AnyValue::Date64(v) => v.into_py(py),
+            AnyValue::Time64(v, _) => v.into_py(py),
+            AnyValue::Duration(v, _) => v.into_py(py),
+            AnyValue::List(v) => {
+                let pypolars = PyModule::import(py, "polars").expect("polars installed");
+                let pyseries = PySeries::new(v);
+                let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                python_series_wrapper.into()
+            }
+            AnyValue::Object(v) => v.into_py(py),
+        }
     }
 }

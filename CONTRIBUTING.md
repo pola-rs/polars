@@ -42,7 +42,10 @@ We test the code formatting in the CI pipelines. If you don't want these to fail
 * **Python** code with [black (version 20.8b1)](https://github.com/psf/black), running `$ black .`
 
 ## Linting
-We use [clippy](https://github.com/rust-lang/rust-clippy) as linter. This will also be checked in CI.
+We use linters to enforce code quality. This will be checked in CI.
+
+* **Rust** We use [clippy](https://github.com/rust-lang/rust-clippy) as linter. 
+* **Python** We use [flake8](https://flake8.pycqa.org/en/latest/) as linter. 
 
 ## License
 By contributing, you agree that your contributions will be licensed under its MIT License.

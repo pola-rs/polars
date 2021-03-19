@@ -19,7 +19,7 @@ We're working towards a new `0.7.0` release. For the
 mean time install a pre-release version. This will likely be more stable than `0.6.7`.
 
 Install the latest pre-release version with: 
-`$ pip install polars==0.7.0-beta.1`
+`$ pip install polars==0.7.0-beta.4`
 
 
 | Functionality                                     | Eager | Lazy (DataFrame) | Lazy (Series) |
@@ -69,7 +69,7 @@ Want to know about all the features Polars support? Read the docs!
 #### Python
 * installation guide: `pip install polars`
 * [the book](https://ritchie46.github.io/polars-book/)
-* [Reference guide](https://ritchie46.github.io/polars/polars/index.html)
+* [Reference guide](https://ritchie46.github.io/polars/python/polars/index.html)
 
 ## Performance
 Polars is written to be performant, and it is! But don't take my word for it, take a look at the results in 

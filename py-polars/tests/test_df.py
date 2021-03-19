@@ -13,6 +13,10 @@ import pandas as pd
 from utils import get_complete_df
 
 
+def test_version():
+    pl.__version__
+
+
 def test_init():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
 
@@ -127,6 +131,14 @@ def test_groupby():
         }
     )
 
+    # use __getitem__ to map to select
+    assert (
+        df.groupby("a")["b"]
+        .sum()
+        .sort(by_column="a")
+        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+    )
+
     assert (
         df.groupby("a")
         .select("b")
@@ -185,6 +197,16 @@ def test_groupby():
     #     DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
     # )
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
+
+    assert df.groupby("a").groups().sort("a")["a"].series_equal(Series(["a", "b", "c"]))
+
+    for subdf in df.groupby("a"):
+        if subdf["a"][0] == "b":
+            assert subdf.shape == (3, 3)
+
+    assert df.groupby("a").get_group("c").shape == (1, 3)
+    assert df.groupby("a").get_group("b").shape == (3, 3)
+    assert df.groupby("a").get_group("a").shape == (2, 3)
 
 
 def test_join():
@@ -248,7 +270,6 @@ def test_file_buffer():
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     df = DataFrame.read_csv(f, has_headers=False)
-    print(df)
     assert df.shape == (2, 6)
     f.seek(0)
 
@@ -346,7 +367,6 @@ def test_to_pandas():
     # test shifted df
     df.shift(2).to_pandas()
     df = DataFrame({"col": Series([True, False, True])})
-    print(df)
     df.shift(2).to_pandas()
 
 
@@ -374,3 +394,23 @@ def test_from_pandas_datetime():
     df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
     df["datetime"] = pd.to_datetime(df["datetime"])
     pl.from_pandas(df)
+
+
+def test_df_fold():
+    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+
+    assert df.fold(lambda s1, s2: s1 + s2).series_equal(Series("a", [4.0, 5.0, 9.0]))
+    assert df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2)).series_equal(
+        Series("a", [1.0, 1.0, 3.0])
+    )
+
+    df = DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    out = df.fold(lambda s1, s2: s1 + s2)
+    out.series_equal(Series("", ["foo11", "bar22", "233"]))
+
+
+def test_row_tuple():
+    df = DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    assert df.row(0) == ("foo", 1, 1.0)
+    assert df.row(1) == ("bar", 2, 2.0)
+    assert df.row(-1) == ("2", 3, 3.0)

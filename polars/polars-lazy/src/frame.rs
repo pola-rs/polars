@@ -873,11 +873,11 @@ impl LazyFrame {
 
     /// Get the last row
     pub fn last(self) -> LazyFrame {
-        self.slice(-1,1)
+        self.slice(-1, 1)
     }
 
     /// Get the n last rows
-    pub fn tail(self, n : usize) -> LazyFrame {
+    pub fn tail(self, n: usize) -> LazyFrame {
         let neg_tail = -(n as i64);
         self.slice(neg_tail, n)
     }
@@ -1806,12 +1806,28 @@ mod test {
         }
         .unwrap();
 
-        let _out = df
-            .clone()
+        let _out = df.clone().lazy().tail(3).collect().unwrap();
+    }
+
+    #[test]
+    fn test_lazy_groupby() {
+        let df = df! {
+            "a" => &[Some(1.0), None, Some(3.0), Some(4.0), Some(5.0)],
+            "groups" => &["a", "a", "b", "c", "c"]
+        }
+        .unwrap();
+
+        let out = df
             .lazy()
-            .tail(3)
+            .groupby(vec![col("groups")])
+            .agg(vec![col("a").mean()])
+            .sort("a_mean", false)
             .collect()
             .unwrap();
 
+        assert_eq!(
+            out.column("a_mean").unwrap().f64().unwrap().get(0),
+            Some(0.5)
+        );
     }
 }

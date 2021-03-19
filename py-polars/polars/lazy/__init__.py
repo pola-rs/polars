@@ -3,6 +3,7 @@ from typing import Union, List, Callable, Optional, Dict
 from polars import Series
 from polars.frame import DataFrame, wrap_df
 from polars import datatypes
+from polars.datatypes import DataType
 import os
 import tempfile
 import subprocess
@@ -14,7 +15,7 @@ try:
         PyLazyFrame,
         col as pycol,
         lit as pylit,
-        binary_expr,
+        # binary_expr,
         binary_function as pybinary_function,
         pearson_corr as pypearson_corr,
         cov as pycov,
@@ -24,7 +25,7 @@ try:
         except_ as pyexcept,
         range as pyrange,
     )
-except:
+except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
@@ -1264,7 +1265,7 @@ def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":
 
 
 class WhenThen:
-    def __init__(self, pywhenthen: "PyWhenThen"):
+    def __init__(self, pywhenthen: "PyWhenThen"):  # noqa F821
         self._pywhenthen = pywhenthen
 
     def otherwise(self, expr: "Expr") -> "Expr":
@@ -1273,7 +1274,7 @@ class WhenThen:
 
 
 class When:
-    def __init__(self, pywhen: "PyWhen"):
+    def __init__(self, pywhen: "pywhen"):  # noqa F821
         self._pywhen = pywhen
 
     def then(self, expr: "Expr") -> WhenThen:
@@ -1391,7 +1392,7 @@ def max(name: "Union[str, List[Expr]]") -> "Expr":
     return col(name).max()
 
 
-def min(name: "Union[str, List[expr]]") -> "Expr":
+def min(name: "Union[str, List[Expr]]") -> "Expr":
     """
     Get minimum value
     """

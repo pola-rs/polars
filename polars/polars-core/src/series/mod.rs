@@ -9,6 +9,7 @@ pub(crate) mod iterator;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::float::IsNan;
+use crate::series::arithmetic::coerce_lhs_rhs;
 use arrow::array::ArrayDataRef;
 use arrow::compute::cast;
 use itertools::Itertools;
@@ -121,6 +122,11 @@ pub(crate) mod private {
             unimplemented!()
         }
         fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+            unimplemented!()
+        }
+        /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+        /// from `other` where the mask evaluates `false`
+        fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
             unimplemented!()
         }
     }
@@ -637,12 +643,6 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         unimplemented!()
     }
 
-    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
-    /// from `other` where the mask evaluates `false`
-    fn zip_with(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
-        unimplemented!()
-    }
-
     /// Get the sum of the Series as a new Series of length 1.
     fn sum_as_series(&self) -> Series {
         unimplemented!()
@@ -682,6 +682,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Series> {
         unimplemented!()
     }
@@ -692,6 +693,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Series> {
         unimplemented!()
     }
@@ -702,6 +704,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Series> {
         unimplemented!()
     }
@@ -712,6 +715,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         _window_size: usize,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
+        _min_periods: u32,
     ) -> Result<Series> {
         unimplemented!()
     }
@@ -1133,6 +1137,13 @@ impl Series {
             )),
         }
     }
+
+    /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
+    /// from `other` where the mask evaluates `false`
+    pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+        let (lhs, rhs) = coerce_lhs_rhs(self, other)?;
+        lhs.zip_with_same_type(mask, rhs.as_ref())
+    }
 }
 
 impl Deref for Series {
@@ -1394,21 +1405,20 @@ mod test {
     fn series_slice_works() {
         let series = Series::new("a", &[1i64, 2, 3, 4, 5]);
 
-        let slice_1 = series.slice(-3,3).unwrap();
-        let slice_2 = series.slice(-5,5).unwrap();
+        let slice_1 = series.slice(-3, 3).unwrap();
+        let slice_2 = series.slice(-5, 5).unwrap();
         let slice_3 = series.slice(0, 5).unwrap();
 
         assert_eq!(slice_1.get(0), AnyValue::Int64(3));
         assert_eq!(slice_2.get(0), AnyValue::Int64(1));
         assert_eq!(slice_3.get(0), AnyValue::Int64(1));
-
     }
 
     #[test]
     fn out_of_range_slice_does_not_panic() {
         let series = Series::new("a", &[1i64, 2, 3, 4, 5]);
 
-        series.slice(-3,4).expect_err("Should be out of bounds");
+        series.slice(-3, 4).expect_err("Should be out of bounds");
         series.slice(-6, 2).expect_err("Should be out of bounds");
         series.slice(4, 2).expect_err("Should be out of bounds");
     }

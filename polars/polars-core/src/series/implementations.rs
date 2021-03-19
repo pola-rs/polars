@@ -78,6 +78,11 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for Wrap<$ca> {
+            fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
+                ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
+                    .map(|ca| ca.into_series())
+            }
+
             fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
                 self.0.vec_hash(random_state)
             }
@@ -740,11 +745,6 @@ macro_rules! impl_dyn_series {
                 ChunkFillNone::fill_none(&self.0, strategy).map(|ca| ca.into_series())
             }
 
-            fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-                ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
-                    .map(|ca| ca.into_series())
-            }
-
             fn sum_as_series(&self) -> Series {
                 ChunkAggSeries::sum_as_series(&self.0)
             }
@@ -774,8 +774,9 @@ macro_rules! impl_dyn_series {
                 window_size: usize,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
+                min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_mean(&self.0, window_size, weight, ignore_null)
+                ChunkWindow::rolling_mean(&self.0, window_size, weight, ignore_null, min_periods)
                     .map(|ca| ca.into_series())
             }
             fn rolling_sum(
@@ -783,8 +784,9 @@ macro_rules! impl_dyn_series {
                 window_size: usize,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
+                min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_sum(&self.0, window_size, weight, ignore_null)
+                ChunkWindow::rolling_sum(&self.0, window_size, weight, ignore_null, min_periods)
                     .map(|ca| ca.into_series())
             }
             fn rolling_min(
@@ -792,8 +794,9 @@ macro_rules! impl_dyn_series {
                 window_size: usize,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
+                min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_min(&self.0, window_size, weight, ignore_null)
+                ChunkWindow::rolling_min(&self.0, window_size, weight, ignore_null, min_periods)
                     .map(|ca| ca.into_series())
             }
             fn rolling_max(
@@ -801,8 +804,9 @@ macro_rules! impl_dyn_series {
                 window_size: usize,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
+                min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_max(&self.0, window_size, weight, ignore_null)
+                ChunkWindow::rolling_max(&self.0, window_size, weight, ignore_null, min_periods)
                     .map(|ca| ca.into_series())
             }
 
@@ -1012,16 +1016,14 @@ where
 
         if offset < 0 && offset_abs <= self.len() && offset_abs <= length {
             let raw_offset = self.len() - offset_abs;
-            return ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series())
+            return ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series());
         }
         if offset >= 0 && offset_abs + length < self.len() {
             let raw_offset = offset as usize;
-            return ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series())
+            return ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series());
+        } else {
+            return Err(PolarsError::OutOfBounds("Slice cannot be computed because combination of offset and length is out of bounds".into()));
         }
-        else {
-            return Err(PolarsError::OutOfBounds("Slice cannot be computed because combination of offset and length is out of bounds".into()))
-        }
-        
     }
 
     fn append(&mut self, other: &Series) -> Result<()> {
@@ -1162,10 +1164,6 @@ where
 
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
         ChunkFillNone::fill_none(&self.0, strategy).map(|ca| ca.into_series())
-    }
-
-    fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-        ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
 
     fn fmt_list(&self) -> String {

@@ -7,12 +7,18 @@ The Rust crate `polars` has its own changelog.
 * name change: Python bindings package renamed from py-polars to polars
 
 * feature
+  - \[python\] eager: DataFrame fold for horizontal aggregation.
+  - \[python\] eager: Series methods: \[median, quantile\]
+  - \[python\] eager: iterate over groupby and yield groups' DataFrames
+  - \[python\] eager: groupby.get_group('value')
   - \[python\] add parquet compression
   - \[python\] shift_and_fill expression
   - \[python\] implicitly download raw files from the web in `read_parquet`, `read_csv`.
   - \[python | rust\] methods for local peak finding in numerical series
   - \[python | rust\] faster query optimization due to local memory arena's.
   - \[rust\] reduce default compile time by making less features default.
+  - \[python | rust\] Series zip_with implicitly cast to supertype.
+  - \[python | rust\] window functions have a `min_periods` argument to control when to compute a result
   
 * bug fix
   - \[python\] support file buffers for reading and writing csv and parquet

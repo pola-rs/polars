@@ -568,6 +568,24 @@ impl PySeries {
         pylist.to_object(python)
     }
 
+    pub fn median(&self) -> PyObject {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        Wrap(self.series.median_as_series().get(0)).into_py(py)
+    }
+
+    pub fn quantile(&self, quantile: f64) -> PyObject {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        Wrap(
+            self.series
+                .quantile_as_series(quantile)
+                .expect("invalid quantile")
+                .get(0),
+        )
+        .into_py(py)
+    }
+
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> PyResult<usize> {
@@ -899,10 +917,11 @@ impl PySeries {
         window_size: usize,
         weight: Option<Vec<f64>>,
         ignore_null: bool,
+        min_periods: u32,
     ) -> PyResult<Self> {
         let s = self
             .series
-            .rolling_sum(window_size, weight.as_deref(), ignore_null)
+            .rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
@@ -912,10 +931,11 @@ impl PySeries {
         window_size: usize,
         weight: Option<Vec<f64>>,
         ignore_null: bool,
+        min_periods: u32,
     ) -> PyResult<Self> {
         let s = self
             .series
-            .rolling_mean(window_size, weight.as_deref(), ignore_null)
+            .rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
@@ -925,10 +945,11 @@ impl PySeries {
         window_size: usize,
         weight: Option<Vec<f64>>,
         ignore_null: bool,
+        min_periods: u32,
     ) -> PyResult<Self> {
         let s = self
             .series
-            .rolling_max(window_size, weight.as_deref(), ignore_null)
+            .rolling_max(window_size, weight.as_deref(), ignore_null, min_periods)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
@@ -937,10 +958,11 @@ impl PySeries {
         window_size: usize,
         weight: Option<Vec<f64>>,
         ignore_null: bool,
+        min_periods: u32,
     ) -> PyResult<Self> {
         let s = self
             .series
-            .rolling_min(window_size, weight.as_deref(), ignore_null)
+            .rolling_min(window_size, weight.as_deref(), ignore_null, min_periods)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
