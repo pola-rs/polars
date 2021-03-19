@@ -93,6 +93,7 @@ def test_apply_custom_function():
                 pl.count("cars"),
             ]
         )
+        .sort("custom_1", reverse=True)
     ).collect()
     expected = pl.DataFrame(
         {
