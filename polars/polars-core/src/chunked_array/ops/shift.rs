@@ -4,7 +4,7 @@ use num::{abs, clamp};
 macro_rules! impl_shift_fill {
     ($self:ident, $periods:expr, $fill_value:expr) => {{
         let periods = clamp($periods, -($self.len() as i64), $self.len() as i64);
-        let slice_offset = (-periods).max(0) as usize;
+        let slice_offset = (-periods).max(0) as i64;
         let length = $self.len() - abs(periods) as usize;
         let mut slice = $self.slice(slice_offset, length).unwrap();
 

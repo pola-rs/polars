@@ -111,7 +111,7 @@ macro_rules! split_array {
 }
 
 pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>> {
-    split_array!(ca, n, usize)
+    split_array!(ca, n, i64)
 }
 
 pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {

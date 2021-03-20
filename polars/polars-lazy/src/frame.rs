@@ -1799,18 +1799,6 @@ mod test {
     }
 
     #[test]
-<<<<<<< HEAD
-    fn test_lazy_tail() {
-        let df = df! {
-            "A" => &[1, 2, 3, 4, 5],
-            "B" => &[5, 4, 3, 2, 1]
-        }
-        .unwrap();
-
-        let _out = df.clone().lazy().tail(3).collect().unwrap();
-    }
-
-    #[test]
     fn test_lazy_groupby() {
         let df = df! {
             "a" => &[Some(1.0), None, Some(3.0), Some(4.0), Some(5.0)],
@@ -1830,6 +1818,7 @@ mod test {
             out.column("a_mean").unwrap().f64().unwrap().get(0),
             Some(0.5)
         );
+    }
 
     #[test]
     fn test_lazy_tail() {

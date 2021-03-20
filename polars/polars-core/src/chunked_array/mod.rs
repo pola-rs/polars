@@ -309,12 +309,23 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
-    pub fn slice(&self, offset: usize, length: usize) -> Result<Self> {
-        if offset + length > self.len() {
+    ///
+    /// When offset is negative it will be counted from the end of the array
+    pub fn slice(&self, offset: i64, length: usize) -> Result<Self> {
+        let abs_offset = offset.abs() as usize;
+
+        if 
+            (offset >= 0 && abs_offset + length > self.len()) ||
+            (offset < 0 && (abs_offset > self.len() ||  abs_offset < length))
+        {
             return Err(PolarsError::OutOfBounds("offset and length was larger than the size of the ChunkedArray during slice operation".into()));
         }
+        
+        // The offset counted from the start of the array
+        let raw_offset = if offset < 0 {self.len() - abs_offset} else {abs_offset};
+
         let mut remaining_length = length;
-        let mut remaining_offset = offset;
+        let mut remaining_offset = raw_offset;
         let mut new_chunks = vec![];
 
         for chunk in &self.chunks {
@@ -407,7 +418,7 @@ impl<T> ChunkedArray<T> {
             Some(len) => std::cmp::min(len, self.len()),
             None => std::cmp::min(10, self.len()),
         };
-        self.slice(self.len() - len, len).unwrap()
+        self.slice(-(len as i64), len).unwrap()
     }
 
     /// Append in place.
@@ -1045,6 +1056,11 @@ pub(crate) mod test {
         assert_slice_equal(&first.slice(1, 4).unwrap(), &[1, 2, 3, 4]);
         assert_slice_equal(&first.slice(3, 2).unwrap(), &[3, 4]);
         assert_slice_equal(&first.slice(3, 3).unwrap(), &[3, 4, 5]);
+        assert_slice_equal(&first.slice(-3, 3).unwrap(), &[3, 4, 5]);
+        assert_slice_equal(&first.slice(-6, 6).unwrap(), &[0, 1, 2, 3, 4, 5]);
+        
+        assert!(first.slice(-7, 2).is_err());
+        assert!(first.slice(-3, 4).is_err());
         assert!(first.slice(3, 4).is_err());
     }
 

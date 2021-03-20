@@ -67,7 +67,7 @@ macro_rules! impl_quantile {
         let null_count = $self.null_count();
         let opt = ChunkSort::sort($self, false)
             .slice(
-                ((($self.len() - null_count) as f64) * $quantile + null_count as f64) as usize,
+                ((($self.len() - null_count) as f64) * $quantile + null_count as f64) as i64,
                 1,
             )
             .unwrap()

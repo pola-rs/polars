@@ -522,19 +522,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn slice(&self, offset: i64, length: usize) -> Result<Series> {
-                let offset_abs = offset.abs() as usize;
-
-                if offset < 0 && offset_abs <= self.len() && offset_abs <= length {
-                    let raw_offset = self.len() - offset_abs;
-                    return self.0.slice(raw_offset, length).map(|ca| ca.into_series())
-                }
-                if offset >= 0 && offset_abs + length <= self.len() {
-                    let raw_offset = offset as usize;
-                    return self.0.slice(raw_offset, length).map(|ca| ca.into_series())
-                }
-                else {
-                    return Err(PolarsError::OutOfBounds("Slice cannot be computed because combination of offset and length is out of bounds".into()))
-                }
+                return self.0.slice(offset, length).map(|ca| ca.into_series())
             }
 
             fn append(&mut self, other: &Series) -> Result<()> {
@@ -1012,19 +1000,7 @@ where
     }
 
     fn slice(&self, offset: i64, length: usize) -> Result<Series> {
-        let offset_abs = offset.abs() as usize;
-
-        if offset < 0 && offset_abs <= self.len() && offset_abs <= length {
-            let raw_offset = self.len() - offset_abs;
-            ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series())
-        } else if offset >= 0 && offset_abs + length < self.len() {
-            let raw_offset = offset as usize;
-            ObjectChunked::slice(&self.0, raw_offset, length).map(|ca| ca.into_series())
-        } else {
-            Err(PolarsError::OutOfBounds(
-                "Slice indices are out of bound".into(),
-            ))
-        }
+        ObjectChunked::slice(&self.0, offset, length).map(|ca| ca.into_series())
     }
 
     fn append(&mut self, other: &Series) -> Result<()> {
