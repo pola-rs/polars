@@ -83,6 +83,10 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.into_series())
             }
 
+            fn is_in_same_type(&self, list_array: &ListChunked) -> Result<BooleanChunked> {
+                IsIn::is_in(&self.0, list_array)
+            }
+
             fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
                 self.0.vec_hash(random_state)
             }

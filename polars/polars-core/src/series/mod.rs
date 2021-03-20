@@ -10,11 +10,13 @@ pub(crate) mod iterator;
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::float::IsNan;
 use crate::series::arithmetic::coerce_lhs_rhs;
+use crate::utils::get_supertype;
 use arrow::array::ArrayDataRef;
 use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
 use std::any::Any;
+use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -124,9 +126,10 @@ pub(crate) mod private {
         fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
             unimplemented!()
         }
-        /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
-        /// from `other` where the mask evaluates `false`
         fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
+            unimplemented!()
+        }
+        fn is_in_same_type(&self, _list_array: &ListChunked) -> Result<BooleanChunked> {
             unimplemented!()
         }
     }
@@ -1140,6 +1143,20 @@ impl Series {
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
         let (lhs, rhs) = coerce_lhs_rhs(self, other)?;
         lhs.zip_with_same_type(mask, rhs.as_ref())
+    }
+
+    /// Check if values of this array are in the Series of the list array.
+    pub fn is_in(&self, list_array: &ListChunked) -> Result<BooleanChunked> {
+        let inner_dt = list_array.inner_dtype();
+        let my_dt = self.dtype();
+
+        let st = get_supertype(my_dt, &inner_dt)?;
+        let left = if &st != my_dt {
+            Cow::Owned(self.cast_with_datatype(&st)?)
+        } else {
+            Cow::Borrowed(self)
+        };
+        left.is_in_same_type(list_array)
     }
 }
 

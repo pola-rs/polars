@@ -795,6 +795,15 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_not_nan())
 
+    def is_in(self, list_series: "Series") -> "Series":
+        """
+        Check if the values in this Series are in the a member of the values in the Series of dtype List
+        Returns
+        -------
+        Boolean Series
+        """
+        return wrap_s(self._s.is_in(list_series._s))
+
     def arg_true(self) -> "Series":
         """
         Get index values where Boolean Series evaluate True
