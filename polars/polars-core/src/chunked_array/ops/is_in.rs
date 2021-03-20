@@ -13,7 +13,7 @@ where
                     .map(|(value, series)| match (value, series) {
                         (val, Some(series)) => {
                             let ca = series.unpack::<T>().unwrap();
-                            ca.into_iter().find(|&a| a == val).is_some()
+                            ca.into_iter().any(|a| a == val)
                         }
                         _ => false,
                     })
@@ -41,7 +41,7 @@ impl IsIn for Utf8Chunked {
                     .map(|(value, series)| match (value, series) {
                         (val, Some(series)) => {
                             let ca = series.unpack::<Utf8Type>().unwrap();
-                            ca.into_iter().find(|&a| a == val).is_some()
+                            ca.into_iter().any(|a| a == val)
                         }
                         _ => false,
                     })
@@ -70,7 +70,7 @@ impl IsIn for BooleanChunked {
                     .map(|(value, series)| match (value, series) {
                         (val, Some(series)) => {
                             let ca = series.unpack::<BooleanType>().unwrap();
-                            ca.into_iter().find(|&a| a == val).is_some()
+                            ca.into_iter().any(|a| a == val)
                         }
                         _ => false,
                     })
