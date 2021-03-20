@@ -314,15 +314,18 @@ impl<T> ChunkedArray<T> {
     pub fn slice(&self, offset: i64, length: usize) -> Result<Self> {
         let abs_offset = offset.abs() as usize;
 
-        if 
-            (offset >= 0 && abs_offset + length > self.len()) ||
-            (offset < 0 && (abs_offset > self.len() ||  abs_offset < length))
+        if (offset >= 0 && abs_offset + length > self.len())
+            || (offset < 0 && (abs_offset > self.len() || abs_offset < length))
         {
             return Err(PolarsError::OutOfBounds("offset and length was larger than the size of the ChunkedArray during slice operation".into()));
         }
-        
+
         // The offset counted from the start of the array
-        let raw_offset = if offset < 0 {self.len() - abs_offset} else {abs_offset};
+        let raw_offset = if offset < 0 {
+            self.len() - abs_offset
+        } else {
+            abs_offset
+        };
 
         let mut remaining_length = length;
         let mut remaining_offset = raw_offset;
@@ -1058,7 +1061,7 @@ pub(crate) mod test {
         assert_slice_equal(&first.slice(3, 3).unwrap(), &[3, 4, 5]);
         assert_slice_equal(&first.slice(-3, 3).unwrap(), &[3, 4, 5]);
         assert_slice_equal(&first.slice(-6, 6).unwrap(), &[0, 1, 2, 3, 4, 5]);
-        
+
         assert!(first.slice(-7, 2).is_err());
         assert!(first.slice(-3, 4).is_err());
         assert!(first.slice(3, 4).is_err());

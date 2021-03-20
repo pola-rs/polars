@@ -1828,11 +1828,6 @@ mod test {
         }
         .unwrap();
 
-        let _out = df
-            .clone()
-            .lazy()
-            .tail(3)
-            .collect()
-            .unwrap();
+        let _out = df.clone().lazy().tail(3).collect().unwrap();
     }
 }
