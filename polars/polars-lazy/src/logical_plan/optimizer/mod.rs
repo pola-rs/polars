@@ -231,7 +231,7 @@ pub enum AExpr {
     Wildcard,
     Slice {
         input: Node,
-        offset: isize,
+        offset: i64,
         length: usize,
     },
     BinaryFunction {
@@ -491,7 +491,7 @@ pub enum ALogicalPlan {
     },
     Slice {
         input: Node,
-        offset: usize,
+        offset: i64,
         len: usize,
     },
     Selection {

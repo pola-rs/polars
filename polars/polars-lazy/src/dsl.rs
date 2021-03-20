@@ -212,7 +212,7 @@ pub enum Expr {
     Slice {
         input: Box<Expr>,
         /// length is not yet known so we accept negative offsets
-        offset: isize,
+        offset: i64,
         length: usize,
     },
     BinaryFunction {
@@ -689,7 +689,7 @@ impl Expr {
     }
 
     /// Slice the Series.
-    pub fn slice(self, offset: isize, length: usize) -> Self {
+    pub fn slice(self, offset: i64, length: usize) -> Self {
         Expr::Slice {
             input: Box::new(self),
             offset,
@@ -705,7 +705,7 @@ impl Expr {
     /// Get the last `n` elements of the Expr result
     pub fn tail(self, length: Option<usize>) -> Self {
         let len = length.unwrap_or(10);
-        self.slice(-(len as isize), len)
+        self.slice(-(len as i64), len)
     }
 
     /// Cast expression to another data type.

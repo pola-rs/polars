@@ -342,7 +342,10 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Get a zero copy view of the data.
-    fn slice(&self, _offset: usize, _length: usize) -> Result<Series> {
+    ///
+    /// When offset is negative the offset is counted from the
+    /// end of the array
+    fn slice(&self, _offset: i64, _length: usize) -> Result<Series> {
         unimplemented!()
     }
 
@@ -1396,5 +1399,27 @@ mod test {
         // add wrong type
         let s2 = Series::new("b", &[3.0]);
         assert!(s1.append(&s2).is_err())
+    }
+
+    #[test]
+    fn series_slice_works() {
+        let series = Series::new("a", &[1i64, 2, 3, 4, 5]);
+
+        let slice_1 = series.slice(-3, 3).unwrap();
+        let slice_2 = series.slice(-5, 5).unwrap();
+        let slice_3 = series.slice(0, 5).unwrap();
+
+        assert_eq!(slice_1.get(0), AnyValue::Int64(3));
+        assert_eq!(slice_2.get(0), AnyValue::Int64(1));
+        assert_eq!(slice_3.get(0), AnyValue::Int64(1));
+    }
+
+    #[test]
+    fn out_of_range_slice_does_not_panic() {
+        let series = Series::new("a", &[1i64, 2, 3, 4, 5]);
+
+        series.slice(-3, 4).expect_err("Should be out of bounds");
+        series.slice(-6, 2).expect_err("Should be out of bounds");
+        series.slice(4, 2).expect_err("Should be out of bounds");
     }
 }

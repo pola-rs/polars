@@ -521,8 +521,8 @@ macro_rules! impl_dyn_series {
                 self.0.append_array(other)
             }
 
-            fn slice(&self, offset: usize, length: usize) -> Result<Series> {
-                self.0.slice(offset, length).map(|ca| ca.into_series())
+            fn slice(&self, offset: i64, length: usize) -> Result<Series> {
+                return self.0.slice(offset, length).map(|ca| ca.into_series());
             }
 
             fn append(&mut self, other: &Series) -> Result<()> {
@@ -999,7 +999,7 @@ where
         ObjectChunked::append_array(&mut self.0, other)
     }
 
-    fn slice(&self, offset: usize, length: usize) -> Result<Series> {
+    fn slice(&self, offset: i64, length: usize) -> Result<Series> {
         ObjectChunked::slice(&self.0, offset, length).map(|ca| ca.into_series())
     }
 
