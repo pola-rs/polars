@@ -172,7 +172,6 @@ class Series:
         # list path
         else:
             dtype = _find_first_non_none(values)
-            print(dtype)
             # order is important as booleans are instance of int in python.
             if isinstance(dtype, bool):
                 self._s = PySeries.new_opt_bool(name, values)
@@ -185,7 +184,6 @@ class Series:
             # make list array
             elif isinstance(dtype, (list, tuple)):
                 value_dtype = _find_first_non_none(dtype)
-                print(value_dtype, "value dtype", values)
 
                 # we can expect a failure if we pass `[[12], "foo", 9]`
                 # in that case we catch the exception and create an object type
@@ -451,7 +449,17 @@ class Series:
             raise ValueError(f'cannot use "{key}" for indexing')
 
     def drop_nulls(self) -> "Series":
+        """
+        Create a new Series that copies data from this Series without null values.
+        """
         return wrap_s(self._s.drop_nulls())
+
+    def to_frame(self) -> "DataFrame":
+        """
+        Cast this Series to a DataFrame
+        """
+        # implementation is in .frame due to circular imports
+        pass
 
     @property
     def dtype(self):

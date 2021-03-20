@@ -1511,7 +1511,6 @@ class GroupBy:
         mask = None
         for column, group_val in zip(by, group_value):
             local_mask = groups_df[column] == group_val
-            print(local_mask)
             if mask is None:
                 mask = local_mask
             else:
@@ -1881,6 +1880,13 @@ class GBSelection:
             df[name] = s
 
         return df
+
+
+def _series_to_frame(self: "Series") -> "DataFrame":
+    return wrap_df(PyDataFrame([self._s]))
+
+
+Series.to_frame = _series_to_frame
 
 
 class StringCache:
