@@ -464,6 +464,29 @@ class LazyFrame:
         """
         return self.slice(0, n)
 
+    def tail(self, n: int):
+        """
+        Get the last `n` rows of the DataFrame
+
+        Parameters
+        ----------
+        n
+            Number of rows.
+        """
+        return wrap_ldf(self._ldf.tail(n))
+
+    def last(self):
+        """
+        Get the last row of the DataFrame
+        """
+        return self.tail(1)
+
+    def first(self):
+        """
+        Get the first row of the DataFrame
+        """
+        return self.slice(0, 1)
+
     def fill_none(self, fill_value: "Union[int, str, Expr]"):
         if not isinstance(fill_value, Expr):
             fill_value = lit(fill_value)
