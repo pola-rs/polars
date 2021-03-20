@@ -618,6 +618,12 @@ impl PySeries {
         arrow_interop::to_py::to_py_array(&self.series.chunks()[0], py, pyarrow)
     }
 
+    pub fn is_in(&self, list_array: &PySeries) -> PyResult<Self> {
+        let list_array = list_array.series.list().map_err(PyPolarsEr::from)?;
+        let out = self.series.is_in(list_array).map_err(PyPolarsEr::from)?;
+        Ok(out.into_series().into())
+    }
+
     pub fn clone(&self) -> Self {
         PySeries::new(self.series.clone())
     }

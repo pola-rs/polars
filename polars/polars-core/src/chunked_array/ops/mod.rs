@@ -15,6 +15,7 @@ pub(crate) mod cum_agg;
 pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
+pub(crate) mod is_in;
 pub(crate) mod peaks;
 pub(crate) mod set;
 pub(crate) mod shift;
@@ -861,6 +862,13 @@ pub trait ChunkPeaks {
 
     /// Get a boolean mask of the local minimum peaks.
     fn peak_min(&self) -> BooleanChunked {
+        unimplemented!()
+    }
+}
+
+pub trait IsIn {
+    /// Check if the element of this array is in the elements of the list array
+    fn is_in(&self, _list_array: &ListChunked) -> Result<BooleanChunked> {
         unimplemented!()
     }
 }

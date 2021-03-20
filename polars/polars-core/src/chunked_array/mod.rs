@@ -945,6 +945,16 @@ impl ValueSize for Utf8Chunked {
     }
 }
 
+impl ListChunked {
+    /// Get the inner data type of the list.
+    pub fn inner_dtype(&self) -> DataType {
+        match self.dtype() {
+            DataType::List(dt) => dt.into(),
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
