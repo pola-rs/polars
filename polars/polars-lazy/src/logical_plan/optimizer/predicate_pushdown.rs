@@ -500,7 +500,7 @@ impl PredicatePushDown {
 
                 for (_, predicate) in acc_predicates {
                     // unique and duplicated can be caused by joins
-                    if has_aexpr(predicate, expr_arena, &AExpr::Unique(Default::default())) {
+                    if has_aexpr(predicate, expr_arena, &AExpr::IsUnique(Default::default())) {
                         local_predicates.push(predicate);
                         continue;
                     }

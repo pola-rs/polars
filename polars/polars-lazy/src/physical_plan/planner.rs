@@ -820,7 +820,7 @@ impl DefaultPlanner {
                     node_to_exp(expression, expr_arena),
                 )))
             }
-            Unique(expr) => {
+            IsUnique(expr) => {
                 let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 let function =
                     NoEq::new(

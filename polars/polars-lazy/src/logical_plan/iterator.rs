@@ -56,7 +56,7 @@ impl<'a> Iterator for ExprIter<'a> {
                 Shift { input, .. } => push(input),
                 Reverse(e) => push(e),
                 Duplicated(e) => push(e),
-                Unique(e) => push(e),
+                IsUnique(e) => push(e),
                 Explode(e) => push(e),
                 Window {
                     function,
@@ -144,7 +144,7 @@ impl AExpr {
             Shift { input, .. } => push(input),
             Reverse(e) => push(e),
             Duplicated(e) => push(e),
-            Unique(e) => push(e),
+            IsUnique(e) => push(e),
             Explode(e) => push(e),
             Window {
                 function,
