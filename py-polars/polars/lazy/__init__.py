@@ -1238,6 +1238,9 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pow(exponent))
 
+    def is_in(self, list_expr: "Expr") -> "Expr":
+        return wrap_expr(self._pyexpr.is_in(list_expr))
+
     def is_between(
         self, start: "Union[Expr, datetime]", end: "Union[Expr, datetime]"
     ) -> "Expr":

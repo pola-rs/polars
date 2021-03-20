@@ -954,6 +954,20 @@ impl Expr {
         self.map(move |s: Series| s.pow(exponent), Some(DataType::Float64))
     }
 
+    /// Check if the values of the left expression are in the lists of the right expr.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_in(self, list_expr: Expr) -> Self {
+        map_binary(
+            self,
+            list_expr,
+            |left, list_ex| {
+                let list_array = list_ex.list()?;
+                left.is_in(list_array).map(|ca| ca.into_series())
+            },
+            Some(Field::new("", DataType::Boolean)),
+        )
+    }
+
     /// Get the year of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn year(self) -> Expr {
