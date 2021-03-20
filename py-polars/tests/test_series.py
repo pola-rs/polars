@@ -6,8 +6,12 @@ import pytest
 import pyarrow as pa
 
 
-def create_series():
+def create_series() -> "Series":
     return Series("a", [1, 2])
+
+
+def test_to_frame():
+    assert create_series().to_frame().shape == (2, 1)
 
 
 def test_bitwise_ops():
