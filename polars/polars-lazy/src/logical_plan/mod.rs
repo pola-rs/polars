@@ -602,8 +602,8 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             partition_by,
             order_by,
         },
-        Expr::Unique(expr) => {
-            Expr::Unique(Box::new(replace_wildcard_with_column(*expr, column_name)))
+        Expr::IsUnique(expr) => {
+            Expr::IsUnique(Box::new(replace_wildcard_with_column(*expr, column_name)))
         }
         Expr::Duplicated(expr) => {
             Expr::Duplicated(Box::new(replace_wildcard_with_column(*expr, column_name)))

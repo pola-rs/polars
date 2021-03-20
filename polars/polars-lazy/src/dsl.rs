@@ -199,7 +199,7 @@ pub enum Expr {
     },
     Reverse(Box<Expr>),
     Duplicated(Box<Expr>),
-    Unique(Box<Expr>),
+    IsUnique(Box<Expr>),
     Explode(Box<Expr>),
     /// See postgres window functions
     Window {
@@ -238,7 +238,7 @@ impl Expr {
         use Expr::*;
         match self {
             Window { function, .. } => function.to_field(schema, ctxt),
-            Unique(expr) => {
+            IsUnique(expr) => {
                 let field = expr.to_field(&schema, ctxt)?;
                 Ok(Field::new(field.name(), DataType::Boolean))
             }
@@ -418,7 +418,7 @@ impl fmt::Debug for Expr {
                 "{:?} OVER (PARTION BY {:?} ORDER BY {:?}",
                 function, partition_by, order_by
             ),
-            Unique(expr) => write!(f, "UNIQUE {:?}", expr),
+            IsUnique(expr) => write!(f, "UNIQUE {:?}", expr),
             Explode(expr) => write!(f, "EXPLODE {:?}", expr),
             Duplicated(expr) => write!(f, "DUPLICATED {:?}", expr),
             Reverse(expr) => write!(f, "REVERSE {:?}", expr),
@@ -936,7 +936,7 @@ impl Expr {
     /// Get a mask of unique values
     #[allow(clippy::wrong_self_convention)]
     pub fn is_unique(self) -> Self {
-        Expr::Unique(Box::new(self))
+        Expr::IsUnique(Box::new(self))
     }
 
     /// and operation

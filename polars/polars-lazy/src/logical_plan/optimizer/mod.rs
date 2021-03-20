@@ -185,7 +185,7 @@ pub enum AAggExpr {
 // AExpr representation of Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
 pub enum AExpr {
-    Unique(Node),
+    IsUnique(Node),
     Duplicated(Node),
     Reverse(Node),
     Explode(Node),
@@ -290,7 +290,7 @@ impl AExpr {
         use AExpr::*;
         match self {
             Window { function, .. } => arena.get(*function).to_field(schema, ctxt, arena),
-            Unique(expr) => {
+            IsUnique(expr) => {
                 let field = arena.get(*expr).to_field(&schema, ctxt, arena)?;
                 Ok(Field::new(field.name(), DataType::Boolean))
             }
@@ -629,7 +629,7 @@ impl ALogicalPlan {
 // converts expression to AExpr, which uses an arena (Vec) for allocation
 pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
     let v = match expr {
-        Expr::Unique(expr) => AExpr::Unique(to_aexpr(*expr, arena)),
+        Expr::IsUnique(expr) => AExpr::IsUnique(to_aexpr(*expr, arena)),
         Expr::Duplicated(expr) => AExpr::Duplicated(to_aexpr(*expr, arena)),
         Expr::Reverse(expr) => AExpr::Reverse(to_aexpr(*expr, arena)),
         Expr::Explode(expr) => AExpr::Explode(to_aexpr(*expr, arena)),
@@ -985,7 +985,7 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 
     match expr {
         AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_exp(node, expr_arena))),
-        AExpr::Unique(node) => Expr::Unique(Box::new(node_to_exp(node, expr_arena))),
+        AExpr::IsUnique(node) => Expr::IsUnique(Box::new(node_to_exp(node, expr_arena))),
         AExpr::Reverse(node) => Expr::Reverse(Box::new(node_to_exp(node, expr_arena))),
         AExpr::Explode(node) => Expr::Explode(Box::new(node_to_exp(node, expr_arena))),
         AExpr::Alias(expr, name) => {
