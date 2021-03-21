@@ -26,7 +26,7 @@ from typing import (
 from .series import Series, wrap_s
 from . import datatypes
 from .datatypes import DataType, pytype_to_polars_type
-from .html import NotebookFormatter
+from ._html import NotebookFormatter
 import pyarrow as pa
 import pyarrow.parquet
 import numpy as np
@@ -43,7 +43,7 @@ def wrap_df(df: "PyDataFrame") -> "DataFrame":
     return DataFrame._from_pydf(df)
 
 
-def prepare_other(other: Any) -> Series:
+def _prepare_other_arg(other: Any) -> Series:
     # if not a series create singleton series such that it will broadcast
     if not isinstance(other, Series):
         if isinstance(other, str):
@@ -378,19 +378,19 @@ class DataFrame:
         return np.vstack([self[:, i].to_numpy() for i in range(self.width)]).T
 
     def __mul__(self, other):
-        other = prepare_other(other)
+        other = _prepare_other_arg(other)
         return wrap_df(self._df.mul(other._s))
 
     def __truediv__(self, other):
-        other = prepare_other(other)
+        other = _prepare_other_arg(other)
         return wrap_df(self._df.div(other._s))
 
     def __add__(self, other):
-        other = prepare_other(other)
+        other = _prepare_other_arg(other)
         return wrap_df(self._df.add(other._s))
 
     def __sub__(self, other):
-        other = prepare_other(other)
+        other = _prepare_other_arg(other)
         return wrap_df(self._df.sub(other._s))
 
     def __str__(self) -> str:

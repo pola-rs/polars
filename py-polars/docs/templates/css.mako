@@ -318,6 +318,7 @@
 </%def>
 
 <%def name="desktop()" filter="minify_css">
+
   @media screen and (min-width: 700px) {
     #sidebar {
       width: 30%;
@@ -326,6 +327,12 @@
       position: sticky;
       top: 0;
     }
+
+    * {
+     font-size: 100%;
+     font-family: Ubuntu;
+    }
+
     #content {
       width: 70%;
       max-width: 100ch;

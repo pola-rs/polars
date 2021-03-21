@@ -49,7 +49,7 @@ def _selection_to_pyexpr_list(exprs) -> "List[PyExpr]":
 
 
 def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
-    return LazyFrame.from_pyldf(ldf)
+    return LazyFrame._from_pyldf(ldf)
 
 
 class LazyGroupBy:
@@ -69,7 +69,7 @@ class LazyFrame:
         self._ldf = None
 
     @staticmethod
-    def from_pyldf(ldf: "PyLazyFrame") -> "LazyFrame":
+    def _from_pyldf(ldf: "PyLazyFrame") -> "LazyFrame":
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = ldf
         return self
@@ -613,7 +613,7 @@ class LazyFrame:
 
 
 def wrap_expr(pyexpr: "PyExpr") -> "Expr":
-    return Expr.from_pyexpr(pyexpr)
+    return Expr._from_pyexpr(pyexpr)
 
 
 class Expr:
@@ -621,7 +621,7 @@ class Expr:
         self._pyexpr = None
 
     @staticmethod
-    def from_pyexpr(pyexpr: "PyExpr") -> "Expr":
+    def _from_pyexpr(pyexpr: "PyExpr") -> "Expr":
         self = Expr.__new__(Expr)
         self._pyexpr = pyexpr
         return self
