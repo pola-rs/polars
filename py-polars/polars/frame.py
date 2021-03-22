@@ -411,6 +411,17 @@ class DataFrame:
     def __iter__(self):
         return self.get_columns().__iter__()
 
+    def find_idx_by_name(self, name: str) -> int:
+        """
+        Find the index of a column by name
+
+        Parameters
+        ----------
+        name
+            Name of the column to find
+        """
+        return self._df.find_idx_by_name(name)
+
     def __getitem__(self, item):
         if isinstance(item, np.ndarray):
             item = Series("", item)
@@ -425,7 +436,21 @@ class DataFrame:
                 # multiple slices
                 # df[:, :]
                 if isinstance(col_selection, slice):
-                    # TODO: select by indexes as column names can be duplicates
+                    # slice can be
+                    # by index
+                    #   [1:8]
+                    # or by column name
+                    #   ["foo":"bar"]
+                    # first we make sure that the slice is by index
+                    start = col_selection.start
+                    stop = col_selection.stop
+                    if isinstance(col_selection.start, str):
+                        start = self.find_idx_by_name(col_selection.start)
+                    if isinstance(col_selection.stop, str):
+                        stop = self.find_idx_by_name(col_selection.stop) + 1
+
+                    col_selection = slice(start, stop, col_selection.step)
+
                     df = self.__getitem__(self.columns[col_selection])
                     return df[row_selection]
 

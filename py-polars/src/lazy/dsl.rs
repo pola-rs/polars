@@ -200,7 +200,6 @@ impl PyExpr {
         self.clone().inner.is_in(expr.inner).into()
     }
 
-
     pub fn pow(&self, exponent: f64) -> PyExpr {
         self.clone().inner.pow(exponent).into()
     }

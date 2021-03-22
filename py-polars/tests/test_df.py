@@ -43,6 +43,7 @@ def test_selection():
     assert df.select_at_idx(0).name == "a"
     assert (df.a == df["a"]).sum() == 3
     assert (df.c == df["a"]).sum() == 0
+    assert df[:, "a":"b"].shape == (3, 2)
 
 
 def test_downsample():
