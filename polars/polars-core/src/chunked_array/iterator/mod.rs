@@ -4,7 +4,7 @@ use crate::prelude::{
     Utf8Chunked,
 };
 use arrow::array::{
-    Array, ArrayDataRef, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
+    Array, ArrayData, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
 };
 use std::convert::TryFrom;
 use std::iter::Copied;
@@ -355,13 +355,13 @@ where
     chunks: Vec<&'a PrimitiveArray<T>>,
     // current iterator if we iterate from the left
     current_iter_left: Copied<Iter<'a, T::Native>>,
-    current_data_left: ArrayDataRef,
+    current_data_left: &'a ArrayData,
     // index in the current iterator from left
     current_array_idx_left: usize,
     // If iter_left and iter_right are the same, this is None and we need to use iter left
     // This is done because we can only have one owner
     current_iter_right: Option<Copied<Iter<'a, T::Native>>>,
-    current_data_right: ArrayDataRef,
+    current_data_right: &'a ArrayData,
     current_array_idx_right: usize,
     chunk_idx_left: usize,
     idx_left: usize,
@@ -378,7 +378,7 @@ where
             // If the left and the right chunk are the same iterator, then, use the
             // the same iterator. The right iterator is kept to maintain the right index
             // in the iterator, as the left index will be the first index in the chunk.
-            self.current_data_left = self.current_data_right.clone();
+            self.current_data_left = self.current_data_right;
             if let Some(current_iter_right) = self.current_iter_right.take() {
                 self.current_iter_left = current_iter_right;
             }
@@ -395,7 +395,7 @@ where
             // If the left and the right chunk are the same iterator, then, use the
             // the same iterator. The left iterator is kept to maintain the left index
             // in the iterator, as the right index will be the last index in the chunk.
-            self.current_data_right = self.current_data_left.clone();
+            self.current_data_right = self.current_data_left;
             self.current_iter_right = None
         } else {
             let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
@@ -744,7 +744,7 @@ macro_rules! impl_single_chunk_null_check_iterator {
         ///
         /// The return type is `Option<$iter_item>`.
         pub struct $iterator_name<'a> {
-            current_data: ArrayDataRef,
+            current_data: &'a ArrayData,
             current_array: &'a $arrow_array,
             idx_left: usize,
             idx_right: usize,
@@ -1072,9 +1072,9 @@ macro_rules! impl_many_chunk_null_check_iterator {
             ca: &'a $ca_type,
             chunks: Vec<&'a $arrow_array>,
             #[allow(dead_code)]
-            current_data_left: ArrayDataRef,
+            current_data_left: &'a ArrayData,
             current_array_left: &'a $arrow_array,
-            current_data_right: ArrayDataRef,
+            current_data_right: &'a ArrayData,
             current_array_right: &'a $arrow_array,
             current_array_idx_left: usize,
             current_array_idx_right: usize,

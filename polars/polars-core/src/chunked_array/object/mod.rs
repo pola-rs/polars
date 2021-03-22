@@ -1,6 +1,7 @@
 pub mod builder;
 pub use crate::prelude::*;
-use arrow::array::{Array, ArrayDataRef, ArrayRef, BooleanBufferBuilder, JsonEqual};
+use crate::utils::arrow::array::ArrayData;
+use arrow::array::{Array, ArrayRef, BooleanBufferBuilder, JsonEqual};
 use arrow::bitmap::Bitmap;
 use serde_json::Value;
 use std::any::Any;
@@ -45,11 +46,11 @@ where
         self
     }
 
-    fn data(&self) -> ArrayDataRef {
+    fn data(&self) -> &ArrayData {
         unimplemented!()
     }
 
-    fn data_ref(&self) -> &ArrayDataRef {
+    fn data_ref(&self) -> &ArrayData {
         unimplemented!()
     }
 

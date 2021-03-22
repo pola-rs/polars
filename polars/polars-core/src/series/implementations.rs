@@ -12,7 +12,7 @@ use crate::prelude::*;
 #[cfg(feature = "object")]
 use crate::series::private::PrivateSeries;
 use ahash::RandomState;
-use arrow::array::{ArrayDataRef, ArrayRef};
+use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
 #[cfg(feature = "object")]
 use std::any::Any;
@@ -210,7 +210,7 @@ macro_rules! impl_dyn_series {
                 self.0.rename(name);
             }
 
-            fn array_data(&self) -> Vec<ArrayDataRef> {
+            fn array_data(&self) -> Vec<&ArrayData> {
                 self.0.array_data()
             }
 
@@ -975,7 +975,7 @@ where
         ObjectChunked::rename(&mut self.0, name)
     }
 
-    fn array_data(&self) -> Vec<ArrayDataRef> {
+    fn array_data(&self) -> Vec<&ArrayData> {
         ObjectChunked::array_data(&self.0)
     }
 

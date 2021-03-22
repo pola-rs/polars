@@ -11,7 +11,7 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::float::IsNan;
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::get_supertype;
-use arrow::array::ArrayDataRef;
+use arrow::array::ArrayData;
 use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
@@ -155,7 +155,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     fn rename(&mut self, name: &str);
 
     /// Get Arrow ArrayData
-    fn array_data(&self) -> Vec<ArrayDataRef> {
+    fn array_data(&self) -> Vec<&ArrayData> {
         unimplemented!()
     }
 
