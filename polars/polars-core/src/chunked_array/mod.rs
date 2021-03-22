@@ -47,7 +47,7 @@ pub mod upstream_traits;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
-    Array, ArrayDataRef, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
+    Array, ArrayData, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
     LargeListArray,
 };
 
@@ -167,7 +167,7 @@ pub struct ChunkedArray<T> {
 
 impl<T> ChunkedArray<T> {
     /// Get Arrow ArrayData
-    pub fn array_data(&self) -> Vec<ArrayDataRef> {
+    pub fn array_data(&self) -> Vec<&ArrayData> {
         self.chunks.iter().map(|arr| arr.data()).collect()
     }
 

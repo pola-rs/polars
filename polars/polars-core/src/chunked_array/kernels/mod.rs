@@ -40,7 +40,7 @@ where
         buf,
         child_data,
     );
-    Arc::new(PrimitiveArray::<T>::from(Arc::new(new_data)))
+    Arc::new(PrimitiveArray::<T>::from(new_data))
 }
 
 pub(crate) unsafe fn transmute_array_from_dtype<S>(

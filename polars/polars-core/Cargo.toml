@@ -37,8 +37,8 @@ dtype-i8 = []
 dtype-i16 = []
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "f7b143959ec77a79a3e11bcb83e24eaf0d03697c", default-features=false}
-parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "f7b143959ec77a79a3e11bcb83e24eaf0d03697c"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "eebf64b00e3a26f61c4bebec7241a0b24d27ec67", default-features=false}
+parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "eebf64b00e3a26f61c4bebec7241a0b24d27ec67"}
 thiserror = "^1.0.16"
 num = "^0.3.1"
 itertools = "0.10"

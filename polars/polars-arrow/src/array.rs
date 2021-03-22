@@ -1,6 +1,4 @@
-use arrow::array::{
-    Array, ArrayData, ArrayDataRef, ArrayRef, BooleanArray, ListArray, PrimitiveArray,
-};
+use arrow::array::{Array, ArrayData, ArrayRef, BooleanArray, ListArray, PrimitiveArray};
 use arrow::datatypes::{ArrowPrimitiveType, DataType};
 use num::Num;
 
@@ -11,7 +9,7 @@ pub trait GetValues {
         T::Native: Num;
 }
 
-impl GetValues for ArrayDataRef {
+impl GetValues for ArrayData {
     fn get_values<T>(&self) -> &[T::Native]
     where
         T: ArrowPrimitiveType,
@@ -52,7 +50,7 @@ pub trait ToPrimitive {
         T: ArrowPrimitiveType;
 }
 
-impl ToPrimitive for ArrayDataRef {
+impl ToPrimitive for ArrayData {
     fn into_primitive_array<T>(self) -> PrimitiveArray<T>
     where
         T: ArrowPrimitiveType,
@@ -66,7 +64,7 @@ impl ToPrimitive for &dyn Array {
     where
         T: ArrowPrimitiveType,
     {
-        self.data().into_primitive_array()
+        self.data().clone().into_primitive_array()
     }
 }
 
