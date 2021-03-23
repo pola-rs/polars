@@ -28,6 +28,7 @@ from . import datatypes
 from .datatypes import DataType, pytype_to_polars_type
 from ._html import NotebookFormatter
 import pyarrow as pa
+import pyarrow.compute
 import pyarrow.parquet
 import numpy as np
 import os
@@ -223,6 +224,36 @@ class DataFrame:
         rechunk
             Make sure that all data is contiguous.
         """
+        data = {}
+        for i, column in enumerate(table):
+            if column.type == pa.timestamp("s"):
+                column = pa.compute.cast(
+                    pa.compute.multiply(pa.compute.cast(column, pa.int64()), 1000),
+                    pa.date64(),
+                )
+            elif column.type == pa.timestamp("ms"):
+                column = pa.compute.cast(
+                    pa.compute.cast(column, pa.int64()), pa.date64()
+                )
+            elif column.type == pa.timestamp("us"):
+                column = pa.compute.cast(
+                    pa.compute.divide(pa.compute.cast(column, pa.int64()), 1000),
+                    pa.date64(),
+                )
+            elif column.type == pa.timestamp("ns"):
+                column = pa.compute.cast(
+                    pa.compute.divide(pa.compute.cast(column, pa.int64()), 1000000),
+                    pa.date64(),
+                )
+
+            if column._name is None:
+                name = f"column_{i}"
+            else:
+                name = column._name
+
+            data[name] = column
+
+        table = pa.table(data)
         batches = table.to_batches()
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.from_arrow_record_batches(batches)

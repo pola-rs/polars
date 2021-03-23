@@ -46,6 +46,18 @@ def test_selection():
     assert df[:, "a":"b"].shape == (3, 2)
 
 
+def test_from_arrow():
+    tbl = pa.table(
+        {
+            "a": pa.array([1, 2], pa.timestamp("s")),
+            "b": pa.array([1, 2], pa.timestamp("ms")),
+            "c": pa.array([1, 2], pa.timestamp("us")),
+            "d": pa.array([1, 2], pa.timestamp("ns")),
+        }
+    )
+    assert pl.from_arrow_table(tbl).shape == (2, 4)
+
+
 def test_downsample():
     s = Series(
         "datetime",
