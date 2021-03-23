@@ -215,7 +215,9 @@ class DataFrame:
     @staticmethod
     def from_arrow(table: pa.Table, rechunk: bool = True) -> "DataFrame":
         """
-        Create DataFrame from arrow Table
+        Create DataFrame from arrow Table.
+        Most will be zero copy. Types that are not supported by Polars may be cast to a closest
+        supported type.
 
         Parameters
         ----------
@@ -245,6 +247,9 @@ class DataFrame:
                     pa.compute.divide(pa.compute.cast(column, pa.int64()), 1000000),
                     pa.date64(),
                 )
+            # note: Decimal256 could not be cast to float
+            elif isinstance(column.type, pa.Decimal128Type):
+                column = pa.compute.cast(column, pa.float64())
 
             if column._name is None:
                 name = f"column_{i}"
