@@ -53,9 +53,10 @@ def test_from_arrow():
             "b": pa.array([1, 2], pa.timestamp("ms")),
             "c": pa.array([1, 2], pa.timestamp("us")),
             "d": pa.array([1, 2], pa.timestamp("ns")),
+            "decimal1": pa.array([1, 2], pa.decimal128(2, 2)),
         }
     )
-    assert pl.from_arrow_table(tbl).shape == (2, 4)
+    assert pl.from_arrow_table(tbl).shape == (2, 5)
 
 
 def test_downsample():
