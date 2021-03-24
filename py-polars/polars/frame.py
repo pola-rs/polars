@@ -1296,6 +1296,30 @@ class DataFrame:
         """
         return wrap_df(self._df.shift(periods))
 
+    def shift_and_fill(
+        self, periods: int, fill_value: Union[int, str, float]
+    ) -> "DataFrame":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with the result of the `fill_value` expression.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        fill_value
+            fill None values with this value.
+        """
+        return (
+            self.lazy()
+            .shift_and_fill(periods, fill_value)
+            .collect(
+                predicate_pushdown=False,
+                projection_pushdown=False,
+                simplify_expression=False,
+            )
+        )
+
     def is_duplicated(self) -> Series:
         """
         Get a mask of all duplicated rows in this DataFrame
@@ -1332,29 +1356,45 @@ class DataFrame:
         """
         return self._df.n_chunks()
 
-    def max(self) -> "DataFrame":
+    def max(self, axis: int = 0) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their maximum value
         """
-        return wrap_df(self._df.max())
+        if axis == 0:
+            return wrap_df(self._df.max())
+        if axis == 1:
+            return self.fold(lambda s1, s2: s1.zip_with(s1 > s2, s2)).to_frame()
+        raise ValueError("axis should be 0 or 1")
 
-    def min(self) -> "DataFrame":
+    def min(self, axis: int = 0) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their minimum value
         """
-        return wrap_df(self._df.min())
+        if axis == 0:
+            return wrap_df(self._df.min())
+        if axis == 1:
+            return self.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2)).to_frame()
+        raise ValueError("axis should be 0 or 1")
 
-    def sum(self) -> "DataFrame":
+    def sum(self, axis: int = 0) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their sum value
         """
-        return wrap_df(self._df.sum())
+        if axis == 0:
+            return wrap_df(self._df.sum())
+        if axis == 1:
+            return self.fold(lambda a, b: a + b).to_frame()
+        raise ValueError("axis should be 0 or 1")
 
-    def mean(self) -> "DataFrame":
+    def mean(self, axis: int = 0) -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their mean value
         """
-        return wrap_df(self._df.mean())
+        if axis == 0:
+            return wrap_df(self._df.mean())
+        if axis == 1:
+            return (self.fold(lambda a, b: a + b) / self.width).to_frame()
+        raise ValueError("axis should be 0 or 1")
 
     def std(self) -> "DataFrame":
         """
@@ -1433,9 +1473,7 @@ class DataFrame:
             return wrap_df(self._df.sample_n(n, with_replacement))
         return wrap_df(self._df.sample_frac(frac, with_replacement))
 
-    def fold(
-        self, operation: "Callable[['Series', 'Series'], 'Series']"
-    ) -> "DataFrame":
+    def fold(self, operation: "Callable[['Series', 'Series'], 'Series']") -> "Series":
         """
         Apply a horizontal reduction on a DataFrame. This can be used to effectively
         determine aggregations on a row level, and can be applied to any DataType that
