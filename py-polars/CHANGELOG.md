@@ -2,13 +2,27 @@
 
 The Rust crate `polars` has its own changelog.
 
-### \[future\] polars 0.7.0
+### polars 0.7.2
+* bug fix
+  - \[python\] 
+    
+* feature
+  - \[python\] DataFrame methods: \[ shift_and_fill\].
+  - \[python\] eager: sum, min, max, mean horizontal aggregation.
+
+
+### polars 0.7.1
+* performance
+  - \[python | rust\] arrow arrays have a layer of indirection less; 10/20% performance improvement
+
+### polars 0.7.0
 * name change: Python bindings module renamed from pypolars to polars
 * name change: Python bindings package renamed from py-polars to polars
 
 * feature
+  - \[python\] lazy: DataFrame methods: \[ tail, first, last \].
   - \[python\] eager: DataFrame fold for horizontal aggregation.
-  - \[python\] eager: Series methods: \[median, quantile\]
+  - \[python\] eager: Series methods: \[median, quantile, is_in, to_frame\]
   - \[python\] eager: iterate over groupby and yield groups' DataFrames
   - \[python\] eager: groupby.get_group('value')
   - \[python\] add parquet compression

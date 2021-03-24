@@ -425,7 +425,9 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: "Expr") -> "LazyFrame":
+    def shift_and_fill(
+        self, periods: int, fill_value: "Union[Expr, int, str, float]"
+    ) -> "LazyFrame":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
@@ -437,6 +439,8 @@ class LazyFrame:
         fill_value
             fill None values with the result of this expression
         """
+        if not isinstance(fill_value, Expr):
+            fill_value = lit(fill_value)
         return wrap_ldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
 
     def slice(self, offset: int, length: int):
