@@ -4,12 +4,11 @@ The Rust crate `polars` has its own changelog.
 
 ### polars 0.7.2
 * bug fix
-  - \[python\] 
+  - \[python\] More pyarrow -> polars conversions.
     
 * feature
   - \[python\] DataFrame methods: \[ shift_and_fill\].
   - \[python\] eager: sum, min, max, mean horizontal aggregation.
-
 
 ### polars 0.7.1
 * performance
