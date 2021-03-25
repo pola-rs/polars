@@ -68,6 +68,7 @@ pub enum LiteralValue {
     /// An unsigned 32-bit integer number.
     UInt32(u32),
     /// An unsigned 64-bit integer number.
+    #[cfg(feature = "dtype-u64")]
     UInt64(u64),
     /// An 8-bit integer number.
     #[cfg(feature = "dtype-i8")]
@@ -102,6 +103,7 @@ impl LiteralValue {
             #[cfg(feature = "dtype-u16")]
             LiteralValue::UInt16(_) => DataType::UInt16,
             LiteralValue::UInt32(_) => DataType::UInt32,
+            #[cfg(feature = "dtype-u64")]
             LiteralValue::UInt64(_) => DataType::UInt64,
             #[cfg(feature = "dtype-i8")]
             LiteralValue::Int8(_) => DataType::Int8,

@@ -1210,6 +1210,7 @@ impl_named_from!([u8], UInt8Type, new_from_slice);
 #[cfg(feature = "dtype-u16")]
 impl_named_from!([u16], UInt16Type, new_from_slice);
 impl_named_from!([u32], UInt32Type, new_from_slice);
+#[cfg(feature = "dtype-u64")]
 impl_named_from!([u64], UInt64Type, new_from_slice);
 #[cfg(feature = "dtype-i8")]
 impl_named_from!([i8], Int8Type, new_from_slice);
@@ -1226,6 +1227,7 @@ impl_named_from!([Option<u8>], UInt8Type, new_from_opt_slice);
 #[cfg(feature = "dtype-u16")]
 impl_named_from!([Option<u16>], UInt16Type, new_from_opt_slice);
 impl_named_from!([Option<u32>], UInt32Type, new_from_opt_slice);
+#[cfg(feature = "dtype-u64")]
 impl_named_from!([Option<u64>], UInt64Type, new_from_opt_slice);
 #[cfg(feature = "dtype-i8")]
 impl_named_from!([Option<i8>], Int8Type, new_from_opt_slice);
@@ -1307,6 +1309,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             #[cfg(feature = "dtype-u16")]
             ArrowDataType::UInt16 => Ok(UInt16Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt32 => Ok(UInt32Chunked::new_from_chunks(name, chunks).into_series()),
+            #[cfg(feature = "dtype-u64")]
             ArrowDataType::UInt64 => Ok(UInt64Chunked::new_from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-i8")]
             ArrowDataType::Int8 => Ok(Int8Chunked::new_from_chunks(name, chunks).into_series()),
@@ -1345,7 +1348,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 #[cfg(feature = "dtype-i8")]
                 return Ok(Int8Chunked::full_null(name, len).into_series());
                 #[cfg(not(feature = "dtype-i8"))]
-                Ok(Int32Chunked::full_null(name, len).into_series())
+                Ok(UInt32Chunked::full_null(name, len).into_series())
             }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?} type", dt).into(),
@@ -1365,7 +1368,7 @@ impl TryFrom<(&str, ArrayRef)> for Series {
 
 impl Default for Series {
     fn default() -> Self {
-        Int32Chunked::default().into_series()
+        Int64Chunked::default().into_series()
     }
 }
 

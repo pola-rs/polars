@@ -42,6 +42,7 @@
 //!     | Int16Type               | dtype-i16         |
 //!     | UInt8Type                | dtype-u8          |
 //!     | UInt16Type               | dtype-u16         |
+//!     | UInt64Type               | dtype-u64         |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.

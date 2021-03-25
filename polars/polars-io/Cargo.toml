@@ -16,6 +16,7 @@ json = []
 ipc = []
 lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
+dtype-u64 = ["polars-core/dtype-u64"]
 
 [dependencies]
 arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "eebf64b00e3a26f61c4bebec7241a0b24d27ec67", default-features=false}
