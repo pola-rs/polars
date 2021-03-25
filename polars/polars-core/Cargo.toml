@@ -35,6 +35,8 @@ dtype-date32 = []
 dtype-date64 = []
 dtype-i8 = []
 dtype-i16 = []
+dtype-u8 = []
+dtype-u16 = []
 
 [dependencies]
 arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "eebf64b00e3a26f61c4bebec7241a0b24d27ec67", default-features=false}

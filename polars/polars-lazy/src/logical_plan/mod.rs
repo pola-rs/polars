@@ -60,8 +60,10 @@ pub enum LiteralValue {
     /// A UTF8 encoded string type.
     Utf8(String),
     /// An unsigned 8-bit integer number.
+    #[cfg(feature = "dtype-u8")]
     UInt8(u8),
     /// An unsigned 16-bit integer number.
+    #[cfg(feature = "dtype-u16")]
     UInt16(u16),
     /// An unsigned 32-bit integer number.
     UInt32(u32),
@@ -95,7 +97,9 @@ impl LiteralValue {
     pub fn get_datatype(&self) -> DataType {
         match self {
             LiteralValue::Boolean(_) => DataType::Boolean,
+            #[cfg(feature = "dtype-u8")]
             LiteralValue::UInt8(_) => DataType::UInt8,
+            #[cfg(feature = "dtype-u16")]
             LiteralValue::UInt16(_) => DataType::UInt16,
             LiteralValue::UInt32(_) => DataType::UInt32,
             LiteralValue::UInt64(_) => DataType::UInt64,

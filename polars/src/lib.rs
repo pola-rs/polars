@@ -40,6 +40,8 @@
 //!     | Date64Type              | dtype-date64      |
 //!     | Int8Type                | dtype-i8          |
 //!     | Int16Type               | dtype-i16         |
+//!     | UInt8Type                | dtype-u8          |
+//!     | UInt16Type               | dtype-u16         |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.

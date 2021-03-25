@@ -1205,7 +1205,9 @@ impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series
 
 impl_named_from!([String], Utf8Type, new_from_slice);
 impl_named_from!([bool], BooleanType, new_from_slice);
+#[cfg(feature = "dtype-u8")]
 impl_named_from!([u8], UInt8Type, new_from_slice);
+#[cfg(feature = "dtype-u16")]
 impl_named_from!([u16], UInt16Type, new_from_slice);
 impl_named_from!([u32], UInt32Type, new_from_slice);
 impl_named_from!([u64], UInt64Type, new_from_slice);
@@ -1219,7 +1221,9 @@ impl_named_from!([f32], Float32Type, new_from_slice);
 impl_named_from!([f64], Float64Type, new_from_slice);
 impl_named_from!([Option<String>], Utf8Type, new_from_opt_slice);
 impl_named_from!([Option<bool>], BooleanType, new_from_opt_slice);
+#[cfg(feature = "dtype-u8")]
 impl_named_from!([Option<u8>], UInt8Type, new_from_opt_slice);
+#[cfg(feature = "dtype-u16")]
 impl_named_from!([Option<u16>], UInt16Type, new_from_opt_slice);
 impl_named_from!([Option<u32>], UInt32Type, new_from_opt_slice);
 impl_named_from!([Option<u64>], UInt64Type, new_from_opt_slice);
@@ -1298,7 +1302,9 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Boolean => {
                 Ok(BooleanChunked::new_from_chunks(name, chunks).into_series())
             }
+            #[cfg(feature = "dtype-u8")]
             ArrowDataType::UInt8 => Ok(UInt8Chunked::new_from_chunks(name, chunks).into_series()),
+            #[cfg(feature = "dtype-u16")]
             ArrowDataType::UInt16 => Ok(UInt16Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt32 => Ok(UInt32Chunked::new_from_chunks(name, chunks).into_series()),
             ArrowDataType::UInt64 => Ok(UInt64Chunked::new_from_chunks(name, chunks).into_series()),
@@ -1359,7 +1365,7 @@ impl TryFrom<(&str, ArrayRef)> for Series {
 
 impl Default for Series {
     fn default() -> Self {
-        UInt8Chunked::default().into_series()
+        Int32Chunked::default().into_series()
     }
 }
 

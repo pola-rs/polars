@@ -1188,7 +1188,9 @@ make_literal!(i8, Int8);
 make_literal!(i16, Int16);
 make_literal!(i32, Int32);
 make_literal!(i64, Int64);
+#[cfg(feature = "dtype-u8")]
 make_literal!(u8, UInt8);
+#[cfg(feature = "dtype-u16")]
 make_literal!(u16, UInt16);
 make_literal!(u32, UInt32);
 make_literal!(u64, UInt64);
