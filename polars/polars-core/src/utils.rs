@@ -259,7 +259,9 @@ macro_rules! match_arrow_data_type_apply_macro {
         match $obj {
             DataType::Utf8 => $macro_utf8!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
+            #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $macro!(UInt8Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
             DataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
             DataType::UInt64 => $macro!(UInt64Type $(, $opt_args)*),
@@ -292,7 +294,9 @@ macro_rules! apply_method_all_arrow_series {
         match $self.dtype() {
             DataType::Boolean => $self.bool().unwrap().$method($($args),*),
             DataType::Utf8 => $self.utf8().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
@@ -326,7 +330,9 @@ macro_rules! apply_method_numeric_series {
     ($self:ident, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
 
+            #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),

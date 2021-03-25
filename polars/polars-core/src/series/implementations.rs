@@ -611,7 +611,9 @@ macro_rules! impl_dyn_series {
                 match data_type {
                     Boolean => ChunkCast::cast::<BooleanType>(&self.0).map(|ca| ca.into_series()),
                     Utf8 => ChunkCast::cast::<Utf8Type>(&self.0).map(|ca| ca.into_series()),
+                    #[cfg(feature = "dtype-u8")]
                     UInt8 => ChunkCast::cast::<UInt8Type>(&self.0).map(|ca| ca.into_series()),
+                    #[cfg(feature = "dtype-u16")]
                     UInt16 => ChunkCast::cast::<UInt16Type>(&self.0).map(|ca| ca.into_series()),
                     UInt32 => ChunkCast::cast::<UInt32Type>(&self.0).map(|ca| ca.into_series()),
                     UInt64 => ChunkCast::cast::<UInt64Type>(&self.0).map(|ca| ca.into_series()),
@@ -927,7 +929,9 @@ impl_dyn_series!(Float64Chunked);
 impl_dyn_series!(Utf8Chunked);
 impl_dyn_series!(ListChunked);
 impl_dyn_series!(BooleanChunked);
+#[cfg(feature = "dtype-u8")]
 impl_dyn_series!(UInt8Chunked);
+#[cfg(feature = "dtype-u16")]
 impl_dyn_series!(UInt16Chunked);
 impl_dyn_series!(UInt32Chunked);
 impl_dyn_series!(UInt64Chunked);

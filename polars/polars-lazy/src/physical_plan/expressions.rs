@@ -29,7 +29,9 @@ impl PhysicalExpr for LiteralExpr {
             Int16(v) => Int16Chunked::full("literal", *v, 1).into_series(),
             Int32(v) => Int32Chunked::full("literal", *v, 1).into_series(),
             Int64(v) => Int64Chunked::full("literal", *v, 1).into_series(),
+            #[cfg(feature = "dtype-u8")]
             UInt8(v) => UInt8Chunked::full("literal", *v, 1).into_series(),
+            #[cfg(feature = "dtype-u16")]
             UInt16(v) => UInt16Chunked::full("literal", *v, 1).into_series(),
             UInt32(v) => UInt32Chunked::full("literal", *v, 1).into_series(),
             UInt64(v) => UInt64Chunked::full("literal", *v, 1).into_series(),
@@ -92,7 +94,9 @@ impl PhysicalExpr for LiteralExpr {
             Int16(_) => Field::new(name, DataType::Int16),
             Int32(_) => Field::new(name, DataType::Int32),
             Int64(_) => Field::new(name, DataType::Int64),
+            #[cfg(feature = "dtype-u8")]
             UInt8(_) => Field::new(name, DataType::UInt8),
+            #[cfg(feature = "dtype-u16")]
             UInt16(_) => Field::new(name, DataType::UInt16),
             UInt32(_) => Field::new(name, DataType::UInt32),
             UInt64(_) => Field::new(name, DataType::UInt64),

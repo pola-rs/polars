@@ -15,6 +15,8 @@ temporal = ["polars-core/temporal"]
 # debugging purposesses
 fmt = ["polars-core/plain_fmt"]
 future = []
+dtype-u8 = ["polars-core/dtype-u8"]
+dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-date32 = ["polars-core/dtype-date32"]

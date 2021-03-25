@@ -27,7 +27,9 @@ macro_rules! from_iterator {
     };
 }
 
+#[cfg(feature = "dtype-u8")]
 from_iterator!(u8, UInt8Type);
+#[cfg(feature = "dtype-u16")]
 from_iterator!(u16, UInt16Type);
 from_iterator!(u32, UInt32Type);
 from_iterator!(u64, UInt64Type);
