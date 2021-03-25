@@ -25,6 +25,7 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Bui
         &DataType::Int32 => Builder::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Int64 => Builder::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::UInt32 => Builder::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
+        #[cfg(feature = "dtype-u64")]
         &DataType::UInt64 => Builder::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Float32 => Builder::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
         &DataType::Float64 => Builder::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
@@ -59,6 +60,7 @@ pub(crate) fn add_to_builders_core(
             DataType::Int32 => add_to_primitive_core(rows, *i, builder.i32(), ignore_parser_error),
             DataType::Int64 => add_to_primitive_core(rows, *i, builder.i64(), ignore_parser_error),
             DataType::UInt32 => add_to_primitive_core(rows, *i, builder.u32(), ignore_parser_error),
+            #[cfg(feature = "dtype-u64")]
             DataType::UInt64 => add_to_primitive_core(rows, *i, builder.u64(), ignore_parser_error),
             DataType::Float32 => {
                 add_to_primitive_core(rows, *i, builder.f32(), ignore_parser_error)
@@ -306,6 +308,7 @@ pub(crate) enum Builder {
     Boolean(BooleanChunkedBuilder),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
+    #[cfg(feature = "dtype-u64")]
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
@@ -338,6 +341,7 @@ impl Builder {
             _ => panic!("implementation error"),
         }
     }
+    #[cfg(feature = "dtype-u64")]
     fn u64(&mut self) -> &mut PrimitiveChunkedBuilder<UInt64Type> {
         match self {
             Builder::UInt64(builder) => builder,
@@ -370,6 +374,7 @@ impl Builder {
             Int32(b) => b.finish().into_series(),
             Int64(b) => b.finish().into_series(),
             UInt32(b) => b.finish().into_series(),
+            #[cfg(feature = "dtype-u64")]
             UInt64(b) => b.finish().into_series(),
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),

@@ -192,6 +192,7 @@ fn field_to_builder(i: usize, capacity: usize, schema: &SchemaRef) -> Result<Buf
         &DataType::Int32 => Buffer::Int32(Vec::with_capacity(capacity)),
         &DataType::Int64 => Buffer::Int64(Vec::with_capacity(capacity)),
         &DataType::UInt32 => Buffer::UInt32(Vec::with_capacity(capacity)),
+        #[cfg(feature = "dtype-u64")]
         &DataType::UInt64 => Buffer::UInt64(Vec::with_capacity(capacity)),
         &DataType::Float32 => Buffer::Float32(Vec::with_capacity(capacity)),
         &DataType::Float64 => Buffer::Float64(Vec::with_capacity(capacity)),
@@ -211,6 +212,7 @@ pub(crate) enum Buffer {
     Int32(Vec<Option<i32>>),
     Int64(Vec<Option<i64>>),
     UInt32(Vec<Option<u32>>),
+    #[cfg(feature = "dtype-u64")]
     UInt64(Vec<Option<u64>>),
     Float32(Vec<Option<f32>>),
     Float64(Vec<Option<f64>>),
@@ -231,6 +233,7 @@ impl Buffer {
             Buffer::Int32(v) => v.len(),
             Buffer::Int64(v) => v.len(),
             Buffer::UInt32(v) => v.len(),
+            #[cfg(feature = "dtype-u64")]
             Buffer::UInt64(v) => v.len(),
             Buffer::Float32(v) => v.len(),
             Buffer::Float64(v) => v.len(),
@@ -265,6 +268,7 @@ impl Buffer {
                 ignore_errors,
                 start_pos,
             ),
+            #[cfg(feature = "dtype-u64")]
             UInt64(buf) => <Vec<Option<u64>> as ParsedBuffer<UInt64Type>>::parse_bytes(
                 buf,
                 bytes,
@@ -363,6 +367,7 @@ where
             let ca: Int64Chunked = iter.collect();
             Ok(ca.into_series())
         }
+        #[cfg(feature = "dtype-u64")]
         Buffer::UInt64(_) => {
             let iter = TrustMyLength::new(
                 buffers

@@ -34,6 +34,7 @@ impl PhysicalExpr for LiteralExpr {
             #[cfg(feature = "dtype-u16")]
             UInt16(v) => UInt16Chunked::full("literal", *v, 1).into_series(),
             UInt32(v) => UInt32Chunked::full("literal", *v, 1).into_series(),
+            #[cfg(feature = "dtype-u64")]
             UInt64(v) => UInt64Chunked::full("literal", *v, 1).into_series(),
             Float32(v) => Float32Chunked::full("literal", *v, 1).into_series(),
             Float64(v) => Float64Chunked::full("literal", *v, 1).into_series(),
@@ -99,6 +100,7 @@ impl PhysicalExpr for LiteralExpr {
             #[cfg(feature = "dtype-u16")]
             UInt16(_) => Field::new(name, DataType::UInt16),
             UInt32(_) => Field::new(name, DataType::UInt32),
+            #[cfg(feature = "dtype-u64")]
             UInt64(_) => Field::new(name, DataType::UInt64),
             Float32(_) => Field::new(name, DataType::Float32),
             Float64(_) => Field::new(name, DataType::Float64),
