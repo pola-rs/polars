@@ -42,7 +42,7 @@ dtype-u16 = []
 arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "eebf64b00e3a26f61c4bebec7241a0b24d27ec67", default-features=false}
 parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow", rev = "eebf64b00e3a26f61c4bebec7241a0b24d27ec67"}
 thiserror = "^1.0.16"
-num = "^0.3.1"
+num = "^0.4"
 itertools = "0.10"
 unsafe_unwrap = "^0.1.0"
 rayon = "1.5"
@@ -58,7 +58,7 @@ anyhow = "1.0"
 ahash = "0.7"
 num_cpus = "1.13"
 lazy_static = "1.4"
-hashbrown = {version = "0.9.1", features = ["rayon"] }
+hashbrown = {version = "0.11", features = ["rayon"] }
 polars-arrow = {version = "0.12.0", path = "../polars-arrow"}
 
 [package.metadata.docs.rs]

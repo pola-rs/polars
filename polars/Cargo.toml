@@ -71,7 +71,7 @@ mimalloc = { version = "*", default-features = false, optional = true}
 criterion = "0.3"
 lazy_static = "1.4"
 rand = "0.8"
-ahash = "0.7.0"
+ahash = "0.7"
 
 # see: https://bheisler.github.io/criterion.rs/book/faq.html
 [lib]
