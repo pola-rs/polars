@@ -5,11 +5,14 @@ The Rust crate `polars` has its own changelog.
 ### polars 0.7.3
 * bug fix
   - \[python\] pandas to polars date64, maintain time information
+  - \[python\] fix bug in Date64 Series.year
 
 * feature
   - \[python | rust\] Series methods
     * Series.week
     * Series.weekday
+    * Series.arg_min
+    * Series.arg_max
 
 ### polars 0.7.2
 * bug fix

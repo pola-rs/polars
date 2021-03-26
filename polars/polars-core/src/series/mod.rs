@@ -527,7 +527,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Get first indexes of unique values.
-    fn arg_unique(&self) -> Result<Vec<u32>> {
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
         unimplemented!()
     }
 

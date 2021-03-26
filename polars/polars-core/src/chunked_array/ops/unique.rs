@@ -72,7 +72,7 @@ impl ChunkUnique<ListType> for ListChunked {
         ))
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for list".into(),
         ))
@@ -86,7 +86,7 @@ impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
         ))
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for object".into(),
         ))
@@ -106,12 +106,12 @@ where
     set
 }
 
-fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<u32>
+fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> AlignedVec<u32>
 where
     T: Hash + Eq,
 {
     let mut set = HashSet::with_capacity_and_hasher(capacity, RandomState::new());
-    let mut unique = Vec::with_capacity(capacity);
+    let mut unique = AlignedVec::with_capacity_aligned(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
             unique.push(idx as u32)
@@ -120,7 +120,7 @@ where
     unique
 }
 
-fn arg_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> Vec<u32>
+fn arg_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> AlignedVec<u32>
 where
     &'a ChunkedArray<T>: IntoIterator + IntoNoNullIterator,
     T: 'a,
@@ -160,8 +160,11 @@ where
         Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
-        Ok(arg_unique_ca(self))
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
+        Ok(UInt32Chunked::new_from_aligned_vec(
+            self.name(),
+            arg_unique_ca(self),
+        ))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -186,8 +189,11 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
         ))
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
-        Ok(arg_unique_ca(self))
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
+        Ok(UInt32Chunked::new_from_aligned_vec(
+            self.name(),
+            arg_unique_ca(self),
+        ))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -210,8 +216,11 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         ca.cast()
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
-        Ok(arg_unique_ca(self))
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
+        Ok(UInt32Chunked::new_from_aligned_vec(
+            self.name(),
+            arg_unique_ca(self),
+        ))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -334,8 +343,11 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
         Ok(ChunkedArray::new_from_opt_slice(self.name(), &unique))
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
-        Ok(arg_unique_ca(self))
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
+        Ok(UInt32Chunked::new_from_aligned_vec(
+            self.name(),
+            arg_unique_ca(self),
+        ))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -376,7 +388,7 @@ where
     )
 }
 
-fn float_arg_unique<T>(ca: &ChunkedArray<T>) -> Vec<u32>
+fn float_arg_unique<T>(ca: &ChunkedArray<T>) -> AlignedVec<u32>
 where
     T: PolarsFloatType,
     T::Native: IntegerDecode,
@@ -396,8 +408,11 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
         Ok(float_unique(self))
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
-        Ok(float_arg_unique(self))
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
+        Ok(UInt32Chunked::new_from_aligned_vec(
+            self.name(),
+            float_arg_unique(self),
+        ))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -416,8 +431,11 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
         Ok(float_unique(self))
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
-        Ok(float_arg_unique(self))
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
+        Ok(UInt32Chunked::new_from_aligned_vec(
+            self.name(),
+            float_arg_unique(self),
+        ))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -462,7 +480,7 @@ mod test {
         let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 1, 1, 3]);
         assert_eq!(
             ca.arg_unique().unwrap().into_iter().collect_vec(),
-            vec![0, 1, 4]
+            vec![Some(0), Some(1), Some(4)]
         );
     }
 

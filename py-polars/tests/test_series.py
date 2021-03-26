@@ -92,7 +92,7 @@ def test_various():
     a.sort(in_place=True)
     assert a.series_equal(Series("", [1, 2, 4]))
     a = Series("a", [2, 1, 1, 4, 4, 4])
-    assert list(a.arg_unique()) == [0, 1, 3]
+    assert a.arg_unique().to_list() == [0, 1, 3]
 
     assert a.take([2, 3]).series_equal(Series("", [1, 4]))
     assert a.is_numeric()
