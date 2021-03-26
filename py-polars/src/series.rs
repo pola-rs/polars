@@ -392,6 +392,14 @@ impl PySeries {
         Ok(pyarray.to_owned())
     }
 
+    pub fn arg_min(&self) -> Option<usize> {
+        self.series.arg_min()
+    }
+
+    pub fn arg_max(&self) -> Option<usize> {
+        self.series.arg_max()
+    }
+
     pub fn take(&self, indices: Vec<usize>) -> Self {
         let take = self.series.take_iter(&mut indices.iter().copied());
         PySeries::new(take)

@@ -718,6 +718,18 @@ class Series:
         """
         return self._s.arg_unique()
 
+    def arg_min(self) -> Optional[int]:
+        """
+        Get the index of the minimal value
+        """
+        return self._s.arg_min()
+
+    def arg_max(self) -> Optional[int]:
+        """
+        Get the index of the maxima value
+        """
+        return self._s.arg_max()
+
     def unique(self) -> "Series":
         """
         Get unique elements in series.

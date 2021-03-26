@@ -498,6 +498,32 @@ impl ChunkAggSeries for ListChunked {
 #[cfg(feature = "object")]
 impl<T> ChunkAggSeries for ObjectChunked<T> {}
 
+impl<T> ArgAgg for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    fn arg_min(&self) -> Option<usize> {
+        self.into_iter()
+            .enumerate()
+            .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
+            .map(|tpl| tpl.0)
+    }
+    fn arg_max(&self) -> Option<usize> {
+        self.into_iter()
+            .enumerate()
+            .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
+            .map(|tpl| tpl.0)
+    }
+}
+
+impl ArgAgg for BooleanChunked {}
+impl ArgAgg for CategoricalChunked {}
+impl ArgAgg for Utf8Chunked {}
+impl ArgAgg for ListChunked {}
+
+#[cfg(feature = "object")]
+impl<T> ArgAgg for ObjectChunked<T> {}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
