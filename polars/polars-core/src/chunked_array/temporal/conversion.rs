@@ -3,7 +3,7 @@ use crate::chunked_array::kernels::temporal::{
     date32_as_duration, date32_to_day, date32_to_month, date32_to_ordinal, date32_to_week,
     date32_to_weekday, date32_to_year, date64_as_duration, date64_to_day, date64_to_hour,
     date64_to_minute, date64_to_month, date64_to_nanosecond, date64_to_ordinal, date64_to_second,
-    date64_to_week, date64_to_weekday,
+    date64_to_week, date64_to_weekday, date64_to_year,
 };
 use crate::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
@@ -296,7 +296,7 @@ impl Date64Chunked {
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     pub fn year(&self) -> Int32Chunked {
-        self.apply_kernel_cast::<_, Int32Type>(date64_to_month)
+        self.apply_kernel_cast::<_, Int32Type>(date64_to_year)
     }
 
     /// Extract month from underlying NaiveDateTime representation.
