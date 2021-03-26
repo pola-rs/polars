@@ -872,3 +872,12 @@ pub trait IsIn {
         unimplemented!()
     }
 }
+
+pub trait ArgAgg {
+    fn arg_min(&self) -> Option<usize> {
+        None
+    }
+    fn arg_max(&self) -> Option<usize> {
+        None
+    }
+}

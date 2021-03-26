@@ -531,6 +531,16 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         unimplemented!()
     }
 
+    /// Get min index
+    fn arg_min(&self) -> Option<usize> {
+        unimplemented!()
+    }
+
+    /// Get max index
+    fn arg_max(&self) -> Option<usize> {
+        unimplemented!()
+    }
+
     /// Get indexes that evaluate true
     fn arg_true(&self) -> Result<UInt32Chunked> {
         Err(PolarsError::InvalidOperation(

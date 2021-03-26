@@ -699,6 +699,14 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
+            fn arg_min(&self) -> Option<usize> {
+                ArgAgg::arg_min(&self.0)
+            }
+
+            fn arg_max(&self) -> Option<usize> {
+                ArgAgg::arg_max(&self.0)
+            }
+
             fn arg_true(&self) -> Result<UInt32Chunked> {
                 let ca: &BooleanChunked = self.bool()?;
                 Ok(ca.arg_true())
