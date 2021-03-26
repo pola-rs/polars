@@ -695,7 +695,7 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::n_unique(&self.0)
             }
 
-            fn arg_unique(&self) -> Result<Vec<u32>> {
+            fn arg_unique(&self) -> Result<UInt32Chunked> {
                 ChunkUnique::arg_unique(&self.0)
             }
 
@@ -1148,7 +1148,7 @@ where
         ChunkUnique::n_unique(&self.0)
     }
 
-    fn arg_unique(&self) -> Result<Vec<u32>> {
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
         ChunkUnique::arg_unique(&self.0)
     }
 

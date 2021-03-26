@@ -736,6 +736,8 @@ class Series:
 
     def argsort(self, reverse: bool = False) -> Sequence[int]:
         """
+        ..deprecate::
+
         Index location of the sorted variant of this Series.
 
         Returns
@@ -745,14 +747,20 @@ class Series:
         """
         return self._s.argsort(reverse)
 
-    def arg_unique(self) -> "List[int]":
+    def arg_sort(self, reverse: bool = False) -> Sequence[int]:
         """
-        Get unique arguments.
+        Index location of the sorted variant of this Series.
 
         Returns
         -------
         indexes
-            Indexes of the unique values
+            Indexes that can be used to sort this array.
+        """
+        return self._s.argsort(reverse)
+
+    def arg_unique(self) -> "Series":
+        """
+        Get unique index as Series.
         """
         return self._s.arg_unique()
 

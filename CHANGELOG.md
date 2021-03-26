@@ -11,6 +11,14 @@ The Python bindings `polars` have their own changelog.
   - Series / ChunkedArray implementations
     * Series::week
     * Series::weekday
+    * Series::arg_min
+    * Series::arg_max
+
+* breaking
+  - ChunkedArray::arg_unique return UInt32Chunked instead of Vec<u32>
+  
+* bug fixes
+  - various
 
 ## Polars v0.12
 * Lot's of bug fixes
