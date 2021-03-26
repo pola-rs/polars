@@ -1,4 +1,5 @@
 use super::buffer::*;
+use crate::csv::CsvEncoding;
 use num::traits::Pow;
 use polars_core::prelude::*;
 
@@ -306,6 +307,7 @@ pub(crate) fn parse_lines(
     projection: &[usize],
     buffers: &mut [Buffer],
     ignore_parser_errors: bool,
+    encoding: CsvEncoding,
 ) -> Result<()> {
     // This variable will store the number of bytes we read. It is important to do this bookkeeping
     // to be able to correctly parse the strings later.
@@ -358,17 +360,18 @@ pub(crate) fn parse_lines(
                     buffers.get_unchecked_mut(processed_fields)
                 };
                 // let buf = &mut buffers[processed_fields];
-                buf.add(field, ignore_parser_errors, read).map_err(|e| {
-                    PolarsError::Other(
-                        format!(
-                            "{:?} on thread line {}; on input: {}",
-                            e,
-                            idx,
-                            String::from_utf8_lossy(field)
+                buf.add(field, ignore_parser_errors, read, encoding)
+                    .map_err(|e| {
+                        PolarsError::Other(
+                            format!(
+                                "{:?} on thread line {}; on input: {}",
+                                e,
+                                idx,
+                                String::from_utf8_lossy(field)
+                            )
+                            .into(),
                         )
-                        .into(),
-                    )
-                })?;
+                    })?;
 
                 processed_fields += 1;
 
@@ -404,69 +407,5 @@ mod test {
         let input = b"\t\n\r
         hello";
         assert_eq!(skip_whitespace(input).0, b"hello");
-    }
-
-    #[test]
-    fn test_parse_lines() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-        let mut file = std::fs::File::open(path).unwrap();
-        let mut input = vec![];
-        file.read_to_end(&mut input).unwrap();
-        let bytes = skip_header(skip_whitespace(&input).0).0;
-
-        // after a skip header, we should not have a new line char.
-        assert_ne!(bytes[0], b'\n');
-        dbg!(std::str::from_utf8(bytes).unwrap());
-
-        let mut buffers = vec![
-            Buffer::Utf8(vec![], 0),
-            Buffer::UInt64(vec![]),
-            Buffer::Float64(vec![]),
-            Buffer::Float64(vec![]),
-        ];
-
-        macro_rules! call_buff_method {
-            ($buf: expr, $method:ident) => {{
-                use Buffer::*;
-                match $buf {
-                    Boolean(a) => a.$method(),
-                    Int32(a) => a.$method(),
-                    Int64(a) => a.$method(),
-                    UInt64(a) => a.$method(),
-                    UInt32(a) => a.$method(),
-                    Float32(a) => a.$method(),
-                    Float64(a) => a.$method(),
-                    Utf8(a, _) => a.$method(),
-                }
-            }};
-        }
-
-        let projection = &[0, 1, 2, 3];
-
-        parse_lines(&bytes, 0, b',', projection, &mut buffers, false).unwrap();
-        // check if all buffers are correctly filled.
-        for buf in &buffers {
-            let len = call_buff_method!(buf, len);
-            assert_eq!(len, 27);
-        }
-
-        dbg!(&buffers[0]);
-        // check if we can reconstruct the correct strings from the accumulated offsets.
-        if let Buffer::Utf8(buf, len) = &buffers[0] {
-            let v = buf
-                .iter()
-                .map(|utf8_field| {
-                    let sub_slice = utf8_field.get_long_subslice(bytes);
-                    std::str::from_utf8(&sub_slice[..sub_slice.len() - 1]).unwrap()
-                })
-                .collect::<Vec<_>>();
-
-            let total_len: usize = v.iter().map(|s| s.len()).sum();
-            assert_eq!(total_len, *len);
-
-            assert_eq!(&v[0], &"vegetables");
-            assert_eq!(&v[v.len() - 1], &"fruit");
-            dbg!(v);
-        }
     }
 }
