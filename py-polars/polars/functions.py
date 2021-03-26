@@ -119,7 +119,7 @@ def read_csv(
         and encoding == "utf8"
     ):
         tbl = pa.csv.read_csv(file, pa.csv.ReadOptions(skip_rows=skip_rows))
-        return from_arrow_table(tbl, rechunk)
+        return from_arrow(tbl, rechunk)
 
     df = DataFrame.read_csv(
         file=file,
@@ -242,7 +242,7 @@ def read_parquet(
     stop_after_n_rows: "Optional[int]" = None,
     memory_map=True,
     columns: Optional[List[str]] = None,
-    **kwargs
+    **kwargs,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a parquet file.
@@ -269,7 +269,7 @@ def read_parquet(
     if stop_after_n_rows is not None:
         return DataFrame.read_parquet(source, stop_after_n_rows=stop_after_n_rows)
     else:
-        return from_arrow_table(
+        return from_arrow(
             pa.parquet.read_table(
                 source, memory_map=memory_map, columns=columns, **kwargs
             )
@@ -294,16 +294,37 @@ def arg_where(mask: "Series"):
 
 def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "DataFrame":
     """
+    .. deprecated:: 7.3
+        use `from_arrow`
+
     Create a DataFrame from an arrow Table
 
     Parameters
     ----------
-    table
+    a
         Arrow Table
     rechunk
         Make sure that all data is contiguous.
     """
     return DataFrame.from_arrow(table, rechunk)
+
+
+def from_arrow(a: "Union[pa.Table, pa.Array]", rechunk: bool = True) -> "DataFrame":
+    """
+    Create a DataFrame from an arrow Table
+
+    Parameters
+    ----------
+    a
+        Arrow Table
+    rechunk
+        Make sure that all data is contiguous.
+    """
+    if isinstance(a, pa.Table):
+        return DataFrame.from_arrow(a, rechunk)
+    if isinstance(a, pa.Array):
+        return Series.from_arrow("", a)
+    raise ValueError(f"expected arrow table / array, got {a}")
 
 
 def from_pandas(
@@ -334,14 +355,17 @@ def from_pandas(
         if dtype == "object" and isinstance(df[name][0], str):
             data[name] = pa.array(df[name], pa.large_utf8())
         elif dtype == "datetime64[ns]":
-            data[name] = pa.compute.cast(
-                pa.array(np.array(df[name].values, dtype="datetime64[ms]")), pa.date64()
-            )
+            # We first cast to ms because that's the unit of Date64
+            # Then we cast to via int64 to date64. Casting directly to Date64 lead to
+            # loss of time information https://github.com/ritchie46/polars/issues/476
+            arr = pa.array(np.array(df[name].values, dtype="datetime64[ms]"))
+            arr = pa.compute.cast(arr, pa.int64())
+            data[name] = pa.compute.cast(arr, pa.date64())
         else:
             data[name] = pa.array(df[name])
 
     table = pa.table(data)
-    return from_arrow_table(table, rechunk)
+    return from_arrow(table, rechunk)
 
 
 def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":

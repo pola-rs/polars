@@ -4,6 +4,9 @@ The Python bindings `polars` have their own changelog.
 
 ## \[future\] Polars v0.13
 
+* performance
+  - Vast reduction of compile times by making compilation dtypes of Series opt-in.
+
 ## Polars v0.12
 * Lot's of bug fixes
 
