@@ -2,6 +2,10 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.3
+* bug fix
+  - \[python\] pandas to polars date64, maintain time information
+
 ### polars 0.7.2
 * bug fix
   - \[python\] More pyarrow -> polars conversions.
