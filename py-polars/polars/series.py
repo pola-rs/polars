@@ -1519,7 +1519,7 @@ class Series:
         name: str, values: Sequence[str], dtype: "DataType", fmt: str
     ) -> "Series":
         """
-        Deprecated.
+        .. deprecated::
         """
         f = get_ffi_func("parse_<>_from_str_slice", dtype, PySeries)
         if f is None:
