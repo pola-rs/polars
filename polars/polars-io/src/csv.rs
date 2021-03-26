@@ -185,7 +185,6 @@ where
     path: Option<String>,
     schema_overwrite: Option<&'a Schema>,
     sample_size: usize,
-    stable_parser: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -297,12 +296,6 @@ where
         self
     }
 
-    /// Use the older/ likely more stable parser.
-    pub fn with_stable_parser(mut self, stable_parser: bool) -> Self {
-        self.stable_parser = stable_parser;
-        self
-    }
-
     pub fn build_inner_reader(self) -> Result<SequentialReader<R>> {
         build_csv_reader(
             self.reader,
@@ -321,7 +314,6 @@ where
             self.path,
             self.schema_overwrite,
             self.sample_size,
-            self.stable_parser,
         )
     }
 }
@@ -358,7 +350,6 @@ where
             path: None,
             schema_overwrite: None,
             sample_size: 1024,
-            stable_parser: false,
         }
     }
 

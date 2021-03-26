@@ -1,7 +1,4 @@
 use crate::csv::CsvEncoding;
-use crate::csv_core::chunked_parser::{
-    add_to_builders_core, finish_builder, init_builders, next_rows_core,
-};
 use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::PhysicalIoExpr;
@@ -13,9 +10,6 @@ use rayon::prelude::*;
 use std::fmt;
 use std::io::{Read, Seek};
 use std::sync::Arc;
-
-/// Is multiplied with batch_size to determine capacity of builders
-const CAPACITY_MULTIPLIER: usize = 512;
 
 /// CSV file reader
 pub struct SequentialReader<R: Read> {
@@ -38,7 +32,6 @@ pub struct SequentialReader<R: Read> {
     has_header: bool,
     delimiter: u8,
     sample_size: usize,
-    stable_parser: bool,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -90,7 +83,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         n_threads: Option<usize>,
         path: Option<String>,
         sample_size: usize,
-        stable_parser: bool,
     ) -> Self {
         let csv_reader = init_csv_reader(reader, has_header, delimiter);
         let record_iter = Some(csv_reader.into_byte_records());
@@ -110,7 +102,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             has_header,
             delimiter,
             sample_size,
-            stable_parser,
         }
     }
 
@@ -133,129 +124,12 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         Ok(bytes)
     }
 
-    fn parse_csv_chunked(
+    fn parse_csv_fast(
         &mut self,
-        predicate: Option<&Arc<dyn PhysicalIoExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
-        capacity: usize,
         n_threads: usize,
         bytes: &[u8],
-    ) -> Result<Vec<DataFrame>> {
-        let projection = self
-            .projection
-            .take()
-            .unwrap_or_else(|| (0..self.schema.fields().len()).collect());
-        let bytes = self.find_starting_point(bytes)?;
-
-        let file_chunks =
-            get_file_chunks(bytes, n_threads, self.schema.fields().len(), self.delimiter);
-
-        let parsed_dfs = POOL
-            .install(|| {
-                file_chunks
-                    .into_par_iter()
-                    .enumerate()
-                    .map(|(thread_no, (mut total_bytes_offset, stop_at_nbytes))| {
-                        let delimiter = self.delimiter;
-                        let batch_size = self.batch_size;
-                        let schema = self.schema.clone();
-                        let ignore_parser_errors = self.ignore_parser_errors;
-                        let encoding = self.encoding;
-                        let projection = &projection;
-
-                        // container to ammortize allocs
-                        let mut rows = Vec::with_capacity(batch_size);
-                        rows.resize_with(batch_size, Default::default);
-
-                        let mut builders = init_builders(&projection, capacity, &schema).unwrap();
-
-                        #[cfg(target_os = "linux")]
-                        let has_utf8 = builders
-                            .iter()
-                            .any(|b| matches!(b, super::chunked_parser::Builder::Utf8(_)));
-
-                        let mut local_parsed_dfs = Vec::with_capacity(16);
-
-                        let mut local_bytes;
-                        let mut core_reader =
-                            csv_core::ReaderBuilder::new().delimiter(delimiter).build();
-
-                        let mut count = 0;
-                        loop {
-                            count += 1;
-                            local_bytes = &bytes[total_bytes_offset..stop_at_nbytes];
-                            let (correctly_parsed, bytes_read) = next_rows_core(
-                                &mut rows,
-                                local_bytes,
-                                &mut core_reader,
-                                batch_size,
-                            );
-                            total_bytes_offset += bytes_read;
-
-                            if correctly_parsed < batch_size {
-                                if correctly_parsed == 0 {
-                                    break;
-                                }
-                                // this only happens at the last batch if it doesn't fit a whole batch.
-                                rows.truncate(correctly_parsed);
-                            }
-                            add_to_builders_core(
-                                &mut builders,
-                                &projection,
-                                &rows,
-                                &schema,
-                                ignore_parser_errors,
-                                encoding,
-                            )?;
-
-                            if total_bytes_offset >= stop_at_nbytes {
-                                break;
-                            }
-
-                            if count % CAPACITY_MULTIPLIER == 0 {
-                                let mut builders_tmp =
-                                    init_builders(&projection, capacity, &schema).unwrap();
-                                std::mem::swap(&mut builders_tmp, &mut builders);
-                                finish_builder(
-                                    builders_tmp,
-                                    &mut local_parsed_dfs,
-                                    predicate,
-                                    aggregate,
-                                )
-                                .unwrap();
-
-                                #[cfg(target_os = "linux")]
-                                {
-                                    // linux global allocators don't return freed memory immediately to the OS.
-                                    // macos and windows return more aggressively.
-                                    // We choose this location to do trim heap memory as this will be called after CSV read
-                                    // which may have some over-allocated utf8
-                                    // This is an expensive operation therefore we don't want to call it too often, and only when
-                                    // there are utf8 arrays.
-                                    if has_utf8
-                                        && thread_no == 0
-                                        && count % (CAPACITY_MULTIPLIER * 16) == 0
-                                    {
-                                        use polars_core::utils::malloc_trim;
-                                        unsafe { malloc_trim(0) };
-                                    }
-                                }
-                            }
-                        }
-                        finish_builder(builders, &mut local_parsed_dfs, predicate, aggregate)?;
-
-                        Ok(local_parsed_dfs)
-                    })
-                    .collect::<Result<Vec<_>>>()
-            })?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-
-        Ok(parsed_dfs)
-    }
-
-    fn parse_csv_fast(&mut self, n_threads: usize, bytes: &[u8]) -> Result<DataFrame> {
+        predicate: Option<&Arc<dyn PhysicalIoExpr>>,
+    ) -> Result<DataFrame> {
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let mut bytes = self.find_starting_point(bytes)?;
 
@@ -332,49 +206,21 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         ignore_parser_errors,
                         self.encoding,
                     )?;
-                    let df = DataFrame::new_no_checks(
+                    let mut df = DataFrame::new_no_checks(
                         buffers.into_iter().map(|buf| buf.into_series()).collect(),
                     );
+                    if let Some(predicate) = predicate {
+                        let s = predicate.evaluate(&df)?;
+                        let mask = s.bool().expect("filter predicates was not of type boolean");
+                        df = df.filter(mask)?;
+                    }
+
                     Ok(df)
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
 
         accumulate_dataframes_vertical(dfs)
-
-        // // restructure the buffers so that they can be dropped as soon as processed;
-        // // Structure:
-        // //      the inner vec has got buffers from a single column
-        // let buffers = (0..projection.len())
-        //     .map(|idx| {
-        //         buffers
-        //             .iter_mut()
-        //             .map(|buffers| std::mem::take(&mut buffers[idx]))
-        //             .collect::<Vec<_>>()
-        //     })
-        //     .collect::<Vec<_>>();
-        //
-        // let columns = buffers
-        //     .into_par_iter()
-        //     .zip(projection)
-        //     .map(|(buffers, idx)| {
-        //         let length = buffers.iter().map(|buf| buf.len()).sum();
-        //         let iter = buffers.into_iter();
-        //         let mut s = buffers_to_series(
-        //             iter,
-        //             length,
-        //             bytes,
-        //             self.ignore_parser_errors,
-        //             self.encoding,
-        //             self.delimiter,
-        //         )?;
-        //         let name = self.schema.field(idx).unwrap().name();
-        //         s.rename(name);
-        //         Ok(s)
-        //     })
-        //     .collect::<Result<Vec<_>>>()?;
-        //
-        // Ok(DataFrame::new_no_checks(columns))
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
@@ -385,42 +231,25 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     ) -> Result<DataFrame> {
         let n_threads = self.n_threads.unwrap_or_else(num_cpus::get);
 
-        let mut df = if predicate.is_some() || self.stable_parser || aggregate.is_some() {
-            let mut capacity = self.batch_size * CAPACITY_MULTIPLIER;
-            if let Some(n) = self.n_rows {
-                self.batch_size = std::cmp::min(self.batch_size, n);
-                capacity = std::cmp::min(n, capacity);
+        let mut df = match (&self.path, self.record_iter.is_some()) {
+            (Some(p), _) => {
+                let file = std::fs::File::open(p).unwrap();
+                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                let bytes = mmap[..].as_ref();
+                self.parse_csv_fast(n_threads, bytes, predicate.as_ref())?
             }
-
-            let path = self.path.as_ref().unwrap();
-            let file = std::fs::File::open(path).expect("path should be set");
-            let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-            let bytes = mmap[..].as_ref();
-
-            let parsed_dfs =
-                self.parse_csv_chunked(predicate.as_ref(), aggregate, capacity, n_threads, bytes)?;
-            polars_core::utils::accumulate_dataframes_vertical(parsed_dfs)?
-        } else {
-            match (&self.path, self.record_iter.is_some()) {
-                (Some(p), _) => {
-                    let file = std::fs::File::open(p).unwrap();
-                    let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
-                    let bytes = mmap[..].as_ref();
-                    self.parse_csv_fast(n_threads, bytes)?
+            (None, true) => {
+                let mut r = std::mem::take(&mut self.record_iter).unwrap().into_reader();
+                let mut bytes = Vec::with_capacity(1024 * 128);
+                r.get_mut().read_to_end(&mut bytes)?;
+                if !bytes.is_empty()
+                    && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
+                {
+                    bytes.push(b'\n')
                 }
-                (None, true) => {
-                    let mut r = std::mem::take(&mut self.record_iter).unwrap().into_reader();
-                    let mut bytes = Vec::with_capacity(1024 * 128);
-                    r.get_mut().read_to_end(&mut bytes)?;
-                    if !bytes.is_empty()
-                        && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
-                    {
-                        bytes.push(b'\n')
-                    }
-                    self.parse_csv_fast(n_threads, &bytes)?
-                }
-                _ => return Err(PolarsError::Other("file or reader must be set".into())),
+                self.parse_csv_fast(n_threads, &bytes, predicate.as_ref())?
             }
+            _ => return Err(PolarsError::Other("file or reader must be set".into())),
         };
 
         if let Some(aggregate) = aggregate {
@@ -460,7 +289,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     path: Option<String>,
     schema_overwrite: Option<&Schema>,
     sample_size: usize,
-    stable_parser: bool,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -501,6 +329,5 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         n_threads,
         path,
         sample_size,
-        stable_parser,
     ))
 }
