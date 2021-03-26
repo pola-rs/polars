@@ -496,6 +496,12 @@ class DataFrame:
                 # s[:]
                 wrap_s(series[row_selection])
 
+            # df[2, :] (select row as df)
+            if isinstance(row_selection, int):
+                if isinstance(col_selection, slice):
+                    df = self[:, col_selection]
+                    return df.slice(row_selection, 1)
+
             # column selection can be "a" and ["a", "b"]
             if isinstance(col_selection, str):
                 col_selection = [col_selection]
