@@ -6,6 +6,11 @@ The Rust crate `polars` has its own changelog.
 * bug fix
   - \[python\] pandas to polars date64, maintain time information
 
+* feature
+  - \[python | rust\] Series methods
+    * Series.week
+    * Series.weekday
+
 ### polars 0.7.2
 * bug fix
   - \[python\] More pyarrow -> polars conversions.
