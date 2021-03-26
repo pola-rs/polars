@@ -7,6 +7,7 @@ use crate::csv_core::{buffer::*, parser::*};
 use crate::PhysicalIoExpr;
 use crate::ScanAggregation;
 use csv::ByteRecordsIntoIter;
+use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;
 use std::fmt;
@@ -307,7 +308,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         // all the buffers returned from the threads
         // Structure:
         //      the inner vec has got buffers from all the columns.
-        let mut buffers = POOL.install(|| {
+        let dfs = POOL.install(|| {
             file_chunks
                 .into_par_iter()
                 .map(|(bytes_offset_thread, stop_at_nbytes)| {
@@ -316,7 +317,9 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     let ignore_parser_errors = self.ignore_parser_errors;
                     let projection = &projection;
 
-                    let mut buffers = init_buffers(&projection, local_capacity, &schema)?;
+                    //TODO! running str lenght stats
+                    let mut buffers =
+                        init_buffers(&projection, local_capacity, &schema, 100, self.delimiter)?;
                     let local_bytes = &bytes[bytes_offset_thread..stop_at_nbytes];
                     let read = bytes_offset_thread;
 
@@ -327,45 +330,51 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         projection,
                         &mut buffers,
                         ignore_parser_errors,
+                        self.encoding,
                     )?;
-                    Ok(buffers)
+                    let df = DataFrame::new_no_checks(
+                        buffers.into_iter().map(|buf| buf.into_series()).collect(),
+                    );
+                    Ok(df)
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
 
-        // restructure the buffers so that they can be dropped as soon as processed;
-        // Structure:
-        //      the inner vec has got buffers from a single column
-        let buffers = (0..projection.len())
-            .map(|idx| {
-                buffers
-                    .iter_mut()
-                    .map(|buffers| std::mem::take(&mut buffers[idx]))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+        accumulate_dataframes_vertical(dfs)
 
-        let columns = buffers
-            .into_par_iter()
-            .zip(projection)
-            .map(|(buffers, idx)| {
-                let length = buffers.iter().map(|buf| buf.len()).sum();
-                let iter = buffers.into_iter();
-                let mut s = buffers_to_series(
-                    iter,
-                    length,
-                    bytes,
-                    self.ignore_parser_errors,
-                    self.encoding,
-                    self.delimiter,
-                )?;
-                let name = self.schema.field(idx).unwrap().name();
-                s.rename(name);
-                Ok(s)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(DataFrame::new_no_checks(columns))
+        // // restructure the buffers so that they can be dropped as soon as processed;
+        // // Structure:
+        // //      the inner vec has got buffers from a single column
+        // let buffers = (0..projection.len())
+        //     .map(|idx| {
+        //         buffers
+        //             .iter_mut()
+        //             .map(|buffers| std::mem::take(&mut buffers[idx]))
+        //             .collect::<Vec<_>>()
+        //     })
+        //     .collect::<Vec<_>>();
+        //
+        // let columns = buffers
+        //     .into_par_iter()
+        //     .zip(projection)
+        //     .map(|(buffers, idx)| {
+        //         let length = buffers.iter().map(|buf| buf.len()).sum();
+        //         let iter = buffers.into_iter();
+        //         let mut s = buffers_to_series(
+        //             iter,
+        //             length,
+        //             bytes,
+        //             self.ignore_parser_errors,
+        //             self.encoding,
+        //             self.delimiter,
+        //         )?;
+        //         let name = self.schema.field(idx).unwrap().name();
+        //         s.rename(name);
+        //         Ok(s)
+        //     })
+        //     .collect::<Result<Vec<_>>>()?;
+        //
+        // Ok(DataFrame::new_no_checks(columns))
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
