@@ -29,6 +29,10 @@ from .datatypes import (
     DataType,
     Date32,
     Date64,
+    Int32,
+    Int16,
+    Int8,
+    UInt16,
 )
 from numbers import Number
 import polars
@@ -94,6 +98,7 @@ class Series:
         name: str,
         values: "Union[np.array, List[Optional[Any]]]" = None,
         nullable: bool = True,
+        dtype: "Optional[DataType]" = None,
     ):
         """
 
@@ -129,11 +134,43 @@ class Series:
                 f"Constructing a Series with a dict is not supported for {values}"
             )
         elif isinstance(values, pa.Array):
-            return self.from_arrow(name, values)
+            self._s = self.from_arrow(name, values)._s
+            return
 
         # castable to numpy
         if not isinstance(values, np.ndarray) and not nullable:
             values = np.array(values)
+
+        if dtype is not None:
+            if dtype == Int8:
+                self._s = PySeries.new_i8(name, values)
+            elif dtype == Int16:
+                self._s = PySeries.new_i16(name, values)
+            elif dtype == Int32:
+                self._s = PySeries.new_i32(name, values)
+            elif dtype == Int64:
+                self._s = PySeries.new_i64(name, values)
+            elif dtype == UInt8:
+                self._s = PySeries.new_u8(name, values)
+            elif dtype == UInt16:
+                self._s = PySeries.new_u16(name, values)
+            elif dtype == UInt32:
+                self._s = PySeries.new_u32(name, values)
+            elif dtype == UInt64:
+                self._s = PySeries.new_u64(name, values)
+            elif dtype == Float32:
+                self._s = PySeries.new_f32(name, values)
+            elif dtype == Float64:
+                self._s = PySeries.new_f64(name, values)
+            elif dtype == Boolean:
+                self._s = PySeries.new_bool(name, values)
+            elif dtype == Utf8:
+                self._s = PySeries.new_str(name, values)
+            else:
+                raise ValueError(
+                    f"dtype {dtype} not yet supported when creating a Series"
+                )
+            return
 
         # numpy path
         if isinstance(values, np.ndarray):
@@ -169,6 +206,7 @@ class Series:
                 self._s = PySeries.new_u64(name, values)
             else:
                 self._s = PySeries.new_object(name, values)
+            return
         # list path
         else:
             dtype = _find_first_non_none(values)
