@@ -160,7 +160,7 @@ The arguments given to a `LazyFrame` can be constructed by building simple or co
 
 The API of the [Expr can be found here](lazy/index.html#polars.lazy.Expr).
 
-## In depth
+## User Guide
 The [polars book](https://ritchie46.github.io/polars-book/) provides more in-depth information about polars. Reading
 this will provide you with a more thorough understanding of what polars lazy has to offer, and what kind of
 optimizations are done by the query optimizer.

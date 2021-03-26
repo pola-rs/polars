@@ -844,6 +844,29 @@ macro_rules! impl_dyn_series {
                     )),
                 }
             }
+            #[cfg(feature = "temporal")]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
+            fn weekday(&self) -> Result<Series> {
+                match self.0.dtype() {
+                    DataType::Date32 => self.date32().map(|ca| ca.weekday().into_series()),
+                    DataType::Date64 => self.date64().map(|ca| ca.weekday().into_series()),
+                    _ => Err(PolarsError::InvalidOperation(
+                        format!("operation not supported on dtype {:?}", self.dtype()).into(),
+                    )),
+                }
+            }
+
+            #[cfg(feature = "temporal")]
+            #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
+            fn week(&self) -> Result<Series> {
+                match self.0.dtype() {
+                    DataType::Date32 => self.date32().map(|ca| ca.week().into_series()),
+                    DataType::Date64 => self.date64().map(|ca| ca.week().into_series()),
+                    _ => Err(PolarsError::InvalidOperation(
+                        format!("operation not supported on dtype {:?}", self.dtype()).into(),
+                    )),
+                }
+            }
 
             #[cfg(feature = "temporal")]
             #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]

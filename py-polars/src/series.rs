@@ -983,6 +983,16 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn weekday(&self) -> PyResult<Self> {
+        let s = self.series.weekday().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn week(&self) -> PyResult<Self> {
+        let s = self.series.week().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
     pub fn day(&self) -> PyResult<Self> {
         let s = self.series.day().map_err(PyPolarsEr::from)?;
         Ok(s.into())

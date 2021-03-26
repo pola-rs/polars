@@ -771,6 +771,19 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     #[cfg(feature = "temporal")]
+    /// Returns the weekday number where monday = 0 and sunday = 6
+    fn weekday(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
+    /// Returns the ISO week number starting from 1.
+    /// The return value ranges from 1 to 53. (The last week of year differs by years.)
+    fn week(&self) -> Result<Series> {
+        unimplemented!()
+    }
+
+    #[cfg(feature = "temporal")]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Returns the day of year starting from 1.
     ///

@@ -1396,6 +1396,33 @@ class Series:
         """
         return wrap_s(self._s.month())
 
+    def week(self):
+        """
+        Extract the week from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the ISO week number starting from 1.
+        The return value ranges from 1 to 53. (The last week of year differs by years.)
+
+        Returns
+        -------
+        Week number as UInt32
+        """
+        return wrap_s(self._s.week())
+
+    def weekday(self):
+        """
+        Extract the week day from underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the weekday number where monday = 0 and sunday = 6
+
+        Returns
+        -------
+        Week day as UInt32
+        """
+        return wrap_s(self._s.week())
+
     def day(self):
         """
         Extract day from underlying Date representation.

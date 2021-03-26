@@ -1,8 +1,9 @@
 use super::*;
 use crate::chunked_array::kernels::temporal::{
-    date32_as_duration, date32_to_day, date32_to_month, date32_to_ordinal, date32_to_year,
-    date64_as_duration, date64_to_day, date64_to_hour, date64_to_minute, date64_to_month,
-    date64_to_nanosecond, date64_to_ordinal, date64_to_second,
+    date32_as_duration, date32_to_day, date32_to_month, date32_to_ordinal, date32_to_week,
+    date32_to_weekday, date32_to_year, date64_as_duration, date64_to_day, date64_to_hour,
+    date64_to_minute, date64_to_month, date64_to_nanosecond, date64_to_ordinal, date64_to_second,
+    date64_to_week, date64_to_weekday,
 };
 use crate::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
@@ -306,6 +307,18 @@ impl Date64Chunked {
         self.apply_kernel_cast::<_, UInt32Type>(date64_to_month)
     }
 
+    /// Extract weekday from underlying NaiveDateTime representation.
+    /// Returns the weekday number where monday = 0 and sunday = 6
+    pub fn weekday(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_weekday)
+    }
+
+    /// Returns the ISO week number starting from 1.
+    /// The return value ranges from 1 to 53. (The last week of year differs by years.)
+    pub fn week(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date64_to_week)
+    }
+
     /// Extract day from underlying NaiveDateTime representation.
     /// Returns the day of month starting from 1.
     ///
@@ -354,7 +367,7 @@ impl Date64Chunked {
 }
 
 impl Date32Chunked {
-    /// Extract month from underlying NaiveDateTime representation.
+    /// Extract month from underlying NaiveDate representation.
     /// Returns the year number in the calendar date.
     pub fn year(&self) -> Int32Chunked {
         self.apply_kernel_cast::<_, Int32Type>(date32_to_year)
@@ -368,7 +381,19 @@ impl Date32Chunked {
         self.apply_kernel_cast::<_, UInt32Type>(date32_to_month)
     }
 
-    /// Extract day from underlying NaiveDateTime representation.
+    /// Extract weekday from underlying NaiveDate representation.
+    /// Returns the weekday number where monday = 0 and sunday = 6
+    pub fn weekday(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date32_to_weekday)
+    }
+
+    /// Returns the ISO week number starting from 1.
+    /// The return value ranges from 1 to 53. (The last week of year differs by years.)
+    pub fn week(&self) -> UInt32Chunked {
+        self.apply_kernel_cast::<_, UInt32Type>(date32_to_week)
+    }
+
+    /// Extract day from underlying NaiveDate representation.
     /// Returns the day of month starting from 1.
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)

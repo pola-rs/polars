@@ -6,6 +6,11 @@ The Python bindings `polars` have their own changelog.
 
 * performance
   - Vast reduction of compile times by making compilation dtypes of Series opt-in.
+  
+* features
+  - Series / ChunkedArray implementations
+    * Series::week
+    * Series::weekday
 
 ## Polars v0.12
 * Lot's of bug fixes

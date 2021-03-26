@@ -4,8 +4,31 @@ use crate::chunked_array::{
 };
 use crate::prelude::*;
 use arrow::array::{ArrayRef, PrimitiveArray};
-use chrono::{Datelike, Timelike};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use std::sync::Arc;
+
+trait PolarsWeekDay {
+    fn p_weekday(&self) -> u32;
+    fn week(&self) -> u32;
+}
+
+impl PolarsWeekDay for NaiveDateTime {
+    fn p_weekday(&self) -> u32 {
+        self.weekday() as u32
+    }
+    fn week(&self) -> u32 {
+        self.iso_week().week()
+    }
+}
+
+impl PolarsWeekDay for NaiveDate {
+    fn p_weekday(&self) -> u32 {
+        self.weekday() as u32
+    }
+    fn week(&self) -> u32 {
+        self.iso_week().week()
+    }
+}
 
 pub fn date32_as_duration(arr: &PrimitiveArray<Date32Type>) -> ArrayRef {
     let vals = arr.values();
@@ -43,7 +66,20 @@ macro_rules! to_temporal_unit {
         }
     };
 }
-
+to_temporal_unit!(
+    date32_to_week,
+    week,
+    date32_as_datetime,
+    Date32Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date32_to_weekday,
+    p_weekday,
+    date32_as_datetime,
+    Date32Type,
+    UInt32Type
+);
 to_temporal_unit!(
     date32_to_year,
     year,
@@ -72,7 +108,20 @@ to_temporal_unit!(
     Date32Type,
     UInt32Type
 );
-
+to_temporal_unit!(
+    date64_to_week,
+    week,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);
+to_temporal_unit!(
+    date64_to_weekday,
+    p_weekday,
+    date64_as_datetime,
+    Date64Type,
+    UInt32Type
+);
 to_temporal_unit!(
     date64_to_year,
     year,
