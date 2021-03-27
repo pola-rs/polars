@@ -207,7 +207,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             .copied()
             .filter(|i| self.schema.field(*i).unwrap().data_type() == &DataType::Utf8)
             .collect();
-        let init_str_bytes = chunk_size * 100;
+        let init_str_bytes = chunk_size * 10;
         let str_capacities: Vec<_> = str_columns
             .iter()
             .map(|_| AtomicUsize::new(init_str_bytes))
@@ -216,8 +216,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
         let file_chunks =
-            get_file_chunks(bytes, n_threads, self.schema.fields().len(), self.delimiter);
-        let local_capacity = total_rows / n_threads;
+            get_file_chunks(bytes, n_chunks, self.schema.fields().len(), self.delimiter);
+        let local_capacity = 90;
 
         // If the number of threads given by the user is lower than our global thread pool we create
         // new one.
@@ -265,6 +265,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         ignore_parser_errors,
                         self.encoding,
                     )?;
+
                     let mut df = DataFrame::new_no_checks(
                         buffers.into_iter().map(|buf| buf.into_series()).collect(),
                     );
@@ -281,7 +282,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         let str_bytes_len = ca.get_values_size();
                         // TODO! determine Ordering
                         let prev_value =
-                            str_capacities[str_index].fetch_max(str_bytes_len, Ordering::SeqCst);
+                            str_capacities[str_index].fetch_max(str_bytes_len, Ordering::Relaxed);
                         let prev_cap = (prev_value as f32 * 1.2) as usize;
                         if logging && (prev_cap < str_bytes_len) {
                             eprintln!(

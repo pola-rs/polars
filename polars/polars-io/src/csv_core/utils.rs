@@ -201,3 +201,18 @@ pub fn infer_file_schema<R: Read + Seek>(
 
     Ok((Schema::new(fields), records_count))
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_get_file_chunks() {
+        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let s = std::fs::read_to_string(path).unwrap();
+        let bytes = s.as_bytes();
+        // can be within -1 / +1 bounds.
+        assert_eq!(get_file_chunks(bytes, 10, 4, b',').len(), 9);
+        assert_eq!(get_file_chunks(bytes, 8, 4, b',').len(), 7);
+    }
+}
