@@ -361,7 +361,7 @@ where
             path: None,
             schema_overwrite: None,
             sample_size: 1024,
-            chunk_size: 1024,
+            chunk_size: 2048,
         }
     }
 

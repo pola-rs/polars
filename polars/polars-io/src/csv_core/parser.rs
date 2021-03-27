@@ -38,9 +38,7 @@ pub(crate) fn next_line_position(
     if input.is_empty() {
         return None;
     }
-    let mut count = 0;
     loop {
-        count += 1;
         let pos = input.iter().position(|b| *b == b'\n')? + 1;
         if input.len() - pos == 0 {
             return None;
@@ -303,6 +301,7 @@ impl<'a> Iterator for SplitFields<'a> {
 /// * `projection` - Indices of the columns to project.
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn parse_lines(
     bytes: &[u8],
     offset: usize,
@@ -311,7 +310,8 @@ pub(crate) fn parse_lines(
     buffers: &mut [Buffer],
     ignore_parser_errors: bool,
     encoding: CsvEncoding,
-) -> Result<()> {
+    n_lines: usize,
+) -> Result<usize> {
     // This variable will store the number of bytes we read. It is important to do this bookkeeping
     // to be able to correctly parse the strings later.
     let mut read = offset;
@@ -323,7 +323,7 @@ pub(crate) fn parse_lines(
     // the length of the string field. We also store the total length of processed string fields per column.
     // Later we use that meta information to exactly allocate the required buffers and parse the strings.
     let iter_lines = SplitLines::new(bytes, b'\n');
-    for mut line in iter_lines {
+    for mut line in iter_lines.take(n_lines) {
         let len = line.len();
 
         // two adjacent '\n\n' will lead to an empty line.
@@ -393,7 +393,7 @@ pub(crate) fn parse_lines(
         // and any skipped fields.
         read = read_sol + line_length;
     }
-    Ok(())
+    Ok(read)
 }
 
 #[cfg(test)]

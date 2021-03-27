@@ -147,7 +147,7 @@ impl DataFrame {
     }
 
     /// Iterator over the columns as Series.
-    pub fn iter(&self) -> std::slice::Iter<'_, Series>{
+    pub fn iter(&self) -> std::slice::Iter<'_, Series> {
         self.columns.iter()
     }
 
