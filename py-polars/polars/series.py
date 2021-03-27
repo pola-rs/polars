@@ -11,7 +11,7 @@ except ImportError:
         "get_ffi_func": False,
     }
 import numpy as np
-from typing import Optional, List, Sequence, Union, Any, Callable
+from typing import Optional, List, Sequence, Union, Any, Callable, Tuple
 from .ffi import _ptr_to_numpy
 from .datatypes import (
     Utf8,
@@ -928,6 +928,12 @@ class Series:
         Length of this Series
         """
         return self._s.len()
+
+    def shape(self) -> Tuple[int]:
+        """
+        Shape of this Series
+        """
+        return (self._s.len(),)
 
     def __len__(self):
         return self.len()
