@@ -1,19 +1,26 @@
-from typing import Union, TextIO, Optional, List, BinaryIO
-import numpy as np
-from pathlib import Path
-from .frame import DataFrame
-from .series import Series
-from .lazy import LazyFrame
-import pyarrow as pa
-import pyarrow.parquet
-import pyarrow.csv
-import pyarrow.compute
 import builtins
-import urllib.request
 import io
+import urllib.request
+from pathlib import Path
+from typing import (
+    BinaryIO,
+    Dict,
+    List,
+    Optional,
+    TextIO,
+    Union,
+)
 
-from typing import Dict
+import numpy as np
+import pyarrow as pa
+import pyarrow.compute
+import pyarrow.csv
+import pyarrow.parquet
+
 from .datatypes import DataType
+from .frame import DataFrame
+from .lazy import LazyFrame
+from .series import Series
 
 
 def _process_http_file(path: str) -> io.BytesIO:

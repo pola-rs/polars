@@ -11,30 +11,37 @@ except ImportError:
     warnings.warn("binary files missing")
     __pdoc__ = {"wrap_df": False}
 
+import os
+from pathlib import Path
 from typing import (
-    Dict,
-    Sequence,
-    List,
-    Tuple,
-    Optional,
-    Union,
-    TextIO,
+    TYPE_CHECKING,
+    Any,
     BinaryIO,
     Callable,
-    Any,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    TextIO,
+    Tuple,
+    Union,
 )
-from .series import Series, wrap_s
-from . import datatypes
-from .datatypes import DataType, pytype_to_polars_type
-from ._html import NotebookFormatter
+
+import numpy as np
 import pyarrow as pa
 import pyarrow.compute
 import pyarrow.parquet
-import numpy as np
-import os
-from pathlib import Path
 
-from typing import TYPE_CHECKING
+from . import datatypes
+from ._html import NotebookFormatter
+from .datatypes import (
+    DataType,
+    pytype_to_polars_type,
+)
+from .series import (
+    Series,
+    wrap_s,
+)
 
 if TYPE_CHECKING:
     from .lazy import LazyFrame

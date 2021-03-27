@@ -1,5 +1,7 @@
 import io
+
 from utils import get_complete_df
+
 import polars as pl
 
 

@@ -3,11 +3,18 @@
 .. include:: ./index.md
 """
 
-from .series import Series, wrap_s
-from .frame import DataFrame, wrap_df, StringCache
+from .datatypes import *
+from .frame import (
+    DataFrame,
+    StringCache,
+    wrap_df,
+)
 from .functions import *
 from .lazy import *
-from .datatypes import *
+from .series import (
+    Series,
+    wrap_s,
+)
 
 # during docs building the binary code is not yet available
 try:

@@ -1,29 +1,39 @@
-from typing import Union, List, Callable, Optional, Dict
-
-from polars import Series
-from polars.frame import DataFrame, wrap_df
-from polars import datatypes
-from polars.datatypes import DataType
 import os
-import tempfile
-import subprocess
 import shutil
+import subprocess
+import tempfile
 from datetime import datetime
+from typing import (
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Union,
+)
+
+from polars import (
+    Series,
+    datatypes,
+)
+from polars.datatypes import DataType
+from polars.frame import (
+    DataFrame,
+    wrap_df,
+)
 
 try:
     from ..polars import (
-        PyLazyFrame,
-        col as pycol,
-        lit as pylit,
-        # binary_expr,
-        binary_function as pybinary_function,
-        pearson_corr as pypearson_corr,
-        cov as pycov,
         PyExpr,
+        PyLazyFrame,
         PyLazyGroupBy,
-        when as pywhen,
+        binary_function as pybinary_function,
+        col as pycol,
+        cov as pycov,
         except_ as pyexcept,
+        lit as pylit,
+        pearson_corr as pypearson_corr,
         range as pyrange,
+        when as pywhen,
     )
 except ImportError:
     import warnings
@@ -139,8 +149,8 @@ class LazyFrame:
         raw_output: bool = False,
     ) -> "Optional[str]":
         try:
-            import matplotlib.pyplot as plt
             import matplotlib.image as mpimg
+            import matplotlib.pyplot as plt
         except ImportError:
             raise ImportError(
                 "graphviz dot binary should be on your PATH and matplotlib should be installed to show graph"
