@@ -132,7 +132,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
     fn parse_csv(
         &mut self,
-        n_threads: usize,
+        mut n_threads: usize,
         bytes: &[u8],
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> Result<DataFrame> {
@@ -176,8 +176,12 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 eprintln!("initial row estimate: {}", total_rows)
             }
         }
-        if logging {
-            eprintln!("file < 128 rows, no statistics determined")
+        if total_rows == 128 {
+            n_threads = 1;
+
+            if logging {
+                eprintln!("file < 128 rows, no statistics determined")
+            }
         }
 
         // we also need to sort the projection to have predictable output.
@@ -213,11 +217,26 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             .map(|_| AtomicUsize::new(init_str_bytes))
             .collect();
 
+        // An empty file with a schema should return an empty DataFrame with that schema
+        if bytes.is_empty() {
+            let str_capacities: Vec<_> = str_columns.iter().map(|_| AtomicUsize::new(0)).collect();
+            let buffers = init_buffers(
+                &projection,
+                0,
+                &self.schema,
+                &str_capacities,
+                self.delimiter,
+            )?;
+            let df = DataFrame::new_no_checks(
+                buffers.into_iter().map(|buf| buf.into_series()).collect(),
+            );
+            return Ok(df);
+        }
+
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
         let file_chunks =
-            get_file_chunks(bytes, n_chunks, self.schema.fields().len(), self.delimiter);
-        let local_capacity = 90;
+            get_file_chunks(bytes, n_threads, self.schema.fields().len(), self.delimiter);
 
         // If the number of threads given by the user is lower than our global thread pool we create
         // new one.
@@ -246,63 +265,74 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     let ignore_parser_errors = self.ignore_parser_errors;
                     let projection = &projection;
 
-                    let mut buffers = init_buffers(
-                        &projection,
-                        local_capacity,
-                        &schema,
-                        &str_capacities,
-                        self.delimiter,
-                    )?;
-                    let local_bytes = &bytes[bytes_offset_thread..stop_at_nbytes];
-                    let read = bytes_offset_thread;
+                    let mut read = bytes_offset_thread;
+                    let mut dfs = Vec::with_capacity(2048);
 
-                    parse_lines(
-                        local_bytes,
-                        read,
-                        delimiter,
-                        projection,
-                        &mut buffers,
-                        ignore_parser_errors,
-                        self.encoding,
-                    )?;
+                    loop {
+                        if read >= stop_at_nbytes {
+                            break;
+                        }
 
-                    let mut df = DataFrame::new_no_checks(
-                        buffers.into_iter().map(|buf| buf.into_series()).collect(),
-                    );
-                    if let Some(predicate) = predicate {
-                        let s = predicate.evaluate(&df)?;
-                        let mask = s.bool().expect("filter predicates was not of type boolean");
-                        df = df.filter(mask)?;
-                    }
+                        let mut buffers = init_buffers(
+                            &projection,
+                            chunk_size,
+                            &schema,
+                            &str_capacities,
+                            self.delimiter,
+                        )?;
 
-                    let mut str_index = 0;
-                    // update the running str bytes statistics
-                    str_columns.iter().for_each(|&i| {
-                        let ca = df.select_at_idx(i).unwrap().utf8().unwrap();
-                        let str_bytes_len = ca.get_values_size();
-                        // TODO! determine Ordering
-                        let prev_value =
-                            str_capacities[str_index].fetch_max(str_bytes_len, Ordering::Relaxed);
-                        let prev_cap = (prev_value as f32 * 1.2) as usize;
-                        if logging && (prev_cap < str_bytes_len) {
-                            eprintln!(
-                                "needed to reallocate column: {}\
+                        let local_bytes = &bytes[read..stop_at_nbytes];
+
+                        read = parse_lines(
+                            local_bytes,
+                            read,
+                            delimiter,
+                            projection,
+                            &mut buffers,
+                            ignore_parser_errors,
+                            self.encoding,
+                            chunk_size,
+                        )?;
+
+                        let mut df = DataFrame::new_no_checks(
+                            buffers.into_iter().map(|buf| buf.into_series()).collect(),
+                        );
+                        if let Some(predicate) = predicate {
+                            let s = predicate.evaluate(&df)?;
+                            let mask = s.bool().expect("filter predicates was not of type boolean");
+                            df = df.filter(mask)?;
+                        }
+
+                        let mut str_index = 0;
+                        // update the running str bytes statistics
+                        str_columns.iter().for_each(|&i| {
+                            let ca = df.select_at_idx(i).unwrap().utf8().unwrap();
+                            let str_bytes_len = ca.get_values_size();
+                            // TODO! determine Ordering
+                            let prev_value = str_capacities[str_index]
+                                .fetch_max(str_bytes_len, Ordering::Relaxed);
+                            let prev_cap = (prev_value as f32 * 1.2) as usize;
+                            if logging && (prev_cap < str_bytes_len) {
+                                eprintln!(
+                                    "needed to reallocate column: {}\
                             \nprevious capacity was: {}\
                             \nneeded capacity was: {}",
-                                self.schema.field(i).unwrap().name(),
-                                prev_cap,
-                                str_bytes_len
-                            );
-                        }
-                        str_index += 1;
-                    });
+                                    self.schema.field(i).unwrap().name(),
+                                    prev_cap,
+                                    str_bytes_len
+                                );
+                            }
+                            str_index += 1;
+                        });
+                        dfs.push(df);
+                    }
 
-                    Ok(df)
+                    Ok(dfs)
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
 
-        accumulate_dataframes_vertical(dfs)
+        accumulate_dataframes_vertical(dfs.into_iter().flatten())
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
