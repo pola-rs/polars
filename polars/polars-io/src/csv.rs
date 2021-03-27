@@ -138,7 +138,9 @@ where
 
 #[derive(Copy, Clone)]
 pub enum CsvEncoding {
+    /// Utf8 encoding
     Utf8,
+    /// Utf8 encoding and unknown bytes are replaced with �
     LossyUtf8,
 }
 
@@ -185,12 +187,20 @@ where
     path: Option<String>,
     schema_overwrite: Option<&'a Schema>,
     sample_size: usize,
+    chunk_size: usize,
 }
 
 impl<'a, R> CsvReader<'a, R>
 where
     R: 'static + Read + Seek + Sync + Send,
 {
+    /// Sets the chunk size used by the parser. This influences performance
+    pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
+        self.chunk_size = chunk_size;
+        self
+    }
+
+    /// Sets the CsvEncoding
     pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
         self.encoding = enc;
         self
@@ -314,6 +324,7 @@ where
             self.path,
             self.schema_overwrite,
             self.sample_size,
+            self.chunk_size,
         )
     }
 }
@@ -350,6 +361,7 @@ where
             path: None,
             schema_overwrite: None,
             sample_size: 1024,
+            chunk_size: 1024,
         }
     }
 

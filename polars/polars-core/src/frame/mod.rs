@@ -146,6 +146,11 @@ impl DataFrame {
         &self.columns
     }
 
+    /// Iterator over the columns as Series.
+    pub fn iter(&self) -> std::slice::Iter<'_, Series>{
+        self.columns.iter()
+    }
+
     pub fn get_column_names(&self) -> Vec<&str> {
         self.columns.iter().map(|s| s.name()).collect()
     }

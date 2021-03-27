@@ -4,12 +4,15 @@ use crate::csv_core::{buffer::*, parser::*};
 use crate::PhysicalIoExpr;
 use crate::ScanAggregation;
 use csv::ByteRecordsIntoIter;
+use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 use std::fmt;
 use std::io::{Read, Seek};
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::{atomic::AtomicUsize, Arc};
 
 /// CSV file reader
 pub struct SequentialReader<R: Read> {
@@ -32,6 +35,7 @@ pub struct SequentialReader<R: Read> {
     has_header: bool,
     delimiter: u8,
     sample_size: usize,
+    chunk_size: usize,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -83,6 +87,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         n_threads: Option<usize>,
         path: Option<String>,
         sample_size: usize,
+        chunk_size: usize,
     ) -> Self {
         let csv_reader = init_csv_reader(reader, has_header, delimiter);
         let record_iter = Some(csv_reader.into_byte_records());
@@ -102,6 +107,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             has_header,
             delimiter,
             sample_size,
+            chunk_size,
         }
     }
 
@@ -124,12 +130,14 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         Ok(bytes)
     }
 
-    fn parse_csv_fast(
+    fn parse_csv(
         &mut self,
         n_threads: usize,
         bytes: &[u8],
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> Result<DataFrame> {
+        let logging = std::env::var("POLARS_VERBOSE").is_ok();
+
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let mut bytes = self.find_starting_point(bytes)?;
 
@@ -138,6 +146,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         // if None, there are less then 128 rows in the file and the statistics don't matter that much
         if let Some((mean, std)) = get_line_stats(bytes, self.sample_size) {
+            if logging {
+                eprintln!("avg line length: {}\nstd. dev. line length: {}", mean, std);
+            }
+
             // x % upper bound of byte length per line assuming normally distributed
             let line_length_upper_bound = mean + 1.1 * std;
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
@@ -160,6 +172,12 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     }
                 }
             }
+            if logging {
+                eprintln!("initial row estimate: {}", total_rows)
+            }
+        }
+        if logging {
+            eprintln!("file < 128 rows, no statistics determined")
         }
 
         // we also need to sort the projection to have predictable output.
@@ -173,16 +191,53 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             })
             .unwrap_or_else(|| (0..self.schema.fields().len()).collect());
 
+        let chunk_size = std::cmp::min(self.chunk_size, total_rows);
+        let n_chunks = total_rows / chunk_size;
+        if logging {
+            eprintln!(
+                "no. of chunks: {} processed by: {} threads at 1 chunk/thread",
+                n_chunks, n_threads
+            );
+        }
+
+        // keep track of the maximum capacity that needs to be allocated for the utf8-builder
+        // Per string column we keep a statistic of the maximum length of string bytes per chunk
+        let str_columns: Vec<_> = projection
+            .iter()
+            .copied()
+            .filter(|i| self.schema.field(*i).unwrap().data_type() == &DataType::Utf8)
+            .collect();
+        let init_str_bytes = chunk_size * 100;
+        let str_capacities: Vec<_> = str_columns
+            .iter()
+            .map(|_| AtomicUsize::new(init_str_bytes))
+            .collect();
+
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
         let file_chunks =
             get_file_chunks(bytes, n_threads, self.schema.fields().len(), self.delimiter);
         let local_capacity = total_rows / n_threads;
 
+        // If the number of threads given by the user is lower than our global thread pool we create
+        // new one.
+        let owned_pool;
+        let pool = if POOL.current_num_threads() != n_threads {
+            owned_pool = Some(
+                ThreadPoolBuilder::new()
+                    .num_threads(n_threads)
+                    .build()
+                    .unwrap(),
+            );
+            owned_pool.as_ref().unwrap()
+        } else {
+            &POOL
+        };
+
         // all the buffers returned from the threads
         // Structure:
         //      the inner vec has got buffers from all the columns.
-        let dfs = POOL.install(|| {
+        let dfs = pool.install(|| {
             file_chunks
                 .into_par_iter()
                 .map(|(bytes_offset_thread, stop_at_nbytes)| {
@@ -191,9 +246,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     let ignore_parser_errors = self.ignore_parser_errors;
                     let projection = &projection;
 
-                    //TODO! running str lenght stats
-                    let mut buffers =
-                        init_buffers(&projection, local_capacity, &schema, 100, self.delimiter)?;
+                    let mut buffers = init_buffers(
+                        &projection,
+                        local_capacity,
+                        &schema,
+                        &str_capacities,
+                        self.delimiter,
+                    )?;
                     let local_bytes = &bytes[bytes_offset_thread..stop_at_nbytes];
                     let read = bytes_offset_thread;
 
@@ -214,6 +273,28 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                         let mask = s.bool().expect("filter predicates was not of type boolean");
                         df = df.filter(mask)?;
                     }
+
+                    let mut str_index = 0;
+                    // update the running str bytes statistics
+                    str_columns.iter().for_each(|&i| {
+                        let ca = df.select_at_idx(i).unwrap().utf8().unwrap();
+                        let str_bytes_len = ca.get_values_size();
+                        // TODO! determine Ordering
+                        let prev_value =
+                            str_capacities[str_index].fetch_max(str_bytes_len, Ordering::SeqCst);
+                        let prev_cap = (prev_value as f32 * 1.2) as usize;
+                        if logging && (prev_cap < str_bytes_len) {
+                            eprintln!(
+                                "needed to reallocate column: {}\
+                            \nprevious capacity was: {}\
+                            \nneeded capacity was: {}",
+                                self.schema.field(i).unwrap().name(),
+                                prev_cap,
+                                str_bytes_len
+                            );
+                        }
+                        str_index += 1;
+                    });
 
                     Ok(df)
                 })
@@ -236,7 +317,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 let file = std::fs::File::open(p).unwrap();
                 let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
                 let bytes = mmap[..].as_ref();
-                self.parse_csv_fast(n_threads, bytes, predicate.as_ref())?
+                self.parse_csv(n_threads, bytes, predicate.as_ref())?
             }
             (None, true) => {
                 let mut r = std::mem::take(&mut self.record_iter).unwrap().into_reader();
@@ -247,7 +328,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 {
                     bytes.push(b'\n')
                 }
-                self.parse_csv_fast(n_threads, &bytes, predicate.as_ref())?
+                self.parse_csv(n_threads, &bytes, predicate.as_ref())?
             }
             _ => return Err(PolarsError::Other("file or reader must be set".into())),
         };
@@ -289,6 +370,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     path: Option<String>,
     schema_overwrite: Option<&Schema>,
     sample_size: usize,
+    chunk_size: usize,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -329,5 +411,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         n_threads,
         path,
         sample_size,
+        chunk_size,
     ))
 }

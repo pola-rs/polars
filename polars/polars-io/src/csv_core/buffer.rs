@@ -2,6 +2,7 @@ use crate::csv::CsvEncoding;
 use crate::csv_core::parser::skip_whitespace;
 use polars_core::prelude::*;
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 trait ToPolarsError: Debug {
     fn to_polars_err(&self) -> PolarsError {
@@ -226,46 +227,65 @@ pub(crate) fn init_buffers(
     projection: &[usize],
     capacity: usize,
     schema: &SchemaRef,
-    str_capacity: usize,
+    // The running statistic of the amount of bytes we must allocate per str column
+    str_capacities: &[AtomicUsize],
     delimiter: u8,
 ) -> Result<Vec<Buffer>> {
+    // we keep track of the string columns we have seen so that we can increment the index
+    let mut str_index = 0;
+
     projection
         .iter()
-        .map(|&i| field_to_builder(i, capacity, schema, str_capacity, delimiter))
+        .map(|&i| {
+            let field = schema.field(i).unwrap();
+            let mut str_capacity = 0;
+            // determine the needed capacity for this column
+            // we overallocate 20%
+            if field.data_type() == &DataType::Utf8 {
+                str_capacity =
+                    // TODO! determine Ordering
+                    (str_capacities[str_index].load(Ordering::SeqCst) as f32 * 1.2) as usize;
+                str_index += 1;
+            }
+
+            let builder = match field.data_type() {
+                &DataType::Boolean => {
+                    Buffer::Boolean(BooleanChunkedBuilder::new(field.name(), capacity))
+                }
+                &DataType::Int32 => {
+                    Buffer::Int32(PrimitiveChunkedBuilder::new(field.name(), capacity))
+                }
+                &DataType::Int64 => {
+                    Buffer::Int64(PrimitiveChunkedBuilder::new(field.name(), capacity))
+                }
+                &DataType::UInt32 => {
+                    Buffer::UInt32(PrimitiveChunkedBuilder::new(field.name(), capacity))
+                }
+                #[cfg(feature = "dtype-u64")]
+                &DataType::UInt64 => {
+                    Buffer::UInt64(PrimitiveChunkedBuilder::new(field.name(), capacity))
+                }
+                &DataType::Float32 => {
+                    Buffer::Float32(PrimitiveChunkedBuilder::new(field.name(), capacity))
+                }
+                &DataType::Float64 => {
+                    Buffer::Float64(PrimitiveChunkedBuilder::new(field.name(), capacity))
+                }
+                &DataType::Utf8 => Buffer::Utf8(Utf8Field::new(
+                    field.name(),
+                    capacity,
+                    str_capacity,
+                    delimiter,
+                )),
+                other => {
+                    return Err(PolarsError::Other(
+                        format!("Unsupported data type {:?} when reading a csv", other).into(),
+                    ))
+                }
+            };
+            Ok(builder)
+        })
         .collect()
-}
-
-fn field_to_builder(
-    i: usize,
-    capacity: usize,
-    schema: &SchemaRef,
-    str_capacity: usize,
-    delimiter: u8,
-) -> Result<Buffer> {
-    let field = schema.field(i).unwrap();
-
-    let builder = match field.data_type() {
-        &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(field.name(), capacity)),
-        &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(field.name(), capacity)),
-        &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(field.name(), capacity)),
-        &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(field.name(), capacity)),
-        #[cfg(feature = "dtype-u64")]
-        &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(field.name(), capacity)),
-        &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(field.name(), capacity)),
-        &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(field.name(), capacity)),
-        &DataType::Utf8 => Buffer::Utf8(Utf8Field::new(
-            field.name(),
-            capacity,
-            str_capacity,
-            delimiter,
-        )),
-        other => {
-            return Err(PolarsError::Other(
-                format!("Unsupported data type {:?} when reading a csv", other).into(),
-            ))
-        }
-    };
-    Ok(builder)
 }
 
 #[allow(clippy::large_enum_variant)]
