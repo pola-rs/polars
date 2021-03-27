@@ -17,7 +17,7 @@ We use github to host code, to track issues and feature requests, as well as acc
 6. Issue that pull request!
 
 ## Want to discuss something?
-I can image that some questions don't fit an issue. 
+I can imagine that some questions don't fit an issue. 
 Therefore there is also a [chat on gitter](https://gitter.im/polars-rs/community).
 
 ## Any contributions you make will be under the MIT Software License
