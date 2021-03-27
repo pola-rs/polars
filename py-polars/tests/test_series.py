@@ -256,3 +256,8 @@ def test_median():
 def test_quantile():
     s = Series([1, 2, 3])
     assert s.quantile(0.5) == 2
+
+
+def test_shape():
+    s = Series([1, 2, 3])
+    assert s.shape == (3,)
