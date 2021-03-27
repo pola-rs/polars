@@ -38,8 +38,10 @@ pub(crate) fn next_line_position(
     if input.is_empty() {
         return None;
     }
+    let mut count = 0;
     loop {
-        let pos = input.iter().position(|b| *b == b'\n')?;
+        count += 1;
+        let pos = input.iter().position(|b| *b == b'\n')? + 1;
         if input.len() - pos == 0 {
             return None;
         }
@@ -81,7 +83,8 @@ where
         return (input, 0);
     }
     let mut read = 0;
-    loop {
+    let len = input.len();
+    while read < len {
         let b = input[read];
         if !f(b) {
             break;
