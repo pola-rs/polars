@@ -929,6 +929,7 @@ class Series:
         """
         return self._s.len()
 
+    @property
     def shape(self) -> Tuple[int]:
         """
         Shape of this Series
