@@ -288,7 +288,7 @@ where
     }
     fn mean_as_series(&self) -> Series {
         let s = self.sum_as_series();
-        let mut out = s.cast::<Float64Type>().unwrap() / self.len() as f64;
+        let mut out = s.cast::<Float64Type>().unwrap() / (self.len() - self.null_count()) as f64;
         out.rename(self.name());
         out
     }
