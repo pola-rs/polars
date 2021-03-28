@@ -88,8 +88,12 @@ def test_apply_custom_function():
         .groupby("fruits")
         .agg(
             [
-                pl.lazy.col("cars").apply(lambda groups: groups.len()).alias("custom_1"),
-                pl.lazy.col("cars").apply(lambda groups: groups.len()).alias("custom_2"),
+                pl.lazy.col("cars")
+                .apply(lambda groups: groups.len())
+                .alias("custom_1"),
+                pl.lazy.col("cars")
+                .apply(lambda groups: groups.len())
+                .alias("custom_2"),
                 pl.lazy.count("cars"),
             ]
         )
