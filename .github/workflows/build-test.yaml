@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install maturin pytest black==20.8b1 pdoc3 numpy ghp-import pandas flake8
+          pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
           black --check .
