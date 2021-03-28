@@ -41,5 +41,5 @@ x["id3"] = x["id3"].cast(pl.Categorical)
 x = x.lazy()
 
 question = "sum v1 by id1"  # q1
-ans = x.groupby("id1").agg(pl.sum("v1")).collect()
+ans = x.groupby("id1").agg(pl.lazy.sum("v1")).collect()
 print(ans.shape, flush=True)

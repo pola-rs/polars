@@ -33,13 +33,13 @@ def test_agg():
 
 def test_fold():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    out = df.lazy().select(pl.sum(["a", "b"])).collect()
+    out = df.lazy().select(pl.lazy.sum(["a", "b"])).collect()
     assert out["sum"].series_equal(Series("sum", [2, 4, 6]))
 
 
 def test_or():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    out = df.lazy().filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()
+    out = df.lazy().filter((pl.lazy.col("a") == 1) | (pl.lazy.col("b") > 2)).collect()
     assert out.shape[0] == 2
 
 
@@ -69,7 +69,7 @@ def test_filter_str():
     )
     q = df.lazy()
     # last row based on a filter
-    q.filter(pl.col("bools")).select(pl.last("*"))
+    q.filter(pl.lazy.col("bools")).select(pl.lazy.last("*"))
 
 
 def test_apply_custom_function():
@@ -88,9 +88,9 @@ def test_apply_custom_function():
         .groupby("fruits")
         .agg(
             [
-                pl.col("cars").apply(lambda groups: groups.len()).alias("custom_1"),
-                pl.col("cars").apply(lambda groups: groups.len()).alias("custom_2"),
-                pl.count("cars"),
+                pl.lazy.col("cars").apply(lambda groups: groups.len()).alias("custom_1"),
+                pl.lazy.col("cars").apply(lambda groups: groups.len()).alias("custom_2"),
+                pl.lazy.count("cars"),
             ]
         )
         .sort("custom_1", reverse=True)
@@ -109,7 +109,7 @@ def test_apply_custom_function():
 
 def test_groupby():
     df = pl.DataFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
-    out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
+    out = df.lazy().groupby("groups").agg(pl.lazy.mean("a")).collect()
 
 
 def test_shift_and_fill():
