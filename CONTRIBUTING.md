@@ -47,5 +47,16 @@ We use linters to enforce code quality. This will be checked in CI.
 * **Rust** We use [clippy](https://github.com/rust-lang/rust-clippy) as linter. 
 * **Python** We use [flake8](https://flake8.pycqa.org/en/latest/) as linter. 
 
+## Python setup
+If you want to contribute to the Python code, you also have to setup a Rust installation to be able to test your changes.
+You have to follow these steps:
+
+* install rust nightly via [rustup](https://www.rust-lang.org/tools/install)
+* run `$ rustup override set nightly` from the root of the repo.
+* `$ pip3 install maturin==0.9.4`
+* from [./py-polars](./py-polars) run `$ ./tasks.sh build-run-test`
+
+The last step installs a (slow) development build in your current environment and runs pytest.
+
 ## License
 By contributing, you agree that your contributions will be licensed under its MIT License.
