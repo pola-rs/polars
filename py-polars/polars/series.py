@@ -1320,7 +1320,7 @@ class Series:
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
-        ignore_null: bool = False,
+        ignore_null: bool = True,
         min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
@@ -1352,7 +1352,7 @@ class Series:
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
-        ignore_null: bool = False,
+        ignore_null: bool = True,
         min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
@@ -1384,7 +1384,7 @@ class Series:
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
-        ignore_null: bool = False,
+        ignore_null: bool = True,
         min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
@@ -1416,7 +1416,7 @@ class Series:
         self,
         window_size: int,
         weight: "Optional[List[float]]" = None,
-        ignore_null: bool = False,
+        ignore_null: bool = True,
         min_periods: "Optional[int]" = None,
     ) -> "Series":
         """

@@ -926,7 +926,7 @@ impl PySeries {
     }
     pub fn rolling_sum(
         &self,
-        window_size: usize,
+        window_size: u32,
         weight: Option<Vec<f64>>,
         ignore_null: bool,
         min_periods: u32,
@@ -940,7 +940,7 @@ impl PySeries {
 
     pub fn rolling_mean(
         &self,
-        window_size: usize,
+        window_size: u32,
         weight: Option<Vec<f64>>,
         ignore_null: bool,
         min_periods: u32,
@@ -954,7 +954,7 @@ impl PySeries {
 
     pub fn rolling_max(
         &self,
-        window_size: usize,
+        window_size: u32,
         weight: Option<Vec<f64>>,
         ignore_null: bool,
         min_periods: u32,
@@ -967,7 +967,7 @@ impl PySeries {
     }
     pub fn rolling_min(
         &self,
-        window_size: usize,
+        window_size: u32,
         weight: Option<Vec<f64>>,
         ignore_null: bool,
         min_periods: u32,

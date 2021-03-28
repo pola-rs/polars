@@ -6,6 +6,9 @@ The Rust crate `polars` has its own changelog.
 * bug fix
   - \[python\] pandas to polars date64, maintain time information
   - \[python\] fix bug in Date64 Series.year
+  - \[python\] fix bug Series.mean (did not correct for null values) #484
+  - \[python | rust \] fix bug in rolling windows #484
+  - \[python | rust \] fix bug lazy csv parser #459
 
 * feature
   - \[python | rust\] Series methods
@@ -13,6 +16,7 @@ The Rust crate `polars` has its own changelog.
     * Series.weekday
     * Series.arg_min
     * Series.arg_max
+    * Series.shape
 
 ### polars 0.7.2
 * bug fix

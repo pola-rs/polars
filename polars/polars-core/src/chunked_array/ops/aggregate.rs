@@ -287,10 +287,15 @@ where
         ca.into_series()
     }
     fn mean_as_series(&self) -> Series {
-        let s = self.sum_as_series();
-        let mut out = s.cast::<Float64Type>().unwrap() / (self.len() - self.null_count()) as f64;
-        out.rename(self.name());
-        out
+        if self.null_count() == self.len() {
+            Self::full_null(self.name(), 1).into_series()
+        } else {
+            let s = self.sum_as_series();
+            let mut out =
+                s.cast::<Float64Type>().unwrap() / (self.len() - self.null_count()) as f64;
+            out.rename(self.name());
+            out
+        }
     }
     fn median_as_series(&self) -> Series {
         let v = self.median();
@@ -562,5 +567,17 @@ mod test {
             ],
         );
         assert_eq!(ca.median(), Some(4));
+    }
+
+    #[test]
+    fn test_mean() {
+        let ca = Float32Chunked::new_from_opt_slice("", &[Some(1.0), Some(2.0), None]);
+        assert_eq!(ca.mean().unwrap(), 1.5);
+        // all mean_as_series are cast to f64.
+        assert_eq!(ca.mean_as_series().f64().unwrap().get(0).unwrap(), 1.5);
+        // all null values case
+        let ca = Float32Chunked::full_null("", 3);
+        assert_eq!(ca.mean(), None);
+        assert_eq!(ca.mean_as_series().f32().unwrap().get(0), None);
     }
 }

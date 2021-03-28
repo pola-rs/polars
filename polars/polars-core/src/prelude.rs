@@ -10,6 +10,7 @@ pub use crate::{
         comparison::{CompToSeries, NumComp},
         iterator::{IntoNoNullIterator, PolarsIterator},
         ops::{
+            aggregate::*,
             chunkops::ChunkOps,
             take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
             window::InitFold,
