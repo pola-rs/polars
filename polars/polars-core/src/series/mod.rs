@@ -692,7 +692,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
     fn rolling_mean(
         &self,
-        _window_size: usize,
+        _window_size: u32,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
         _min_periods: u32,
@@ -703,7 +703,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_sum).
     fn rolling_sum(
         &self,
-        _window_size: usize,
+        _window_size: u32,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
         _min_periods: u32,
@@ -714,7 +714,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_min).
     fn rolling_min(
         &self,
-        _window_size: usize,
+        _window_size: u32,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
         _min_periods: u32,
@@ -725,7 +725,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_max).
     fn rolling_max(
         &self,
-        _window_size: usize,
+        _window_size: u32,
         _weight: Option<&[f64]>,
         _ignore_null: bool,
         _min_periods: u32,
