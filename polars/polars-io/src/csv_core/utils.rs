@@ -212,7 +212,7 @@ mod test {
         let s = std::fs::read_to_string(path).unwrap();
         let bytes = s.as_bytes();
         // can be within -1 / +1 bounds.
-        assert_eq!(get_file_chunks(bytes, 10, 4, b',').len(), 9);
-        assert_eq!(get_file_chunks(bytes, 8, 4, b',').len(), 7);
+        assert!((get_file_chunks(bytes, 10, 4, b',').len() as i32 - 10).abs() <= 1);
+        assert!((get_file_chunks(bytes, 8, 4, b',').len() as i32 - 8).abs() <= 1);
     }
 }
