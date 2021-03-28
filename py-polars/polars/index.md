@@ -152,7 +152,8 @@ The lazy API builds a query plan. Nothing is executed until you explicitly ask p
 for optimizations and choosing the fastest algorithm given that context.
 
 ### LazyFrame
-A `LazyFrame` is a `DataFrame` abstraction that lazily keeps track of the query plan. Read more about the [eager Lazy DataFrame operations](lazy/index.html#polars.lazy.LazyFrame).
+A `LazyFrame` is a `DataFrame` abstraction that lazily keeps track of the query plan. 
+Read more about the [Lazy DataFrame operations](lazy/index.html#polars.lazy.LazyFrame).
 
 ### Expr
 The arguments given to a `LazyFrame` can be constructed by building simple or complex queries. See the examples in the 

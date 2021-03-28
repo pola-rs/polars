@@ -11,7 +11,7 @@ Polars is a blazingly fast DataFrames library implemented in Rust. Its memory mo
 It currently consists of an eager API similar to pandas and a lazy API that is somewhat similar to spark. 
 Amongst more, Polars has the following functionalities.
 
-To learn more about the inner workings of Polars read the [WIP book](https://ritchie46.github.io/polars-book/).
+To learn more about the inner workings of Polars read the [User Guide (wip)](https://ritchie46.github.io/polars-book/).
 
 # Python users read this!
 Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name. 
@@ -62,11 +62,11 @@ Want to know about all the features Polars support? Read the docs!
     * [Time/ DateTime utilities](https://ritchie46.github.io/polars/polars/doc/time/index.html)
     * [Groupby, aggregations and pivots](https://ritchie46.github.io/polars/polars/frame/group_by/struct.GroupBy.html)
     * [Lazy DataFrame](https://ritchie46.github.io/polars/polars_lazy/frame/struct.LazyFrame.html)
-* [the book](https://ritchie46.github.io/polars-book/)
+* [User Guide](https://ritchie46.github.io/polars-book/)
     
 #### Python
 * installation guide: `$ pip3 install polars`
-* [the book](https://ritchie46.github.io/polars-book/)
+* [User Guide](https://ritchie46.github.io/polars-book/)
 * [Reference guide](https://ritchie46.github.io/polars/python/polars/index.html)
 
 ## Performance
