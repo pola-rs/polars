@@ -108,7 +108,7 @@ Additional cargo features:
 
 
 ## Contribution
-Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).
+Want to contribute? Read our [contribution guideline](https://github.com/ritchie46/polars/blob/master/CONTRIBUTING.md).
 
 
 ## ENV vars
@@ -118,6 +118,7 @@ Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).
 * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
 * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 * `POLARS_MAX_THREADS` -> maximum number of threads used in join algorithm. Default is unbounded.
+* `POLARS_VERBOSE` -> print logging info to stderr
 
 ## \[Python\] compile py-polars from source
 If you want a bleeding edge release or maximal performance you should compile **py-polars** from source.
