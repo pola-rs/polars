@@ -774,7 +774,7 @@ macro_rules! impl_dyn_series {
             }
             fn rolling_mean(
                 &self,
-                window_size: usize,
+                window_size: u32,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
                 min_periods: u32,
@@ -784,7 +784,7 @@ macro_rules! impl_dyn_series {
             }
             fn rolling_sum(
                 &self,
-                window_size: usize,
+                window_size: u32,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
                 min_periods: u32,
@@ -794,7 +794,7 @@ macro_rules! impl_dyn_series {
             }
             fn rolling_min(
                 &self,
-                window_size: usize,
+                window_size: u32,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
                 min_periods: u32,
@@ -804,7 +804,7 @@ macro_rules! impl_dyn_series {
             }
             fn rolling_max(
                 &self,
-                window_size: usize,
+                window_size: u32,
                 weight: Option<&[f64]>,
                 ignore_null: bool,
                 min_periods: u32,
