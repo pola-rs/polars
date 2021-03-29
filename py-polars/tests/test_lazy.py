@@ -122,3 +122,10 @@ def test_shift_and_fill():
     # use df method
     out = df.lazy().shift_and_fill(2, col("b").std()).collect()
     assert out["a"].null_count() == 0
+
+
+def test_arange():
+    df = pl.DataFrame({"a": [1, 1, 1]}).lazy()
+    result = df.filter(pl.lazy.col("a") >= pl.lazy.arange(0, 3)).collect()
+    expected = pl.DataFrame({"a": [1, 1]})
+    assert result.frame_equal(expected)

@@ -1675,7 +1675,7 @@ def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
 
     ```python
     (df.lazy()
-        .filter(pl.col("foo") < pl.range(0, 100))
+        .filter(pl.col("foo") < pl.arange(0, 100))
         .collect())
     ```
 
