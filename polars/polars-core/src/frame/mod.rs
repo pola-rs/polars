@@ -247,6 +247,11 @@ impl DataFrame {
         self.shape().0
     }
 
+    /// Check if DataFrame is empty
+    pub fn is_empty(&self) -> bool {
+        self.columns.is_empty()
+    }
+
     pub(crate) fn hstack_mut_no_checks(&mut self, columns: &[Series]) -> &mut Self {
         for col in columns {
             self.columns.push(col.clone());
@@ -1203,6 +1208,116 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(columns))
     }
 
+    /// Aggregate the column horizontally to their min values
+    pub fn hmin(&self) -> Result<Option<Series>> {
+        match self.columns.len() {
+            0 => Ok(None),
+            1 => Ok(Some(self.columns[0].clone())),
+            _ => {
+                let first = Cow::Borrowed(&self.columns[0]);
+
+                self.columns[1..]
+                    .iter()
+                    .try_fold(first, |acc, s| {
+                        let mask = acc.lt(s) & acc.is_not_null() | s.is_null();
+                        let min = acc.zip_with(&mask, s)?;
+
+                        Ok(Cow::Owned(min))
+                    })
+                    .map(|s| Some(s.into_owned()))
+            }
+        }
+    }
+
+    /// Aggregate the column horizontally to their max values
+    pub fn hmax(&self) -> Result<Option<Series>> {
+        match self.columns.len() {
+            0 => Ok(None),
+            1 => Ok(Some(self.columns[0].clone())),
+            _ => {
+                let first = Cow::Borrowed(&self.columns[0]);
+
+                self.columns[1..]
+                    .iter()
+                    .try_fold(first, |acc, s| {
+                        let mask = acc.gt(s) & acc.is_not_null() | s.is_null();
+                        let max = acc.zip_with(&mask, s)?;
+
+                        Ok(Cow::Owned(max))
+                    })
+                    .map(|s| Some(s.into_owned()))
+            }
+        }
+    }
+
+    /// Aggregate the column horizontally to their sum values
+    pub fn hsum(&self) -> Result<Option<Series>> {
+        match self.columns.len() {
+            0 => Ok(None),
+            1 => Ok(Some(self.columns[0].clone())),
+            _ => {
+                let first = Cow::Borrowed(&self.columns[0]);
+                self.columns[1..]
+                    .iter()
+                    .map(Cow::Borrowed)
+                    .try_fold(first, |acc, s| {
+                        let mut acc = acc.as_ref().clone();
+                        let mut s = s.as_ref().clone();
+
+                        if acc.null_count() != 0 {
+                            acc = acc.fill_none(FillNoneStrategy::Zero)?;
+                        }
+                        if s.null_count() != 0 {
+                            s = s.fill_none(FillNoneStrategy::Zero)?;
+                        }
+                        Ok(Cow::Owned(&acc + &s))
+                    })
+                    .map(|s| Some(s.into_owned()))
+            }
+        }
+    }
+
+    /// Aggregate the column horizontally to their mean values
+    pub fn hmean(&self) -> Result<Option<Series>> {
+        match self.columns.len() {
+            0 => Ok(None),
+            1 => Ok(Some(self.columns[0].clone())),
+            _ => {
+                let sum = self.hsum()?;
+
+                let first: Cow<Series> = Cow::Owned(
+                    self.columns[0]
+                        .is_null()
+                        .cast::<UInt32Type>()
+                        .unwrap()
+                        .into_series(),
+                );
+                let null_count = self.columns[1..]
+                    .iter()
+                    .map(Cow::Borrowed)
+                    .fold(first, |acc, s| {
+                        Cow::Owned(
+                            acc.as_ref() + &s.is_null().cast::<UInt32Type>().unwrap().into_series(),
+                        )
+                    })
+                    .into_owned();
+
+                // value lengths: len - null_count
+                let value_length: UInt32Chunked =
+                    (self.width().sub(&null_count)).u32().unwrap().clone();
+
+                // make sure that we do not divide by zero
+                // by replacing with None
+                let value_length = value_length
+                    .set(&value_length.eq(0), None)?
+                    .into_series()
+                    .cast::<Float64Type>()?;
+
+                Ok(sum.map(|sum| &sum / &value_length))
+            }
+        }
+    }
+
     /// Pipe different functions/ closure operations that work on a DataFrame together.
     pub fn pipe<F, B>(self, f: F) -> Result<B>
     where
@@ -1658,5 +1773,30 @@ mod test {
 
         df.vstack_mut(&df.slice(0, 3).unwrap()).unwrap();
         assert_eq!(df.n_chunks().unwrap(), 2)
+    }
+
+    #[test]
+    fn test_h_agg() {
+        let a = Series::new("a", &[1, 2, 6]);
+        let b = Series::new("b", &[Some(1), None, None]);
+        let c = Series::new("c", &[Some(4), None, Some(3)]);
+
+        let df = DataFrame::new(vec![a, b, c]).unwrap();
+        assert_eq!(
+            Vec::from(df.hmean().unwrap().unwrap().f64().unwrap()),
+            &[Some(2.0), Some(2.0), Some(4.5)]
+        );
+        assert_eq!(
+            Vec::from(df.hsum().unwrap().unwrap().i32().unwrap()),
+            &[Some(6), Some(2), Some(9)]
+        );
+        assert_eq!(
+            Vec::from(df.hmin().unwrap().unwrap().i32().unwrap()),
+            &[Some(1), Some(2), Some(3)]
+        );
+        assert_eq!(
+            Vec::from(df.hmax().unwrap().unwrap().i32().unwrap()),
+            &[Some(4), Some(2), Some(6)]
+        );
     }
 }
