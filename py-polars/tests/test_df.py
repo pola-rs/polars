@@ -18,11 +18,16 @@ def test_version():
 
 
 def test_init():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    assert df.shape == (3, 2)
 
     # length mismatch
     with pytest.raises(RuntimeError):
-        df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0, 4.0]})
+        pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0, 4.0]})
+
+    df = pl.DataFrame(np.random.randn(3, 5))
+    assert df.shape == (3, 5)
+    assert df.columns == ["0", "1", "2", "3", "4"]
 
 
 def test_selection():
