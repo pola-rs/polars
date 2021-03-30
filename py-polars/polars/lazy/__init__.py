@@ -1666,7 +1666,7 @@ def udf(f: Callable[[Series], Series], output_type: "DataType"):
     return UDF(f, output_type)
 
 
-def range(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
+def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
     """
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
@@ -1675,7 +1675,7 @@ def range(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
 
     ```python
     (df.lazy()
-        .filter(pl.col("foo") < pl.range(0, 100))
+        .filter(pl.col("foo") < pl.arange(0, 100))
         .collect())
     ```
 
