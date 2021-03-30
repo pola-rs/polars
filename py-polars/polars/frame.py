@@ -1350,7 +1350,7 @@ class DataFrame:
         * `.describe_optimized_plan()` (print optimized query plan)
         * `.show_graph()` (show (un)optimized query plan) as graphiz graph.
 
-        Lazy operations are advised because the allow for query optimization and more parallelization.
+        Lazy operations are advised because they allow for query optimization and more parallelization.
         """
         from polars.lazy import wrap_ldf
 
