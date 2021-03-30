@@ -568,11 +568,24 @@ pub trait ChunkSort<T> {
 
 #[derive(Copy, Clone, Debug)]
 pub enum FillNoneStrategy {
+    /// previous value in array
     Backward,
+    /// next value in array
     Forward,
+    /// mean value of array
     Mean,
+    /// minimal value in array
     Min,
+    /// maximum value in array
     Max,
+    /// replace with the value zero
+    Zero,
+    /// replace with the value one
+    One,
+    /// replace with the maximum value of that data type
+    MaxBound,
+    /// replace with the minimal value of that data type
+    MinBound,
 }
 
 /// Replace None values with various strategies

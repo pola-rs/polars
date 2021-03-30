@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use num::{Num, NumCast};
+use num::{Bounded, Num, NumCast, One, Zero};
 use std::ops::{Add, Div};
 
 fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
@@ -80,7 +80,14 @@ macro_rules! impl_fill_backward {
 impl<T> ChunkFillNone for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Add<Output = T::Native> + PartialOrd + Div<Output = T::Native> + Num + NumCast,
+    T::Native: Add<Output = T::Native>
+        + PartialOrd
+        + Div<Output = T::Native>
+        + Num
+        + NumCast
+        + Zero
+        + One
+        + Bounded,
 {
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         // nothing to fill
@@ -102,6 +109,10 @@ where
                 .fill_none_with_value(self.mean().ok_or_else(|| {
                     PolarsError::Other("Could not determine fill value".into())
                 })?)?,
+            FillNoneStrategy::One => return self.fill_none_with_value(One::one()),
+            FillNoneStrategy::Zero => return self.fill_none_with_value(Zero::zero()),
+            FillNoneStrategy::MinBound => return self.fill_none_with_value(Bounded::min_value()),
+            FillNoneStrategy::MaxBound => return self.fill_none_with_value(Bounded::max_value()),
         };
         Ok(ca)
     }
@@ -138,8 +149,10 @@ impl ChunkFillNone for BooleanChunked {
                     .ok_or_else(|| PolarsError::Other("Could not determine fill value".into()))?,
             ),
             FillNoneStrategy::Mean => Err(PolarsError::InvalidOperation(
-                "mean not suppoted on array of Boolean type".into(),
+                "mean not supported on array of Boolean type".into(),
             )),
+            FillNoneStrategy::One | FillNoneStrategy::MaxBound => self.fill_none_with_value(true),
+            FillNoneStrategy::Zero | FillNoneStrategy::MinBound => self.fill_none_with_value(false),
         }
     }
 }

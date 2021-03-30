@@ -682,6 +682,7 @@ impl PyDataFrame {
     pub fn mean(&self) -> Self {
         self.df.mean().into()
     }
+
     pub fn std(&self) -> Self {
         self.df.std().into()
     }
@@ -693,6 +694,27 @@ impl PyDataFrame {
     pub fn median(&self) -> Self {
         self.df.median().into()
     }
+
+    pub fn hmean(&self) -> PyResult<Option<PySeries>> {
+        let s = self.df.hmean().map_err(PyPolarsEr::from)?;
+        Ok(s.map(|s| s.into()))
+    }
+
+    pub fn hmax(&self) -> PyResult<Option<PySeries>> {
+        let s = self.df.hmax().map_err(PyPolarsEr::from)?;
+        Ok(s.map(|s| s.into()))
+    }
+
+    pub fn hmin(&self) -> PyResult<Option<PySeries>> {
+        let s = self.df.hmin().map_err(PyPolarsEr::from)?;
+        Ok(s.map(|s| s.into()))
+    }
+
+    pub fn hsum(&self) -> PyResult<Option<PySeries>> {
+        let s = self.df.hsum().map_err(PyPolarsEr::from)?;
+        Ok(s.map(|s| s.into()))
+    }
+
 
     pub fn quantile(&self, quantile: f64) -> PyResult<Self> {
         let df = self.df.quantile(quantile).map_err(PyPolarsEr::from)?;

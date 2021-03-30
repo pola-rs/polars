@@ -1378,7 +1378,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.max())
         if axis == 1:
-            return self.fold(lambda s1, s2: s1.zip_with(s1 > s2, s2)).to_frame()
+            return wrap_s(self._df.hmax()).to_frame()
         raise ValueError("axis should be 0 or 1")
 
     def min(self, axis: int = 0) -> "DataFrame":
@@ -1388,7 +1388,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.min())
         if axis == 1:
-            return self.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2)).to_frame()
+            return wrap_s(self._df.hmin()).to_frame()
         raise ValueError("axis should be 0 or 1")
 
     def sum(self, axis: int = 0) -> "DataFrame":
@@ -1398,7 +1398,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.sum())
         if axis == 1:
-            return self.fold(lambda a, b: a + b).to_frame()
+            return wrap_s(self._df.hsum()).to_frame()
         raise ValueError("axis should be 0 or 1")
 
     def mean(self, axis: int = 0) -> "DataFrame":
@@ -1408,7 +1408,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.mean())
         if axis == 1:
-            return (self.fold(lambda a, b: a + b) / self.width).to_frame()
+            return wrap_s(self._df.hmean()).to_frame()
         raise ValueError("axis should be 0 or 1")
 
     def std(self) -> "DataFrame":

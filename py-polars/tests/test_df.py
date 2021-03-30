@@ -416,20 +416,27 @@ def test_from_pandas_datetime():
 
 
 def test_df_fold():
-    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
 
     assert df.fold(lambda s1, s2: s1 + s2).series_equal(Series("a", [4.0, 5.0, 9.0]))
     assert df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2)).series_equal(
         Series("a", [1.0, 1.0, 3.0])
     )
 
-    df = DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.fold(lambda s1, s2: s1 + s2)
     out.series_equal(Series("", ["foo11", "bar22", "233"]))
 
+    df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    # just check dispatch. values are tested on rust side.
+    assert df.sum(axis=1).shape == (3, 1)
+    assert df.mean(axis=1).shape == (3, 1)
+    assert df.min(axis=1).shape == (3, 1)
+    assert df.max(axis=1).shape == (3, 1)
+
 
 def test_row_tuple():
-    df = DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     assert df.row(0) == ("foo", 1, 1.0)
     assert df.row(1) == ("bar", 2, 2.0)
     assert df.row(-1) == ("2", 3, 3.0)
