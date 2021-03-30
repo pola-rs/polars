@@ -324,7 +324,7 @@ class DataFrame:
         delimiter: str = ",",
     ):
         """
-        Write Dataframe to comma-seperated values file (csv)
+        Write Dataframe to comma-separated values file (csv)
 
         Parameters
         ---

@@ -415,7 +415,7 @@ impl fmt::Debug for Expr {
                 order_by,
             } => write!(
                 f,
-                "{:?} OVER (PARTION BY {:?} ORDER BY {:?}",
+                "{:?} OVER (PARTITION BY {:?} ORDER BY {:?}",
                 function, partition_by, order_by
             ),
             IsUnique(expr) => write!(f, "UNIQUE {:?}", expr),

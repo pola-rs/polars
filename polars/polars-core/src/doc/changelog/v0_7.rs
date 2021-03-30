@@ -28,5 +28,5 @@
 //!         * (col, lit, lt, lt_eq, alias, etc.)
 //!         * arithmetic
 //!         * when / then /otherwise
-//! * 1.3-1.7 peformance increase of filter
+//! * 1.3-1.7 performance increase of filter
 //! * ChunkedArray/ Series creation speedup: No nulls: 10X speedup, Nulls: 1.1-2.2x speedup.

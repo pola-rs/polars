@@ -138,7 +138,7 @@ impl ChunkFillNone for BooleanChunked {
                     .ok_or_else(|| PolarsError::Other("Could not determine fill value".into()))?,
             ),
             FillNoneStrategy::Mean => Err(PolarsError::InvalidOperation(
-                "mean not suppoted on array of Boolean type".into(),
+                "mean not supported on array of Boolean type".into(),
             )),
         }
     }

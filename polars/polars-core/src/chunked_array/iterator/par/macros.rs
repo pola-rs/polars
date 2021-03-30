@@ -2,7 +2,7 @@
 
 /// Implement all parallel iterators and producers for a given chunked array. It also implements the
 /// `IntoParallelIterator` trait for `ca_type` and for `NoNull<ca_type>`.
-/// It will implement and iterator and a producer for the followin chunke arrays:
+/// It will implement and iterator and a producer for the following chunke arrays:
 /// - Chunked arrays with one chunk without null value, which returns the value wrapped in an `Option`.
 /// - Chunked arrays with one chunk with null values, which returns the value wrapped in an `Option`.
 /// - Chunked arrays with many chunks without null value, which returns the value wrapped in an `Option`.

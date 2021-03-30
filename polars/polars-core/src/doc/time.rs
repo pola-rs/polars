@@ -38,10 +38,10 @@
 //!
 //! ## String formatting
 //!
-//! We can also directly parse strings given a predifined `fmt: &str`. This uses **chrono's**
+//! We can also directly parse strings given a predefined `fmt: &str`. This uses **chrono's**
 //! [NaiveTime::parse_from_str](https://docs.rs/chrono/0.4.15/chrono/naive/struct.NaiveTime.html#method.parse_from_str)
 //! under the hood. So look there for the different formatting options. If the string parsing is not
-//! succesful, the value will be `None`.
+//! successful, the value will be `None`.
 //!
 //! ### Examples
 //!

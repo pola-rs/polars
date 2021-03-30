@@ -336,7 +336,7 @@ fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> Gro
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupTuples {
     /// Create the tuples need for a groupby operation.
-    ///     * The first value in te tuple is the first index of the group.
+    ///     * The first value in the tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
     fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
         unimplemented!()
@@ -1917,7 +1917,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// * mean
     /// * median
     ///
-    /// The pivot operation consists of a group by one, or multiple collumns (these will be the new
+    /// The pivot operation consists of a group by one, or multiple columns (these will be the new
     /// y-axis), column that will be pivoted (this will be the new x-axis) and an aggregation.
     ///
     /// # Panics
