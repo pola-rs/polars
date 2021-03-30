@@ -58,7 +58,9 @@ def _prepare_other_arg(other: Any) -> Series:
 
 class DataFrame:
     def __init__(
-        self, data: "Union[Dict[str, Sequence], List[Series]]", nullable: bool = True
+        self,
+        data: "Union[Dict[str, Sequence], List[Series], np.ndarray]",
+        nullable: bool = True,
     ):
         """
         A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
@@ -68,6 +70,13 @@ class DataFrame:
         if isinstance(data, dict):
             for k, v in data.items():
                 columns.append(Series(k, v, nullable=nullable).inner())
+        elif isinstance(data, np.ndarray):
+            shape = data.shape
+            if len(shape) == 2:
+                for i, c in enumerate(range(shape[1])):
+                    columns.append(Series(str(i), data[:, c], nullable=False).inner())
+            else:
+                raise ValueError("a numpy array should have 2 dimensions")
         elif isinstance(data, list):
             for s in data:
                 if not isinstance(s, Series):
