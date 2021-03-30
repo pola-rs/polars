@@ -69,7 +69,7 @@ fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
 /// # ChunkedArray
 ///
 /// Every Series contains a `ChunkedArray<T>`. Unlike Series, ChunkedArray's are typed. This allows
-/// us to apply closures to the data and collect the results to a `ChunkedArray` of te same type `T`.
+/// us to apply closures to the data and collect the results to a `ChunkedArray` of the same type `T`.
 /// Below we use an apply to use the cosine function to the values of a `ChunkedArray`.
 ///
 /// ```rust
@@ -121,7 +121,7 @@ fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
 ///
 /// `ChunkedArrays` fully support Rust native [Iterator](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
 /// and [DoubleEndedIterator](https://doc.rust-lang.org/std/iter/trait.DoubleEndedIterator.html) traits, thereby
-/// giving access to all the excelent methods available for [Iterators](https://doc.rust-lang.org/std/iter/trait.Iterator.html).
+/// giving access to all the excellent methods available for [Iterators](https://doc.rust-lang.org/std/iter/trait.Iterator.html).
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
@@ -141,7 +141,7 @@ fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
 /// # Memory layout
 ///
 /// `ChunkedArray`'s use [Apache Arrow](https://github.com/apache/arrow) as backend for the memory layout.
-/// Arrows memory is immutable which makes it possible to make mutliple zero copy (sub)-views from a single array.
+/// Arrows memory is immutable which makes it possible to make multiple zero copy (sub)-views from a single array.
 ///
 /// To be able to append data, Polars uses chunks to append new memory locations, hence the `ChunkedArray<T>` data structure.
 /// Appends are cheap, because it will not lead to a full reallocation of the whole array (as could be the case with a Rust Vec).
@@ -153,7 +153,7 @@ fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
 ///
 /// **The key takeaway is that by applying operations on a `ChunkArray` of multiple chunks, the results will converge to
 /// a `ChunkArray` of a single chunk!** It is recommended to leave them as is. If you want to have predictable performance
-/// (no unexpected re-allocation of memory), it is adviced to call the [rechunk](chunked_array/chunkops/trait.ChunkOps.html) after
+/// (no unexpected re-allocation of memory), it is advised to call the [rechunk](chunked_array/chunkops/trait.ChunkOps.html) after
 /// multiple append operations.
 pub struct ChunkedArray<T> {
     pub(crate) field: Arc<Field>,

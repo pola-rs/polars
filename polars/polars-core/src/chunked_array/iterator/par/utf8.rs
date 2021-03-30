@@ -75,7 +75,7 @@ mod test {
             .collect()
     }
 
-    /// Implement a test which performs a map over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// Implement a test which performs a map over a `ParallelIterator` and over its correspondent `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
     /// Option<&str>.
     ///
@@ -89,25 +89,25 @@ mod test {
             fn $test_name() {
                 let a = $ca_init_block;
 
-                // Perform a parallel maping.
+                // Perform a parallel mapping.
                 let par_result = a
                     .into_par_iter()
                     .map(|opt_s| opt_s.map(|s| s.replace("0", "a")))
                     .collect::<Vec<_>>();
 
-                // Perform a sequetial maping.
+                // Perform a sequential mapping.
                 let seq_result = a
                     .into_iter()
                     .map(|opt_s| opt_s.map(|s| s.replace("0", "a")))
                     .collect::<Vec<_>>();
 
-                // Check sequetial and parallel results are equal.
+                // Check sequential and parallel results are equal.
                 assert_eq!(par_result, seq_result);
             }
         };
     }
 
-    /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondent `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
     /// Option<&str>.
     ///
@@ -131,7 +131,7 @@ mod test {
                     })
                     .collect::<Vec<_>>();
 
-                // Perform a sequetial filter.
+                // Perform a sequential filter.
                 let seq_result = a
                     .into_iter()
                     .filter(|opt_s| {
@@ -141,13 +141,13 @@ mod test {
                     })
                     .collect::<Vec<_>>();
 
-                // Check sequetial and parallel results are equal.
+                // Check sequential and parallel results are equal.
                 assert_eq!(par_result, seq_result);
             }
         };
     }
 
-    /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondent `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
     /// Option<&str>.
     ///
@@ -183,7 +183,7 @@ mod test {
                     acc + len
                 });
 
-                // Check sequetial and parallel results are equal.
+                // Check sequential and parallel results are equal.
                 assert_eq!(par_result, seq_result);
             }
         };
@@ -282,7 +282,7 @@ mod test {
         }
     );
 
-    /// Implement a test which performs a map over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// Implement a test which performs a map over a `ParallelIterator` and over its correspondent `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
     /// &str.
     ///
@@ -296,25 +296,25 @@ mod test {
             fn $test_name() {
                 let a = $ca_init_block;
 
-                // Perform a parallel maping.
+                // Perform a parallel mapping.
                 let par_result = NoNull(&a)
                     .into_par_iter()
                     .map(|s| s.replace("0", "a"))
                     .collect::<Vec<_>>();
 
-                // Perform a sequetial maping.
+                // Perform a sequential mapping.
                 let seq_result = a
                     .into_no_null_iter()
                     .map(|s| s.replace("0", "a"))
                     .collect::<Vec<_>>();
 
-                // Check sequetial and parallel results are equal.
+                // Check sequential and parallel results are equal.
                 assert_eq!(par_result, seq_result);
             }
         };
     }
 
-    /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// Implement a test which performs a filter over a `ParallelIterator` and over its correspondent `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
     /// &str.
     ///
@@ -334,19 +334,19 @@ mod test {
                     .filter(|s| s.contains("0"))
                     .collect::<Vec<_>>();
 
-                // Perform a sequetial filter.
+                // Perform a sequential filter.
                 let seq_result = a
                     .into_no_null_iter()
                     .filter(|s| s.contains("0"))
                     .collect::<Vec<_>>();
 
-                // Check sequetial and parallel results are equal.
+                // Check sequential and parallel results are equal.
                 assert_eq!(par_result, seq_result);
             }
         };
     }
 
-    /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondant `Iterator`,
+    /// Implement a test which performs a fold over a `ParallelIterator` and over its correspondent `Iterator`,
     /// and compares that the result of both iterators is the same. It performs over iterators which return
     /// &str.
     ///
@@ -371,7 +371,7 @@ mod test {
                     .into_no_null_iter()
                     .fold(0u64, |acc, s| acc + s.len() as u64);
 
-                // Check sequetial and parallel results are equal.
+                // Check sequential and parallel results are equal.
                 assert_eq!(par_result, seq_result);
             }
         };

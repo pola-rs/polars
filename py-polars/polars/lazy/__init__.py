@@ -1357,7 +1357,7 @@ def except_(name: str) -> "Expr":
         .select(["*", except_("foo")])
         .collect()
     ```
-    Ouputs:
+    Outputs:
 
     ```text
     ╭─────┬─────╮

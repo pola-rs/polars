@@ -1,6 +1,6 @@
 /// Forked from Arrow until their API stabilizes.
 ///
-/// Note taht the bound checks are optimized away.
+/// Note that the bound checks are optimized away.
 ///
 
 #[cfg(feature = "simd")]

@@ -385,7 +385,7 @@ impl NoNullLargeStringBuilder {
         assert_eq!(buf_values.len(), buf_values.capacity());
         assert_eq!(buf_offsets.len(), buf_offsets.capacity());
 
-        // note that the arrays are already shrinked when transformed to an arrow buffer.
+        // note that the arrays are already shrunk when transformed to an arrow buffer.
         let arraydata = ArrayData::builder(DataType::LargeUtf8)
             .len(offsets_len)
             .add_buffer(buf_offsets)

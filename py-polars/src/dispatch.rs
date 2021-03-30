@@ -1026,7 +1026,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     let mut nulls = 0;
 
                     // use first values to get dtype and replace default builders
-                    // continue untill no null is found
+                    // continue until no null is found
                     while let Some(opt_series) = it.next() {
                         if let Some(series) = opt_series {
                             let out_series = call_series_lambda(pypolars, lambda, series)

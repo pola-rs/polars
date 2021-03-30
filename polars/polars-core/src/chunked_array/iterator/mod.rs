@@ -1919,7 +1919,7 @@ mod test {
             fn $test_name() {
                 let a = $ca_init_block;
 
-                // Consume first postion of iterator.
+                // Consume first position of iterator.
                 let mut it = a.into_iter();
                 assert_eq!(it.next(), Some($first_val));
 

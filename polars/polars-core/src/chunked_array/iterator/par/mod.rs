@@ -13,7 +13,7 @@ impl<T> ChunkedArray<T> {
     ///
     /// An iterator has two indexes, a left and a right index, which do not overlap as if both indexes point to the
     /// same index means that the iterator is consumed.
-    /// In order to avoid overlaping the right index is always one position ahead of the last chunk index, then:
+    /// In order to avoid overlapping the right index is always one position ahead of the last chunk index, then:
     /// - left chunk indexes: goes from 0 to `chunk.len() - 1`.
     /// - right chunk indexes: goes from 1 to `chunk.len()`.
     ///

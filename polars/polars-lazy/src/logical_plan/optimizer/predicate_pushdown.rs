@@ -600,7 +600,7 @@ impl PredicatePushDown {
                 }
 
                 // First we get all names of added columns in this HStack operation
-                // and then we remove the predicates from the elegible container if they are
+                // and then we remove the predicates from the eligible container if they are
                 // dependent on data we've added in this node.
 
                 // *use a vec instead of a set because of the low number of expected columns

@@ -85,7 +85,7 @@ def read_csv(
     projection
         Indexes of columns to select
     sep
-        Delimiter/ value seperator
+        Delimiter/ value separator
     columns
         Columns to project/ select
     rechunk

@@ -92,7 +92,7 @@ impl DataFrame {
 
             if names.contains(&name) {
                 return Err(PolarsError::Duplicate(
-                    format!("Column with name: '{}' has more than one occurences", name).into(),
+                    format!("Column with name: '{}' has more than one occurrences", name).into(),
                 ));
             }
 

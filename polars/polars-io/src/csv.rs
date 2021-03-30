@@ -2,7 +2,7 @@
 //!
 //! ## Maximal performance
 //! Currently [CsvReader::new](CsvReader::new) has an extra copy. If you want optimal performance in CSV parsing/
-//! reading, it is adviced to use [CsvReader::from_path](CsvReader::from_path).
+//! reading, it is advised to use [CsvReader::from_path](CsvReader::from_path).
 //!
 //! ## Write a DataFrame to a csv file.
 //!
@@ -623,13 +623,13 @@ hello,","," ",world,"!""#;
     #[test]
     fn test_very_long_utf8() {
         let csv = r#"column_1,column_2,column_3
--86.64408227,"Lorem Ipsum is simply dummy text of the printing and typesetting 
+-86.64408227,"Lorem Ipsum is simply dummy text of the printing and typesetting
 industry. Lorem Ipsum has been the industry's standard dummy text ever since th
-e 1500s, when an unknown printer took a galley of type and scrambled it to make 
-a type specimen book. It has survived not only five centuries, but also the leap 
-into electronic typesetting, remaining essentially unchanged. It was popularised 
-in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, 
-and more recently with desktop publishing software like Aldus PageMaker including 
+e 1500s, when an unknown printer took a galley of type and scrambled it to make
+a type specimen book. It has survived not only five centuries, but also the leap
+into electronic typesetting, remaining essentially unchanged. It was popularised
+in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages,
+and more recently with desktop publishing software like Aldus PageMaker including
 versions of Lorem Ipsum.",11"#;
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).finish().unwrap();
@@ -637,13 +637,13 @@ versions of Lorem Ipsum.",11"#;
         assert!(df.column("column_2").unwrap().series_equal(&Series::new(
             "column_2",
             &[
-                r#"Lorem Ipsum is simply dummy text of the printing and typesetting 
+                r#"Lorem Ipsum is simply dummy text of the printing and typesetting
 industry. Lorem Ipsum has been the industry's standard dummy text ever since th
-e 1500s, when an unknown printer took a galley of type and scrambled it to make 
-a type specimen book. It has survived not only five centuries, but also the leap 
-into electronic typesetting, remaining essentially unchanged. It was popularised 
-in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, 
-and more recently with desktop publishing software like Aldus PageMaker including 
+e 1500s, when an unknown printer took a galley of type and scrambled it to make
+a type specimen book. It has survived not only five centuries, but also the leap
+into electronic typesetting, remaining essentially unchanged. It was popularised
+in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages,
+and more recently with desktop publishing software like Aldus PageMaker including
 versions of Lorem Ipsum."#,
             ]
         )));
