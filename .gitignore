@@ -7,3 +7,4 @@ __pycache__/
 .ipynb_checkpoints/
 polars/vendor
 *.so
+.ENV
