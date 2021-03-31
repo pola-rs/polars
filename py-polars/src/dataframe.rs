@@ -715,7 +715,6 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-
     pub fn quantile(&self, quantile: f64) -> PyResult<Self> {
         let df = self.df.quantile(quantile).map_err(PyPolarsEr::from)?;
         Ok(df.into())

@@ -896,13 +896,18 @@ impl PySeries {
 
     pub fn as_duration(&self) -> PyResult<Self> {
         match self.series.dtype() {
-            DataType::Date64 => {
-                let ca = self.series.date64().unwrap().as_duration();
-                Ok(ca.into_series().into())
-            }
+            DataType::Date64 => Ok(self
+                .series
+                .cast::<DurationMillisecondType>()
+                .unwrap()
+                .into_series()
+                .into()),
             DataType::Date32 => {
-                let ca = self.series.date32().unwrap().as_duration();
-                Ok(ca.into_series().into())
+                let s = self.series.cast::<Date64Type>().unwrap() * 3600 * 24 * 1000;
+                Ok(s.cast::<DurationMillisecondType>()
+                    .unwrap()
+                    .into_series()
+                    .into())
             }
             _ => Err(PyPolarsEr::Other(
                 "Only date32 and date64 can be transformed as duration".into(),
