@@ -19,13 +19,13 @@ where
         };
     };
 
-    // only i32 can be cast to Date32
-    if let DataType::Date32 = N::get_dtype() {
-        if T::get_dtype() != ArrowDataType::Int32 {
-            let casted_i32 = cast_ca::<Int32Type, _>(ca)?;
-            return cast_ca(&casted_i32);
-        }
-    }
+    // // only i32 can be cast to Date32
+    // if let DataType::Date32 = N::get_dtype() {
+    //     if T::get_dtype() != ArrowDataType::Int32 {
+    //         let casted_i32 = cast_ca::<Int32Type, _>(ca)?;
+    //         return cast_ca(&casted_i32);
+    //     }
+    // }
     let chunks = ca
         .chunks
         .iter()
@@ -91,80 +91,23 @@ where
     where
         N: PolarsDataType,
     {
-        let ca = match T::get_dtype() {
-            DataType::UInt32 => match N::get_dtype() {
-                DataType::Categorical => {
-                    let ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
-                    Ok(ca)
-                }
-                _ => cast_ca(self),
+        use DataType::*;
+        let ca = match (T::get_dtype(), N::get_dtype()) {
+            (UInt32, Categorical) => {
+                let ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
+                return Ok(ca);
+            }
+            // underlying type: i64
+            (Duration(_), UInt64) => cast_from_dtype!(self, cast_numeric_from_dtype, UInt64),
+            // the underlying datatype is i64 so we transmute array
+            (Duration(_), Int64) => unsafe {
+                cast_from_dtype!(self, transmute_array_from_dtype, Int64)
             },
-
-            // Duration cast is not implemented in Arrow
-            DataType::Duration(_) => {
-                // underlying type: i64
-                match N::get_dtype() {
-                    DataType::UInt64 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, UInt64)
-                    }
-                    // the underlying datatype is i64 so we transmute array
-                    DataType::Int64 => unsafe {
-                        cast_from_dtype!(self, transmute_array_from_dtype, Int64)
-                    },
-                    DataType::Float32 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
-                    }
-                    DataType::Float64 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
-                    }
-                    _ => cast_ca(self),
-                }
+            (Duration(_), Float32) | (Date32, Float32) | (Date64, Float32) => {
+                cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
             }
-            DataType::Date32 => {
-                match N::get_dtype() {
-                    // underlying type: i32
-                    DataType::Int32 => cast_ca(self),
-                    DataType::Int64 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, Int64)
-                    }
-                    DataType::Float32 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
-                    }
-                    DataType::Float64 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
-                    }
-                    #[cfg(feature = "temporal")]
-                    DataType::Utf8 => {
-                        let ca: ChunkedArray<N> = unsafe {
-                            std::mem::transmute(self.cast::<Date32Type>().unwrap().str_fmt("%F"))
-                        };
-                        Ok(ca)
-                    }
-                    _ => cast_ca(self),
-                }
-            }
-            DataType::Date64 => {
-                match N::get_dtype() {
-                    // underlying type: i32
-                    DataType::Int32 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, Int32)
-                    }
-                    DataType::Int64 => cast_ca(self),
-                    DataType::Float32 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
-                    }
-                    DataType::Float64 => {
-                        cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
-                    }
-                    #[cfg(feature = "temporal")]
-                    DataType::Utf8 => {
-                        let ca: ChunkedArray<N> = unsafe {
-                            std::mem::transmute(self.cast::<Date64Type>().unwrap().str_fmt("%+"))
-                        };
-                        Ok(ca)
-                    }
-                    _ => cast_ca(self),
-                }
+            (Duration(_), Float64) | (Date32, Float64) | (Date64, Float64) => {
+                cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
             }
             _ => cast_ca(self),
         };
