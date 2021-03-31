@@ -3,7 +3,7 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
-use crate::series::implementations::Wrap;
+use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
 use arrow::array::{ArrayRef, UInt32Array};
 use std::marker::Sized;
@@ -277,11 +277,11 @@ where
     }
 }
 
-impl<'a, INulls> From<Wrap<INulls>> for TakeIdx<'a, Dummy<usize>, INulls>
+impl<'a, INulls> From<SeriesWrap<INulls>> for TakeIdx<'a, Dummy<usize>, INulls>
 where
     INulls: Iterator<Item = Option<usize>>,
 {
-    fn from(iter: Wrap<INulls>) -> Self {
+    fn from(iter: SeriesWrap<INulls>) -> Self {
         TakeIdx::IterNulls(iter.0)
     }
 }

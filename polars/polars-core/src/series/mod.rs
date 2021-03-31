@@ -1405,6 +1405,38 @@ where
     }
 }
 
+impl IntoSeries for Arc<dyn SeriesTrait> {
+    fn into_series(self) -> Series {
+        Series(self)
+    }
+}
+
+impl IntoSeries for Series {
+    fn into_series(self) -> Series {
+        self
+    }
+}
+
+impl<'a, T> AsRef<ChunkedArray<T>> for dyn SeriesTrait + 'a
+where
+    T: 'static + PolarsDataType,
+{
+    fn as_ref(&self) -> &ChunkedArray<T> {
+        if &T::get_dtype() == self.dtype() ||
+            // needed because we want to get ref of List no matter what the inner type is.
+            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)) )
+        {
+            unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
+        } else {
+            panic!(
+                "implementation error, cannot get ref {:?} from {:?}",
+                T::get_dtype(),
+                self.dtype()
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
