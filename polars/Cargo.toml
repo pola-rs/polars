@@ -17,7 +17,8 @@ default = ["docs",
     "temporal",
     "performant",
     "plain_fmt",
-    "mimalloc"
+    "mimalloc",
+    "dtype-slim"
 ]
 ndarray = ["polars-core/ndarray"]
 parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
