@@ -1279,6 +1279,7 @@ class Series:
 
     def as_duration(self) -> "Series":
         """
+        .. deprecated::
         If Series is a date32 or a date64 it can be turned into a duration.
         """
         return wrap_s(self._s.as_duration())

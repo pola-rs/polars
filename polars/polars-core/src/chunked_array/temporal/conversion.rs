@@ -1,9 +1,9 @@
 use super::*;
 use crate::chunked_array::kernels::temporal::{
-    date32_as_duration, date32_to_day, date32_to_month, date32_to_ordinal, date32_to_week,
-    date32_to_weekday, date32_to_year, date64_as_duration, date64_to_day, date64_to_hour,
-    date64_to_minute, date64_to_month, date64_to_nanosecond, date64_to_ordinal, date64_to_second,
-    date64_to_week, date64_to_weekday, date64_to_year,
+    date32_to_day, date32_to_month, date32_to_ordinal, date32_to_week, date32_to_weekday,
+    date32_to_year, date64_to_day, date64_to_hour, date64_to_minute, date64_to_month,
+    date64_to_nanosecond, date64_to_ordinal, date64_to_second, date64_to_week, date64_to_weekday,
+    date64_to_year,
 };
 use crate::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
@@ -161,18 +161,6 @@ impl AsNaiveTime for Time64NanosecondChunked {
         self.into_iter()
             .map(|opt_t| opt_t.map(time64_nanosecond_as_time))
             .collect()
-    }
-}
-
-impl AsDuration<DurationMillisecondType> for Date32Chunked {
-    fn as_duration(&self) -> DurationMillisecondChunked {
-        self.apply_kernel_cast(date32_as_duration)
-    }
-}
-
-impl AsDuration<DurationMillisecondType> for Date64Chunked {
-    fn as_duration(&self) -> DurationMillisecondChunked {
-        self.apply_kernel_cast(date64_as_duration)
     }
 }
 

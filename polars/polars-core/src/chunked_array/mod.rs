@@ -1,5 +1,5 @@
 //! The typed heart of every Series column.
-use crate::chunked_array::builder::{build_with_existing_null_bitmap_and_slice, get_bitmap};
+use crate::chunked_array::builder::get_bitmap;
 use crate::prelude::*;
 use arrow::{
     array::{
@@ -620,26 +620,6 @@ where
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
         let arr = v.into_primitive_array::<T>(None);
         Self::new_from_chunks(name, vec![Arc::new(arr)])
-    }
-
-    /// Nullify values in slice with an existing null bitmap
-    pub fn new_with_null_bitmap(
-        name: &str,
-        values: &[T::Native],
-        buffer: Option<Buffer>,
-        null_count: usize,
-    ) -> Self {
-        let len = values.len();
-        let arr = Arc::new(build_with_existing_null_bitmap_and_slice::<T>(
-            buffer, null_count, values,
-        ));
-        ChunkedArray {
-            field: Arc::new(Field::new(name, T::get_dtype())),
-            chunks: vec![arr],
-            chunk_id: vec![len],
-            phantom: PhantomData,
-            categorical_map: None,
-        }
     }
 
     /// Nullify values in slice with an existing null bitmap

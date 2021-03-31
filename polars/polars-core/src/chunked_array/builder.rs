@@ -5,12 +5,8 @@ use crate::{
 };
 use ahash::AHashMap;
 pub use arrow::alloc;
-use arrow::array::{ArrayDataBuilder, ArrayRef, LargeListBuilder};
-use arrow::datatypes::ToByteSlice;
-use arrow::{
-    array::{Array, ArrayData, PrimitiveArray},
-    buffer::Buffer,
-};
+use arrow::array::{ArrayRef, LargeListBuilder};
+use arrow::{array::Array, buffer::Buffer};
 use num::Num;
 use polars_arrow::prelude::*;
 use std::borrow::Cow;
@@ -315,64 +311,6 @@ impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
     }
 }
 
-pub fn build_primitive_ca_with_opt<T>(s: &[Option<T::Native>], name: &str) -> ChunkedArray<T>
-where
-    T: PolarsPrimitiveType,
-    T::Native: Copy,
-{
-    let mut builder = PrimitiveChunkedBuilder::new(name, s.len());
-    for opt in s {
-        builder.append_option(*opt);
-    }
-    builder.finish()
-}
-
-pub(crate) fn set_null_bits(
-    mut builder: ArrayDataBuilder,
-    null_bit_buffer: Option<Buffer>,
-    null_count: Option<usize>,
-) -> ArrayDataBuilder {
-    match null_count {
-        Some(null_count) => {
-            if null_count > 0 {
-                let null_bit_buffer = null_bit_buffer
-                    .expect("implementation error. Should not be None if null_count > 0");
-
-                builder = builder.null_bit_buffer(null_bit_buffer);
-            }
-            builder
-        }
-        None => match null_bit_buffer {
-            None => builder,
-            Some(_) => {
-                // this should take account into offset and length
-                unimplemented!()
-            }
-        },
-    }
-}
-
-/// Take an existing slice and a null bitmap and construct an arrow array.
-pub fn build_with_existing_null_bitmap_and_slice<T>(
-    null_bit_buffer: Option<Buffer>,
-    null_count: usize,
-    values: &[T::Native],
-) -> PrimitiveArray<T>
-where
-    T: PolarsPrimitiveType,
-{
-    let len = values.len();
-    // See:
-    // https://docs.rs/arrow/0.16.0/src/arrow/array/builder.rs.html#314
-    let builder = ArrayData::builder(T::DATA_TYPE)
-        .len(len)
-        .add_buffer(Buffer::from(values.to_byte_slice()));
-
-    let builder = set_null_bits(builder, null_bit_buffer, Some(null_count));
-    let data = builder.build();
-    PrimitiveArray::<T>::from(data)
-}
-
 /// Get the null count and the null bitmap of the arrow array
 pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
     let data = arr.data();
@@ -399,19 +337,6 @@ where
         }
         ChunkedArray::new_from_chunks("from_iter", chunks)
     }
-}
-
-/// Returns the nearest number that is `>=` than `num` and is a multiple of 64
-#[inline]
-pub fn round_upto_multiple_of_64(num: usize) -> usize {
-    round_upto_power_of_2(num, 64)
-}
-
-/// Returns the nearest multiple of `factor` that is `>=` than `num`. Here `factor` must
-/// be a power of 2.
-fn round_upto_power_of_2(num: usize, factor: usize) -> usize {
-    debug_assert!(factor > 0 && (factor & (factor - 1)) == 0);
-    (num + (factor - 1)) & !(factor - 1)
 }
 
 pub trait NewChunkedArray<T, N> {
@@ -783,22 +708,6 @@ mod test {
         }
         let ca = builder.finish();
         assert_eq!(Vec::from(&ca), values);
-    }
-
-    #[test]
-    fn test_existing_null_bitmap() {
-        let mut builder = PrimitiveBuilder::<UInt32Type>::new(3);
-        for val in &[Some(1), None, Some(2)] {
-            builder.append_option(*val).unwrap();
-        }
-        let arr = builder.finish();
-        let (null_count, buf) = get_bitmap(&arr);
-
-        let new_arr =
-            build_with_existing_null_bitmap_and_slice::<UInt32Type>(buf, null_count, &[7, 8, 9]);
-        assert!(new_arr.is_valid(0));
-        assert!(new_arr.is_null(1));
-        assert!(new_arr.is_valid(2));
     }
 
     #[test]
