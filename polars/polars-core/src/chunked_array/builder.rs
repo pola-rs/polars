@@ -33,11 +33,13 @@ pub struct BooleanChunkedBuilder {
 
 impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
     /// Appends a value of type `T` into the builder
+    #[inline]
     fn append_value(&mut self, v: bool) {
         self.array_builder.append_value(v);
     }
 
     /// Appends a null slot into the builder
+    #[inline]
     fn append_null(&mut self) {
         self.array_builder.append_null();
     }
@@ -80,11 +82,13 @@ where
     T::Native: Default,
 {
     /// Appends a value of type `T` into the builder
+    #[inline]
     fn append_value(&mut self, v: T::Native) {
         self.array_builder.append_value(v)
     }
 
     /// Appends a null slot into the builder
+    #[inline]
     fn append_null(&mut self) {
         self.array_builder.append_null()
     }
@@ -188,6 +192,7 @@ impl CategoricalChunkedBuilder {
 }
 
 impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
+    #[inline]
     fn append_value(&mut self, val: &str) {
         let idx = if use_string_cache() {
             let mut mapping = crate::STRING_CACHE.lock_map();
@@ -213,6 +218,7 @@ impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
         self.array_builder.append_value(idx);
     }
 
+    #[inline]
     fn append_null(&mut self) {
         self.array_builder.append_null()
     }
@@ -256,11 +262,13 @@ impl Utf8ChunkedBuilder {
     }
 
     /// Appends a value of type `T` into the builder
+    #[inline]
     pub fn append_value<S: AsRef<str>>(&mut self, v: S) {
         self.builder.append_value(v.as_ref()).unwrap();
     }
 
     /// Appends a null slot into the builder
+    #[inline]
     pub fn append_null(&mut self) {
         self.builder.append_null().unwrap();
     }
@@ -298,10 +306,12 @@ impl Utf8ChunkedBuilderCow {
 }
 
 impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
+    #[inline]
     fn append_value(&mut self, val: Cow<'_, str>) {
         self.builder.append_value(val.as_ref())
     }
 
+    #[inline]
     fn append_null(&mut self) {
         self.builder.append_null()
     }
@@ -530,12 +540,14 @@ where
         }
     }
 
+    #[inline]
     fn append_null(&mut self) {
         let builder = self.builder.values();
         builder.append_null();
         self.builder.append(true).unwrap();
     }
 
+    #[inline]
     fn append_series(&mut self, s: &Series) {
         let builder = self.builder.values();
         let arrays = s.chunks();
@@ -588,12 +600,14 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         }
     }
 
+    #[inline]
     fn append_null(&mut self) {
         let builder = self.builder.values();
         builder.append_null().unwrap();
         self.builder.append(true).unwrap();
     }
 
+    #[inline]
     fn append_series(&mut self, s: &Series) {
         let ca = s.utf8().unwrap();
         let value_builder = self.builder.values();
@@ -635,12 +649,14 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
         }
     }
 
+    #[inline]
     fn append_null(&mut self) {
         let builder = self.builder.values();
         builder.append_null();
         self.builder.append(true).unwrap();
     }
 
+    #[inline]
     fn append_series(&mut self, s: &Series) {
         let ca = s.bool().unwrap();
         let value_builder = self.builder.values();
