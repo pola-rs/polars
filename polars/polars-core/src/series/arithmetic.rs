@@ -358,21 +358,21 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     /// Apply lhs - self
-    pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Series {
+    pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply(|v| lhs - v).into_series()
+        self.apply(|v| lhs - v)
     }
 
     /// Apply lhs / self
-    pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Series {
+    pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply(|v| lhs / v).into_series()
+        self.apply(|v| lhs / v)
     }
 
     /// Apply lhs % self
-    pub fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Series {
+    pub fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply(|v| lhs % v).into_series()
+        self.apply(|v| lhs % v)
     }
 }
 
