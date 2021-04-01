@@ -6,7 +6,7 @@ use crate::utils::{aexpr_to_root_names, agg_source_paths};
 use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::prelude::*;
-use polars_core::{frame::group_by::GroupByMethod, utils::parallel_op};
+use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op};
 use polars_io::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;

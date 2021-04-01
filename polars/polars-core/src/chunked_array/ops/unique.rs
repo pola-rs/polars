@@ -1,9 +1,9 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
-use crate::frame::group_by::GroupTuples;
+use crate::frame::groupby::GroupTuples;
 use crate::prelude::*;
 use crate::utils::{floating_encode_f64, integer_decode_f64, NoNull};
-use crate::{chunked_array::float::IntegerDecode, frame::group_by::IntoGroupTuples};
+use crate::{chunked_array::float::IntegerDecode, frame::groupby::IntoGroupTuples};
 use ahash::RandomState;
 use itertools::Itertools;
 use num::{NumCast, ToPrimitive};

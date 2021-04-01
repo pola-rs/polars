@@ -1,3 +1,9 @@
+#[cfg(any(feature = "dtype-date64",
+feature = "dtype-date32",
+feature = "dtype-duration-ms",
+feature = "dtype-duration-ns",
+feature = "dtype-time64-ns"
+))]
 pub mod dates;
 #[cfg(feature = "object")]
 pub mod object;
@@ -10,7 +16,9 @@ use crate::chunked_array::{
     AsSinglePtr,
 };
 use crate::fmt::FmtList;
-use crate::frame::group_by::*;
+use crate::frame::groupby::*;
+#[cfg(feature = "pivot")]
+use crate::frame::groupby::pivot::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
 use ahash::RandomState;
@@ -106,6 +114,7 @@ macro_rules! impl_dyn_series {
                 self.0.agg_median(groups)
             }
 
+            #[cfg(feature = "pivot")]
             fn pivot<'a>(
                 &self,
                 pivot_series: &'a (dyn SeriesTrait + 'a),
@@ -116,6 +125,7 @@ macro_rules! impl_dyn_series {
                 self.0.pivot(pivot_series, keys, groups, agg_type)
             }
 
+            #[cfg(feature = "pivot")]
             fn pivot_count<'a>(
                 &self,
                 pivot_series: &'a (dyn SeriesTrait + 'a),

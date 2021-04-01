@@ -29,7 +29,10 @@ pub trait IntoSeries {
 
 pub(crate) mod private {
     use super::*;
-    use crate::frame::group_by::{GroupTuples, PivotAgg};
+    use crate::frame::groupby::GroupTuples;
+    #[cfg(feature = "pivot")]
+    use crate::frame::groupby::pivot::PivotAgg;
+
     use ahash::RandomState;
 
     pub trait PrivateSeries {
@@ -72,6 +75,7 @@ pub(crate) mod private {
         fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
+        #[cfg(feature = "pivot")]
         fn pivot<'a>(
             &self,
             _pivot_series: &'a (dyn SeriesTrait + 'a),
@@ -82,6 +86,7 @@ pub(crate) mod private {
             unimplemented!()
         }
 
+        #[cfg(feature = "pivot")]
         fn pivot_count<'a>(
             &self,
             _pivot_series: &'a (dyn SeriesTrait + 'a),

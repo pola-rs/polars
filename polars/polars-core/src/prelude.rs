@@ -21,7 +21,7 @@ pub use crate::{
     datatypes,
     datatypes::*,
     error::{PolarsError, Result},
-    frame::{group_by::VecHash, hash_join::JoinType, DataFrame},
+    frame::{groupby::VecHash, hash_join::JoinType, DataFrame},
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
         IntoSeries, NamedFrom, Series, SeriesTrait,
