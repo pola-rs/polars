@@ -1,23 +1,23 @@
 use std::convert::TryFrom;
 
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use pyo3::types::PyTuple;
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
-use polars::frame::{groupby::GroupBy};
+use polars::frame::groupby::GroupBy;
 use polars::prelude::*;
 use polars_core::frame::groupby::resample::SampleRule;
 
-use crate::{
-    arrow_interop,
-    error::PyPolarsEr,
-    file::{EitherRustPythonFile, get_either_file, get_file_like},
-    series::{PySeries, to_pyseries_collection, to_series_collection},
-};
 use crate::conversion::Wrap;
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::utils::str_to_polarstype;
+use crate::{
+    arrow_interop,
+    error::PyPolarsEr,
+    file::{get_either_file, get_file_like, EitherRustPythonFile},
+    series::{to_pyseries_collection, to_series_collection, PySeries},
+};
 
 #[pyclass]
 #[repr(transparent)]

@@ -746,33 +746,32 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> Result<Series> {
-        unimplemented!()
+    fn hour(&self) -> Result<UInt32Chunked> {
+        self.date64().map(|ca| ca.hour())
     }
 
     #[cfg(feature = "temporal")]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
-    fn minute(&self) -> Result<Series> {
-        unimplemented!()
+    fn minute(&self) -> Result<UInt32Chunked> {
+        self.date64().map(|ca| ca.minute())
     }
 
     #[cfg(feature = "temporal")]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
-    fn second(&self) -> Result<Series> {
-        unimplemented!()
+    fn second(&self) -> Result<UInt32Chunked> {
+        self.date64().map(|ca| ca.second())
     }
 
     #[cfg(feature = "temporal")]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
-    fn nanosecond(&self) -> Result<Series> {
-        unimplemented!()
+    fn nanosecond(&self) -> Result<UInt32Chunked> {
+        self.date64().map(|ca| ca.nanosecond())
     }
 
     #[cfg(feature = "temporal")]
@@ -781,21 +780,40 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// Returns the day of month starting from 1.
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    fn day(&self) -> Result<Series> {
-        unimplemented!()
+    fn day(&self) -> Result<UInt32Chunked> {
+        match self.dtype() {
+            DataType::Date32 => self.date32().map(|ca| ca.day()),
+            DataType::Date64 => self.date64().map(|ca| ca.day()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
     }
-
     #[cfg(feature = "temporal")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Returns the weekday number where monday = 0 and sunday = 6
-    fn weekday(&self) -> Result<Series> {
-        unimplemented!()
+    fn weekday(&self) -> Result<UInt32Chunked> {
+        match self.dtype() {
+            DataType::Date32 => self.date32().map(|ca| ca.weekday()),
+            DataType::Date64 => self.date64().map(|ca| ca.weekday()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
     }
 
     #[cfg(feature = "temporal")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-    fn week(&self) -> Result<Series> {
-        unimplemented!()
+    fn week(&self) -> Result<UInt32Chunked> {
+        match self.dtype() {
+            DataType::Date32 => self.date32().map(|ca| ca.week()),
+            DataType::Date64 => self.date64().map(|ca| ca.week()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
     }
 
     #[cfg(feature = "temporal")]
@@ -803,8 +821,14 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    fn ordinal_day(&self) -> Result<Series> {
-        unimplemented!()
+    fn ordinal_day(&self) -> Result<UInt32Chunked> {
+        match self.dtype() {
+            DataType::Date32 => self.date32().map(|ca| ca.ordinal()),
+            DataType::Date64 => self.date64().map(|ca| ca.ordinal()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
     }
 
     #[cfg(feature = "temporal")]
@@ -813,16 +837,28 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
-    fn month(&self) -> Result<Series> {
-        unimplemented!()
+    fn month(&self) -> Result<UInt32Chunked> {
+        match self.dtype() {
+            DataType::Date32 => self.date32().map(|ca| ca.month()),
+            DataType::Date64 => self.date64().map(|ca| ca.month()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
     }
 
     #[cfg(feature = "temporal")]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
-    fn year(&self) -> Result<Series> {
-        unimplemented!()
+    fn year(&self) -> Result<Int32Chunked> {
+        match self.dtype() {
+            DataType::Date32 => self.date32().map(|ca| ca.year()),
+            DataType::Date64 => self.date64().map(|ca| ca.year()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
     }
 
     #[cfg(feature = "temporal")]
