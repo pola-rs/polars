@@ -2,8 +2,9 @@
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, NoNull};
 use arrow::array::PrimitiveArray;
+use arrow::compute::divide_scalar;
 use arrow::{array::ArrayRef, compute};
-use num::{Num, NumCast, ToPrimitive};
+use num::{Num, NumCast, One, ToPrimitive, Zero};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
@@ -301,15 +302,14 @@ where
 impl<T, N> Div<N> for &ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast,
+    T::Native: NumCast + Div<Output = T::Native> + One + Zero + Sub<Output = T::Native>,
     N: Num + ToPrimitive,
-    T::Native: Div<Output = T::Native>,
 {
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: N) -> Self::Output {
-        let divider: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val / divider)
+        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
+        self.apply_kernel(|arr| Arc::new(divide_scalar(arr, rhs).unwrap()))
     }
 }
 

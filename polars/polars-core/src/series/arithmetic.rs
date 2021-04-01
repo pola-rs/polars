@@ -139,7 +139,7 @@ impl ops::Add for &Series {
     }
 }
 
-impl std::ops::Mul for &Series {
+impl ops::Mul for &Series {
     type Output = Series;
 
     /// ```
@@ -153,7 +153,7 @@ impl std::ops::Mul for &Series {
     }
 }
 
-impl std::ops::Div for &Series {
+impl ops::Div for &Series {
     type Output = Series;
 
     /// ```
@@ -167,7 +167,7 @@ impl std::ops::Div for &Series {
     }
 }
 
-impl std::ops::Rem for &Series {
+impl ops::Rem for &Series {
     type Output = Series;
 
     /// ```
@@ -183,77 +183,6 @@ impl std::ops::Rem for &Series {
 
 // Series +-/* numbers instead of Series
 
-pub(super) trait NumOpsDispatchSeriesSingleNumber {
-    fn subtract_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
-        unimplemented!()
-    }
-    fn add_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
-        unimplemented!()
-    }
-    fn multiply_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
-        unimplemented!()
-    }
-    fn divide_number<N: Num + NumCast>(&self, _rhs: N) -> Series {
-        unimplemented!()
-    }
-}
-
-impl NumOpsDispatchSeriesSingleNumber for BooleanChunked {}
-impl NumOpsDispatchSeriesSingleNumber for Utf8Chunked {}
-impl NumOpsDispatchSeriesSingleNumber for ListChunked {}
-#[cfg(feature = "object")]
-impl<T> NumOpsDispatchSeriesSingleNumber for ObjectChunked<T> {}
-
-impl<T> NumOpsDispatchSeriesSingleNumber for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: Num
-        + NumCast
-        + ops::Add<Output = T::Native>
-        + ops::Sub<Output = T::Native>
-        + ops::Mul<Output = T::Native>
-        + ops::Div<Output = T::Native>,
-    ChunkedArray<T>: IntoSeries,
-{
-    fn subtract_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        let mut ca: ChunkedArray<T> = self
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| v - rhs))
-            .collect();
-        ca.rename(self.name());
-        ca.into_series()
-    }
-
-    fn add_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        let mut ca: ChunkedArray<T> = self
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| v + rhs))
-            .collect();
-        ca.rename(self.name());
-        ca.into_series()
-    }
-    fn multiply_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        let mut ca: ChunkedArray<T> = self
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| v * rhs))
-            .collect();
-        ca.rename(self.name());
-        ca.into_series()
-    }
-    fn divide_number<N: Num + NumCast>(&self, rhs: N) -> Series {
-        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        let mut ca: ChunkedArray<T> = self
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| v / rhs))
-            .collect();
-        ca.rename(self.name());
-        ca.into_series()
-    }
-}
-
 impl<T> ops::Sub<T> for &Series
 where
     T: Num + NumCast,
@@ -261,7 +190,18 @@ where
     type Output = Series;
 
     fn sub(self, rhs: T) -> Self::Output {
-        apply_method_all_arrow_series!(self, subtract_number, rhs)
+        macro_rules! numeric {
+            ($ca:expr) => {{
+                $ca.sub(rhs).into_series()
+            }};
+        }
+
+        macro_rules! noop {
+            ($ca:expr) => {{
+                unimplemented!()
+            }};
+        }
+        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
     }
 }
 
@@ -283,7 +223,18 @@ where
     type Output = Series;
 
     fn add(self, rhs: T) -> Self::Output {
-        apply_method_all_arrow_series!(self, add_number, rhs)
+        macro_rules! numeric {
+            ($ca:expr) => {{
+                $ca.add(rhs).into_series()
+            }};
+        }
+
+        macro_rules! noop {
+            ($ca:expr) => {{
+                unimplemented!()
+            }};
+        }
+        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
     }
 }
 
@@ -305,7 +256,18 @@ where
     type Output = Series;
 
     fn div(self, rhs: T) -> Self::Output {
-        apply_method_all_arrow_series!(self, divide_number, rhs)
+        macro_rules! numeric {
+            ($ca:expr) => {{
+                $ca.div(rhs).into_series()
+            }};
+        }
+
+        macro_rules! noop {
+            ($ca:expr) => {{
+                unimplemented!()
+            }};
+        }
+        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
     }
 }
 
@@ -327,7 +289,18 @@ where
     type Output = Series;
 
     fn mul(self, rhs: T) -> Self::Output {
-        apply_method_all_arrow_series!(self, multiply_number, rhs)
+        macro_rules! numeric {
+            ($ca:expr) => {{
+                $ca.mul(rhs).into_series()
+            }};
+        }
+
+        macro_rules! noop {
+            ($ca:expr) => {{
+                unimplemented!()
+            }};
+        }
+        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
     }
 }
 
@@ -342,77 +315,71 @@ where
     }
 }
 
+impl<T> ops::Rem<T> for &Series
+where
+    T: Num + NumCast,
+{
+    type Output = Series;
+
+    fn rem(self, rhs: T) -> Self::Output {
+        macro_rules! numeric {
+            ($ca:expr) => {{
+                $ca.rem(rhs).into_series()
+            }};
+        }
+
+        macro_rules! noop {
+            ($ca:expr) => {{
+                unimplemented!()
+            }};
+        }
+        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
+    }
+}
+
+impl<T> ops::Rem<T> for Series
+where
+    T: Num + NumCast,
+{
+    type Output = Self;
+
+    fn rem(self, rhs: T) -> Self::Output {
+        (&self).rem(rhs)
+    }
+}
+
 /// We cannot override the left hand side behaviour. So we create a trait Lhs num ops.
 /// This allows for 1.add(&Series)
 
 pub(super) trait LhsNumOpsDispatch {
-    fn lhs_subtract_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
+    fn lhs_sub<N: Num + NumCast>(&self, _lhs: N) -> Series {
         unimplemented!()
     }
-    fn lhs_add_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
+    fn lhs_div<N: Num + NumCast>(&self, _lhs: N) -> Series {
         unimplemented!()
     }
-    fn lhs_multiply_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
-        unimplemented!()
-    }
-    fn lhs_divide_number<N: Num + NumCast>(&self, _lhs: N) -> Series {
+    fn lhs_rem<N: Num + NumCast>(&self, _lhs: N) -> Series {
         unimplemented!()
     }
 }
 
-impl LhsNumOpsDispatch for BooleanChunked {}
-impl LhsNumOpsDispatch for Utf8Chunked {}
-impl LhsNumOpsDispatch for ListChunked {}
-#[cfg(feature = "object")]
-impl<T> LhsNumOpsDispatch for ObjectChunked<T> {}
-
 impl<T> LhsNumOpsDispatch for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Num
-        + NumCast
-        + ops::Add<Output = T::Native>
-        + ops::Sub<Output = T::Native>
-        + ops::Mul<Output = T::Native>
-        + ops::Div<Output = T::Native>,
+    T::Native: Num + NumCast + ops::Sub<Output = T::Native> + ops::Div<Output = T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
-    fn lhs_subtract_number<N: Num + NumCast>(&self, lhs: N) -> Series {
+    fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Series {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        let mut ca: ChunkedArray<T> = self
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| lhs - v))
-            .collect();
-        ca.rename(self.name());
-        ca.into_series()
+        self.apply(|v| lhs - v).into_series()
     }
-
-    fn lhs_add_number<N: Num + NumCast>(&self, lhs: N) -> Series {
+    fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Series {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        let mut ca: ChunkedArray<T> = self
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| lhs + v))
-            .collect();
-        ca.rename(self.name());
-        ca.into_series()
+        self.apply(|v| lhs / v).into_series()
     }
-    fn lhs_multiply_number<N: Num + NumCast>(&self, lhs: N) -> Series {
+    fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Series {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        let mut ca: ChunkedArray<T> = self
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| lhs * v))
-            .collect();
-        ca.rename(self.name());
-        ca.into_series()
-    }
-    fn lhs_divide_number<N: Num + NumCast>(&self, lhs: N) -> Series {
-        let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        let mut ca: ChunkedArray<T> = self
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| lhs / v))
-            .collect();
-        ca.rename(self.name());
-        ca.into_series()
+        self.apply(|v| lhs % v).into_series()
     }
 }
 
@@ -423,6 +390,7 @@ pub trait LhsNumOps {
     fn sub(self, rhs: &Series) -> Self::Output;
     fn div(self, rhs: &Series) -> Self::Output;
     fn mul(self, rhs: &Series) -> Self::Output;
+    fn rem(self, rem: &Series) -> Self::Output;
 }
 
 impl<T> LhsNumOps for T
@@ -432,16 +400,54 @@ where
     type Output = Series;
 
     fn add(self, rhs: &Series) -> Self::Output {
-        apply_method_all_arrow_series!(rhs, lhs_add_number, self)
+        // order doesn't matter, dispatch to rhs + lhs
+        rhs + self
     }
     fn sub(self, rhs: &Series) -> Self::Output {
-        apply_method_all_arrow_series!(rhs, lhs_subtract_number, self)
+        macro_rules! numeric {
+            ($rhs:expr) => {{
+                $rhs.lhs_sub(self).into_series()
+            }};
+        }
+
+        macro_rules! noop {
+            ($ca:expr) => {{
+                unimplemented!()
+            }};
+        }
+        match_arrow_data_type_apply_macro_ca!(rhs, numeric, noop, noop)
     }
     fn div(self, rhs: &Series) -> Self::Output {
-        apply_method_all_arrow_series!(rhs, lhs_divide_number, self)
+        macro_rules! numeric {
+            ($rhs:expr) => {{
+                $rhs.lhs_div(self).into_series()
+            }};
+        }
+
+        macro_rules! noop {
+            ($ca:expr) => {{
+                unimplemented!()
+            }};
+        }
+        match_arrow_data_type_apply_macro_ca!(rhs, numeric, noop, noop)
     }
     fn mul(self, rhs: &Series) -> Self::Output {
-        apply_method_all_arrow_series!(rhs, lhs_multiply_number, self)
+        // order doesn't matter, dispatch to rhs * lhs
+        rhs * self
+    }
+    fn rem(self, rhs: &Series) -> Self::Output {
+        macro_rules! numeric {
+            ($rhs:expr) => {{
+                $rhs.lhs_rem(self).into_series()
+            }};
+        }
+
+        macro_rules! noop {
+            ($ca:expr) => {{
+                unimplemented!()
+            }};
+        }
+        match_arrow_data_type_apply_macro_ca!(rhs, numeric, noop, noop)
     }
 }
 
@@ -453,7 +459,7 @@ mod test {
     #[allow(clippy::eq_op)]
     fn test_arithmetic_series() {
         // Series +-/* Series
-        let s: Series = [1, 2, 3].iter().collect();
+        let s = Series::new("foo", [1, 2, 3]);
         assert_eq!(
             Vec::from((&s * &s).i32().unwrap()),
             [Some(1), Some(4), Some(9)]
@@ -505,5 +511,13 @@ mod test {
             Vec::from((1.mul(&s)).i32().unwrap()),
             [Some(1), Some(2), Some(3)]
         );
+        assert_eq!(
+            Vec::from((1.rem(&s)).i32().unwrap()),
+            [Some(0), Some(1), Some(1)]
+        );
+
+        assert_eq!((&s * &s).name(), "foo");
+        assert_eq!((&s * 1).name(), "foo");
+        assert_eq!((1.div(&s)).name(), "foo");
     }
 }
