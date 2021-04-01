@@ -971,51 +971,51 @@ impl Expr {
     /// Get the year of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn year(self) -> Expr {
-        let function = move |s: Series| s.year();
+        let function = move |s: Series| s.year().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
 
     /// Get the month of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn month(self) -> Expr {
-        let function = move |s: Series| s.month();
+        let function = move |s: Series| s.month().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the month of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn day(self) -> Expr {
-        let function = move |s: Series| s.day();
+        let function = move |s: Series| s.day().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the ordinal_day of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn ordinal_day(self) -> Expr {
-        let function = move |s: Series| s.ordinal_day();
+        let function = move |s: Series| s.ordinal_day().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the hour of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn hour(self) -> Expr {
-        let function = move |s: Series| s.hour();
+        let function = move |s: Series| s.hour().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the minute of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn minute(self) -> Expr {
-        let function = move |s: Series| s.minute();
+        let function = move |s: Series| s.minute().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
 
     /// Get the second of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn second(self) -> Expr {
-        let function = move |s: Series| s.second();
+        let function = move |s: Series| s.second().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
     /// Get the nanosecond of a Time64
     #[cfg(feature = "temporal")]
     pub fn nanosecond(self) -> Expr {
-        let function = move |s: Series| s.nanosecond();
+        let function = move |s: Series| s.nanosecond().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
 }

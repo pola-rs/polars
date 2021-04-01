@@ -986,52 +986,52 @@ impl PySeries {
 
     pub fn year(&self) -> PyResult<Self> {
         let s = self.series.year().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn month(&self) -> PyResult<Self> {
         let s = self.series.month().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn weekday(&self) -> PyResult<Self> {
         let s = self.series.weekday().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn week(&self) -> PyResult<Self> {
         let s = self.series.week().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn day(&self) -> PyResult<Self> {
         let s = self.series.day().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn ordinal_day(&self) -> PyResult<Self> {
         let s = self.series.ordinal_day().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn hour(&self) -> PyResult<Self> {
         let s = self.series.hour().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn minute(&self) -> PyResult<Self> {
         let s = self.series.minute().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn second(&self) -> PyResult<Self> {
         let s = self.series.second().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     pub fn nanosecond(&self) -> PyResult<Self> {
         let s = self.series.nanosecond().map_err(PyPolarsEr::from)?;
-        Ok(s.into())
+        Ok(s.into_series().into())
     }
 
     fn peak_max(&self) -> Self {

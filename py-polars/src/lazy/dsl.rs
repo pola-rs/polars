@@ -314,60 +314,28 @@ impl PyExpr {
     }
 
     pub fn year(&self) -> PyExpr {
-        let function = move |s: Series| s.year();
-        self.clone()
-            .inner
-            .map(function, Some(DataType::UInt32))
-            .into()
+        self.clone().inner.year().into()
     }
     pub fn month(&self) -> PyExpr {
-        let function = move |s: Series| s.month();
-        self.clone()
-            .inner
-            .map(function, Some(DataType::UInt32))
-            .into()
+        self.clone().inner.month().into()
     }
     pub fn day(&self) -> PyExpr {
-        let function = move |s: Series| s.day();
-        self.clone()
-            .inner
-            .map(function, Some(DataType::UInt32))
-            .into()
+        self.clone().inner.day().into()
     }
     pub fn ordinal_day(&self) -> PyExpr {
-        let function = move |s: Series| s.ordinal_day();
-        self.clone()
-            .inner
-            .map(function, Some(DataType::UInt32))
-            .into()
+        self.clone().inner.ordinal_day().into()
     }
     pub fn hour(&self) -> PyExpr {
-        let function = move |s: Series| s.hour();
-        self.clone()
-            .inner
-            .map(function, Some(DataType::UInt32))
-            .into()
+        self.clone().inner.hour().into()
     }
     pub fn minute(&self) -> PyExpr {
-        let function = move |s: Series| s.minute();
-        self.clone()
-            .inner
-            .map(function, Some(DataType::UInt32))
-            .into()
+        self.clone().inner.minute().into()
     }
     pub fn second(&self) -> PyExpr {
-        let function = move |s: Series| s.second();
-        self.clone()
-            .inner
-            .map(function, Some(DataType::UInt32))
-            .into()
+        self.clone().inner.second().into()
     }
     pub fn nanosecond(&self) -> PyExpr {
-        let function = move |s: Series| s.nanosecond();
-        self.clone()
-            .inner
-            .map(function, Some(DataType::UInt32))
-            .into()
+        self.clone().inner.nanosecond().into()
     }
 
     pub fn map(&self, lambda: PyObject, output_type: &PyAny) -> PyExpr {
