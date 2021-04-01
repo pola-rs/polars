@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use ahash::RandomState;
 
-use polars_core::frame::group_by::{fmt_groupby_column, GroupByMethod};
+use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, Arena, Node};

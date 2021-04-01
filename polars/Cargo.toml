@@ -25,21 +25,33 @@ parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
 lazy = ["polars-core/lazy"]
 # commented out until UB is fixed
 #parallel = ["polars-core/parallel"]
+
 # extra utilities for Utf8Chunked
 strings = ["polars-core/strings"]
+
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["polars-core/object"]
+
 # support for arrows json parsing
 json = ["polars-io/json"]
+
 # support for arrows ipc file parsing
 ipc = ["polars-io/ipc"]
+
 # ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
 # that fits a TrustedLen iterator.
 performant = ["polars-core/performant"]
+
+# Choose one of those features for dataframe formatting.
+#   - plain_fmt: less compile times, simpler formatting
+#   - pretty_fmt: better looking dataframes for increase compile times
 plain_fmt = ["polars-core/plain_fmt"]
 pretty_fmt = ["polars-core/pretty_fmt"]
 
-# opt-in datatypes
+# features
+pivot = ["polars-core/pivot"]
+
+# all opt-in datatypes
 dtype-full = [
     "dtype-time64-ns",
     "dtype-duration-ns",
@@ -59,6 +71,7 @@ dtype-slim = [
     "dtype-date64",
 ]
 
+# opt-in datatypes for Series
 dtype-time64-ns = ["polars-core/dtype-time64-ns"]
 dtype-duration-ns = ["polars-core/dtype-duration-ns"]
 dtype-duration-ms = ["polars-core/dtype-duration-ms"]

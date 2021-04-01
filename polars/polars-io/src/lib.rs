@@ -1,4 +1,4 @@
-#[cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod csv;
 pub mod csv_core;
 #[cfg(feature = "ipc")]

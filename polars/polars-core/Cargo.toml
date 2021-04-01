@@ -16,18 +16,28 @@ temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "lazy", "parquet", "performant", "plain_fmt"]
 lazy = []
+
 # commented out until UB is fixed
 #parallel = []
+
+# ~40% faster collect, needed until trustedlength iter stabilizes
 performant = []
+
 # extra utilities for Utf8Chunked
 strings = ["regex"]
+
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
+
 # Cannot have mutually exclusive types. User should choose one of:
 pretty_fmt = ["comfy-table"]
 plain_fmt = ["prettytable-rs"]
 
-# opt-in datatypes
+# opt-in features
+# pivot operation on DataFrame
+pivot = []
+
+# opt-in datatypes for Series
 dtype-time64-ns = []
 dtype-duration-ns = []
 dtype-duration-ms = []

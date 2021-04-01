@@ -1,4 +1,4 @@
-use crate::frame::group_by::GroupBy;
+use crate::frame::groupby::GroupBy;
 use crate::prelude::*;
 
 pub enum SampleRule {

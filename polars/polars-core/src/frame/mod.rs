@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 mod arithmetic;
 pub mod explode;
-pub mod group_by;
+pub mod groupby;
 pub mod hash_join;
 pub mod resample;
 pub mod row;

@@ -27,7 +27,6 @@ pub mod float;
 pub mod iterator;
 pub mod kernels;
 #[cfg(feature = "ndarray")]
-#[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
 mod ndarray;
 
 #[cfg(feature = "object")]
