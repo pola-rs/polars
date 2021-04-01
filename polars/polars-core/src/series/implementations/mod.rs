@@ -1,8 +1,9 @@
-#[cfg(any(feature = "dtype-date64",
-feature = "dtype-date32",
-feature = "dtype-duration-ms",
-feature = "dtype-duration-ns",
-feature = "dtype-time64-ns"
+#[cfg(any(
+    feature = "dtype-date64",
+    feature = "dtype-date32",
+    feature = "dtype-duration-ms",
+    feature = "dtype-duration-ns",
+    feature = "dtype-time64-ns"
 ))]
 pub mod dates;
 #[cfg(feature = "object")]
@@ -16,9 +17,9 @@ use crate::chunked_array::{
     AsSinglePtr,
 };
 use crate::fmt::FmtList;
-use crate::frame::groupby::*;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
+use crate::frame::groupby::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
 use ahash::RandomState;

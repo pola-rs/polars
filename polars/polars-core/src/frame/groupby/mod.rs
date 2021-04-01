@@ -1,5 +1,5 @@
 #[cfg(feature = "pivot")]
-pub (crate) mod pivot;
+pub(crate) mod pivot;
 
 use crate::chunked_array::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
@@ -1911,7 +1911,6 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         df.as_single_chunk();
         Ok(df)
     }
-
 }
 
 #[derive(Copy, Clone)]
@@ -2063,7 +2062,6 @@ mod test {
         );
         println!("{:?}", df.groupby("date").unwrap().groups().unwrap());
     }
-
 
     #[test]
     fn test_static_groupby_by_12_columns() {

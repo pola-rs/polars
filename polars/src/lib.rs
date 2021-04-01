@@ -1,29 +1,82 @@
 //! # Polars: *<small>DataFrames in Rust</small>*
 //!
 //! Polars is a DataFrame library for Rust. It is based on [Apache Arrows](https://arrow.apache.org/) memory model.
-//! This means that operations on Polars array's *(called `Series` or `ChunkedArray<T>` {if the type `T` is known})* are
-//! optimally aligned cache friendly operations and SIMD.
+//! Apache arrow provides very cache efficient columnar data structures, and is becoming the defacto
+//! standard for columnar data.
 //!
-//! Polars supports an eager and a lazy api. The eager api is similar to [pandas](https://pandas.pydata.org/),
-//! the lazy api is similar to [Spark](https://spark.apache.org/).
+//! This means that Polars data structures can be shared zero copy with processes in many different
+//! languages.
 //!
-//! ### Eager
+//! ## 1. Data Structures
+//! The base data structures provided by polars are `DataFrame`, `Series`, and `ChunkedArray<T>`.
+//! We will provide a short top down view of these data structures.
+//!
+//! ### 1.1 DataFrame
+//! A `DataFrame` is a 2 dimensional data structure that is backed by a `Series`, and it could be
+//! seen as an abstraction on `Vec<Series>`. Operations that can be executed on `DataFrame`s are very
+//! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc. The closes
+//! arrow equivalent to a `DataFrame` is a [RecordBatch](arrow/record_batch/struct.RecordBatch.html),
+//! and Polars provides zero copy coercion.
+//!
+//! ### 1.2 Series
+//! `Series` are the type agnostic columnar data representation of Polars. They provide many
+//! operations out of the box, many via the [Series struct](crate::prelude::Series) and
+//! [SeriesTrait trait](crate::series/trait.SeriesTrait.html). Whether or not an operation is provided
+//! by a `Series` is determined by the operation. If the operation can be done without knowing the
+//! underlying columnar type, this operation probably is provided by the `Series`. If not, you must
+//! downcast to the typed data structure that is wrapped by the `Series`. That is the `ChunkedArray<T>`.
+//!
+//! ### 1.3 ChunkedArray
+//! `ChunkedArray<T>` are wrappers around an arrow array, that can contain multiples chunks, e.g.
+//! `Vec<dyn ArrowArray>`. These are the root data structures of Polars, and implement many operations.
+//! Most operations are implemented by traits defined in [chunked_array::ops](crate::chunked_array::ops),
+//! or on the [ChunkedArray struct](crate::chunked_array::ops).
+//!
+//! ## 2. SIMD
+//! Polars / Arrow uses packed_simd to speed up kernels with SIMD operations. SIMD is an optional
+//! `feature = "simd"`, and requires a nightly compiler. If you don't need SIMD, **Polars runs on stable!**
+//!
+//! ## 3. API
+//! Polars supports an eager and a lazy API, and strives to make them both equally capable.
+//! The eager API is similar to [pandas](https://pandas.pydata.org/), and is easy to get started.
+//! The lazy API is similar to [Spark](https://spark.apache.org/), and builds a query plan that will
+//! be optimized. This may be less intuitive, but you may gain of additional performance.
+//!
+//! ### 3.1 Eager
 //! Read more in the pages of the following data structures /traits.
 //!
 //! * [DataFrame struct](crate::frame::DataFrame)
 //! * [Series struct](crate::series::Series)
 //! * [Series trait](crate::series::SeriesTrait)
 //! * [ChunkedArray struct](crate::chunked_array::ChunkedArray)
+//! * [ChunkedArray operations traits](crate::chunked_array::ops)
 //!
-//! ### Lazy
+//! ### 3.2 Lazy
 //! Unlock full potential with lazy computation. This allows query optimizations and provides Polars
 //! the full query context so that the fastest algorithm can be chosen.
-//! Read more in the [lazy](polars_lazy) module
 //!
-//! ## Compile times and opt-in data types
-//! Polars [DataFrames](crate::frame::DataFrame) wrap [Series](crate::series::Series). These `Series`
-//! are wrappers around [ChunkedArray<T>](crate::chunked_array::ChunkedArray) without the generic
-//! parameter `T`. To get rid of the generic parameter, all the possible value of `T` are compiled
+//! **[Read more in the lazy module.](polars_lazy)**
+//!
+//! ## 4. Compile times
+//! A DataFrame library typically consists of
+//!
+//! * Tons of features
+//! * A lot of datatypes
+//!
+//! Both of these really put large strains on compile times. To keep Polars lean, we make both **opt-in**,
+//! meaning that you only pay the compilation cost, if you need it.
+//!
+//! ## 4.2 Compile times and opt-in featurs
+//! The opt-in features are:
+//!
+//! * `pivot` - pivot operation on `DataFrame`s
+//! * `random` - Generate array's with randomly sampled values
+//! * `ndarray`- Convert from `DataFrame` to `ndarray`
+//!
+//! ## 4.3 Compile times and opt-in data types
+//! As mentioned above, Polars `Series` are wrappers around
+//! `ChunkedArray<T>` without the generic parameter `T`.
+//! To get rid of the generic parameter, all the possible value of `T` are compiled
 //! for `Series`. This gets more expensive the more types you want for a `Series`. In order to reduce
 //! the compile times, we have decided to default to a minimal set of types and make more `Series` types
 //! opt-in.
@@ -40,20 +93,25 @@
 //!     | Date64Type              | dtype-date64      |
 //!     | Int8Type                | dtype-i8          |
 //!     | Int16Type               | dtype-i16         |
-//!     | UInt8Type                | dtype-u8          |
-//!     | UInt16Type               | dtype-u16         |
-//!     | UInt64Type               | dtype-u64         |
+//!     | UInt8Type               | dtype-u8          |
+//!     | UInt16Type              | dtype-u16         |
+//!     | UInt64Type              | dtype-u64         |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.
 //!
 //! * `dtype-full` - all opt-in dtypes.
+//! * `dtype-slim` - slim preset of opt-in dtypes.
 //!
-//! ## Performance and string data
+//! ## 5. Performance and string data
 //! Large string data can really slow down your queries.
 //! Read more in the [performance section](crate::docs::performance)
 //!
-//! ## Read and write CSV/ JSON
+//! ## 6. Examples
+//! Below we show some minimal examples, most can be found in the provided `traits` and `structs`
+//! documentation.
+//!
+//! ### Read and write CSV/ JSON
 //!
 //! ```
 //! use polars::prelude::*;
@@ -73,7 +131,7 @@
 //! * [the IPC module](polars_io::ipc)
 //! * [the parquet module](polars_io::parquet)
 //!
-//! ## Joins
+//! ### Joins
 //!
 //! ```
 //! # #[macro_use] extern crate polars;
@@ -115,7 +173,7 @@
 //! +------+------+------+
 //! ```
 //!
-//! ## Groupby's | aggregations | pivots | melts
+//! ### Groupby's | aggregations | pivots | melts
 //!
 //! ```
 //! use polars::prelude::*;
@@ -126,14 +184,14 @@
 //! }
 //! ```
 //!
-//! ## Arithmetic
+//! ### Arithmetic
 //! ```
 //! use polars::prelude::*;
 //! let s = Series::new("foo", [1, 2, 3]);
 //! let s_squared = &s * &s;
 //! ```
 //!
-//! ## Rust iterators
+//! ### Rust iterators
 //!
 //! ```
 //! use polars::prelude::*;
@@ -150,7 +208,7 @@
 //!  }).collect();
 //! ```
 //!
-//! ## Apply custom closures
+//! ### Apply custom closures
 //!
 //! Besides running custom iterators, custom closures can be applied on the values of [ChunkedArray](chunked_array/struct.ChunkedArray.html)
 //! by using the [apply](chunked_array/apply/trait.Apply.html) method. This method accepts
@@ -168,7 +226,7 @@
 //! assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)])
 //! ```
 //!
-//! ## Comparisons
+//! ### Comparisons
 //!
 //! ```
 //! use polars::prelude::*;
@@ -177,34 +235,6 @@
 //!
 //! assert_eq!(Vec::from(mask), &[Some(true), Some(false), Some(false)]);
 //! ```
-//!
-//! ## Temporal data types
-//!
-//! ```rust
-//! # use polars::prelude::*;
-//! let dates = &[
-//! "2020-08-21",
-//! "2020-08-21",
-//! "2020-08-22",
-//! "2020-08-23",
-//! "2020-08-22",
-//! ];
-//! // date format
-//! let fmt = "%Y-%m-%d";
-//! // create date series
-//! let s0 = Date32Chunked::parse_from_str_slice("date", dates, fmt)
-//!         .into_series();
-//! ```
-//!
-//!
-//! ## And more...
-//!
-//! * [DataFrame](crate::frame::DataFrame)
-//! * [Series](crate::series::Series)
-//! * [ChunkedArray](crate::chunked_array::ChunkedArray)
-//!     - [Operations implemented by Traits](crate::chunked_array::ops)
-//! * [Time/ DateTime utilities](crate::doc::time)
-//! * [Groupby, aggregations, pivots and melts](crate::frame::group_by::GroupBy)
 //!
 //! ## Features
 //!
@@ -220,12 +250,6 @@
 //!     - Json serialization
 //! * `ipc`
 //!     - Arrow's IPC format serialization
-//! * `random`
-//!     - Generate array's with randomly sampled values
-//! * `ndarray`
-//!     - Convert from `DataFrame` to `ndarray`
-//! * `parallel`
-//!     - ChunkedArrays can be used by rayon::par_iter()
 //! * `lazy`
 //!     - Lazy api
 //! * `strings`
@@ -233,7 +257,6 @@
 //! * `object`
 //!     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
 //!       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
-//!
 //!
 pub mod docs;
 pub mod prelude;

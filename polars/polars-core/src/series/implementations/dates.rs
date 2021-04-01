@@ -12,9 +12,9 @@ use super::SeriesTrait;
 use super::SeriesWrap;
 use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
-use crate::frame::groupby::*;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
+use crate::frame::groupby::*;
 use crate::prelude::*;
 use ahash::RandomState;
 use arrow::array::{ArrayData, ArrayRef};
