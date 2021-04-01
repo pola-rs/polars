@@ -433,6 +433,15 @@ impl Display for DataFrame {
 
             write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         }
+        #[cfg(not(any(feature = "plain_fmt", feature = "pretty_fmt")))]
+        {
+            write!(
+                f,
+                "shape: {:?}\nto see more, compile with 'plain_fmt' or 'pretty_fmt' feature",
+                self.shape()
+            )?;
+        }
+
         #[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
         {
             let mut table = Table::new();
