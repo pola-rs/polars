@@ -1,23 +1,24 @@
 //! DataFrame module.
-use crate::chunked_array::ops::unique::is_unique_helper;
-use crate::frame::select::Selection;
-use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, NoNull};
-use ahash::RandomState;
-use arrow::record_batch::RecordBatch;
-use itertools::Itertools;
-use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::iter::Iterator;
 use std::mem;
 use std::sync::Arc;
 
+use ahash::RandomState;
+use arrow::record_batch::RecordBatch;
+use itertools::Itertools;
+use rayon::prelude::*;
+
+use crate::chunked_array::ops::unique::is_unique_helper;
+use crate::frame::select::Selection;
+use crate::prelude::*;
+use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, NoNull};
+
 mod arithmetic;
 pub mod explode;
 pub mod groupby;
 pub mod hash_join;
-pub mod resample;
 pub mod row;
 pub mod select;
 mod upstream_traits;
@@ -1572,11 +1573,13 @@ impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
+    use std::convert::TryFrom;
+
     use arrow::array::{Float64Array, Int64Array};
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow::record_batch::RecordBatch;
-    use std::convert::TryFrom;
+
+    use crate::prelude::*;
 
     fn create_frame() -> DataFrame {
         let s0 = Series::new("days", [0, 1, 2].as_ref());
