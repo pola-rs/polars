@@ -53,7 +53,7 @@ pretty_fmt = ["polars-core/pretty_fmt"]
 pivot = ["polars-core/pivot"]
 
 # resample operation on DataFrame
-resample = ["polars-core/resample"]
+downsample = ["polars-core/downsample"]
 
 # all opt-in datatypes
 dtype-full = [

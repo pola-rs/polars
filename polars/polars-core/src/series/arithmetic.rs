@@ -348,36 +348,29 @@ where
     }
 }
 
-/// We cannot override the left hand side behaviour. So we create a trait Lhs num ops.
+/// We cannot override the left hand side behaviour. So we create a trait LhsNumOps.
 /// This allows for 1.add(&Series)
-
-pub(super) trait LhsNumOpsDispatch {
-    fn lhs_sub<N: Num + NumCast>(&self, _lhs: N) -> Series {
-        unimplemented!()
-    }
-    fn lhs_div<N: Num + NumCast>(&self, _lhs: N) -> Series {
-        unimplemented!()
-    }
-    fn lhs_rem<N: Num + NumCast>(&self, _lhs: N) -> Series {
-        unimplemented!()
-    }
-}
-
-impl<T> LhsNumOpsDispatch for ChunkedArray<T>
+///
+impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Num + NumCast + ops::Sub<Output = T::Native> + ops::Div<Output = T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
-    fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Series {
+    /// Apply lhs - self
+    pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Series {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
         self.apply(|v| lhs - v).into_series()
     }
-    fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Series {
+
+    /// Apply lhs / self
+    pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Series {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
         self.apply(|v| lhs / v).into_series()
     }
-    fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Series {
+
+    /// Apply lhs % self
+    pub fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Series {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
         self.apply(|v| lhs % v).into_series()
     }

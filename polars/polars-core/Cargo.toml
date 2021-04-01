@@ -37,7 +37,7 @@ plain_fmt = ["prettytable-rs"]
 # pivot operation on DataFrame
 pivot = []
 # resample operation on DataFrame
-resample = []
+downsample = []
 
 # opt-in datatypes for Series
 dtype-time64-ns = []
