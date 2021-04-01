@@ -510,10 +510,11 @@ impl PyDataFrame {
         column_to_agg: Vec<(&str, Vec<&str>)>,
     ) -> PyResult<Self> {
         let rule = match rule {
-            "second" => SampleRule::Second(n),
-            "minute" => SampleRule::Minute(n),
+            "week" => SampleRule::Week(n),
             "day" => SampleRule::Day(n),
             "hour" => SampleRule::Hour(n),
+            "minute" => SampleRule::Minute(n),
+            "second" => SampleRule::Second(n),
             a => {
                 return Err(PyPolarsEr::Other(format!("rule {} not supported", a)).into());
             }

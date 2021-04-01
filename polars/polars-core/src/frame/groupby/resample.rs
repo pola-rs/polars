@@ -2,10 +2,11 @@ use crate::frame::groupby::GroupBy;
 use crate::prelude::*;
 
 pub enum SampleRule {
-    Second(u32),
-    Minute(u32),
+    Week(u32),
     Day(u32),
     Hour(u32),
+    Minute(u32),
+    Second(u32),
 }
 
 impl DataFrame {
@@ -68,48 +69,118 @@ impl DataFrame {
     ///  │ 2000-01-01 00:15:00 ┆ 15      │
     ///  ╰─────────────────────┴─────────╯
     /// ```
-    #[cfg_attr(docsrs, doc(cfg(feature = "downsample")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "downsample", feature = "temporal")))]
+    #[cfg(all(feature = "downsample", feature = "temporal"))]
     pub fn downsample(&self, key: &str, rule: SampleRule) -> Result<GroupBy> {
         let s = self.column(key)?;
         self.downsample_with_series(s, rule)
     }
 
     /// See [downsample](crate::frame::DataFrame::downsample).
-    #[cfg_attr(docsrs, doc(cfg(feature = "downsample")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "downsample", feature = "temporal")))]
+    #[cfg(all(feature = "downsample", feature = "temporal"))]
     pub fn downsample_with_series(&self, key: &Series, rule: SampleRule) -> Result<GroupBy> {
         use SampleRule::*;
-        // todo! implement logic for date32 if we don't want to pay the casting price
-        let key = key.cast::<Date64Type>()?;
 
-        // first we floor divide so that we get buckets that fit our frequency.
-        let (gb, n, multiply) = match rule {
-            Second(n) => {
-                let gb = &key / 1000 / n;
-                (gb, n, 1000)
-            }
-            Minute(n) => {
-                let gb = &key / 60000 / n;
-                (gb, n, 60000)
+        let year_c = "__POLARS_TEMP_YEAR";
+        let week_c = "__POLARS_TEMP_WEEK";
+        let day_c = "__POLARS_TEMP_DAY";
+        let hour_c = "__POLARS_TEMP_HOUR";
+        let minute_c = "__POLARS_TEMP_MINUTE";
+        let second_c = "__POLARS_TEMP_SECOND";
+
+        // We add columns to group on. We need to make sure that we do not groupby seconds
+        // that belong to another minute, or another day, year, etc. That's why we add all
+        // those columns to make sure that te group is unique in cyclic events.
+
+        // year is needed in all branches
+        let mut year = key.year()?.into_series();
+        year.rename(year_c);
+
+        let mut df = self.clone();
+        df.drop(key.name())?;
+
+        let selection = self
+            .get_columns()
+            .iter()
+            .filter_map(|c| {
+                let name = c.name();
+                if name == key.name() {
+                    None
+                } else {
+                    Some(name)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let gb = match rule {
+            Week(n) => {
+                // We floor divide to create a bucket.
+                let mut week = (&key.week()? / n).into_series();
+                week.rename(day_c);
+
+                df.hstack_mut(&[year, week])?;
+
+                df.groupby_stable(&[year_c, week_c])?
             }
             Day(n) => {
-                let fact = 1000 * 3600 * 24;
-                let gb = &key / fact / n;
-                (gb, n, fact)
+                // We floor divide to create a bucket.
+                let mut day = (&key.ordinal_day()? / n).into_series();
+                day.rename(day_c);
+
+                df.hstack_mut(&[year, day])?;
+
+                df.groupby_stable(&[year_c, day_c])?
             }
             Hour(n) => {
-                let fact = 1000 * 3600;
-                let gb = &key / fact / n;
-                (gb, n, fact)
+                let mut day = key.ordinal_day()?.into_series();
+                day.rename(day_c);
+
+                // We floor divide to create a bucket.
+                let mut hour = (&key.hour()? / n).into_series();
+                hour.rename(hour_c);
+                df.hstack_mut(&[year, day, hour])?;
+
+                df.groupby_stable(&[year_c, day_c, hour_c])?
+            }
+            Minute(n) => {
+                let mut day = key.ordinal_day()?.into_series();
+                day.rename(day_c);
+                let mut hour = key.hour()?.into_series();
+                hour.rename(hour_c);
+
+                // We floor divide to create a bucket.
+                let mut minute = (&key.minute()? / n).into_series();
+                minute.rename(minute_c);
+
+                df.hstack_mut(&[year, day, hour, minute])?;
+
+                df.groupby_stable(&[year_c, day_c, hour_c, minute_c])?
+            }
+            Second(n) => {
+                let mut day = key.ordinal_day()?.into_series();
+                day.rename(day_c);
+                let mut hour = key.hour()?.into_series();
+                hour.rename(hour_c);
+                let mut minute = key.minute()?.into_series();
+                minute.rename(minute_c);
+
+                // We floor divide to create a bucket.
+                let mut second = (&key.second()? / n).into_series();
+                second.rename(second_c);
+
+                df.hstack_mut(&[year, day, hour, minute, second])?;
+
+                df.groupby_stable(&[day_c, hour_c, minute_c, second_c])?
             }
         };
-        let mut gb = self.groupby_with_series(vec![gb], true)?;
-        // we restore the original scale by multiplying with the earlier floor division value
-        gb.selected_keys = gb
-            .selected_keys
-            .into_iter()
-            .map(|s| &s * multiply * n)
-            .collect();
-        Ok(gb)
+
+        Ok(GroupBy::new(
+            self,
+            vec![key.clone()],
+            gb.groups,
+            Some(selection),
+        ))
     }
 }
 

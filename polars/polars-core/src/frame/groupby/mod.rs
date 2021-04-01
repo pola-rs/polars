@@ -28,7 +28,7 @@ use crate::POOL;
 
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
-#[cfg(feature = "resample")]
+#[cfg(feature = "downsample")]
 pub mod resample;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
@@ -729,7 +729,7 @@ pub struct GroupBy<'df, 'selection_str> {
     // [first idx, [other idx]]
     pub(crate) groups: GroupTuples,
     // columns selected for aggregation
-    selected_agg: Option<Vec<&'selection_str str>>,
+    pub(crate) selected_agg: Option<Vec<&'selection_str str>>,
 }
 
 pub(crate) trait NumericAggSync {
@@ -1256,6 +1256,20 @@ impl AggQuantile for CategoricalChunked {}
 impl<T> AggQuantile for ObjectChunked<T> {}
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
+    fn new(
+        df: &'df DataFrame,
+        by: Vec<Series>,
+        groups: GroupTuples,
+        selected_agg: Option<Vec<&'selection_str str>>,
+    ) -> Self {
+        GroupBy {
+            df,
+            selected_keys: by,
+            groups,
+            selected_agg,
+        }
+    }
+
     /// Select the column(s) that should be aggregated.
     /// You can select a single column or a slice of columns.
     ///

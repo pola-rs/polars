@@ -1025,10 +1025,11 @@ class DataFrame:
             Units of the downscaling operation.
 
             Any of:
-                - "second"
-                - "minute"
-                - "hour"
+                - "week"
                 - "day"
+                - "hour"
+                - "minute"
+                - "second"
 
         n
             Number of units (e.g. 5 "day", 15 "minute"
