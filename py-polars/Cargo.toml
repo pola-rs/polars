@@ -37,7 +37,8 @@ features = [
     "mimalloc",
     "performant",
     "dtype-full",
-    "pivot"
+    "pivot",
+    "resample"
 ]
 
 [lib]

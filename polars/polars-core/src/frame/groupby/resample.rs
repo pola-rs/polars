@@ -44,7 +44,7 @@ impl DataFrame {
     /// ```
     /// ```rust
     /// use polars_core::prelude::*;
-    /// use polars_core::frame::resample::SampleRule;
+    /// use polars_core::frame::groupby::resample::SampleRule;
     ///
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     df.downsample("datetime", SampleRule::Minute(6))?
@@ -68,12 +68,14 @@ impl DataFrame {
     ///  │ 2000-01-01 00:15:00 ┆ 15      │
     ///  ╰─────────────────────┴─────────╯
     /// ```
+    #[cfg_attr(docsrs, doc(cfg(feature = "downsample")))]
     pub fn downsample(&self, key: &str, rule: SampleRule) -> Result<GroupBy> {
         let s = self.column(key)?;
         self.downsample_with_series(s, rule)
     }
 
     /// See [downsample](crate::frame::DataFrame::downsample).
+    #[cfg_attr(docsrs, doc(cfg(feature = "downsample")))]
     pub fn downsample_with_series(&self, key: &Series, rule: SampleRule) -> Result<GroupBy> {
         use SampleRule::*;
         // todo! implement logic for date32 if we don't want to pay the casting price

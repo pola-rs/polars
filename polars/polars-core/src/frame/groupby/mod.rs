@@ -1,5 +1,17 @@
-#[cfg(feature = "pivot")]
-pub(crate) mod pivot;
+use std::collections::HashSet;
+use std::hash::{BuildHasher, Hash, Hasher};
+use std::{
+    fmt::{Debug, Formatter},
+    ops::Add,
+};
+
+use ahash::RandomState;
+use hashbrown::{hash_map::RawEntryMut, HashMap};
+use itertools::Itertools;
+use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
+use rayon::prelude::*;
+
+use polars_arrow::prelude::*;
 
 use crate::chunked_array::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
@@ -13,18 +25,11 @@ use crate::vector_hasher::{
     prepare_hashed_relation, IdBuildHasher, IdxHash,
 };
 use crate::POOL;
-use ahash::RandomState;
-use hashbrown::{hash_map::RawEntryMut, HashMap};
-use itertools::Itertools;
-use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
-use polars_arrow::prelude::*;
-use rayon::prelude::*;
-use std::collections::HashSet;
-use std::hash::{BuildHasher, Hash, Hasher};
-use std::{
-    fmt::{Debug, Formatter},
-    ops::Add,
-};
+
+#[cfg(feature = "pivot")]
+pub(crate) mod pivot;
+#[cfg(feature = "resample")]
+pub mod resample;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 
@@ -1954,10 +1959,11 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 
 #[cfg(test)]
 mod test {
-    use crate::frame::group_by::{groupby, groupby_threaded_flat};
+    use itertools::Itertools;
+
+    use crate::frame::groupby::{groupby, groupby_threaded_flat};
     use crate::prelude::*;
     use crate::utils::split_ca;
-    use itertools::Itertools;
 
     #[test]
     fn test_group_by() {

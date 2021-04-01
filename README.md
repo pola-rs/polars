@@ -13,6 +13,24 @@ Amongst more, Polars has the following functionalities.
 
 To learn more about the inner workings of Polars read the [User Guide (wip)](https://ritchie46.github.io/polars-book/).
 
+# Rust users read this!
+Polars cannot deploy a new version to `crates.io` until a new arrow release is issued. Arrow's release cycle takes 3/4
+months which is a lot slower than I'd like to release. Until that time it is recommended to use the current `master` 
+branch instead of the published version on `crates.io`. The current master is a lot stables than the published version
+and has way faster compile times.
+
+You can add the master like this:
+
+```toml
+polars = {version="0.12.0", git = "https://github.com/ritchie46/polars" }
+```
+
+Or by fixing to a specific version:
+
+```toml
+polars = {version="0.12.0", git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
+```
+
 # Python users read this!
 Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name. 
 

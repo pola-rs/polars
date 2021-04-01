@@ -69,9 +69,10 @@
 //! ## 4.2 Compile times and opt-in featurs
 //! The opt-in features are:
 //!
-//! * `pivot` - pivot operation on `DataFrame`s
+//! * `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
 //! * `random` - Generate array's with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
+//! * `downsample` - [downsample operation](crate::frame::DataFrame::downsample) on `DataFrame`s
 //!
 //! ## 4.3 Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around
