@@ -679,6 +679,19 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
     }
 
     #[test]
+    fn test_quoted_numeric() {
+        // CSV fields may be quoted
+        let s = r#""foo","bar"
+"4.9","3"
+"1.4","2""#;
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file).has_header(true).finish().unwrap();
+        assert_eq!(df.column("bar").unwrap().dtype(), &DataType::Int64);
+        assert_eq!(df.column("foo").unwrap().dtype(), &DataType::Float64);
+    }
+
+    #[test]
     fn test_empty_bytes_to_dataframe() {
         let fields = vec![Field::new("test_field", DataType::Utf8)];
         let schema = Schema::new(fields);

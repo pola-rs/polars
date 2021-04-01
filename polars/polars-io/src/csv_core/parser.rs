@@ -105,9 +105,23 @@ pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
 }
 
 /// Remove whitespace and line endings from the start of file.
-#[inline]
 pub(crate) fn skip_whitespace(input: &[u8]) -> (&[u8], usize) {
     skip_condition(input, |b| is_whitespace(b) || is_line_ending(b))
+}
+
+/// Local version of slice::starts_with (as it won't inline)
+fn starts_with(bytes: &[u8], needle: u8) -> bool {
+    !bytes.is_empty() && bytes[0] == needle
+}
+
+/// Slice `"100"` to `100`, if slice starts with `"` it does not check that it ends with `"`, but
+/// assumes this. Be aware of this.
+pub(crate) fn drop_quotes(input: &[u8]) -> &[u8] {
+    if starts_with(input, b'"') {
+        &input[1..input.len() - 1]
+    } else {
+        input
+    }
 }
 
 pub(crate) fn skip_line_ending(input: &[u8]) -> (&[u8], usize) {

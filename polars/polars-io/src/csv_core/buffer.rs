@@ -1,5 +1,5 @@
 use crate::csv::CsvEncoding;
-use crate::csv_core::parser::skip_whitespace;
+use crate::csv_core::parser::{drop_quotes, skip_whitespace};
 use polars_core::prelude::*;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -36,18 +36,6 @@ impl PrimitiveParser for Float64Type {
     }
 }
 
-impl PrimitiveParser for UInt8Type {
-    fn parse(bytes: &[u8]) -> Result<u8> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
-    }
-}
-impl PrimitiveParser for UInt16Type {
-    fn parse(bytes: &[u8]) -> Result<u16> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
-    }
-}
 impl PrimitiveParser for UInt32Type {
     fn parse(bytes: &[u8]) -> Result<u32> {
         let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
@@ -56,18 +44,6 @@ impl PrimitiveParser for UInt32Type {
 }
 impl PrimitiveParser for UInt64Type {
     fn parse(bytes: &[u8]) -> Result<u64> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
-    }
-}
-impl PrimitiveParser for Int8Type {
-    fn parse(bytes: &[u8]) -> Result<i8> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
-    }
-}
-impl PrimitiveParser for Int16Type {
-    fn parse(bytes: &[u8]) -> Result<i16> {
         let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
     }
@@ -107,6 +83,7 @@ where
         _encoding: CsvEncoding,
     ) -> Result<()> {
         let (bytes, _) = skip_whitespace(bytes);
+        let bytes = drop_quotes(bytes);
         let result = T::parse(bytes);
 
         match (result, ignore_errors) {

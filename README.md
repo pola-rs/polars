@@ -16,7 +16,7 @@ To learn more about the inner workings of Polars read the [User Guide (wip)](htt
 # Rust users read this!
 Polars cannot deploy a new version to `crates.io` until a new arrow release is issued. Arrow's release cycle takes 3/4
 months which is a lot slower than I'd like to release. Until that time it is recommended to use the current `master` 
-branch instead of the published version on `crates.io`. The current master is a lot stables than the published version
+branch instead of the published version on `crates.io`. The current master is a lot stabler than the published version
 and has way faster compile times.
 
 You can add the master like this:
