@@ -413,7 +413,6 @@ macro_rules! df {
             )+
             DataFrame::new(columns)
         }
-
     }
 }
 

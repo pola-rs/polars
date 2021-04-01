@@ -12,7 +12,7 @@ use crate::{
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
-use polars::frame::{group_by::GroupBy, resample::SampleRule};
+use polars::frame::{groupby::GroupBy, resample::SampleRule};
 use pyo3::types::PyTuple;
 use std::convert::TryFrom;
 

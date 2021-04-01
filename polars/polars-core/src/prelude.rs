@@ -35,11 +35,3 @@ pub use std::sync::Arc;
 
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-
-#[macro_export]
-macro_rules! as_result {
-    ($block:block) => {{
-        let res: Result<_> = $block;
-        res
-    }};
-}

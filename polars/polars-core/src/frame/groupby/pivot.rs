@@ -19,13 +19,14 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///
     /// ```rust
     /// use polars_core::prelude::*;
-    /// let s0 = Series::new("foo", ["A", "A", "B", "B", "C"].as_ref());
-    /// let s1 = Series::new("N", [1, 2, 2, 4, 2].as_ref());
-    /// let s2 = Series::new("bar", ["k", "l", "m", "n", "o"].as_ref());
-    /// // create a new DataFrame
-    /// let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
+    /// use polars_core::df;
     ///
-    /// fn example(df: DataFrame) -> Result<DataFrame> {
+    /// fn example() -> Result<DataFrame> {
+    ///     let df = df!("foo" => &["A", "A", "B", "B", "C"],
+    ///         "N" => &[1, 2, 2, 4, 2],
+    ///         "bar" => &["k", "l", "m", "n", "0"]
+    ///         ).unwrap();
+    ///
     ///     df.groupby("foo")?
     ///     .pivot("bar", "N")
     ///     .first()
@@ -83,7 +84,6 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     }
 }
 
-
 /// Intermediate structure when a `pivot` operation is applied.
 /// See [the pivot method for more information.](../group_by/struct.GroupBy.html#method.pivot)
 #[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
@@ -137,8 +137,8 @@ fn create_new_column_builder_map<'a, T>(
     pivot_vec: &'a [Option<Groupable>],
     groups: &[(u32, Vec<u32>)],
 ) -> HashMap<&'a Groupable<'a>, PrimitiveChunkedBuilder<T>, RandomState>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     // create a hash map that will be filled with the results of the aggregation.
     let mut columns_agg_map_main =
@@ -152,10 +152,10 @@ fn create_new_column_builder_map<'a, T>(
 }
 
 impl<T> ChunkPivot for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-        T::Native: Copy + Num + NumCast,
-        ChunkedArray<T>: IntoSeries,
+where
+    T: PolarsNumericType,
+    T::Native: Copy + Num + NumCast,
+    ChunkedArray<T>: IntoSeries,
 {
     fn pivot<'a>(
         &self,
@@ -328,33 +328,33 @@ pub enum PivotAgg {
 }
 
 fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     builder.append_option(v[0]);
 }
 
 fn pivot_agg_median<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &mut Vec<Option<T::Native>>)
-    where
-        T: PolarsNumericType,
-        T::Native: PartialOrd,
+where
+    T: PolarsNumericType,
+    T::Native: PartialOrd,
 {
     v.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
     builder.append_option(v[v.len() / 2]);
 }
 
 fn pivot_agg_sum<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-    where
-        T: PolarsNumericType,
-        T::Native: Num + Zero,
+where
+    T: PolarsNumericType,
+    T::Native: Num + Zero,
 {
     builder.append_option(v.iter().copied().fold_options(Zero::zero(), Add::add));
 }
 
 fn pivot_agg_mean<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-    where
-        T: PolarsNumericType,
-        T::Native: Num + Zero + NumCast,
+where
+    T: PolarsNumericType,
+    T::Native: Num + Zero + NumCast,
 {
     builder.append_option(
         v.iter()
@@ -365,8 +365,8 @@ fn pivot_agg_mean<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Na
 }
 
 fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     let mut min = None;
 
@@ -385,8 +385,8 @@ fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Nat
 }
 
 fn pivot_agg_max<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     let mut max = None;
 
@@ -483,7 +483,6 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
         )
     }
 }
-
 
 #[cfg(test)]
 mod test {

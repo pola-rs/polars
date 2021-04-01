@@ -15,13 +15,30 @@ homepage = "https://github.com/ritchie46/polars"
 # prevents package from thinking it's in the workspace
 
 [dependencies]
-polars = {path = "../polars", features = ["parquet", "simd", "lazy", "strings", "temporal", "random", "object", "ipc", "pretty_fmt", "mimalloc", "performant", "dtype-full"]}
 polars-core = {path = "../polars/polars-core", default-features = false}
 pyo3 = {version = "0.13", features = ["abi3-py36", "extension-module"] }
 libc = "0.2"
 thiserror = "1.0.20"
 numpy = "0.13.0"
 ndarray = "0.14.0"
+
+[dependencies.polars]
+path = "../polars"
+features = [
+    "parquet",
+    "simd",
+    "lazy",
+    "strings",
+    "temporal",
+    "random",
+    "object",
+    "ipc",
+    "pretty_fmt",
+    "mimalloc",
+    "performant",
+    "dtype-full",
+    "pivot"
+]
 
 [lib]
 name = "polars"

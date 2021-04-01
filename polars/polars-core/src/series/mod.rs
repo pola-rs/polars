@@ -29,9 +29,9 @@ pub trait IntoSeries {
 
 pub(crate) mod private {
     use super::*;
-    use crate::frame::groupby::GroupTuples;
     #[cfg(feature = "pivot")]
     use crate::frame::groupby::pivot::PivotAgg;
+    use crate::frame::groupby::GroupTuples;
 
     use ahash::RandomState;
 
