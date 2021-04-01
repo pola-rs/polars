@@ -75,22 +75,17 @@ where
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        if let Ok(slice) = self.cont_slice() {
-            let new: NoNull<ChunkedArray<T>> = slice.iter().copied().map(f).collect();
-            new.into_inner()
-        } else {
-            let mut ca: ChunkedArray<T> = self
-                .data_views()
-                .into_iter()
-                .zip(self.null_bits())
-                .map(|(slice, (_null_count, opt_buffer))| {
-                    let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
-                    (vec, opt_buffer)
-                })
-                .collect();
-            ca.rename(self.name());
-            ca
-        }
+        let mut ca: ChunkedArray<T> = self
+            .data_views()
+            .into_iter()
+            .zip(self.null_bits())
+            .map(|(slice, (_null_count, opt_buffer))| {
+                let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
+                (vec, opt_buffer)
+            })
+            .collect();
+        ca.rename(self.name());
+        ca
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self

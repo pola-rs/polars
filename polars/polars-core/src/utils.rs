@@ -290,6 +290,42 @@ macro_rules! match_arrow_data_type_apply_macro {
 }
 
 #[macro_export]
+macro_rules! match_arrow_data_type_apply_macro_ca {
+    ($self:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
+        match $self.dtype() {
+            DataType::Utf8 => $macro_utf8!($self.utf8().unwrap() $(, $opt_args)*),
+            DataType::Boolean => $macro_bool!($self.bool().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => $macro!($self.u8().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => $macro!($self.u16().unwrap() $(, $opt_args)*),
+            DataType::UInt32 => $macro!($self.u32().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-u64")]
+            DataType::UInt64 => $macro!($self.u64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => $macro!($self.i8().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => $macro!($self.i16().unwrap() $(, $opt_args)*),
+            DataType::Int32 => $macro!($self.i32().unwrap() $(, $opt_args)*),
+            DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
+            DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
+            DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-date32")]
+            DataType::Date32 => $macro!($self.date32().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-date64")]
+            DataType::Date64 => $macro!($self.date64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-time64-ns")]
+            DataType::Time64(TimeUnit::Nanosecond) => $macro!($self.time64_nanosecond().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-duration-ns")]
+            DataType::Duration(TimeUnit::Nanosecond) => $macro!($self.duration_nanosecond().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-duration-ms")]
+            DataType::Duration(TimeUnit::Millisecond) => $macro!($self.duration_millisecond().unwrap() $(, $opt_args)*),
+            _ => unimplemented!(),
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! apply_method_all_arrow_series {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {

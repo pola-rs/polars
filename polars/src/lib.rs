@@ -186,10 +186,39 @@
 //! ```
 //!
 //! ### Arithmetic
+//! The syntax required for arithmetic require understanding a few **gotcha's**. Due to the ownership
+//! rules and because we don't want an operation such as a **multiply** or an **addition** takes
+//! ownership of a Series, these need to be referenced when doing an arithmetic operation.
 //! ```
 //! use polars::prelude::*;
 //! let s = Series::new("foo", [1, 2, 3]);
 //! let s_squared = &s * &s;
+//!
+//! let s_twice = &s * 100;
+//! ```
+//!
+//! Because Rusts Orphan Rule doesn't allow use to implement left side operations, we need to call
+//! such operation directly.
+//!
+//! ```rust
+//! # use polars::prelude::*;
+//! let s = Series::new("foo", [1, 2, 3]);
+//!
+//! // 1 / s
+//! let divide_one_by_s = 1.div(&series);
+//!
+//! // 1 - s
+//! let subtract_one_by_s = 1.sub(&series);
+//! ```
+//!
+//! For `ChunkedArray`s this left hand side operations can be done with the `apply` method.
+//!
+//! ```rust
+//! # use polars::prelude::*;
+//! let ca = UInt32Chunked::new_from_slice("foo", &[1, 2, 3]);
+//!
+//! // 1 / ca
+//! let divide_one_by_ca = ca.apply(|rhs| 1 / rhs);
 //! ```
 //!
 //! ### Rust iterators
