@@ -2,11 +2,11 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{split_ca, NoNull};
 use crate::vector_hasher::{
-    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation,
-    prepare_hashed_relation_threaded,
+    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded,
 };
 use crate::POOL;
 use ahash::RandomState;
+use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -58,6 +58,23 @@ where
     hash_tables.get_unchecked(idx)
 }
 
+unsafe fn get_hash_tbl_mut<T>(
+    h: u64,
+    hash_tables: &mut [HashMap<T, Vec<u32>, RandomState>],
+    len: u64,
+) -> &mut HashMap<T, Vec<u32>, RandomState>
+where
+    T: Send + Hash + Eq + Sync + Copy,
+{
+    let mut idx = 0;
+    for i in 0..len {
+        if (h + i) % len == 0 {
+            idx = i as usize;
+        }
+    }
+    hash_tables.get_unchecked_mut(idx)
+}
+
 #[allow(clippy::needless_collect)]
 fn hash_join_tuples_inner_threaded<T, I, J>(
     a: Vec<I>,
@@ -70,6 +87,8 @@ where
     J: Iterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy + Debug,
 {
+    // NOTE: see the left join for more elaborate comments
+
     // first we hash one relation
     let hash_tbls = prepare_hashed_relation_threaded(b);
     let random_state = hash_tbls[0].hasher().clone();
@@ -146,8 +165,10 @@ where
     // first we hash one relation
     let hash_tbls = prepare_hashed_relation_threaded(b);
     let random_state = hash_tbls[0].hasher().clone();
+    // we pre hash the probing values
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
 
+    // we determine the offset so that we later know which index to store in the join tuples
     let offsets = probe_hashes
         .iter()
         .map(|ph| ph.len())
@@ -161,22 +182,25 @@ where
     let n_tables = hash_tbls.len() as u64;
 
     // next we probe the other relation
-    // code duplication is because we want to only do the swap check once
     POOL.install(|| {
         probe_hashes
             .into_par_iter()
             .zip(offsets)
+            // probes_hashes: Vec<u64> processed by this thread
+            // offset: offset index
             .map(|(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results =
-                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
+
+                // assume the result tuples equal lenght of the no. of hashes processed by this thread.
+                let mut results = Vec::with_capacity(probe_hashes.len());
 
                 probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
                     let idx_a = (idx_a + offset) as u32;
                     // probe table that contains the hashed value
                     let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
 
+                    // we already hashed, so we don't have to hash again.
                     let entry = current_probe_table
                         .raw_entry()
                         .from_key_hashed_nocheck(*h, k);
@@ -197,126 +221,104 @@ where
     })
 }
 
-/// Hash join a and b.
-///     b should be the shorter relation.
-/// NOTE that T also can be an Option<T>. Nulls are seen as equal.
-fn hash_join_tuples_inner<T>(
-    a: impl Iterator<Item = T>,
-    b: impl Iterator<Item = T>,
-    // Because b should be the shorter relation we could need to swap to keep left left and right right.
-    swap: bool,
-) -> Vec<(u32, u32)>
-where
-    T: Hash + Eq + Copy,
-{
-    let mut results = Vec::new();
-    // First we hash one relation
-    let hash_tbl = prepare_hashed_relation(b);
-
-    // Next we probe the other relation in the hash table
-    // code duplication is because we want to only do the swap check once
-    if swap {
-        a.enumerate().for_each(|(idx_a, key)| {
-            let idx_a = idx_a as u32;
-            if let Some(indexes_b) = hash_tbl.get(&key) {
-                let tuples = indexes_b.iter().map(|&idx_b| (idx_b, idx_a));
-                results.extend(tuples)
-            }
-        });
-    } else {
-        a.enumerate().for_each(|(idx_a, key)| {
-            let idx_a = idx_a as u32;
-            if let Some(indexes_b) = hash_tbl.get(&key) {
-                let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
-                results.extend(tuples)
-            }
-        });
-    }
-    results
-}
-
-/// Hash join left. None/ Nulls are regarded as Equal
-/// All left values are joined so no Option<usize> there.
-fn hash_join_tuples_left<T>(
-    a: impl Iterator<Item = T>,
-    b: impl Iterator<Item = T>,
-) -> Vec<(u32, Option<u32>)>
-where
-    T: Hash + Eq + Copy,
-{
-    let mut results = Vec::new();
-    // First we hash one relation
-    let hash_tbl = prepare_hashed_relation(b);
-
-    // Next we probe the other relation in the hash table
-    a.enumerate().for_each(|(idx_a, key)| {
-        let idx_a = idx_a as u32;
-        match hash_tbl.get(&key) {
-            // left and right matches
-            Some(indexes_b) => results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b)))),
-            // only left values, right = null
-            None => results.push((idx_a, None)),
-        }
-    });
-    results
-}
-
 /// Hash join outer. Both left and right can have no match so Options
-/// We accept a closure as we need to do two passes over the same iterators.
-fn hash_join_tuples_outer<T, I, J>(a: I, b: J, swap: bool) -> Vec<(Option<u32>, Option<u32>)>
+fn hash_join_tuples_outer<T, I, J>(
+    a: Vec<I>,
+    b: Vec<J>,
+    swap: bool,
+) -> Vec<(Option<u32>, Option<u32>)>
 where
-    I: Iterator<Item = T>,
-    J: Iterator<Item = T>,
-    T: Hash + Eq + Copy + Sync,
+    I: Iterator<Item = T> + Send,
+    J: Iterator<Item = T> + Send,
+    T: Hash + Eq + Copy + Sync + Send,
 {
-    let mut results = Vec::with_capacity(a.size_hint().0 + b.size_hint().0);
+    // This function is partially multi-threaded.
+    // Parts that are done in parallel:
+    //  - creation of the probe tables
+    //  - creation of the hashes
+
+    // during the probe phase values are removed from the tables, that's done single threaded to
+    // keep it lock free.
+
+    let size = a.iter().map(|a| a.size_hint().0).sum::<usize>()
+        + b.iter().map(|b| b.size_hint().0).sum::<usize>();
+    let mut results = Vec::with_capacity(size);
 
     // prepare hash table
-    let mut hash_tbl = prepare_hashed_relation(b);
+    let mut hash_tbls = prepare_hashed_relation_threaded(b);
+    let random_state = hash_tbls[0].hasher().clone();
+
+    // we pre hash the probing values
+    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
+
+    let n_tables = hash_tbls.len() as u64;
 
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)
     // Therefore we remove the matches and the remaining will be joined from the right
 
     // code duplication is because we want to only do the swap check once
+    let mut idx_a = 0;
     if swap {
-        a.enumerate().for_each(|(idx_a, key)| {
-            let idx_a = idx_a as u32;
-            match hash_tbl.remove(&key) {
-                // left and right matches
-                Some(indexes_b) => {
-                    results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), Some(idx_a))))
-                }
-                // only left values, right = null
-                None => {
-                    results.push((None, Some(idx_a)));
-                }
-            }
-        });
-        hash_tbl.iter().for_each(|(_k, indexes_b)| {
-            // remaining joined values from the right table
-            results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), None)))
-        });
-    } else {
-        a.enumerate().for_each(|(idx_a, key)| {
-            let idx_a = idx_a as u32;
-            match hash_tbl.remove(&key) {
-                // left and right matches
-                Some(indexes_b) => {
-                    results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_a), Some(idx_b))))
-                }
-                // only left values, right = null
-                None => {
-                    results.push((Some(idx_a), None));
-                }
-            }
-        });
-        hash_tbl.iter().for_each(|(_k, indexes_b)| {
-            // remaining joined values from the right table
-            results.extend(indexes_b.iter().map(|&idx_b| (None, Some(idx_b))))
-        });
-    };
+        for probe_hashes in probe_hashes {
+            for (h, key) in probe_hashes {
+                // probe table that contains the hashed value
+                let current_probe_table = unsafe { get_hash_tbl_mut(h, &mut hash_tbls, n_tables) };
 
+                let entry = current_probe_table
+                    .raw_entry_mut()
+                    .from_key_hashed_nocheck(h, &key);
+
+                match entry {
+                    // match and remove
+                    RawEntryMut::Occupied(occupied) => {
+                        let indexes_b = occupied.remove();
+                        results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), Some(idx_a))))
+                    }
+                    // no match
+                    RawEntryMut::Vacant(_) => results.push((None, Some(idx_a))),
+                }
+                idx_a += 1;
+            }
+        }
+
+        for hash_tbl in hash_tbls {
+            hash_tbl.iter().for_each(|(_k, indexes_b)| {
+                // remaining joined values from the right table
+                results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), None)))
+            });
+        }
+    } else {
+        for probe_hashes in probe_hashes {
+            for (h, key) in probe_hashes {
+                // probe table that contains the hashed value
+                let current_probe_table = unsafe { get_hash_tbl_mut(h, &mut hash_tbls, n_tables) };
+
+                let entry = current_probe_table
+                    .raw_entry_mut()
+                    .from_key_hashed_nocheck(h, &key);
+
+                match entry {
+                    // match and remove
+                    RawEntryMut::Occupied(occupied) => {
+                        let indexes_b = occupied.remove();
+                        results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_a), Some(idx_b))))
+                    }
+                    // no match
+                    RawEntryMut::Vacant(_) => {
+                        results.push((Some(idx_a), None));
+                    }
+                }
+                idx_a += 1;
+            }
+        }
+        for hash_tbl in hash_tbls {
+            hash_tbl.iter().for_each(|(_k, indexes_b)| {
+                // remaining joined values from the right table
+                results.extend(indexes_b.iter().map(|&idx_b| (None, Some(idx_b))))
+            });
+        }
+    }
     results
 }
 
@@ -405,13 +407,13 @@ macro_rules! impl_float_hash_join {
 
                 match (a.null_count() == 0, b.null_count() == 0) {
                     (true, true) => hash_join_tuples_outer(
-                        a.into_no_null_iter().map(|v| v.to_bits()),
-                        b.into_no_null_iter().map(|v| v.to_bits()),
+                        vec![a.into_no_null_iter().map(|v| v.to_bits())],
+                        vec![b.into_no_null_iter().map(|v| v.to_bits())],
                         swap,
                     ),
                     _ => hash_join_tuples_outer(
-                        a.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())),
-                        b.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())),
+                        vec![a.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()))],
+                        vec![b.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()))],
                         swap,
                     ),
                 }
@@ -506,11 +508,27 @@ where
     fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        match (a.null_count() == 0, b.null_count() == 0) {
-            (true, true) => {
-                hash_join_tuples_outer(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+        let n_threads = n_join_threads();
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_outer(iters_a, iters_b, swap)
             }
-            _ => hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap),
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_outer(iters_a, iters_b, swap)
+            }
         }
     }
 }
@@ -519,31 +537,82 @@ impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(u32, u32)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        // Create the join tuples
-        match (a.null_count() == 0, b.null_count() == 0) {
-            (true, true) => {
-                hash_join_tuples_inner(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+        let n_threads = n_join_threads();
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
             }
-            _ => hash_join_tuples_inner(a.into_iter(), b.into_iter(), swap),
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
+            }
         }
     }
 
     fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(u32, Option<u32>)> {
-        match (self.null_count() == 0, other.null_count() == 0) {
-            (true, true) => {
-                hash_join_tuples_left(self.into_no_null_iter(), other.into_no_null_iter())
+        let n_threads = n_join_threads();
+
+        let a = self;
+        let b = other;
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_left_threaded(iters_a, iters_b)
             }
-            _ => hash_join_tuples_left(self.into_iter(), other.into_iter()),
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_left_threaded(iters_a, iters_b)
+            }
         }
     }
 
     fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
-        match (a.null_count() == 0, b.null_count() == 0) {
-            (true, true) => {
-                hash_join_tuples_outer(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+
+        let n_threads = n_join_threads();
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_outer(iters_a, iters_b, swap)
             }
-            _ => hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap),
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_outer(iters_a, iters_b, swap)
+            }
         }
     }
 }
@@ -606,11 +675,28 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
 
     fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
-        match (a.null_count() == 0, b.null_count() == 0) {
-            (true, true) => {
-                hash_join_tuples_outer(a.into_no_null_iter(), b.into_no_null_iter(), swap)
+
+        let n_threads = n_join_threads();
+        let splitted_a = split_ca(a, n_threads).unwrap();
+        let splitted_b = split_ca(b, n_threads).unwrap();
+
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_no_null_iter())
+                    .collect_vec();
+                hash_join_tuples_outer(iters_a, iters_b, swap)
             }
-            _ => hash_join_tuples_outer(a.into_iter(), b.into_iter(), swap),
+            _ => {
+                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                hash_join_tuples_outer(iters_a, iters_b, swap)
+            }
         }
     }
 }
@@ -789,6 +875,8 @@ impl DataFrame {
             new.unwrap()
         }
 
+        // This is still single threaded and can create very large keys that are inserted in the
+        // hashmap. TODO: implement same hashing technique as in grouping.
         match how {
             JoinType::Inner => {
                 let join_tuples = match selected_left.len() {
@@ -796,31 +884,31 @@ impl DataFrame {
                         let a = static_zip!(selected_left, 1);
                         let b = static_zip!(selected_right, 1);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner(a, b, swap)
+                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
                     }
                     3 => {
                         let a = static_zip!(selected_left, 2);
                         let b = static_zip!(selected_right, 2);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner(a, b, swap)
+                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
                     }
                     4 => {
                         let a = static_zip!(selected_left, 3);
                         let b = static_zip!(selected_right, 3);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner(a, b, swap)
+                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
                     }
                     5 => {
                         let a = static_zip!(selected_left, 4);
                         let b = static_zip!(selected_right, 4);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner(a, b, swap)
+                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
                     }
                     6 => {
                         let a = static_zip!(selected_left, 5);
                         let b = static_zip!(selected_right, 5);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner(a, b, swap)
+                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
                     }
                     _ => todo!(),
                 };
@@ -841,27 +929,28 @@ impl DataFrame {
                     2 => {
                         let a = static_zip!(selected_left, 1);
                         let b = static_zip!(selected_right, 1);
-                        hash_join_tuples_left(a, b)
+
+                        hash_join_tuples_left_threaded(vec![a], vec![b])
                     }
                     3 => {
                         let a = static_zip!(selected_left, 2);
                         let b = static_zip!(selected_right, 2);
-                        hash_join_tuples_left(a, b)
+                        hash_join_tuples_left_threaded(vec![a], vec![b])
                     }
                     4 => {
                         let a = static_zip!(selected_left, 3);
                         let b = static_zip!(selected_right, 3);
-                        hash_join_tuples_left(a, b)
+                        hash_join_tuples_left_threaded(vec![a], vec![b])
                     }
                     5 => {
                         let a = static_zip!(selected_left, 4);
                         let b = static_zip!(selected_right, 4);
-                        hash_join_tuples_left(a, b)
+                        hash_join_tuples_left_threaded(vec![a], vec![b])
                     }
                     6 => {
                         let a = static_zip!(selected_left, 5);
                         let b = static_zip!(selected_right, 5);
-                        hash_join_tuples_left(a, b)
+                        hash_join_tuples_left_threaded(vec![a], vec![b])
                     }
                     _ => todo!(),
                 };
@@ -885,31 +974,31 @@ impl DataFrame {
                         let a = static_zip!(selected_left, 1);
                         let b = static_zip!(selected_right, 1);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(a, b, swap)
+                        hash_join_tuples_outer(vec![a], vec![b], swap)
                     }
                     3 => {
                         let a = static_zip!(selected_left, 2);
                         let b = static_zip!(selected_right, 2);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(a, b, swap)
+                        hash_join_tuples_outer(vec![a], vec![b], swap)
                     }
                     4 => {
                         let a = static_zip!(selected_left, 3);
                         let b = static_zip!(selected_right, 3);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(a, b, swap)
+                        hash_join_tuples_outer(vec![a], vec![b], swap)
                     }
                     5 => {
                         let a = static_zip!(selected_left, 4);
                         let b = static_zip!(selected_right, 4);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(a, b, swap)
+                        hash_join_tuples_outer(vec![a], vec![b], swap)
                     }
                     6 => {
                         let a = static_zip!(selected_left, 5);
                         let b = static_zip!(selected_right, 5);
                         let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(a, b, swap)
+                        hash_join_tuples_outer(vec![a], vec![b], swap)
                     }
                     _ => todo!(),
                 };
