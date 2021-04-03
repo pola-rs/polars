@@ -238,9 +238,13 @@ where
 ///
 /// # Safety
 /// Doesn't check any bounds
-unsafe fn compare_fn(keys: &DataFrame, idx_a: u32, idx_b: u32) -> bool {
+pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: u32, idx_b: u32) -> bool {
+    let idx_a = idx_a as usize;
+    let idx_b = idx_b as usize;
     for s in keys.get_columns() {
-        if !(s.get_unchecked(idx_a as usize) == s.get_unchecked(idx_b as usize)) {
+        dbg!(idx_a, idx_b, s.get_unchecked(idx_a), s.get_unchecked(idx_b));
+
+        if !(s.get_unchecked(idx_a) == s.get_unchecked(idx_b)) {
             return false;
         }
     }
@@ -252,7 +256,7 @@ unsafe fn compare_fn(keys: &DataFrame, idx_a: u32, idx_b: u32) -> bool {
 /// To check if a row is equal the original DataFrame is also passed as ref.
 /// When a hash collision occurs the indexes are ptrs to the rows and the rows are compared
 /// on equality.
-pub(crate) fn populate_multiple_key_hashmap<V, H, F>(
+pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     hash_tbl: &mut HashMap<IdxHash, V, H>,
     // row index
     idx: u32,
@@ -262,10 +266,11 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F>(
     // the keys are needed for the equality check
     keys: &DataFrame,
     // value to insert
-    value: V,
+    vacant_fn: G,
     // function that gets a mutable ref to the occupied value in the hash table
     occupied_fn: F,
 ) where
+    G: Fn() -> V,
     F: Fn(&mut V),
     H: BuildHasher,
 {
@@ -276,12 +281,12 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F>(
         .from_hash(h, |idx_hash| {
             let key_idx = idx_hash.idx;
             // Safety:
-            // indices in a join operation are always in bounds.
-            unsafe { compare_fn(keys, key_idx, idx) }
+            // indices in a groupby operation are always in bounds.
+            unsafe { compare_df_rows(keys, key_idx, idx) }
         });
     match entry {
         RawEntryMut::Vacant(entry) => {
-            entry.insert_hashed_nocheck(h, IdxHash::new(idx, h), value);
+            entry.insert_hashed_nocheck(h, IdxHash::new(idx, h), vacant_fn());
         }
         RawEntryMut::Occupied(mut entry) => {
             let (_k, v) = entry.get_key_value_mut();
@@ -301,9 +306,14 @@ fn groupby_multiple_keys(keys: DataFrame) -> GroupTuples {
     let mut idx = 0;
     for hashes_chunk in hashes.data_views() {
         for &h in hashes_chunk {
-            populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys, (idx, vec![idx]), |v| {
-                v.1.push(idx)
-            });
+            populate_multiple_key_hashmap(
+                &mut hash_tbl,
+                idx,
+                h,
+                &keys,
+                || (idx, vec![idx]),
+                |v| v.1.push(idx),
+            );
             idx += 1;
         }
     }
@@ -349,7 +359,7 @@ fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> Gro
                                 idx,
                                 h,
                                 &keys,
-                                (idx, vec![idx]),
+                                || (idx, vec![idx]),
                                 |v| v.1.push(idx),
                             );
                         }
