@@ -10,6 +10,8 @@ lazy_static! {
 
         let mut df = CsvReader::from_path(&path)
             .expect("could not read file")
+            // 1M rows
+            .with_stop_after_n_rows(Some(1000000))
             .finish()
             .unwrap();
         df.may_apply("id1", |s| s.cast::<CategoricalType>())
@@ -180,6 +182,6 @@ fn q10(c: &mut Criterion) {
 }
 
 criterion_group!(name = benches;
-config = Criterion::default().sample_size(10);
+config = Criterion::default().sample_size(100);
 targets = q1, q2, q3, q4, q5, q6, q7, q8, q9, q10);
 criterion_main!(benches);

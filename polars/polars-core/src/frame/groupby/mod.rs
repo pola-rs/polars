@@ -2225,12 +2225,14 @@ mod test {
                     "ham" => ["a", "a", "b", "b", "c"],
                     "bar" => [1, 1, 1, 1, 1]
         }
+        .unwrap();
+
+        df.apply("foo", |s| s.cast::<CategoricalType>().unwrap())
             .unwrap();
 
-        df.apply("foo", |s| s.cast::<CategoricalType>().unwrap());
-
         // check multiple keys and categorical
-        let res = df.groupby_stable(&["foo", "ham"])
+        let res = df
+            .groupby_stable(&["foo", "ham"])
             .unwrap()
             .select("bar")
             .sum()
@@ -2240,7 +2242,6 @@ mod test {
             Vec::from(res.column("bar_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]
         );
-
     }
 
     #[test]
