@@ -616,7 +616,12 @@ impl<T> FmtList for ObjectChunked<T> {
     }
 }
 
-#[cfg(all(test, feature = "temporal", feature="dtype-date32", feature = "dtype-date64"))]
+#[cfg(all(
+    test,
+    feature = "temporal",
+    feature = "dtype-date32",
+    feature = "dtype-date64"
+))]
 mod test {
     use crate::prelude::*;
     use polars_arrow::prelude::PrimitiveArrayBuilder;
