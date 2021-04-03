@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 /// credits to csv-core
 pub(crate) fn skip_bom(input: &[u8]) -> &[u8] {
     if input.len() >= 3 && &input[0..3] == b"\xef\xbb\xbf" {
-        &input[..3]
+        &input[3..]
     } else {
         input
     }
