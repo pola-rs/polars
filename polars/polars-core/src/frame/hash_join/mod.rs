@@ -77,6 +77,34 @@ where
     hash_tables.get_unchecked_mut(idx)
 }
 
+/// Probe the build table and add tuples to the results (inner join)
+fn probe_inner<T, F>(
+    probe_hashes: &[(u64, T)],
+    hash_tbls: &[HashMap<T, Vec<u32>, RandomState>],
+    results: &mut Vec<(u32, u32)>,
+    local_offset: usize,
+    n_tables: u64,
+    swap_fn: F,
+) where
+    T: Send + Hash + Eq + Sync + Copy + Debug,
+    F: Fn(u32, u32) -> (u32, u32),
+{
+    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+        let idx_a = (idx_a + local_offset) as u32;
+        // probe table that contains the hashed value
+        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+
+        let entry = current_probe_table
+            .raw_entry()
+            .from_key_hashed_nocheck(*h, k);
+
+        if let Some((_, indexes_b)) = entry {
+            let tuples = indexes_b.iter().map(|&idx_b| swap_fn(idx_a, idx_b));
+            results.extend(tuples);
+        }
+    });
+}
+
 #[allow(clippy::needless_collect)]
 fn hash_join_tuples_inner_threaded<T, I, J>(
     a: Vec<I>,
@@ -118,37 +146,26 @@ where
                 let mut results =
                     Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
                 let local_offset = offset;
-                // code duplication is to hoist swap out of the inner loop.
+
+                // branch is to hoist swap out of the inner loop.
                 if swap {
-                    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                        let idx_a = (idx_a + local_offset) as u32;
-                        // probe table that contains the hashed value
-                        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
-
-                        let entry = current_probe_table
-                            .raw_entry()
-                            .from_key_hashed_nocheck(*h, k);
-
-                        if let Some((_, indexes_b)) = entry {
-                            let tuples = indexes_b.iter().map(|&idx_b| (idx_b, idx_a));
-                            results.extend(tuples);
-                        }
-                    });
+                    probe_inner(
+                        &probe_hashes,
+                        hash_tbls,
+                        &mut results,
+                        local_offset,
+                        n_tables,
+                        |idx_a, idx_b| (idx_b, idx_a),
+                    )
                 } else {
-                    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
-                        let idx_a = (idx_a + local_offset) as u32;
-                        // probe table that contains the hashed value
-                        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
-
-                        let entry = current_probe_table
-                            .raw_entry()
-                            .from_key_hashed_nocheck(*h, k);
-
-                        if let Some((_, indexes_b)) = entry {
-                            let tuples = indexes_b.iter().map(|&idx_b| (idx_a, idx_b));
-                            results.extend(tuples);
-                        }
-                    });
+                    probe_inner(
+                        &probe_hashes,
+                        hash_tbls,
+                        &mut results,
+                        local_offset,
+                        n_tables,
+                        |idx_a, idx_b| (idx_a, idx_b),
+                    )
                 }
 
                 results
