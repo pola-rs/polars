@@ -687,8 +687,8 @@ impl BooleanChunked {
 // private
 pub(crate) trait ChunkEqualElement {
     /// Check if element in self is equal to element in other, assumes same dtypes
-    /// # Safety:
-    ///     No bounds checks and not type checks.
+    /// # Safety
+    ///     No bounds checks and no type checks.
     unsafe fn equal_element(&self, _idx_self: usize, _idx_other: usize, _other: &Series) -> bool {
         unimplemented!()
     }
