@@ -240,6 +240,59 @@ where
     })
 }
 
+/// Probe the build table and add tuples to the results (inner join)
+fn probe_outer<T, F, G, H>(
+    probe_hashes: &[Vec<(u64, T)>],
+    hash_tbls: &mut [HashMap<T, Vec<u32>, RandomState>],
+    results: &mut Vec<(Option<u32>, Option<u32>)>,
+    n_tables: u64,
+    // Function that get index_a, index_b when there is a match and pushes to result
+    swap_fn_match: F,
+    // Function that get index_a when there is no match and pushes to result
+    swap_fn_no_match: G,
+    // Function that get index_b from the build table that did not match any in A and pushes to result
+    swap_fn_drain: H,
+) where
+    T: Send + Hash + Eq + Sync + Copy,
+    // idx_a, idx_b -> ...
+    F: Fn(u32, u32) -> (Option<u32>, Option<u32>),
+    // idx_a -> ...
+    G: Fn(u32) -> (Option<u32>, Option<u32>),
+    // idx_b -> ...
+    H: Fn(u32) -> (Option<u32>, Option<u32>),
+{
+    let mut idx_a = 0;
+    for probe_hashes in probe_hashes {
+        for (h, key) in probe_hashes {
+            let h = *h;
+            // probe table that contains the hashed value
+            let current_probe_table = unsafe { get_hash_tbl_mut(h, hash_tbls, n_tables) };
+
+            let entry = current_probe_table
+                .raw_entry_mut()
+                .from_key_hashed_nocheck(h, &key);
+
+            match entry {
+                // match and remove
+                RawEntryMut::Occupied(occupied) => {
+                    let indexes_b = occupied.remove();
+                    results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
+                }
+                // no match
+                RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
+            }
+            idx_a += 1;
+        }
+    }
+
+    for hash_tbl in hash_tbls {
+        hash_tbl.iter().for_each(|(_k, indexes_b)| {
+            // remaining joined values from the right table
+            results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+        });
+    }
+}
+
 /// Hash join outer. Both left and right can have no match so Options
 fn hash_join_tuples_outer<T, I, J>(
     a: Vec<I>,
@@ -276,67 +329,27 @@ where
     // Note: indexes from b that are not matched will be None, Some(idx_b)
     // Therefore we remove the matches and the remaining will be joined from the right
 
-    // code duplication is because we want to only do the swap check once
-    let mut idx_a = 0;
+    // branch is because we want to only do the swap check once
     if swap {
-        for probe_hashes in probe_hashes {
-            for (h, key) in probe_hashes {
-                // probe table that contains the hashed value
-                let current_probe_table = unsafe { get_hash_tbl_mut(h, &mut hash_tbls, n_tables) };
-
-                let entry = current_probe_table
-                    .raw_entry_mut()
-                    .from_key_hashed_nocheck(h, &key);
-
-                match entry {
-                    // match and remove
-                    RawEntryMut::Occupied(occupied) => {
-                        let indexes_b = occupied.remove();
-                        results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), Some(idx_a))))
-                    }
-                    // no match
-                    RawEntryMut::Vacant(_) => results.push((None, Some(idx_a))),
-                }
-                idx_a += 1;
-            }
-        }
-
-        for hash_tbl in hash_tbls {
-            hash_tbl.iter().for_each(|(_k, indexes_b)| {
-                // remaining joined values from the right table
-                results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_b), None)))
-            });
-        }
+        probe_outer(
+            &probe_hashes,
+            &mut hash_tbls,
+            &mut results,
+            n_tables,
+            |idx_a, idx_b| (Some(idx_b), Some(idx_a)),
+            |idx_a| (None, Some(idx_a)),
+            |idx_b| (Some(idx_b), None),
+        )
     } else {
-        for probe_hashes in probe_hashes {
-            for (h, key) in probe_hashes {
-                // probe table that contains the hashed value
-                let current_probe_table = unsafe { get_hash_tbl_mut(h, &mut hash_tbls, n_tables) };
-
-                let entry = current_probe_table
-                    .raw_entry_mut()
-                    .from_key_hashed_nocheck(h, &key);
-
-                match entry {
-                    // match and remove
-                    RawEntryMut::Occupied(occupied) => {
-                        let indexes_b = occupied.remove();
-                        results.extend(indexes_b.iter().map(|&idx_b| (Some(idx_a), Some(idx_b))))
-                    }
-                    // no match
-                    RawEntryMut::Vacant(_) => {
-                        results.push((Some(idx_a), None));
-                    }
-                }
-                idx_a += 1;
-            }
-        }
-        for hash_tbl in hash_tbls {
-            hash_tbl.iter().for_each(|(_k, indexes_b)| {
-                // remaining joined values from the right table
-                results.extend(indexes_b.iter().map(|&idx_b| (None, Some(idx_b))))
-            });
-        }
+        probe_outer(
+            &probe_hashes,
+            &mut hash_tbls,
+            &mut results,
+            n_tables,
+            |idx_a, idx_b| (Some(idx_a), Some(idx_b)),
+            |idx_a| (Some(idx_a), None),
+            |idx_b| (None, Some(idx_b)),
+        )
     }
     results
 }
