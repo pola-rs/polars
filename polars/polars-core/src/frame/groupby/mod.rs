@@ -238,12 +238,10 @@ where
 ///
 /// # Safety
 /// Doesn't check any bounds
-pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: u32, idx_b: u32) -> bool {
-    let idx_a = idx_a as usize;
-    let idx_b = idx_b as usize;
+pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: usize, idx_b: usize) -> bool {
     for s in keys.get_columns() {
-        if !(s.get_unchecked(idx_a) == s.get_unchecked(idx_b)) {
-            return false;
+        if !s.equal_element(idx_a, idx_b, s) {
+            return false
         }
     }
     true
@@ -280,7 +278,7 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
             let key_idx = idx_hash.idx;
             // Safety:
             // indices in a groupby operation are always in bounds.
-            unsafe { compare_df_rows(keys, key_idx, idx) }
+            unsafe { compare_df_rows(keys, key_idx as usize, idx as usize) }
         });
     match entry {
         RawEntryMut::Vacant(entry) => {
@@ -2013,6 +2011,7 @@ mod test {
     use crate::utils::split_ca;
 
     #[test]
+    #[cfg(feature="dtype-date32")]
     fn test_group_by() {
         let s0 = Date32Chunked::parse_from_str_slice(
             "date",

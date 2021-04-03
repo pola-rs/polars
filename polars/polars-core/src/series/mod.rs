@@ -36,6 +36,9 @@ pub(crate) mod private {
     use ahash::RandomState;
 
     pub trait PrivateSeries {
+        unsafe fn equal_element(&self, _idx_self: usize, _idx_other: usize, _other: &Series) -> bool {
+            unimplemented!()
+        }
         fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
             unimplemented!()
         }
