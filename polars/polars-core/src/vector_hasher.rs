@@ -38,6 +38,7 @@ impl Default for IdHasher {
 
 pub(crate) type IdBuildHasher = BuildHasherDefault<IdHasher>;
 
+#[derive(Debug)]
 pub(crate) struct IdxHash {
     // idx in row of Series, DataFrame
     pub(crate) idx: u32,

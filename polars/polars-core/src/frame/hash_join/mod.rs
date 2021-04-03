@@ -1,5 +1,6 @@
 mod multiple_keys;
 
+use crate::frame::hash_join::multiple_keys::inner_join_multiple_keys;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{split_ca, NoNull};
@@ -43,14 +44,11 @@ pub enum JoinType {
     Outer,
 }
 
-unsafe fn get_hash_tbl<T>(
+unsafe fn get_hash_tbl_threaded_join<T, H>(
     h: u64,
-    hash_tables: &[HashMap<T, Vec<u32>, RandomState>],
+    hash_tables: &[HashMap<T, Vec<u32>, H>],
     len: u64,
-) -> &HashMap<T, Vec<u32>, RandomState>
-where
-    T: Send + Hash + Eq + Sync + Copy,
-{
+) -> &HashMap<T, Vec<u32>, H> {
     let mut idx = 0;
     for i in 0..len {
         if (h + i) % len == 0 {
@@ -86,13 +84,13 @@ fn probe_inner<T, F>(
     n_tables: u64,
     swap_fn: F,
 ) where
-    T: Send + Hash + Eq + Sync + Copy + Debug,
+    T: Send + Hash + Eq + Sync + Copy,
     F: Fn(u32, u32) -> (u32, u32),
 {
     probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
         let idx_a = (idx_a + local_offset) as u32;
         // probe table that contains the hashed value
-        let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+        let current_probe_table = unsafe { get_hash_tbl_threaded_join(*h, hash_tbls, n_tables) };
 
         let entry = current_probe_table
             .raw_entry()
@@ -217,7 +215,8 @@ where
                 probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
                     let idx_a = (idx_a + offset) as u32;
                     // probe table that contains the hashed value
-                    let current_probe_table = unsafe { get_hash_tbl(*h, hash_tbls, n_tables) };
+                    let current_probe_table =
+                        unsafe { get_hash_tbl_threaded_join(*h, hash_tbls, n_tables) };
 
                     // we already hashed, so we don't have to hash again.
                     let entry = current_probe_table
@@ -907,43 +906,20 @@ impl DataFrame {
             new.unwrap()
         }
 
+        impl DataFrame {
+            fn len(&self) -> usize {
+                self.height()
+            }
+        }
+
         // This is still single threaded and can create very large keys that are inserted in the
         // hashmap. TODO: implement same hashing technique as in grouping.
         match how {
             JoinType::Inner => {
-                let join_tuples = match selected_left.len() {
-                    2 => {
-                        let a = static_zip!(selected_left, 1);
-                        let b = static_zip!(selected_right, 1);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
-                    }
-                    3 => {
-                        let a = static_zip!(selected_left, 2);
-                        let b = static_zip!(selected_right, 2);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
-                    }
-                    4 => {
-                        let a = static_zip!(selected_left, 3);
-                        let b = static_zip!(selected_right, 3);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
-                    }
-                    5 => {
-                        let a = static_zip!(selected_left, 4);
-                        let b = static_zip!(selected_right, 4);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
-                    }
-                    6 => {
-                        let a = static_zip!(selected_left, 5);
-                        let b = static_zip!(selected_right, 5);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_inner_threaded(vec![a], vec![b], swap)
-                    }
-                    _ => todo!(),
-                };
+                let left = DataFrame::new_no_checks(selected_left);
+                let right = DataFrame::new_no_checks(selected_right.clone());
+                let (left, right, swap) = det_hash_prone_order!(left, right);
+                let join_tuples = inner_join_multiple_keys(&left, &right, swap);
 
                 let (df_left, df_right) = POOL.join(
                     || self.create_left_df(&join_tuples, false),
@@ -1369,11 +1345,14 @@ mod test {
             .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Left)
             .unwrap();
         let ca = joined.column("ham").unwrap().utf8().unwrap();
+        dbg!(&df_a, &df_b);
         assert_eq!(Vec::from(ca), correct_ham);
         let joined_inner_hack = df_a.inner_join(&df_b, "dummy", "dummy").unwrap();
         let joined_inner = df_a
             .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Inner)
             .unwrap();
+
+        dbg!(&joined_inner_hack, &joined_inner);
         assert!(joined_inner_hack
             .column("ham")
             .unwrap()
