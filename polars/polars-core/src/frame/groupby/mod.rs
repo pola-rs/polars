@@ -242,8 +242,6 @@ pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: u32, idx_b: u32) -
     let idx_a = idx_a as usize;
     let idx_b = idx_b as usize;
     for s in keys.get_columns() {
-        dbg!(idx_a, idx_b, s.get_unchecked(idx_a), s.get_unchecked(idx_b));
-
         if !(s.get_unchecked(idx_a) == s.get_unchecked(idx_b)) {
             return false;
         }

@@ -1,6 +1,6 @@
 mod multiple_keys;
 
-use crate::frame::hash_join::multiple_keys::inner_join_multiple_keys;
+use crate::frame::hash_join::multiple_keys::{inner_join_multiple_keys, left_join_multiple_keys};
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{split_ca, NoNull};
@@ -933,35 +933,9 @@ impl DataFrame {
                 self.finish_join(df_left, df_right)
             }
             JoinType::Left => {
-                let join_tuples = match selected_left.len() {
-                    2 => {
-                        let a = static_zip!(selected_left, 1);
-                        let b = static_zip!(selected_right, 1);
-
-                        hash_join_tuples_left_threaded(vec![a], vec![b])
-                    }
-                    3 => {
-                        let a = static_zip!(selected_left, 2);
-                        let b = static_zip!(selected_right, 2);
-                        hash_join_tuples_left_threaded(vec![a], vec![b])
-                    }
-                    4 => {
-                        let a = static_zip!(selected_left, 3);
-                        let b = static_zip!(selected_right, 3);
-                        hash_join_tuples_left_threaded(vec![a], vec![b])
-                    }
-                    5 => {
-                        let a = static_zip!(selected_left, 4);
-                        let b = static_zip!(selected_right, 4);
-                        hash_join_tuples_left_threaded(vec![a], vec![b])
-                    }
-                    6 => {
-                        let a = static_zip!(selected_left, 5);
-                        let b = static_zip!(selected_right, 5);
-                        hash_join_tuples_left_threaded(vec![a], vec![b])
-                    }
-                    _ => todo!(),
-                };
+                let left = DataFrame::new_no_checks(selected_left);
+                let right = DataFrame::new_no_checks(selected_right.clone());
+                let join_tuples = left_join_multiple_keys(&left, &right);
 
                 let (df_left, df_right) = POOL.join(
                     || self.create_left_df(&join_tuples, true),
