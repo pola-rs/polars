@@ -72,14 +72,15 @@ fn create_build_table(
 }
 
 /// Probe the build table and add tuples to the results (inner join)
+#[allow(clippy::too_many_arguments)]
 fn probe_inner<F>(
     probe_hashes: &UInt64Chunked,
     hash_tbls: &[HashMap<IdxHash, Vec<u32>, IdBuildHasher>],
     results: &mut Vec<(u32, u32)>,
     local_offset: usize,
     n_tables: u64,
-    left: &DataFrame,
-    right: &DataFrame,
+    a: &DataFrame,
+    b: &DataFrame,
     swap_fn: F,
 ) where
     F: Fn(u32, u32) -> (u32, u32),
@@ -94,7 +95,7 @@ fn probe_inner<F>(
                 let idx_b = idx_hash.idx;
                 // Safety:
                 // indices in a join operation are always in bounds.
-                unsafe { compare_df_rows2(left, right, idx_a as usize, idx_b as usize) }
+                unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize) }
             });
 
             if let Some((_, indexes_b)) = entry {
@@ -106,12 +107,24 @@ fn probe_inner<F>(
     }
 }
 
+fn get_offsets(probe_hashes: &[UInt64Chunked]) -> Vec<usize> {
+    probe_hashes
+        .iter()
+        .map(|ph| ph.len())
+        .scan(0, |state, val| {
+            let out = *state;
+            *state += val;
+            Some(out)
+        })
+        .collect()
+}
+
 pub(crate) fn inner_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
     swap: bool,
 ) -> Vec<(u32, u32)> {
-    // we assume that the right DataFrame is the shorter relation.
+    // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 
     let n_threads = n_join_threads();
@@ -126,16 +139,7 @@ pub(crate) fn inner_join_multiple_keys(
     drop(build_hashes);
 
     let n_tables = hash_tbls.len() as u64;
-    let offsets = probe_hashes
-        .iter()
-        .map(|ph| ph.len())
-        .scan(0, |state, val| {
-            let out = *state;
-            *state += val;
-            Some(out)
-        })
-        .collect::<Vec<_>>();
-
+    let offsets = get_offsets(&probe_hashes);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
     POOL.install(|| {
@@ -171,6 +175,69 @@ pub(crate) fn inner_join_multiple_keys(
                         b,
                         |idx_a, idx_b| (idx_a, idx_b),
                     )
+                }
+
+                results
+            })
+            .flatten()
+            .collect()
+    })
+}
+pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32, Option<u32>)> {
+    // we assume that the b DataFrame is the shorter relation.
+    // b will be used for the build phase.
+
+    let n_threads = n_join_threads();
+    let dfs_a = split_df(&a, n_threads).unwrap();
+    let dfs_b = split_df(&b, n_threads).unwrap();
+
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
+    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
+
+    let hash_tbls = create_build_table(&build_hashes, b);
+    // early drop to reduce memory pressure
+    drop(build_hashes);
+
+    let n_tables = hash_tbls.len() as u64;
+    let offsets = get_offsets(&probe_hashes);
+
+    // next we probe the other relation
+    // code duplication is because we want to only do the swap check once
+    POOL.install(|| {
+        probe_hashes
+            .into_par_iter()
+            .zip(offsets)
+            .map(|(probe_hashes, offset)| {
+                // local reference
+                let hash_tbls = &hash_tbls;
+                let mut results =
+                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
+                let local_offset = offset;
+
+                let mut idx_a = local_offset as u32;
+                for probe_hashes in probe_hashes.data_views() {
+                    for &h in probe_hashes {
+                        // probe table that contains the hashed value
+                        let current_probe_table =
+                            unsafe { get_hash_tbl_threaded_join(h, hash_tbls, n_tables) };
+
+                        let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
+                            let idx_b = idx_hash.idx;
+                            // Safety:
+                            // indices in a join operation are always in bounds.
+                            unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize) }
+                        });
+
+                        match entry {
+                            // left and right matches
+                            Some((_, indexes_b)) => {
+                                results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
+                            }
+                            // only left values, right = null
+                            None => results.push((idx_a, None)),
+                        }
+                        idx_a += 1;
+                    }
                 }
 
                 results
