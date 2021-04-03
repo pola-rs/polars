@@ -198,7 +198,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    #[cfg(feature="dtype-i8")]
+    #[cfg(feature = "dtype-i8")]
     fn test_explode() {
         let s0 = Series::new("a", &[1i8, 2, 3]);
         let s1 = Series::new("b", &[1i8, 1, 1]);

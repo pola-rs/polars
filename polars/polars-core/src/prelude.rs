@@ -7,7 +7,7 @@ pub use crate::{
             ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
-        comparison::{CompToSeries, NumComp},
+        comparison::NumComp,
         iterator::{IntoNoNullIterator, PolarsIterator},
         ops::{
             aggregate::*,

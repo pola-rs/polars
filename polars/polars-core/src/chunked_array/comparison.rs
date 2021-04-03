@@ -664,67 +664,8 @@ impl Not for BooleanChunked {
     }
 }
 
-pub trait CompToSeries {
-    fn lt_series(&self, _rhs: &Series) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn gt_series(&self, _rhs: &Series) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn gt_eq_series(&self, _rhs: &Series) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn lt_eq_series(&self, _rhs: &Series) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn eq_series(&self, _rhs: &Series) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    fn neq_series(&self, _rhs: &Series) -> BooleanChunked {
-        unimplemented!()
-    }
-}
-
-impl<T> CompToSeries for ChunkedArray<T>
-where
-    T: PolarsSingleType,
-    ChunkedArray<T>: IntoSeries,
-{
-    fn lt_series(&self, rhs: &Series) -> BooleanChunked {
-        ChunkCompare::<&Series>::lt(&self.clone().into_series(), rhs)
-    }
-
-    fn gt_series(&self, rhs: &Series) -> BooleanChunked {
-        ChunkCompare::<&Series>::gt(&self.clone().into_series(), rhs)
-    }
-
-    fn gt_eq_series(&self, rhs: &Series) -> BooleanChunked {
-        ChunkCompare::<&Series>::gt_eq(&self.clone().into_series(), rhs)
-    }
-
-    fn lt_eq_series(&self, rhs: &Series) -> BooleanChunked {
-        ChunkCompare::<&Series>::lt_eq(&self.clone().into_series(), rhs)
-    }
-
-    fn eq_series(&self, rhs: &Series) -> BooleanChunked {
-        ChunkCompare::<&Series>::eq(&self.clone().into_series(), rhs)
-    }
-
-    fn neq_series(&self, rhs: &Series) -> BooleanChunked {
-        ChunkCompare::<&Series>::neq(&self.clone().into_series(), rhs)
-    }
-}
-
-impl CompToSeries for ListChunked {}
-#[cfg(feature = "object")]
-impl<T> CompToSeries for ObjectChunked<T> {}
-
 impl BooleanChunked {
+    /// Check if all values are true
     pub fn all_true(&self) -> bool {
         match self.sum() {
             None => false,
@@ -734,6 +675,7 @@ impl BooleanChunked {
 }
 
 impl BooleanChunked {
+    /// Check if all values are false
     pub fn all_false(&self) -> bool {
         match self.sum() {
             None => false,
@@ -746,15 +688,16 @@ impl BooleanChunked {
 pub(crate) trait ChunkEqualElement {
     /// Check if element in self is equal to element in other, assumes same dtypes
     /// # Safety:
-    ///     no bounds checks
+    ///     No bounds checks and not type checks.
     unsafe fn equal_element(&self, _idx_self: usize, _idx_other: usize, _other: &Series) -> bool {
         unimplemented!()
     }
 }
 
 impl<T> ChunkEqualElement for ChunkedArray<T>
-where T: PolarsNumericType,
-    T::Native: PartialEq
+where
+    T: PolarsNumericType,
+    T::Native: PartialEq,
 {
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         let ca_other = other.as_ref().as_ref();
@@ -764,8 +707,7 @@ where T: PolarsNumericType,
     }
 }
 
-impl ChunkEqualElement for BooleanChunked
-{
+impl ChunkEqualElement for BooleanChunked {
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
@@ -774,8 +716,7 @@ impl ChunkEqualElement for BooleanChunked
     }
 }
 
-impl ChunkEqualElement for Utf8Chunked
-{
+impl ChunkEqualElement for Utf8Chunked {
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());

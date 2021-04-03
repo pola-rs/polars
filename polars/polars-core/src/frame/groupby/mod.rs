@@ -241,7 +241,7 @@ where
 pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: usize, idx_b: usize) -> bool {
     for s in keys.get_columns() {
         if !s.equal_element(idx_a, idx_b, s) {
-            return false
+            return false;
         }
     }
     true
@@ -2011,7 +2011,7 @@ mod test {
     use crate::utils::split_ca;
 
     #[test]
-    #[cfg(feature="dtype-date32")]
+    #[cfg(feature = "dtype-date32")]
     fn test_group_by() {
         let s0 = Date32Chunked::parse_from_str_slice(
             "date",
