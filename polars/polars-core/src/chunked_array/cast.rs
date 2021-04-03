@@ -74,7 +74,8 @@ impl ChunkCast for CategoricalChunked {
                 Ok(ca)
             }
             DataType::UInt32 => {
-                let ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
+                let mut ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
+                ca.field = Arc::new(Field::new(ca.name(), DataType::UInt32));
                 Ok(ca)
             }
             _ => cast_ca(self),
@@ -94,7 +95,8 @@ where
         use DataType::*;
         let ca = match (T::get_dtype(), N::get_dtype()) {
             (UInt32, Categorical) => {
-                let ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
+                let mut ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
+                ca.field = Arc::new(Field::new(ca.name(), DataType::Categorical));
                 return Ok(ca);
             }
             // underlying type: i64
