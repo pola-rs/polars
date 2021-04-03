@@ -22,7 +22,7 @@ use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_vertical, split_ca, split_df, NoNull};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, df_rows_to_hashes, df_rows_to_hashes_threaded,
-    prepare_hashed_relation, IdBuildHasher, IdxHash,
+    prepare_hashed_relation, this_thread, IdBuildHasher, IdxHash,
 };
 use crate::POOL;
 
@@ -247,12 +247,28 @@ unsafe fn compare_fn(keys: &DataFrame, idx_a: u32, idx_b: u32) -> bool {
     true
 }
 
-fn populate_multiple_key_hashmap(
-    hash_tbl: &mut HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher>,
+/// Populate a multiple key hashmap with row indexes.
+/// Instead of the keys (which could be very large), the row indexes are stored.
+/// To check if a row is equal the original DataFrame is also passed as ref.
+/// When a hash collision occurs the indexes are ptrs to the rows and the rows are compared
+/// on equality.
+pub(crate) fn populate_multiple_key_hashmap<V, H, F>(
+    hash_tbl: &mut HashMap<IdxHash, V, H>,
+    // row index
     idx: u32,
+    // hash
     h: u64,
+    // keys of the hash table (will not be inserted, the indexes will be used)
+    // the keys are needed for the equality check
     keys: &DataFrame,
-) {
+    // value to insert
+    value: V,
+    // function that gets a mutable ref to the occupied value in the hash table
+    occupied_fn: F,
+) where
+    F: Fn(&mut V),
+    H: BuildHasher,
+{
     let entry = hash_tbl
         .raw_entry_mut()
         // uses the idx to probe rows in the original DataFrame with keys
@@ -265,11 +281,11 @@ fn populate_multiple_key_hashmap(
         });
     match entry {
         RawEntryMut::Vacant(entry) => {
-            entry.insert_hashed_nocheck(h, IdxHash::new(idx, h), (idx, vec![idx]));
+            entry.insert_hashed_nocheck(h, IdxHash::new(idx, h), value);
         }
         RawEntryMut::Occupied(mut entry) => {
             let (_k, v) = entry.get_key_value_mut();
-            v.1.push(idx);
+            occupied_fn(v);
         }
     }
 }
@@ -285,7 +301,9 @@ fn groupby_multiple_keys(keys: DataFrame) -> GroupTuples {
     let mut idx = 0;
     for hashes_chunk in hashes.data_views() {
         for &h in hashes_chunk {
-            populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys);
+            populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys, (idx, vec![idx]), |v| {
+                v.1.push(idx)
+            });
             idx += 1;
         }
     }
@@ -301,7 +319,7 @@ fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> Gro
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
 
-    // We use a combination of a custom IdentityHasher and a uitility key IdxHash that stores
+    // We use a combination of a custom IdentityHasher and a utility key IdxHash that stores
     // the index of the row and and the hash. The Hash function of this key just returns the hash it stores.
     POOL.install(|| {
         (0..n_threads).into_par_iter().map(|thread_no| {
@@ -324,9 +342,16 @@ fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> Gro
                     for &h in hashes_chunk {
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
-                        if (h + thread_no) % n_threads == 0 {
+                        if this_thread(h, thread_no, n_threads) {
                             let idx = idx + offset;
-                            populate_multiple_key_hashmap(&mut hash_tbl, idx, h, &keys);
+                            populate_multiple_key_hashmap(
+                                &mut hash_tbl,
+                                idx,
+                                h,
+                                &keys,
+                                (idx, vec![idx]),
+                                |v| v.1.push(idx),
+                            );
                         }
                         idx += 1;
                     }
