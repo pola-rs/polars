@@ -1,9 +1,12 @@
 use crate::frame::groupby::populate_multiple_key_hashmap;
-use crate::frame::hash_join::{get_hash_tbl_threaded_join, n_join_threads};
+use crate::frame::hash_join::{
+    get_hash_tbl_threaded_join, get_hash_tbl_threaded_join_mut, n_join_threads,
+};
 use crate::prelude::*;
 use crate::utils::split_df;
 use crate::vector_hasher::{df_rows_to_hashes_threaded, this_thread, IdBuildHasher, IdxHash};
 use crate::POOL;
+use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 use rayon::prelude::*;
 
@@ -245,4 +248,126 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32,
             .flatten()
             .collect()
     })
+}
+
+/// Probe the build table and add tuples to the results (inner join)
+#[allow(clippy::too_many_arguments)]
+fn probe_outer<F, G, H>(
+    probe_hashes: &[UInt64Chunked],
+    hash_tbls: &mut [HashMap<IdxHash, Vec<u32>, IdBuildHasher>],
+    results: &mut Vec<(Option<u32>, Option<u32>)>,
+    n_tables: u64,
+    a: &DataFrame,
+    b: &DataFrame,
+    // Function that get index_a, index_b when there is a match and pushes to result
+    swap_fn_match: F,
+    // Function that get index_a when there is no match and pushes to result
+    swap_fn_no_match: G,
+    // Function that get index_b from the build table that did not match any in A and pushes to result
+    swap_fn_drain: H,
+) where
+    // idx_a, idx_b -> ...
+    F: Fn(u32, u32) -> (Option<u32>, Option<u32>),
+    // idx_a -> ...
+    G: Fn(u32) -> (Option<u32>, Option<u32>),
+    // idx_b -> ...
+    H: Fn(u32) -> (Option<u32>, Option<u32>),
+{
+    let mut idx_a = 0;
+
+    // vec<ca>
+    for probe_hashes in probe_hashes {
+        // ca
+        for probe_hashes in probe_hashes.data_views() {
+            // chunk slices
+            for &h in probe_hashes {
+                // probe table that contains the hashed value
+                let current_probe_table =
+                    unsafe { get_hash_tbl_threaded_join_mut(h, hash_tbls, n_tables) };
+
+                let entry = current_probe_table
+                    .raw_entry_mut()
+                    .from_hash(h, |idx_hash| {
+                        let idx_b = idx_hash.idx;
+                        // Safety:
+                        // indices in a join operation are always in bounds.
+                        unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize) }
+                    });
+
+                match entry {
+                    // match and remove
+                    RawEntryMut::Occupied(occupied) => {
+                        let indexes_b = occupied.remove();
+                        results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
+                    }
+                    // no match
+                    RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
+                }
+                idx_a += 1;
+            }
+        }
+    }
+
+    for hash_tbl in hash_tbls {
+        hash_tbl.iter().for_each(|(_k, indexes_b)| {
+            // remaining joined values from the right table
+            results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+        });
+    }
+}
+
+pub(crate) fn outer_join_multiple_keys(
+    a: &DataFrame,
+    b: &DataFrame,
+    swap: bool,
+) -> Vec<(Option<u32>, Option<u32>)> {
+    // we assume that the b DataFrame is the shorter relation.
+    // b will be used for the build phase.
+
+    let size = a.height() + b.height();
+    let mut results = Vec::with_capacity(size);
+
+    let n_threads = n_join_threads();
+    let dfs_a = split_df(&a, n_threads).unwrap();
+    let dfs_b = split_df(&b, n_threads).unwrap();
+
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
+    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
+
+    let mut hash_tbls = create_build_table(&build_hashes, b);
+    // early drop to reduce memory pressure
+    drop(build_hashes);
+
+    let n_tables = hash_tbls.len() as u64;
+    // probe the hash table.
+    // Note: indexes from b that are not matched will be None, Some(idx_b)
+    // Therefore we remove the matches and the remaining will be joined from the right
+
+    // branch is because we want to only do the swap check once
+    if swap {
+        probe_outer(
+            &probe_hashes,
+            &mut hash_tbls,
+            &mut results,
+            n_tables,
+            a,
+            b,
+            |idx_a, idx_b| (Some(idx_b), Some(idx_a)),
+            |idx_a| (None, Some(idx_a)),
+            |idx_b| (Some(idx_b), None),
+        )
+    } else {
+        probe_outer(
+            &probe_hashes,
+            &mut hash_tbls,
+            &mut results,
+            n_tables,
+            a,
+            b,
+            |idx_a, idx_b| (Some(idx_a), Some(idx_b)),
+            |idx_a| (Some(idx_a), None),
+            |idx_b| (None, Some(idx_b)),
+        )
+    }
+    results
 }

@@ -1,6 +1,8 @@
 mod multiple_keys;
 
-use crate::frame::hash_join::multiple_keys::{inner_join_multiple_keys, left_join_multiple_keys};
+use crate::frame::hash_join::multiple_keys::{
+    inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
+};
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{split_ca, NoNull};
@@ -58,14 +60,11 @@ unsafe fn get_hash_tbl_threaded_join<T, H>(
     hash_tables.get_unchecked(idx)
 }
 
-unsafe fn get_hash_tbl_mut<T>(
+unsafe fn get_hash_tbl_threaded_join_mut<T, H>(
     h: u64,
-    hash_tables: &mut [HashMap<T, Vec<u32>, RandomState>],
+    hash_tables: &mut [HashMap<T, Vec<u32>, H>],
     len: u64,
-) -> &mut HashMap<T, Vec<u32>, RandomState>
-where
-    T: Send + Hash + Eq + Sync + Copy,
-{
+) -> &mut HashMap<T, Vec<u32>, H> {
     let mut idx = 0;
     for i in 0..len {
         if (h + i) % len == 0 {
@@ -265,7 +264,8 @@ fn probe_outer<T, F, G, H>(
         for (h, key) in probe_hashes {
             let h = *h;
             // probe table that contains the hashed value
-            let current_probe_table = unsafe { get_hash_tbl_mut(h, hash_tbls, n_tables) };
+            let current_probe_table =
+                unsafe { get_hash_tbl_threaded_join_mut(h, hash_tbls, n_tables) };
 
             let entry = current_probe_table
                 .raw_entry_mut()
@@ -877,24 +877,6 @@ impl DataFrame {
             };
         }
 
-        macro_rules! det_hash_prone_order2 {
-            ($self:expr, $other:expr) => {{
-                // The shortest relation will be used to create a hash table.
-                let left_first = $self.size_hint().0 > $other.size_hint().0;
-                let a;
-                let b;
-                if left_first {
-                    a = $self;
-                    b = $other;
-                } else {
-                    b = $self;
-                    a = $other;
-                }
-
-                (a, b, !left_first)
-            }};
-        }
-
         fn remove_selected(df: &DataFrame, selected: &[Series]) -> DataFrame {
             let mut new = None;
             for s in selected {
@@ -951,39 +933,11 @@ impl DataFrame {
                 self.finish_join(df_left, df_right)
             }
             JoinType::Outer => {
-                let opt_join_tuples = match selected_left.len() {
-                    2 => {
-                        let a = static_zip!(selected_left, 1);
-                        let b = static_zip!(selected_right, 1);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(vec![a], vec![b], swap)
-                    }
-                    3 => {
-                        let a = static_zip!(selected_left, 2);
-                        let b = static_zip!(selected_right, 2);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(vec![a], vec![b], swap)
-                    }
-                    4 => {
-                        let a = static_zip!(selected_left, 3);
-                        let b = static_zip!(selected_right, 3);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(vec![a], vec![b], swap)
-                    }
-                    5 => {
-                        let a = static_zip!(selected_left, 4);
-                        let b = static_zip!(selected_right, 4);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(vec![a], vec![b], swap)
-                    }
-                    6 => {
-                        let a = static_zip!(selected_left, 5);
-                        let b = static_zip!(selected_right, 5);
-                        let (a, b, swap) = det_hash_prone_order2!(a, b);
-                        hash_join_tuples_outer(vec![a], vec![b], swap)
-                    }
-                    _ => todo!(),
-                };
+                let left = DataFrame::new_no_checks(selected_left.clone());
+                let right = DataFrame::new_no_checks(selected_right.clone());
+
+                let (left, right, swap) = det_hash_prone_order!(left, right);
+                let opt_join_tuples = outer_join_multiple_keys(&left, &right, swap);
 
                 // Take the left and right dataframes by join tuples
                 let (mut df_left, df_right) = POOL.join(
