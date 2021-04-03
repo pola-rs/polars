@@ -19,6 +19,7 @@ use crate::prelude::*;
 use ahash::RandomState;
 use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
+use crate::chunked_array::comparison::*;
 
 impl<T> ChunkedArray<T> {
     /// get the physical memory type of a date type
@@ -104,6 +105,10 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+                self.0.equal_element(idx_self, idx_other, other)
+            }
+
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
                 try_physical_dispatch!(self, zip_with_same_type, mask, other)
             }

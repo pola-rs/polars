@@ -27,6 +27,7 @@ use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
 use std::borrow::Cow;
 use std::ops::Deref;
+use crate::chunked_array::comparison::*;
 
 // Utility wrapper struct
 pub(crate) struct SeriesWrap<T>(pub T);
@@ -54,6 +55,11 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+
+            unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+                self.0.equal_element(idx_self, idx_other, other)
+            }
+
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
                 ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
                     .map(|ca| ca.into_series())

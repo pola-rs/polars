@@ -742,6 +742,58 @@ impl BooleanChunked {
     }
 }
 
+// private
+pub(crate) trait ChunkEqualElement {
+    /// Check if element in self is equal to element in other, assumes same dtypes
+    /// # Safety:
+    ///     no bounds checks
+    unsafe fn equal_element(&self, _idx_self: usize, _idx_other: usize, _other: &Series) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<T> ChunkEqualElement for ChunkedArray<T>
+where T: PolarsNumericType,
+    T::Native: PartialEq
+{
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let ca_other = other.as_ref().as_ref();
+        debug_assert!(self.dtype() == other.dtype());
+        let ca_other = &*(ca_other as *const ChunkedArray<T>);
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+    }
+}
+
+impl ChunkEqualElement for BooleanChunked
+{
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let ca_other = other.as_ref().as_ref();
+        debug_assert!(self.dtype() == other.dtype());
+        let ca_other = &*(ca_other as *const BooleanChunked);
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+    }
+}
+
+impl ChunkEqualElement for Utf8Chunked
+{
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let ca_other = other.as_ref().as_ref();
+        debug_assert!(self.dtype() == other.dtype());
+        let ca_other = &*(ca_other as *const Utf8Chunked);
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+    }
+}
+
+impl ChunkEqualElement for ListChunked {}
+impl ChunkEqualElement for CategoricalChunked {
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let ca_other = other.as_ref().as_ref();
+        debug_assert!(self.dtype() == other.dtype());
+        let ca_other = &*(ca_other as *const CategoricalChunked);
+        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};

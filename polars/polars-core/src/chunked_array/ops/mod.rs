@@ -41,10 +41,13 @@ pub trait ChunkCumAgg<T> {
     }
 }
 
+/// Traverse and collect every nth element
 pub trait ChunkTakeEvery<T> {
+    /// Traverse and collect every nth element in a new array.
     fn take_every(&self, n: usize) -> ChunkedArray<T>;
 }
 
+/// Explode/ flatten a
 pub trait ChunkExplode {
     fn explode(&self) -> Result<Series> {
         self.explode_and_offsets().map(|t| t.0)
@@ -56,6 +59,7 @@ pub trait ChunkBytes {
     fn to_byte_slices(&self) -> Vec<&[u8]>;
 }
 
+/// Rolling window functions
 pub trait ChunkWindow {
     /// apply a rolling sum (moving sum) over the values in this array.
     /// a window of length `window_size` will traverse the array. the values that fill this window
@@ -172,6 +176,7 @@ pub trait ChunkWindow {
     }
 }
 
+/// Custom rolling window functions
 pub trait ChunkWindowCustom<T> {
     /// Apply a rolling aggregation over the values in this array.
     ///
@@ -867,6 +872,7 @@ pub trait ChunkApplyKernel<A> {
         S: PolarsDataType;
 }
 
+/// Find local minima/ maxima
 pub trait ChunkPeaks {
     /// Get a boolean mask of the local maximum peaks.
     fn peak_max(&self) -> BooleanChunked {
@@ -879,6 +885,7 @@ pub trait ChunkPeaks {
     }
 }
 
+/// Check if element is member of list array
 pub trait IsIn {
     /// Check if the element of this array is in the elements of the list array
     fn is_in(&self, _list_array: &ListChunked) -> Result<BooleanChunked> {
@@ -886,10 +893,13 @@ pub trait IsIn {
     }
 }
 
+/// Argmin/ Argmax
 pub trait ArgAgg {
+    /// Get the index of the minimal value
     fn arg_min(&self) -> Option<usize> {
         None
     }
+    /// Get the index of the maximal value
     fn arg_max(&self) -> Option<usize> {
         None
     }
