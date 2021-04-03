@@ -2220,6 +2220,30 @@ mod test {
     }
 
     #[test]
+    fn test_groupby_categorical() {
+        let mut df = df! {"foo" => ["a", "a", "b", "b", "c"],
+                    "ham" => ["a", "a", "b", "b", "c"],
+                    "bar" => [1, 1, 1, 1, 1]
+        }
+            .unwrap();
+
+        df.apply("foo", |s| s.cast::<CategoricalType>().unwrap());
+
+        // check multiple keys and categorical
+        let res = df.groupby_stable(&["foo", "ham"])
+            .unwrap()
+            .select("bar")
+            .sum()
+            .unwrap();
+
+        assert_eq!(
+            Vec::from(res.column("bar_sum").unwrap().i32().unwrap()),
+            &[Some(2), Some(2), Some(1)]
+        );
+
+    }
+
+    #[test]
     fn test_groupby_apply() {
         let df = df! {
             "a" => [1, 1, 2, 2, 2],
