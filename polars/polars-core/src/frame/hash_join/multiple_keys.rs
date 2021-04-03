@@ -14,10 +14,6 @@ fn create_build_table(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
 ) -> Vec<HashMap<IdxHash, Vec<u32>, IdBuildHasher>> {
-    // POOL.install(|| {
-    //     hashes.into_par_iter()
-    // })
-    // let mut tbl = HashMap::with_capacity_and_hasher(hashes, IdBuildHasher::default());
     let n_threads = hashes.len();
     let size = hashes.iter().fold(0, |acc, v| acc + v.len());
 
@@ -74,7 +70,11 @@ fn inner_join_multiple_keys(left: &DataFrame, right: &DataFrame, swap: bool) {
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&left_dfs, None);
     let (probe_hashes, random_state) = df_rows_to_hashes_threaded(&right_dfs, Some(random_state));
 
-    todo!()
+    let hash_tbls = create_build_table(&build_hashes, left);
+    // early drop to reduce memory pressure
+    drop(build_hashes);
+
+    todo!();
 
     // let n_tables = hash_tbls.len() as u64;
     // let offsets = probe_hashes
@@ -86,8 +86,8 @@ fn inner_join_multiple_keys(left: &DataFrame, right: &DataFrame, swap: bool) {
     //         Some(out)
     //     })
     //     .collect::<Vec<_>>();
-    // // next we probe the other relation
-    // // code duplication is because we want to only do the swap check once
+    // next we probe the other relation
+    // code duplication is because we want to only do the swap check once
     // POOL.install(|| {
     //     probe_hashes
     //         .into_par_iter()
