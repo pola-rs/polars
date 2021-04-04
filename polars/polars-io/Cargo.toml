@@ -19,8 +19,8 @@ parquet = ["polars-core/parquet", "parquet_lib"]
 dtype-u64 = ["polars-core/dtype-u64"]
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "5bfae36954f7fe1573ec24166ba7d57f2a73b614", default-features=false}
-parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "5bfae36954f7fe1573ec24166ba7d57f2a73b614"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "2b87dfc5da67dc39d18ccc1d49ed5212b468496e", default-features=false}
+parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "2b87dfc5da67dc39d18ccc1d49ed5212b468496e"}
 csv = "1.1"
 lexical = "5.2"
 num_cpus = "1.13.0"
