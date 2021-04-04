@@ -2,6 +2,22 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.4
+* performance
+  - \[python | rust\] multi-threaded outer join
+  - \[python | rust\] better performance in groupby on multiple keys (faster hashmap comparisons)
+  - \[python | rust\] better performance in multi column joins
+
+* bug fix
+  - \[python\] make horizontal aggregations null aware
+
+* feature
+  - \[python | rust\] Downsample by week
+  - \[python | rust\] join by unlimited columns
+  - \[python\] Create a list Series directly.
+  - \[python\] Create DataFrame from np.ndarray
+  
+
 ### polars 0.7.3
 * bug fix
   - \[python\] pandas to polars date64, maintain time information
