@@ -9,6 +9,7 @@ except ImportError:
         "find_first_non_none": False,
         "out_to_dtype": False,
         "get_ffi_func": False,
+        "SeriesIter": False,
     }
 import numpy as np
 from typing import Optional, List, Sequence, Union, Any, Callable, Tuple
@@ -961,7 +962,7 @@ class Series:
         return self._s.to_list()
 
     def __iter__(self):
-        return self.to_list().__iter__()
+        return SeriesIter(self.len(), self)
 
     def rechunk(self, in_place: bool = False) -> Optional["Series"]:
         """
@@ -1623,17 +1624,35 @@ class Series:
         return wrap_s(self._s.peak_min())
 
 
-def out_to_dtype(out: Any) -> "Union[DataType, np.ndarray]":
+class SeriesIter:
+    def __init__(self, length: int, s: "Series"):
+        self.len = length
+        self.i = 0
+        self.s = s
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.i < self.len:
+            i = self.i
+            self.i += 1
+            return self.s[i]
+        else:
+            raise StopIteration
+
+
+def out_to_dtype(out: Any) -> "Union[datatypes.DataType, np.ndarray]":
     if isinstance(out, float):
-        return Float64
+        return datatypes.Float64
     if isinstance(out, int):
-        return Int64
+        return datatypes.Int64
     if isinstance(out, str):
-        return Utf8
+        return datatypes.Utf8
     if isinstance(out, bool):
-        return Boolean
+        return datatypes.Boolean
     if isinstance(out, Series):
-        return List
+        return datatypes.List
     if isinstance(out, np.ndarray):
         return np.ndarray
     raise NotImplementedError
