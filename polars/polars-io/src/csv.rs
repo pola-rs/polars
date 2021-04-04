@@ -710,4 +710,14 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
             .finish();
         assert!(result.is_ok())
     }
+
+    #[test]
+    fn test_carriage_return() {
+        let csv =
+            "\"foo\",\"bar\"\r\n\"158252579.00\",\"7.5800\"\r\n\"158252579.00\",\"7.5800\"\r\n";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).has_header(true).finish().unwrap();
+        assert_eq!(df.shape(), (2, 2));
+    }
 }
