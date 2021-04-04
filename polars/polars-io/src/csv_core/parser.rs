@@ -403,6 +403,21 @@ pub(crate) fn parse_lines(
             // +1 is the split character that is consumed by the iterator.
             read += field.len() + 1;
         }
+
+        // there can be lines that miss fields (also the comma values)
+        // this means the splitter won't process them.
+        // We traverse them to read them as null values.
+        while processed_fields < projection.len() {
+            debug_assert!(processed_fields < buffers.len());
+            let buf = unsafe {
+                // SAFETY: processed fields index can never exceed the projection indices.
+                buffers.get_unchecked_mut(processed_fields)
+            };
+
+            buf.add(&[], true, read, encoding).unwrap();
+            processed_fields += 1;
+        }
+
         // this way we also include the trailing '\n' or '\r\n' in the bytes read
         // and any skipped fields.
         read = read_sol + line_length;
