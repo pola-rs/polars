@@ -720,4 +720,24 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
         let df = CsvReader::new(file).has_header(true).finish().unwrap();
         assert_eq!(df.shape(), (2, 2));
     }
+
+    #[test]
+    fn test_missing_value() {
+        let csv = r#"foo,bar,ham
+1,2,3
+1,2,3
+1,2"#;
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(true)
+            .with_schema(Arc::new(Schema::new(vec![
+                Field::new("foo", DataType::UInt32),
+                Field::new("bar", DataType::UInt32),
+                Field::new("ham", DataType::UInt32),
+            ])))
+            .finish()
+            .unwrap();
+        assert_eq!(df.column("ham").unwrap().len(), 3)
+    }
 }
