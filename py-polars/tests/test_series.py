@@ -261,3 +261,9 @@ def test_quantile():
 def test_shape():
     s = Series([1, 2, 3])
     assert s.shape == (3,)
+
+
+def test_create_list_series():
+    a = [[1, 2], None, [None, 3]]
+    s = pl.Series("", a)
+    assert s.to_list() == a

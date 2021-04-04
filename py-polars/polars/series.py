@@ -34,6 +34,7 @@ from .datatypes import (
     Int8,
     UInt16,
 )
+from . import datatypes
 from numbers import Number
 import polars
 import pyarrow as pa
@@ -955,13 +956,8 @@ class Series:
         """
         Convert this Series to a Python List. This operation clones data.
         """
-
-        if self.dtype == List:
-            column = []
-            for i in range(len(self)):
-                subseries = self[i]
-                column.append(subseries.to_numpy())
-            return column
+        if self.dtype != datatypes.Object:
+            return self.to_arrow().to_pylist()
         return self._s.to_list()
 
     def __iter__(self):
