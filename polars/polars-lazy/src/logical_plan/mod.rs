@@ -27,7 +27,7 @@ use polars_core::utils::chrono::NaiveDateTime;
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Context {
     Aggregation,
     Other,

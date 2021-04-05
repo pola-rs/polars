@@ -687,6 +687,12 @@ pub(crate) trait CustomIterTools: Iterator {
         let first = self.next()?;
         Some(self.fold(first, f))
     }
+
+    fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
+    where Self: Sized
+    {
+        TrustMyLength::new(self, length)
+    }
 }
 
 impl<T: ?Sized> CustomIterTools for T where T: Iterator {}

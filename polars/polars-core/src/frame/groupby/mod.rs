@@ -19,7 +19,7 @@ use crate::chunked_array::kernels::take_agg::{
 use crate::chunked_array::{builder::PrimitiveChunkedBuilder, float::IntegerDecode};
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_vertical, split_ca, split_df, NoNull};
+use crate::utils::{accumulate_dataframes_vertical, split_ca, split_df, NoNull, CustomIterTools};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, df_rows_to_hashes, df_rows_to_hashes_threaded,
     prepare_hashed_relation, this_thread, IdBuildHasher, IdxHash,

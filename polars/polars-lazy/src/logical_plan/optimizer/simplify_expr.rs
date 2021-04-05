@@ -314,6 +314,7 @@ impl OptimizationRule for SimplifyExprRule {
 }
 
 #[test]
+#[cfg(feature = "dtype-i8")]
 fn test_expr_to_aexp() {
     use super::*;
 
