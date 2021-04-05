@@ -227,6 +227,9 @@ def test_groupby():
     assert df.groupby("a").get_group("b").shape == (3, 3)
     assert df.groupby("a").get_group("a").shape == (2, 3)
 
+    # Use lazy API in eager groupby
+    assert df.groupby("a").agg([pl.sum("b")]).shape == (3, 2)
+
 
 def test_join():
     df_left = DataFrame(
