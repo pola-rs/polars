@@ -34,10 +34,11 @@ import numpy as np
 import os
 from pathlib import Path
 
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .lazy import LazyFrame
+    from .lazy import LazyFrame, Expr
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
@@ -1659,10 +1660,11 @@ class GroupBy:
         return wrap_df(self._df.groupby_apply(self.by, f))
 
     def agg(
-        self, column_to_agg: "Union[List[Tuple[str, List[str]]], Dict[str, List[str]]]"
+        self,
+        column_to_agg: "Union[List[Tuple[str, List[str]]], Dict[str, List[str]]], List[Expr]",
     ) -> DataFrame:
         """
-        Use multiple aggregations on columns
+        Use multiple aggregations on columns. This can be combined with complete lazy API.
 
         Parameters
         ----------
@@ -1670,26 +1672,64 @@ class GroupBy:
             map column to aggregation functions
 
             Examples:
+                ## column name to aggregation with tuples:
                 [("foo", ["sum", "n_unique", "min"]),
                  ("bar": ["max"])]
 
+                ## column name to aggregation with dict:
                 {"foo": ["sum", "n_unique", "min"],
                 "bar": "max" }
+
+                ## use lazy API syntax
+                [col("foo").sum(), col("bar").min()]
 
         Returns
         -------
         Result of groupby split apply operations.
+
+
+        # Example
+
+        ```python
+
+        # use lazy API
+        (df.groupby(["foo", "bar])
+            .agg([pl.sum("ham"), col("spam").tail(4).sum()])
+
+        # use a dict
+        (df.groupby(["foo", "bar])
+            .agg({"spam": ["sum", "min"})
+        ```
         """
         if isinstance(column_to_agg, dict):
             column_to_agg = [
                 (column, [agg] if isinstance(agg, str) else agg)
                 for (column, agg) in column_to_agg.items()
             ]
+        elif isinstance(column_to_agg, list):
+            from .lazy import Expr
+
+            if isinstance(column_to_agg[0], tuple):
+                column_to_agg = [
+                    (column, [agg] if isinstance(agg, str) else agg)
+                    for (column, agg) in column_to_agg
+                ]
+
+            elif isinstance(column_to_agg[0], Expr):
+                return (
+                    wrap_df(self._df)
+                    .lazy()
+                    .groupby(self.by)
+                    .agg(column_to_agg)
+                    .collect(no_optimization=True)
+                )
+
+                pass
+            else:
+                raise ValueError(f"argument: {column_to_agg} not understood")
         else:
-            column_to_agg = [
-                (column, [agg] if isinstance(agg, str) else agg)
-                for (column, agg) in column_to_agg
-            ]
+            raise ValueError(f"argument: {column_to_agg} not understood")
+
         if self.downsample:
             return wrap_df(
                 self._df.downsample_agg(

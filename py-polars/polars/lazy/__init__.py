@@ -188,6 +188,7 @@ class LazyFrame:
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         string_cache: bool = True,
+        no_optimization: bool = False,
     ) -> DataFrame:
         """
         Collect into a DataFrame
@@ -202,11 +203,16 @@ class LazyFrame:
             do projection pushdown optimization
         simplify_expression
             run simplify expressions optimization
+        no_optimization
+            Turn off optimizations
 
         Returns
         -------
         DataFrame
         """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
