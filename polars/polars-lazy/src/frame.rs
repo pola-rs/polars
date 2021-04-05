@@ -980,6 +980,7 @@ mod test {
     use super::*;
     use crate::functions::pearson_corr;
     use crate::tests::get_df;
+    #[cfg(feature = "temporal")]
     use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
     use polars_core::*;
 
@@ -1155,6 +1156,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "temporal")]
     fn test_lazy_agg() {
         let s0 = Date32Chunked::parse_from_str_slice(
             "date",
@@ -1387,6 +1389,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "temporal")]
     fn test_lazy_query_7() {
         let date = NaiveDate::from_ymd(2021, 3, 5);
         let dates = vec![
@@ -1829,5 +1832,43 @@ mod test {
         .unwrap();
 
         let _out = df.clone().lazy().tail(3).collect().unwrap();
+    }
+
+    #[test]
+    fn test_lazy_groupby_sort() {
+        let df = df! {
+            "a" => ["a", "b", "a", "b", "b", "c"],
+            "b" => [1, 2, 3, 4, 5, 6]
+        }
+        .unwrap();
+
+        let out = df
+            .clone()
+            .lazy()
+            .groupby(vec![col("a")])
+            .agg(vec![col("b").sort(false).first()])
+            .collect()
+            .unwrap()
+            .sort("a", false)
+            .unwrap();
+
+        assert_eq!(
+            Vec::from(out.column("b_first").unwrap().i32().unwrap()),
+            [Some(1), Some(2), Some(6)]
+        );
+
+        let out = df
+            .lazy()
+            .groupby(vec![col("a")])
+            .agg(vec![col("b").sort(false).last()])
+            .collect()
+            .unwrap()
+            .sort("a", false)
+            .unwrap();
+
+        assert_eq!(
+            Vec::from(out.column("b_last").unwrap().i32().unwrap()),
+            [Some(3), Some(5), Some(6)]
+        );
     }
 }

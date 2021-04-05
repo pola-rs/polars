@@ -81,7 +81,7 @@ where
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        // if len larger than 1M we sort in paralllel
+        // if len larger than 1M we sort in parallel
         if self.is_optimal_aligned()
             && self.len()
                 > std::env::var("POLARS_PAR_SORT_BOUND")

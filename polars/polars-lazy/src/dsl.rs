@@ -716,7 +716,9 @@ impl Expr {
         }
     }
 
-    /// Sort expression. See [the eager implementation](polars_core::series::SeriesTrait::sort).
+    /// Sort in increasing order. See [the eager implementation](polars_core::series::SeriesTrait::sort).
+    ///
+    /// Can be used in `default` and `aggregation` context.
     pub fn sort(self, reverse: bool) -> Self {
         Expr::Sort {
             expr: Box::new(self),

@@ -3,9 +3,10 @@ use crate::physical_plan::AggPhysicalExpr;
 use crate::prelude::*;
 use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
+use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct LiteralExpr(pub LiteralValue, Expr);
@@ -225,6 +226,40 @@ impl PhysicalExpr for SortExpr {
         let series = self.physical_expr.evaluate(df)?;
         Ok(series.sort(self.reverse))
     }
+
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        let (series, groups) = self.physical_expr.evaluate_on_groups(df, groups)?;
+
+        let groups = groups
+            .iter()
+            .map(|(first, idx)| {
+                // Safety:
+                // Group tuples are always in bounds
+                let group =
+                    unsafe { series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
+
+                let sorted_idx = group.argsort(self.reverse);
+
+                let new_idx: Vec<_> = sorted_idx
+                    .cont_slice()
+                    .unwrap()
+                    .iter()
+                    .map(|&i| {
+                        debug_assert!(idx.get(i as usize).is_some());
+                        unsafe { *idx.get_unchecked(i as usize) }
+                    })
+                    .collect();
+                (*first, new_idx)
+            })
+            .collect();
+
+        Ok((series, Cow::Owned(groups)))
+    }
+
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.physical_expr.to_field(input_schema)
     }
@@ -300,7 +335,7 @@ impl PhysicalExpr for AliasExpr {
 }
 
 impl AggPhysicalExpr for AliasExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(u32, Vec<u32>)]) -> Result<Option<Series>> {
+    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let agg_expr = self.physical_expr.as_agg_expr()?;
         let opt_agg = agg_expr.evaluate(df, groups)?;
         Ok(opt_agg.map(|mut agg| {
@@ -410,29 +445,29 @@ fn rename_option_series(opt: Option<Series>, name: &str) -> Option<Series> {
 }
 
 impl AggPhysicalExpr for PhysicalAggExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(u32, Vec<u32>)]) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+        let (series, groups) = self.expr.evaluate_on_groups(df, groups)?;
         let new_name = fmt_groupby_column(series.name(), self.agg_type);
 
         match self.agg_type {
             GroupByMethod::Min => {
-                let agg_s = series.agg_min(groups);
+                let agg_s = series.agg_min(&groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Max => {
-                let agg_s = series.agg_max(groups);
+                let agg_s = series.agg_max(&groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Median => {
-                let agg_s = series.agg_median(groups);
+                let agg_s = series.agg_median(&groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Mean => {
-                let agg_s = series.agg_mean(groups);
+                let agg_s = series.agg_mean(&groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Sum => {
-                let agg_s = series.agg_sum(groups);
+                let agg_s = series.agg_sum(&groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
@@ -442,17 +477,17 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 Ok(Some(ca.into_inner().into_series()))
             }
             GroupByMethod::First => {
-                let mut agg_s = series.agg_first(groups);
+                let mut agg_s = series.agg_first(&groups);
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::Last => {
-                let mut agg_s = series.agg_last(groups);
+                let mut agg_s = series.agg_last(&groups);
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::NUnique => {
-                let opt_agg = series.agg_n_unique(groups);
+                let opt_agg = series.agg_n_unique(&groups);
                 let opt_agg = opt_agg.map(|mut agg| {
                     agg.rename(&new_name);
                     agg.into_series()
@@ -460,7 +495,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 Ok(opt_agg)
             }
             GroupByMethod::List => {
-                let opt_agg = series.agg_list(groups);
+                let opt_agg = series.agg_list(&groups);
                 Ok(rename_option_series(opt_agg, &new_name))
             }
             GroupByMethod::Groups => {
@@ -476,11 +511,11 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 Ok(Some(column.into_series()))
             }
             GroupByMethod::Std => {
-                let agg_s = series.agg_std(groups);
+                let agg_s = series.agg_std(&groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Var => {
-                let agg_s = series.agg_var(groups);
+                let agg_s = series.agg_var(&groups);
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Quantile(_) => {
@@ -492,7 +527,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &[(u32, Vec<u32>)],
+        groups: &GroupTuples,
     ) -> Result<Option<Vec<Series>>> {
         match self.agg_type {
             GroupByMethod::Mean => {
@@ -528,7 +563,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,
-        groups: &[(u32, Vec<u32>)],
+        groups: &GroupTuples,
     ) -> Result<Option<Series>> {
         match self.agg_type {
             GroupByMethod::Mean => {
@@ -594,7 +629,7 @@ impl PhysicalExpr for AggQuantileExpr {
 }
 
 impl AggPhysicalExpr for AggQuantileExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(u32, Vec<u32>)]) -> Result<Option<Series>> {
+    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
         let opt_agg = series.agg_quantile(groups, self.quantile);
@@ -704,7 +739,7 @@ impl PhysicalExpr for ApplyExpr {
 }
 
 impl AggPhysicalExpr for ApplyExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(u32, Vec<u32>)]) -> Result<Option<Series>> {
+    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         match self.input.as_agg_expr() {
             // layer below is also an aggregation expr.
             Ok(expr) => {
@@ -827,7 +862,7 @@ impl PhysicalExpr for SliceExpr {
 }
 
 impl AggPhysicalExpr for SliceExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(u32, Vec<u32>)]) -> Result<Option<Series>> {
+    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let s = self.input.evaluate(df)?;
         let agg_s = s.agg_list(groups);
         let out = agg_s.map(|s| {
@@ -879,7 +914,7 @@ impl PhysicalExpr for BinaryFunctionExpr {
 }
 
 impl AggPhysicalExpr for BinaryFunctionExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &[(u32, Vec<u32>)]) -> Result<Option<Series>> {
+    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let a = self.input_a.evaluate(df)?;
         let b = self.input_b.evaluate(df)?;
 
