@@ -496,7 +496,7 @@ fn groupby_helper(
             .par_iter()
             .map(|expr| {
                 let agg_expr = expr.as_agg_expr()?;
-                let opt_agg = agg_expr.evaluate(&df, groups)?;
+                let opt_agg = agg_expr.aggregate(&df, groups)?;
                 if let Some(agg) = &opt_agg {
                     if agg.len() != groups.len() {
                         panic!(

@@ -50,12 +50,12 @@ use arrow::array::{
     LargeListArray,
 };
 
+use crate::utils::slice_offsets;
 use ahash::AHashMap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use polars_arrow::array::ValueSize;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use crate::utils::slice_offsets;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {

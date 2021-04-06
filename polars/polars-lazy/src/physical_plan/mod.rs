@@ -68,7 +68,7 @@ pub trait PhysicalExpr: Send + Sync {
     ///
     /// The expression sum, min, max etc can be called as `evaluate` in the standard context,
     /// or during a groupby execution, this method is called to convert them to an AggPhysicalExpr
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         let e = self.as_expression();
         Err(PolarsError::InvalidOperation(
             format!("{:?} is not an agg expression", e).into(),
@@ -102,9 +102,11 @@ impl PhysicalIoExpr for dyn PhysicalExpr {
     }
 }
 
-pub trait AggPhysicalExpr {
+pub trait PhysicalAggregation {
     #[allow(clippy::ptr_arg)]
-    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>>;
+    /// Should be called on the final aggregation node like sum, min, max, etc.
+    /// When called on a tail, slice, sort, etc. it should return a list-array
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>>;
 
     #[allow(clippy::ptr_arg)]
     fn evaluate_partitioned(
@@ -113,7 +115,7 @@ pub trait AggPhysicalExpr {
         groups: &GroupTuples,
     ) -> Result<Option<Vec<Series>>> {
         // we return a vec, such that an implementor can return more information, such as a sum and count.
-        self.evaluate(df, groups).map(|opt| opt.map(|s| vec![s]))
+        self.aggregate(df, groups).map(|opt| opt.map(|s| vec![s]))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -122,6 +124,6 @@ pub trait AggPhysicalExpr {
         final_df: &DataFrame,
         groups: &GroupTuples,
     ) -> Result<Option<Series>> {
-        self.evaluate(final_df, groups)
+        self.aggregate(final_df, groups)
     }
 }
