@@ -55,6 +55,7 @@ use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use polars_arrow::array::ValueSize;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use crate::utils::slice_offsets;
 
 /// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
 fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
@@ -313,25 +314,7 @@ impl<T> ChunkedArray<T> {
     /// This method will never error,
     /// and will slice the best match when offset, or length is out of bounds
     pub fn slice(&self, offset: i64, length: usize) -> Self {
-        let abs_offset = offset.abs() as usize;
-
-        let len = self.len();
-        // The offset counted from the start of the array
-        // negative index
-        let (raw_offset, slice_len) = if offset < 0 {
-            if abs_offset <= len {
-                (len - abs_offset, std::cmp::min(length, abs_offset))
-            // negative index larger that array: slice from start
-            } else {
-                (0, std::cmp::min(length, len))
-            }
-        // positive index
-        } else if abs_offset <= len {
-            (abs_offset, std::cmp::min(length, len - abs_offset))
-        // empty slice
-        } else {
-            (len, 0)
-        };
+        let (raw_offset, slice_len) = slice_offsets(offset, length, self.len());
 
         let mut remaining_length = slice_len;
         let mut remaining_offset = raw_offset;
