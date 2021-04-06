@@ -70,7 +70,6 @@ macro_rules! impl_quantile {
                 ((($self.len() - null_count) as f64) * $quantile + null_count as f64) as i64,
                 1,
             )
-            .unwrap()
             .into_iter()
             .next()
             .unwrap();

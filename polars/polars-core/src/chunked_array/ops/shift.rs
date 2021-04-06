@@ -6,7 +6,7 @@ macro_rules! impl_shift_fill {
         let periods = clamp($periods, -($self.len() as i64), $self.len() as i64);
         let slice_offset = (-periods).max(0) as i64;
         let length = $self.len() - abs(periods) as usize;
-        let mut slice = $self.slice(slice_offset, length).unwrap();
+        let mut slice = $self.slice(slice_offset, length);
 
         let fill_length = abs(periods) as usize;
         let mut fill = match $fill_value {

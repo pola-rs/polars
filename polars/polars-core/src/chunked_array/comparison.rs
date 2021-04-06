@@ -932,7 +932,7 @@ mod test {
         // This failed with arrow comparisons.
         // sliced
         let a1: Int32Chunked = (&[Some(1), Some(2)]).iter().copied().collect();
-        let a1 = a1.slice(1, 1).unwrap();
+        let a1 = a1.slice(1, 1);
         let a2: Int32Chunked = (&[Some(2)]).iter().copied().collect();
         assert_eq!(a1.eq(&a2).sum(), a2.eq(&a1).sum());
         assert_eq!(a1.neq(&a2).sum(), a2.neq(&a1).sum());
@@ -942,7 +942,7 @@ mod test {
         assert_eq!(a1.gt_eq(&a2).sum(), a2.gt_eq(&a1).sum());
 
         let a1: Utf8Chunked = (&["a", "b"]).iter().copied().collect();
-        let a1 = a1.slice(1, 1).unwrap();
+        let a1 = a1.slice(1, 1);
         let a2: Utf8Chunked = (&["b"]).iter().copied().collect();
         assert_eq!(a1.eq(&a2).sum(), a2.eq(&a1).sum());
         assert_eq!(a1.neq(&a2).sum(), a2.neq(&a1).sum());
