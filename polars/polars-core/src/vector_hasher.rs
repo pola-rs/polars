@@ -235,7 +235,12 @@ pub(crate) fn df_rows_to_hashes(
     let hashes: Vec<_> = keys
         .columns
         .iter()
-        .map(|s| s.vec_hash(random_state.clone()))
+        .map(|s| {
+            let h = s.vec_hash(random_state.clone());
+            // if this fails we have unexpected groupby results.
+            debug_assert_eq!(h.null_count(), 0);
+            h
+        })
         .collect();
 
     let mut iter = hashes.into_iter();
