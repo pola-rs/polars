@@ -1,5 +1,5 @@
 use crate::logical_plan::Context;
-use crate::physical_plan::AggPhysicalExpr;
+use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
@@ -264,6 +264,27 @@ impl PhysicalExpr for SortExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.physical_expr.to_field(input_schema)
     }
+
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+        Ok(self)
+    }
+}
+
+impl PhysicalAggregation for SortExpr {
+    // As a final aggregation a Sort returns a list array.
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+        let s = self.physical_expr.evaluate(df)?;
+        let agg_s = s.agg_list(groups);
+        let out = agg_s.map(|s| {
+            s.list()
+                .unwrap()
+                .into_iter()
+                .map(|opt_s| opt_s.map(|s| s.sort(self.reverse)))
+                .collect::<ListChunked>()
+                .into_series()
+        });
+        Ok(out)
+    }
 }
 
 pub struct NotExpr(Arc<dyn PhysicalExpr>, Expr);
@@ -330,15 +351,15 @@ impl PhysicalExpr for AliasExpr {
         ))
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
 }
 
-impl AggPhysicalExpr for AliasExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+impl PhysicalAggregation for AliasExpr {
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let agg_expr = self.physical_expr.as_agg_expr()?;
-        let opt_agg = agg_expr.evaluate(df, groups)?;
+        let opt_agg = agg_expr.aggregate(df, groups)?;
         Ok(opt_agg.map(|mut agg| {
             agg.rename(&self.name);
             agg
@@ -433,7 +454,7 @@ impl PhysicalExpr for PhysicalAggExpr {
         Ok(Field::new(&new_name, field.data_type().clone()))
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
 }
@@ -445,8 +466,8 @@ fn rename_option_series(opt: Option<Series>, name: &str) -> Option<Series> {
     })
 }
 
-impl AggPhysicalExpr for PhysicalAggExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+impl PhysicalAggregation for PhysicalAggExpr {
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let (series, groups) = self.expr.evaluate_on_groups(df, groups)?;
         let new_name = fmt_groupby_column(series.name(), self.agg_type);
 
@@ -557,7 +578,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                     vec![s]
                 }))
             }
-            _ => AggPhysicalExpr::evaluate(self, df, groups).map(|opt| opt.map(|s| vec![s])),
+            _ => PhysicalAggregation::aggregate(self, df, groups).map(|opt| opt.map(|s| vec![s])),
         }
     }
 
@@ -599,7 +620,7 @@ impl AggPhysicalExpr for PhysicalAggExpr {
                 let out = builder.finish();
                 Ok(Some(out.into_series()))
             }
-            _ => AggPhysicalExpr::evaluate(self, final_df, groups),
+            _ => PhysicalAggregation::aggregate(self, final_df, groups),
         }
     }
 }
@@ -624,13 +645,13 @@ impl PhysicalExpr for AggQuantileExpr {
         impl_to_field_for_agg!(self, input_schema, GroupByMethod::Quantile(self.quantile))
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
 }
 
-impl AggPhysicalExpr for AggQuantileExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+impl PhysicalAggregation for AggQuantileExpr {
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
         let opt_agg = series.agg_quantile(groups, self.quantile);
@@ -734,17 +755,17 @@ impl PhysicalExpr for ApplyExpr {
             None => self.input.to_field(input_schema),
         }
     }
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
 }
 
-impl AggPhysicalExpr for ApplyExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+impl PhysicalAggregation for ApplyExpr {
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         match self.input.as_agg_expr() {
             // layer below is also an aggregation expr.
             Ok(expr) => {
-                let aggregated = expr.evaluate(df, groups)?;
+                let aggregated = expr.aggregate(df, groups)?;
                 let out = aggregated.map(|s| self.function.call_udf(s));
                 out.transpose()
             }
@@ -863,14 +884,14 @@ impl PhysicalExpr for SliceExpr {
         self.input.to_field(input_schema)
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
 }
 
-impl AggPhysicalExpr for SliceExpr {
+impl PhysicalAggregation for SliceExpr {
     // As a final aggregation a Slice returns a list array.
-    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let s = self.input.evaluate(df)?;
         let agg_s = s.agg_list(groups);
         let out = agg_s.map(|s| {
@@ -910,13 +931,13 @@ impl PhysicalExpr for BinaryFunctionExpr {
             .get_field(input_schema, Context::Default, &field_a, &field_b)
             .ok_or_else(|| PolarsError::UnknownSchema("no field found".into()))
     }
-    fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
 }
 
-impl AggPhysicalExpr for BinaryFunctionExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+impl PhysicalAggregation for BinaryFunctionExpr {
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let a = self.input_a.evaluate(df)?;
         let b = self.input_b.evaluate(df)?;
 
