@@ -227,6 +227,7 @@ impl PhysicalExpr for SortExpr {
         Ok(series.sort(self.reverse))
     }
 
+    #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
@@ -824,7 +825,7 @@ impl PhysicalExpr for WindowExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.function.to_field(input_schema, Context::Other)
+        self.function.to_field(input_schema, Context::Default)
     }
 }
 
@@ -905,7 +906,7 @@ impl PhysicalExpr for BinaryFunctionExpr {
         let field_a = self.input_a.to_field(input_schema)?;
         let field_b = self.input_b.to_field(input_schema)?;
         self.output_field
-            .get_field(input_schema, Context::Other, &field_a, &field_b)
+            .get_field(input_schema, Context::Default, &field_a, &field_b)
             .ok_or_else(|| PolarsError::UnknownSchema("no field found".into()))
     }
     fn as_agg_expr(&self) -> Result<&dyn AggPhysicalExpr> {

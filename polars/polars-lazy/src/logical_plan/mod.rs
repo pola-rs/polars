@@ -29,8 +29,10 @@ thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(Non
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {
+    /// Any operation that is done on groups
     Aggregation,
-    Other,
+    /// Any operation that is done while projection/ selection of data
+    Default,
 }
 
 pub trait DataFrameUdf: Send + Sync {
@@ -842,7 +844,7 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 
 pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
     let exprs = rewrite_projections(exprs, schema);
-    let schema = utils::expressions_to_schema(&exprs, schema, Context::Other);
+    let schema = utils::expressions_to_schema(&exprs, schema, Context::Default);
     (exprs, schema)
 }
 
@@ -970,7 +972,7 @@ impl LogicalPlanBuilder {
         let mut new_fields = schema.fields().clone();
 
         for e in &exprs {
-            let field = e.to_field(schema, Context::Other).unwrap();
+            let field = e.to_field(schema, Context::Default).unwrap();
             match schema.index_of(field.name()) {
                 Ok(idx) => {
                     new_fields[idx] = field;
@@ -1016,7 +1018,7 @@ impl LogicalPlanBuilder {
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs, current_schema);
 
-        let schema1 = utils::expressions_to_schema(&keys, current_schema, Context::Other);
+        let schema1 = utils::expressions_to_schema(&keys, current_schema, Context::Default);
         let schema2 = utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation);
         let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
 

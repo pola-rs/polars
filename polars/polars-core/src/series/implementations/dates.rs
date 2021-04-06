@@ -105,7 +105,6 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
-
             unsafe fn equal_element(
                 &self,
                 idx_self: usize,
