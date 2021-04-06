@@ -327,7 +327,7 @@ impl PredicatePushDown {
                     .filter(|e| check_down_node(*e, schema, expr_arena))
                     .collect();
 
-                let schema = aexprs_to_schema(&expr, schema, Context::Other, expr_arena);
+                let schema = aexprs_to_schema(&expr, schema, Context::Default, expr_arena);
                 Ok(ALogicalPlan::LocalProjection {
                     expr,
                     input,
@@ -520,7 +520,7 @@ impl PredicatePushDown {
                         let name = Arc::new(
                             expr_arena
                                 .get(predicate)
-                                .to_field(schema_left, Context::Other, expr_arena)
+                                .to_field(schema_left, Context::Default, expr_arena)
                                 .unwrap()
                                 .name()
                                 .clone(),
@@ -537,7 +537,7 @@ impl PredicatePushDown {
                         let name = Arc::new(
                             expr_arena
                                 .get(predicate)
-                                .to_field(schema_right, Context::Other, expr_arena)
+                                .to_field(schema_right, Context::Default, expr_arena)
                                 .unwrap()
                                 .name()
                                 .clone(),
@@ -676,7 +676,7 @@ impl PredicatePushDown {
                             let name = Arc::new(
                                 expr_arena
                                     .get(predicate)
-                                    .to_field(input_schema, Context::Other, expr_arena)
+                                    .to_field(input_schema, Context::Default, expr_arena)
                                     .unwrap()
                                     .name()
                                     .clone(),

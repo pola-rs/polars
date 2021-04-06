@@ -689,7 +689,8 @@ pub(crate) trait CustomIterTools: Iterator {
     }
 
     fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
-    where Self: Sized
+    where
+        Self: Sized,
     {
         TrustMyLength::new(self, length)
     }

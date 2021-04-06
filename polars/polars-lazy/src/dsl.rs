@@ -318,7 +318,7 @@ impl Expr {
                         let field = expr.to_field(schema, ctxt)?;
                         let field = Field::new(field.name(), DataType::UInt32);
                         match ctxt {
-                            Context::Other => field,
+                            Context::Default => field,
                             Context::Aggregation => {
                                 let new_name =
                                     fmt_groupby_column(field.name(), GroupByMethod::NUnique);
@@ -343,7 +343,7 @@ impl Expr {
                         let field = expr.to_field(schema, ctxt)?;
                         let field = Field::new(field.name(), DataType::UInt32);
                         match ctxt {
-                            Context::Other => field,
+                            Context::Default => field,
                             Context::Aggregation => {
                                 let new_name =
                                     fmt_groupby_column(field.name(), GroupByMethod::Count);

@@ -112,7 +112,8 @@ impl DefaultPlanner {
             }
             Selection { input, predicate } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
-                let predicate = self.create_physical_expr(predicate, Context::Other, expr_arena)?;
+                let predicate =
+                    self.create_physical_expr(predicate, Context::Default, expr_arena)?;
                 Ok(Box::new(FilterExec::new(predicate, input)))
             }
             CsvScan {
@@ -129,7 +130,7 @@ impl DefaultPlanner {
                 cache,
             } => {
                 let predicate = predicate
-                    .map(|pred| self.create_physical_expr(pred, Context::Other, expr_arena))
+                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
                 Ok(Box::new(CsvExec::new(
@@ -157,7 +158,7 @@ impl DefaultPlanner {
                 cache,
             } => {
                 let predicate = predicate
-                    .map(|pred| self.create_physical_expr(pred, Context::Other, expr_arena))
+                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
 
                 let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
@@ -174,13 +175,13 @@ impl DefaultPlanner {
             Projection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
-                    self.create_physical_expressions(expr, Context::Other, expr_arena)?;
+                    self.create_physical_expressions(expr, Context::Default, expr_arena)?;
                 Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
             }
             LocalProjection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
-                    self.create_physical_expressions(expr, Context::Other, expr_arena)?;
+                    self.create_physical_expressions(expr, Context::Default, expr_arena)?;
                 Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
             }
             DataFrameScan {
@@ -190,10 +191,12 @@ impl DefaultPlanner {
                 ..
             } => {
                 let selection = selection
-                    .map(|pred| self.create_physical_expr(pred, Context::Other, expr_arena))
+                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 let projection = projection
-                    .map(|proj| self.create_physical_expressions(proj, Context::Other, expr_arena))
+                    .map(|proj| {
+                        self.create_physical_expressions(proj, Context::Default, expr_arena)
+                    })
                     .map_or(Ok(None), |v| v.map(Some))?;
                 Ok(Box::new(DataFrameExec::new(df, projection, selection)))
             }
@@ -278,7 +281,7 @@ impl DefaultPlanner {
                     partitionable = false;
                 }
                 let phys_keys =
-                    self.create_physical_expressions(keys, Context::Other, expr_arena)?;
+                    self.create_physical_expressions(keys, Context::Default, expr_arena)?;
                 if partitionable {
                     let phys_aggs = self.create_physical_expressions(
                         aggs.clone(),
@@ -334,9 +337,9 @@ impl DefaultPlanner {
                 let input_right =
                     self.create_initial_physical_plan(input_right, lp_arena, expr_arena)?;
                 let left_on =
-                    self.create_physical_expressions(left_on, Context::Other, expr_arena)?;
+                    self.create_physical_expressions(left_on, Context::Default, expr_arena)?;
                 let right_on =
-                    self.create_physical_expressions(right_on, Context::Other, expr_arena)?;
+                    self.create_physical_expressions(right_on, Context::Default, expr_arena)?;
                 Ok(Box::new(JoinExec::new(
                     input_left,
                     input_right,
@@ -349,7 +352,7 @@ impl DefaultPlanner {
             HStack { input, exprs, .. } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
-                    self.create_physical_expressions(exprs, Context::Other, expr_arena)?;
+                    self.create_physical_expressions(exprs, Context::Default, expr_arena)?;
                 Ok(Box::new(StackExec::new(input, phys_expr)))
             }
             Udf {
@@ -463,7 +466,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Min)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
                                     parallel_op(|s| Ok(s.min_as_series()), s, None)
                                 })
@@ -483,7 +486,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Max)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
                                     parallel_op(|s| Ok(s.max_as_series()), s, None)
                                 })
@@ -503,7 +506,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Sum)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
                                     parallel_op(|s| Ok(s.sum_as_series()), s, None)
                                 })
@@ -523,7 +526,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Std)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function =
                                     NoEq::new(Arc::new(move |s: Series| Ok(s.std_as_series()))
                                         as Arc<dyn SeriesUdf>);
@@ -542,7 +545,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Var)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function =
                                     NoEq::new(Arc::new(move |s: Series| Ok(s.var_as_series()))
                                         as Arc<dyn SeriesUdf>);
@@ -561,7 +564,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Mean)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
                                     let len = s.len() as f64;
                                     parallel_op(|s| Ok(s.sum_as_series()), s, None)
@@ -583,7 +586,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Median)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function =
                                     NoEq::new(Arc::new(move |s: Series| Ok(s.median_as_series()))
                                         as Arc<dyn SeriesUdf>);
@@ -602,7 +605,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::First)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function =
                                     NoEq::new(Arc::new(move |s: Series| Ok(s.head(Some(1))))
                                         as Arc<dyn SeriesUdf>);
@@ -621,7 +624,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Last)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function =
                                     NoEq::new(Arc::new(move |s: Series| Ok(s.tail(Some(1))))
                                         as Arc<dyn SeriesUdf>);
@@ -640,7 +643,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::List)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 panic!(
                                     "list expression is only supported in the aggregation context"
                                 )
@@ -654,7 +657,7 @@ impl DefaultPlanner {
                                 input,
                                 GroupByMethod::NUnique,
                             ))),
-                            Context::Other => {
+                            Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
                                     s.n_unique().map(|count| {
                                         UInt32Chunked::new_from_slice(s.name(), &[count as u32])
@@ -678,7 +681,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(AggQuantileExpr::new(input, quantile)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
                                     s.quantile_as_series(quantile)
                                 })
@@ -693,7 +696,7 @@ impl DefaultPlanner {
                         }
                     }
                     AAggExpr::AggGroups(expr) => {
-                        if let Context::Other = ctxt {
+                        if let Context::Default = ctxt {
                             panic!("agg groups expression only supported in aggregation context")
                         }
                         let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
@@ -708,7 +711,7 @@ impl DefaultPlanner {
                             Context::Aggregation => {
                                 Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Count)))
                             }
-                            Context::Other => {
+                            Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
                                     let count = s.len();
                                     Ok(UInt32Chunked::new_from_slice(s.name(), &[count as u32])

@@ -260,7 +260,7 @@ pub(crate) fn field_by_context(
     }
 
     match ctxt {
-        Context::Other => field,
+        Context::Default => field,
         Context::Aggregation => {
             let new_name = fmt_groupby_column(field.name(), groupby_method);
             rename_field(&field, &new_name)
@@ -405,7 +405,7 @@ impl AExpr {
                         let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         let field = Field::new(field.name(), DataType::UInt32);
                         match ctxt {
-                            Context::Other => field,
+                            Context::Default => field,
                             Context::Aggregation => {
                                 let new_name =
                                     fmt_groupby_column(field.name(), GroupByMethod::NUnique);
@@ -422,7 +422,7 @@ impl AExpr {
                         let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         let field = Field::new(field.name(), DataType::UInt32);
                         match ctxt {
-                            Context::Other => field,
+                            Context::Default => field,
                             Context::Aggregation => {
                                 let new_name =
                                     fmt_groupby_column(field.name(), GroupByMethod::Count);
@@ -1470,7 +1470,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
     pub fn project_local(self, exprs: Vec<Node>) -> Self {
         let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        let schema = aexprs_to_schema(&exprs, input_schema, Context::Other, self.expr_arena);
+        let schema = aexprs_to_schema(&exprs, input_schema, Context::Default, self.expr_arena);
         if !exprs.is_empty() {
             let lp = ALogicalPlan::LocalProjection {
                 expr: exprs,
@@ -1486,7 +1486,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
     pub fn project(self, exprs: Vec<Node>) -> Self {
         let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        let schema = aexprs_to_schema(&exprs, input_schema, Context::Other, self.expr_arena);
+        let schema = aexprs_to_schema(&exprs, input_schema, Context::Default, self.expr_arena);
 
         // if len == 0, no projection has to be done. This is a select all operation.
         if !exprs.is_empty() {
@@ -1523,7 +1523,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             let field = self
                 .expr_arena
                 .get(*e)
-                .to_field(schema, Context::Other, self.expr_arena)
+                .to_field(schema, Context::Default, self.expr_arena)
                 .unwrap();
             match schema.index_of(field.name()) {
                 Ok(idx) => {
@@ -1555,7 +1555,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
         // let aggs = rewrite_projections(aggs, current_schema);
 
-        let schema1 = aexprs_to_schema(&keys, current_schema, Context::Other, self.expr_arena);
+        let schema1 = aexprs_to_schema(&keys, current_schema, Context::Default, self.expr_arena);
         let schema2 =
             aexprs_to_schema(&aggs, current_schema, Context::Aggregation, self.expr_arena);
 

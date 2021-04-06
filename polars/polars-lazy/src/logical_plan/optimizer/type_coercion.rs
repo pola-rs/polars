@@ -23,10 +23,10 @@ impl OptimizationRule for TypeCoercionRule {
                 let truthy = expr_arena.get(truthy_node);
                 let falsy = expr_arena.get(falsy_node);
                 let type_true = truthy
-                    .get_type(input_schema, Context::Other, expr_arena)
+                    .get_type(input_schema, Context::Default, expr_arena)
                     .expect("could not dtype");
                 let type_false = falsy
-                    .get_type(input_schema, Context::Other, expr_arena)
+                    .get_type(input_schema, Context::Default, expr_arena)
                     .expect("could not dtype");
 
                 if type_true == type_false {
@@ -59,10 +59,10 @@ impl OptimizationRule for TypeCoercionRule {
                 let right = expr_arena.get(node_right);
 
                 let type_left = left
-                    .get_type(input_schema, Context::Other, expr_arena)
+                    .get_type(input_schema, Context::Default, expr_arena)
                     .expect("could not get dtype");
                 let type_right = right
-                    .get_type(input_schema, Context::Other, expr_arena)
+                    .get_type(input_schema, Context::Default, expr_arena)
                     .expect("could not get dtype");
                 if type_left == type_right {
                     None

@@ -233,7 +233,7 @@ pub(crate) fn check_down_node(node: Node, down_schema: &Schema, expr_arena: &Are
             .map(|e| {
                 expr_arena
                     .get(*e)
-                    .to_field(down_schema, Context::Other, expr_arena)
+                    .to_field(down_schema, Context::Default, expr_arena)
                     .is_ok()
             })
             .all(|b| b),

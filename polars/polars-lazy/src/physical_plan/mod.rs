@@ -50,6 +50,8 @@ pub trait PhysicalExpr: Send + Sync {
     /// Think of sort, slice, etc.
     ///
     /// defaults to ignoring the group
+    // we allow this because we pass the vec to the Cow
+    #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
@@ -101,8 +103,10 @@ impl PhysicalIoExpr for dyn PhysicalExpr {
 }
 
 pub trait AggPhysicalExpr {
+    #[allow(clippy::ptr_arg)]
     fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>>;
 
+    #[allow(clippy::ptr_arg)]
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
@@ -112,6 +116,7 @@ pub trait AggPhysicalExpr {
         self.evaluate(df, groups).map(|opt| opt.map(|s| vec![s]))
     }
 
+    #[allow(clippy::ptr_arg)]
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,

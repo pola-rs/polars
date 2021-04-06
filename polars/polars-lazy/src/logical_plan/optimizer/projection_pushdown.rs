@@ -234,7 +234,7 @@ impl ProjectionPushDown {
                         // We check if we still can the projection here.
                         if expr_arena
                             .get(expr)
-                            .to_field(lp.schema(lp_arena), Context::Other, expr_arena)
+                            .to_field(lp.schema(lp_arena), Context::Default, expr_arena)
                             .is_ok()
                         {
                             local_projection.push(expr);
