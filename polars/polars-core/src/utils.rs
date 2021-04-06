@@ -105,7 +105,7 @@ macro_rules! split_array {
                 };
                 $ca.slice((i * chunk_size) as $ty, len)
             })
-            .collect::<Result<_>>()?;
+            .collect();
         Ok(v)
     }};
 }

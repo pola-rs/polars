@@ -259,7 +259,7 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Take a view of top n elements
-    pub fn limit(&self, num_elements: usize) -> Result<Self> {
+    pub fn limit(&self, num_elements: usize) -> Self {
         self.slice(0, num_elements)
     }
 
@@ -309,24 +309,31 @@ impl<T> ChunkedArray<T> {
 
     /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
     ///
-    /// When offset is negative it will be counted from the end of the array
-    pub fn slice(&self, offset: i64, length: usize) -> Result<Self> {
+    /// When offset is negative it will be counted from the end of the array.
+    /// This method will never error,
+    /// and will slice the best match when offset, or length is out of bounds
+    pub fn slice(&self, offset: i64, length: usize) -> Self {
         let abs_offset = offset.abs() as usize;
 
-        if (offset >= 0 && abs_offset + length > self.len())
-            || (offset < 0 && (abs_offset > self.len() || abs_offset < length))
-        {
-            return Err(PolarsError::OutOfBounds("offset and length was larger than the size of the ChunkedArray during slice operation".into()));
-        }
-
+        let len = self.len();
         // The offset counted from the start of the array
-        let raw_offset = if offset < 0 {
-            self.len() - abs_offset
+        // negative index
+        let (raw_offset, slice_len) = if offset < 0 {
+            if abs_offset <= len {
+                (len - abs_offset, std::cmp::min(length, abs_offset))
+            // negative index larger that array: slice from start
+            } else {
+                (0, std::cmp::min(length, len))
+            }
+        // positive index
+        } else if abs_offset <= len {
+            (abs_offset, std::cmp::min(length, len - abs_offset))
+        // empty slice
         } else {
-            abs_offset
+            (len, 0)
         };
 
-        let mut remaining_length = length;
+        let mut remaining_length = slice_len;
         let mut remaining_offset = raw_offset;
         let mut new_chunks = vec![];
 
@@ -350,7 +357,7 @@ impl<T> ChunkedArray<T> {
                 break;
             }
         }
-        Ok(self.copy_with_chunks(new_chunks))
+        self.copy_with_chunks(new_chunks)
     }
 
     /// Get a mask of the null values.
@@ -407,11 +414,10 @@ impl<T> ChunkedArray<T> {
 
     /// Get the head of the ChunkedArray
     pub fn head(&self, length: Option<usize>) -> Self {
-        let res_ca = match length {
+        match length {
             Some(len) => self.slice(0, std::cmp::min(len, self.len())),
             None => self.slice(0, std::cmp::min(10, self.len())),
-        };
-        res_ca.unwrap()
+        }
     }
 
     /// Get the tail of the ChunkedArray
@@ -420,7 +426,7 @@ impl<T> ChunkedArray<T> {
             Some(len) => std::cmp::min(len, self.len()),
             None => std::cmp::min(10, self.len()),
         };
-        self.slice(-(len as i64), len).unwrap()
+        self.slice(-(len as i64), len)
     }
 
     /// Append in place.
@@ -978,7 +984,7 @@ pub(crate) mod test {
     #[test]
     fn limit() {
         let a = get_chunked_array();
-        let b = a.limit(2).unwrap();
+        let b = a.limit(2);
         println!("{:?}", b);
         assert_eq!(b.len(), 2)
     }
@@ -1043,17 +1049,18 @@ pub(crate) mod test {
         let mut first = UInt32Chunked::new_from_slice("first", &[0, 1, 2]);
         let second = UInt32Chunked::new_from_slice("second", &[3, 4, 5]);
         first.append(&second);
-        assert_slice_equal(&first.slice(0, 3).unwrap(), &[0, 1, 2]);
-        assert_slice_equal(&first.slice(0, 4).unwrap(), &[0, 1, 2, 3]);
-        assert_slice_equal(&first.slice(1, 4).unwrap(), &[1, 2, 3, 4]);
-        assert_slice_equal(&first.slice(3, 2).unwrap(), &[3, 4]);
-        assert_slice_equal(&first.slice(3, 3).unwrap(), &[3, 4, 5]);
-        assert_slice_equal(&first.slice(-3, 3).unwrap(), &[3, 4, 5]);
-        assert_slice_equal(&first.slice(-6, 6).unwrap(), &[0, 1, 2, 3, 4, 5]);
+        assert_slice_equal(&first.slice(0, 3), &[0, 1, 2]);
+        assert_slice_equal(&first.slice(0, 4), &[0, 1, 2, 3]);
+        assert_slice_equal(&first.slice(1, 4), &[1, 2, 3, 4]);
+        assert_slice_equal(&first.slice(3, 2), &[3, 4]);
+        assert_slice_equal(&first.slice(3, 3), &[3, 4, 5]);
+        assert_slice_equal(&first.slice(-3, 3), &[3, 4, 5]);
+        assert_slice_equal(&first.slice(-6, 6), &[0, 1, 2, 3, 4, 5]);
 
-        assert!(first.slice(-7, 2).is_err());
-        assert!(first.slice(-3, 4).is_err());
-        assert!(first.slice(3, 4).is_err());
+        assert_eq!(first.slice(-7, 2).len(), 2);
+        assert_eq!(first.slice(-3, 4).len(), 3);
+        assert_eq!(first.slice(3, 4).len(), 3);
+        assert_eq!(first.slice(10, 4).len(), 0);
     }
 
     #[test]

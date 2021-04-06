@@ -61,8 +61,8 @@ where
         ObjectChunked::append_array(&mut self.0, other)
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Result<Series> {
-        ObjectChunked::slice(&self.0, offset, length).map(|ca| ca.into_series())
+    fn slice(&self, offset: i64, length: usize) -> Series {
+        ObjectChunked::slice(&self.0, offset, length).into_series()
     }
 
     fn append(&mut self, other: &Series) -> Result<()> {

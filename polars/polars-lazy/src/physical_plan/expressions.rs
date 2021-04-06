@@ -835,22 +835,10 @@ pub struct SliceExpr {
     pub(crate) len: usize,
 }
 
-impl SliceExpr {
-    fn slice_series(&self, series: &Series) -> Result<Series> {
-        let series_len = series.len() as i64;
-        let offset = if self.offset >= 0 {
-            self.offset as i64
-        } else {
-            series_len - self.offset
-        };
-        series.slice(offset, self.len)
-    }
-}
-
 impl PhysicalExpr for SliceExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let series = self.input.evaluate(df)?;
-        self.slice_series(&series)
+        Ok(series.slice(self.offset, self.len))
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
@@ -870,13 +858,7 @@ impl AggPhysicalExpr for SliceExpr {
             s.list()
                 .unwrap()
                 .into_iter()
-                .map(|opt_s| match opt_s {
-                    None => None,
-                    Some(s) => {
-                        let r = self.slice_series(&s);
-                        r.ok()
-                    }
-                })
+                .map(|opt_s| opt_s.map(|s| s.slice(self.offset, self.len)))
                 .collect::<ListChunked>()
                 .into_series()
         });

@@ -304,17 +304,16 @@ impl PySeries {
         self.series.n_chunks()
     }
 
-    pub fn limit(&self, num_elements: usize) -> PyResult<Self> {
-        let series = self.series.limit(num_elements).map_err(PyPolarsEr::from)?;
-        Ok(PySeries { series })
+    pub fn limit(&self, num_elements: usize) -> Self {
+        let series = self.series.limit(num_elements);
+        series.into()
     }
 
-    pub fn slice(&self, offset: usize, length: usize) -> PyResult<Self> {
+    pub fn slice(&self, offset: i64, length: usize) -> Self {
         let series = self
             .series
-            .slice(offset as i64, length)
-            .map_err(PyPolarsEr::from)?;
-        Ok(PySeries { series })
+            .slice(offset , length);
+        series.into()
     }
 
     pub fn append(&mut self, other: &PySeries) -> PyResult<()> {

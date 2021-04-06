@@ -466,12 +466,11 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn slice(&self, offset: usize, length: usize) -> PyResult<Self> {
+    pub fn slice(&self, offset: usize, length: usize) -> Self {
         let df = self
             .df
-            .slice(offset as i64, length)
-            .map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
+            .slice(offset as i64, length);
+        df.into()
     }
 
     pub fn head(&self, length: Option<usize>) -> Self {

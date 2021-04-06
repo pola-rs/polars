@@ -810,7 +810,7 @@ pub struct SliceExec {
 impl Executor for SliceExec {
     fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
         let df = self.input.execute(cache)?;
-        df.slice(self.offset, self.len)
+        Ok(df.slice(self.offset, self.len))
     }
 }
 pub struct MeltExec {

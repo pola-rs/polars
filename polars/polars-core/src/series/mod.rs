@@ -353,7 +353,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Take `num_elements` from the top as a zero copy view.
-    fn limit(&self, num_elements: usize) -> Result<Series> {
+    fn limit(&self, num_elements: usize) -> Series {
         self.slice(0, num_elements)
     }
 
@@ -361,7 +361,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     ///
     /// When offset is negative the offset is counted from the
     /// end of the array
-    fn slice(&self, _offset: i64, _length: usize) -> Result<Series> {
+    fn slice(&self, _offset: i64, _length: usize) -> Series {
         unimplemented!()
     }
 
@@ -1535,9 +1535,9 @@ mod test {
     fn series_slice_works() {
         let series = Series::new("a", &[1i64, 2, 3, 4, 5]);
 
-        let slice_1 = series.slice(-3, 3).unwrap();
-        let slice_2 = series.slice(-5, 5).unwrap();
-        let slice_3 = series.slice(0, 5).unwrap();
+        let slice_1 = series.slice(-3, 3);
+        let slice_2 = series.slice(-5, 5);
+        let slice_3 = series.slice(0, 5);
 
         assert_eq!(slice_1.get(0), AnyValue::Int64(3));
         assert_eq!(slice_2.get(0), AnyValue::Int64(1));
@@ -1548,8 +1548,8 @@ mod test {
     fn out_of_range_slice_does_not_panic() {
         let series = Series::new("a", &[1i64, 2, 3, 4, 5]);
 
-        series.slice(-3, 4).expect_err("Should be out of bounds");
-        series.slice(-6, 2).expect_err("Should be out of bounds");
-        series.slice(4, 2).expect_err("Should be out of bounds");
+        series.slice(-3, 4);
+        series.slice(-6, 2);
+        series.slice(4, 2);
     }
 }

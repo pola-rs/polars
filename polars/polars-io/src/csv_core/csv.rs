@@ -376,7 +376,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         // Let's slice to correct number of rows if possible.
         if let Some(n_rows) = self.n_rows {
             if n_rows < df.height() {
-                df = df.slice(0, n_rows).unwrap()
+                df = df.slice(0, n_rows)
             }
         }
         Ok(df)

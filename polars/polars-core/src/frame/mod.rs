@@ -1047,13 +1047,13 @@ impl DataFrame {
     }
 
     /// Slice the DataFrame along the rows.
-    pub fn slice(&self, offset: i64, length: usize) -> Result<Self> {
+    pub fn slice(&self, offset: i64, length: usize) -> Self {
         let col = self
             .columns
-            .par_iter()
+            .iter()
             .map(|s| s.slice(offset, length))
-            .collect::<Result<Vec<_>>>()?;
-        Ok(DataFrame::new_no_checks(col))
+            .collect::<Vec<_>>();
+        DataFrame::new_no_checks(col)
     }
 
     /// Get the head of the DataFrame
@@ -1504,7 +1504,7 @@ impl<'a> Iterator for RecordBatchIter<'a> {
         let mut rb_cols = Vec::with_capacity(self.columns.len());
         // take a slice from all columns and add the the current RecordBatch
         self.columns.iter().for_each(|s| {
-            let slice = s.slice(self.idx as i64, length).unwrap();
+            let slice = s.slice(self.idx as i64, length);
             rb_cols.push(Arc::clone(&slice.chunks()[0]))
         });
         let rb = RecordBatch::try_new(Arc::clone(&self.schema), rb_cols).unwrap();
@@ -1699,7 +1699,7 @@ mod test {
     #[test]
     fn slice() {
         let df = create_frame();
-        let sliced_df = df.slice(0, 2).expect("slice");
+        let sliced_df = df.slice(0, 2);
         assert_eq!(sliced_df.shape(), (2, 2));
         println!("{:?}", df)
     }
@@ -1774,7 +1774,7 @@ mod test {
         }
         .unwrap();
 
-        df.vstack_mut(&df.slice(0, 3).unwrap()).unwrap();
+        df.vstack_mut(&df.slice(0, 3)).unwrap();
         assert_eq!(df.n_chunks().unwrap(), 2)
     }
 
