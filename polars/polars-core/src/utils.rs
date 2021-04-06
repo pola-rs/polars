@@ -130,6 +130,28 @@ pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
     split_array!(df, n, i64)
 }
 
+#[inline]
+pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
+    let abs_offset = offset.abs() as usize;
+
+    // The offset counted from the start of the array
+    // negative index
+    if offset < 0 {
+        if abs_offset <= array_len {
+            (array_len - abs_offset, std::cmp::min(length, abs_offset))
+            // negative index larger that array: slice from start
+        } else {
+            (0, std::cmp::min(length, array_len))
+        }
+        // positive index
+    } else if abs_offset <= array_len {
+        (abs_offset, std::cmp::min(length, array_len - abs_offset))
+        // empty slice
+    } else {
+        (array_len, 0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Node(pub usize);
 

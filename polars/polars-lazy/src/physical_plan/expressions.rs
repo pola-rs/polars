@@ -5,7 +5,7 @@ use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::prelude::*;
-use polars_core::utils::NoNull;
+use polars_core::utils::{slice_offsets, NoNull};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -841,6 +841,24 @@ impl PhysicalExpr for SliceExpr {
         Ok(series.slice(self.offset, self.len))
     }
 
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        let s = self.input.evaluate(df)?;
+
+        let groups = groups
+            .iter()
+            .map(|(first, idx)| {
+                let (offset, len) = slice_offsets(self.offset, self.len, s.len());
+                (*first, idx[offset..offset + len].to_vec())
+            })
+            .collect();
+
+        Ok((s, Cow::Owned(groups)))
+    }
+
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
     }
@@ -851,6 +869,7 @@ impl PhysicalExpr for SliceExpr {
 }
 
 impl AggPhysicalExpr for SliceExpr {
+    // As a final aggregation a Slice returns a list array.
     fn evaluate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let s = self.input.evaluate(df)?;
         let agg_s = s.agg_list(groups);
@@ -903,6 +922,10 @@ impl AggPhysicalExpr for BinaryFunctionExpr {
 
         let agg_a = a.agg_list(groups).expect("no data?");
         let agg_b = b.agg_list(groups).expect("no data?");
+
+        // keep track of the output lengths. If they are all unit length,
+        // we can explode the array as it would have the same length as the no. of groups
+        // if it is not all unit length it should remain a listarray
 
         let mut all_unit_length = true;
 
