@@ -690,7 +690,7 @@ pub(crate) trait ChunkEqualElement {
     ///
     /// # Safety
     ///
-    /// No bounds checks and no type checks.
+    /// No type checks.
     unsafe fn equal_element(&self, _idx_self: usize, _idx_other: usize, _other: &Series) -> bool {
         unimplemented!()
     }
@@ -705,7 +705,8 @@ where
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const ChunkedArray<T>);
-        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+        // Should be get and not get_unchecked, because there could be nulls
+        self.get(idx_self) == ca_other.get(idx_other)
     }
 }
 
@@ -714,7 +715,7 @@ impl ChunkEqualElement for BooleanChunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const BooleanChunked);
-        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+        self.get(idx_self) == ca_other.get(idx_other)
     }
 }
 
@@ -723,7 +724,7 @@ impl ChunkEqualElement for Utf8Chunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const Utf8Chunked);
-        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+        self.get(idx_self) == ca_other.get(idx_other)
     }
 }
 
@@ -733,7 +734,7 @@ impl ChunkEqualElement for CategoricalChunked {
         let ca_other = other.as_ref().as_ref();
         debug_assert!(self.dtype() == other.dtype());
         let ca_other = &*(ca_other as *const CategoricalChunked);
-        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
+        self.get(idx_self) == ca_other.get(idx_other)
     }
 }
 

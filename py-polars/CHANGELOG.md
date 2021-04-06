@@ -2,6 +2,14 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.5
+* bug fix
+  - fix bug in vectorized hashing algorithm that affected groupbys with null values
+
+* feature
+  - use lazy groupby API/DSL in eager API #522
+  - make sort groupby-context aware #522
+
 ### polars 0.7.4
 * performance
   - \[python | rust\] multi-threaded outer join
@@ -14,7 +22,7 @@ The Rust crate `polars` has its own changelog.
 * feature
   - \[python | rust\] Downsample by week
   - \[python | rust\] join by unlimited columns
-  - \[python\] Create a list Series directly.
+  - \[python\] ~Create a list Series directly.~
   - \[python\] Create DataFrame from np.ndarray
   
 
