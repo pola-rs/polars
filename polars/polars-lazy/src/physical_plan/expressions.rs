@@ -237,7 +237,7 @@ impl PhysicalExpr for SortExpr {
 
         let groups = groups
             .iter()
-            .map(|(first, idx)| {
+            .map(|(_first, idx)| {
                 // Safety:
                 // Group tuples are always in bounds
                 let group =
@@ -254,7 +254,7 @@ impl PhysicalExpr for SortExpr {
                         unsafe { *idx.get_unchecked(i as usize) }
                     })
                     .collect();
-                (*first, new_idx)
+                (new_idx[0], new_idx)
             })
             .collect();
 
@@ -280,6 +280,123 @@ impl PhysicalAggregation for SortExpr {
                 .unwrap()
                 .into_iter()
                 .map(|opt_s| opt_s.map(|s| s.sort(self.reverse)))
+                .collect::<ListChunked>()
+                .into_series()
+        });
+        Ok(out)
+    }
+}
+
+pub struct SortByExpr {
+    input: Arc<dyn PhysicalExpr>,
+    by: Arc<dyn PhysicalExpr>,
+    reverse: bool,
+    expr: Expr,
+}
+
+impl SortByExpr {
+    pub fn new(
+        input: Arc<dyn PhysicalExpr>,
+        by: Arc<dyn PhysicalExpr>,
+        reverse: bool,
+        expr: Expr,
+    ) -> Self {
+        Self {
+            input,
+            by,
+            reverse,
+            expr,
+        }
+    }
+}
+
+impl PhysicalExpr for SortByExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series = self.input.evaluate(df)?;
+        let series_sort_by = self.by.evaluate(df)?;
+        let sorted_idx = series_sort_by.argsort(self.reverse);
+
+        // Safety:
+        // sorted index are within bounds
+        unsafe { series.take_unchecked(&sorted_idx) }
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        let (series, _) = self.input.evaluate_on_groups(df, groups)?;
+        let (series_sort_by, groups) = self.by.evaluate_on_groups(df, groups)?;
+
+        let groups = groups
+            .iter()
+            .map(|(_first, idx)| {
+                // Safety:
+                // Group tuples are always in bounds
+                let group = unsafe {
+                    series_sort_by.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
+                };
+
+                let sorted_idx = group.argsort(self.reverse);
+
+                let new_idx: Vec<_> = sorted_idx
+                    .cont_slice()
+                    .unwrap()
+                    .iter()
+                    .map(|&i| {
+                        debug_assert!(idx.get(i as usize).is_some());
+                        unsafe { *idx.get_unchecked(i as usize) }
+                    })
+                    .collect();
+                (new_idx[0], new_idx)
+            })
+            .collect();
+
+        Ok((series, Cow::Owned(groups)))
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.input.to_field(input_schema)
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+        Ok(self)
+    }
+}
+
+impl PhysicalAggregation for SortByExpr {
+    // As a final aggregation a Sort returns a list array.
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+        let s = self.input.evaluate(df)?;
+        let s_sort_by = self.by.evaluate(df)?;
+
+        let s_sort_by = s_sort_by.agg_list(groups).ok_or_else(|| {
+            PolarsError::Other(format!("cannot aggregate {:?} as list array", self.expr).into())
+        })?;
+
+        let agg_s = s.agg_list(groups);
+        let out = agg_s.map(|s| {
+            s.list()
+                .unwrap()
+                .into_iter()
+                .zip(s_sort_by.list().unwrap())
+                .map(|(opt_s, opt_sort_by)| {
+                    match (opt_s, opt_sort_by) {
+                        (Some(s), Some(sort_by)) => {
+                            let sorted_idx = sort_by.argsort(self.reverse);
+                            // Safety:
+                            // sorted index are within bounds
+                            unsafe { s.take_unchecked(&sorted_idx) }.ok()
+                        }
+                        _ => None,
+                    }
+                })
                 .collect::<ListChunked>()
                 .into_series()
         });

@@ -182,6 +182,11 @@ pub enum Expr {
         expr: Box<Expr>,
         reverse: bool,
     },
+    SortBy {
+        expr: Box<Expr>,
+        by: Box<Expr>,
+        reverse: bool,
+    },
     Agg(AggExpr),
     Ternary {
         predicate: Box<Expr>,
@@ -290,6 +295,7 @@ impl Expr {
             IsNull(_) => Ok(Field::new("is_null", DataType::Boolean)),
             IsNotNull(_) => Ok(Field::new("is_not_null", DataType::Boolean)),
             Sort { expr, .. } => expr.to_field(schema, ctxt),
+            SortBy { expr, .. } => expr.to_field(schema, ctxt),
             Agg(agg) => {
                 use AggExpr::*;
                 let field = match agg {
@@ -432,6 +438,10 @@ impl fmt::Debug for Expr {
             Sort { expr, reverse } => match reverse {
                 true => write!(f, "{:?} DESC", expr),
                 false => write!(f, "{:?} ASC", expr),
+            },
+            SortBy { expr, by, reverse } => match reverse {
+                true => write!(f, "{:?} DESC BY {:?}", expr, by),
+                false => write!(f, "{:?} ASC BY {:?}", expr, by),
             },
             Agg(agg) => {
                 use AggExpr::*;
@@ -1019,6 +1029,16 @@ impl Expr {
     pub fn nanosecond(self) -> Expr {
         let function = move |s: Series| s.nanosecond().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
+    }
+
+    /// Sort this column by the ordering of another column.
+    /// Can also be used in a groupby context to sort the groups.
+    pub fn sort_by(self, by: Expr, reverse: bool) -> Expr {
+        Expr::SortBy {
+            expr: Box::new(self),
+            by: Box::new(by),
+            reverse,
+        }
     }
 }
 

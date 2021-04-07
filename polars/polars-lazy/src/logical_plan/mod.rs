@@ -728,6 +728,11 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             offset,
             length,
         },
+        Expr::SortBy { expr, by, reverse } => Expr::SortBy {
+            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
+            by,
+            reverse,
+        },
         Expr::Sort { expr, reverse } => Expr::Sort {
             expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
             reverse,

@@ -138,6 +138,11 @@ impl PyExpr {
     pub fn sort(&self, reverse: bool) -> PyExpr {
         self.clone().inner.sort(reverse).into()
     }
+
+    pub fn sort_by(&self, by: PyExpr, reverse: bool) -> PyExpr {
+        self.clone().inner.sort_by(by.inner, reverse).into()
+    }
+
     pub fn shift(&self, periods: i64) -> PyExpr {
         self.clone().inner.shift(periods).into()
     }
