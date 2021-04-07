@@ -1,8 +1,9 @@
 use super::expressions as phys_expr;
+use crate::dummies::{dummy_aexpr_binary_fn, dummy_aexpr_sort_by};
 use crate::logical_plan::Context;
 use crate::physical_plan::executors::*;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, agg_source_paths};
+use crate::utils::{aexpr_to_root_names, agg_source_paths, has_aexpr};
 use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::prelude::*;
@@ -252,13 +253,29 @@ impl DefaultPlanner {
                 ..
             } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+
+                // We first check if we can partition the groupby on the latest moment.
+                // TODO: fix this brittle/ buggy state and implement partitioned groupby's in eager
                 let mut partitionable = true;
+
+                // we create a dummy to check if this is in the expression tree. very ugly.
+                let dummy_binary_fn = dummy_aexpr_binary_fn();
+                let dummy_sort_by = dummy_aexpr_sort_by();
 
                 // currently only a single aggregation seems faster with ad-hoc partitioning.
                 if aggs.len() == 1 && keys.len() == 1 {
                     for agg in &aggs {
+                        // make sure that we don't have a binary expr in the expr tree
+                        if has_aexpr(*agg, expr_arena, &dummy_binary_fn)
+                            || has_aexpr(*agg, expr_arena, &dummy_sort_by)
+                        {
+                            partitionable = false;
+                            break;
+                        }
+
                         let agg = node_to_exp(*agg, expr_arena);
 
+                        // check if the aggregation type is partitionable
                         match agg {
                             Expr::Agg(AggExpr::Min(_))
                             | Expr::Agg(AggExpr::Max(_))
@@ -270,6 +287,7 @@ impl DefaultPlanner {
                             | Expr::Agg(AggExpr::First(_)) => {}
                             _ => {
                                 partitionable = false;
+                                break
                             }
                         }
                     }
@@ -424,6 +442,16 @@ impl DefaultPlanner {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 Ok(Arc::new(SortExpr::new(
                     phys_expr,
+                    reverse,
+                    node_to_exp(expression, expr_arena),
+                )))
+            }
+            SortBy { expr, by, reverse } => {
+                let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
+                let phys_by = self.create_physical_expr(by, ctxt, expr_arena)?;
+                Ok(Arc::new(SortByExpr::new(
+                    phys_expr,
+                    phys_by,
                     reverse,
                     node_to_exp(expression, expr_arena),
                 )))

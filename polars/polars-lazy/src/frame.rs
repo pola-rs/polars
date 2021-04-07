@@ -1871,4 +1871,28 @@ mod test {
             [Some(3), Some(5), Some(6)]
         );
     }
+
+    #[test]
+    fn test_lazy_groupby_sort_by() {
+        let df = df! {
+            "a" => ["a", "a", "a", "b", "b", "c"],
+            "b" => [1, 2, 3, 4, 5, 6],
+            "c" => [6, 1, 4, 3, 2, 1]
+        }
+        .unwrap();
+
+        let out = df
+            .lazy()
+            .groupby(vec![col("a")])
+            .agg(vec![col("b").sort_by(col("c"), true).first()])
+            .collect()
+            .unwrap()
+            .sort("a", false)
+            .unwrap();
+
+        assert_eq!(
+            Vec::from(out.column("b_first").unwrap().i32().unwrap()),
+            [Some(1), Some(4), Some(6)]
+        );
+    }
 }

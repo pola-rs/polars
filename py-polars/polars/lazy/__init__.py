@@ -783,7 +783,33 @@ class Expr:
         return wrap_expr(self._pyexpr.cast(dtype))
 
     def sort(self, reverse: bool) -> "Expr":
+        """
+        Sort this column. In projection/ selection context the whole column is sorted.
+        If used in a groupby context, the groups are sorted.
+
+        Parameters
+        ----------
+        reverse
+            False -> order from small to large
+            True -> order from large to small
+        """
         return wrap_expr(self._pyexpr.sort(reverse))
+
+    def sort_by(self, by: "Expr", reverse: bool) -> "Expr":
+        """
+        Sort this column by the ordering of another column.
+        In projection/ selection context the whole column is sorted.
+        If used in a groupby context, the groups are sorted.
+
+        Parameters
+        ----------
+        by
+            The column used for sorting
+        reverse
+            False -> order from small to large
+            True -> order from large to small
+        """
+        return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
     def shift(self, periods: int) -> "Expr":
         """

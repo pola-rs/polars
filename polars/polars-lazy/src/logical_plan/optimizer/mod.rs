@@ -208,6 +208,11 @@ pub enum AExpr {
         expr: Node,
         reverse: bool,
     },
+    SortBy {
+        expr: Node,
+        by: Node,
+        reverse: bool,
+    },
     Agg(AAggExpr),
     Ternary {
         predicate: Node,
@@ -345,6 +350,7 @@ impl AExpr {
             IsNull(_) => Ok(Field::new("is_null", DataType::Boolean)),
             IsNotNull(_) => Ok(Field::new("is_not_null", DataType::Boolean)),
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
+            SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Agg(agg) => {
                 use AAggExpr::*;
                 let field = match agg {
@@ -655,6 +661,11 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         },
         Expr::Sort { expr, reverse } => AExpr::Sort {
             expr: to_aexpr(*expr, arena),
+            reverse,
+        },
+        Expr::SortBy { expr, by, reverse } => AExpr::SortBy {
+            expr: to_aexpr(*expr, arena),
+            by: to_aexpr(*by, arena),
             reverse,
         },
         Expr::Agg(agg) => {
@@ -1026,6 +1037,15 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Sort {
                 expr: Box::new(exp),
+                reverse,
+            }
+        }
+        AExpr::SortBy { expr, by, reverse } => {
+            let expr = node_to_exp(expr, expr_arena);
+            let by = node_to_exp(by, expr_arena);
+            Expr::SortBy {
+                expr: Box::new(expr),
+                by: Box::new(by),
                 reverse,
             }
         }

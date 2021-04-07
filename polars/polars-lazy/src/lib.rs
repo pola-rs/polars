@@ -194,6 +194,7 @@
 //! ```
 #![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod dsl;
+mod dummies;
 pub mod frame;
 pub mod functions;
 mod logical_plan;
