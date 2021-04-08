@@ -5,6 +5,8 @@ The Rust crate `polars` has its own changelog.
 ### polars 0.7.5
 * bug fix
   - fix bug in vectorized hashing algorithm that affected groupbys with null values: #523
+  - fix bug in downsample: 528
+  - change median algorithm: #527
 
 * feature
   - use lazy groupby API/DSL in eager API: #522
