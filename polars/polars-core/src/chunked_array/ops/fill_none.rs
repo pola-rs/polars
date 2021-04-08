@@ -105,10 +105,11 @@ where
                 .fill_none_with_value(self.max().ok_or_else(|| {
                     PolarsError::Other("Could not determine fill value".into())
                 })?)?,
-            FillNoneStrategy::Mean => self
-                .fill_none_with_value(self.mean().ok_or_else(|| {
-                    PolarsError::Other("Could not determine fill value".into())
-                })?)?,
+            FillNoneStrategy::Mean => self.fill_none_with_value(
+                self.mean()
+                    .map(|v| NumCast::from(v).unwrap())
+                    .ok_or_else(|| PolarsError::Other("Could not determine fill value".into()))?,
+            )?,
             FillNoneStrategy::One => return self.fill_none_with_value(One::one()),
             FillNoneStrategy::Zero => return self.fill_none_with_value(Zero::zero()),
             FillNoneStrategy::MinBound => return self.fill_none_with_value(Bounded::min_value()),
