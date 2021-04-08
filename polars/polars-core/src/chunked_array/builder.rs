@@ -273,6 +273,7 @@ impl Utf8ChunkedBuilder {
         self.builder.append_null().unwrap();
     }
 
+    #[inline]
     pub fn append_option<S: AsRef<str>>(&mut self, opt: Option<S>) {
         match opt {
             Some(s) => self.append_value(s.as_ref()),
