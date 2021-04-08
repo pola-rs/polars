@@ -4,11 +4,14 @@ The Rust crate `polars` has its own changelog.
 
 ### polars 0.7.5
 * bug fix
-  - fix bug in vectorized hashing algorithm that affected groupbys with null values
+  - fix bug in vectorized hashing algorithm that affected groupbys with null values: #523
 
 * feature
-  - use lazy groupby API/DSL in eager API #522
-  - make sort groupby-context aware #522
+  - use lazy groupby API/DSL in eager API: #522
+  - make sort groupby-context aware: #522
+
+* performance
+  - improve sort algorithms for sort and argsort: #526
 
 ### polars 0.7.4
 * performance

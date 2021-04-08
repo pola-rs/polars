@@ -355,6 +355,10 @@ macro_rules! impl_dyn_series {
                 self.0.slice(offset, length).into_series()
             }
 
+            fn mean(&self) -> Option<f64> {
+                cast_and_apply!(self, mean,)
+            }
+
             fn append(&mut self, other: &Series) -> Result<()> {
                 if self.0.dtype() == other.dtype() {
                     // todo! add object

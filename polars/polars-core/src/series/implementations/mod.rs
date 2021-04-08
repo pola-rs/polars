@@ -533,6 +533,10 @@ macro_rules! impl_dyn_series {
                 ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
             }
 
+            fn mean(&self) -> Option<f64> {
+                self.0.mean()
+            }
+
             fn take(&self, indices: &UInt32Chunked) -> Series {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())

@@ -525,8 +525,7 @@ class Series:
         """
         Reduce this Series to the mean value.
         """
-        # use float type for mean aggregations no matter of base type
-        return self._s.mean_f64()
+        return self._s.mean()
 
     def min(self):
         """

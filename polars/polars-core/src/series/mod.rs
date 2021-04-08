@@ -468,6 +468,12 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         }
     }
 
+    /// Returns the mean value in the array
+    /// Returns an option because the array is nullable.
+    fn mean(&self) -> Option<f64> {
+        unimplemented!()
+    }
+
     /// Create a new Series filled with values at that index.
     ///
     /// # Example
@@ -1123,18 +1129,6 @@ impl Series {
         self.max_as_series()
             .cast::<Float64Type>()
             .ok()
-            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
-    }
-
-    /// Returns the mean value in the array
-    /// Returns an option because the array is nullable.
-    pub fn mean<T>(&self) -> Option<T>
-    where
-        T: NumCast,
-    {
-        self.cast::<Float64Type>()
-            .ok()
-            .map(|s| s.mean_as_series())
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 

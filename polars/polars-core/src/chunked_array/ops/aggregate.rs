@@ -119,10 +119,9 @@ where
         }
     }
 
-    fn mean(&self) -> Option<T::Native> {
+    fn mean(&self) -> Option<f64> {
         let len = (self.len() - self.null_count()) as f64;
-        self.sum()
-            .map(|v| NumCast::from(v.to_f64().unwrap() / len).unwrap())
+        self.sum().map(|v| v.to_f64().unwrap() / len)
     }
 
     fn median(&self) -> Option<T::Native> {
@@ -239,9 +238,9 @@ impl ChunkAgg<u32> for BooleanChunked {
         Some(min_max_helper(self, false))
     }
 
-    fn mean(&self) -> Option<u32> {
-        let len = self.len() - self.null_count();
-        self.sum().map(|v| (v as usize / len) as u32)
+    fn mean(&self) -> Option<f64> {
+        let len = (self.len() - self.null_count()) as f64;
+        self.sum().map(|v| v as f64 / len)
     }
 
     fn median(&self) -> Option<u32> {
@@ -259,6 +258,9 @@ impl ChunkAgg<u32> for BooleanChunked {
         }
     }
 }
+
+impl ChunkAgg<Series> for ListChunked {}
+impl ChunkAgg<String> for Utf8Chunked {}
 
 // Needs the same trait bounds as the implementation of ChunkedArray<T> of dyn Series
 impl<T> ChunkAggSeries for ChunkedArray<T>
@@ -289,11 +291,8 @@ where
         if self.null_count() == self.len() {
             Self::full_null(self.name(), 1).into_series()
         } else {
-            let s = self.sum_as_series();
-            let mut out =
-                s.cast::<Float64Type>().unwrap() / (self.len() - self.null_count()) as f64;
-            out.rename(self.name());
-            out
+            let val = [self.mean()];
+            Series::new(self.name(), val)
         }
     }
     fn median_as_series(&self) -> Series {
@@ -421,7 +420,7 @@ impl ChunkAggSeries for BooleanChunked {
     }
     fn mean_as_series(&self) -> Series {
         let v = ChunkAgg::mean(self);
-        let mut ca: UInt32Chunked = [v].iter().copied().collect();
+        let mut ca: Float64Chunked = [v].iter().copied().collect();
         ca.rename(self.name());
         ca.into_series()
     }

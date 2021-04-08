@@ -442,24 +442,36 @@ pub trait ChunkApply<'a, A, B> {
 pub trait ChunkAgg<T> {
     /// Aggregate the sum of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
-    fn sum(&self) -> Option<T>;
+    fn sum(&self) -> Option<T> {
+        None
+    }
 
-    fn min(&self) -> Option<T>;
+    fn min(&self) -> Option<T> {
+        None
+    }
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns `None` if the array is empty or only contains null values.
-    fn max(&self) -> Option<T>;
+    fn max(&self) -> Option<T> {
+        None
+    }
 
     /// Returns the mean value in the array.
     /// Returns `None` if the array is empty or only contains null values.
-    fn mean(&self) -> Option<T>;
+    fn mean(&self) -> Option<f64> {
+        None
+    }
 
     /// Returns the mean value in the array.
     /// Returns `None` if the array is empty or only contains null values.
-    fn median(&self) -> Option<T>;
+    fn median(&self) -> Option<T> {
+        None
+    }
 
     /// Aggregate a given quantile of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
-    fn quantile(&self, quantile: f64) -> Result<Option<T>>;
+    fn quantile(&self, _quantile: f64) -> Result<Option<T>> {
+        Ok(None)
+    }
 }
 
 /// Variance and standard deviation aggregation.

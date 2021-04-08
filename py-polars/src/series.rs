@@ -300,6 +300,10 @@ impl PySeries {
         dt as u8
     }
 
+    pub fn mean(&self) -> Option<f64> {
+        self.series.mean()
+    }
+
     pub fn n_chunks(&self) -> usize {
         self.series.n_chunks()
     }
@@ -1415,27 +1419,6 @@ impl_max!(max_i64, i64);
 impl_max!(max_f32, f32);
 impl_max!(max_f64, f64);
 
-macro_rules! impl_mean {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            pub fn $name(&self) -> PyResult<Option<$type>> {
-                Ok(self.series.mean())
-            }
-        }
-    };
-}
-
-impl_mean!(mean_u8, u8);
-impl_mean!(mean_u16, u16);
-impl_mean!(mean_u32, u32);
-impl_mean!(mean_u64, u64);
-impl_mean!(mean_i8, i8);
-impl_mean!(mean_i16, i16);
-impl_mean!(mean_i32, i32);
-impl_mean!(mean_i64, i64);
-impl_mean!(mean_f32, f32);
-impl_mean!(mean_f64, f64);
 
 macro_rules! impl_eq_num {
     ($name:ident, $type:ty) => {
