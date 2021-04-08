@@ -577,10 +577,8 @@ impl PySeries {
         pylist.to_object(python)
     }
 
-    pub fn median(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        Wrap(self.series.median_as_series().get(0)).into_py(py)
+    pub fn median(&self) -> Option<f64> {
+        self.series.median()
     }
 
     pub fn quantile(&self, quantile: f64) -> PyObject {

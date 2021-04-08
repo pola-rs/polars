@@ -463,7 +463,7 @@ pub trait ChunkAgg<T> {
 
     /// Returns the mean value in the array.
     /// Returns `None` if the array is empty or only contains null values.
-    fn median(&self) -> Option<T> {
+    fn median(&self) -> Option<f64> {
         None
     }
 
