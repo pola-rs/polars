@@ -782,7 +782,7 @@ class Expr:
             dtype = datatypes.Int64
         return wrap_expr(self._pyexpr.cast(dtype))
 
-    def sort(self, reverse: bool) -> "Expr":
+    def sort(self, reverse: bool = False) -> "Expr":
         """
         Sort this column. In projection/ selection context the whole column is sorted.
         If used in a groupby context, the groups are sorted.
@@ -795,7 +795,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.sort(reverse))
 
-    def sort_by(self, by: "Expr", reverse: bool) -> "Expr":
+    def sort_by(self, by: "Expr", reverse: bool = False) -> "Expr":
         """
         Sort this column by the ordering of another column.
         In projection/ selection context the whole column is sorted.
