@@ -117,7 +117,7 @@ impl DataFrame {
             Week(n) => {
                 // We floor divide to create a bucket.
                 let mut week = (&key.week()? / n).into_series();
-                week.rename(day_c);
+                week.rename(week_c);
 
                 df.hstack_mut(&[year, week])?;
 
