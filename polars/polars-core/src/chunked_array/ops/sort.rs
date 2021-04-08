@@ -7,7 +7,7 @@ use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 
 /// Sort with null values, to reverse, swap the arguments.
-fn sort_partial<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     match (a, b) {
         (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
         (None, Some(_)) => Ordering::Less,
@@ -28,12 +28,12 @@ fn order_default<T: PartialOrd>(a: &T, b: &T) -> Ordering {
 
 /// Default sorting nulls
 fn order_default_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    sort_partial(a, b)
+    sort_with_nulls(a, b)
 }
 
 /// Default sorting nulls
 fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    sort_partial(b, a)
+    sort_with_nulls(b, a)
 }
 
 fn sort_branch<T, Fd, Fr>(
@@ -55,12 +55,82 @@ fn sort_branch<T, Fd, Fr>(
     }
 }
 
+fn argsort_branch<T, Fd, Fr>(
+    slice: &mut [T],
+    sort_parallel: bool,
+    reverse: bool,
+    default_order_fn: Fd,
+    reverse_order_fn: Fr,
+) where
+    T: PartialOrd + Send,
+    Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
+    Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
+{
+    match (sort_parallel, reverse) {
+        (true, true) => slice.par_sort_by(reverse_order_fn),
+        (true, false) => slice.par_sort_by(default_order_fn),
+        (false, true) => slice.sort_by(reverse_order_fn),
+        (false, false) => slice.sort_by(default_order_fn),
+    }
+}
+
 /// If the sort should be ran parallel or not.
 fn sort_parallel<T>(ca: &ChunkedArray<T>) -> bool {
     ca.len()
         > std::env::var("POLARS_PAR_SORT_BOUND")
             .map(|v| v.parse::<usize>().expect("could not parse"))
             .unwrap_or(1000000)
+}
+
+macro_rules! argsort {
+    ($self:expr, $reverse:expr) => {{
+        let sort_parallel = sort_parallel($self);
+
+        let ca: NoNull<UInt32Chunked> = if $self.null_count() == 0 {
+            let mut count: u32 = 0;
+            let mut vals: Vec<_> = $self
+                .into_no_null_iter()
+                .map(|v| {
+                    let i = count;
+                    count += 1;
+                    (i, v)
+                })
+                .collect();
+
+            argsort_branch(
+                vals.as_mut_slice(),
+                sort_parallel,
+                $reverse,
+                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
+                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+            );
+
+            vals.into_iter().map(|(idx, _v)| idx).collect()
+        } else {
+            let mut count: u32 = 0;
+            let mut vals: Vec<_> = $self
+                .into_iter()
+                .map(|v| {
+                    let i = count;
+                    count += 1;
+                    (i, v)
+                })
+                .collect();
+
+            argsort_branch(
+                vals.as_mut_slice(),
+                sort_parallel,
+                $reverse,
+                |(_, a), (_, b)| order_default_null(a, b),
+                |(_, a), (_, b)| order_reverse_null(a, b),
+            );
+
+            vals.into_iter().map(|(idx, _v)| idx).collect()
+        };
+        let mut ca = ca.into_inner();
+        ca.rename($self.name());
+        ca
+    }};
 }
 
 impl<T> ChunkSort<T> for ChunkedArray<T>
@@ -126,71 +196,8 @@ where
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        // if len larger than 1M we sort in parallel
-        if self.is_optimal_aligned()
-            && self.len()
-                > std::env::var("POLARS_PAR_SORT_BOUND")
-                    .map(|v| v.parse::<usize>().expect("could not parse"))
-                    .unwrap_or(1000000)
-        {
-            let vals = self.cont_slice().unwrap();
-
-            let mut vals = vals.into_par_iter().enumerate().collect::<Vec<_>>();
-
-            if reverse {
-                vals.as_mut_slice()
-                    .par_sort_by(|(_idx, a), (_idx_b, b)| b.partial_cmp(a).unwrap());
-            } else {
-                vals.as_mut_slice()
-                    .par_sort_by(|(_idx, a), (_idx_b, b)| a.partial_cmp(b).unwrap());
-            }
-            vals.into_par_iter()
-                .map(|(idx, _v)| Some(idx as u32))
-                .collect()
-        } else if self.null_count() == 0 {
-            if reverse {
-                self.into_no_null_iter()
-                    .enumerate()
-                    .sorted_by(|(_idx_a, a), (_idx_b, b)| b.partial_cmp(a).unwrap())
-                    .map(|(idx, _v)| idx as u32)
-                    .collect::<NoNull<UInt32Chunked>>()
-                    .into_inner()
-            } else {
-                self.into_no_null_iter()
-                    .enumerate()
-                    .sorted_by(|(_idx_a, a), (_idx_b, b)| a.partial_cmp(b).unwrap())
-                    .map(|(idx, _v)| idx as u32)
-                    .collect::<NoNull<UInt32Chunked>>()
-                    .into_inner()
-            }
-        } else if reverse {
-            self.into_iter()
-                .enumerate()
-                .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(b, a))
-                .map(|(idx, _v)| idx as u32)
-                .collect::<NoNull<UInt32Chunked>>()
-                .into_inner()
-        } else {
-            self.into_iter()
-                .enumerate()
-                .sorted_by(|(_idx_a, a), (_idx_b, b)| sort_partial(a, b))
-                .map(|(idx, _v)| idx as u32)
-                .collect::<NoNull<UInt32Chunked>>()
-                .into_inner()
-        }
+        argsort!(self, reverse)
     }
-}
-
-macro_rules! argsort {
-    ($self:ident, $closure:expr) => {{
-        $self
-            .into_iter()
-            .enumerate()
-            .sorted_by($closure)
-            .map(|(idx, _v)| idx as u32)
-            .collect::<NoNull<UInt32Chunked>>()
-            .into_inner()
-    }};
 }
 
 macro_rules! sort {
@@ -214,11 +221,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        if reverse {
-            argsort!(self, |(_idx_a, a), (_idx_b, b)| b.cmp(a))
-        } else {
-            argsort!(self, |(_idx_a, a), (_idx_b, b)| a.cmp(b))
-        }
+        argsort!(self, reverse)
     }
 }
 
@@ -276,10 +279,6 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        if reverse {
-            argsort!(self, |(_idx_a, a), (_idx_b, b)| b.cmp(a))
-        } else {
-            argsort!(self, |(_idx_a, a), (_idx_b, b)| a.cmp(b))
-        }
+        argsort!(self, reverse)
     }
 }
