@@ -237,26 +237,6 @@ impl ChunkAgg<u32> for BooleanChunked {
         }
         Some(min_max_helper(self, false))
     }
-
-    fn mean(&self) -> Option<f64> {
-        let len = (self.len() - self.null_count()) as f64;
-        self.sum().map(|v| v as f64 / len)
-    }
-
-    fn median(&self) -> Option<u32> {
-        self.quantile(0.5).unwrap()
-    }
-
-    fn quantile(&self, quantile: f64) -> Result<Option<u32>> {
-        if !(0.0..=1.0).contains(&quantile) {
-            Err(PolarsError::ValueError(
-                "quantile should be between 0.0 and 1.0".into(),
-            ))
-        } else {
-            let opt = impl_quantile!(self, quantile);
-            Ok(opt.map(|v| v as u32))
-        }
-    }
 }
 
 impl ChunkAgg<Series> for ListChunked {}
