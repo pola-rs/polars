@@ -474,6 +474,12 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         unimplemented!()
     }
 
+    /// Returns the median value in the array
+    /// Returns an option because the array is nullable.
+    fn median(&self) -> Option<f64> {
+        unimplemented!()
+    }
+
     /// Create a new Series filled with values at that index.
     ///
     /// # Example

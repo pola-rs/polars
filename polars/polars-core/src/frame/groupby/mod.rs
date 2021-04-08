@@ -1213,15 +1213,15 @@ pub(crate) trait AggQuantile {
         None
     }
 
-    fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.agg_quantile(groups, 0.5)
+    fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        None
     }
 }
 
 impl<T> AggQuantile for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: PartialEq,
+    T::Native: PartialOrd + Num + NumCast + Zero,
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
@@ -1238,6 +1238,20 @@ where
                     group_vals.get(value_idx as usize)
                 })
                 .collect::<ChunkedArray<T>>()
+                .into_series(),
+        )
+    }
+
+    fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        Some(
+            groups
+                .into_par_iter()
+                .map(|(_first, idx)| {
+                    let group_vals =
+                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                    group_vals.median()
+                })
+                .collect::<Float64Chunked>()
                 .into_series(),
         )
     }
