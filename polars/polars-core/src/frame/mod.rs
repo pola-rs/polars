@@ -1705,6 +1705,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-u8")]
     fn get_dummies() {
         let df = df! {
             "id" => &[1, 2, 3, 1, 2, 3, 1, 1],

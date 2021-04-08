@@ -1513,7 +1513,7 @@ mod test {
 
     #[test]
     fn new_series_from_arrow_primitive_array() {
-        let array = UInt64Array::from(vec![1, 2, 3, 4, 5]);
+        let array = UInt32Array::from(vec![1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Arc::new(array);
 
         Series::try_from(("foo", array_ref)).unwrap();
