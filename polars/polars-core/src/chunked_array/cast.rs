@@ -18,14 +18,6 @@ where
             Ok(ca)
         };
     };
-
-    // // only i32 can be cast to Date32
-    // if let DataType::Date32 = N::get_dtype() {
-    //     if T::get_dtype() != ArrowDataType::Int32 {
-    //         let casted_i32 = cast_ca::<Int32Type, _>(ca)?;
-    //         return cast_ca(&casted_i32);
-    //     }
-    // }
     let chunks = ca
         .chunks
         .iter()

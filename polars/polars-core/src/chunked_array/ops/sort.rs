@@ -3,8 +3,10 @@ use crate::utils::NoNull;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::cmp::Ordering;
+use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 
+/// Sort with null values, to reverse, swap the arguments.
 fn sort_partial<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     match (a, b) {
         (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
@@ -14,20 +16,64 @@ fn sort_partial<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     }
 }
 
+/// Reverse sorting when there are no nulls
+fn order_reverse<T: PartialOrd>(a: &T, b: &T) -> Ordering {
+    b.partial_cmp(a).unwrap()
+}
+
+/// Default sorting when there are no nulls
+fn order_default<T: PartialOrd>(a: &T, b: &T) -> Ordering {
+    a.partial_cmp(b).unwrap()
+}
+
+/// Default sorting nulls
+fn order_default_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+    sort_partial(a, b)
+}
+
+/// Default sorting nulls
+fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+    sort_partial(b, a)
+}
+
+fn sort_branch<T, Fd, Fr>(
+    slice: &mut [T],
+    sort_parallel: bool,
+    reverse: bool,
+    default_order_fn: Fd,
+    reverse_order_fn: Fr,
+) where
+    T: PartialOrd + Send,
+    Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
+    Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
+{
+    match (sort_parallel, reverse) {
+        (true, true) => slice.par_sort_unstable_by(reverse_order_fn),
+        (true, false) => slice.par_sort_unstable_by(default_order_fn),
+        (false, true) => slice.sort_unstable_by(reverse_order_fn),
+        (false, false) => slice.sort_unstable_by(default_order_fn),
+    }
+}
+
+/// If the sort should be ran parallel or not.
+fn sort_parallel<T>(ca: &ChunkedArray<T>) -> bool {
+    ca.len()
+        > std::env::var("POLARS_PAR_SORT_BOUND")
+            .map(|v| v.parse::<usize>().expect("could not parse"))
+            .unwrap_or(1000000)
+}
+
 impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: std::cmp::PartialOrd,
 {
     fn sort(&self, reverse: bool) -> ChunkedArray<T> {
-        if self.is_optimal_aligned()
-            && self.len()
-                > std::env::var("POLARS_PAR_SORT_BOUND")
-                    .map(|v| v.parse::<usize>().expect("could not parse"))
-                    .unwrap_or(1000000)
-        {
+        let sort_parallel = sort_parallel(self);
+
+        if let Ok(vals) = self.cont_slice() {
+            // Copy the values to a new aligned vec. This can be mutably sorted.
             let n = self.len();
-            let vals = self.cont_slice().unwrap();
             let vals_ptr = vals.as_ptr();
             // allocate aligned
             let mut new = AlignedVec::<T::Native>::with_capacity_aligned(n);
@@ -38,40 +84,39 @@ where
             // set len to copied bytes
             unsafe { new.set_len(n) };
 
-            if reverse {
-                new.as_mut_slice()
-                    .par_sort_by(|a, b| b.partial_cmp(a).unwrap())
-            } else {
-                new.as_mut_slice()
-                    .par_sort_by(|a, b| a.partial_cmp(b).unwrap())
-            }
-            ChunkedArray::new_from_aligned_vec(self.name(), new)
-        } else if self.null_count() == 0 {
-            if reverse {
-                let ca: NoNull<ChunkedArray<T>> = self
-                    .into_no_null_iter()
-                    .sorted_by(|a, b| b.partial_cmp(a).unwrap())
-                    .collect();
-                let mut ca = ca.into_inner();
-                ca.rename(self.name());
-                ca
-            } else {
-                let ca: NoNull<ChunkedArray<T>> = self
-                    .into_no_null_iter()
-                    .sorted_by(|a, b| a.partial_cmp(b).unwrap())
-                    .collect();
-                let mut ca = ca.into_inner();
-                ca.rename(self.name());
-                ca
-            }
-        } else if reverse {
-            self.into_iter()
-                .sorted_by(|a, b| sort_partial(b, a))
-                .collect()
+            sort_branch(
+                new.as_mut_slice(),
+                sort_parallel,
+                reverse,
+                order_default,
+                order_reverse,
+            );
+
+            return ChunkedArray::new_from_aligned_vec(self.name(), new);
+        }
+
+        if self.null_count() == 0 {
+            let mut av: AlignedVec<_> = self.into_no_null_iter().collect();
+            sort_branch(
+                av.as_mut_slice(),
+                sort_parallel,
+                reverse,
+                order_default,
+                order_reverse,
+            );
+            ChunkedArray::new_from_aligned_vec(self.name(), av)
         } else {
-            self.into_iter()
-                .sorted_by(|a, b| sort_partial(a, b))
-                .collect()
+            let mut v = Vec::from_iter(self);
+            sort_branch(
+                v.as_mut_slice(),
+                sort_parallel,
+                reverse,
+                order_default_null,
+                order_reverse_null,
+            );
+            let mut ca: Self = v.into_iter().collect();
+            ca.rename(self.name());
+            ca
         }
     }
 
