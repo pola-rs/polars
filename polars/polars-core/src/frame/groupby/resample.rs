@@ -89,6 +89,10 @@ impl DataFrame {
         let minute_c = "__POLARS_TEMP_MINUTE";
         let second_c = "__POLARS_TEMP_SECOND";
 
+        let mut key = key.clone();
+        let wrong_key_dtype = || Err(PolarsError::Other("key should be date32 || date64".into()));
+        let wrong_key_dtype_date64 = || Err(PolarsError::Other("key should be date64".into()));
+
         // We add columns to group on. We need to make sure that we do not groupby seconds
         // that belong to another minute, or another day, year, etc. That's why we add all
         // those columns to make sure that te group is unique in cyclic events.
@@ -121,6 +125,12 @@ impl DataFrame {
 
                 df.hstack_mut(&[year, week])?;
 
+                match key.dtype() {
+                    DataType::Date32 => key = key / (7 * n),
+                    DataType::Date64 => key = key / (1000 * 3600 * 24 * 7 * n),
+                    _ => return wrong_key_dtype(),
+                }
+
                 df.groupby_stable(&[year_c, week_c])?
             }
             Day(n) => {
@@ -129,6 +139,12 @@ impl DataFrame {
                 day.rename(day_c);
 
                 df.hstack_mut(&[year, day])?;
+
+                match key.dtype() {
+                    DataType::Date32 => key = key / n,
+                    DataType::Date64 => key = key / (1000 * 3600 * 24 * n),
+                    _ => return wrong_key_dtype(),
+                }
 
                 df.groupby_stable(&[year_c, day_c])?
             }
@@ -141,6 +157,10 @@ impl DataFrame {
                 hour.rename(hour_c);
                 df.hstack_mut(&[year, day, hour])?;
 
+                match key.dtype() {
+                    DataType::Date64 => key = key / (1000 * 3600 * n),
+                    _ => return wrong_key_dtype(),
+                }
                 df.groupby_stable(&[year_c, day_c, hour_c])?
             }
             Minute(n) => {
@@ -154,6 +174,11 @@ impl DataFrame {
                 minute.rename(minute_c);
 
                 df.hstack_mut(&[year, day, hour, minute])?;
+
+                match key.dtype() {
+                    DataType::Date64 => key = key / (1000 * 3600 * n),
+                    _ => return wrong_key_dtype_date64(),
+                }
 
                 df.groupby_stable(&[year_c, day_c, hour_c, minute_c])?
             }
@@ -171,16 +196,16 @@ impl DataFrame {
 
                 df.hstack_mut(&[year, day, hour, minute, second])?;
 
+                match key.dtype() {
+                    DataType::Date64 => key = key / (1000 * n),
+                    _ => return wrong_key_dtype_date64(),
+                }
+
                 df.groupby_stable(&[day_c, hour_c, minute_c, second_c])?
             }
         };
 
-        Ok(GroupBy::new(
-            self,
-            vec![key.clone()],
-            gb.groups,
-            Some(selection),
-        ))
+        Ok(GroupBy::new(self, vec![key], gb.groups, Some(selection)))
     }
 }
 
@@ -232,5 +257,12 @@ mod test {
             Vec::from(out.column("i_first").unwrap().u8().unwrap()),
             &[Some(0), Some(5), Some(10), Some(15)]
         );
+
+        // check if we can run them without errors
+        df.downsample("ms", SampleRule::Week(1)).unwrap();
+        df.downsample("ms", SampleRule::Day(1)).unwrap();
+        df.downsample("ms", SampleRule::Hour(1)).unwrap();
+        df.downsample("ms", SampleRule::Minute(1)).unwrap();
+        df.downsample("ms", SampleRule::Second(1)).unwrap();
     }
 }
