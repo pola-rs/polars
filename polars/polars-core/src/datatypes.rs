@@ -306,7 +306,11 @@ pub enum DataType {
     Float32,
     Float64,
     Utf8,
+    /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
+    /// in days (32 bits).
     Date32,
+    /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
+    /// in milliseconds (64 bits).
     Date64,
     Time64(TimeUnit),
     List(ArrowDataType),
