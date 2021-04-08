@@ -212,7 +212,21 @@ macro_rules! sort {
 
 impl ChunkSort<Utf8Type> for Utf8Chunked {
     fn sort(&self, reverse: bool) -> Utf8Chunked {
-        sort!(self, reverse)
+        let sort_parallel = sort_parallel(self);
+
+        let mut v = Vec::from_iter(self);
+        sort_branch(
+            v.as_mut_slice(),
+            sort_parallel,
+            reverse,
+            order_default_null,
+            order_reverse_null,
+        );
+
+        // We don't collect from an iterator because we know the total value size
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
+        v.into_iter().for_each(|opt_v| builder.append_option(opt_v));
+        builder.finish()
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
