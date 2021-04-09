@@ -1,9 +1,9 @@
 use super::expressions as phys_expr;
-use crate::dummies::{dummy_aexpr_binary_fn, dummy_aexpr_filter, dummy_aexpr_sort_by};
+use crate::dummies::{dummy_aexpr_filter, dummy_aexpr_sort_by};
 use crate::logical_plan::Context;
 use crate::physical_plan::executors::*;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, agg_source_paths, has_aexpr};
+use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr};
 use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::prelude::*;
@@ -259,7 +259,6 @@ impl DefaultPlanner {
                 let mut partitionable = true;
 
                 // we create a dummy to check if this is in the expression tree. very ugly.
-                let dummy_binary_fn = dummy_aexpr_binary_fn();
                 let dummy_sort_by = dummy_aexpr_sort_by();
                 let dummy_filter = dummy_aexpr_filter();
 
@@ -267,7 +266,7 @@ impl DefaultPlanner {
                 if aggs.len() == 1 && keys.len() == 1 {
                     for agg in &aggs {
                         // make sure that we don't have a binary expr in the expr tree
-                        if has_aexpr(*agg, expr_arena, &dummy_binary_fn)
+                        if aexpr_to_root_nodes(*agg, expr_arena).len() != 1
                             || has_aexpr(*agg, expr_arena, &dummy_sort_by)
                             || has_aexpr(*agg, expr_arena, &dummy_filter)
                         {

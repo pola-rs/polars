@@ -17,15 +17,6 @@ impl Default for NoEq<Arc<dyn BinaryUdfOutputField>> {
     }
 }
 
-pub(crate) fn dummy_aexpr_binary_fn() -> AExpr {
-    AExpr::BinaryFunction {
-        input_a: Default::default(),
-        input_b: Default::default(),
-        function: Default::default(),
-        output_field: Default::default(),
-    }
-}
-
 pub(crate) fn dummy_aexpr_sort_by() -> AExpr {
     AExpr::SortBy {
         expr: Default::default(),

@@ -100,7 +100,9 @@ pub(crate) fn rename_aexpr_root_name(
             });
             Ok(())
         }
-        _ => Err(PolarsError::Other("had more than one root columns".into())),
+        _ => {
+            panic!("had more than one root columns");
+        }
     }
 }
 
