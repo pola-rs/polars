@@ -970,11 +970,13 @@ pub(crate) trait AggFirst {
 
 macro_rules! impl_agg_first {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
-        $groups
+        let mut ca = $groups
             .iter()
             .map(|(first, _idx)| $self.get(*first as usize))
-            .collect::<$ca_type>()
-            .into_series()
+            .collect::<$ca_type>();
+
+        ca.categorical_map = $self.categorical_map.clone();
+        ca.into_series()
     }};
 }
 
@@ -1008,11 +1010,15 @@ impl AggFirst for ListChunked {
 
 impl AggFirst for CategoricalChunked {
     fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.cast::<UInt32Type>()
+        let out = self
+            .cast::<UInt32Type>()
             .unwrap()
             .agg_first(groups)
             .cast::<CategoricalType>()
-            .unwrap()
+            .unwrap();
+
+        debug_assert!(out.categorical().unwrap().categorical_map.is_some());
+        out
     }
 }
 
@@ -1029,11 +1035,13 @@ pub(crate) trait AggLast {
 
 macro_rules! impl_agg_last {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
-        $groups
+        let mut ca = $groups
             .iter()
             .map(|(_first, idx)| $self.get(idx[idx.len() - 1] as usize))
-            .collect::<$ca_type>()
-            .into_series()
+            .collect::<$ca_type>();
+
+        ca.categorical_map = $self.categorical_map.clone();
+        ca.into_series()
     }};
 }
 
@@ -1130,7 +1138,13 @@ impl AggNUnique for Float64Chunked {}
 impl AggNUnique for ListChunked {}
 impl AggNUnique for CategoricalChunked {
     fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-        self.cast::<UInt32Type>().unwrap().agg_n_unique(groups)
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .agg_n_unique(groups)
+            .map(|mut ca| {
+                ca.categorical_map = self.categorical_map.clone();
+                ca
+            })
     }
 }
 #[cfg(feature = "object")]
