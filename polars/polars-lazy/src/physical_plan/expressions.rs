@@ -801,6 +801,20 @@ impl PhysicalExpr for CastExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
     }
+
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+        Ok(self)
+    }
+}
+
+impl PhysicalAggregation for CastExpr {
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+        let agg_expr = self.input.as_agg_expr()?;
+        let opt_agg = agg_expr.aggregate(df, groups)?;
+        opt_agg
+            .map(|agg| agg.cast_with_datatype(&self.data_type))
+            .transpose()
+    }
 }
 
 pub struct TernaryExpr {

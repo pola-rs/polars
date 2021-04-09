@@ -28,11 +28,11 @@ where
 }
 
 macro_rules! cast_from_dtype {
-    ($self: expr, $kernel:expr, $dtype: ident) => {{
+    ($self: expr, $kernel:expr, $dtype: expr) => {{
         let chunks = $self
             .downcast_chunks()
             .into_iter()
-            .map(|arr| $kernel(arr, ArrowDataType::$dtype))
+            .map(|arr| $kernel(arr, $dtype))
             .collect();
 
         Ok(ChunkedArray::new_from_chunks($self.field.name(), chunks))
@@ -91,17 +91,29 @@ where
                 ca.field = Arc::new(Field::new(ca.name(), DataType::Categorical));
                 return Ok(ca);
             }
-            // underlying type: i64
-            (Duration(_), UInt64) => cast_from_dtype!(self, cast_numeric_from_dtype, UInt64),
             // the underlying datatype is i64 so we transmute array
             (Duration(_), Int64) => unsafe {
-                cast_from_dtype!(self, transmute_array_from_dtype, Int64)
+                cast_from_dtype!(self, transmute_array_from_dtype, Int64.to_arrow())
             },
-            (Duration(_), Float32) | (Date32, Float32) | (Date64, Float32) => {
-                cast_from_dtype!(self, cast_numeric_from_dtype, Float32)
+            // paths not supported by arrow kernel
+            // to float32
+            (Duration(_), Float32) | (Date32, Float32) | (Date64, Float32)
+            // to float64
+           | (Duration(_), Float64) | (Date32, Float64) | (Date64, Float64)
+            // underlying type: i64
+            | (Duration(_), UInt64)
+            => {
+                cast_from_dtype!(self, cast_numeric_from_dtype, N::get_dtype().to_arrow())
             }
-            (Duration(_), Float64) | (Date32, Float64) | (Date64, Float64) => {
-                cast_from_dtype!(self, cast_numeric_from_dtype, Float64)
+            // to date64
+            (Float64, Date64) | (Float32, Date64) => {
+                let out: Result<Int64Chunked> = cast_from_dtype!(self, cast_numeric_from_dtype, Int64.to_arrow());
+                out?.cast::<N>()
+            }
+            // to date64
+            (Float64, Date32) | (Float32, Date32) => {
+                let out: Result<Int32Chunked> = cast_from_dtype!(self, cast_numeric_from_dtype, Int32.to_arrow());
+                out?.cast::<N>()
             }
             _ => cast_ca(self),
         };
