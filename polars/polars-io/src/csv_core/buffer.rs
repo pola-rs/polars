@@ -220,8 +220,7 @@ pub(crate) fn init_buffers(
             // we overallocate 20%
             if field.data_type() == &DataType::Utf8 {
                 str_capacity =
-                    // TODO! determine Ordering
-                    (str_capacities[str_index].load(Ordering::Relaxed) as f32 * 1.2) as usize;
+                    (str_capacities[str_index].load(Ordering::Acquire) as f32 * 1.2) as usize;
                 str_index += 1;
             }
 

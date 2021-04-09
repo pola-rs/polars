@@ -738,6 +738,19 @@ class Expr:
     def count(self) -> "Expr":
         return wrap_expr(self._pyexpr.count())
 
+    def slice(self, offset: int, length: int):
+        """
+        Slice the Series
+
+        Parameters
+        ----------
+        offset
+            Start index
+        length
+            Length of the slice
+        """
+        return wrap_expr(self._pyexpr.slice(offset, length))
+
     def cum_sum(self, reverse: bool):
         """
         Get an array with the cumulative sum computed at every element

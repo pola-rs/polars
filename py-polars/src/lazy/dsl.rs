@@ -182,8 +182,13 @@ impl PyExpr {
     pub fn tail(&self, n: Option<usize>) -> PyExpr {
         self.clone().inner.tail(n).into()
     }
+
     pub fn head(&self, n: Option<usize>) -> PyExpr {
         self.clone().inner.head(n).into()
+    }
+
+    pub fn slice(&self, offset: i64, length: usize) -> PyExpr {
+        self.clone().inner.slice(offset, length).into()
     }
 
     pub fn is_duplicated(&self) -> PyExpr {
