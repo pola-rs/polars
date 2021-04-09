@@ -1195,6 +1195,18 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.nanosecond())
 
+    def filter(self, predicate: "Expr") -> "Expr":
+        """
+        Filter a single column
+        Should be used in aggregation context. If you want to filter on a DataFrame level, use `LazyFrame.filter`
+
+        Parameters
+        ----------
+        predicate
+            Boolean expression
+        """
+        return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
+
     def map(
         self,
         f: "Union[UDF, Callable[[Series], Series]]",

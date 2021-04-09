@@ -277,8 +277,8 @@ impl Executor for CsvExec {
 }
 
 pub struct FilterExec {
-    predicate: Arc<dyn PhysicalExpr>,
-    input: Box<dyn Executor>,
+    pub(crate) predicate: Arc<dyn PhysicalExpr>,
+    pub(crate) input: Box<dyn Executor>,
 }
 
 impl FilterExec {

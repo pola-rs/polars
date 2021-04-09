@@ -4,6 +4,7 @@ use crate::prelude::*;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::prelude::*;
 use polars_core::utils::{slice_offsets, NoNull};
+use rayon::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -768,5 +769,60 @@ impl PhysicalExpr for BinaryFunctionExpr {
     }
     fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
+    }
+}
+
+pub struct FilterExpr {
+    pub(crate) input: Arc<dyn PhysicalExpr>,
+    pub(crate) by: Arc<dyn PhysicalExpr>,
+    expr: Expr,
+}
+
+impl FilterExpr {
+    pub fn new(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>, expr: Expr) -> Self {
+        Self { input, by, expr }
+    }
+}
+
+impl PhysicalExpr for FilterExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
+    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+        let series = self.input.evaluate(df)?;
+        let predicate = self.by.evaluate(df)?;
+        series.filter(predicate.bool()?)
+    }
+
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        let s = self.input.evaluate(df)?;
+        let predicate_s = self.by.evaluate(df)?;
+        let predicate = predicate_s.bool()?;
+
+        let groups = groups
+            .par_iter()
+            .map(|(first, idx)| {
+                let idx: Vec<u32> = idx
+                    .iter()
+                    .filter_map(|i| match predicate.get(*i as usize) {
+                        Some(true) => Some(*i),
+                        _ => None,
+                    })
+                    .collect();
+
+                (*idx.get(0).unwrap_or(first), idx)
+            })
+            .collect();
+
+        Ok((s, Cow::Owned(groups)))
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.input.to_field(input_schema)
     }
 }

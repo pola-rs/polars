@@ -153,8 +153,12 @@ impl PyExpr {
             .into()
     }
 
-    pub fn fill_none(&self, expr: PyExpr) -> PyResult<PyExpr> {
-        Ok(self.clone().inner.fill_none(expr.inner).into())
+    pub fn fill_none(&self, expr: PyExpr) -> PyExpr {
+        self.clone().inner.fill_none(expr.inner).into()
+    }
+
+    pub fn filter(&self, predicate: PyExpr) -> PyExpr {
+        self.clone().inner.filter(predicate.inner).into()
     }
     pub fn reverse(&self) -> PyExpr {
         self.clone().inner.reverse().into()
