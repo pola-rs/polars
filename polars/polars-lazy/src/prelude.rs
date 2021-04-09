@@ -9,7 +9,7 @@ pub use crate::{
         executors::{CsvExec, DataFrameExec, FilterExec, GroupByExec, StandardExec},
         expressions::*,
         planner::DefaultPlanner,
-        Executor, PhysicalExpr, PhysicalPlanner,
+        Executor, PhysicalPlanner,
     },
 };
 
