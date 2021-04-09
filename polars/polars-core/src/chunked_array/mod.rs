@@ -215,16 +215,53 @@ impl<T> ChunkedArray<T> {
             .collect()
     }
 
-    /// Series to ChunkedArray<T>
-    pub fn unpack_series_matching_type(&self, series: &Series) -> Result<&ChunkedArray<T>> {
+    /// Unpack a Series to the same physical type.
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe as the dtype may be uncorrect and
+    /// is assumed to be correct in other unsafe code.
+    pub(crate) unsafe fn unpack_series_matching_physical_type(
+        &self,
+        series: &Series,
+    ) -> Result<&ChunkedArray<T>> {
         let series_trait = &**series;
         if self.dtype() == series.dtype() {
-            let ca =
-                unsafe { &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>) };
+            let ca = &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>);
             Ok(ca)
         } else {
+            use DataType::*;
+            match (self.dtype(), series.dtype()) {
+                (Int64, Date64) | (Int32, Date32) | (Int64, Duration(_)) | (Int64, Time64(_)) => {
+                    let ca = &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>);
+                    Ok(ca)
+                }
+                _ => Err(PolarsError::DataTypeMisMatch(
+                    format!(
+                        "cannot unpack series {:?} into matching type {:?}",
+                        series,
+                        self.dtype()
+                    )
+                    .into(),
+                )),
+            }
+        }
+    }
+
+    /// Series to ChunkedArray<T>
+    pub fn unpack_series_matching_type(&self, series: &Series) -> Result<&ChunkedArray<T>> {
+        if self.dtype() == series.dtype() {
+            // Safety
+            // dtype will be correct.
+            unsafe { self.unpack_series_matching_physical_type(series) }
+        } else {
             Err(PolarsError::DataTypeMisMatch(
-                format!("cannot unpack series {:?} into matching type", series).into(),
+                format!(
+                    "cannot unpack series {:?} into matching type {:?}",
+                    series,
+                    self.dtype()
+                )
+                .into(),
             ))
         }
     }

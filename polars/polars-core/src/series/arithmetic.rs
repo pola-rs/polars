@@ -66,27 +66,29 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn subtract(&self, rhs: &Series) -> Result<Series> {
-        let rhs = self.unpack_series_matching_type(rhs)?;
+        // Safety:
+        // The ChunkedArray with the wrong dtype is dropped after this operation
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
         let out = self - rhs;
         Ok(out.into_series())
     }
     fn add_to(&self, rhs: &Series) -> Result<Series> {
-        let rhs = self.unpack_series_matching_type(rhs)?;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
         let out = self + rhs;
         Ok(out.into_series())
     }
     fn multiply(&self, rhs: &Series) -> Result<Series> {
-        let rhs = self.unpack_series_matching_type(rhs)?;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
         let out = self * rhs;
         Ok(out.into_series())
     }
     fn divide(&self, rhs: &Series) -> Result<Series> {
-        let rhs = self.unpack_series_matching_type(rhs)?;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
         let out = self / rhs;
         Ok(out.into_series())
     }
     fn remainder(&self, rhs: &Series) -> Result<Series> {
-        let rhs = self.unpack_series_matching_type(rhs)?;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
         let out = self % rhs;
         Ok(out.into_series())
     }
@@ -512,5 +514,15 @@ mod test {
         assert_eq!((&s * &s).name(), "foo");
         assert_eq!((&s * 1).name(), "foo");
         assert_eq!((1.div(&s)).name(), "foo");
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-date64")]
+    fn test_arithmetic_series_date() {
+        // Date Series have a different dispatch, so let's test that.
+        let s = Date64Chunked::new_from_slice("foo", &[0, 1, 2, 3]).into_series();
+
+        // test if it runs.
+        let _ = &s * &s;
     }
 }
