@@ -1,7 +1,7 @@
 //! Domain specific language for the Lazy api.
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{output_name, rename_field};
+use crate::utils::{has_expr, output_name, rename_field};
 use polars_core::{
     frame::groupby::{fmt_groupby_column, GroupByMethod},
     prelude::*,
@@ -964,6 +964,21 @@ impl Expr {
     /// Raise expression to the power `exponent`
     pub fn pow(self, exponent: f64) -> Self {
         self.map(move |s: Series| s.pow(exponent), Some(DataType::Float64))
+    }
+
+    /// Filter a single column
+    /// Should be used in aggregation context. If you want to filter on a DataFrame level, use
+    /// [LazyFrame::filter](LazyFrame::filter)
+    pub fn filter(self, predicate: Expr) -> Self {
+        if has_expr(&self, &Expr::Wildcard) {
+            panic!("filter '*' not allowed, use LazyFrame::filter")
+        };
+        map_binary(
+            self,
+            predicate,
+            |s, predicate| s.filter(predicate.bool()?),
+            None,
+        )
     }
 
     /// Check if the values of the left expression are in the lists of the right expr.

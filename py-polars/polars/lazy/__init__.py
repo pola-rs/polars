@@ -1594,7 +1594,7 @@ def lit(value: "Optional[Union[float, int, str, datetime]]") -> "Expr":
     ```
     """
     if isinstance(value, datetime):
-        lit(int(value.timestamp() * 1e3))
+        return lit(int(value.timestamp() * 1e3)).cast(datatypes.Date64)
 
     return wrap_expr(pylit(value))
 
