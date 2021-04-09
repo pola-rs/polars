@@ -1895,4 +1895,21 @@ mod test {
             [Some(1), Some(4), Some(6)]
         );
     }
+
+    #[test]
+    fn test_lazy_groupby_cast() {
+        let df = df! {
+            "a" => ["a", "a", "a", "b", "b", "c"],
+            "b" => [1, 2, 3, 4, 5, 6]
+        }
+        .unwrap();
+
+        // test if it runs in groupby context
+        let out = df
+            .lazy()
+            .groupby(vec![col("a")])
+            .agg(vec![col("b").mean().cast(DataType::Date64)])
+            .collect()
+            .unwrap();
+    }
 }
