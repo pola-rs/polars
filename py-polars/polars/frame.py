@@ -1726,9 +1726,13 @@ class GroupBy:
 
                 pass
             else:
-                raise ValueError(f"argument: {column_to_agg} not understood")
+                raise ValueError(
+                    f"argument: {column_to_agg} not understood, have you passed a list of expressions?"
+                )
         else:
-            raise ValueError(f"argument: {column_to_agg} not understood")
+            raise ValueError(
+                f"argument: {column_to_agg} not understood, have you passed a list of expressions?"
+            )
 
         if self.downsample:
             return wrap_df(

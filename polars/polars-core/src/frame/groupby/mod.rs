@@ -748,7 +748,17 @@ pub(crate) trait NumericAggSync {
     }
 }
 
-impl NumericAggSync for BooleanChunked {}
+impl NumericAggSync for BooleanChunked {
+    fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.cast::<UInt32Type>().unwrap().agg_min(groups)
+    }
+    fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.cast::<UInt32Type>().unwrap().agg_max(groups)
+    }
+    fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.cast::<UInt32Type>().unwrap().agg_sum(groups)
+    }
+}
 impl NumericAggSync for Utf8Chunked {}
 impl NumericAggSync for ListChunked {}
 impl NumericAggSync for CategoricalChunked {}
@@ -1147,9 +1157,14 @@ pub(crate) trait AggList {
 impl<T> AggList for ChunkedArray<T>
 where
     T: PolarsDataType,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoSeries + ChunkCast,
 {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        let s = match self.dtype() {
+            DataType::Categorical => self.cast::<Utf8Type>().unwrap().into_series(),
+            _ => self.clone().into_series(),
+        };
+
         // TODO! use collect, can be faster
         // needed capacity for the list
         let values_cap = groups.iter().fold(0, |acc, g| acc + g.1.len());
@@ -1197,7 +1212,6 @@ where
             }};
         }
 
-        let s = self.clone().into_series();
         Some(match_arrow_data_type_apply_macro!(
             s.dtype(),
             impl_gb,

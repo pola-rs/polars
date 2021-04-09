@@ -529,6 +529,8 @@ pub fn lit(value: &PyAny) -> PyExpr {
                 .expect("could not transform Python string to Rust Unicode"),
         )
         .into()
+    } else if value.is_none() {
+        dsl::lit(Null {}).into()
     } else {
         panic!("could not convert value {:?} as a Literal", value)
     }

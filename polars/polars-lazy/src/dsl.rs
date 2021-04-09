@@ -1218,6 +1218,15 @@ make_literal!(u32, UInt32);
 #[cfg(feature = "dtype-u64")]
 make_literal!(u64, UInt64);
 
+/// The literal Null
+pub struct Null {}
+
+impl Literal for Null {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Null)
+    }
+}
+
 #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {

@@ -359,6 +359,11 @@ fn prepare_row(row: Vec<AnyValue>, n_first: usize, n_last: usize) -> Vec<String>
 
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let height = self.height();
+        if !self.columns.iter().all(|s| s.len() == height) {
+            panic!("The columns lengths in the DataFrame are not equal.");
+        }
+
         let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
             .unwrap_or_else(|_| "8".to_string())
             .parse()
@@ -540,7 +545,7 @@ impl Display for AnyValue<'_> {
 macro_rules! fmt_option {
     ($opt:expr) => {{
         match $opt {
-            Some(v) => format!("{:?}", v),
+            Some(v) => format!("{}", v),
             None => "null".to_string(),
         }
     }};
@@ -579,6 +584,7 @@ pub(crate) trait FmtList {
 impl<T> FmtList for ChunkedArray<T>
 where
     T: PolarsPrimitiveType,
+    T::Native: fmt::Display,
 {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)

@@ -467,9 +467,7 @@ impl PyDataFrame {
     }
 
     pub fn slice(&self, offset: usize, length: usize) -> Self {
-        let df = self
-            .df
-            .slice(offset as i64, length);
+        let df = self.df.slice(offset as i64, length);
         df.into()
     }
 
