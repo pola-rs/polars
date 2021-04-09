@@ -135,7 +135,7 @@ impl DataFrame {
         }
     }
 
-    /// Get a reference to the DataFrame schema.
+    /// Get the DataFrame schema.
     pub fn schema(&self) -> Schema {
         let fields = Self::create_fields(&self.columns);
         Schema::new(fields)

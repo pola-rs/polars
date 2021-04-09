@@ -368,8 +368,61 @@ where
     /// Read the file and create the DataFrame.
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        let mut csv_reader = self.build_inner_reader()?;
-        let df = csv_reader.as_df(None, None)?;
+
+        let df = if let Some(schema) = self.schema_overwrite {
+            // This branch we check if there are dtypes we cannot parse.
+            // We only support a few dtypes in the parser and later cast to the required dtype
+            let mut to_cast = Vec::with_capacity(schema.len());
+
+            let fields = schema
+                .fields()
+                .iter()
+                .map(|fld| {
+                    match fld.data_type() {
+                        // For categorical we first read as utf8 and later cast to categorical
+                        DataType::Categorical => {
+                            to_cast.push(fld);
+                            Field::new(fld.name(), DataType::Utf8)
+                        }
+                        _ => fld.clone(),
+                    }
+                })
+                .collect();
+            let schema = Schema::new(fields);
+
+            // we cannot overwrite self, because the lifetime is already instantiated with `a, and
+            // the lifetime that accompanies this scope is shorter.
+            // So we just build_csv_reader from here
+            let mut csv_reader = build_csv_reader(
+                self.reader,
+                self.stop_after_n_rows,
+                self.skip_rows,
+                self.projection,
+                self.batch_size,
+                self.max_records,
+                self.delimiter,
+                self.has_header,
+                self.ignore_parser_errors,
+                self.schema,
+                self.columns,
+                self.encoding,
+                self.n_threads,
+                self.path,
+                Some(&schema),
+                self.sample_size,
+                self.chunk_size,
+            )?;
+            let mut df = csv_reader.as_df(None, None)?;
+
+            // cast to the original dtypes in the schema
+            for fld in to_cast {
+                df.may_apply(fld.name(), |s| s.cast_with_datatype(&DataType::Categorical))?;
+            }
+            df
+        } else {
+            let mut csv_reader = self.build_inner_reader()?;
+            csv_reader.as_df(None, None)?
+        };
 
         match rechunk {
             true => {

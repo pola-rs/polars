@@ -443,3 +443,11 @@ def test_row_tuple():
     assert df.row(0) == ("foo", 1, 1.0)
     assert df.row(1) == ("bar", 2, 2.0)
     assert df.row(-1) == ("2", 3, 3.0)
+
+
+def test_read_csv_categorical():
+    f = BytesIO()
+    f.write(b"col1,col2,col3,col4,col5,col6\n'foo',2,3,4,5,6\n'bar',8,9,10,11,12")
+    f.seek(0)
+    df = pl.DataFrame.read_csv(f, has_headers=True, dtype={"col1": pl.Categorical})
+    assert df["col1"].dtype == pl.Categorical
