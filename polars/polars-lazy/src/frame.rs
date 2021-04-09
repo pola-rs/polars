@@ -1897,6 +1897,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-date64")]
     fn test_lazy_groupby_cast() {
         let df = df! {
             "a" => ["a", "a", "a", "b", "b", "c"],
@@ -1911,5 +1912,27 @@ mod test {
             .agg(vec![col("b").mean().cast(DataType::Date64)])
             .collect()
             .unwrap();
+    }
+
+    #[test]
+    fn test_lazy_groupby_binary_expr() {
+        let df = df! {
+            "a" => ["a", "a", "a", "b", "b", "c"],
+            "b" => [1, 2, 3, 4, 5, 6]
+        }
+        .unwrap();
+
+        // test if it runs in groupby context
+        let out = df
+            .lazy()
+            .groupby(vec![col("a")])
+            .agg(vec![col("b").mean() * lit(2)])
+            .sort("a", false)
+            .collect()
+            .unwrap();
+        assert_eq!(
+            Vec::from(out.column("b_mean").unwrap().f64().unwrap()),
+            [Some(4.0), Some(9.0), Some(12.0)]
+        );
     }
 }

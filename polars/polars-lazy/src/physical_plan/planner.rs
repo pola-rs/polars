@@ -492,7 +492,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Min)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Min)))
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
@@ -512,7 +512,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Max)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Max)))
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
@@ -532,7 +532,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Sum)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Sum)))
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
@@ -552,7 +552,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Std)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Std)))
                             }
                             Context::Default => {
                                 let function =
@@ -571,7 +571,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Var)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Var)))
                             }
                             Context::Default => {
                                 let function =
@@ -590,7 +590,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Mean)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Mean)))
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
@@ -612,7 +612,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Median)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Median)))
                             }
                             Context::Default => {
                                 let function =
@@ -631,7 +631,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::First)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::First)))
                             }
                             Context::Default => {
                                 let function =
@@ -650,7 +650,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Last)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Last)))
                             }
                             Context::Default => {
                                 let function =
@@ -669,7 +669,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::List)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::List)))
                             }
                             Context::Default => {
                                 panic!(
@@ -681,7 +681,7 @@ impl DefaultPlanner {
                     AAggExpr::NUnique(expr) => {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
-                            Context::Aggregation => Ok(Arc::new(PhysicalAggExpr::new(
+                            Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
                                 input,
                                 GroupByMethod::NUnique,
                             ))),
@@ -728,7 +728,7 @@ impl DefaultPlanner {
                             panic!("agg groups expression only supported in aggregation context")
                         }
                         let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                        Ok(Arc::new(PhysicalAggExpr::new(
+                        Ok(Arc::new(AggregationExpr::new(
                             phys_expr,
                             GroupByMethod::Groups,
                         )))
@@ -737,7 +737,7 @@ impl DefaultPlanner {
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(PhysicalAggExpr::new(input, GroupByMethod::Count)))
+                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Count)))
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
