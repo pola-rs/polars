@@ -808,7 +808,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.sort(reverse))
 
-    def sort_by(self, by: "Expr", reverse: bool = False) -> "Expr":
+    def sort_by(self, by: "Union[Expr, str]", reverse: bool = False) -> "Expr":
         """
         Sort this column by the ordering of another column.
         In projection/ selection context the whole column is sorted.
@@ -822,7 +822,10 @@ class Expr:
             False -> order from small to large
             True -> order from large to small
         """
-        return wrap_expr(self._pyexpr.sort_by(by, reverse))
+        if isinstance(by, str):
+            by = col(by)
+
+        return wrap_expr(self._pyexpr.sort_by(by._pyexpr, reverse))
 
     def shift(self, periods: int) -> "Expr":
         """
@@ -1570,7 +1573,7 @@ def lit_date(dt: "datetime") -> Expr:
     return lit(int(dt.timestamp() * 1e3))
 
 
-def lit(value: Union[float, int, str, datetime]) -> "Expr":
+def lit(value: "Optional[Union[float, int, str, datetime]]") -> "Expr":
     """
     A literal value
 
@@ -1585,6 +1588,9 @@ def lit(value: Union[float, int, str, datetime]) -> "Expr":
 
     # literal date64
     lit(datetime(2021, 1, 20))
+
+    # literal Null
+    lit(None)
     ```
     """
     if isinstance(value, datetime):

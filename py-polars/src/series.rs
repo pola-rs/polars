@@ -314,9 +314,7 @@ impl PySeries {
     }
 
     pub fn slice(&self, offset: i64, length: usize) -> Self {
-        let series = self
-            .series
-            .slice(offset , length);
+        let series = self.series.slice(offset, length);
         series.into()
     }
 
@@ -1416,7 +1414,6 @@ impl_max!(max_i32, i32);
 impl_max!(max_i64, i64);
 impl_max!(max_f32, f32);
 impl_max!(max_f64, f64);
-
 
 macro_rules! impl_eq_num {
     ($name:ident, $type:ty) => {
