@@ -206,6 +206,10 @@ pub enum Expr {
     Duplicated(Box<Expr>),
     IsUnique(Box<Expr>),
     Explode(Box<Expr>),
+    Filter {
+        input: Box<Expr>,
+        by: Box<Expr>,
+    },
     /// See postgres window functions
     Window {
         /// Also has the input. i.e. avg("foo")
@@ -296,6 +300,7 @@ impl Expr {
             IsNotNull(_) => Ok(Field::new("is_not_null", DataType::Boolean)),
             Sort { expr, .. } => expr.to_field(schema, ctxt),
             SortBy { expr, .. } => expr.to_field(schema, ctxt),
+            Filter { input, .. } => input.to_field(schema, ctxt),
             Agg(agg) => {
                 use AggExpr::*;
                 let field = match agg {
@@ -443,6 +448,9 @@ impl fmt::Debug for Expr {
                 true => write!(f, "{:?} DESC BY {:?}", expr, by),
                 false => write!(f, "{:?} ASC BY {:?}", expr, by),
             },
+            Filter { input, by } => {
+                write!(f, "FILTER {:?} BY {:?}", input, by)
+            }
             Agg(agg) => {
                 use AggExpr::*;
                 match agg {
@@ -973,12 +981,10 @@ impl Expr {
         if has_expr(&self, &Expr::Wildcard) {
             panic!("filter '*' not allowed, use LazyFrame::filter")
         };
-        map_binary(
-            self,
-            predicate,
-            |s, predicate| s.filter(predicate.bool()?),
-            None,
-        )
+        Expr::Filter {
+            input: Box::new(self),
+            by: Box::new(predicate),
+        }
     }
 
     /// Check if the values of the left expression are in the lists of the right expr.

@@ -1,5 +1,5 @@
 use super::expressions as phys_expr;
-use crate::dummies::{dummy_aexpr_binary_fn, dummy_aexpr_sort_by};
+use crate::dummies::{dummy_aexpr_binary_fn, dummy_aexpr_filter, dummy_aexpr_sort_by};
 use crate::logical_plan::Context;
 use crate::physical_plan::executors::*;
 use crate::prelude::*;
@@ -261,6 +261,7 @@ impl DefaultPlanner {
                 // we create a dummy to check if this is in the expression tree. very ugly.
                 let dummy_binary_fn = dummy_aexpr_binary_fn();
                 let dummy_sort_by = dummy_aexpr_sort_by();
+                let dummy_filter = dummy_aexpr_filter();
 
                 // currently only a single aggregation seems faster with ad-hoc partitioning.
                 if aggs.len() == 1 && keys.len() == 1 {
@@ -268,6 +269,7 @@ impl DefaultPlanner {
                         // make sure that we don't have a binary expr in the expr tree
                         if has_aexpr(*agg, expr_arena, &dummy_binary_fn)
                             || has_aexpr(*agg, expr_arena, &dummy_sort_by)
+                            || has_aexpr(*agg, expr_arena, &dummy_filter)
                         {
                             partitionable = false;
                             break;
@@ -453,6 +455,15 @@ impl DefaultPlanner {
                     phys_expr,
                     phys_by,
                     reverse,
+                    node_to_exp(expression, expr_arena),
+                )))
+            }
+            Filter { input, by } => {
+                let phys_input = self.create_physical_expr(input, ctxt, expr_arena)?;
+                let phys_by = self.create_physical_expr(by, ctxt, expr_arena)?;
+                Ok(Arc::new(FilterExpr::new(
+                    phys_input,
+                    phys_by,
                     node_to_exp(expression, expr_arena),
                 )))
             }

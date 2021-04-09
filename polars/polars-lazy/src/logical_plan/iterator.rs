@@ -24,6 +24,10 @@ impl<'a> Iterator for ExprIter<'a> {
                 IsNotNull(e) => push(e),
                 Cast { expr, .. } => push(expr),
                 Sort { expr, .. } => push(expr),
+                Filter { input, by } => {
+                    push(input);
+                    push(by)
+                }
                 SortBy { expr, by, .. } => {
                     push(expr);
                     push(by)
@@ -118,6 +122,10 @@ impl AExpr {
             Sort { expr, .. } => push(expr),
             SortBy { expr, by, .. } => {
                 push(expr);
+                push(by);
+            }
+            Filter { input, by } => {
+                push(input);
                 push(by);
             }
             Agg(agg_e) => {

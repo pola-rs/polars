@@ -669,6 +669,9 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             Box::new(replace_wildcard_with_column(*e, column_name)),
             name,
         ),
+        Expr::Filter { .. } => {
+            panic!("Expression filter may not be used with wildcard, use LazyFrame::filter")
+        }
         Expr::Agg(agg) => match agg {
             AggExpr::Mean(e) => {
                 AggExpr::Mean(Box::new(replace_wildcard_with_column(*e, column_name)))

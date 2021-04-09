@@ -1935,4 +1935,27 @@ mod test {
             [Some(4.0), Some(9.0), Some(12.0)]
         );
     }
+
+    #[test]
+    fn test_lazy_groupby_filter() {
+        let df = df! {
+            "a" => ["a", "a", "a", "b", "b", "c"],
+            "b" => [1, 2, 3, 4, 5, 6]
+        }
+        .unwrap();
+
+        // test if it runs in groupby context
+        let out = df
+            .lazy()
+            .groupby(vec![col("a")])
+            .agg(vec![col("b").filter(col("a").eq(lit("a"))).sum()])
+            .sort("a", false)
+            .collect()
+            .unwrap();
+
+        assert_eq!(
+            Vec::from(out.column("b_sum").unwrap().i32().unwrap()),
+            [Some(6), Some(0), Some(0)]
+        );
+    }
 }

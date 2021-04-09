@@ -33,3 +33,9 @@ pub(crate) fn dummy_aexpr_sort_by() -> AExpr {
         reverse: Default::default(),
     }
 }
+pub(crate) fn dummy_aexpr_filter() -> AExpr {
+    AExpr::Filter {
+        input: Default::default(),
+        by: Default::default(),
+    }
+}

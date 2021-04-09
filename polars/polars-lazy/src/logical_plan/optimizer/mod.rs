@@ -213,6 +213,10 @@ pub enum AExpr {
         by: Node,
         reverse: bool,
     },
+    Filter {
+        input: Node,
+        by: Node,
+    },
     Agg(AAggExpr),
     Ternary {
         predicate: Node,
@@ -351,6 +355,7 @@ impl AExpr {
             IsNotNull(_) => Ok(Field::new("is_not_null", DataType::Boolean)),
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
+            Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {
                 use AAggExpr::*;
                 let field = match agg {
@@ -476,7 +481,8 @@ impl AExpr {
                 let field_a = arena.get(*input_a).to_field(schema, ctxt, arena)?;
                 let field_b = arena.get(*input_b).to_field(schema, ctxt, arena)?;
                 let out = output_field.get_field(schema, ctxt, &field_a, &field_b);
-                Ok(out.unwrap())
+                // TODO: remove Option?
+                Ok(out.expect("field should be set"))
             }
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
@@ -667,6 +673,10 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             expr: to_aexpr(*expr, arena),
             by: to_aexpr(*by, arena),
             reverse,
+        },
+        Expr::Filter { input, by } => AExpr::Filter {
+            input: to_aexpr(*input, arena),
+            by: to_aexpr(*by, arena),
         },
         Expr::Agg(agg) => {
             let a_agg = match agg {
@@ -1047,6 +1057,14 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 expr: Box::new(expr),
                 by: Box::new(by),
                 reverse,
+            }
+        }
+        AExpr::Filter { input, by } => {
+            let input = node_to_exp(input, expr_arena);
+            let by = node_to_exp(by, expr_arena);
+            Expr::Filter {
+                input: Box::new(input),
+                by: Box::new(by),
             }
         }
         AExpr::Agg(agg) => match agg {
