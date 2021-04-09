@@ -79,7 +79,7 @@ fn rename_option_series(opt: Option<Series>, name: &str) -> Option<Series> {
     })
 }
 
-impl PhysicalAggregation for PhysicalAggExpr {
+impl PhysicalAggregation for AggregationExpr {
     fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
         let (series, groups) = self.expr.evaluate_on_groups(df, groups)?;
         let new_name = fmt_groupby_column(series.name(), self.agg_type);
@@ -341,5 +341,41 @@ impl PhysicalAggregation for BinaryFunctionExpr {
             return Ok(Some(ca.explode()?));
         }
         Ok(Some(ca.into_series()))
+    }
+}
+
+impl PhysicalAggregation for BinaryExpr {
+    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+        match (self.left.as_agg_expr(), self.right.as_agg_expr()) {
+            (Ok(left), Err(_)) => {
+                let opt_agg = left.aggregate(df, groups)?;
+                let rhs = self.right.evaluate(df)?;
+                opt_agg
+                    .map(|agg| apply_operator(&agg, &rhs, self.op))
+                    .transpose()
+            }
+            (Err(_), Ok(right)) => {
+                let opt_agg = right.aggregate(df, groups)?;
+                let lhs = self.left.evaluate(df)?;
+                opt_agg
+                    .map(|agg| apply_operator(&lhs, &agg, self.op))
+                    .transpose()
+            }
+            (Ok(left), Ok(right)) => {
+                let right_agg = right.aggregate(df, groups)?;
+                left.aggregate(df, groups)?
+                    .and_then(|left| right_agg.map(|right| apply_operator(&left, &right, self.op)))
+                    .transpose()
+            }
+            (_, _) => Err(PolarsError::Other(
+                "both expressions could not be used in an aggregation context.".into(),
+            )),
+        }
+    }
+}
+
+impl PhysicalAggregation for LiteralExpr {
+    fn aggregate(&self, df: &DataFrame, _groups: &GroupTuples) -> Result<Option<Series>> {
+        PhysicalExpr::evaluate(self, df).map(Some)
     }
 }

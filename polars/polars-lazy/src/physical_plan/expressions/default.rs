@@ -112,12 +112,16 @@ impl PhysicalExpr for LiteralExpr {
         };
         Ok(field)
     }
+
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+        Ok(self)
+    }
 }
 
 pub struct BinaryExpr {
-    left: Arc<dyn PhysicalExpr>,
-    op: Operator,
-    right: Arc<dyn PhysicalExpr>,
+    pub(crate) left: Arc<dyn PhysicalExpr>,
+    pub(crate) op: Operator,
+    pub(crate) right: Arc<dyn PhysicalExpr>,
     expr: Expr,
 }
 
@@ -137,6 +141,27 @@ impl BinaryExpr {
     }
 }
 
+pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Series> {
+    match op {
+        Operator::Gt => Ok(ChunkCompare::<&Series>::gt(left, right).into_series()),
+        Operator::GtEq => Ok(ChunkCompare::<&Series>::gt_eq(left, right).into_series()),
+        Operator::Lt => Ok(ChunkCompare::<&Series>::lt(left, right).into_series()),
+        Operator::LtEq => Ok(ChunkCompare::<&Series>::lt_eq(left, right).into_series()),
+        Operator::Eq => Ok(ChunkCompare::<&Series>::eq(left, right).into_series()),
+        Operator::NotEq => Ok(ChunkCompare::<&Series>::neq(left, right).into_series()),
+        Operator::Plus => Ok(left + right),
+        Operator::Minus => Ok(left - right),
+        Operator::Multiply => Ok(left * right),
+        Operator::Divide => Ok(left / right),
+        Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
+        Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
+        Operator::Not => Ok(ChunkCompare::<&Series>::eq(left, right).into_series()),
+        Operator::Like => todo!(),
+        Operator::NotLike => todo!(),
+        Operator::Modulus => Ok(left % right),
+    }
+}
+
 impl PhysicalExpr for BinaryExpr {
     fn as_expression(&self) -> &Expr {
         &self.expr
@@ -145,30 +170,14 @@ impl PhysicalExpr for BinaryExpr {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         let lhs = self.left.evaluate(df)?;
         let rhs = self.right.evaluate(df)?;
-        let left = &lhs;
-        let right = &rhs;
-
-        match self.op {
-            Operator::Gt => Ok(ChunkCompare::<&Series>::gt(left, right).into_series()),
-            Operator::GtEq => Ok(ChunkCompare::<&Series>::gt_eq(left, right).into_series()),
-            Operator::Lt => Ok(ChunkCompare::<&Series>::lt(left, right).into_series()),
-            Operator::LtEq => Ok(ChunkCompare::<&Series>::lt_eq(left, right).into_series()),
-            Operator::Eq => Ok(ChunkCompare::<&Series>::eq(left, right).into_series()),
-            Operator::NotEq => Ok(ChunkCompare::<&Series>::neq(left, right).into_series()),
-            Operator::Plus => Ok(left + right),
-            Operator::Minus => Ok(left - right),
-            Operator::Multiply => Ok(left * right),
-            Operator::Divide => Ok(left / right),
-            Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
-            Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
-            Operator::Not => Ok(ChunkCompare::<&Series>::eq(left, right).into_series()),
-            Operator::Like => todo!(),
-            Operator::NotLike => todo!(),
-            Operator::Modulus => Ok(left % right),
-        }
+        apply_operator(&lhs, &rhs, self.op)
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         todo!()
+    }
+
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+        Ok(self)
     }
 }
 
@@ -476,18 +485,18 @@ impl PhysicalExpr for IsNotNullExpr {
     }
 }
 
-pub(crate) struct PhysicalAggExpr {
+pub(crate) struct AggregationExpr {
     pub(crate) expr: Arc<dyn PhysicalExpr>,
     pub(crate) agg_type: GroupByMethod,
 }
 
-impl PhysicalAggExpr {
+impl AggregationExpr {
     pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod) -> Self {
         Self { expr, agg_type }
     }
 }
 
-impl PhysicalExpr for PhysicalAggExpr {
+impl PhysicalExpr for AggregationExpr {
     fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
         unimplemented!()
     }
