@@ -252,9 +252,8 @@ pub(crate) fn df_rows_to_hashes(
         iter.fold(first, |acc, s| {
             let chunks = acc
                 .data_views()
-                .iter()
                 .zip(s.data_views())
-                .map(|(&array_left, array_right)| {
+                .map(|(array_left, array_right)| {
                     let av: AlignedVec<_> = array_left
                         .iter()
                         .zip(array_right)
