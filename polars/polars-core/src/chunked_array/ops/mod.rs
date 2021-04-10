@@ -266,7 +266,7 @@ pub type TakeIdxIterNull<'a, INull> = TakeIdx<'a, Dummy<usize>, INull>;
 impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
     fn from(ca: &'a UInt32Chunked) -> Self {
         if ca.chunks.len() == 1 {
-            TakeIdx::Array(ca.downcast_chunks()[0])
+            TakeIdx::Array(ca.downcast_chunks().next().unwrap())
         } else {
             panic!("implementation error, should be transformed to an iterator by the caller")
         }

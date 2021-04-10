@@ -51,15 +51,15 @@ where
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_primitive(chunks[0], array) as ArrayRef,
-                    (_, 1) => take(chunks[0], array, None).unwrap(),
+                    (0, 1) => take_no_null_primitive(chunks.next().unwrap(), array) as ArrayRef,
+                    (_, 1) => take(chunks.next().unwrap(), array, None).unwrap(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -83,8 +83,11 @@ where
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_primitive_iter_unchecked(chunks[0], iter) as ArrayRef,
-                    (_, 1) => take_primitive_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (0, 1) => take_no_null_primitive_iter_unchecked(chunks.next().unwrap(), iter)
+                        as ArrayRef,
+                    (_, 1) => {
+                        take_primitive_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
+                    }
                     _ => {
                         let mut ca = take_primitive_iter_n_chunks(self, iter);
                         ca.rename(self.name());
@@ -99,9 +102,12 @@ where
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => {
-                        take_no_null_primitive_opt_iter_unchecked(chunks[0], iter) as ArrayRef
+                        take_no_null_primitive_opt_iter_unchecked(chunks.next().unwrap(), iter)
+                            as ArrayRef
                     }
-                    (_, 1) => take_primitive_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (_, 1) => {
+                        take_primitive_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
+                    }
                     _ => {
                         let mut ca = take_primitive_opt_iter_n_chunks(self, iter);
                         ca.rename(self.name());
@@ -119,14 +125,14 @@ where
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks[0], array, None).unwrap(),
+                    1 => take(chunks.next().unwrap(), array, None).unwrap(),
                     _ => {
                         let iter = array
                             .into_iter()
@@ -144,8 +150,8 @@ where
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_primitive_iter(chunks[0], iter) as ArrayRef,
-                    (_, 1) => take_primitive_iter(chunks[0], iter) as ArrayRef,
+                    (0, 1) => take_no_null_primitive_iter(chunks.next().unwrap(), iter) as ArrayRef,
+                    (_, 1) => take_primitive_iter(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
                         let mut ca = take_primitive_iter_n_chunks(self, iter);
                         ca.rename(self.name());
@@ -168,14 +174,14 @@ impl ChunkTake for BooleanChunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks[0], array, None).unwrap(),
+                    1 => take(chunks.next().unwrap(), array, None).unwrap(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -199,8 +205,10 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_bool_iter_unchecked(chunks[0], iter) as ArrayRef,
-                    (_, 1) => take_bool_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (0, 1) => {
+                        take_no_null_bool_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
+                    }
+                    (_, 1) => take_bool_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
                         let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
                         ca.rename(self.name());
@@ -214,8 +222,11 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_bool_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
-                    (_, 1) => take_bool_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (0, 1) => take_no_null_bool_opt_iter_unchecked(chunks.next().unwrap(), iter)
+                        as ArrayRef,
+                    (_, 1) => {
+                        take_bool_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
+                    }
                     _ => {
                         let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
                         ca.rename(self.name());
@@ -233,14 +244,14 @@ impl ChunkTake for BooleanChunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks[0], array, None).unwrap(),
+                    1 => take(chunks.next().unwrap(), array, None).unwrap(),
                     _ => {
                         let iter = array.values().iter().map(|i| *i as usize);
                         let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
@@ -255,8 +266,8 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_bool_iter(chunks[0], iter) as ArrayRef,
-                    (_, 1) => take_bool_iter(chunks[0], iter) as ArrayRef,
+                    (0, 1) => take_no_null_bool_iter(chunks.next().unwrap(), iter) as ArrayRef,
+                    (_, 1) => take_bool_iter(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
                         let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
                         ca.rename(self.name());
@@ -279,14 +290,14 @@ impl ChunkTake for Utf8Chunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take_utf8(chunks[0], array) as ArrayRef,
+                    1 => take_utf8(chunks.next().unwrap(), array) as ArrayRef,
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -310,8 +321,10 @@ impl ChunkTake for Utf8Chunked {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_utf8_iter_unchecked(chunks[0], iter) as ArrayRef,
-                    (_, 1) => take_utf8_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (0, 1) => {
+                        take_no_null_utf8_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
+                    }
+                    (_, 1) => take_utf8_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
                         let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
                         ca.rename(self.name());
@@ -325,8 +338,11 @@ impl ChunkTake for Utf8Chunked {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_utf8_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
-                    (_, 1) => take_utf8_opt_iter_unchecked(chunks[0], iter) as ArrayRef,
+                    (0, 1) => take_no_null_utf8_opt_iter_unchecked(chunks.next().unwrap(), iter)
+                        as ArrayRef,
+                    (_, 1) => {
+                        take_utf8_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
+                    }
                     _ => {
                         let mut ca: Utf8Chunked = take_opt_iter_n_chunks!(self, iter);
                         ca.rename(self.name());
@@ -344,14 +360,14 @@ impl ChunkTake for Utf8Chunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks[0], array, None).unwrap() as ArrayRef,
+                    1 => take(chunks.next().unwrap(), array, None).unwrap() as ArrayRef,
                     _ => {
                         let iter = array.values().iter().map(|i| *i as usize);
                         let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
@@ -366,8 +382,8 @@ impl ChunkTake for Utf8Chunked {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_utf8_iter(chunks[0], iter) as ArrayRef,
-                    (_, 1) => take_utf8_iter(chunks[0], iter) as ArrayRef,
+                    (0, 1) => take_no_null_utf8_iter(chunks.next().unwrap(), iter) as ArrayRef,
+                    (_, 1) => take_utf8_iter(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
                         let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
                         ca.rename(self.name());
@@ -399,14 +415,14 @@ impl ChunkTake for ListChunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_chunks();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks[0], array, None).unwrap() as ArrayRef,
+                    1 => take(chunks.next().unwrap(), array, None).unwrap() as ArrayRef,
                     _ => {
                         let ca = self.rechunk();
                         return ca.take(indices);
@@ -501,11 +517,16 @@ pub trait IntoTakeRandom<'a> {
 /// Choose the Struct for multiple chunks or the struct for a single chunk.
 macro_rules! many_or_single {
     ($self:ident, $StructSingle:ident, $StructMany:ident) => {{
-        let chunks = $self.downcast_chunks();
-        if chunks.len() == 1 {
-            Box::new($StructSingle { arr: chunks[0] })
+        let mut chunks = $self.downcast_chunks();
+        if $self.chunks.len() == 1 {
+            Box::new($StructSingle {
+                arr: chunks.next().unwrap(),
+            })
         } else {
-            Box::new($StructMany { ca: $self, chunks })
+            Box::new($StructMany {
+                ca: $self,
+                chunks: chunks.collect(),
+            })
         }
     }};
 }
@@ -521,11 +542,16 @@ where
         match self.cont_slice() {
             Ok(slice) => Box::new(NumTakeRandomCont { slice }),
             _ => {
-                let chunks = self.downcast_chunks();
-                if chunks.len() == 1 {
-                    Box::new(NumTakeRandomSingleChunk { arr: chunks[0] })
+                let mut chunks = self.downcast_chunks();
+                if self.chunks.len() == 1 {
+                    Box::new(NumTakeRandomSingleChunk {
+                        arr: chunks.next().unwrap(),
+                    })
                 } else {
-                    Box::new(NumTakeRandomChunked { ca: self, chunks })
+                    Box::new(NumTakeRandomChunked {
+                        ca: self,
+                        chunks: chunks.collect(),
+                    })
                 }
             }
         }
@@ -555,14 +581,17 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
     type TakeRandom = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
     fn take_rand(&self) -> Self::TakeRandom {
-        let chunks = self.downcast_chunks();
-        if chunks.len() == 1 {
+        let mut chunks = self.downcast_chunks();
+        if self.chunks.len() == 1 {
             Box::new(ListTakeRandomSingleChunk {
-                arr: chunks[0],
+                arr: chunks.next().unwrap(),
                 name: self.name(),
             })
         } else {
-            Box::new(ListTakeRandom { ca: self, chunks })
+            Box::new(ListTakeRandom {
+                ca: self,
+                chunks: chunks.collect(),
+            })
         }
     }
 }

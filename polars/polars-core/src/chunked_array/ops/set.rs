@@ -62,8 +62,11 @@ where
             if let Some(value) = value {
                 // fast path uses kernel
                 if self.chunks.len() == 1 {
-                    let arr =
-                        set_at_idx_no_null(self.downcast_chunks()[0], idx.into_iter(), value)?;
+                    let arr = set_at_idx_no_null(
+                        self.downcast_chunks().next().unwrap(),
+                        idx.into_iter(),
+                        value,
+                    )?;
                     return Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]));
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy

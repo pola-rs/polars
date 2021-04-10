@@ -22,7 +22,6 @@ where
     ) -> Result<BooleanChunked> {
         let chunks = self
             .downcast_chunks()
-            .iter()
             .zip(rhs.downcast_chunks())
             .map(|(left, right)| {
                 let arr_res = operator(left, right);
@@ -572,7 +571,6 @@ impl BooleanChunked {
     ) -> Result<BooleanChunked> {
         let chunks = self
             .downcast_chunks()
-            .iter()
             .zip(rhs.downcast_chunks())
             .map(|(left, right)| {
                 let arr_res = operator(left, right);
@@ -646,7 +644,6 @@ impl Not for &BooleanChunked {
     fn not(self) -> Self::Output {
         let chunks = self
             .downcast_chunks()
-            .iter()
             .map(|a| {
                 let arr = compute::not(a).expect("should not fail");
                 Arc::new(arr) as ArrayRef

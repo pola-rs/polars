@@ -63,10 +63,9 @@ where
             let (left, right, mask) = align_chunks_ternary(self, other, mask);
             let chunks = left
                 .downcast_chunks()
-                .iter()
-                .zip(&right.downcast_chunks())
-                .zip(&mask.downcast_chunks())
-                .map(|((&left_c, &right_c), mask_c)| {
+                .zip(right.downcast_chunks())
+                .zip(mask.downcast_chunks())
+                .map(|((left_c, right_c), mask_c)| {
                     let arr = zip(mask_c, left_c, right_c)?;
                     Ok(arr)
                 })
@@ -85,10 +84,9 @@ impl ChunkZip<BooleanType> for BooleanChunked {
             let (left, right, mask) = align_chunks_ternary(self, other, mask);
             let chunks = left
                 .downcast_chunks()
-                .iter()
-                .zip(&right.downcast_chunks())
-                .zip(&mask.downcast_chunks())
-                .map(|((&left_c, &right_c), mask_c)| {
+                .zip(right.downcast_chunks())
+                .zip(mask.downcast_chunks())
+                .map(|((left_c, right_c), mask_c)| {
                     let arr = zip(mask_c, left_c, right_c)?;
                     Ok(arr)
                 })
@@ -106,10 +104,9 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
             let (left, right, mask) = align_chunks_ternary(self, other, mask);
             let chunks = left
                 .downcast_chunks()
-                .iter()
-                .zip(&right.downcast_chunks())
-                .zip(&mask.downcast_chunks())
-                .map(|((&left_c, &right_c), mask_c)| {
+                .zip(right.downcast_chunks())
+                .zip(mask.downcast_chunks())
+                .map(|((left_c, right_c), mask_c)| {
                     let arr = zip(mask_c, left_c, right_c)?;
                     Ok(arr)
                 })
@@ -127,10 +124,9 @@ impl ChunkZip<ListType> for ListChunked {
         let (left, right, mask) = align_chunks_ternary(self, other, mask);
         let chunks = left
             .downcast_chunks()
-            .iter()
-            .zip(&right.downcast_chunks())
-            .zip(&mask.downcast_chunks())
-            .map(|((&left_c, &right_c), mask_c)| {
+            .zip(right.downcast_chunks())
+            .zip(mask.downcast_chunks())
+            .map(|((left_c, right_c), mask_c)| {
                 let arr = zip(mask_c, left_c, right_c)?;
                 Ok(arr)
             })

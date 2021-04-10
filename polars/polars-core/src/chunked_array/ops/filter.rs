@@ -43,9 +43,8 @@ where
 
         let chunks = left
             .downcast_chunks()
-            .iter()
             .zip(filter.downcast_chunks())
-            .map(|(&left, mask)| filter_fn(left, mask).unwrap())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
     }
@@ -65,9 +64,8 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
 
         let chunks = left
             .downcast_chunks()
-            .iter()
             .zip(filter.downcast_chunks())
-            .map(|(&left, mask)| filter_fn(left, mask).unwrap())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
     }
@@ -87,9 +85,8 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
 
         let chunks = left
             .downcast_chunks()
-            .iter()
             .zip(filter.downcast_chunks())
-            .map(|(&left, mask)| filter_fn(left, mask).unwrap())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
     }
@@ -118,9 +115,8 @@ impl ChunkFilter<ListType> for ListChunked {
 
         let chunks = left
             .downcast_chunks()
-            .iter()
             .zip(filter.downcast_chunks())
-            .map(|(&left, mask)| filter_fn(left, mask).unwrap())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
     }
@@ -147,7 +143,7 @@ where
                 "cannot filter empty object array".into(),
             ));
         }
-        let chunks = self.downcast_chunks();
+        let chunks = self.downcast_chunks().collect::<Vec<_>>();
         let mut builder = ObjectChunkedBuilder::<T>::new(self.name(), self.len());
         for (idx, mask) in filter.into_iter().enumerate() {
             if mask.unwrap_or(false) {

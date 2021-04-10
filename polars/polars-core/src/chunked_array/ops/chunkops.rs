@@ -108,19 +108,19 @@ where
             // todo! use iterators once implemented
             // no_null path
             if self.null_count() == 0 {
-                for idx in 0..self.len() {
-                    let (chunk_idx, idx) = self.index_to_chunked_index(idx);
-                    let arr = unsafe { &**chunks.get_unchecked(chunk_idx) };
-                    builder.append_value(arr.value(idx).clone())
+                for arr in chunks {
+                    for idx in 0..arr.len() {
+                        builder.append_value(arr.value(idx).clone())
+                    }
                 }
             } else {
-                for idx in 0..self.len() {
-                    let (chunk_idx, idx) = self.index_to_chunked_index(idx);
-                    let arr = unsafe { &**chunks.get_unchecked(chunk_idx) };
-                    if arr.is_valid(idx) {
-                        builder.append_value(arr.value(idx).clone())
-                    } else {
-                        builder.append_null()
+                for arr in chunks {
+                    for idx in 0..arr.len() {
+                        if arr.is_valid(idx) {
+                            builder.append_value(arr.value(idx).clone())
+                        } else {
+                            builder.append_null()
+                        }
                     }
                 }
             }

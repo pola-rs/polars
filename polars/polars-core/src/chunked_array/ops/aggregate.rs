@@ -84,8 +84,7 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_chunks()
-            .iter()
-            .map(|&a| compute::sum(a))
+            .map(|a| compute::sum(a))
             .fold(None, |acc, v| match v {
                 Some(v) => match acc {
                     None => Some(v),
@@ -101,8 +100,7 @@ where
             DataType::Float64 => agg_float_with_nans!(self, min, f64),
             _ => self
                 .downcast_chunks()
-                .iter()
-                .filter_map(|&a| compute::min(a))
+                .filter_map(|a| compute::min(a))
                 .fold_first_(|acc, v| if acc < v { acc } else { v }),
         }
     }
@@ -113,8 +111,7 @@ where
             DataType::Float64 => agg_float_with_nans!(self, max, f64),
             _ => self
                 .downcast_chunks()
-                .iter()
-                .filter_map(|&a| compute::max(a))
+                .filter_map(|a| compute::max(a))
                 .fold_first_(|acc, v| if acc > v { acc } else { v }),
         }
     }

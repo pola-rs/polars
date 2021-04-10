@@ -701,7 +701,11 @@ where
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            Ok(self.downcast_chunks()[0].values())
+            Ok(self
+                .downcast_chunks()
+                .next()
+                .map(|arr| arr.values())
+                .unwrap())
         } else {
             Err(PolarsError::NoSlice)
         }
@@ -711,10 +715,7 @@ where
     /// NOTE: null values should be taken into account by the user of these slices as they are handled
     /// separately
     pub fn data_views(&self) -> Vec<&[T::Native]> {
-        self.downcast_chunks()
-            .iter()
-            .map(|arr| arr.values())
-            .collect()
+        self.downcast_chunks().map(|arr| arr.values()).collect()
     }
 
     /// If [cont_slice](#method.cont_slice) is successful a closure is mapped over the elements.
@@ -824,74 +825,57 @@ impl<T> Clone for ChunkedArray<T> {
     }
 }
 
-pub trait Downcast<T> {
-    fn downcast_chunks(&self) -> Vec<&T>;
-}
-
-impl<T> Downcast<PrimitiveArray<T>> for ChunkedArray<T>
+impl<T> ChunkedArray<T>
 where
     T: PolarsPrimitiveType,
 {
-    fn downcast_chunks(&self) -> Vec<&PrimitiveArray<T>> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const PrimitiveArray<T>) }
-            })
-            .collect::<Vec<_>>()
+    pub fn downcast_chunks(
+        &self,
+    ) -> impl Iterator<Item = &PrimitiveArray<T>> + DoubleEndedIterator {
+        self.chunks.iter().map(|arr| {
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const PrimitiveArray<T>) }
+        })
     }
 }
 
-impl Downcast<BooleanArray> for BooleanChunked {
-    fn downcast_chunks(&self) -> Vec<&BooleanArray> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const BooleanArray) }
-            })
-            .collect::<Vec<_>>()
+impl BooleanChunked {
+    pub fn downcast_chunks(&self) -> impl Iterator<Item = &BooleanArray> + DoubleEndedIterator {
+        self.chunks.iter().map(|arr| {
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const BooleanArray) }
+        })
     }
 }
 
-impl Downcast<LargeStringArray> for Utf8Chunked {
-    fn downcast_chunks(&self) -> Vec<&LargeStringArray> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const LargeStringArray) }
-            })
-            .collect::<Vec<_>>()
+impl Utf8Chunked {
+    pub fn downcast_chunks(&self) -> impl Iterator<Item = &LargeStringArray> + DoubleEndedIterator {
+        self.chunks.iter().map(|arr| {
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const LargeStringArray) }
+        })
     }
 }
 
-impl Downcast<LargeListArray> for ListChunked {
-    fn downcast_chunks(&self) -> Vec<&LargeListArray> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const LargeListArray) }
-            })
-            .collect::<Vec<_>>()
+impl ListChunked {
+    pub fn downcast_chunks(&self) -> impl Iterator<Item = &LargeListArray> + DoubleEndedIterator {
+        self.chunks.iter().map(|arr| {
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const LargeListArray) }
+        })
     }
 }
 
 #[cfg(feature = "object")]
-impl<T> Downcast<ObjectArray<T>> for ObjectChunked<T>
+impl<T> ObjectChunked<T>
 where
     T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
 {
-    fn downcast_chunks(&self) -> Vec<&ObjectArray<T>> {
-        self.chunks
-            .iter()
-            .map(|arr| {
-                let arr = &**arr;
-                unsafe { &*(arr as *const dyn Array as *const ObjectArray<T>) }
-            })
-            .collect::<Vec<_>>()
+    pub fn downcast_chunks(&self) -> impl Iterator<Item = &ObjectArray<T>> + DoubleEndedIterator {
+        self.chunks.iter().map(|arr| {
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const ObjectArray<T>) }
+        })
     }
 }
 
