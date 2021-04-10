@@ -1,5 +1,5 @@
-use crate::datatypes::CategoricalChunked;
 use crate::chunked_array::ops::downcast::Chunks;
+use crate::datatypes::CategoricalChunked;
 use crate::prelude::{
     BooleanChunked, ChunkedArray, ListChunked, PolarsNumericType, Series, UnsafeValue, Utf8Chunked,
 };
@@ -406,7 +406,7 @@ where
     }
 
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunks= ca.downcast_chunks();
+        let chunks = ca.downcast_chunks();
         let arr_left = chunks.get(0).unwrap();
         let current_iter_left = arr_left.values().iter().copied();
         let current_data_left = arr_left.data();

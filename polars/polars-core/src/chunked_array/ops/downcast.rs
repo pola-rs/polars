@@ -2,7 +2,7 @@
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray
+    Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
 };
 use std::marker::PhantomData;
 
@@ -47,7 +47,7 @@ where
             unsafe { &*(arr as *const dyn Array as *const PrimitiveArray<T>) }
         })
     }
-    pub fn downcast_chunks(& self) -> Chunks<'_, PrimitiveArray<T>> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, PrimitiveArray<T>> {
         Chunks::new(&self.chunks)
     }
 }
@@ -59,7 +59,7 @@ impl BooleanChunked {
             unsafe { &*(arr as *const dyn Array as *const BooleanArray) }
         })
     }
-    pub fn downcast_chunks(& self) -> Chunks<'_, BooleanArray> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, BooleanArray> {
         Chunks::new(&self.chunks)
     }
 }
@@ -71,7 +71,7 @@ impl Utf8Chunked {
             unsafe { &*(arr as *const dyn Array as *const LargeStringArray) }
         })
     }
-    pub fn downcast_chunks(& self) -> Chunks<'_, LargeStringArray> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, LargeStringArray> {
         Chunks::new(&self.chunks)
     }
 }
@@ -99,7 +99,7 @@ where
             unsafe { &*(arr as *const dyn Array as *const ObjectArray<T>) }
         })
     }
-    pub fn downcast_chunks(& self) -> Chunks<'_, ObjectArray<T>> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, ObjectArray<T>> {
         Chunks::new(&self.chunks)
     }
 }

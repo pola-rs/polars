@@ -4,8 +4,8 @@ use crate::prelude::*;
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-        Int64Array, Int8Array, LargeStringArray, Time64NanosecondArray,
-        UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+        Int64Array, Int8Array, LargeStringArray, Time64NanosecondArray, UInt16Array, UInt32Array,
+        UInt64Array, UInt8Array,
     },
     buffer::Buffer,
     datatypes::TimeUnit,
@@ -679,7 +679,7 @@ where
     fn as_single_ptr(&mut self) -> Result<usize> {
         let mut ca = self.rechunk();
         mem::swap(&mut ca, self);
-        let a = self.data_views()[0];
+        let a = self.data_views().next().unwrap();
         let ptr = a.as_ptr();
         Ok(ptr as usize)
     }
@@ -708,8 +708,8 @@ where
     /// Get slices of the underlying arrow data.
     /// NOTE: null values should be taken into account by the user of these slices as they are handled
     /// separately
-    pub fn data_views(&self) -> Vec<&[T::Native]> {
-        self.downcast_iter().map(|arr| arr.values()).collect()
+    pub fn data_views(&self) -> impl Iterator<Item = &[T::Native]> {
+        self.downcast_iter().map(|arr| arr.values())
     }
 
     /// If [cont_slice](#method.cont_slice) is successful a closure is mapped over the elements.
