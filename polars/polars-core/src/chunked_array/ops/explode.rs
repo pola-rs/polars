@@ -33,7 +33,10 @@ impl ChunkExplode for ListChunked {
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
-        let listarr: &LargeListArray = ca.downcast_chunks()[0];
+        let listarr: &LargeListArray = ca
+            .downcast_chunks()
+            .next()
+            .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
         let list_data = listarr.data();
         let values = listarr.values();
         let offset_ptr = list_data.buffers()[0].as_ptr() as *const i64;
@@ -51,7 +54,10 @@ impl ChunkExplode for Utf8Chunked {
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
-        let stringarr: &LargeStringArray = ca.downcast_chunks()[0];
+        let stringarr: &LargeStringArray = ca
+            .downcast_chunks()
+            .next()
+            .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
         let list_data = stringarr.data();
         let str_values_buf = stringarr.value_data();
 

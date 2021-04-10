@@ -1,7 +1,6 @@
 use crate::datatypes::CategoricalChunked;
 use crate::prelude::{
-    BooleanChunked, ChunkedArray, Downcast, ListChunked, PolarsNumericType, Series, UnsafeValue,
-    Utf8Chunked,
+    BooleanChunked, ChunkedArray, ListChunked, PolarsNumericType, Series, UnsafeValue, Utf8Chunked,
 };
 use arrow::array::{
     Array, ArrayData, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
@@ -88,7 +87,7 @@ where
     T: PolarsNumericType,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunk = ca.downcast_chunks()[0];
+        let chunk = ca.downcast_chunks().next().unwrap();
         let slice = chunk.values();
         let iter = slice.iter().copied();
 
@@ -138,8 +137,8 @@ where
     T: PolarsNumericType,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunks = ca.downcast_chunks();
-        let arr = chunks[0];
+        let mut chunks = ca.downcast_chunks();
+        let arr = chunks.next().unwrap();
         let idx_left = 0;
         let idx_right = arr.len();
 
@@ -250,7 +249,8 @@ where
         }
     }
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunks = ca.downcast_chunks();
+        // TODO: traverse iterator without collect
+        let chunks: Vec<_> = ca.downcast_chunks().collect();
         let current_iter_left = chunks[0].values().iter().copied();
 
         let idx_left = 0;
@@ -292,7 +292,7 @@ where
             // iterators have met in the middle or at the end
             if self.idx_left == self.idx_right {
                 return None;
-            // one chunk is finished but there are still more chunks
+                // one chunk is finished but there are still more chunks
             } else {
                 self.chunk_idx_left += 1;
                 self.set_current_iter_left();
@@ -327,7 +327,7 @@ where
             // iterators have met in the middle or at the beginning
             if self.idx_left == self.idx_right {
                 return None;
-            // one chunk is finished but there are still more chunks
+                // one chunk is finished but there are still more chunks
             } else {
                 self.chunk_idx_right -= 1;
                 self.set_current_iter_right();
@@ -406,7 +406,8 @@ where
     }
 
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunks = ca.downcast_chunks();
+        // TODO: traverse without collect
+        let chunks: Vec<_> = ca.downcast_chunks().collect();
         let arr_left = chunks[0];
         let current_iter_left = arr_left.values().iter().copied();
         let current_data_left = arr_left.data();
@@ -456,7 +457,7 @@ where
             // iterators have met in the middle or at the end
             if self.idx_left == self.idx_right {
                 return None;
-            // one chunk is finished but there are still more chunks
+                // one chunk is finished but there are still more chunks
             } else {
                 self.chunk_idx_left += 1;
                 // reset the index
@@ -501,7 +502,7 @@ where
             // iterators have met in the middle or at the beginning
             if self.idx_left == self.idx_right {
                 return None;
-            // one chunk is finished but there are still more chunks
+                // one chunk is finished but there are still more chunks
             } else {
                 self.chunk_idx_right -= 1;
                 self.set_current_iter_right();
@@ -536,8 +537,7 @@ where
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let chunks = self.downcast_chunks();
-        match chunks.len() {
+        match self.chunks.len() {
             1 => {
                 if self.null_count() == 0 {
                     Box::new(SomeIterator(NumIterSingleChunk::new(self)))
@@ -623,8 +623,7 @@ macro_rules! impl_single_chunk_iterator {
 
         impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
-                let chunks = ca.downcast_chunks();
-                let current_array = chunks[0];
+                let current_array = ca.downcast_chunks().next().unwrap();
                 let idx_left = 0;
                 let idx_right = current_array.len();
 
@@ -752,8 +751,7 @@ macro_rules! impl_single_chunk_null_check_iterator {
 
         impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
-                let chunks = ca.downcast_chunks();
-                let current_array = chunks[0];
+                let current_array  = ca.downcast_chunks().next().unwrap();
                 let current_data = current_array.data();
                 let idx_left = 0;
                 let idx_right = current_array.len();
@@ -893,7 +891,8 @@ macro_rules! impl_many_chunk_iterator {
 
         impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
-                let chunks = ca.downcast_chunks();
+                // TODO: fix without collect
+                let chunks: Vec<_> = ca.downcast_chunks().collect();
                 let current_array_left = chunks[0];
                 let idx_left = 0;
                 let chunk_idx_left = 0;
@@ -1087,7 +1086,8 @@ macro_rules! impl_many_chunk_null_check_iterator {
 
         impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
-                let chunks = ca.downcast_chunks();
+                // TODO: fix without collect
+                let chunks: Vec<_> = ca.downcast_chunks().collect();
                 let current_array_left = chunks[0];
                 let current_data_left = current_array_left.data();
                 let idx_left = 0;
@@ -1281,8 +1281,7 @@ macro_rules! impl_into_polars_iterator {
             /// Decides which iterator fits best the current chunked array. The decision are based
             /// on the number of chunks and the existence of null values.
             fn into_iter(self) -> Self::IntoIter {
-                let chunks = self.downcast_chunks();
-                match chunks.len() {
+                match self.chunks.len() {
                     1 => {
                         if self.null_count() == 0 {
                             Box::new(SomeIterator($single_chunk_ident::new(self)))

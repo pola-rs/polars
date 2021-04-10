@@ -73,7 +73,6 @@ where
             let (lhs, rhs) = align_chunks_binary(lhs, rhs);
             let chunks = lhs
                 .downcast_chunks()
-                .iter()
                 .zip(rhs.downcast_chunks())
                 .map(|(lhs, rhs)| Arc::new(kernel(lhs, rhs).expect("output")) as ArrayRef)
                 .collect();

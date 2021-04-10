@@ -781,7 +781,7 @@ where
                     match (self.null_count(), self.chunks.len()) {
                         (0, 1) => unsafe {
                             take_agg_no_null_primitive_iter_unchecked(
-                                self.downcast_chunks()[0],
+                                self.downcast_chunks().next().unwrap(),
                                 idx.iter().map(|i| *i as usize),
                                 |a, b| a + b,
                                 T::Native::zero(),
@@ -791,7 +791,7 @@ where
                         .map(|sum| sum / idx.len() as f64),
                         (_, 1) => unsafe {
                             take_agg_primitive_iter_unchecked(
-                                self.downcast_chunks()[0],
+                                self.downcast_chunks().next().unwrap(),
                                 idx.iter().map(|i| *i as usize),
                                 |a, b| a + b,
                                 T::Native::zero(),
@@ -823,7 +823,7 @@ where
                         match (self.null_count(), self.chunks.len()) {
                             (0, 1) => Some(unsafe {
                                 take_agg_no_null_primitive_iter_unchecked(
-                                    self.downcast_chunks()[0],
+                                    self.downcast_chunks().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| if a < b { a } else { b },
                                     T::Native::max_value(),
@@ -831,7 +831,7 @@ where
                             }),
                             (_, 1) => unsafe {
                                 take_agg_primitive_iter_unchecked(
-                                    self.downcast_chunks()[0],
+                                    self.downcast_chunks().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| if a < b { a } else { b },
                                     T::Native::max_value(),
@@ -862,7 +862,7 @@ where
                         match (self.null_count(), self.chunks.len()) {
                             (0, 1) => Some(unsafe {
                                 take_agg_no_null_primitive_iter_unchecked(
-                                    self.downcast_chunks()[0],
+                                    self.downcast_chunks().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| if a > b { a } else { b },
                                     T::Native::min_value(),
@@ -870,7 +870,7 @@ where
                             }),
                             (_, 1) => unsafe {
                                 take_agg_primitive_iter_unchecked(
-                                    self.downcast_chunks()[0],
+                                    self.downcast_chunks().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| if a > b { a } else { b },
                                     T::Native::min_value(),
@@ -901,7 +901,7 @@ where
                         match (self.null_count(), self.chunks.len()) {
                             (0, 1) => Some(unsafe {
                                 take_agg_no_null_primitive_iter_unchecked(
-                                    self.downcast_chunks()[0],
+                                    self.downcast_chunks().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| a + b,
                                     T::Native::zero(),
@@ -909,7 +909,7 @@ where
                             }),
                             (_, 1) => unsafe {
                                 take_agg_primitive_iter_unchecked(
-                                    self.downcast_chunks()[0],
+                                    self.downcast_chunks().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| a + b,
                                     T::Native::zero(),
@@ -1260,7 +1260,7 @@ where
                     let group_vals =
                         unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
                     let sorted_idx_ca = group_vals.argsort(false);
-                    let sorted_idx = sorted_idx_ca.downcast_chunks()[0].values();
+                    let sorted_idx = sorted_idx_ca.downcast_chunks().next().unwrap().values();
                     let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
                     let value_idx = sorted_idx[quant_idx];
                     group_vals.get(value_idx as usize)
