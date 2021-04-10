@@ -63,7 +63,7 @@ where
                 // fast path uses kernel
                 if self.chunks.len() == 1 {
                     let arr = set_at_idx_no_null(
-                        self.downcast_chunks().next().unwrap(),
+                        self.downcast_iter().next().unwrap(),
                         idx.into_iter(),
                         value,
                     )?;
@@ -110,9 +110,9 @@ where
 
                 // apply binary kernel.
                 let chunks = left
-                    .downcast_chunks()
+                    .downcast_iter()
                     .into_iter()
-                    .zip(mask.downcast_chunks())
+                    .zip(mask.downcast_iter())
                     .map(|(arr, mask)| {
                         let a = set_with_mask(arr, mask, value);
                         Arc::new(a) as ArrayRef

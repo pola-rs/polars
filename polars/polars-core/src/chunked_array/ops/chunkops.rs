@@ -103,7 +103,7 @@ where
             self.clone()
         } else {
             let mut builder = ObjectChunkedBuilder::new(self.name(), self.len());
-            let chunks = self.downcast_chunks();
+            let chunks = self.downcast_iter();
 
             // todo! use iterators once implemented
             // no_null path

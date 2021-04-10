@@ -42,8 +42,8 @@ where
         let (left, filter) = align_chunks_binary(self, filter);
 
         let chunks = left
-            .downcast_chunks()
-            .zip(filter.downcast_chunks())
+            .downcast_iter()
+            .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
@@ -63,8 +63,8 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         let (left, filter) = align_chunks_binary(self, filter);
 
         let chunks = left
-            .downcast_chunks()
-            .zip(filter.downcast_chunks())
+            .downcast_iter()
+            .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
@@ -84,8 +84,8 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
         let (left, filter) = align_chunks_binary(self, filter);
 
         let chunks = left
-            .downcast_chunks()
-            .zip(filter.downcast_chunks())
+            .downcast_iter()
+            .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
@@ -114,8 +114,8 @@ impl ChunkFilter<ListType> for ListChunked {
         let (left, filter) = align_chunks_binary(self, filter);
 
         let chunks = left
-            .downcast_chunks()
-            .zip(filter.downcast_chunks())
+            .downcast_iter()
+            .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
         Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
@@ -143,7 +143,7 @@ where
                 "cannot filter empty object array".into(),
             ));
         }
-        let chunks = self.downcast_chunks().collect::<Vec<_>>();
+        let chunks = self.downcast_iter().collect::<Vec<_>>();
         let mut builder = ObjectChunkedBuilder::<T>::new(self.name(), self.len());
         for (idx, mask) in filter.into_iter().enumerate() {
             if mask.unwrap_or(false) {

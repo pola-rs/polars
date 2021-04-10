@@ -72,8 +72,8 @@ where
         (a, b) if a == b => {
             let (lhs, rhs) = align_chunks_binary(lhs, rhs);
             let chunks = lhs
-                .downcast_chunks()
-                .zip(rhs.downcast_chunks())
+                .downcast_iter()
+                .zip(rhs.downcast_iter())
                 .map(|(lhs, rhs)| Arc::new(kernel(lhs, rhs).expect("output")) as ArrayRef)
                 .collect();
             lhs.copy_with_chunks(chunks)

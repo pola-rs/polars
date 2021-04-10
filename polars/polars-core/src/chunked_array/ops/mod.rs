@@ -12,6 +12,7 @@ pub(crate) mod aggregate;
 pub(crate) mod apply;
 pub(crate) mod chunkops;
 pub(crate) mod cum_agg;
+pub(crate) mod downcast;
 pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
@@ -266,7 +267,7 @@ pub type TakeIdxIterNull<'a, INull> = TakeIdx<'a, Dummy<usize>, INull>;
 impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
     fn from(ca: &'a UInt32Chunked) -> Self {
         if ca.chunks.len() == 1 {
-            TakeIdx::Array(ca.downcast_chunks().next().unwrap())
+            TakeIdx::Array(ca.downcast_iter().next().unwrap())
         } else {
             panic!("implementation error, should be transformed to an iterator by the caller")
         }

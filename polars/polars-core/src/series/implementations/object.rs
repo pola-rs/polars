@@ -226,6 +226,7 @@ where
     }
 
     fn get_as_any(&self, index: usize) -> &dyn Any {
-        ObjectChunked::get_as_any(&self.0, index)
+        debug_assert!(index < self.0.len());
+        unsafe { ObjectChunked::get_as_any(&self.0, index) }
     }
 }

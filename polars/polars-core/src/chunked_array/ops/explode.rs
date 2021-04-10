@@ -34,7 +34,7 @@ impl ChunkExplode for ListChunked {
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
         let listarr: &LargeListArray = ca
-            .downcast_chunks()
+            .downcast_iter()
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
         let list_data = listarr.data();
@@ -55,7 +55,7 @@ impl ChunkExplode for Utf8Chunked {
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
         let stringarr: &LargeStringArray = ca
-            .downcast_chunks()
+            .downcast_iter()
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
         let list_data = stringarr.data();
