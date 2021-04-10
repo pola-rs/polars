@@ -206,10 +206,19 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         // keep track of the maximum capacity that needs to be allocated for the utf8-builder
         // Per string column we keep a statistic of the maximum length of string bytes per chunk
+        // We must the names, not the indexes, (the indexes are incorrect due to projection
+        // pushdown)
         let str_columns: Vec<_> = projection
             .iter()
             .copied()
-            .filter(|i| self.schema.field(*i).unwrap().data_type() == &DataType::Utf8)
+            .filter_map(|i| {
+                let fld = self.schema.field(i).unwrap();
+                if fld.data_type() == &DataType::Utf8 {
+                    Some(fld.name())
+                } else {
+                    None
+                }
+            })
             .collect();
         let init_str_bytes = chunk_size * 10;
         let str_capacities: Vec<_> = str_columns
@@ -305,21 +314,19 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
                         let mut str_index = 0;
                         // update the running str bytes statistics
-                        str_columns.iter().for_each(|&i| {
-                            let ca = df.select_at_idx(i).unwrap().utf8().unwrap();
+                        str_columns.iter().for_each(|name| {
+                            let ca = df.column(name).unwrap().utf8().unwrap();
                             let str_bytes_len = ca.get_values_size();
-                            // TODO! determine Ordering
+
                             let prev_value = str_capacities[str_index]
-                                .fetch_max(str_bytes_len, Ordering::Relaxed);
+                                .fetch_max(str_bytes_len, Ordering::Acquire);
                             let prev_cap = (prev_value as f32 * 1.2) as usize;
                             if logging && (prev_cap < str_bytes_len) {
                                 eprintln!(
                                     "needed to reallocate column: {}\
                             \nprevious capacity was: {}\
                             \nneeded capacity was: {}",
-                                    self.schema.field(i).unwrap().name(),
-                                    prev_cap,
-                                    str_bytes_len
+                                    name, prev_cap, str_bytes_len
                                 );
                             }
                             str_index += 1;
