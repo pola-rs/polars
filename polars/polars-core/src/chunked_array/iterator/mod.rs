@@ -1,4 +1,5 @@
 use crate::datatypes::CategoricalChunked;
+use crate::chunked_array::ops::downcast::Chunks;
 use crate::prelude::{
     BooleanChunked, ChunkedArray, ListChunked, PolarsNumericType, Series, UnsafeValue, Utf8Chunked,
 };
@@ -87,7 +88,7 @@ where
     T: PolarsNumericType,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunk = ca.downcast_chunks().next().unwrap();
+        let chunk = ca.downcast_iter().next().unwrap();
         let slice = chunk.values();
         let iter = slice.iter().copied();
 
@@ -137,7 +138,7 @@ where
     T: PolarsNumericType,
 {
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let mut chunks = ca.downcast_chunks();
+        let mut chunks = ca.downcast_iter();
         let arr = chunks.next().unwrap();
         let idx_left = 0;
         let idx_right = arr.len();
@@ -206,7 +207,7 @@ where
     T: PolarsNumericType,
 {
     ca: &'a ChunkedArray<T>,
-    chunks: Vec<&'a PrimitiveArray<T>>,
+    chunks: Chunks<'a, PrimitiveArray<T>>,
     // current iterator if we iterate from the left
     current_iter_left: Copied<Iter<'a, T::Native>>,
     // If iter_left and iter_right are the same, this is None and we need to use iter left
@@ -249,9 +250,8 @@ where
         }
     }
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        // TODO: traverse iterator without collect
-        let chunks: Vec<_> = ca.downcast_chunks().collect();
-        let current_iter_left = chunks[0].values().iter().copied();
+        let chunks = ca.downcast_chunks();
+        let current_iter_left = chunks.get(0).unwrap().values().iter().copied();
 
         let idx_left = 0;
         let chunk_idx_left = 0;
@@ -262,7 +262,7 @@ where
         if chunk_idx_left == chunk_idx_right {
             current_iter_right = None
         } else {
-            let arr = chunks[chunk_idx_right];
+            let arr = chunks.get(chunk_idx_right).unwrap();
             current_iter_right = Some(arr.values().iter().copied())
         }
 
@@ -352,7 +352,7 @@ where
     T: PolarsNumericType,
 {
     ca: &'a ChunkedArray<T>,
-    chunks: Vec<&'a PrimitiveArray<T>>,
+    chunks: Chunks<'a, PrimitiveArray<T>>,
     // current iterator if we iterate from the left
     current_iter_left: Copied<Iter<'a, T::Native>>,
     current_data_left: &'a ArrayData,
@@ -406,9 +406,8 @@ where
     }
 
     fn new(ca: &'a ChunkedArray<T>) -> Self {
-        // TODO: traverse without collect
-        let chunks: Vec<_> = ca.downcast_chunks().collect();
-        let arr_left = chunks[0];
+        let chunks= ca.downcast_chunks();
+        let arr_left = chunks.get(0).unwrap();
         let current_iter_left = arr_left.values().iter().copied();
         let current_data_left = arr_left.data();
 
@@ -418,7 +417,7 @@ where
 
         let chunk_idx_right = chunks.len() - 1;
         let current_iter_right;
-        let arr = chunks[chunk_idx_right];
+        let arr = chunks.get(chunk_idx_right).unwrap();
         let current_data_right = arr.data();
         if chunk_idx_left == chunk_idx_right {
             current_iter_right = None
@@ -623,7 +622,7 @@ macro_rules! impl_single_chunk_iterator {
 
         impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
-                let current_array = ca.downcast_chunks().next().unwrap();
+                let current_array = ca.downcast_iter().next().unwrap();
                 let idx_left = 0;
                 let idx_right = current_array.len();
 
@@ -751,7 +750,7 @@ macro_rules! impl_single_chunk_null_check_iterator {
 
         impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
-                let current_array  = ca.downcast_chunks().next().unwrap();
+                let current_array  = ca.downcast_iter().next().unwrap();
                 let current_data = current_array.data();
                 let idx_left = 0;
                 let idx_right = current_array.len();
@@ -877,7 +876,7 @@ macro_rules! impl_many_chunk_iterator {
         /// The return type is `$iter_item`.
         pub struct $iterator_name<'a> {
             ca: &'a $ca_type,
-            chunks: Vec<&'a $arrow_array>,
+            chunks: Chunks<'a, $arrow_array>,
             current_array_left: &'a $arrow_array,
             current_array_right: &'a $arrow_array,
             current_array_idx_left: usize,
@@ -891,13 +890,12 @@ macro_rules! impl_many_chunk_iterator {
 
         impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
-                // TODO: fix without collect
-                let chunks: Vec<_> = ca.downcast_chunks().collect();
-                let current_array_left = chunks[0];
+                let chunks = ca.downcast_chunks();
+                let current_array_left = chunks.get(0).unwrap();
                 let idx_left = 0;
                 let chunk_idx_left = 0;
                 let chunk_idx_right = chunks.len() - 1;
-                let current_array_right = chunks[chunk_idx_right];
+                let current_array_right = chunks.get(chunk_idx_right).unwrap();
                 let idx_right = ca.len();
                 let current_array_idx_left = 0;
                 let current_array_idx_right = current_array_right.len();
@@ -924,7 +922,7 @@ macro_rules! impl_many_chunk_iterator {
                 let (chunk_idx_left, current_array_idx_left) = self.ca.index_to_chunked_index(idx_left);
                 self.chunk_idx_left = chunk_idx_left;
                 self.current_array_idx_left = current_array_idx_left;
-                self.current_array_left = self.chunks[chunk_idx_left];
+                self.current_array_left = self.chunks.get(chunk_idx_left).unwrap();
                 self.current_array_left_len = self.current_array_left.len();
             }
 
@@ -977,7 +975,7 @@ macro_rules! impl_many_chunk_iterator {
                     if self.chunk_idx_left < self.chunks.len() {
                         // reset to new array
                         self.current_array_idx_left = 0;
-                        self.current_array_left = self.chunks[self.chunk_idx_left];
+                        self.current_array_left = self.chunks.get(self.chunk_idx_left).unwrap();
                         self.current_array_left_len = self.current_array_left.len();
                     }
                 }
@@ -1023,7 +1021,7 @@ macro_rules! impl_many_chunk_iterator {
                     // set a new chunk as current data
                     self.chunk_idx_right -= 1;
                     // reset to new array
-                    self.current_array_right = self.chunks[self.chunk_idx_right];
+                    self.current_array_right = self.chunks.get(self.chunk_idx_right).unwrap();
                     self.current_array_idx_right = self.current_array_right.len();
                 }
 
@@ -1069,7 +1067,7 @@ macro_rules! impl_many_chunk_null_check_iterator {
         /// The return type is `Option<$iter_item>`.
         pub struct $iterator_name<'a> {
             ca: &'a $ca_type,
-            chunks: Vec<&'a $arrow_array>,
+            chunks: Chunks<'a, $arrow_array>,
             #[allow(dead_code)]
             current_data_left: &'a ArrayData,
             current_array_left: &'a $arrow_array,
@@ -1086,14 +1084,13 @@ macro_rules! impl_many_chunk_null_check_iterator {
 
         impl<'a> $iterator_name<'a> {
             fn new(ca: &'a $ca_type) -> Self {
-                // TODO: fix without collect
-                let chunks: Vec<_> = ca.downcast_chunks().collect();
-                let current_array_left = chunks[0];
+                let chunks = ca.downcast_chunks();
+                let current_array_left = chunks.get(0).unwrap();
                 let current_data_left = current_array_left.data();
                 let idx_left = 0;
                 let chunk_idx_left = 0;
                 let chunk_idx_right = chunks.len() - 1;
-                let current_array_right = chunks[chunk_idx_right];
+                let current_array_right = chunks.get(chunk_idx_right).unwrap();
                 let current_data_right = current_array_right.data();
                 let idx_right = ca.len();
                 let current_array_idx_left = 0;
@@ -1123,7 +1120,7 @@ macro_rules! impl_many_chunk_null_check_iterator {
                 let (chunk_idx_left, current_array_idx_left) = self.ca.index_to_chunked_index(idx_left);
                 self.chunk_idx_left = chunk_idx_left;
                 self.current_array_idx_left = current_array_idx_left;
-                self.current_array_left = self.chunks[chunk_idx_left];
+                self.current_array_left = self.chunks.get(chunk_idx_left).unwrap();
                 self.current_array_left_len = self.current_array_left.len();
                 self.current_data_left = self.current_array_left.data();
             }
@@ -1190,7 +1187,7 @@ macro_rules! impl_many_chunk_null_check_iterator {
                     if self.chunk_idx_left < self.chunks.len() {
                         // reset to new array
                         self.current_array_idx_left = 0;
-                        self.current_array_left = self.chunks[self.chunk_idx_left];
+                        self.current_array_left = self.chunks.get(self.chunk_idx_left).unwrap();
                         self.current_data_left = self.current_array_left.data();
                         self.current_array_left_len = self.current_array_left.len();
                     }
@@ -1246,7 +1243,7 @@ macro_rules! impl_many_chunk_null_check_iterator {
                     // set a new chunk as current data
                     self.chunk_idx_right -= 1;
                     // reset to new array
-                    self.current_array_right = self.chunks[self.chunk_idx_right];
+                    self.current_array_right = self.chunks.get(self.chunk_idx_right).unwrap();
                     self.current_data_right = self.current_array_right.data();
                     self.current_array_idx_right = self.current_array_right.len();
                 }

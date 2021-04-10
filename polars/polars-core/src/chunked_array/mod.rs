@@ -4,7 +4,7 @@ use crate::prelude::*;
 use arrow::{
     array::{
         ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-        Int64Array, Int8Array, LargeStringArray, PrimitiveArray, Time64NanosecondArray,
+        Int64Array, Int8Array, LargeStringArray, Time64NanosecondArray,
         UInt16Array, UInt32Array, UInt64Array, UInt8Array,
     },
     buffer::Buffer,
@@ -43,8 +43,6 @@ pub mod strings;
 pub mod temporal;
 pub mod upstream_traits;
 
-#[cfg(feature = "object")]
-use crate::chunked_array::object::ObjectArray;
 use arrow::array::{
     Array, ArrayData, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
     LargeListArray,
@@ -701,11 +699,7 @@ where
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            Ok(self
-                .downcast_chunks()
-                .next()
-                .map(|arr| arr.values())
-                .unwrap())
+            Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
         } else {
             Err(PolarsError::NoSlice)
         }
@@ -715,7 +709,7 @@ where
     /// NOTE: null values should be taken into account by the user of these slices as they are handled
     /// separately
     pub fn data_views(&self) -> Vec<&[T::Native]> {
-        self.downcast_chunks().map(|arr| arr.values()).collect()
+        self.downcast_iter().map(|arr| arr.values()).collect()
     }
 
     /// If [cont_slice](#method.cont_slice) is successful a closure is mapped over the elements.
@@ -822,60 +816,6 @@ impl<T> Clone for ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
         }
-    }
-}
-
-impl<T> ChunkedArray<T>
-where
-    T: PolarsPrimitiveType,
-{
-    pub fn downcast_chunks(
-        &self,
-    ) -> impl Iterator<Item = &PrimitiveArray<T>> + DoubleEndedIterator {
-        self.chunks.iter().map(|arr| {
-            let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const PrimitiveArray<T>) }
-        })
-    }
-}
-
-impl BooleanChunked {
-    pub fn downcast_chunks(&self) -> impl Iterator<Item = &BooleanArray> + DoubleEndedIterator {
-        self.chunks.iter().map(|arr| {
-            let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const BooleanArray) }
-        })
-    }
-}
-
-impl Utf8Chunked {
-    pub fn downcast_chunks(&self) -> impl Iterator<Item = &LargeStringArray> + DoubleEndedIterator {
-        self.chunks.iter().map(|arr| {
-            let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const LargeStringArray) }
-        })
-    }
-}
-
-impl ListChunked {
-    pub fn downcast_chunks(&self) -> impl Iterator<Item = &LargeListArray> + DoubleEndedIterator {
-        self.chunks.iter().map(|arr| {
-            let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const LargeListArray) }
-        })
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T> ObjectChunked<T>
-where
-    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
-{
-    pub fn downcast_chunks(&self) -> impl Iterator<Item = &ObjectArray<T>> + DoubleEndedIterator {
-        self.chunks.iter().map(|arr| {
-            let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const ObjectArray<T>) }
-        })
     }
 }
 

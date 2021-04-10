@@ -30,7 +30,7 @@ where
 macro_rules! cast_from_dtype {
     ($self: expr, $kernel:expr, $dtype: expr) => {{
         let chunks = $self
-            .downcast_chunks()
+            .downcast_iter()
             .into_iter()
             .map(|arr| $kernel(arr, $dtype))
             .collect();

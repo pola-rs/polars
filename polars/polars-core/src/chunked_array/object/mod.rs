@@ -117,10 +117,14 @@ impl<T> ObjectChunked<T>
 where
     T: Any + Debug + Clone + Send + Sync + Default,
 {
-    pub fn get_as_any(&self, index: usize) -> &dyn Any {
+    ///
+    /// # Safety
+    ///
+    /// No bounds checks
+    pub unsafe fn get_as_any(&self, index: usize) -> &dyn Any {
         let chunks = self.downcast_chunks();
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = unsafe { *chunks.get_unchecked(chunk_idx) };
+        let arr = chunks.get_unchecked(chunk_idx);
         arr.value(idx)
     }
 }

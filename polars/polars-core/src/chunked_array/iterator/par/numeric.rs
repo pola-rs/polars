@@ -100,7 +100,7 @@ where
     T: PolarsNumericType + Send + Sync,
 {
     fn from_parts(ca: &'a ChunkedArray<T>, offset: usize, len: usize) -> Self {
-        let chunk = ca.downcast_chunks()[0];
+        let chunk = ca.downcast_iter()[0];
         let slice = &chunk.values()[offset..len];
         let iter = slice.iter().copied();
 
@@ -113,7 +113,7 @@ where
     T: PolarsNumericType + Send + Sync,
 {
     fn from_parts(ca: &'a ChunkedArray<T>, offset: usize, len: usize) -> Self {
-        let chunks = ca.downcast_chunks();
+        let chunks = ca.downcast_iter();
 
         // Compute left array indexes.
         let idx_left = offset;
@@ -256,7 +256,7 @@ where
     T: PolarsNumericType + Send + Sync,
 {
     fn from(prod: NumProducerSingleChunkNullCheckReturnOption<'a, T>) -> Self {
-        let chunks = prod.ca.downcast_chunks();
+        let chunks = prod.ca.downcast_iter();
         let arr = chunks[0];
         let idx_left = prod.offset;
         let idx_right = prod.offset + prod.len;
@@ -393,7 +393,7 @@ where
 {
     fn from(prod: NumProducerManyChunkNullCheckReturnOption<'a, T>) -> Self {
         let ca = prod.ca;
-        let chunks = prod.ca.downcast_chunks();
+        let chunks = prod.ca.downcast_iter();
 
         // Compute left array indexes and data.
         let idx_left = prod.offset;
@@ -632,7 +632,7 @@ where
     type Item = Option<T::Native>;
 
     fn into_par_iter(self) -> Self::Iter {
-        let chunks = self.downcast_chunks();
+        let chunks = self.downcast_iter();
         match chunks.len() {
             1 => {
                 if self.null_count() == 0 {
@@ -747,7 +747,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         let ca = self.0;
-        let chunks = ca.downcast_chunks();
+        let chunks = ca.downcast_iter();
         match chunks.len() {
             1 => NumNoNullParIterDispatcher::SingleChunk(
                 NumParIterSingleChunkReturnUnwrapped::new(ca),

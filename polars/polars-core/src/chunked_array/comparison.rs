@@ -21,8 +21,8 @@ where
         operator: impl Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> arrow::error::Result<BooleanArray>,
     ) -> Result<BooleanChunked> {
         let chunks = self
-            .downcast_chunks()
-            .zip(rhs.downcast_chunks())
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
             .map(|(left, right)| {
                 let arr_res = operator(left, right);
                 let arr = match arr_res {
@@ -570,8 +570,8 @@ impl BooleanChunked {
         operator: impl Fn(&BooleanArray, &BooleanArray) -> arrow::error::Result<BooleanArray>,
     ) -> Result<BooleanChunked> {
         let chunks = self
-            .downcast_chunks()
-            .zip(rhs.downcast_chunks())
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
             .map(|(left, right)| {
                 let arr_res = operator(left, right);
                 let arr = match arr_res {
@@ -643,7 +643,7 @@ impl Not for &BooleanChunked {
 
     fn not(self) -> Self::Output {
         let chunks = self
-            .downcast_chunks()
+            .downcast_iter()
             .map(|a| {
                 let arr = compute::not(a).expect("should not fail");
                 Arc::new(arr) as ArrayRef

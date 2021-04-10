@@ -13,6 +13,7 @@ use crate::chunked_array::kernels::take::{
     take_primitive_opt_iter_unchecked, take_utf8, take_utf8_iter, take_utf8_iter_unchecked,
     take_utf8_opt_iter_unchecked,
 };
+use crate::chunked_array::ops::downcast::Chunks;
 use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::array::{
@@ -51,7 +52,7 @@ where
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let mut chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
@@ -125,7 +126,7 @@ where
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let mut chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
@@ -174,7 +175,7 @@ impl ChunkTake for BooleanChunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let mut chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
@@ -244,7 +245,7 @@ impl ChunkTake for BooleanChunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let mut chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
@@ -290,7 +291,7 @@ impl ChunkTake for Utf8Chunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let mut chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
@@ -360,7 +361,7 @@ impl ChunkTake for Utf8Chunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let mut chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
@@ -415,7 +416,7 @@ impl ChunkTake for ListChunked {
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        let mut chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
                 if self.is_empty() {
@@ -517,15 +518,14 @@ pub trait IntoTakeRandom<'a> {
 /// Choose the Struct for multiple chunks or the struct for a single chunk.
 macro_rules! many_or_single {
     ($self:ident, $StructSingle:ident, $StructMany:ident) => {{
-        let mut chunks = $self.downcast_chunks();
         if $self.chunks.len() == 1 {
             Box::new($StructSingle {
-                arr: chunks.next().unwrap(),
+                arr: $self.downcast_iter().next().unwrap(),
             })
         } else {
             Box::new($StructMany {
                 ca: $self,
-                chunks: chunks.collect(),
+                chunks: $self.downcast_chunks(),
             })
         }
     }};
@@ -542,7 +542,7 @@ where
         match self.cont_slice() {
             Ok(slice) => Box::new(NumTakeRandomCont { slice }),
             _ => {
-                let mut chunks = self.downcast_chunks();
+                let mut chunks = self.downcast_iter();
                 if self.chunks.len() == 1 {
                     Box::new(NumTakeRandomSingleChunk {
                         arr: chunks.next().unwrap(),
@@ -581,7 +581,7 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
     type TakeRandom = Box<dyn TakeRandom<Item = Self::Item> + 'a>;
 
     fn take_rand(&self) -> Self::TakeRandom {
-        let mut chunks = self.downcast_chunks();
+        let mut chunks = self.downcast_iter();
         if self.chunks.len() == 1 {
             Box::new(ListTakeRandomSingleChunk {
                 arr: chunks.next().unwrap(),
@@ -709,7 +709,7 @@ where
 
 pub struct Utf8TakeRandom<'a> {
     ca: &'a Utf8Chunked,
-    chunks: Vec<&'a LargeStringArray>,
+    chunks: Chunks<'a, LargeStringArray>,
 }
 
 impl<'a> TakeRandom for Utf8TakeRandom<'a> {
@@ -749,7 +749,7 @@ impl<'a> TakeRandom for Utf8TakeRandomSingleChunk<'a> {
 
 pub struct BoolTakeRandom<'a> {
     ca: &'a BooleanChunked,
-    chunks: Vec<&'a BooleanArray>,
+    chunks: Chunks<'a, BooleanArray>,
 }
 
 impl<'a> TakeRandom for BoolTakeRandom<'a> {
