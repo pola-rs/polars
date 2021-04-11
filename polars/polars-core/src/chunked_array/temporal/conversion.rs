@@ -164,6 +164,78 @@ impl AsNaiveTime for Time64NanosecondChunked {
     }
 }
 
+const N_PATTERNS: usize = 7;
+fn date_pattern(val: &str, id: usize) -> Option<&'static str> {
+    match id {
+        0 => {
+            // 2021-12-1
+            // 2021-12-31
+            let pat = r"^\d{4}-\d{1,2}-\d{1,2}\s*$";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%Y-%m-%d");
+            }
+        }
+        1 => {
+            // 1-12-2021
+            // 31-12-2021
+            let pat = r"^\d{1,2}-\d{1,2}-\d{4}\s*$";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%d-%m-%Y");
+            }
+        }
+        2 => {
+            // 2021/12/31 12:54:98
+            let pat = r"^\d{4}/\d{1,2}/\d{1,2}\s*$";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%Y/%m/%d %H:%M:%S");
+            }
+        }
+        3 => {
+            // 2021-12-31 24:58:01
+            let pat = r"^\d{4}-\d{1,2}-\d{1,2} \d{2}:\d{2}:\d{2}\s*$";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%Y-%m-%d %H:%M:%S");
+            }
+        }
+        4 => {
+            // 2021/12/31 24:58:01
+            let pat = r"^\d{4}/\d{1,2}/\d{1,2} \d{2}:\d{2}:\d{2}\s*$";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%Y/%m/%d %H:%M:%S");
+            }
+        }
+        5 => {
+            // no separator
+            // 20210319 23:58:50
+            // 2021319 23:58:50
+            // 202131 23:58:50
+            let pat = r"^\d{6,8} \d{2}:\d{2}:\d{2}\s*$";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%Y%m%d %H:%M:%S");
+            }
+        }
+        6 => {
+            // no separator
+            // 20210319
+            // 2021319 (2021-03-19)
+            // 202131 (2021-03-01)
+            let pat = r"^\d{6,8}\s*$";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%Y%m%d");
+            }
+        }
+        _ => (),
+    }
+    None
+}
+
 impl Utf8Chunked {
     fn get_first_val(&self) -> Result<&str> {
         let idx = match self.first_non_null() {
@@ -180,15 +252,10 @@ impl Utf8Chunked {
 
     fn sniff_fmt_date64(&self) -> Result<&'static str> {
         let val = self.get_first_val()?;
-        let pat = r"^\d{4}-\d{1,2}-\d{1,2} \d{2}:\d{2}:\d{2}\s*$";
-        let reg = Regex::new(pat).expect("wrong regex");
-        if reg.is_match(val) {
-            return Ok("%Y-%m-%d %H:%M:%S");
-        }
-        let pat = r"^\d{4}/\d{1,2}/\d{1,2} \d{2}:\d{2}:\d{2}\s*$";
-        let reg = Regex::new(pat).expect("wrong regex");
-        if reg.is_match(val) {
-            return Ok("%Y/%m/%d %H:%M:%S");
+        for id in 0..N_PATTERNS {
+            if let Some(pattern) = date_pattern(val, id) {
+                return Ok(pattern);
+            }
         }
         Err(PolarsError::Other(
             "Could not find an appropriate format to parse dates, please define a fmt".into(),
@@ -197,22 +264,10 @@ impl Utf8Chunked {
 
     fn sniff_fmt_date32(&self) -> Result<&'static str> {
         let val = self.get_first_val()?;
-        let pat = r"^\d{4}-\d{1,2}-\d{1,2}\s*$";
-        let reg = Regex::new(pat).expect("wrong regex");
-        if reg.is_match(val) {
-            return Ok("%Y-%m-%d");
-        }
-
-        let pat = r"^\d{1,2}-\d{1,2}-\d{4}\s*$";
-        let reg = Regex::new(pat).expect("wrong regex");
-        if reg.is_match(val) {
-            return Ok("%d-%m-%Y");
-        }
-
-        let pat = r"^\d{4}/\d{1,2}/\d{1,2}\s*$";
-        let reg = Regex::new(pat).expect("wrong regex");
-        if reg.is_match(val) {
-            return Ok("%Y/%m/%d %H:%M:%S");
+        for id in 0..N_PATTERNS {
+            if let Some(pattern) = date_pattern(val, id) {
+                return Ok(pattern);
+            }
         }
         Err(PolarsError::Other(
             "Could not find an appropriate format to parse dates, please define a fmt".into(),

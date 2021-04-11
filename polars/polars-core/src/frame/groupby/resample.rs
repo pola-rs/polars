@@ -126,8 +126,17 @@ impl DataFrame {
                 df.hstack_mut(&[year, week])?;
 
                 match key.dtype() {
-                    DataType::Date32 => key = key / (7 * n),
-                    DataType::Date64 => key = key / (1000 * 3600 * 24 * 7 * n),
+                    DataType::Date32 => {
+                        let fact = 7 * n;
+                        key = key / fact;
+                        key = key * fact;
+                    }
+                    DataType::Date64 => {
+                        let fact = 1000 * 3600 * 24 * 7 * n;
+                        // first we floor divide, then we multiply again to get the same date intervals
+                        key = key / fact;
+                        key = key * fact;
+                    }
                     _ => return wrong_key_dtype(),
                 }
 
@@ -141,8 +150,15 @@ impl DataFrame {
                 df.hstack_mut(&[year, day])?;
 
                 match key.dtype() {
-                    DataType::Date32 => key = key / n,
-                    DataType::Date64 => key = key / (1000 * 3600 * 24 * n),
+                    DataType::Date32 => {
+                        key = key / n;
+                        key = key * n;
+                    }
+                    DataType::Date64 => {
+                        let fact = 1000 * 3600 * 24 * n;
+                        key = key / fact;
+                        key = key * fact;
+                    }
                     _ => return wrong_key_dtype(),
                 }
 
@@ -158,7 +174,11 @@ impl DataFrame {
                 df.hstack_mut(&[year, day, hour])?;
 
                 match key.dtype() {
-                    DataType::Date64 => key = key / (1000 * 3600 * n),
+                    DataType::Date64 => {
+                        let fact = 1000 * 3600 * n;
+                        key = key / fact;
+                        key = key * fact;
+                    }
                     _ => return wrong_key_dtype(),
                 }
                 df.groupby_stable(&[year_c, day_c, hour_c])?
@@ -176,7 +196,11 @@ impl DataFrame {
                 df.hstack_mut(&[year, day, hour, minute])?;
 
                 match key.dtype() {
-                    DataType::Date64 => key = key / (1000 * 3600 * n),
+                    DataType::Date64 => {
+                        let fact = 1000 * 60 * n;
+                        key = key / fact;
+                        key = key * fact;
+                    }
                     _ => return wrong_key_dtype_date64(),
                 }
 
@@ -197,7 +221,11 @@ impl DataFrame {
                 df.hstack_mut(&[year, day, hour, minute, second])?;
 
                 match key.dtype() {
-                    DataType::Date64 => key = key / (1000 * n),
+                    DataType::Date64 => {
+                        let fact = 1000 * n;
+                        key = key / fact;
+                        key = key * fact;
+                    }
                     _ => return wrong_key_dtype_date64(),
                 }
 
@@ -214,7 +242,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_downsample() {
+    fn test_downsample() -> Result<()> {
         let ts = Date64Chunked::new_from_slice(
             "ms",
             &[
@@ -243,26 +271,61 @@ mod test {
         .into_series();
         let idx = UInt8Chunked::new_from_iter("i", 0..20).into_series();
 
-        let df = DataFrame::new(vec![ts, idx]).unwrap();
+        let df = DataFrame::new(vec![ts, idx])?;
         dbg!(&df);
         let out = df
-            .downsample("ms", SampleRule::Minute(5))
-            .unwrap()
-            .first()
-            .unwrap()
-            .sort("ms", false)
-            .unwrap();
+            .downsample("ms", SampleRule::Minute(5))?
+            .first()?
+            .sort("ms", false)?;
         dbg!(&out);
         assert_eq!(
-            Vec::from(out.column("i_first").unwrap().u8().unwrap()),
+            Vec::from(out.column("i_first")?.u8()?),
             &[Some(0), Some(5), Some(10), Some(15)]
         );
 
         // check if we can run them without errors
-        df.downsample("ms", SampleRule::Week(1)).unwrap();
-        df.downsample("ms", SampleRule::Day(1)).unwrap();
-        df.downsample("ms", SampleRule::Hour(1)).unwrap();
-        df.downsample("ms", SampleRule::Minute(1)).unwrap();
-        df.downsample("ms", SampleRule::Second(1)).unwrap();
+        df.downsample("ms", SampleRule::Week(1))?;
+        df.downsample("ms", SampleRule::Day(1))?;
+        df.downsample("ms", SampleRule::Hour(1))?;
+        df.downsample("ms", SampleRule::Minute(1))?;
+        df.downsample("ms", SampleRule::Second(1))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_downsample_bucket_floors() -> Result<()> {
+        // test if the floor divide make sense
+
+        let data = "20210216 23:58:58
+20210217 23:58:58
+20210310 23:58:58
+20210311 23:58:57
+20210312 23:58:55
+20210313 23:58:55
+20210314 23:58:54
+20210315 23:58:54
+20210316 23:58:50
+20210317 23:58:50
+20210318 23:58:49
+20210319 23:59:01";
+        let data: Vec<_> = data.split('\n').collect();
+
+        let date = Utf8Chunked::new_from_slice("date", &data);
+        let date = date.as_date64(None)?.into_series();
+        let values =
+            UInt32Chunked::new_from_iter("values", (0..date.len()).map(|v| v as u32)).into_series();
+
+        let df = DataFrame::new(vec![date, values]).unwrap();
+        let out = df.downsample("date", SampleRule::Week(1))?.first()?;
+
+        assert_eq!(
+            Vec::from(&out.column("date")?.year()?),
+            &[Some(2021), Some(2021), Some(2021)]
+        );
+        assert_eq!(
+            Vec::from(&out.column("date")?.month()?),
+            &[Some(2), Some(3), Some(3)]
+        );
+        Ok(())
     }
 }
