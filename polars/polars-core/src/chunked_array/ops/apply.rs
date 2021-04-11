@@ -40,7 +40,6 @@ where
     {
         let mut ca: ChunkedArray<S> = self
             .data_views()
-            .into_iter()
             .zip(self.null_bits())
             .map(|(slice, (_null_count, opt_buffer))| {
                 let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
@@ -58,7 +57,6 @@ where
     {
         let chunks = self
             .downcast_iter()
-            .into_iter()
             .map(|array| {
                 let av: AlignedVec<_> = if array.null_count() == 0 {
                     array.values().iter().map(|&v| f(Some(v))).collect()

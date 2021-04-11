@@ -48,7 +48,7 @@ use arrow::array::{
     LargeListArray,
 };
 
-use crate::utils::slice_offsets;
+use crate::utils::{slice_offsets, CustomIterTools};
 use ahash::AHashMap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use polars_arrow::array::ValueSize;
@@ -708,8 +708,21 @@ where
     /// Get slices of the underlying arrow data.
     /// NOTE: null values should be taken into account by the user of these slices as they are handled
     /// separately
-    pub fn data_views(&self) -> impl Iterator<Item = &[T::Native]> {
+    pub fn data_views(&self) -> impl Iterator<Item = &[T::Native]> + DoubleEndedIterator {
         self.downcast_iter().map(|arr| arr.values())
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl Iterator<Item = T::Native> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
+    {
+        // .copied was significantly slower in benchmark, next call did not inline?
+        #[allow(clippy::map_clone)]
+        self.data_views()
+            .flatten()
+            .map(|v| *v)
+            .trust_my_length(self.len())
     }
 
     /// If [cont_slice](#method.cont_slice) is successful a closure is mapped over the elements.
