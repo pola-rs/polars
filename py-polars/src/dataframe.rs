@@ -507,6 +507,7 @@ impl PyDataFrame {
         column_to_agg: Vec<(&str, Vec<&str>)>,
     ) -> PyResult<Self> {
         let rule = match rule {
+            "month" => SampleRule::Month(n),
             "week" => SampleRule::Week(n),
             "day" => SampleRule::Day(n),
             "hour" => SampleRule::Hour(n),
