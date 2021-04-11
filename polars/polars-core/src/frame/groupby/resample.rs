@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::utils::chrono::{Datelike, NaiveDate};
 
 pub enum SampleRule {
+    Month(u32),
     Week(u32),
     Day(u32),
     Hour(u32),
@@ -120,6 +121,30 @@ impl DataFrame {
             .collect::<Vec<_>>();
 
         let gb = match rule {
+            Month(n) => {
+                let month = &key.month()? / n;
+
+                key = year
+                    .i32()?
+                    .into_iter()
+                    .zip(month.into_iter())
+                    .map(|(yr, month)| match (yr, month) {
+                        (Some(yr), Some(month)) => NaiveDate::from_ymd_opt(yr, month, 1)
+                            .map(|nd| nd.and_hms(0, 0, 0).timestamp_millis()),
+                        _ => None,
+                    })
+                    .collect::<Date64Chunked>()
+                    .into_series();
+
+                key.rename(&key_name);
+
+                let mut tempkey = key.clone();
+                tempkey.rename(&temp_key);
+
+                df.hstack_mut(&[tempkey])?;
+                df.groupby_stable(&[temp_key])?
+            }
+
             Week(n) => {
                 // We floor divide to create a bucket.
                 let week = &key.week()? / n;
@@ -326,10 +351,9 @@ mod test {
         let values =
             UInt32Chunked::new_from_iter("values", (0..date.len()).map(|v| v as u32)).into_series();
 
-        let df = DataFrame::new(vec![date, values]).unwrap();
+        let df = DataFrame::new(vec![date.clone(), values.clone()]).unwrap();
         let out = df.downsample("date", SampleRule::Week(1))?.first()?;
 
-        dbg!(&out);
         assert_eq!(
             Vec::from(&out.column("date")?.year()?),
             &[Some(2021), Some(2021), Some(2021)]
@@ -337,6 +361,19 @@ mod test {
         assert_eq!(
             Vec::from(&out.column("date")?.month()?),
             &[Some(2), Some(3), Some(3)]
+        );
+        // ordinal days match with 2021-02-15, 2021-03-08, 2021-03-15
+        assert_eq!(
+            Vec::from(&out.column("date")?.ordinal_day()?),
+            &[Some(46), Some(67), Some(74)]
+        );
+
+        let df = DataFrame::new(vec![date, values]).unwrap();
+        let out = df.downsample("date", SampleRule::Month(1))?.first()?;
+        // ordinal days match with 2021-02-01, 2021-03-01
+        assert_eq!(
+            Vec::from(&out.column("date")?.ordinal_day()?),
+            &[Some(32), Some(60)]
         );
         Ok(())
     }

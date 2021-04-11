@@ -1026,6 +1026,7 @@ class DataFrame:
             Units of the downscaling operation.
 
             Any of:
+                - "month"
                 - "week"
                 - "day"
                 - "hour"
