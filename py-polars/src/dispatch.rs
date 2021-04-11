@@ -416,11 +416,9 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
 
 impl<'a, T> ApplyLambda<'a> for ChunkedArray<T>
 where
-    T: PyArrowPrimitiveType,
+    T: PyArrowPrimitiveType + PolarsNumericType,
     T::Native: ToPyObject + FromPyObject<'a>,
     ChunkedArray<T>: IntoSeries,
-    &'a ChunkedArray<T>:
-        IntoIterator<Item = Option<T::Native>> + IntoNoNullIterator<Item = T::Native>,
 {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
         let mut null_count = 0;

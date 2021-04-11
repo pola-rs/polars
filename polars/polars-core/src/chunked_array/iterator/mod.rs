@@ -555,20 +555,6 @@ where
     }
 }
 
-impl<'a, T> IntoNoNullIterator for &'a ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Item = T::Native;
-    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
-
-    fn into_no_null_iter(self) -> Self::IntoIter {
-        match self.chunks.len() {
-            1 => Box::new(NumIterSingleChunk::new(self)),
-            _ => Box::new(NumIterManyChunk::new(self)),
-        }
-    }
-}
 impl<'a> IntoIterator for &'a CategoricalChunked {
     type Item = Option<u32>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
@@ -578,11 +564,12 @@ impl<'a> IntoIterator for &'a CategoricalChunked {
     }
 }
 
-impl<'a> IntoNoNullIterator for &'a CategoricalChunked {
-    type Item = u32;
-    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
-
-    fn into_no_null_iter(self) -> Self::IntoIter {
+impl CategoricalChunked {
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl Iterator<Item = u32> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
+    {
         self.deref().into_no_null_iter()
     }
 }

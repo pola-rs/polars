@@ -120,17 +120,13 @@ where
     unique
 }
 
-fn arg_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> AlignedVec<u32>
-where
-    &'a ChunkedArray<T>: IntoIterator + IntoNoNullIterator,
-    T: 'a,
-    <&'a ChunkedArray<T> as IntoIterator>::Item: Eq + Hash,
-    <&'a ChunkedArray<T> as IntoNoNullIterator>::Item: Eq + Hash,
-{
-    match ca.null_count() {
-        0 => arg_unique(ca.into_no_null_iter(), ca.len()),
-        _ => arg_unique(ca.into_iter(), ca.len()),
-    }
+macro_rules! arg_unique_ca {
+    ($ca:expr) => {{
+        match $ca.null_count() {
+            0 => arg_unique($ca.into_no_null_iter(), $ca.len()),
+            _ => arg_unique($ca.into_iter(), $ca.len()),
+        }
+    }};
 }
 
 macro_rules! impl_value_counts {
@@ -163,7 +159,7 @@ where
     fn arg_unique(&self) -> Result<UInt32Chunked> {
         Ok(UInt32Chunked::new_from_aligned_vec(
             self.name(),
-            arg_unique_ca(self),
+            arg_unique_ca!(self),
         ))
     }
 
@@ -192,7 +188,7 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn arg_unique(&self) -> Result<UInt32Chunked> {
         Ok(UInt32Chunked::new_from_aligned_vec(
             self.name(),
-            arg_unique_ca(self),
+            arg_unique_ca!(self),
         ))
     }
 
@@ -219,7 +215,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
     fn arg_unique(&self) -> Result<UInt32Chunked> {
         Ok(UInt32Chunked::new_from_aligned_vec(
             self.name(),
-            arg_unique_ca(self),
+            arg_unique_ca!(self),
         ))
     }
 
@@ -346,7 +342,7 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     fn arg_unique(&self) -> Result<UInt32Chunked> {
         Ok(UInt32Chunked::new_from_aligned_vec(
             self.name(),
-            arg_unique_ca(self),
+            arg_unique_ca!(self),
         ))
     }
 
