@@ -1,5 +1,6 @@
 use crate::frame::groupby::GroupBy;
 use crate::prelude::*;
+use crate::utils::chrono::{Datelike, NaiveDate};
 
 pub enum SampleRule {
     Week(u32),
@@ -83,13 +84,14 @@ impl DataFrame {
         use SampleRule::*;
 
         let year_c = "__POLARS_TEMP_YEAR";
-        let week_c = "__POLARS_TEMP_WEEK";
         let day_c = "__POLARS_TEMP_DAY";
         let hour_c = "__POLARS_TEMP_HOUR";
         let minute_c = "__POLARS_TEMP_MINUTE";
         let second_c = "__POLARS_TEMP_SECOND";
+        let temp_key = "__POLAR_TEMP_NAME";
 
         let mut key = key.clone();
+        let key_name = key.name().to_string();
         let wrong_key_dtype = || Err(PolarsError::Other("key should be date32 || date64".into()));
         let wrong_key_dtype_date64 = || Err(PolarsError::Other("key should be date64".into()));
 
@@ -120,27 +122,36 @@ impl DataFrame {
         let gb = match rule {
             Week(n) => {
                 // We floor divide to create a bucket.
-                let mut week = (&key.week()? / n).into_series();
-                week.rename(week_c);
+                let week = &key.week()? / n;
 
-                df.hstack_mut(&[year, week])?;
+                key = year
+                    .i32()?
+                    .into_iter()
+                    // convert to ordinal days by multiplying the week no. by 7
+                    // the week number starts with 1 so we translate the week numbers by 1
+                    .zip((&(&week - 1) * 7).into_iter())
+                    .map(|(yr, od)| match (yr, od) {
+                        (Some(yr), Some(od)) => {
+                            // the calendar week doesn't start on a monday, so we must offset
+                            let offset = 8 - NaiveDate::from_ymd(yr, 1, 1)
+                                .weekday()
+                                .num_days_from_monday();
 
-                match key.dtype() {
-                    DataType::Date32 => {
-                        let fact = 7 * n;
-                        key = key / fact;
-                        key = key * fact;
-                    }
-                    DataType::Date64 => {
-                        let fact = 1000 * 3600 * 24 * 7 * n;
-                        // first we floor divide, then we multiply again to get the same date intervals
-                        key = key / fact;
-                        key = key * fact;
-                    }
-                    _ => return wrong_key_dtype(),
-                }
+                            NaiveDate::from_yo_opt(yr, od + offset)
+                                .map(|nd| nd.and_hms(0, 0, 0).timestamp_millis())
+                        }
+                        _ => None,
+                    })
+                    .collect::<Date64Chunked>()
+                    .into_series();
 
-                df.groupby_stable(&[year_c, week_c])?
+                key.rename(&key_name);
+
+                let mut tempkey = key.clone();
+                tempkey.rename(&temp_key);
+
+                df.hstack_mut(&[tempkey])?;
+                df.groupby_stable(&[temp_key])?
             }
             Day(n) => {
                 // We floor divide to create a bucket.
@@ -318,6 +329,7 @@ mod test {
         let df = DataFrame::new(vec![date, values]).unwrap();
         let out = df.downsample("date", SampleRule::Week(1))?.first()?;
 
+        dbg!(&out);
         assert_eq!(
             Vec::from(&out.column("date")?.year()?),
             &[Some(2021), Some(2021), Some(2021)]
