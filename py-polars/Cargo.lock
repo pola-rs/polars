@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.7.6-beta.2"
+version = "0.7.6"
 dependencies = [
  "libc",
  "ndarray",
