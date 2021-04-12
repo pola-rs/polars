@@ -1,3 +1,4 @@
+use crate::POOL;
 use ahash::RandomState;
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::prelude::*;
@@ -32,6 +33,16 @@ pub(crate) trait NumericAggSync {
     }
 }
 
+fn agg_helper<T, F>(groups: &[(u32, Vec<u32>)], f: F) -> Option<Series>
+where
+    F: Fn(&(u32, Vec<u32>)) -> Option<T::Native> + Send + Sync,
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+{
+    let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().map(f).collect());
+    Some(ca.into_series())
+}
+
 impl NumericAggSync for BooleanChunked {
     fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.cast::<UInt32Type>().unwrap().agg_min(groups)
@@ -56,195 +67,155 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        let ca: Float64Chunked = groups
-            .par_iter()
-            .map(|(first, idx)| {
-                if idx.len() == 1 {
-                    self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
-                } else {
-                    match (self.null_count(), self.chunks.len()) {
-                        (0, 1) => unsafe {
-                            take_agg_no_null_primitive_iter_unchecked(
-                                self.downcast_iter().next().unwrap(),
-                                idx.iter().map(|i| *i as usize),
-                                |a, b| a + b,
-                                T::Native::zero(),
-                            )
-                        }
-                        .to_f64()
-                        .map(|sum| sum / idx.len() as f64),
-                        (_, 1) => unsafe {
-                            take_agg_primitive_iter_unchecked(
-                                self.downcast_iter().next().unwrap(),
-                                idx.iter().map(|i| *i as usize),
-                                |a, b| a + b,
-                                T::Native::zero(),
-                            )
-                        }
-                        .map(|sum| sum.to_f64().map(|sum| sum / idx.len() as f64).unwrap()),
-                        _ => {
-                            let take = unsafe {
-                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                            };
-                            let opt_sum: Option<T::Native> = take.sum();
-                            opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
-                        }
+        agg_helper::<Float64Type, _>(groups, |(first, idx)| {
+            if idx.len() == 1 {
+                self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
+            } else {
+                match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => unsafe {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                    }
+                    .to_f64()
+                    .map(|sum| sum / idx.len() as f64),
+                    (_, 1) => unsafe {
+                        take_agg_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                    }
+                    .map(|sum| sum.to_f64().map(|sum| sum / idx.len() as f64).unwrap()),
+                    _ => {
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                        let opt_sum: Option<T::Native> = take.sum();
+                        opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                     }
                 }
-            })
-            .collect();
-        Some(ca.into_series())
+            }
+        })
     }
 
     fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        Some(
-            groups
-                .par_iter()
-                .map(|(first, idx)| {
-                    if idx.len() == 1 {
-                        self.get(*first as usize)
-                    } else {
-                        match (self.null_count(), self.chunks.len()) {
-                            (0, 1) => Some(unsafe {
-                                take_agg_no_null_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| if a < b { a } else { b },
-                                    T::Native::max_value(),
-                                )
-                            }),
-                            (_, 1) => unsafe {
-                                take_agg_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| if a < b { a } else { b },
-                                    T::Native::max_value(),
-                                )
-                            },
-                            _ => {
-                                let take = unsafe {
-                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                                };
-                                take.min()
-                            }
-                        }
+        agg_helper::<T, _>(groups, |(first, idx)| {
+            if idx.len() == 1 {
+                self.get(*first as usize)
+            } else {
+                match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => Some(unsafe {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a < b { a } else { b },
+                            T::Native::max_value(),
+                        )
+                    }),
+                    (_, 1) => unsafe {
+                        take_agg_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a < b { a } else { b },
+                            T::Native::max_value(),
+                        )
+                    },
+                    _ => {
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                        take.min()
                     }
-                })
-                .collect::<ChunkedArray<T>>()
-                .into_series(),
-        )
+                }
+            }
+        })
     }
 
     fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        Some(
-            groups
-                .par_iter()
-                .map(|(first, idx)| {
-                    if idx.len() == 1 {
-                        self.get(*first as usize)
-                    } else {
-                        match (self.null_count(), self.chunks.len()) {
-                            (0, 1) => Some(unsafe {
-                                take_agg_no_null_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| if a > b { a } else { b },
-                                    T::Native::min_value(),
-                                )
-                            }),
-                            (_, 1) => unsafe {
-                                take_agg_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| if a > b { a } else { b },
-                                    T::Native::min_value(),
-                                )
-                            },
-                            _ => {
-                                let take = unsafe {
-                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                                };
-                                take.max()
-                            }
-                        }
+        agg_helper::<T, _>(groups, |(first, idx)| {
+            if idx.len() == 1 {
+                self.get(*first as usize)
+            } else {
+                match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => Some(unsafe {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a > b { a } else { b },
+                            T::Native::min_value(),
+                        )
+                    }),
+                    (_, 1) => unsafe {
+                        take_agg_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a > b { a } else { b },
+                            T::Native::min_value(),
+                        )
+                    },
+                    _ => {
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                        take.max()
                     }
-                })
-                .collect::<ChunkedArray<T>>()
-                .into_series(),
-        )
+                }
+            }
+        })
     }
 
     fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        Some(
-            groups
-                .par_iter()
-                .map(|(first, idx)| {
-                    if idx.len() == 1 {
-                        self.get(*first as usize)
-                    } else {
-                        match (self.null_count(), self.chunks.len()) {
-                            (0, 1) => Some(unsafe {
-                                take_agg_no_null_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| a + b,
-                                    T::Native::zero(),
-                                )
-                            }),
-                            (_, 1) => unsafe {
-                                take_agg_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| a + b,
-                                    T::Native::zero(),
-                                )
-                            },
-                            _ => {
-                                let take = unsafe {
-                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                                };
-                                take.sum()
-                            }
-                        }
+        agg_helper::<T, _>(groups, |(first, idx)| {
+            if idx.len() == 1 {
+                self.get(*first as usize)
+            } else {
+                match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => Some(unsafe {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                    }),
+                    (_, 1) => unsafe {
+                        take_agg_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                    },
+                    _ => {
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                        take.sum()
                     }
-                })
-                .collect::<ChunkedArray<T>>()
-                .into_series(),
-        )
+                }
+            }
+        })
     }
     fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        Some(
-            groups
-                .par_iter()
-                .map(|(_first, idx)| {
-                    let take =
-                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                    take.into_series()
-                        .var_as_series()
-                        .unpack::<T>()
-                        .unwrap()
-                        .get(0)
-                })
-                .collect::<ChunkedArray<T>>()
-                .into_series(),
-        )
+        agg_helper::<T, _>(groups, |(_first, idx)| {
+            let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+            take.into_series()
+                .var_as_series()
+                .unpack::<T>()
+                .unwrap()
+                .get(0)
+        })
     }
     fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        Some(
-            groups
-                .par_iter()
-                .map(|(_first, idx)| {
-                    let take =
-                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                    take.into_series()
-                        .std_as_series()
-                        .unpack::<T>()
-                        .unwrap()
-                        .get(0)
-                })
-                .collect::<ChunkedArray<T>>()
-                .into_series(),
-        )
+        agg_helper::<T, _>(groups, |(_first, idx)| {
+            let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+            take.into_series()
+                .std_as_series()
+                .unpack::<T>()
+                .unwrap()
+                .get(0)
+        })
     }
 }
 
@@ -537,35 +508,21 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
-        Some(
-            groups
-                .into_par_iter()
-                .map(|(_first, idx)| {
-                    let group_vals =
-                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                    let sorted_idx_ca = group_vals.argsort(false);
-                    let sorted_idx = sorted_idx_ca.downcast_iter().next().unwrap().values();
-                    let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
-                    let value_idx = sorted_idx[quant_idx];
-                    group_vals.get(value_idx as usize)
-                })
-                .collect::<ChunkedArray<T>>()
-                .into_series(),
-        )
+        agg_helper::<T, _>(groups, |(_first, idx)| {
+            let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+            let sorted_idx_ca = group_vals.argsort(false);
+            let sorted_idx = sorted_idx_ca.downcast_iter().next().unwrap().values();
+            let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
+            let value_idx = sorted_idx[quant_idx];
+            group_vals.get(value_idx as usize)
+        })
     }
 
     fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        Some(
-            groups
-                .into_par_iter()
-                .map(|(_first, idx)| {
-                    let group_vals =
-                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                    group_vals.median()
-                })
-                .collect::<Float64Chunked>()
-                .into_series(),
-        )
+        agg_helper::<Float64Type, _>(groups, |(_first, idx)| {
+            let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+            group_vals.median()
+        })
     }
 }
 
