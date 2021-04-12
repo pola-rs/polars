@@ -243,7 +243,7 @@ impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
 
 impl<T> ChunkApplyKernel<PrimitiveArray<T>> for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     fn apply_kernel<F>(&self, f: F) -> Self
     where

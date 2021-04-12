@@ -3,32 +3,42 @@ use crate::datatypes::CategoricalChunked;
 use crate::prelude::{
     BooleanChunked, ChunkedArray, ListChunked, PolarsNumericType, Series, UnsafeValue, Utf8Chunked,
 };
-use arrow::array::{
-    Array, ArrayData, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
-};
+use crate::utils::CustomIterTools;
+use arrow::array::{Array, ArrayData, ArrayRef, BooleanArray, LargeListArray, LargeStringArray};
 use std::convert::TryFrom;
-use std::iter::Copied;
 use std::ops::Deref;
-use std::slice::Iter;
 
 // If parallel feature is enable, then, activate the parallel module.
 #[cfg(feature = "parallel")]
 #[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 pub mod par;
 
-// ExactSizeIterator trait implementations for all Iterator structs in this file
-impl<'a, T> ExactSizeIterator for NumIterSingleChunk<'a, T> where T: PolarsNumericType {}
-impl<'a, T> ExactSizeIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
-impl<'a, T> ExactSizeIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
-impl<'a, T> ExactSizeIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
-impl<'a, T> PolarsIterator for NumIterSingleChunk<'a, T> where T: PolarsNumericType {}
-impl<'a, T> PolarsIterator for NumIterSingleChunkNullCheck<'a, T> where T: PolarsNumericType {}
-impl<'a, T> PolarsIterator for NumIterManyChunkNullCheck<'a, T> where T: PolarsNumericType {}
-impl<'a, T> PolarsIterator for NumIterManyChunk<'a, T> where T: PolarsNumericType {}
-
 /// A `PolarsIterator` is an iterator over a `ChunkedArray` which contains polars types. A `PolarsIterator`
 /// must implement `ExactSizeIterator` and `DoubleEndedIterator`.
 pub trait PolarsIterator: ExactSizeIterator + DoubleEndedIterator + Send + Sync {}
+
+/// Implement PolarsIterator for every iterator that implements the needed traits.
+impl<T: ?Sized> PolarsIterator for T where T: ExactSizeIterator + DoubleEndedIterator + Send + Sync {}
+
+impl<'a, T> IntoIterator for &'a ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    type Item = Option<T::Native>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+    }
+}
+
+impl<'a> IntoIterator for &'a CategoricalChunked {
+    type Item = Option<u32>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref().into_iter()
+    }
+}
 
 /// Trait for ChunkedArrays that don't have null values.
 /// The result is the most efficient implementation `Iterator`, according to the number of chunks.
@@ -39,7 +49,7 @@ pub trait IntoNoNullIterator {
     fn into_no_null_iter(self) -> Self::IntoIter;
 }
 
-/// Wrapper strunct to convert an iterator of type `T` into one of type `Option<T>`.  It is useful to make the
+/// Wrapper struct to convert an iterator of type `T` into one of type `Option<T>`.  It is useful to make the
 /// `IntoIterator` trait, in which every iterator shall return an `Option<T>`.
 pub struct SomeIterator<I>(I)
 where
@@ -70,499 +80,6 @@ where
 }
 
 impl<I> ExactSizeIterator for SomeIterator<I> where I: ExactSizeIterator {}
-impl<I> PolarsIterator for SomeIterator<I> where I: PolarsIterator {}
-
-/// Iterator for chunked arrays with just one chunk.
-/// The chunk cannot have null values so it does NOT perform null checks.
-///
-/// The return type is `PolarsNumericType::Native`.
-pub struct NumIterSingleChunk<'a, T>
-where
-    T: PolarsNumericType,
-{
-    iter: Copied<Iter<'a, T::Native>>,
-}
-
-impl<'a, T> NumIterSingleChunk<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunk = ca.downcast_iter().next().unwrap();
-        let slice = chunk.values();
-        let iter = slice.iter().copied();
-
-        NumIterSingleChunk { iter }
-    }
-}
-
-impl<'a, T> Iterator for NumIterSingleChunk<'a, T>
-where
-    T: PolarsNumericType,
-{
-    type Item = T::Native;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.iter.size_hint()
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for NumIterSingleChunk<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.iter.next_back()
-    }
-}
-
-/// Iterator for chunked arrays with just one chunk.
-/// The chunk have null values so it DOES perform null checks.
-///
-/// The return type is `Option<PolarsNumericType::Native>`.
-pub struct NumIterSingleChunkNullCheck<'a, T>
-where
-    T: PolarsNumericType,
-{
-    arr: &'a PrimitiveArray<T>,
-    idx_left: usize,
-    idx_right: usize,
-}
-
-impl<'a, T> NumIterSingleChunkNullCheck<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let mut chunks = ca.downcast_iter();
-        let arr = chunks.next().unwrap();
-        let idx_left = 0;
-        let idx_right = arr.len();
-
-        NumIterSingleChunkNullCheck {
-            arr,
-            idx_left,
-            idx_right,
-        }
-    }
-
-    fn return_opt_val(&self, index: usize) -> Option<T::Native> {
-        if self.arr.is_null(index) {
-            None
-        } else {
-            // Safety:
-            // Null is checked above.
-            unsafe { Some(self.arr.value_unchecked(index)) }
-        }
-    }
-}
-
-impl<'a, T> Iterator for NumIterSingleChunkNullCheck<'a, T>
-where
-    T: PolarsNumericType,
-{
-    type Item = Option<T::Native>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.idx_left == self.idx_right {
-            None
-        } else {
-            let ret = self.return_opt_val(self.idx_left);
-            self.idx_left += 1;
-
-            Some(ret)
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.arr.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for NumIterSingleChunkNullCheck<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.idx_left == self.idx_right {
-            None
-        } else {
-            self.idx_right -= 1;
-            Some(self.return_opt_val(self.idx_right))
-        }
-    }
-}
-
-/// Iterator for chunked arrays with many chunks.
-/// The chunks cannot have null values so it does NOT perform null checks.
-///
-/// The return type is `PolarsNumericType::Native`.
-pub struct NumIterManyChunk<'a, T>
-where
-    T: PolarsNumericType,
-{
-    ca: &'a ChunkedArray<T>,
-    chunks: Chunks<'a, PrimitiveArray<T>>,
-    // current iterator if we iterate from the left
-    current_iter_left: Copied<Iter<'a, T::Native>>,
-    // If iter_left and iter_right are the same, this is None and we need to use iter left
-    // This is done because we can only have one owner
-    current_iter_right: Option<Copied<Iter<'a, T::Native>>>,
-    chunk_idx_left: usize,
-    idx_left: usize,
-    idx_right: usize,
-    chunk_idx_right: usize,
-}
-
-impl<'a, T> NumIterManyChunk<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn set_current_iter_left(&mut self) {
-        if self.chunk_idx_left == self.chunk_idx_right {
-            // If the left and the right chunk are the same iterator, then, use the
-            // the same iterator. The right iterator is kept to maintain the right index
-            // in the iterator, as the left index will be the first index in the chunk.
-            if let Some(current_iter_right) = self.current_iter_right.take() {
-                self.current_iter_left = current_iter_right;
-            }
-        } else {
-            let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
-
-            self.current_iter_left = current_chunk.values().iter().copied();
-        }
-    }
-
-    fn set_current_iter_right(&mut self) {
-        if self.chunk_idx_left == self.chunk_idx_right {
-            // If the left and the right chunk are the same iterator, then, use the
-            // the same iterator. The left iterator is kept to maintain the left index
-            // in the iterator, as the right index will be the last index in the chunk.
-            self.current_iter_right = None
-        } else {
-            let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
-            self.current_iter_right = Some(current_chunk.values().iter().copied());
-        }
-    }
-    fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunks = ca.downcast_chunks();
-        let current_iter_left = chunks.get(0).unwrap().values().iter().copied();
-
-        let idx_left = 0;
-        let chunk_idx_left = 0;
-        let idx_right = ca.len();
-
-        let chunk_idx_right = chunks.len() - 1;
-        let current_iter_right;
-        if chunk_idx_left == chunk_idx_right {
-            current_iter_right = None
-        } else {
-            let arr = chunks.get(chunk_idx_right).unwrap();
-            current_iter_right = Some(arr.values().iter().copied())
-        }
-
-        NumIterManyChunk {
-            ca,
-            chunks,
-            current_iter_left,
-            current_iter_right,
-            chunk_idx_left,
-            idx_left,
-            idx_right,
-            chunk_idx_right,
-        }
-    }
-}
-
-impl<'a, T> Iterator for NumIterManyChunk<'a, T>
-where
-    T: PolarsNumericType,
-{
-    type Item = T::Native;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let opt_val = self.current_iter_left.next();
-
-        let opt_val = if opt_val.is_none() {
-            // iterators have met in the middle or at the end
-            if self.idx_left == self.idx_right {
-                return None;
-                // one chunk is finished but there are still more chunks
-            } else {
-                self.chunk_idx_left += 1;
-                self.set_current_iter_left();
-            }
-            // so we return the first value of the next chunk
-            self.current_iter_left.next()
-        } else {
-            // we got a value
-            opt_val
-        };
-        self.idx_left += 1;
-        opt_val
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.ca.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for NumIterManyChunk<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let opt_val = match &mut self.current_iter_right {
-            Some(it) => it.next_back(),
-            None => self.current_iter_left.next_back(),
-        };
-
-        let opt_val = if opt_val.is_none() {
-            // iterators have met in the middle or at the beginning
-            if self.idx_left == self.idx_right {
-                return None;
-                // one chunk is finished but there are still more chunks
-            } else {
-                self.chunk_idx_right -= 1;
-                self.set_current_iter_right();
-            }
-            // so we return the first value of the next chunk from the back
-            self.current_iter_left.next_back()
-        } else {
-            // we got a value
-            opt_val
-        };
-        self.idx_right -= 1;
-        opt_val
-    }
-}
-
-/// Iterator for chunked arrays with many chunks.
-/// The chunks have null values so it DOES perform null checks.
-///
-/// The return type is `Option<PolarsNumericType::Native>`.
-pub struct NumIterManyChunkNullCheck<'a, T>
-where
-    T: PolarsNumericType,
-{
-    ca: &'a ChunkedArray<T>,
-    chunks: Chunks<'a, PrimitiveArray<T>>,
-    // current iterator if we iterate from the left
-    current_iter_left: Copied<Iter<'a, T::Native>>,
-    current_data_left: &'a ArrayData,
-    // index in the current iterator from left
-    current_array_idx_left: usize,
-    // If iter_left and iter_right are the same, this is None and we need to use iter left
-    // This is done because we can only have one owner
-    current_iter_right: Option<Copied<Iter<'a, T::Native>>>,
-    current_data_right: &'a ArrayData,
-    current_array_idx_right: usize,
-    chunk_idx_left: usize,
-    idx_left: usize,
-    idx_right: usize,
-    chunk_idx_right: usize,
-}
-
-impl<'a, T> NumIterManyChunkNullCheck<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn set_current_iter_left(&mut self) {
-        if self.chunk_idx_left == self.chunk_idx_right {
-            // If the left and the right chunk are the same iterator, then, use the
-            // the same iterator. The right iterator is kept to maintain the right index
-            // in the iterator, as the left index will be the first index in the chunk.
-            self.current_data_left = self.current_data_right;
-            if let Some(current_iter_right) = self.current_iter_right.take() {
-                self.current_iter_left = current_iter_right;
-            }
-        } else {
-            let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_left) };
-            self.current_data_left = current_chunk.data();
-
-            self.current_iter_left = current_chunk.values().iter().copied();
-        }
-    }
-
-    fn set_current_iter_right(&mut self) {
-        if self.chunk_idx_left == self.chunk_idx_right {
-            // If the left and the right chunk are the same iterator, then, use the
-            // the same iterator. The left iterator is kept to maintain the left index
-            // in the iterator, as the right index will be the last index in the chunk.
-            self.current_data_right = self.current_data_left;
-            self.current_iter_right = None
-        } else {
-            let current_chunk = unsafe { self.chunks.get_unchecked(self.chunk_idx_right) };
-            self.current_data_right = current_chunk.data();
-
-            self.current_iter_right = Some(current_chunk.values().iter().copied());
-        }
-    }
-
-    fn new(ca: &'a ChunkedArray<T>) -> Self {
-        let chunks = ca.downcast_chunks();
-        let arr_left = chunks.get(0).unwrap();
-        let current_iter_left = arr_left.values().iter().copied();
-        let current_data_left = arr_left.data();
-
-        let idx_left = 0;
-        let chunk_idx_left = 0;
-        let idx_right = ca.len();
-
-        let chunk_idx_right = chunks.len() - 1;
-        let current_iter_right;
-        let arr = chunks.get(chunk_idx_right).unwrap();
-        let current_data_right = arr.data();
-        if chunk_idx_left == chunk_idx_right {
-            current_iter_right = None
-        } else {
-            current_iter_right = Some(arr.values().iter().copied())
-        }
-        let current_array_idx_right = arr.len();
-
-        NumIterManyChunkNullCheck {
-            ca,
-            current_iter_left,
-            current_data_left,
-            current_array_idx_left: 0,
-            chunks,
-            current_iter_right,
-            current_data_right,
-            current_array_idx_right,
-            idx_left,
-            chunk_idx_left,
-            idx_right,
-            chunk_idx_right,
-        }
-    }
-}
-
-impl<'a, T> Iterator for NumIterManyChunkNullCheck<'a, T>
-where
-    T: PolarsNumericType,
-{
-    type Item = Option<T::Native>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let opt_val = self.current_iter_left.next();
-
-        let opt_val = if opt_val.is_none() {
-            // iterators have met in the middle or at the end
-            if self.idx_left == self.idx_right {
-                return None;
-                // one chunk is finished but there are still more chunks
-            } else {
-                self.chunk_idx_left += 1;
-                // reset the index
-                self.current_array_idx_left = 0;
-                self.set_current_iter_left();
-            }
-            // so we return the first value of the next chunk
-            self.current_iter_left.next()
-        } else {
-            // we got a value
-            opt_val
-        };
-        self.idx_left += 1;
-        self.current_array_idx_left += 1;
-        if self
-            .current_data_left
-            .is_null(self.current_array_idx_left - 1)
-        {
-            Some(None)
-        } else {
-            opt_val.map(Some)
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.ca.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for NumIterManyChunkNullCheck<'a, T>
-where
-    T: PolarsNumericType,
-{
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let opt_val = match &mut self.current_iter_right {
-            Some(it) => it.next_back(),
-            None => self.current_iter_left.next_back(),
-        };
-
-        let opt_val = if opt_val.is_none() {
-            // iterators have met in the middle or at the beginning
-            if self.idx_left == self.idx_right {
-                return None;
-                // one chunk is finished but there are still more chunks
-            } else {
-                self.chunk_idx_right -= 1;
-                self.set_current_iter_right();
-                // reset the index accumulator
-                self.current_array_idx_right = self.current_data_right.len()
-            }
-            // so we return the first value of the next chunk from the back
-            self.current_iter_left.next_back()
-        } else {
-            // we got a value
-            opt_val
-        };
-        self.idx_right -= 1;
-        self.current_array_idx_right -= 1;
-
-        if self
-            .current_data_right
-            .is_null(self.current_array_idx_right)
-        {
-            Some(None)
-        } else {
-            opt_val.map(Some)
-        }
-    }
-}
-
-impl<'a, T> IntoIterator for &'a ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Item = Option<T::Native>;
-    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        match self.chunks.len() {
-            1 => {
-                if self.null_count() == 0 {
-                    Box::new(SomeIterator(NumIterSingleChunk::new(self)))
-                } else {
-                    Box::new(NumIterSingleChunkNullCheck::new(self))
-                }
-            }
-            _ => {
-                if self.null_count() == 0 {
-                    Box::new(SomeIterator(NumIterManyChunk::new(self)))
-                } else {
-                    Box::new(NumIterManyChunkNullCheck::new(self))
-                }
-            }
-        }
-    }
-}
-
-impl<'a> IntoIterator for &'a CategoricalChunked {
-    type Item = Option<u32>;
-    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.deref().into_iter()
-    }
-}
 
 impl CategoricalChunked {
     #[allow(clippy::wrong_self_convention)]
@@ -582,7 +99,6 @@ impl CategoricalChunked {
 /// - Iterator
 /// - DoubleEndedIterator
 /// - ExactSizeIterator
-/// - PolarsIterator
 ///
 /// # Input
 ///
@@ -595,7 +111,6 @@ impl CategoricalChunked {
 macro_rules! impl_single_chunk_iterator {
     ($ca_type:ident, $arrow_array:ident, $iterator_name:ident, $iter_item:ty $(, $return_function:ident)?) => {
         impl<'a> ExactSizeIterator for $iterator_name<'a> {}
-        impl<'a> PolarsIterator for $iterator_name<'a> {}
 
         /// Iterator for chunked arrays with just one chunk.
         /// The chunk cannot have null values so it does NOT perform null checks.
@@ -709,7 +224,6 @@ macro_rules! impl_single_chunk_iterator {
 /// - Iterator
 /// - DoubleEndedIterator
 /// - ExactSizeIterator
-/// - PolarsIterator
 ///
 /// # Input
 ///
@@ -722,7 +236,6 @@ macro_rules! impl_single_chunk_iterator {
 macro_rules! impl_single_chunk_null_check_iterator {
     ($ca_type:ident, $arrow_array:ident, $iterator_name:ident, $iter_item:ty $(, $return_function:ident)?) => {
         impl<'a> ExactSizeIterator for $iterator_name<'a> {}
-        impl<'a> PolarsIterator for $iterator_name<'a> {}
 
         /// Iterator for chunked arrays with just one chunk.
         /// The chunk have null values so it DOES perform null checks.
@@ -842,7 +355,6 @@ macro_rules! impl_single_chunk_null_check_iterator {
 /// - Iterator
 /// - DoubleEndedIterator
 /// - ExactSizeIterator
-/// - PolarsIterator
 ///
 /// # Input
 ///
@@ -855,7 +367,6 @@ macro_rules! impl_single_chunk_null_check_iterator {
 macro_rules! impl_many_chunk_iterator {
     ($ca_type:ident, $arrow_array:ident, $iterator_name:ident, $iter_item:ty $(, $return_function:ident)?) => {
         impl<'a> ExactSizeIterator for $iterator_name<'a> {}
-        impl<'a> PolarsIterator for $iterator_name<'a> {}
 
         /// Iterator for chunked arrays with many chunks.
         /// The chunks cannot have null values so it does NOT perform null checks.
@@ -1032,7 +543,6 @@ macro_rules! impl_many_chunk_iterator {
 /// - Iterator
 /// - DoubleEndedIterator
 /// - ExactSizeIterator
-/// - PolarsIterator
 ///
 /// # Input
 ///
@@ -1046,7 +556,6 @@ macro_rules! impl_many_chunk_iterator {
 macro_rules! impl_many_chunk_null_check_iterator {
     ($ca_type:ident, $arrow_array:ident, $iterator_name:ident, $iter_item:ty $(, $return_function:ident)? ) => {
         impl<'a> ExactSizeIterator for $iterator_name<'a> {}
-        impl<'a> PolarsIterator for $iterator_name<'a> {}
 
         /// Iterator for chunked arrays with many chunks.
         /// The chunks have null values so it DOES perform null checks.
