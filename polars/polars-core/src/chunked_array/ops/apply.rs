@@ -1,6 +1,6 @@
 //! Implementations of the ChunkApply Trait.
 use crate::prelude::*;
-use crate::utils::NoNull;
+use crate::utils::{CustomIterTools, NoNull};
 use arrow::array::{Array, ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray};
 use std::borrow::Cow;
 use std::convert::TryFrom;
@@ -94,7 +94,9 @@ where
             let ca: NoNull<_> = self.into_no_null_iter().enumerate().map(f).collect();
             ca.into_inner()
         } else {
-            self.into_iter()
+            self.downcast_iter()
+                .flatten()
+                .trust_my_length(self.len())
                 .enumerate()
                 .map(|(idx, opt_v)| opt_v.map(|v| f((idx, v))))
                 .collect()
@@ -105,7 +107,12 @@ where
     where
         F: Fn((usize, Option<T::Native>)) -> Option<T::Native> + Copy,
     {
-        self.into_iter().enumerate().map(f).collect()
+        self.downcast_iter()
+            .flatten()
+            .trust_my_length(self.len())
+            .enumerate()
+            .map(f)
+            .collect()
     }
 }
 
