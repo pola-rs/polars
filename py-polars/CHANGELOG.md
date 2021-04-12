@@ -2,6 +2,19 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.6
+* bug fix
+  - fix bug in downsample: #537
+
+* feature
+  - cast categorical in csv parser: #533
+  - add many groupby-context aware operations: #534
+  - dowcast by month: #537
+
+* performance
+  - improve iterator in no null case: #538
+  - remove indirection: #536
+
 ### polars 0.7.5
 * bug fix
   - fix bug in vectorized hashing algorithm that affected groupbys with null values: #523
