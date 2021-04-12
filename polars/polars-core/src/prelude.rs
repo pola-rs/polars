@@ -1,4 +1,5 @@
 //! Everything you need to get started with Polars.
+pub(crate) use crate::frame::groupby::aggregations::*;
 pub use crate::{
     chunked_array::{
         arithmetic::Pow,
