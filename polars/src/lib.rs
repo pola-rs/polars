@@ -298,6 +298,7 @@ pub use polars_core::{
 pub use polars_core::apply_method_all_arrow_series;
 pub use polars_core::df;
 
+#[cfg(feature = "polars-io")]
 pub use polars_io as io;
 #[cfg(feature = "lazy")]
 pub use polars_lazy as lazy;
