@@ -14,7 +14,7 @@ simd = ["arrow/simd"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "lazy", "parquet", "performant", "plain_fmt"]
+default = ["docs", "temporal", "performant"]
 lazy = []
 
 # commented out until UB is fixed
