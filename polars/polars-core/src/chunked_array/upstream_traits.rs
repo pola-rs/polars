@@ -3,7 +3,6 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
-use crate::POOL;
 use arrow::array::{BooleanArray, LargeStringArray, PrimitiveArray};
 use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
