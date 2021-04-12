@@ -1,8 +1,9 @@
 //! Implementations of upstream traits for ChunkedArray<T>
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
-use crate::utils::get_iter_capacity;
 use crate::utils::NoNull;
+use crate::utils::{get_iter_capacity, CustomIterTools};
+use crate::POOL;
 use arrow::array::{BooleanArray, LargeStringArray, PrimitiveArray};
 use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
@@ -245,8 +246,10 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let av: AlignedVec<_> =
-            TrustMyLength::new(vectors.into_iter().flatten(), capacity).collect();
+        let mut av = AlignedVec::with_capacity_aligned(capacity);
+        for v in vectors {
+            av.extend_from_slice(&v)
+        }
         let arr = av.into_primitive_array::<T>(None);
         NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
     }
@@ -274,15 +277,15 @@ impl FromParallelIterator<bool> for BooleanChunked {
 
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut builder = BooleanChunkedBuilder::new("", capacity);
-        // Unpack all these results and append them single threaded
-        vectors.iter().for_each(|vec| {
-            for val in vec {
-                builder.append_value(*val);
-            }
-        });
-
-        builder.finish()
+        // 2021-02-07: this was ~70% faster than with the builder, even with the extra Option<T> added.
+        let arr = BooleanArray::from_iter(
+            vectors
+                .into_iter()
+                .flatten()
+                .trust_my_length(capacity)
+                .map(Some),
+        );
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
