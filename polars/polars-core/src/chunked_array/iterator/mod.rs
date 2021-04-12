@@ -40,6 +40,80 @@ impl<'a> IntoIterator for &'a CategoricalChunked {
     }
 }
 
+impl<'a> IntoIterator for &'a BooleanChunked {
+    type Item = Option<bool>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+    }
+}
+
+/// The no null iterator for a BooleanArray
+pub struct BoolIterNoNull<'a> {
+    array: &'a BooleanArray,
+    current: usize,
+    current_end: usize,
+}
+
+impl<'a> BoolIterNoNull<'a> {
+    /// create a new iterator
+    pub fn new(array: &'a BooleanArray) -> Self {
+        BoolIterNoNull {
+            array,
+            current: 0,
+            current_end: array.len(),
+        }
+    }
+}
+
+impl<'a> Iterator for BoolIterNoNull<'a> {
+    type Item = bool;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == self.current_end {
+            None
+        } else {
+            let old = self.current;
+            self.current += 1;
+            unsafe { Some(self.array.value_unchecked(old)) }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.array.len() - self.current,
+            Some(self.array.len() - self.current),
+        )
+    }
+}
+
+impl<'a> DoubleEndedIterator for BoolIterNoNull<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.current_end == self.current {
+            None
+        } else {
+            self.current_end -= 1;
+            unsafe { Some(self.array.value_unchecked(self.current_end)) }
+        }
+    }
+}
+
+/// all arrays have known size.
+impl<'a> ExactSizeIterator for BoolIterNoNull<'a> {}
+
+impl BooleanChunked {
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl Iterator<Item = bool> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
+    {
+        self.downcast_iter()
+            .map(|bool_arr| BoolIterNoNull::new(bool_arr))
+            .flatten()
+            .trust_my_length(self.len())
+    }
+}
+
 /// Trait for ChunkedArrays that don't have null values.
 /// The result is the most efficient implementation `Iterator`, according to the number of chunks.
 pub trait IntoNoNullIterator {
@@ -920,15 +994,6 @@ impl_all_iterators!(
     Utf8IterManyChunk,
     Utf8IterManyChunkNullCheck,
     &'a str
-);
-impl_all_iterators!(
-    BooleanChunked,
-    BooleanArray,
-    BooleanIterSingleChunk,
-    BooleanIterSingleChunkNullCheck,
-    BooleanIterManyChunk,
-    BooleanIterManyChunkNullCheck,
-    bool
 );
 
 // used for macro
