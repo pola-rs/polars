@@ -31,6 +31,19 @@ def test_add_eager_column():
     assert out["c"].sum() == 6
 
 
+def test_set_null():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = (
+        df.lazy()
+        .with_column(when(col("a") > 1).then(lit(None)).otherwise(100).alias("foo"))
+        .collect()
+    )
+    s = out["foo"]
+    assert s[0] == 100
+    assert s[1] is None
+    assert s[2] is None
+
+
 def test_agg():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()
