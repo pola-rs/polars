@@ -19,10 +19,9 @@ default = ["docs",
     "plain_fmt",
     "mimalloc",
     "dtype-slim",
-    "polars-io"
 ]
 ndarray = ["polars-core/ndarray"]
-parquet = ["polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
+parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
 lazy = ["polars-core/lazy", "polars-lazy"]
 # commented out until UB is fixed
 #parallel = ["polars-core/parallel"]
@@ -34,10 +33,13 @@ strings = ["polars-core/strings"]
 object = ["polars-core/object"]
 
 # support for arrows json parsing
-json = ["polars-io/json"]
+json = ["polars-io", "polars-io/json"]
 
 # support for arrows ipc file parsing
-ipc = ["polars-io/ipc"]
+ipc = ["polars-io", "polars-io/ipc"]
+
+# support for arrows csv file parsing
+csv-file = ["polars-io", "polars-io/csv-file"]
 
 # ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
 # that fits a TrustedLen iterator.

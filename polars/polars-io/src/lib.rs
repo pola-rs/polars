@@ -1,5 +1,10 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(feature = "csv-file")]
+#[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
+#[cfg(feature = "csv-file")]
+#[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv_core;
 #[cfg(feature = "ipc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
