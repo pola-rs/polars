@@ -1365,7 +1365,7 @@ class WhenThen:
     def __init__(self, pywhenthen: "PyWhenThen"):  # noqa F821
         self._pywhenthen = pywhenthen
 
-    def otherwise(self, expr: "Expr") -> "Expr":
+    def otherwise(self, expr: "Union[Expr, int, float, str]") -> "Expr":
         expr = expr_to_lit_or_expr(expr)
         return wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
@@ -1374,7 +1374,7 @@ class When:
     def __init__(self, pywhen: "pywhen"):  # noqa F821
         self._pywhen = pywhen
 
-    def then(self, expr: "Expr") -> WhenThen:
+    def then(self, expr: "Union[Expr, int, float, str]") -> WhenThen:
         expr = expr_to_lit_or_expr(expr)
         whenthen = self._pywhen.then(expr._pyexpr)
         return WhenThen(whenthen)

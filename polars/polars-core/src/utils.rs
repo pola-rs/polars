@@ -650,6 +650,9 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Boolean, Float32) => Some(Float32),
         (Boolean, Float64) => Some(Float64),
 
+        (dt, Null) => Some(dt.clone()),
+        (Null, dt) => Some(dt.clone()),
+
         _ => None,
     }
 }

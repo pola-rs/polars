@@ -1150,7 +1150,7 @@ class DataFrame:
         else:
             return wrap_df(self._df.hstack([s.inner() for s in columns]))
 
-    def vstack(self, df: "DataFrame", in_place: bool = False):
+    def vstack(self, df: "DataFrame", in_place: bool = False) -> Optional["DataFrame"]:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
