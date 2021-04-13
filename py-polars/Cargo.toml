@@ -33,6 +33,7 @@ features = [
     "random",
     "object",
     "ipc",
+    "csv-file",
     "pretty_fmt",
     "mimalloc",
     "performant",

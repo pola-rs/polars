@@ -247,7 +247,7 @@ impl PySeries {
             self.series = series;
             None
         } else {
-            Some(PySeries::new(series))
+            Some(series.into())
         }
     }
 
