@@ -93,6 +93,7 @@ pub enum LiteralValue {
     },
     #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
     DateTime(NaiveDateTime),
+    Series(NoEq<Series>),
 }
 
 impl LiteralValue {
@@ -119,7 +120,8 @@ impl LiteralValue {
             LiteralValue::Range { data_type, .. } => data_type.clone(),
             #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
             LiteralValue::DateTime(_) => DataType::Date64,
-            _ => panic!("Cannot treat {:?} as scalar value", self),
+            LiteralValue::Series(s) => s.dtype().clone(),
+            LiteralValue::Null => DataType::Null,
         }
     }
 }

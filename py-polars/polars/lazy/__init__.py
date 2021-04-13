@@ -371,8 +371,15 @@ class LazyFrame:
         exprs
             List of Expressions that evaluate to columns
         """
-        exprs = [e._pyexpr for e in exprs]
-        return wrap_ldf(self._ldf.with_columns(exprs))
+        pyexprs = []
+
+        for e in exprs:
+            if isinstance(e, Expr):
+                pyexprs.append(e._pyexpr)
+            elif isinstance(e, Series):
+                pyexprs.append(lit(e)._pyexpr)
+
+        return wrap_ldf(self._ldf.with_columns(pyexprs))
 
     def with_column(self, expr: "Expr") -> "LazyFrame":
         """
@@ -1585,7 +1592,7 @@ def lit_date(dt: "datetime") -> Expr:
     return lit(int(dt.timestamp() * 1e3))
 
 
-def lit(value: "Optional[Union[float, int, str, datetime]]") -> "Expr":
+def lit(value: "Optional[Union[float, int, str, datetime, Series]]") -> "Expr":
     """
     A literal value
 
@@ -1603,10 +1610,16 @@ def lit(value: "Optional[Union[float, int, str, datetime]]") -> "Expr":
 
     # literal Null
     lit(None)
+
+    # literal eager Series
+    lit(Series("a", [1, 2, 3])
     ```
     """
     if isinstance(value, datetime):
         return lit(int(value.timestamp() * 1e3)).cast(datatypes.Date64)
+
+    if isinstance(value, Series):
+        value = value._s
 
     return wrap_expr(pylit(value))
 

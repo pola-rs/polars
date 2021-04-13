@@ -25,6 +25,12 @@ def test_apply():
     new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
 
+def test_add_eager_column():
+    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out = df.lazy().with_column(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
+    assert out["c"].sum() == 6
+
+
 def test_agg():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()

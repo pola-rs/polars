@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{slice_offsets, NoNull};
 use rayon::prelude::*;
 use std::borrow::Cow;
+use std::ops::Deref;
 use std::sync::Arc;
 
 pub struct LiteralExpr(pub LiteralValue, Expr);
@@ -81,6 +82,7 @@ impl PhysicalExpr for LiteralExpr {
                 let timestamp = naive_datetime_to_date64(ndt);
                 Date64Chunked::full("literal", timestamp, 1).into_series()
             }
+            Series(series) => series.deref().clone(),
         };
         Ok(s)
     }
@@ -110,6 +112,7 @@ impl PhysicalExpr for LiteralExpr {
             Range { data_type, .. } => Field::new(name, data_type.clone()),
             #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
             DateTime(_) => Field::new(name, DataType::Date64),
+            Series(s) => s.field().clone(),
         };
         Ok(field)
     }

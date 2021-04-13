@@ -1262,6 +1262,12 @@ impl Literal for NaiveDate {
     }
 }
 
+impl Literal for Series {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Series(NoEq::new(self)))
+    }
+}
+
 /// Create a Literal Expression from `L`
 pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
