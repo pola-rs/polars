@@ -1,5 +1,7 @@
-pub use crate::{csv::*, SerReader, SerWriter};
+pub use crate::{SerReader, SerWriter};
 
+#[cfg(feature = "csv-file")]
+pub use crate::csv::*;
 #[cfg(feature = "ipc")]
 pub use crate::ipc::*;
 #[cfg(feature = "json")]
