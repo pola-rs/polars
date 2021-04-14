@@ -532,9 +532,8 @@ pub fn lit(value: &PyAny) -> PyExpr {
                 .to_str()
                 .expect("could not transform Python string to Rust Unicode"),
         )
-            .into()
-    }
-    else if let Ok(series) = value.extract::<PySeries>() {
+        .into()
+    } else if let Ok(series) = value.extract::<PySeries>() {
         dsl::lit(series.series.clone()).into()
     } else if value.is_none() {
         dsl::lit(Null {}).into()
