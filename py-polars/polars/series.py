@@ -735,7 +735,7 @@ class Series:
         else:
             return wrap_s(self._s.sort(reverse))
 
-    def argsort(self, reverse: bool = False) -> Sequence[int]:
+    def argsort(self, reverse: bool = False) -> "Series":
         """
         ..deprecate::
 
@@ -748,7 +748,7 @@ class Series:
         """
         return self._s.argsort(reverse)
 
-    def arg_sort(self, reverse: bool = False) -> Sequence[int]:
+    def arg_sort(self, reverse: bool = False) -> "Series":
         """
         Index location of the sorted variant of this Series.
 

@@ -335,28 +335,28 @@ impl PySeries {
         }
     }
 
-    pub fn add(&self, other: &PySeries) -> PyResult<Self> {
-        Ok(PySeries::new(&self.series + &other.series))
+    pub fn add(&self, other: &PySeries) -> Self {
+        (&self.series + &other.series).into()
     }
 
-    pub fn sub(&self, other: &PySeries) -> PyResult<Self> {
-        Ok(PySeries::new(&self.series - &other.series))
+    pub fn sub(&self, other: &PySeries) -> Self {
+        (&self.series - &other.series).into()
     }
 
-    pub fn mul(&self, other: &PySeries) -> PyResult<Self> {
-        Ok(PySeries::new(&self.series * &other.series))
+    pub fn mul(&self, other: &PySeries) -> Self {
+        (&self.series * &other.series).into()
     }
 
-    pub fn div(&self, other: &PySeries) -> PyResult<Self> {
-        Ok(PySeries::new(&self.series / &other.series))
+    pub fn div(&self, other: &PySeries) -> Self {
+        (&self.series / &other.series).into()
     }
 
-    pub fn head(&self, length: Option<usize>) -> PyResult<Self> {
-        Ok(PySeries::new(self.series.head(length)))
+    pub fn head(&self, length: Option<usize>) -> Self {
+        (self.series.head(length)).into()
     }
 
-    pub fn tail(&self, length: Option<usize>) -> PyResult<Self> {
-        Ok(PySeries::new(self.series.tail(length)))
+    pub fn tail(&self, length: Option<usize>) -> Self {
+        (self.series.tail(length)).into()
     }
 
     pub fn sort_in_place(&mut self, reverse: bool) {
@@ -367,13 +367,8 @@ impl PySeries {
         PySeries::new(self.series.sort(reverse))
     }
 
-    pub fn argsort(&self, reverse: bool) -> Py<PyArray1<u32>> {
-        let gil = pyo3::Python::acquire_gil();
-        let pyarray = PyArray1::from_iter(
-            gil.python(),
-            self.series.argsort(reverse).into_iter().flatten(),
-        );
-        pyarray.to_owned()
+    pub fn argsort(&self, reverse: bool) -> Self {
+        self.series.argsort(reverse).into_series().into()
     }
 
     pub fn unique(&self) -> PyResult<Self> {
