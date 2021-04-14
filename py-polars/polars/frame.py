@@ -266,6 +266,9 @@ class DataFrame:
             else:
                 name = column._name
 
+            if column.num_chunks > 1:
+                column = column.combine_chunks()
+
             data[name] = column
 
         table = pa.table(data)
