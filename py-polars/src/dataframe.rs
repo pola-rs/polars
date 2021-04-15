@@ -321,6 +321,12 @@ impl PyDataFrame {
         Ok(())
     }
 
+    pub fn with_column(&mut self, s: PySeries) -> PyResult<Self> {
+        let mut df = self.df.clone();
+        df.with_column(s.series).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     /// Get datatypes
     pub fn dtypes(&self) -> Vec<u8> {
         self.df

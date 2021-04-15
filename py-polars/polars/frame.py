@@ -1133,6 +1133,17 @@ class DataFrame:
 
         return wrap_df(out)
 
+    def with_column(self, column: "Series") -> "DataFrame":
+        """
+        Return a new DataFrame with the column added or replaced
+
+        Parameters
+        ----------
+        column
+            Series, where the name of the Series refers to the column in the DataFrame.
+        """
+        return wrap_df(self._df.with_column(column._s))
+
     def hstack(
         self, columns: "Union[List[Series], DataFrame]", in_place=False
     ) -> Optional["DataFrame"]:

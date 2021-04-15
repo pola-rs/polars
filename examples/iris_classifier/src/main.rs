@@ -158,7 +158,7 @@ fn one_hot_encode(mut df: DataFrame) -> Result<DataFrame> {
         .collect::<ListChunked>()
         .into_series();
     ohe.rename("ohe");
-    df.add_column(ohe)?;
+    df.with_column(ohe)?;
 
     Ok(df)
 }

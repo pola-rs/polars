@@ -1241,7 +1241,8 @@ mod test {
             + df_a.column("b").unwrap().utf8().unwrap();
         s.rename("dummy");
 
-        let df_a = df_a.with_column(s).unwrap();
+        let mut df_a = df_a.clone();
+        df_a.with_column(s).unwrap();
         let mut s = df_b
             .column("foo")
             .unwrap()
@@ -1251,7 +1252,8 @@ mod test {
             .unwrap()
             + df_b.column("bar").unwrap().utf8().unwrap();
         s.rename("dummy");
-        let df_b = df_b.with_column(s).unwrap();
+        let mut df_b = df_b.clone();
+        df_b.with_column(s).unwrap();
 
         let joined = df_a.left_join(&df_b, "dummy", "dummy").unwrap();
         let ham_col = joined.column("ham").unwrap();
