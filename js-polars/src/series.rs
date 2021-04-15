@@ -3,10 +3,15 @@ use polars_core::prelude::{
 };
 use std::ops::{BitAnd, BitOr};
 use wasm_bindgen::prelude::*;
+use crate::{
+    console_log,
+    log,
+};
 
 #[wasm_bindgen]
+#[repr(transparent)]
 pub struct Series {
-    series: PSeries,
+    pub(crate) series: PSeries,
 }
 
 impl From<PSeries> for Series {
@@ -31,6 +36,33 @@ impl Series {
         } else {
             unimplemented!()
         }
+    }
+
+    #[wasm_bindgen(js_name = toString)]
+    pub fn to_string(&self) -> String {
+        format!("{}", self.series)
+    }
+
+    pub fn log(&self) {
+        console_log!("{}", self.series)
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) ->  String {
+        let mut series_fmt = String::with_capacity(10);
+        series_fmt.push('[');
+        let n  = std::cmp::min(self.series.len(), 5);
+        for i in 0..n {
+            let val = self.series.get(i);
+            if i < n -1 {
+                series_fmt.push_str(&format!("{}, ", val))
+            } else {
+                series_fmt.push_str(&format!("{}", val))
+            }
+        }
+        series_fmt.push(']');
+
+        format!(r#"{{ {}: {} }}"#, self.series.name(), series_fmt)
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Series> {

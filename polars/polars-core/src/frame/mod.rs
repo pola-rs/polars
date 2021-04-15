@@ -421,13 +421,17 @@ impl DataFrame {
         self.insert_at_idx_no_name_check(index, series)
     }
 
-    /// Add a new column to this `DataFrame`.
-    pub fn add_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
+    /// Add a new column to this `DataFrame` or replace an existing one.
+    pub fn with_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
         let series = column.into_series();
-        self.has_column(series.name())?;
-        if series.len() == self.height() {
-            self.columns.push(series);
-            self.rechunk();
+        if series.len() == self.height() || self.is_empty() {
+            if self.has_column(series.name()).is_err() {
+                let name = series.name().to_string();
+                self.apply(&name, |_| series)?;
+            } else {
+                self.columns.push(series);
+                self.rechunk();
+            }
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -439,13 +443,6 @@ impl DataFrame {
                 .into(),
             ))
         }
-    }
-
-    /// Create a new `DataFrame` with the column added.
-    pub fn with_column<S: IntoSeries>(&self, column: S) -> Result<Self> {
-        let mut df = self.clone();
-        df.add_column(column)?;
-        Ok(df)
     }
 
     /// Get a row in the `DataFrame` Beware this is slow.
@@ -760,7 +757,7 @@ impl DataFrame {
     pub fn replace_or_add<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
         let new_col = new_col.into_series();
         match self.replace(column, new_col.clone()) {
-            Err(_) => self.add_column(new_col),
+            Err(_) => self.with_column(new_col),
             Ok(_) => Ok(self),
         }
     }
@@ -1737,8 +1734,10 @@ mod test {
             "foo" => &[1, 2, 3]
         }
         .unwrap();
-        assert!(df.add_column(Series::new("foo", &[1, 2, 3])).is_err());
-        assert!(df.add_column(Series::new("bar", &[1, 2, 3])).is_ok());
+        // check if column is replaced
+        assert!(df.with_column(Series::new("foo", &[1, 2, 3])).is_ok());
+        assert!(df.with_column(Series::new("bar", &[1, 2, 3])).is_ok());
+        assert!(df.column("bar").is_ok())
     }
 
     #[test]
