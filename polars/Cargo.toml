@@ -14,6 +14,7 @@ docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal"]
 random = ["polars-core/random"]
 default = ["docs",
+    "csv-file",
     "temporal",
     "performant",
     "plain_fmt",
