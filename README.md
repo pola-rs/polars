@@ -31,6 +31,8 @@ Or by fixing to a specific version:
 polars = {version="0.12.0", git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
 ```
 
+Required Rust version `>=1.51`
+
 # Python users read this!
 Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name. 
 
