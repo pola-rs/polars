@@ -1,5 +1,9 @@
 #[macro_use]
 extern crate polars;
+
+use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
+
 use crate::lazy::dsl::PyExpr;
 use crate::{
     dataframe::PyDataFrame,
@@ -9,14 +13,12 @@ use crate::{
     },
     series::PySeries,
 };
-use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
 
+pub mod apply;
 pub mod arrow_interop;
 pub mod conversion;
 pub mod dataframe;
 pub mod datatypes;
-pub mod dispatch;
 pub mod error;
 pub mod file;
 pub mod lazy;

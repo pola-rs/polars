@@ -2,6 +2,15 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.7
+* bug fix
+  - fix bug with pyarrow chunkedarray: #545
+
+* feature
+  - DataFrame.apply method
+  - Make a Series a Literal
+  - Make None a Literal
+
 ### polars 0.7.6
 * bug fix
   - fix bug in downsample: #537

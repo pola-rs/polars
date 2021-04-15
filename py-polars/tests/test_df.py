@@ -451,3 +451,9 @@ def test_read_csv_categorical():
     f.seek(0)
     df = pl.DataFrame.read_csv(f, has_headers=True, dtype={"col1": pl.Categorical})
     assert df["col1"].dtype == pl.Categorical
+
+
+def test_df_apply():
+    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    out = df.apply(lambda x: len(x), None)
+    assert out.sum() == 9

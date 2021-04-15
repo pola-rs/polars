@@ -8,6 +8,15 @@ use pyo3::{PyAny, PyResult};
 
 pub struct Wrap<T>(pub T);
 
+impl<T> Clone for Wrap<T>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        Wrap(self.0.clone())
+    }
+}
+
 fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
     let seq = <PySequence as PyTryFrom>::try_from(obj)?;
     let len = seq.len()? as usize;
@@ -94,5 +103,11 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Object(v) => v.into_py(py),
         }
+    }
+}
+
+impl ToPyObject for Wrap<AnyValue<'_>> {
+    fn to_object(&self, py: Python) -> PyObject {
+        self.clone().into_py(py)
     }
 }

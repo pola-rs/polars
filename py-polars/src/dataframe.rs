@@ -7,6 +7,10 @@ use polars::frame::groupby::GroupBy;
 use polars::prelude::*;
 use polars_core::frame::groupby::resample::SampleRule;
 
+use crate::apply::dataframe::{
+    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
+    apply_lambda_with_utf8_out_type,
+};
 use crate::conversion::Wrap;
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
@@ -736,6 +740,64 @@ impl PyDataFrame {
     pub fn null_count(&self) -> Self {
         let df = self.df.null_count();
         df.into()
+    }
+
+    pub fn apply(&self, lambda: &PyAny, output_type: &PyAny) -> PyResult<PySeries> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let df = &self.df;
+
+        let output_type = match output_type.is_none() {
+            true => None,
+            false => {
+                let str_repr = output_type.str().unwrap().to_str().unwrap();
+                Some(str_to_polarstype(str_repr))
+            }
+        };
+        let out = match output_type {
+            Some(DataType::Int32) => {
+                apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
+                    .into_series()
+            }
+            Some(DataType::Int64) => {
+                apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
+                    .into_series()
+            }
+            Some(DataType::UInt32) => {
+                apply_lambda_with_primitive_out_type::<UInt32Type>(df, py, lambda, 0, None)
+                    .into_series()
+            }
+            Some(DataType::UInt64) => {
+                apply_lambda_with_primitive_out_type::<UInt64Type>(df, py, lambda, 0, None)
+                    .into_series()
+            }
+            Some(DataType::Float32) => {
+                apply_lambda_with_primitive_out_type::<Float32Type>(df, py, lambda, 0, None)
+                    .into_series()
+            }
+            Some(DataType::Float64) => {
+                apply_lambda_with_primitive_out_type::<Float64Type>(df, py, lambda, 0, None)
+                    .into_series()
+            }
+            Some(DataType::Boolean) => {
+                apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series()
+            }
+            Some(DataType::Date32) => {
+                apply_lambda_with_primitive_out_type::<Date32Type>(df, py, lambda, 0, None)
+                    .into_series()
+            }
+            Some(DataType::Date64) => {
+                apply_lambda_with_primitive_out_type::<Date64Type>(df, py, lambda, 0, None)
+                    .into_series()
+            }
+            Some(DataType::Utf8) => {
+                apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
+            }
+
+            _ => apply_lambda_unknown(df, py, lambda)?,
+        };
+
+        Ok(out.into())
     }
 }
 

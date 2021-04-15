@@ -705,7 +705,7 @@ where
     f(out)
 }
 
-pub(crate) trait CustomIterTools: Iterator {
+pub trait CustomIterTools: Iterator {
     fn fold_first_<F>(mut self, f: F) -> Option<Self::Item>
     where
         Self: Sized,
