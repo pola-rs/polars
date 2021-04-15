@@ -1,27 +1,10 @@
+use super::*;
 use crate::error::PyPolarsEr;
 use crate::series::PySeries;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString, PyTuple};
-
-pub trait PyArrowPrimitiveType: PolarsPrimitiveType {}
-
-impl PyArrowPrimitiveType for UInt8Type {}
-impl PyArrowPrimitiveType for UInt16Type {}
-impl PyArrowPrimitiveType for UInt32Type {}
-impl PyArrowPrimitiveType for UInt64Type {}
-impl PyArrowPrimitiveType for Int8Type {}
-impl PyArrowPrimitiveType for Int16Type {}
-impl PyArrowPrimitiveType for Int32Type {}
-impl PyArrowPrimitiveType for Int64Type {}
-impl PyArrowPrimitiveType for Float32Type {}
-impl PyArrowPrimitiveType for Float64Type {}
-impl PyArrowPrimitiveType for Date32Type {}
-impl PyArrowPrimitiveType for Date64Type {}
-impl PyArrowPrimitiveType for Time64NanosecondType {}
-impl PyArrowPrimitiveType for DurationNanosecondType {}
-impl PyArrowPrimitiveType for DurationMillisecondType {}
 
 pub trait ApplyLambda<'a> {
     fn apply_lambda_unknown(&'a self, _py: Python, _lambda: &'a PyAny) -> PyResult<PySeries> {
@@ -83,105 +66,17 @@ pub trait ApplyLambda<'a> {
     }
 }
 
-fn iterator_to_primitive<T>(
-    it: impl Iterator<Item = Option<T::Native>>,
-    init_null_count: usize,
-    first_value: Option<T::Native>,
-    name: &str,
-    capacity: usize,
-) -> ChunkedArray<T>
-where
-    T: PyArrowPrimitiveType,
-{
-    let mut builder = PrimitiveChunkedBuilder::<T>::new(name, capacity);
-    for _ in 0..init_null_count {
-        builder.append_null();
-    }
-    if let Some(val) = first_value {
-        builder.append_value(val)
-    }
-    for opt_val in it {
-        match opt_val {
-            Some(val) => builder.append_value(val),
-            None => builder.append_null(),
-        }
-    }
-    builder.finish()
-}
-
-fn iterator_to_bool(
-    it: impl Iterator<Item = Option<bool>>,
-    init_null_count: usize,
-    first_value: Option<bool>,
-    name: &str,
-    capacity: usize,
-) -> ChunkedArray<BooleanType> {
-    let mut builder = BooleanChunkedBuilder::new(name, capacity);
-    for _ in 0..init_null_count {
-        builder.append_null();
-    }
-    if let Some(val) = first_value {
-        builder.append_value(val)
-    }
-    for opt_val in it {
-        match opt_val {
-            Some(val) => builder.append_value(val),
-            None => builder.append_null(),
-        }
-    }
-    builder.finish()
-}
-
-fn iterator_to_utf8<'a>(
-    it: impl Iterator<Item = Option<&'a str>>,
-    init_null_count: usize,
-    first_value: Option<&str>,
-    name: &str,
-    capacity: usize,
-) -> Utf8Chunked {
-    let mut builder = Utf8ChunkedBuilder::new(name, capacity, capacity * 25);
-    for _ in 0..init_null_count {
-        builder.append_null();
-    }
-    if let Some(val) = first_value {
-        builder.append_value(val)
-    }
-    for opt_val in it {
-        match opt_val {
-            Some(val) => builder.append_value(val),
-            None => builder.append_null(),
-        }
-    }
-    builder.finish()
-}
-
-fn iterator_to_list(
-    dt: &DataType,
-    it: impl Iterator<Item = Option<Series>>,
-    init_null_count: usize,
-    first_value: &Series,
-    name: &str,
-    capacity: usize,
-) -> ListChunked {
-    let mut builder = get_list_builder(dt, capacity * 5, capacity, name);
-    for _ in 0..init_null_count {
-        builder.append_opt_series(None);
-    }
-    builder.append_series(first_value);
-    for opt_val in it {
-        builder.append_opt_series(opt_val.as_ref())
-    }
-    builder.finish()
-}
-
 fn call_lambda<'a, T, S>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<S>
 where
     T: ToPyObject,
     S: FromPyObject<'a>,
 {
     let arg = PyTuple::new(py, &[in_val]);
-    let out = lambda.call1(arg).expect("lambda failed");
-    out.extract::<S>()
+
+    match lambda.call1(arg) {
+        Ok(out) => out.extract::<S>(),
+        Err(e) => panic!("python function failed {}", e),
+    }
 }
 
 impl<'a> ApplyLambda<'a> for BooleanChunked {
@@ -388,7 +283,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 dt,
                 it,
                 init_null_count,
-                first_value,
+                Some(first_value),
                 self.name(),
                 self.len(),
             ))
@@ -406,7 +301,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 dt,
                 it,
                 init_null_count,
-                first_value,
+                Some(first_value),
                 self.name(),
                 self.len(),
             ))
@@ -623,7 +518,7 @@ where
                 dt,
                 it,
                 init_null_count,
-                first_value,
+                Some(first_value),
                 self.name(),
                 self.len(),
             ))
@@ -641,7 +536,7 @@ where
                 dt,
                 it,
                 init_null_count,
-                first_value,
+                Some(first_value),
                 self.name(),
                 self.len(),
             ))
@@ -852,7 +747,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
                 dt,
                 it,
                 init_null_count,
-                first_value,
+                Some(first_value),
                 self.name(),
                 self.len(),
             ))
@@ -870,7 +765,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
                 dt,
                 it,
                 init_null_count,
-                first_value,
+                Some(first_value),
                 self.name(),
                 self.len(),
             ))
@@ -1240,7 +1135,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 dt,
                 it,
                 init_null_count,
-                first_value,
+                Some(first_value),
                 self.name(),
                 self.len(),
             ))
@@ -1253,7 +1148,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 dt,
                 it,
                 init_null_count,
-                first_value,
+                Some(first_value),
                 self.name(),
                 self.len(),
             ))

@@ -2,7 +2,7 @@ use crate::prelude::*;
 use itertools::Itertools;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Row<'a>(Vec<AnyValue<'a>>);
+pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
 impl DataFrame {
     /// Get a row from a DataFrame. Use of this is discouraged as it will likely be slow.

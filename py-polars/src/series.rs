@@ -1,15 +1,19 @@
+use std::any::Any;
+use std::ops::{BitAnd, BitOr};
+
+use numpy::PyArray1;
+use pyo3::types::{PyList, PyTuple};
+use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
+
+use polars::chunked_array::builder::get_bitmap;
+
+use crate::apply::series::ApplyLambda;
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::utils::str_to_polarstype;
-use crate::{arrow_interop, dispatch::ApplyLambda, npy::aligned_array, prelude::*};
-use numpy::PyArray1;
-use polars::chunked_array::builder::get_bitmap;
-use pyo3::types::{PyList, PyTuple};
-use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
-use std::any::Any;
-use std::ops::{BitAnd, BitOr};
+use crate::{arrow_interop, npy::aligned_array, prelude::*};
 
 #[derive(Clone, Debug)]
 pub struct ObjectValue {

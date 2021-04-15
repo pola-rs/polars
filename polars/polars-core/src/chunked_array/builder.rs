@@ -532,6 +532,7 @@ where
     T: PolarsPrimitiveType,
     T::Native: Num,
 {
+    #[inline]
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         match opt_s {
             Some(s) => self.append_series(s),
