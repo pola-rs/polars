@@ -206,10 +206,6 @@ impl PredicatePushDown {
         use ALogicalPlan::*;
 
         match logical_plan {
-            Slice { input, offset, len } => {
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                Ok(Slice { input, offset, len })
-            }
             Selection { predicate, input } => {
                 let name = roots_to_key(&aexpr_to_root_names(predicate, expr_arena));
                 insert_and_combine_predicate(&mut acc_predicates, name, predicate, expr_arena);
@@ -385,18 +381,6 @@ impl PredicatePushDown {
                     cache,
                 };
                 Ok(lp)
-            }
-            Sort {
-                input,
-                by_column,
-                reverse,
-            } => {
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                Ok(Sort {
-                    input,
-                    by_column,
-                    reverse,
-                })
             }
             Explode { input, columns } => {
                 // we remove predicates that are done in one of the exploded columns.
@@ -679,6 +663,31 @@ impl PredicatePushDown {
                     projection_pd,
                     schema,
                 })
+            }
+            lp => {
+                let inputs = lp.get_inputs();
+                let exprs = lp.get_exprs();
+
+                let new_inputs = if inputs.len() == 1 {
+                    let node = inputs[0];
+                    let alp = lp_arena.take(node);
+                    let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+                    lp_arena.replace(node, alp);
+                    vec![node]
+                } else {
+                    inputs
+                        .iter()
+                        .map(|&node| {
+                            let alp = lp_arena.take(node);
+                            let alp =
+                                self.push_down(alp, acc_predicates.clone(), lp_arena, expr_arena)?;
+                            lp_arena.replace(node, alp);
+                            Ok(node)
+                        })
+                        .collect::<Result<Vec<_>>>()?
+                };
+
+                Ok(lp.from_exprs_and_input(exprs, new_inputs))
             }
         }
     }

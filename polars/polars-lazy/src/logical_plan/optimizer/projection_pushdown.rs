@@ -173,18 +173,6 @@ impl ProjectionPushDown {
         use ALogicalPlan::*;
 
         match logical_plan {
-            Slice { input, offset, len } => {
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                Ok(Slice { input, offset, len })
-            }
-
             Projection { expr, input, .. } => {
                 // A projection can consist of a chain of expressions followed by an alias.
                 // We want to do the chain locally because it can have complicated side effects.
@@ -384,17 +372,6 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
                 Ok(Explode { input, columns })
-            }
-            Cache { input } => {
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                Ok(Cache { input })
             }
             Distinct {
                 input,
@@ -686,7 +663,6 @@ impl ProjectionPushDown {
                     .build();
                 Ok(lp)
             }
-
             Udf {
                 input,
                 function,
@@ -711,6 +687,44 @@ impl ProjectionPushDown {
                     projection_pd,
                     schema,
                 })
+            }
+            lp @ Slice { .. } | lp @ Cache { .. } => {
+                let inputs = lp.get_inputs();
+                let exprs = lp.get_exprs();
+
+                let new_inputs = if inputs.len() == 1 {
+                    let node = inputs[0];
+                    let alp = lp_arena.take(node);
+                    let alp = self.push_down(
+                        alp,
+                        acc_projections,
+                        names,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                    lp_arena.replace(node, alp);
+                    vec![node]
+                } else {
+                    inputs
+                        .iter()
+                        .map(|&node| {
+                            let alp = lp_arena.take(node);
+                            let alp = self.push_down(
+                                alp,
+                                acc_projections.clone(),
+                                names.clone(),
+                                projections_seen,
+                                lp_arena,
+                                expr_arena,
+                            )?;
+                            lp_arena.replace(node, alp);
+                            Ok(node)
+                        })
+                        .collect::<Result<Vec<_>>>()?
+                };
+
+                Ok(lp.from_exprs_and_input(exprs, new_inputs))
             }
         }
     }

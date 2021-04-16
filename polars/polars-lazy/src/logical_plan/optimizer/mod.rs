@@ -13,6 +13,7 @@ use crate::utils::{aexprs_to_schema, rename_field};
 
 pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
+mod logical_plan;
 pub(crate) mod predicate_pushdown;
 pub(crate) mod projection_pushdown;
 pub(crate) mod simplify_expr;
