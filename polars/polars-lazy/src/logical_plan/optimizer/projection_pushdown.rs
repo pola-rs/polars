@@ -243,11 +243,7 @@ impl ProjectionPushDown {
                     // only aliases should be projected locally
                 } else {
                     for expr in expr {
-                        if has_aexpr(
-                            expr,
-                            expr_arena,
-                            &AExpr::Alias(Default::default(), Arc::new("".into())),
-                        ) {
+                        if has_aexpr(expr, expr_arena, |e| matches!(e, AExpr::Alias(_, _))) {
                             local_projection.push(expr)
                         }
                     }

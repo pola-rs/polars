@@ -30,26 +30,14 @@ impl AggregatePushdown {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Option<ALogicalPlan> {
-        let dummy_node = usize::max_value();
-        let dummy_min = AExpr::Agg(AAggExpr::Min(Node(dummy_node)));
-        let dummy_max = AExpr::Agg(AAggExpr::Max(Node(dummy_node)));
-        let dummy_first = AExpr::Agg(AAggExpr::First(Node(dummy_node)));
-        let dummy_last = AExpr::Agg(AAggExpr::First(Node(dummy_node)));
-        let dummy_sum = AExpr::Agg(AAggExpr::Sum(Node(dummy_node)));
-
         // only do aggregation pushdown if all projections are aggregations
         #[allow(clippy::blocks_in_if_conditions)]
         if !self.processed_state
             && expr.iter().all(|node| {
-                (has_aexpr(*node, expr_arena, &dummy_min)
-                    || has_aexpr(*node, expr_arena, &dummy_max)
-                    || has_aexpr(*node, expr_arena, &dummy_first)
-                    || has_aexpr(*node, expr_arena, &dummy_sum)
-                    || has_aexpr(*node, expr_arena, &dummy_last))
-                    && {
-                        let roots = aexpr_to_root_nodes(*node, expr_arena);
-                        roots.len() == 1
-                    }
+                has_aexpr(*node, expr_arena, |e| matches!(e, AExpr::Agg(_))) && {
+                    let roots = aexpr_to_root_nodes(*node, expr_arena);
+                    roots.len() == 1
+                }
             })
         {
             // add to state

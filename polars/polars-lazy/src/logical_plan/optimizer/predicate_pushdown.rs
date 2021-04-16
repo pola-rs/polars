@@ -1,10 +1,10 @@
 use crate::logical_plan::optimizer::ALogicalPlanBuilder;
 use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
+use crate::utils::rename_aexpr_root_name;
 use crate::utils::{
-    aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node,
+    aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node, has_aexpr,
 };
-use crate::utils::{has_aexpr, rename_aexpr_root_name};
 use ahash::RandomState;
 use polars_core::prelude::*;
 use std::collections::HashMap;
@@ -99,40 +99,40 @@ impl Default for PredicatePushDown {
     }
 }
 
-fn no_pushdown_preds(
+fn no_pushdown_preds<F>(
     // node that is projected | hstacked
     node: Node,
     arena: &Arena<AExpr>,
-    matches: &[AExpr],
+    matches: F,
     // predicates that will be filtered at this node in the LP
     local_predicates: &mut Vec<Node>,
     acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
-) {
+) where
+    F: Fn(&AExpr) -> bool,
+{
     // matching expr are typically explode, shift, etc. expressions that mess up predicates when pushed down
-    for matching_expr in matches {
-        if has_aexpr(node, &arena, matching_expr) {
-            // columns that are projected. We check if we can push down the predicates past this projection
-            let columns = aexpr_to_root_names(node, &arena);
-            debug_assert_eq!(columns.len(), 1);
+    if has_aexpr(node, &arena, matches) {
+        // columns that are projected. We check if we can push down the predicates past this projection
+        let columns = aexpr_to_root_names(node, &arena);
+        debug_assert_eq!(columns.len(), 1);
 
-            // keep track of the predicates that should be removed from pushed down predicates
-            // these predicates will be added to local predicates
-            let mut remove_keys = Vec::with_capacity(acc_predicates.len());
+        // keep track of the predicates that should be removed from pushed down predicates
+        // these predicates will be added to local predicates
+        let mut remove_keys = Vec::with_capacity(acc_predicates.len());
 
-            for (key, predicate) in &*acc_predicates {
-                let root_names = aexpr_to_root_names(*predicate, arena);
+        for (key, predicate) in &*acc_predicates {
+            let root_names = aexpr_to_root_names(*predicate, arena);
 
-                for name in root_names {
-                    if columns.contains(&name) {
-                        remove_keys.push(key.clone());
-                        continue;
-                    }
+            for name in root_names {
+                if columns.contains(&name) {
+                    remove_keys.push(key.clone());
+                    continue;
                 }
             }
-            for key in remove_keys {
-                let pred = acc_predicates.remove(&*key).expect("we know it exists");
-                local_predicates.push(pred);
-            }
+        }
+        for key in remove_keys {
+            let pred = acc_predicates.remove(&*key).expect("we know it exists");
+            local_predicates.push(pred);
         }
     }
 }
@@ -247,11 +247,10 @@ impl PredicatePushDown {
                     }
 
                     // remove predicates that are based on an exploded column
-                    // todo! add shift
                     no_pushdown_preds(
                         *node,
                         &expr_arena,
-                        &[AExpr::Explode(Default::default())],
+                        |e| matches!(e, AExpr::Explode(_)) || matches!(e, AExpr::Shift { .. }),
                         &mut local_predicates,
                         &mut acc_predicates,
                     );
@@ -439,15 +438,8 @@ impl PredicatePushDown {
                 let mut new_acc_predicates = optimizer::init_hashmap();
 
                 for (name, predicate) in acc_predicates {
-                    if has_aexpr(
-                        predicate,
-                        expr_arena,
-                        &AExpr::BinaryExpr {
-                            left: Default::default(),
-                            op: Operator::And,
-                            right: Default::default(),
-                        },
-                    ) {
+                    let matches = |e: &AExpr| matches!(e, AExpr::BinaryExpr { .. });
+                    if has_aexpr(predicate, expr_arena, matches) {
                         local_predicates.push(predicate)
                     } else {
                         new_acc_predicates.insert(name, predicate);
@@ -500,15 +492,9 @@ impl PredicatePushDown {
 
                 for (_, predicate) in acc_predicates {
                     // unique and duplicated can be caused by joins
-                    if has_aexpr(predicate, expr_arena, &AExpr::IsUnique(Default::default())) {
-                        local_predicates.push(predicate);
-                        continue;
-                    }
-                    if has_aexpr(
-                        predicate,
-                        expr_arena,
-                        &AExpr::Duplicated(Default::default()),
-                    ) {
+                    let matches =
+                        |e: &AExpr| matches!(e, AExpr::IsUnique(_) | AExpr::Duplicated(_));
+                    if has_aexpr(predicate, expr_arena, matches) {
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -556,15 +542,12 @@ impl PredicatePushDown {
                     }
                     // An outer join or left join may create null values.
                     // we also do it local
-                    if (how == JoinType::Outer) | (how == JoinType::Left) {
-                        if has_aexpr(predicate, expr_arena, &AExpr::IsNotNull(Default::default())) {
-                            local_predicates.push(predicate);
-                            continue;
-                        }
-                        if has_aexpr(predicate, expr_arena, &AExpr::IsNull(Default::default())) {
-                            local_predicates.push(predicate);
-                            continue;
-                        }
+                    let matches = |e: &AExpr| matches!(e, AExpr::IsNotNull(_) | AExpr::IsNull(_));
+                    if (how == JoinType::Outer) | (how == JoinType::Left)
+                        && has_aexpr(predicate, expr_arena, matches)
+                    {
+                        local_predicates.push(predicate);
+                        continue;
                     }
                 }
 
@@ -607,21 +590,8 @@ impl PredicatePushDown {
                 let mut added_cols = Vec::with_capacity(exprs.len());
                 for e in &exprs {
                     // shifts | sorts are influenced by a filter so we do all predicates before the shift | sort
-                    if has_aexpr(
-                        *e,
-                        expr_arena,
-                        &AExpr::Shift {
-                            input: Default::default(),
-                            periods: Default::default(),
-                        },
-                    ) || has_aexpr(
-                        *e,
-                        expr_arena,
-                        &AExpr::Sort {
-                            expr: Default::default(),
-                            reverse: Default::default(),
-                        },
-                    ) {
+                    let matches = |e: &AExpr| matches!(e, AExpr::Shift { .. } | AExpr::Sort { .. });
+                    if has_aexpr(*e, expr_arena, matches) {
                         let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                             .with_columns(exprs)
                             .build();

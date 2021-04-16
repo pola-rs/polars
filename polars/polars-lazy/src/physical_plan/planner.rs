@@ -1,5 +1,4 @@
 use super::expressions as phys_expr;
-use crate::dummies::{dummy_aexpr_filter, dummy_aexpr_sort_by};
 use crate::logical_plan::Context;
 use crate::physical_plan::executors::*;
 use crate::prelude::*;
@@ -258,17 +257,14 @@ impl DefaultPlanner {
                 // TODO: fix this brittle/ buggy state and implement partitioned groupby's in eager
                 let mut partitionable = true;
 
-                // we create a dummy to check if this is in the expression tree. very ugly.
-                let dummy_sort_by = dummy_aexpr_sort_by();
-                let dummy_filter = dummy_aexpr_filter();
-
                 // currently only a single aggregation seems faster with ad-hoc partitioning.
                 if aggs.len() == 1 && keys.len() == 1 {
                     for agg in &aggs {
                         // make sure that we don't have a binary expr in the expr tree
+                        let matches =
+                            |e: &AExpr| matches!(e, AExpr::SortBy { .. } | AExpr::Filter { .. });
                         if aexpr_to_root_nodes(*agg, expr_arena).len() != 1
-                            || has_aexpr(*agg, expr_arena, &dummy_sort_by)
-                            || has_aexpr(*agg, expr_arena, &dummy_filter)
+                            || has_aexpr(*agg, expr_arena, matches)
                         {
                             partitionable = false;
                             break;

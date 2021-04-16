@@ -6,22 +6,20 @@ use polars_core::prelude::*;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-pub(crate) fn has_aexpr(current_node: Node, arena: &Arena<AExpr>, matching_expr: &AExpr) -> bool {
-    arena.iter(current_node).any(|(_node, e)| match e {
-        AExpr::Agg(_) => false,
-        _ => std::mem::discriminant(e) == std::mem::discriminant(matching_expr),
-    })
+pub(crate) fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
+where
+    F: Fn(&AExpr) -> bool,
+{
+    arena.iter(current_node).any(|(_node, e)| matches(e))
 }
 
 /// Can check if an expression tree has a matching_expr. This
 /// requires a dummy expression to be created that will be used to patter match against.
-///
-/// Another option was to create a recursive macro but would increase code bloat.
-pub(crate) fn has_expr(current_expr: &Expr, matching_expr: &Expr) -> bool {
-    current_expr.into_iter().any(|e| match e {
-        Expr::Agg(_) => false,
-        _ => std::mem::discriminant(e) == std::mem::discriminant(matching_expr),
-    })
+pub(crate) fn has_expr<F>(current_expr: &Expr, matches: F) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    current_expr.into_iter().any(|e| matches(e))
 }
 
 /// output name of expr
