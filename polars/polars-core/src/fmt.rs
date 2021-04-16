@@ -652,6 +652,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-time64-ns")]
     fn temporal() {
         let s = Date32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
         assert_eq!(
