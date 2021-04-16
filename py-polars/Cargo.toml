@@ -21,6 +21,7 @@ libc = "0.2"
 thiserror = "1.0.20"
 numpy = "0.13.0"
 ndarray = "0.14.0"
+mimalloc = { version = "*", default-features = false}
 
 [dependencies.polars]
 path = "../polars"
@@ -35,7 +36,6 @@ features = [
     "ipc",
     "csv-file",
     "pretty_fmt",
-    "mimalloc",
     "performant",
     "dtype-full",
     "pivot",
