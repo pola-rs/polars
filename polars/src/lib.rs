@@ -302,10 +302,3 @@ pub use polars_core::df;
 pub use polars_io as io;
 #[cfg(feature = "lazy")]
 pub use polars_lazy as lazy;
-
-#[cfg(feature = "mimalloc")]
-use mimalloc::MiMalloc;
-
-#[cfg(feature = "mimalloc")]
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;

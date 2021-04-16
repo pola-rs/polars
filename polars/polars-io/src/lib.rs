@@ -22,8 +22,6 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use polars_core::prelude::*;
-use polars_core::utils::accumulate_dataframes_vertical;
-use std::convert::TryFrom;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -83,6 +81,7 @@ impl<R: Read> ArrowReader for ArrowJsonReader<R> {
     }
 }
 
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
@@ -90,6 +89,9 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
 ) -> Result<DataFrame> {
+    use polars_core::utils::accumulate_dataframes_vertical;
+    use std::convert::TryFrom;
+
     let mut n_rows = 0;
     let mut parsed_dfs = Vec::with_capacity(1024);
 
@@ -164,6 +166,7 @@ pub enum ScanAggregation {
 
 impl ScanAggregation {
     /// Evaluate the aggregations per batch.
+    #[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
     pub(crate) fn evaluate_batch(&self, df: &DataFrame) -> Result<Series> {
         use ScanAggregation::*;
         let s = match self {

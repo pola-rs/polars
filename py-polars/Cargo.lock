@@ -994,7 +994,6 @@ dependencies = [
 name = "polars"
 version = "0.12.0"
 dependencies = [
- "mimalloc",
  "polars-core",
  "polars-io",
  "polars-lazy",
@@ -1109,6 +1108,7 @@ name = "py-polars"
 version = "0.7.6"
 dependencies = [
  "libc",
+ "mimalloc",
  "ndarray",
  "numpy",
  "polars",

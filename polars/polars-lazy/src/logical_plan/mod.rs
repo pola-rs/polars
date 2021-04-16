@@ -12,7 +12,8 @@ use itertools::Itertools;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_io::csv_core::utils::infer_file_schema;
-use polars_io::prelude::*;
+#[cfg(feature = "parquet")]
+use polars_io::{parquet::ParquetReader, SerReader};
 use std::collections::HashSet;
 use std::{
     cell::Cell,

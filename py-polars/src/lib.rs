@@ -27,6 +27,11 @@ pub mod prelude;
 pub mod series;
 pub mod utils;
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 #[pyfunction]
 fn col(name: &str) -> dsl::PyExpr {
     dsl::col(name)

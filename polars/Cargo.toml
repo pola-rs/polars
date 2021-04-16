@@ -18,7 +18,6 @@ default = ["docs",
     "temporal",
     "performant",
     "plain_fmt",
-    "mimalloc",
     "dtype-slim",
 ]
 ndarray = ["polars-core/ndarray"]
@@ -95,7 +94,6 @@ dtype-u64 = ["polars-core/dtype-u64", "polars-lazy/dtype-u64", "polars-io/dtype-
 polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}
 polars-io = {version = "0.12.0", path = "./polars-io", default-features = false, optional=true}
 polars-lazy = {version = "0.12.0", path = "./polars-lazy", default-features = false, optional=true}
-mimalloc = { version = "*", default-features = false, optional = true}
 
 [dev-dependencies]
 criterion = "0.3"
