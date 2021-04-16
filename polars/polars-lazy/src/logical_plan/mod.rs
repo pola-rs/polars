@@ -770,12 +770,11 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             }
         }
 
-        let has_wildcard = has_expr(&expr, &Expr::Wildcard);
+        let has_wildcard = has_expr(&expr, |e| matches!(e, Expr::Wildcard));
 
         if has_wildcard {
             // if count wildcard. count one column
-            let dummy = &Expr::Agg(AggExpr::Count(Box::new(Expr::Wildcard)));
-            if has_expr(&expr, dummy) {
+            if has_expr(&expr, |e| matches!(e, Expr::Agg(AggExpr::Count(_)))) {
                 let new_name = Arc::new(schema.field(0).unwrap().name().clone());
                 let expr = rename_expr_root_name(&expr, new_name).unwrap();
 
@@ -1004,7 +1003,7 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
-        let predicate = if has_expr(&predicate, &Expr::Wildcard) {
+        let predicate = if has_expr(&predicate, |e| matches!(e, Expr::Wildcard)) {
             let it = self.0.schema().fields().iter().map(|field| {
                 replace_wildcard_with_column(predicate.clone(), Arc::new(field.name().clone()))
             });
