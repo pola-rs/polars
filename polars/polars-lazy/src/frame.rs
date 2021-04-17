@@ -176,6 +176,7 @@ pub struct OptState {
     pub predicate_pushdown: bool,
     pub type_coercion: bool,
     pub simplify_expr: bool,
+    /// Make sure that all needed columns are scannedn
     pub agg_scan_projection: bool,
     pub aggregate_pushdown: bool,
     pub global_string_cache: bool,
@@ -188,6 +189,7 @@ impl Default for OptState {
             predicate_pushdown: true,
             type_coercion: true,
             simplify_expr: true,
+            // will be toggled by a scan operation such as csv scan or parquet scan
             agg_scan_projection: false,
             aggregate_pushdown: false,
             global_string_cache: true,

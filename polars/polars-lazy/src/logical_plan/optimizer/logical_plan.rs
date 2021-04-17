@@ -185,8 +185,8 @@ impl ALogicalPlan {
         }
     }
 
-    /// Get expressions in this node.
-    pub fn get_exprs(&self) -> Vec<Node> {
+    /// Push exprs in this node to an existing container.
+    pub fn collect_exprs(&self, container: &mut Vec<Node>) {
         use ALogicalPlan::*;
         match self {
             Melt { .. }
@@ -195,62 +195,66 @@ impl ALogicalPlan {
             | Explode { .. }
             | Cache { .. }
             | Distinct { .. }
-            | Udf { .. } => vec![],
-            Selection { predicate, .. } => vec![*predicate],
-            Projection { expr, .. } => expr.clone(),
-            LocalProjection { expr, .. } => expr.clone(),
+            | Udf { .. } => {}
+            Selection { predicate, .. } => container.push(*predicate),
+            Projection { expr, .. } => container.extend_from_slice(expr),
+            LocalProjection { expr, .. } => container.extend_from_slice(expr),
             Aggregate { keys, aggs, .. } => {
-                keys.iter().copied().chain(aggs.iter().copied()).collect()
+                let iter = keys.iter().copied().chain(aggs.iter().copied());
+                container.extend(iter)
             }
             Join {
                 left_on, right_on, ..
-            } => left_on
-                .iter()
-                .copied()
-                .chain(right_on.iter().copied())
-                .collect(),
-            HStack { exprs, .. } => exprs.clone(),
+            } => {
+                let iter = left_on.iter().copied().chain(right_on.iter().copied());
+                container.extend(iter)
+            }
+            HStack { exprs, .. } => container.extend_from_slice(exprs),
             #[cfg(feature = "parquet")]
             ParquetScan {
                 predicate,
                 aggregate,
                 ..
             } => {
-                let mut exprs = aggregate.clone();
+                container.extend_from_slice(aggregate);
                 if let Some(node) = predicate {
-                    exprs.push(*node)
+                    container.push(*node)
                 }
-                exprs
             }
             CsvScan {
                 predicate,
                 aggregate,
                 ..
             } => {
-                let mut exprs = aggregate.clone();
+                container.extend_from_slice(aggregate);
                 if let Some(node) = predicate {
-                    exprs.push(*node)
+                    container.push(*node)
                 }
-                exprs
             }
             DataFrameScan {
                 projection,
                 selection,
                 ..
             } => {
-                let mut exprs = vec![];
                 if let Some(expr) = projection {
-                    exprs.extend_from_slice(expr)
+                    container.extend_from_slice(expr)
                 }
                 if let Some(expr) = selection {
-                    exprs.push(*expr)
+                    container.push(*expr)
                 }
-                exprs
             }
         }
     }
 
-    pub fn get_inputs(&self) -> Vec<Node> {
+    /// Get expressions in this node.
+    pub fn get_exprs(&self) -> Vec<Node> {
+        let mut exprs = Vec::new();
+        self.collect_exprs(&mut exprs);
+        exprs
+    }
+
+    /// Push inputs in this node to an existing container.
+    pub fn collect_inputs(&self, container: &mut Vec<Node>) {
         use ALogicalPlan::*;
         let input = match self {
             Melt { input, .. } => *input,
@@ -266,14 +270,24 @@ impl ALogicalPlan {
                 input_left,
                 input_right,
                 ..
-            } => return vec![*input_left, *input_right],
+            } => {
+                container.push(*input_left);
+                container.push(*input_right);
+                return;
+            }
             HStack { input, .. } => *input,
             Distinct { input, .. } => *input,
             Udf { input, .. } => *input,
             #[cfg(feature = "parquet")]
-            ParquetScan { .. } => return vec![],
-            CsvScan { .. } | DataFrameScan { .. } => return vec![],
+            ParquetScan { .. } => return,
+            CsvScan { .. } | DataFrameScan { .. } => return,
         };
-        vec![input]
+        container.push(input)
+    }
+
+    pub fn get_inputs(&self) -> Vec<Node> {
+        let mut inputs = Vec::new();
+        self.collect_inputs(&mut inputs);
+        inputs
     }
 }
