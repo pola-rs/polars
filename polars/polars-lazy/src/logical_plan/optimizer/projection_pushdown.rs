@@ -403,7 +403,7 @@ impl ProjectionPushDown {
                 subset,
             } => {
                 // make sure that the set of unique columns is projected
-                (&*subset).as_ref().map(|subset| {
+                if let Some(subset) = (&*subset).as_ref() {
                     subset.iter().for_each(|name| {
                         add_str_to_accumulated(
                             name,
@@ -412,7 +412,8 @@ impl ProjectionPushDown {
                             expr_arena,
                         )
                     })
-                });
+                }
+
                 self.pushdown_and_assign(
                     input,
                     acc_projections,

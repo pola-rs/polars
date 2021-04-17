@@ -103,7 +103,7 @@ impl<'a> IntoIterator for &'a Expr {
 }
 
 impl AExpr {
-    /// Push nodes to a pre-allocated stack
+    /// Push nodes at this level to a pre-allocated stack
     pub(crate) fn nodes<'a>(&'a self, container: &mut Vec<Node>) {
         let mut push = |e: &'a Node| container.push(*e);
         use AExpr::*;

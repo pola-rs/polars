@@ -44,13 +44,11 @@ impl StackOptimizer {
     ) -> Node {
         let mut changed = true;
 
-        let mut plans = Vec::with_capacity(64);
+        let mut plans = Vec::with_capacity(32);
 
         // nodes of expressions and lp node from which the expressions are a member of
-        let mut exprs = Vec::with_capacity(64);
+        let mut exprs = Vec::with_capacity(32);
 
-        // used to get the nodes of an expression
-        let mut inter_mediate_stack = Vec::with_capacity(8);
         // run loop until reaching fixed point
         while changed {
             // recurse into sub plans and expressions and apply rules
@@ -69,82 +67,18 @@ impl StackOptimizer {
                 let plan = lp_arena.get(current_node);
 
                 // traverse subplans and expressions and add to the stack
-                match plan {
-                    ALogicalPlan::Slice { input, .. } => {
-                        plans.push(*input);
-                    }
-                    ALogicalPlan::Selection { input, predicate } => {
-                        plans.push(*input);
-                        exprs.push((*predicate, *input));
-                    }
-                    ALogicalPlan::Projection { expr, input, .. } => {
-                        plans.push(*input);
-                        exprs.extend(expr.iter().map(|e| (*e, *input)));
-                    }
-                    ALogicalPlan::LocalProjection { expr, input, .. } => {
-                        plans.push(*input);
-                        exprs.extend(expr.iter().map(|e| (*e, *input)));
-                    }
-                    ALogicalPlan::Sort { input, .. } => {
-                        plans.push(*input);
-                    }
-                    ALogicalPlan::Explode { input, .. } => {
-                        plans.push(*input);
-                    }
-                    ALogicalPlan::Cache { input } => {
-                        plans.push(*input);
-                    }
-                    ALogicalPlan::Aggregate {
-                        input, aggs, keys, ..
-                    } => {
-                        plans.push(*input);
-                        exprs.extend(aggs.iter().map(|e| (*e, *input)));
-                        exprs.extend(keys.iter().map(|e| (*e, *input)));
-                    }
-                    ALogicalPlan::Join {
-                        input_left,
-                        input_right,
-                        ..
-                    } => {
-                        plans.push(*input_left);
-                        plans.push(*input_right);
-                    }
-                    ALogicalPlan::HStack {
-                        input, exprs: e2, ..
-                    } => {
-                        plans.push(*input);
-                        exprs.extend(e2.iter().map(|e| (*e, *input)));
-                    }
-                    ALogicalPlan::Distinct { input, .. } => plans.push(*input),
-                    ALogicalPlan::DataFrameScan { selection, .. } => {
-                        if let Some(selection) = *selection {
-                            exprs.push((selection, current_node))
-                        }
-                    }
-                    ALogicalPlan::CsvScan { predicate, .. } => {
-                        if let Some(predicate) = *predicate {
-                            exprs.push((predicate, current_node))
-                        }
-                    }
-                    #[cfg(feature = "parquet")]
-                    ALogicalPlan::ParquetScan { predicate, .. } => {
-                        if let Some(predicate) = *predicate {
-                            exprs.push((predicate, current_node))
-                        }
-                    }
-                    ALogicalPlan::Melt { input, .. } => plans.push(*input),
-                    ALogicalPlan::Udf { input, .. } => plans.push(*input),
-                }
+                plan.collect_exprs(&mut exprs);
+                plan.collect_inputs(&mut plans);
 
                 // process the expressions on the stack and apply optimizations.
-                while let Some((current_expr_node, current_lp_node)) = exprs.pop() {
+                while let Some(current_expr_node) = exprs.pop() {
                     for rule in rules.iter() {
                         // keep iterating over same rule
                         while let Some(x) = rule.optimize_expr(
                             expr_arena,
                             current_expr_node,
                             &lp_arena,
-                            current_lp_node,
+                            current_node,
                         ) {
                             expr_arena.replace(current_expr_node, x);
                             changed = true;
@@ -153,11 +87,7 @@ impl StackOptimizer {
 
                     // traverse subexpressions and add to the stack
                     let expr = expr_arena.get(current_expr_node);
-
-                    expr.nodes(&mut inter_mediate_stack);
-                    for node in inter_mediate_stack.drain(..) {
-                        exprs.push((node, current_lp_node))
-                    }
+                    expr.nodes(&mut exprs);
                 }
             }
         }
