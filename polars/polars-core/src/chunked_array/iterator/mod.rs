@@ -1,7 +1,7 @@
 use crate::chunked_array::ops::downcast::Chunks;
 use crate::datatypes::CategoricalChunked;
 use crate::prelude::{
-    BooleanChunked, ChunkedArray, ListChunked, PolarsNumericType, Series, UnsafeValue, Utf8Chunked,
+    BooleanChunked, ChunkedArray, ListChunked, PolarsNumericType, Series, Utf8Chunked,
 };
 use crate::utils::CustomIterTools;
 use arrow::array::{Array, ArrayData, ArrayRef, BooleanArray, LargeListArray, LargeStringArray};
