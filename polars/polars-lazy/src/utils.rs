@@ -6,6 +6,26 @@ use polars_core::prelude::*;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+pub(crate) trait PushNode {
+    fn push_node(&mut self, value: Node);
+}
+
+impl PushNode for Vec<Node> {
+    fn push_node(&mut self, value: Node) {
+        self.push(value)
+    }
+}
+
+impl PushNode for [Option<Node>; 2] {
+    fn push_node(&mut self, value: Node) {
+        match self {
+            [None, None] => self[0] = Some(value),
+            [Some(_), None] => self[1] = Some(value),
+            _ => panic!("cannot push more than 2 nodes"),
+        }
+    }
+}
+
 pub(crate) fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
 where
     F: Fn(&AExpr) -> bool,

@@ -38,8 +38,8 @@ impl StackOptimizer {
                 let plan = lp_arena.get(current_node);
 
                 // traverse subplans and expressions and add to the stack
-                plan.collect_exprs(&mut exprs);
-                plan.collect_inputs(&mut plans);
+                plan.copy_exprs(&mut exprs);
+                plan.copy_inputs(&mut plans);
 
                 // process the expressions on the stack and apply optimizations.
                 while let Some(current_expr_node) = exprs.pop() {
