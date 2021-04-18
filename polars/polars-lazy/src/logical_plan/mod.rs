@@ -605,6 +605,13 @@ impl LogicalPlan {
             }
         }
     }
+
+    pub(crate) fn into_alp(self) -> (Node, Arena<ALogicalPlan>, Arena<AExpr>) {
+        let mut lp_arena = Arena::with_capacity(16);
+        let mut expr_arena = Arena::with_capacity(16);
+        let root = to_alp(self, &mut expr_arena, &mut lp_arena);
+        (root, lp_arena, expr_arena)
+    }
 }
 
 fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
