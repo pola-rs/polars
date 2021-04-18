@@ -1,23 +1,26 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
-use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
-use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
-use crate::prelude::simplify_expr::SimplifyBooleanRule;
-use crate::utils::combine_predicates_expr;
-use crate::{logical_plan::FETCH_ROWS, prelude::*};
-use ahash::RandomState;
-use polars_core::frame::hash_join::JoinType;
-use polars_core::prelude::*;
-use polars_core::toggle_string_cache;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use ahash::RandomState;
+use itertools::Itertools;
+
+use polars_core::frame::hash_join::JoinType;
+use polars_core::prelude::*;
+use polars_core::toggle_string_cache;
+
+use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 use crate::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
+use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
+use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
 use crate::prelude::aggregate_scan_projections::agg_projection;
-use itertools::Itertools;
+use crate::prelude::simplify_expr::SimplifyBooleanRule;
+use crate::utils::combine_predicates_expr;
+use crate::{logical_plan::FETCH_ROWS, prelude::*};
 
 #[derive(Clone)]
 pub struct LazyCsvReader<'a> {
@@ -979,12 +982,14 @@ impl LazyGroupBy {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::functions::pearson_corr;
-    use crate::tests::get_df;
     #[cfg(feature = "temporal")]
     use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
     use polars_core::*;
+
+    use crate::functions::pearson_corr;
+    use crate::tests::get_df;
+
+    use super::*;
 
     fn scan_foods_csv() -> LazyFrame {
         let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";

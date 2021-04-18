@@ -1,3 +1,8 @@
+pub use polars_core::utils::{Arena, Node};
+
+pub use crate::logical_plan::aexpr::*;
+pub use crate::logical_plan::alp::*;
+pub(crate) use crate::logical_plan::conversion::*;
 pub use crate::{
     dsl::*,
     frame::*,
@@ -12,5 +17,3 @@ pub use crate::{
         Executor, PhysicalPlanner,
     },
 };
-
-pub use polars_core::utils::{Arena, Node};

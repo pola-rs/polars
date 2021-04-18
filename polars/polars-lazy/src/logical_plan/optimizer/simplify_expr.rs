@@ -1,6 +1,7 @@
-use crate::logical_plan::*;
-use crate::prelude::*;
 use polars_core::utils::Arena;
+
+use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
+use crate::logical_plan::*;
 
 macro_rules! eval_binary_same_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
