@@ -26,6 +26,16 @@ impl PushNode for [Option<Node>; 2] {
     }
 }
 
+impl PushNode for &mut [Option<Node>] {
+    fn push_node(&mut self, value: Node) {
+        if let Some(_) = self[0] {
+            self[1] = Some(value)
+        } else {
+            self[0] = Some(value)
+        }
+    }
+}
+
 pub(crate) fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
 where
     F: Fn(&AExpr) -> bool,

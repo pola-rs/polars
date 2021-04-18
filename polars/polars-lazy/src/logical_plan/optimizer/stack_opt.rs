@@ -69,9 +69,9 @@ impl StackOptimizer {
 pub trait OptimizationRule {
     ///  Optimize (subplan) in LogicalPlan
     ///
-    /// * node - node of the (sub) logicalplan root/ node
-    /// * lp_arena - LogicalPlan memory arena
-    /// * expr_arena - Expression memory arena
+    /// * `lp_arena` - LogicalPlan memory arena
+    /// * `expr_arena` - Expression memory arena
+    /// * `node` - node of the current LogicalPlan node
     fn optimize_plan(
         &mut self,
         _lp_arena: &mut Arena<ALogicalPlan>,

@@ -220,3 +220,61 @@ impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
         }
     }
 }
+
+pub struct AlpIter<'a> {
+    stack: Vec<Node>,
+    arena: &'a Arena<ALogicalPlan>,
+}
+
+pub(crate) trait ArenaLpIter<'a> {
+    fn iter(&self, root: Node) -> AlpIter<'a>;
+}
+
+impl<'a> ArenaLpIter<'a> for &'a Arena<ALogicalPlan> {
+    fn iter(&self, root: Node) -> AlpIter<'a> {
+        let stack = vec![root];
+        AlpIter {
+            stack,
+            arena: self,
+        }
+    }
+}
+
+impl<'a> Iterator for AlpIter<'a> {
+    type Item = (Node, &'a ALogicalPlan);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.stack.pop().map(|node| {
+            let lp = self.arena.get(node);
+            lp.copy_inputs(&mut self.stack);
+            (node, lp)
+        })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::prelude::*;
+    use polars_core::df;
+    use polars_core::prelude::*;
+
+    #[test]
+    fn test_lp_iter() -> Result<()> {
+        let df = df! {
+            "a" => [1, 2]
+        }?;
+
+        let (root, lp_arena, expr_arena) = df
+            .lazy()
+            .sort("a", false)
+            .groupby(vec![col("a")])
+            .agg(vec![col("a").first()])
+            .logical_plan
+            .into_alp();
+
+        let cnt = (&lp_arena).iter(root).count();
+        assert_eq!(cnt, 3);
+        Ok(())
+    }
+}
