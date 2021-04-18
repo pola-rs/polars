@@ -1,19 +1,3 @@
-pub(crate) mod iterator;
-pub(crate) mod optimizer;
-
-use crate::logical_plan::LogicalPlan::CsvScan;
-use crate::utils::{
-    combine_predicates_expr, expr_to_root_column_name, expr_to_root_column_names, has_expr,
-    rename_expr_root_name,
-};
-use crate::{prelude::*, utils};
-use ahash::RandomState;
-use itertools::Itertools;
-use polars_core::frame::hash_join::JoinType;
-use polars_core::prelude::*;
-use polars_io::csv_core::utils::infer_file_schema;
-#[cfg(feature = "parquet")]
-use polars_io::{parquet::ParquetReader, SerReader};
 use std::collections::HashSet;
 use std::{
     cell::Cell,
@@ -21,9 +5,30 @@ use std::{
     sync::Arc,
 };
 
+use ahash::RandomState;
+use itertools::Itertools;
+
+use polars_core::frame::hash_join::JoinType;
+use polars_core::prelude::*;
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 #[cfg(feature = "temporal")]
 use polars_core::utils::chrono::NaiveDateTime;
+use polars_io::csv_core::utils::infer_file_schema;
+#[cfg(feature = "parquet")]
+use polars_io::{parquet::ParquetReader, SerReader};
+
+use crate::logical_plan::LogicalPlan::CsvScan;
+use crate::utils::{
+    combine_predicates_expr, expr_to_root_column_name, expr_to_root_column_names, has_expr,
+    rename_expr_root_name,
+};
+use crate::{prelude::*, utils};
+
+pub(crate) mod aexpr;
+pub(crate) mod alp;
+pub(crate) mod conversion;
+pub(crate) mod iterator;
+pub(crate) mod optimizer;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -1201,10 +1206,11 @@ pub(crate) fn det_melt_schema(value_vars: &[String], input_schema: &Schema) -> S
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
-    use crate::tests::get_df;
     use polars_core::df;
     use polars_core::prelude::*;
+
+    use crate::prelude::*;
+    use crate::tests::get_df;
 
     fn print_plans(lf: &LazyFrame) {
         println!("LOGICAL PLAN\n\n{}\n", lf.describe_plan());

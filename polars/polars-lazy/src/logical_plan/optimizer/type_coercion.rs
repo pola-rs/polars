@@ -1,6 +1,8 @@
+use polars_core::utils::get_supertype;
+
+use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use polars_core::utils::get_supertype;
 
 pub struct TypeCoercionRule {}
 

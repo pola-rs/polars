@@ -1,8 +1,11 @@
-use crate::logical_plan::ALogicalPlanBuilder;
-use crate::prelude::*;
-use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+use ahash::RandomState;
+
+use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
+use crate::logical_plan::ALogicalPlanBuilder;
+use crate::prelude::*;
 
 fn process_with_columns(
     path: &str,

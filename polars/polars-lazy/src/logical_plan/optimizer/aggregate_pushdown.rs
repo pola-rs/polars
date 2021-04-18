@@ -1,7 +1,9 @@
+use polars_core::prelude::*;
+
+use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{aexpr_to_root_nodes, has_aexpr};
-use polars_core::prelude::*;
 
 pub(crate) struct AggregatePushdown {
     accumulated_projections: Vec<Node>,
