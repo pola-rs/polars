@@ -10,6 +10,11 @@ The Rust crate `polars` has its own changelog.
   - DataFrame.apply method
   - Make a Series a Literal
   - Make None a Literal
+    
+* performance
+  - Update arrow
+    * faster iterators
+    * faster kernels
 
 ### polars 0.7.6
 * bug fix
