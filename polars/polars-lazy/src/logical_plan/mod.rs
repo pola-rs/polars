@@ -606,6 +606,7 @@ impl LogicalPlan {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn into_alp(self) -> (Node, Arena<ALogicalPlan>, Arena<AExpr>) {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);

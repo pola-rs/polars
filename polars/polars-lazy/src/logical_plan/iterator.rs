@@ -233,10 +233,7 @@ pub(crate) trait ArenaLpIter<'a> {
 impl<'a> ArenaLpIter<'a> for &'a Arena<ALogicalPlan> {
     fn iter(&self, root: Node) -> AlpIter<'a> {
         let stack = vec![root];
-        AlpIter {
-            stack,
-            arena: self,
-        }
+        AlpIter { stack, arena: self }
     }
 }
 
