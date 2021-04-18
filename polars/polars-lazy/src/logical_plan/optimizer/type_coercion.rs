@@ -22,10 +22,10 @@ impl OptimizationRule for TypeCoercionRule {
                 predicate,
             } => {
                 let plan = lp_arena.get(lp_node);
-                let inputs = plan.get_inputs();
+                let mut inputs = [None, None];
+                plan.copy_inputs(&mut inputs);
 
-                if inputs.len() == 1 {
-                    let input = inputs[0];
+                if let Some(input) = inputs[0] {
                     let input_schema = lp_arena.get(input).schema(lp_arena);
                     let truthy = expr_arena.get(truthy_node);
                     let falsy = expr_arena.get(falsy_node);
@@ -64,10 +64,10 @@ impl OptimizationRule for TypeCoercionRule {
                 right: node_right,
             } => {
                 let plan = lp_arena.get(lp_node);
-                let inputs = plan.get_inputs();
+                let mut inputs = [None, None];
+                plan.copy_inputs(&mut inputs);
 
-                if inputs.len() == 1 {
-                    let input = inputs[0];
+                if let Some(input) = inputs[0] {
                     let input_schema = lp_arena.get(input).schema(lp_arena);
 
                     let left = expr_arena.get(node_left);

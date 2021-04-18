@@ -1,6 +1,6 @@
 use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
-use crate::utils::aexprs_to_schema;
+use crate::utils::{aexprs_to_schema, PushNode};
 use ahash::RandomState;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
@@ -339,8 +339,8 @@ impl ALogicalPlan {
         }
     }
 
-    /// Push exprs in this node to an existing container.
-    pub fn collect_exprs(&self, container: &mut Vec<Node>) {
+    /// Copy the exprs in this LP node to an existing container.
+    pub fn copy_exprs(&self, container: &mut Vec<Node>) {
         use ALogicalPlan::*;
         match self {
             Melt { .. }
@@ -403,12 +403,17 @@ impl ALogicalPlan {
     /// Get expressions in this node.
     pub fn get_exprs(&self) -> Vec<Node> {
         let mut exprs = Vec::new();
-        self.collect_exprs(&mut exprs);
+        self.copy_exprs(&mut exprs);
         exprs
     }
 
-    /// Push inputs in this node to an existing container.
-    pub fn collect_inputs(&self, container: &mut Vec<Node>) {
+    /// Push inputs of the LP in of this node to an existing container.
+    /// Most plans have typically one input. A join has two and a scan (CsvScan)
+    /// or an in-memory DataFrame has none.
+    pub(crate) fn copy_inputs<T>(&self, container: &mut T)
+    where
+        T: PushNode,
+    {
         use ALogicalPlan::*;
         let input = match self {
             Melt { input, .. } => *input,
@@ -425,8 +430,8 @@ impl ALogicalPlan {
                 input_right,
                 ..
             } => {
-                container.push(*input_left);
-                container.push(*input_right);
+                container.push_node(*input_left);
+                container.push_node(*input_right);
                 return;
             }
             HStack { input, .. } => *input,
@@ -436,12 +441,12 @@ impl ALogicalPlan {
             ParquetScan { .. } => return,
             CsvScan { .. } | DataFrameScan { .. } => return,
         };
-        container.push(input)
+        container.push_node(input)
     }
 
     pub fn get_inputs(&self) -> Vec<Node> {
         let mut inputs = Vec::new();
-        self.collect_inputs(&mut inputs);
+        self.copy_inputs(&mut inputs);
         inputs
     }
 }
