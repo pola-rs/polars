@@ -7,6 +7,7 @@ pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
 pub(crate) mod predicate_pushdown;
 pub(crate) mod projection_pushdown;
+pub(crate) mod prune_join;
 pub(crate) mod simplify_expr;
 pub(crate) mod stack_opt;
 pub(crate) mod type_coercion;

@@ -6,6 +6,12 @@ use polars_core::prelude::*;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+pub(crate) fn equal_aexprs(left: &[Node], right: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    left.iter()
+        .zip(right.iter())
+        .all(|(l, r)| AExpr::eq(*l, *r, expr_arena))
+}
+
 pub(crate) trait PushNode {
     fn push_node(&mut self, value: Node);
 }
@@ -26,9 +32,18 @@ impl PushNode for [Option<Node>; 2] {
     }
 }
 
+impl PushNode for [Option<Node>; 1] {
+    fn push_node(&mut self, value: Node) {
+        match self {
+            [Some(_)] => self[0] = Some(value),
+            _ => panic!("cannot push more than 2 nodes"),
+        }
+    }
+}
+
 impl PushNode for &mut [Option<Node>] {
     fn push_node(&mut self, value: Node) {
-        if let Some(_) = self[0] {
+        if self[0].is_some() {
             self[1] = Some(value)
         } else {
             self[0] = Some(value)

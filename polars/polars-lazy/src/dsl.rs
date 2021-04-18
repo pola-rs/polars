@@ -166,7 +166,6 @@ pub enum Expr {
         op: Operator,
         right: Box<Expr>,
     },
-    // Nested(Box<Expr>),
     Not(Box<Expr>),
     IsNotNull(Box<Expr>),
     IsNull(Box<Expr>),

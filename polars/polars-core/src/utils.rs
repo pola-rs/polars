@@ -152,7 +152,7 @@ pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, us
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Node(pub usize);
 
 impl Default for Node {

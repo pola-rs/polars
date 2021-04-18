@@ -1,3 +1,4 @@
+use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::rename_field;
@@ -312,6 +313,27 @@ impl AExpr {
             Wildcard => panic!("should be no wildcard at this point"),
             Except(_) => panic!("should be no except at this point"),
         }
+    }
+
+    pub(crate) fn eq(node_left: Node, node_right: Node, expr_arena: &Arena<AExpr>) -> bool {
+        let cmp = |(node_left, node_right)| {
+            use AExpr::*;
+            // TODO! more variants
+            match (expr_arena.get(node_left), expr_arena.get(node_right)) {
+                (Alias(_, name_l), Alias(_, name_r)) => name_l == name_r,
+                (Column(name_l), Column(name_r)) => name_l == name_r,
+                (Literal(left), Literal(right)) => left == right,
+                (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
+                (Cast { data_type: l, .. }, Cast { data_type: r, .. }) => l == r,
+                (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
+            }
+        };
+
+        expr_arena
+            .iter(node_left)
+            .zip(expr_arena.iter(node_right))
+            .map(|(tpll, tplr)| (tpll.0, tplr.0))
+            .all(cmp)
     }
 }
 
