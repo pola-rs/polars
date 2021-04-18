@@ -20,8 +20,8 @@ dtype-u64 = ["polars-core/dtype-u64"]
 csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "2b87dfc5da67dc39d18ccc1d49ed5212b468496e", default-features=false}
-parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "2b87dfc5da67dc39d18ccc1d49ed5212b468496e"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "9a4ef4696b8b9d46e203f164345ee9c19cbac46c", default-features=false}
+parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "9a4ef4696b8b9d46e203f164345ee9c19cbac46c"}
 csv = {version="1.1", optional=true}
 lexical = {version = "5.2", optional = true}
 num_cpus = "1.13.0"

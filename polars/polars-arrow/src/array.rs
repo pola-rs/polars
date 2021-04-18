@@ -98,29 +98,6 @@ impl ValueSize for ListArray {
     }
 }
 
-pub trait UnsafeValue<T> {
-    /// # Safety
-    /// no bounds check
-    unsafe fn value_unchecked(&self, index: usize) -> T;
-}
-
-impl<T> UnsafeValue<T::Native> for PrimitiveArray<T>
-where
-    T: ArrowPrimitiveType,
-{
-    #[inline]
-    unsafe fn value_unchecked(&self, index: usize) -> T::Native {
-        self.value(index)
-    }
-}
-
-impl UnsafeValue<bool> for BooleanArray {
-    #[inline]
-    unsafe fn value_unchecked(&self, index: usize) -> bool {
-        self.value(index)
-    }
-}
-
 /// Cheaply get the null mask as BooleanArray.
 pub trait IsNull {
     fn is_null_mask(&self) -> BooleanArray;

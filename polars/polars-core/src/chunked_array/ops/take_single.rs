@@ -2,7 +2,6 @@ use crate::prelude::*;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
 };
-use polars_arrow::prelude::*;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
