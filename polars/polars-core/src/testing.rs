@@ -61,6 +61,15 @@ impl DataFrame {
         }
         true
     }
+
+    /// Checks if the Arc ptrs of the Series are equal
+    #[allow(clippy::vtable_address_comparisons)]
+    pub fn fast_equal(&self, other: &DataFrame) -> bool {
+        self.columns
+            .iter()
+            .zip(other.columns.iter())
+            .all(|(a, b)| Arc::ptr_eq(&a.0, &b.0) && a.name() == b.name() && a.len() == b.len())
+    }
 }
 
 #[cfg(test)]

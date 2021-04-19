@@ -139,12 +139,16 @@ impl PyLazyFrame {
         predicate_pushdown: bool,
         projection_pushdown: bool,
         simplify_expr: bool,
+        string_cache: bool,
+        join_pruning: bool
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
             .with_type_coercion(type_coercion)
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expr)
+            .with_string_cache(string_cache)
+            .with_join_pruning(join_pruning)
             .with_projection_pushdown(projection_pushdown);
         ldf.into()
     }

@@ -181,6 +181,18 @@ impl<T> Arena<T> {
         Node(idx)
     }
 
+    pub fn pop(&mut self) -> Option<T> {
+        self.items.pop()
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     pub fn new() -> Self {
         Arena { items: vec![] }
     }

@@ -315,16 +315,34 @@ impl AExpr {
         }
     }
 
+    /// Check if AExpr equality. The nodes may differ.
+    /// j
+    /// For instance: there can be two columns "foo" in the memory arena. These are equal,
+    /// but would have different node values.
     pub(crate) fn eq(node_left: Node, node_right: Node, expr_arena: &Arena<AExpr>) -> bool {
         let cmp = |(node_left, node_right)| {
             use AExpr::*;
-            // TODO! more variants
             match (expr_arena.get(node_left), expr_arena.get(node_right)) {
                 (Alias(_, name_l), Alias(_, name_r)) => name_l == name_r,
                 (Column(name_l), Column(name_r)) => name_l == name_r,
                 (Literal(left), Literal(right)) => left == right,
                 (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
                 (Cast { data_type: l, .. }, Cast { data_type: r, .. }) => l == r,
+                (Sort { reverse: l, .. }, Sort { reverse: r, .. }) => l == r,
+                (SortBy { reverse: l, .. }, SortBy { reverse: r, .. }) => l == r,
+                (Shift { periods: l, .. }, Shift { periods: r, .. }) => l == r,
+                (
+                    Slice {
+                        offset: offset_l,
+                        length: length_l,
+                        ..
+                    },
+                    Slice {
+                        offset: offset_r,
+                        length: length_r,
+                        ..
+                    },
+                ) => offset_l == offset_r && length_l == length_r,
                 (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
             }
         };

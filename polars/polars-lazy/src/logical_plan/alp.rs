@@ -1,3 +1,4 @@
+use crate::logical_plan::iterator::ArenaLpIter;
 use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
@@ -6,6 +7,7 @@ use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::utils::{Arena, Node};
 use std::collections::HashSet;
+use std::fs::canonicalize;
 use std::sync::Arc;
 
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
@@ -56,8 +58,8 @@ pub enum ALogicalPlan {
         selection: Option<Node>,
     },
     Projection {
-        expr: Vec<Node>,
         input: Node,
+        expr: Vec<Node>,
         schema: SchemaRef,
     },
     LocalProjection {
@@ -151,6 +153,38 @@ impl ALogicalPlan {
                 None => arena.get(*input).schema(arena),
             },
         }
+    }
+
+    /// Check ALogicalPlan equallity. The nodes may differ.
+    ///
+    /// For instance: there can be two columns "foo" in the memory arena. These are equal,
+    /// but would have different node values.
+    pub(crate) fn eq(node_left: Node, node_right: Node, lp_arena: &Arena<ALogicalPlan>) -> bool {
+        let cmp = |(node_left, node_right)| {
+            use ALogicalPlan::*;
+            match (lp_arena.get(node_left), lp_arena.get(node_right)) {
+                (CsvScan { path: path_a, .. }, CsvScan { path: path_b, .. }) => {
+                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
+                }
+                #[cfg(feature = "parquet")]
+                (ParquetScan { path: path_a, .. }, ParquetScan { path: path_b, .. }) => {
+                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
+                }
+                (DataFrameScan { df: df_a, .. }, DataFrameScan { df: df_b, .. }) => {
+                    df_a.fast_equal(df_b)
+                }
+                (a, b) => {
+                    std::mem::discriminant(a) == std::mem::discriminant(b)
+                        && a.schema(lp_arena) == b.schema(lp_arena)
+                }
+            }
+        };
+
+        lp_arena
+            .iter(node_left)
+            .zip(lp_arena.iter(node_right))
+            .map(|(tpll, tplr)| (tpll.0, tplr.0))
+            .all(cmp)
     }
 }
 
@@ -521,7 +555,11 @@ impl<'a> ALogicalPlanBuilder<'a> {
     }
 
     pub fn build(self) -> ALogicalPlan {
-        self.lp_arena.take(self.root)
+        if self.root.0 == self.lp_arena.len() {
+            self.lp_arena.pop().unwrap()
+        } else {
+            self.lp_arena.take(self.root)
+        }
     }
 
     pub(crate) fn schema(&self) -> &Schema {
