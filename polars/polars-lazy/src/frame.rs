@@ -18,6 +18,7 @@ use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
 use crate::prelude::aggregate_scan_projections::agg_projection;
+use crate::prelude::join_pruning::JoinPrune;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::combine_predicates_expr;
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
@@ -183,6 +184,7 @@ pub struct OptState {
     pub agg_scan_projection: bool,
     pub aggregate_pushdown: bool,
     pub global_string_cache: bool,
+    pub join_pruning: bool,
 }
 
 impl Default for OptState {
@@ -196,6 +198,7 @@ impl Default for OptState {
             agg_scan_projection: false,
             aggregate_pushdown: false,
             global_string_cache: true,
+            join_pruning: true,
         }
     }
 }
@@ -221,8 +224,8 @@ impl LazyFrame {
         let mut logical_plan = self.clone().get_plan_builder().build();
         if optimized {
             // initialize arena's
-            let mut expr_arena = Arena::with_capacity(512);
-            let mut lp_arena = Arena::with_capacity(512);
+            let mut expr_arena = Arena::with_capacity(64);
+            let mut lp_arena = Arena::with_capacity(32);
 
             let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
             logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
@@ -246,6 +249,14 @@ impl LazyFrame {
             logical_plan,
             opt_state,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_alp(self) -> (Node, Arena<AExpr>, Arena<ALogicalPlan>) {
+        let mut expr_arena = Arena::with_capacity(64);
+        let mut lp_arena = Arena::with_capacity(32);
+        let root = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena);
+        (root, expr_arena, lp_arena)
     }
 
     /// Toggle projection pushdown optimization.
@@ -281,6 +292,12 @@ impl LazyFrame {
     /// Toggle global string cache.
     pub fn with_string_cache(mut self, toggle: bool) -> Self {
         self.opt_state.global_string_cache = toggle;
+        self
+    }
+
+    /// Toggle join pruning optimization
+    pub fn with_join_pruning(mut self, toggle: bool) -> Self {
+        self.opt_state.join_pruning = toggle;
         self
     }
 
@@ -413,6 +430,7 @@ impl LazyFrame {
         let simplify_expr = self.opt_state.simplify_expr;
         let agg_scan_projection = self.opt_state.agg_scan_projection;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
+        let join_pruning = self.opt_state.join_pruning;
 
         let logical_plan = self.get_plan_builder().build();
 
@@ -452,9 +470,11 @@ impl LazyFrame {
             rules.push(Box::new(SimplifyExprRule {}));
             rules.push(Box::new(SimplifyBooleanRule {}));
         }
-
         if aggregate_pushdown {
             rules.push(Box::new(AggregatePushdown::new()))
+        }
+        if join_pruning {
+            rules.push(Box::new(JoinPrune {}))
         }
 
         if agg_scan_projection {
