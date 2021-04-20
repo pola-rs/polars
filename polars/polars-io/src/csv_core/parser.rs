@@ -428,7 +428,6 @@ pub(crate) fn parse_lines(
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::io::Read;
 
     #[test]
     fn test_skip() {

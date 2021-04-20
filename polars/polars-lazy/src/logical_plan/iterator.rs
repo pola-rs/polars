@@ -252,7 +252,6 @@ impl<'a> Iterator for AlpIter<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::prelude::*;
     use polars_core::df;
     use polars_core::prelude::*;
 
@@ -262,7 +261,7 @@ mod test {
             "a" => [1, 2]
         }?;
 
-        let (root, lp_arena, expr_arena) = df
+        let (root, lp_arena, _expr_arena) = df
             .lazy()
             .sort("a", false)
             .groupby(vec![col("a")])

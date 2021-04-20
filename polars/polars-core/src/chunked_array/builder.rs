@@ -715,7 +715,6 @@ pub fn get_list_builder(
 #[cfg(test)]
 mod test {
     use super::*;
-    use arrow::array::PrimitiveBuilder;
 
     #[test]
     fn test_primitive_builder() {
