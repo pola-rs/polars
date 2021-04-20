@@ -1933,7 +1933,7 @@ mod test {
         .unwrap();
 
         // test if it runs in groupby context
-        let out = df
+        let _out = df
             .lazy()
             .groupby(vec![col("a")])
             .agg(vec![col("b").mean().cast(DataType::Date64)])

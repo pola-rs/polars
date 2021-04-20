@@ -415,9 +415,9 @@ mod test {
     #[test]
     fn test_string_builder() {
         let mut builder = LargeStringBuilder::with_capacity(1, 3);
-        builder.append_value("foo");
-        builder.append_null();
-        builder.append_value("bar");
+        builder.append_value("foo").unwrap();
+        builder.append_null().unwrap();
+        builder.append_value("bar").unwrap();
         let out = builder.finish();
         let vals = out.iter().collect::<Vec<_>>();
         assert_eq!(vals, &[Some("foo"), None, Some("bar")]);
