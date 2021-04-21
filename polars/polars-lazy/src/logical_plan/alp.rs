@@ -155,11 +155,16 @@ impl ALogicalPlan {
         }
     }
 
-    /// Check ALogicalPlan equallity. The nodes may differ.
+    /// Check ALogicalPlan equality. The nodes may differ.
     ///
     /// For instance: there can be two columns "foo" in the memory arena. These are equal,
     /// but would have different node values.
-    pub(crate) fn eq(node_left: Node, node_right: Node, lp_arena: &Arena<ALogicalPlan>) -> bool {
+    pub(crate) fn eq(
+        node_left: Node,
+        node_right: Node,
+        lp_arena: &Arena<ALogicalPlan>,
+        expr_arena: &Arena<AExpr>,
+    ) -> bool {
         let cmp = |(node_left, node_right)| {
             use ALogicalPlan::*;
             match (lp_arena.get(node_left), lp_arena.get(node_right)) {
@@ -173,6 +178,35 @@ impl ALogicalPlan {
                 (DataFrameScan { df: df_a, .. }, DataFrameScan { df: df_b, .. }) => {
                     df_a.ptr_equal(df_b)
                 }
+                // the following don't affect the schema, but do affect the # of rows or the row order.
+                (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
+                    AExpr::eq(*l, *r, expr_arena)
+                }
+                (
+                    Sort {
+                        by_column: l,
+                        reverse: r_l,
+                        ..
+                    },
+                    Sort {
+                        by_column: r,
+                        reverse: r_r,
+                        ..
+                    },
+                ) => l == r && r_l == r_r,
+                (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
+                (
+                    Distinct {
+                        maintain_order: l1,
+                        subset: l2,
+                        ..
+                    },
+                    Distinct {
+                        maintain_order: r1,
+                        subset: r2,
+                        ..
+                    },
+                ) => l1 == r1 && l2 == r2,
                 (a, b) => {
                     std::mem::discriminant(a) == std::mem::discriminant(b)
                         && a.schema(lp_arena) == b.schema(lp_arena)

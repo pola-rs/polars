@@ -10,6 +10,22 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
+    (item as *const _ as usize - slice.as_ptr() as usize) / std::mem::size_of::<T>()
+}
+
+fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
+    debug_assert!(std::mem::size_of::<T>() > 0);
+    let ptr = item as *const T;
+    unsafe {
+        if slice.as_ptr() < ptr && slice.as_ptr().add(slice.len()) > ptr {
+            Some(index_of_unchecked(slice, item))
+        } else {
+            None
+        }
+    }
+}
+
 /// Used to split the mantissa and exponent of floating point numbers
 /// https://stackoverflow.com/questions/39638363/how-can-i-use-a-hashmap-with-f64-as-key-in-rust
 pub(crate) fn integer_decode_f64(val: f64) -> (u64, i16, i8) {
@@ -201,6 +217,10 @@ impl<T> Arena<T> {
         Arena {
             items: Vec::with_capacity(cap),
         }
+    }
+
+    pub fn get_node(&self, val: &T) -> Option<Node> {
+        index_of(&self.items, val).map(Node)
     }
 
     #[inline]

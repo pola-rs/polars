@@ -31,59 +31,90 @@ impl OptimizationRule for JoinPrune {
                 left_on,
                 right_on,
                 ..
-            } if equal_aexprs(left_on, right_on, expr_arena) => {
-                match (lp_arena.get(*input_left), lp_arena.get(*input_right)) {
-                    (
-                        Aggregate {
-                            input: input_l,
-                            keys: keys_l,
-                            aggs: aggs_l,
-                            apply: apply_l,
-                            ..
-                        },
-                        Aggregate {
-                            input: input_r,
-                            keys: keys_r,
-                            aggs: aggs_r,
-                            apply: apply_r,
-                            ..
-                        },
-                    // skip if we have custom functions
-                    ) if apply_l.is_none()
-                        && apply_r.is_none()
-                        // check if aggregation keys can be combined.
-                        && equal_aexprs(keys_l, keys_r, expr_arena)
-                        // check if all previous nodes/ transformations are equal
-                        && ALogicalPlan::eq(*input_l, *input_r, lp_arena)
-                    =>
-                    {
-                        let keys = keys_l.clone();
-                        let aggs = aggs_l
-                            .iter()
-                            .copied()
-                            .chain(aggs_r.iter().copied())
-                            .collect();
-                        Some(
-                            ALogicalPlanBuilder::new(*input_l, expr_arena, lp_arena)
-                                .groupby(keys, aggs, None)
-                                .build(),
-                        )
-                    }
-                    (Projection {input: input_l, expr: expr_l, ..},
-                        Projection {input: input_r, expr: expr_r, ..})
-                    // check if all previous nodes/ transformations are equal
-                    if ALogicalPlan::eq(*input_l, *input_r, lp_arena)
-                    => {
-                        let exprs = expr_l.iter().copied().chain(expr_r.iter().copied()).collect();
-                        Some(ALogicalPlanBuilder::new(*input_l, expr_arena, lp_arena)
-                            .project(exprs)
-                            .build())
-                    }
-                    _ => None,
-                }
             }
-            _ => None,
+            // Only do this optimization of join keys are equal
+            if equal_aexprs(left_on, right_on, expr_arena) => {
+                combine_lp_nodes(*input_left, *input_right, lp_arena, expr_arena)
+            }
+            _ => None
         }
+    }
+}
+
+/// Recursively combine nodes in the LogicalPlan based on the conditions
+/// listed above.
+fn combine_lp_nodes(
+    input_l: Node,
+    input_r: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<ALogicalPlan> {
+    use ALogicalPlan::*;
+
+    match (lp_arena.get(input_l), lp_arena.get(input_r)) {
+        (
+            Aggregate {
+                input: child_input_l,
+                keys: keys_l,
+                aggs: aggs_l,
+                apply: apply_l,
+                ..
+            },
+            Aggregate {
+                input: child_input_r,
+                keys: keys_r,
+                aggs: aggs_r,
+                apply: apply_r,
+                ..
+            },
+            // skip if we have custom functions
+        ) if {
+            apply_l.is_none()
+                && apply_r.is_none()
+                // check if aggregation keys can be combined.
+                && equal_aexprs(keys_l, keys_r, expr_arena)
+        }
+        =>
+            {
+                let keys = keys_l.clone();
+                let aggs = aggs_l
+                    .iter()
+                    .copied()
+                    .chain(aggs_r.iter().copied())
+                    .collect();
+
+                combine_lp_nodes(*child_input_l, *child_input_r, lp_arena, expr_arena)
+                    .map(|input| {
+                        let node = lp_arena.add(input);
+                        ALogicalPlanBuilder::new(node, expr_arena, lp_arena)
+                            .groupby(keys, aggs, None)
+                            .build()
+
+                    })
+
+            }
+        (Projection {input: child_input_l, expr: expr_l, ..},
+            Projection {input: child_input_r, expr: expr_r, ..})
+        // check if all previous nodes/ transformations are equal
+        if ALogicalPlan::eq(*child_input_l, *child_input_r, lp_arena, expr_arena)
+        => {
+            let exprs = expr_l.iter().copied().chain(expr_r.iter().copied()).collect();
+            combine_lp_nodes(*child_input_l, *child_input_r, lp_arena, expr_arena)
+                .map(|input| {
+                    let node = lp_arena.add(input);
+                    ALogicalPlanBuilder::new(node, expr_arena, lp_arena)
+                        .project(exprs)
+                        .build()
+
+                })
+        }
+        _ => {
+            if ALogicalPlan::eq(input_l, input_r, lp_arena, expr_arena) {
+                Some(lp_arena.take(input_l))
+            } else {
+                None
+            }
+        },
     }
 }
 
@@ -97,9 +128,11 @@ mod test {
     fn test_join_prune() -> Result<()> {
         let df = df!(
             "a" => [1, 2, 3, 4, 5],
-            "b" => [1, 1, 2, 2, 2]
+            "b" => [1, 1, 2, 2, 2],
+            "c" => [1, 1, 2, 2, 2]
         )?;
 
+        // // Only aggregation
         let q1 = df
             .clone()
             .lazy()
@@ -109,6 +142,30 @@ mod test {
         let q2 = df
             .clone()
             .lazy()
+            .groupby(vec![col("b")])
+            .agg(vec![col("a").last()]);
+
+        let (root, mut expr_arena, mut alp_arena) =
+            q1.left_join(q2, col("b"), col("b"), None).into_alp();
+        dbg!(alp_arena.get(root));
+        let mut opt = JoinPrune {};
+        let out = opt
+            .optimize_plan(&mut alp_arena, &mut expr_arena, root)
+            .unwrap();
+        assert!(matches!(out, ALogicalPlan::Aggregate { .. }));
+
+        // Projection and Aggregations, this needs recursion.
+        let q1 = df
+            .clone()
+            .lazy()
+            .select(vec![col("a"), col("b")])
+            .groupby(vec![col("b")])
+            .agg(vec![col("a").first()]);
+
+        let q2 = df
+            .clone()
+            .lazy()
+            .select(vec![col("a"), col("b"), col("c")])
             .groupby(vec![col("b")])
             .agg(vec![col("a").last()]);
 
