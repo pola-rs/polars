@@ -194,11 +194,11 @@ impl Default for OptState {
             predicate_pushdown: true,
             type_coercion: true,
             simplify_expr: true,
+            global_string_cache: true,
+            join_pruning: true,
             // will be toggled by a scan operation such as csv scan or parquet scan
             agg_scan_projection: false,
             aggregate_pushdown: false,
-            global_string_cache: true,
-            join_pruning: true,
         }
     }
 }

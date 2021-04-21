@@ -137,7 +137,24 @@ class LazyFrame:
         show: bool = True,
         output_path: "Optional[str]" = None,
         raw_output: bool = False,
+        figsize=(16, 12),
     ) -> "Optional[str]":
+        """
+        Show a plot of the query plan. Note that you should have graphviz installed.
+
+        Parameters
+        ----------
+        optimized
+            Optimize the query plan.
+        show
+            Show the figure.
+        output_path
+            Write the figure to disk
+        raw_output
+            Return dot syntax
+        figsize
+            Passed to matlotlib if `show` == True
+        """
         try:
             import matplotlib.pyplot as plt
             import matplotlib.image as mpimg
@@ -160,6 +177,7 @@ class LazyFrame:
                 shutil.copy(out_path, output_path)
 
             if show:
+                plt.figure(figsize=figsize)
                 img = mpimg.imread(out_path)
                 plt.imshow(img)
                 plt.show()

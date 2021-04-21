@@ -123,7 +123,7 @@ where
         self
     }
 
-    /// Set the CSV file's timestamp formatch array in
+    /// Set the CSV file's timestamp format array in
     pub fn with_timestamp_format(mut self, format: String) -> Self {
         self.writer_builder = self.writer_builder.with_timestamp_format(format);
         self
