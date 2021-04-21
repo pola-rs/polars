@@ -231,7 +231,7 @@ impl LazyFrame {
             logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         }
 
-        logical_plan.dot(&mut s, 0, "").expect("io error");
+        logical_plan.dot(&mut s, (0, 0), "").expect("io error");
         s.push_str("\n}");
         Ok(s)
     }
@@ -428,7 +428,8 @@ impl LazyFrame {
         let projection_pushdown = self.opt_state.projection_pushdown;
         let type_coercion = self.opt_state.type_coercion;
         let simplify_expr = self.opt_state.simplify_expr;
-        let agg_scan_projection = self.opt_state.agg_scan_projection;
+
+        let mut agg_scan_projection = self.opt_state.agg_scan_projection;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
         let join_pruning = self.opt_state.join_pruning;
 
@@ -474,7 +475,8 @@ impl LazyFrame {
             rules.push(Box::new(AggregatePushdown::new()))
         }
         if join_pruning {
-            rules.push(Box::new(JoinPrune {}))
+            rules.push(Box::new(JoinPrune {}));
+            agg_scan_projection = true;
         }
 
         if agg_scan_projection {

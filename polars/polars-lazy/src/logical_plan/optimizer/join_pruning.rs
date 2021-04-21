@@ -1,6 +1,7 @@
 use crate::prelude::stack_opt::OptimizationRule;
 use crate::prelude::*;
-use crate::utils::equal_aexprs;
+use crate::utils::{equal_aexprs, remove_duplicate_aexprs};
+use std::fs::canonicalize;
 
 /// Optimization rule that prunes a join, if the latest operation could be merged and the rest of
 /// the LP is equal.
@@ -98,7 +99,9 @@ fn combine_lp_nodes(
         // check if all previous nodes/ transformations are equal
         if ALogicalPlan::eq(*child_input_l, *child_input_r, lp_arena, expr_arena)
         => {
-            let exprs = expr_l.iter().copied().chain(expr_r.iter().copied()).collect();
+            let exprs: Vec<_> = expr_l.iter().copied().chain(expr_r.iter().copied()).collect();
+            let exprs = remove_duplicate_aexprs(&exprs, expr_arena);
+
             combine_lp_nodes(*child_input_l, *child_input_r, lp_arena, expr_arena)
                 .map(|input| {
                     let node = lp_arena.add(input);
@@ -107,6 +110,45 @@ fn combine_lp_nodes(
                         .build()
 
                 })
+        }
+        (CsvScan {path: path_l,
+            with_columns: with_columns_l,
+            schema,
+            has_header,
+            delimiter,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+            predicate,
+            aggregate,
+            cache,
+        },
+            CsvScan {path: path_r, with_columns: with_columns_r, ..})
+        if canonicalize(path_l).unwrap() == canonicalize(path_r).unwrap()
+        => {
+            let path = path_l.clone();
+            let with_columns = match (with_columns_l, with_columns_r) {
+                (Some(l), Some(r)) => Some(l.iter().cloned().chain(r.iter().cloned()).collect()),
+                (Some(l), None) => Some(l.clone()),
+                (None, Some(r)) => Some(r.clone()),
+                _ => None
+            };
+
+            Some(CsvScan {
+                path,
+                schema: schema.clone(),
+                has_header: *has_header,
+                delimiter: *delimiter,
+                ignore_errors: *ignore_errors,
+                skip_rows: *skip_rows,
+                stop_after_n_rows: *stop_after_n_rows,
+                predicate: *predicate,
+                with_columns,
+                aggregate: aggregate.clone(),
+                cache: *cache
+            })
+
+
         }
         _ => {
             if ALogicalPlan::eq(input_l, input_r, lp_arena, expr_arena) {
