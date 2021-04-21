@@ -413,19 +413,31 @@ impl LogicalPlan {
         }
     }
 
-    pub(crate) fn dot(&self, acc_str: &mut String, id: usize, prev_node: &str) -> std::fmt::Result {
+    ///
+    /// # Arguments
+    /// `id` - (branch, id)
+    ///     Used to make sure that the dot boxes are distinct.
+    ///     branch is an id per join branch
+    ///     id is incremented by the depth traversal of the tree.
+    pub(crate) fn dot(
+        &self,
+        acc_str: &mut String,
+        id: (usize, usize),
+        prev_node: &str,
+    ) -> std::fmt::Result {
         use LogicalPlan::*;
+        let (branch, id) = id;
         match self {
             Cache { input } => {
-                let current_node = format!("CACHE [{}]", id);
+                let current_node = format!("CACHE [{:?}]", (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             Selection { predicate, input } => {
                 let pred = fmt_predicate(Some(predicate));
-                let current_node = format!("FILTER BY {} [{}]", pred, id);
+                let current_node = format!("FILTER BY {} [{:?}]", pred, (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             CsvScan {
                 path,
@@ -442,8 +454,12 @@ impl LogicalPlan {
                 let pred = fmt_predicate(predicate.as_ref());
 
                 let current_node = format!(
-                    "CSV SCAN {};\nπ {}/{};\nσ {}\n[{}]",
-                    path, n_columns, total_columns, pred, id
+                    "CSV SCAN {};\nπ {}/{};\nσ {}\n[{:?}]",
+                    path,
+                    n_columns,
+                    total_columns,
+                    pred,
+                    (branch, id)
                 );
                 if id == 0 {
                     self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -466,8 +482,11 @@ impl LogicalPlan {
 
                 let pred = fmt_predicate(selection.as_ref());
                 let current_node = format!(
-                    "TABLE\nπ {}/{};\nσ {}\n[{}]",
-                    n_columns, total_columns, pred, id
+                    "TABLE\nπ {}/{};\nσ {}\n[{:?}]",
+                    n_columns,
+                    total_columns,
+                    pred,
+                    (branch, id)
                 );
                 if id == 0 {
                     self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -478,40 +497,40 @@ impl LogicalPlan {
             }
             Projection { expr, input, .. } => {
                 let current_node = format!(
-                    "π {}/{} [{}]",
+                    "π {}/{} [{:?}]",
                     expr.len(),
                     input.schema().fields().len(),
-                    id
+                    (branch, id)
                 );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             Sort {
                 input, by_column, ..
             } => {
                 let current_node = format!("SORT by {} [{}]", by_column, id);
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             LocalProjection { expr, input, .. } => {
                 let current_node = format!(
-                    "LOCAL π {}/{} [{}]",
+                    "LOCAL π {}/{} [{:?}]",
                     expr.len(),
                     input.schema().fields().len(),
-                    id
+                    (branch, id)
                 );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             Explode { input, columns, .. } => {
-                let current_node = format!("EXPLODE {:?} [{}]", columns, id);
+                let current_node = format!("EXPLODE {:?} [{:?}]", columns, (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             Melt { input, .. } => {
-                let current_node = format!("MELT [{}]", id);
+                let current_node = format!("MELT [{:?}]", (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             Aggregate {
                 input, keys, aggs, ..
@@ -520,9 +539,9 @@ impl LogicalPlan {
                 for key in keys.iter() {
                     s_keys.push_str(&format!("{:?}", key));
                 }
-                let current_node = format!("AGG {:?} BY {} [{}]", aggs, s_keys, id);
+                let current_node = format!("AGG {:?} BY {} [{:?}]", aggs, s_keys, (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             HStack { input, exprs, .. } => {
                 let mut current_node = String::with_capacity(128);
@@ -536,14 +555,19 @@ impl LogicalPlan {
                         }
                     }
                 }
-                current_node.push_str(&format!(" [{}]", id));
+                current_node.push_str(&format!(" [{:?}]", (branch, id)));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             Slice { input, offset, len } => {
-                let current_node = format!("SLICE offset: {}; len: {} [{}]", offset, len, id);
+                let current_node = format!(
+                    "SLICE offset: {}; len: {} [{:?}]",
+                    offset,
+                    len,
+                    (branch, id)
+                );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             Distinct { input, subset, .. } => {
                 let mut current_node = String::with_capacity(128);
@@ -554,10 +578,10 @@ impl LogicalPlan {
                         current_node.push_str(&format!("{}, ", name));
                     }
                 }
-                current_node.push_str(&format!(" [{}]", id));
+                current_node.push_str(&format!(" [{:?}]", (branch, id)));
 
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
             #[cfg(feature = "parquet")]
             ParquetScan {
@@ -575,8 +599,12 @@ impl LogicalPlan {
 
                 let pred = fmt_predicate(predicate.as_ref());
                 let current_node = format!(
-                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{}]",
-                    path, n_columns, total_columns, pred, id
+                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    path,
+                    n_columns,
+                    total_columns,
+                    pred,
+                    (branch, id)
                 );
                 if id == 0 {
                     self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -595,13 +623,13 @@ impl LogicalPlan {
                 let current_node =
                     format!("JOIN left {:?}; right: {:?} [{}]", left_on, right_on, id);
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input_left.dot(acc_str, id + 1, &current_node)?;
-                input_right.dot(acc_str, id + 1, &current_node)
+                input_left.dot(acc_str, (branch + 10, id + 1), &current_node)?;
+                input_right.dot(acc_str, (branch + 20, id + 1), &current_node)
             }
             Udf { input, .. } => {
-                let current_node = format!("UDF [{}]", id);
+                let current_node = format!("UDF [{:?}]", (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
-                input.dot(acc_str, id + 1, &current_node)
+                input.dot(acc_str, (branch, id + 1), &current_node)
             }
         }
     }
@@ -1388,7 +1416,7 @@ mod test {
         left.lazy()
             .select(&[col("days")])
             .logical_plan
-            .dot(&mut s, 0, "")
+            .dot(&mut s, (0, 0), "")
             .unwrap();
         println!("{}", s);
     }
