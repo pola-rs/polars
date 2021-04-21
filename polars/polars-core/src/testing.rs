@@ -1,9 +1,13 @@
 //! Testing utilities.
 use crate::prelude::*;
+use std::ops::Deref;
 
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`
     pub fn series_equal(&self, other: &Series) -> bool {
+        if self.get_data_ptr() == other.get_data_ptr() {
+            return true;
+        }
         if self.len() != other.len() {
             return false;
         }
@@ -32,6 +36,20 @@ impl Series {
             None => false,
             Some(sum) => sum as usize == self.len(),
         }
+    }
+
+    /// Get a pointer to the underlying data of this Series.
+    /// Can be useful for fast comparisons.
+    pub fn get_data_ptr(&self) -> usize {
+        let object = self.0.deref();
+
+        // Safety:
+        // A fat pointer consists of a data ptr and a ptr to the vtable.
+        // we specifically check that we only transmute &dyn SeriesTrait e.g.
+        // a trait object, therefore this is sound.
+        let (data_ptr, _vtable_ptr) =
+            unsafe { std::mem::transmute::<&dyn SeriesTrait, (usize, usize)>(object) };
+        data_ptr
     }
 }
 
@@ -63,12 +81,11 @@ impl DataFrame {
     }
 
     /// Checks if the Arc ptrs of the Series are equal
-    #[allow(clippy::vtable_address_comparisons)]
-    pub fn fast_equal(&self, other: &DataFrame) -> bool {
+    pub fn ptr_equal(&self, other: &DataFrame) -> bool {
         self.columns
             .iter()
             .zip(other.columns.iter())
-            .all(|(a, b)| Arc::ptr_eq(&a.0, &b.0) && a.name() == b.name() && a.len() == b.len())
+            .all(|(a, b)| a.get_data_ptr() == b.get_data_ptr())
     }
 }
 
