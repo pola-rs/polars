@@ -171,7 +171,7 @@ impl ALogicalPlan {
                     canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
                 }
                 (DataFrameScan { df: df_a, .. }, DataFrameScan { df: df_b, .. }) => {
-                    df_a.fast_equal(df_b)
+                    df_a.ptr_equal(df_b)
                 }
                 (a, b) => {
                     std::mem::discriminant(a) == std::mem::discriminant(b)
