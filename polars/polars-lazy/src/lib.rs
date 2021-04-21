@@ -90,26 +90,17 @@
 //!
 //!```rust
 //! use polars_core::prelude::*;
+//! use polars_core::df;
 //! use polars_lazy::prelude::*;
 //!
-//! let s0 = Date32Chunked::parse_from_str_slice(
-//!     "date",
-//!     &[
-//!         "2020-08-21",
-//!         "2020-08-21",
-//!         "2020-08-22",
-//!         "2020-08-23",
-//!         "2020-08-22",
-//!     ],
-//!     "%Y-%m-%d",
-//! )
-//! .into_series();
-//! let s1 = Series::new("temp", &[20, 10, 7, 9, 1]);
-//! let s2 = Series::new("rain", &[0.2, 0.1, 0.3, 0.1, 0.01]);
-//! let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
+//! fn example() -> Result<DataFrame> {
+//!     let df = df!(
+//!     "date" => ["2020-08-21", "2020-08-21", "2020-08-22", "2020-08-23", "2020-08-22"],
+//!     "temp" => [20, 10, 7, 9, 1],
+//!     "rain" => [0.2, 0.1, 0.3, 0.1, 0.01]
+//!     )?;
 //!
-//! let new = df
-//!     .lazy()
+//!     df.lazy()
 //!     .groupby(vec![col("date")])
 //!     .agg(vec![
 //!         col("rain").min(),
@@ -118,7 +109,8 @@
 //!     ])
 //!     .sort("date", false)
 //!     .collect()
-//!     .unwrap();
+//!
+//! }
 //! ```
 //!
 //! #### Calling any function
