@@ -189,7 +189,7 @@ pub mod dsl;
 mod dummies;
 pub mod frame;
 pub mod functions;
-mod logical_plan;
+pub mod logical_plan;
 pub mod physical_plan;
 pub mod prelude;
 pub(crate) mod utils;
