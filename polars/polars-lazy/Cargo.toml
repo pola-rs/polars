@@ -22,6 +22,7 @@ dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-date32 = ["polars-core/dtype-date32"]
 dtype-date64 = ["polars-core/dtype-date64"]
+ooc = ["datafusion", "tokio"]
 
 [dependencies]
 ahash = "0.7"
@@ -31,6 +32,8 @@ itertools = "0.10"
 polars-io = {version = "0.12.0", path = "../polars-io", features = ["lazy", "csv-file"], default-features=false}
 polars-core = {version = "0.12.0", path = "../polars-core", features = ["lazy"], default-features=false}
 polars-arrow = {version = "0.12.0", path = "../polars-arrow"}
+datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "9a4ef4696b8b9d46e203f164345ee9c19cbac46c", default-features=false, optional=true}
+tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "sync"] , optional=true}
 
 [package.metadata.docs.rs]
 all-features = true

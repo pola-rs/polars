@@ -418,7 +418,7 @@ impl LazyFrame {
         res
     }
 
-    fn optimize(
+    pub fn optimize(
         self,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
@@ -530,8 +530,8 @@ impl LazyFrame {
     /// ```
     pub fn collect(self) -> Result<DataFrame> {
         let use_string_cache = self.opt_state.global_string_cache;
-        let mut expr_arena = Arena::with_capacity(512);
-        let mut lp_arena = Arena::with_capacity(512);
+        let mut expr_arena = Arena::with_capacity(256);
+        let mut lp_arena = Arena::with_capacity(128);
         let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
 
         toggle_string_cache(use_string_cache);
