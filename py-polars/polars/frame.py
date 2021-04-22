@@ -238,6 +238,12 @@ class DataFrame:
         """
         data = {}
         for i, column in enumerate(table):
+            # extract the name before casting
+            if column._name is None:
+                name = f"column_{i}"
+            else:
+                name = column._name
+
             if column.type == pa.timestamp("s"):
                 column = pa.compute.cast(
                     pa.compute.multiply(pa.compute.cast(column, pa.int64()), 1000),
@@ -260,11 +266,6 @@ class DataFrame:
             # note: Decimal256 could not be cast to float
             elif isinstance(column.type, pa.Decimal128Type):
                 column = pa.compute.cast(column, pa.float64())
-
-            if column._name is None:
-                name = f"column_{i}"
-            else:
-                name = column._name
 
             if column.num_chunks > 1:
                 column = column.combine_chunks()

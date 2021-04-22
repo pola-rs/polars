@@ -457,3 +457,14 @@ def test_df_apply():
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.apply(lambda x: len(x), None)
     assert out.sum() == 9
+
+
+def test_column_names():
+    tbl = pa.table(
+        {
+            "a": pa.array([1, 2, 3, 4, 5], pa.decimal128(38, 2)),
+            "b": pa.array([1, 2, 3, 4, 5], pa.int64()),
+        }
+    )
+    df = pl.from_arrow(tbl)
+    assert df.columns == ["a", "b"]
