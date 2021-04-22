@@ -17,6 +17,8 @@ ipc = []
 lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
 dtype-u64 = ["polars-core/dtype-u64"]
+dtype-date64 = ["polars-core/dtype-date64"]
+dtype-date32 = ["polars-core/dtype-date32"]
 csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
 
 [dependencies]

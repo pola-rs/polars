@@ -121,7 +121,7 @@ impl PyDataFrame {
             .with_columns(columns)
             .with_n_threads(n_threads)
             .with_path(path)
-            .with_dtype_overwrite(overwrite_dtype.as_ref())
+            .with_dtypes(overwrite_dtype.as_ref())
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
