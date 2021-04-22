@@ -183,6 +183,8 @@ pub enum Expr {
         reverse: bool,
     },
     Agg(AggExpr),
+    /// A ternary operation
+    /// if true then "foo" else "bar"
     Ternary {
         predicate: Box<Expr>,
         truthy: Box<Expr>,
@@ -358,9 +360,6 @@ pub enum Operator {
     Modulus,
     And,
     Or,
-    Not,
-    Like,
-    NotLike,
 }
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {

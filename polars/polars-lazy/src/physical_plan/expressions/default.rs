@@ -168,9 +168,6 @@ pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Res
         Operator::Divide => Ok(left / right),
         Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
         Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
-        Operator::Not => Ok(ChunkCompare::<&Series>::eq(left, right).into_series()),
-        Operator::Like => todo!(),
-        Operator::NotLike => todo!(),
         Operator::Modulus => Ok(left % right),
     }
 }
@@ -695,6 +692,7 @@ impl PhysicalExpr for WindowExpr {
                 format!("{:?} function not supported", self.function).into(),
             )),
         }?;
+
         let mut out = df
             .select(self.group_column.as_str())?
             .left_join(&out, self.group_column.as_str(), &self.group_column)?

@@ -163,7 +163,8 @@ macro_rules! impl_dyn_series {
             }
 
             fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_list, groups)
+                // we cannot cast and dispatch as the inner type of the list would be incorrect
+                self.0.agg_list(groups)
             }
 
             fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
@@ -706,3 +707,20 @@ impl_dyn_series!(Date32Chunked);
 impl_dyn_series!(Date64Chunked);
 #[cfg(feature = "dtype-time64-ns")]
 impl_dyn_series!(Time64NanosecondChunked);
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    #[cfg(feature = "dtype-date64")]
+    fn test_agg_list_type() -> Result<()> {
+        let s = Series::new("foo", &[1, 2, 3]);
+        let s = s.cast_with_datatype(&DataType::Date64)?;
+
+        let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
+        assert!(matches!(l.dtype(), DataType::List(ArrowDataType::Date64)));
+
+        Ok(())
+    }
+}

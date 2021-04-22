@@ -147,17 +147,14 @@ impl AExpr {
                 let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
 
                 let expr_type = match op {
-                    Operator::Not
-                    | Operator::Lt
+                    Operator::Lt
                     | Operator::Gt
                     | Operator::Eq
                     | Operator::NotEq
                     | Operator::And
                     | Operator::LtEq
                     | Operator::GtEq
-                    | Operator::Or
-                    | Operator::NotLike
-                    | Operator::Like => DataType::Boolean,
+                    | Operator::Or => DataType::Boolean,
                     _ => get_supertype(&left_type, &right_type)?,
                 };
 

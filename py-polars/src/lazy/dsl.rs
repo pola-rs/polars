@@ -460,9 +460,6 @@ pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
         10 => Operator::Modulus,
         11 => Operator::And,
         12 => Operator::Or,
-        13 => Operator::Not,
-        14 => Operator::Like,
-        15 => Operator::NotLike,
         _ => panic!("not an operator"),
     };
 

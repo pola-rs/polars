@@ -135,14 +135,14 @@ impl LiteralValue {
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 pub enum LogicalPlan {
-    // filter on a boolean mask
+    /// Filter on a boolean mask
     Selection {
         input: Box<LogicalPlan>,
         predicate: Expr,
     },
-    Cache {
-        input: Box<LogicalPlan>,
-    },
+    /// Cache the input at this point in the LP
+    Cache { input: Box<LogicalPlan> },
+    /// Scan a CSV file
     CsvScan {
         path: String,
         schema: SchemaRef,
@@ -160,6 +160,7 @@ pub enum LogicalPlan {
     },
     #[cfg(feature = "parquet")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
+    /// Scan a Parquet file
     ParquetScan {
         path: String,
         schema: SchemaRef,
@@ -170,6 +171,7 @@ pub enum LogicalPlan {
         cache: bool,
     },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
+    /// In memory DataFrame
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: SchemaRef,
@@ -183,12 +185,13 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         schema: SchemaRef,
     },
-    // vertical selection
+    /// Column selection
     Projection {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
         schema: SchemaRef,
     },
+    /// Groupby aggregation
     Aggregate {
         input: Box<LogicalPlan>,
         keys: Arc<Vec<Expr>>,
@@ -196,6 +199,7 @@ pub enum LogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
     },
+    /// Join operation
     Join {
         input_left: Box<LogicalPlan>,
         input_right: Box<LogicalPlan>,
@@ -206,36 +210,43 @@ pub enum LogicalPlan {
         allow_par: bool,
         force_par: bool,
     },
+    /// Adding columns to the table without a Join
     HStack {
         input: Box<LogicalPlan>,
         exprs: Vec<Expr>,
         schema: SchemaRef,
     },
+    /// Remove duplicates from the table
     Distinct {
         input: Box<LogicalPlan>,
         maintain_order: bool,
         subset: Arc<Option<Vec<String>>>,
     },
+    /// Sort the table
     Sort {
         input: Box<LogicalPlan>,
         by_column: String,
         reverse: bool,
     },
+    /// An explode operation
     Explode {
         input: Box<LogicalPlan>,
         columns: Vec<String>,
     },
+    /// Slice the table
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
         len: usize,
     },
+    /// A Melt operation
     Melt {
         input: Box<LogicalPlan>,
         id_vars: Arc<Vec<String>>,
         value_vars: Arc<Vec<String>>,
         schema: SchemaRef,
     },
+    /// A User Defined Function
     Udf {
         input: Box<LogicalPlan>,
         function: Arc<dyn DataFrameUdf>,

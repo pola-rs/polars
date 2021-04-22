@@ -306,7 +306,6 @@ impl OptimizationRule for SimplifyExprRule {
                     Operator::LtEq => eval_binary_bool_type!(left, >=, right),
                     Operator::And => eval_and(left, right),
                     Operator::Or => eval_or(left, right),
-                    _ => None,
                 }
             }
             _ => None,
