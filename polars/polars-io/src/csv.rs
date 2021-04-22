@@ -219,7 +219,10 @@ where
         self
     }
 
-    /// Set the CSV file's schema
+    /// Set the CSV file's schema. This only accepts datatypes that are implemented
+    /// in the csv parser and expects a complete Schema.
+    ///
+    /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
     pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
         self.schema = Some(schema);
         self
@@ -251,7 +254,7 @@ where
 
     /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
     /// of the total schema.
-    pub fn with_dtype_overwrite(mut self, schema: Option<&'a Schema>) -> Self {
+    pub fn with_dtypes(mut self, schema: Option<&'a Schema>) -> Self {
         self.schema_overwrite = schema;
         self
     }
@@ -377,14 +380,19 @@ where
             let fields = schema
                 .fields()
                 .iter()
-                .map(|fld| {
+                .filter_map(|fld| {
                     match fld.data_type() {
                         // For categorical we first read as utf8 and later cast to categorical
                         DataType::Categorical => {
                             to_cast.push(fld);
-                            Field::new(fld.name(), DataType::Utf8)
+                            Some(Field::new(fld.name(), DataType::Utf8))
                         }
-                        _ => fld.clone(),
+                        DataType::Date32 | DataType::Date64 => {
+                            to_cast.push(fld);
+                            // let inference decide the column type
+                            None
+                        }
+                        _ => Some(fld.clone()),
                     }
                 })
                 .collect();
@@ -416,7 +424,7 @@ where
 
             // cast to the original dtypes in the schema
             for fld in to_cast {
-                df.may_apply(fld.name(), |s| s.cast_with_datatype(&DataType::Categorical))?;
+                df.may_apply(fld.name(), |s| s.cast_with_datatype(fld.data_type()))?;
             }
             df
         } else {
@@ -792,5 +800,31 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
             .finish()
             .unwrap();
         assert_eq!(df.column("ham").unwrap().len(), 3)
+    }
+
+    #[test]
+    fn test_with_dtype() -> Result<()> {
+        // test if timestamps can be parsed as Date64
+        let csv = r#"a,b,c,d,e
+AUDCAD,1616455919,0.91212,0.95556,1
+AUDCAD,1616455920,0.92212,0.95556,1
+AUDCAD,1616455921,0.96212,0.95666,1"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(true)
+            .with_dtypes(Some(&Schema::new(vec![Field::new("b", DataType::Date64)])))
+            .finish()?;
+
+        assert_eq!(
+            df.dtypes(),
+            &[
+                DataType::Utf8,
+                DataType::Date64,
+                DataType::Float64,
+                DataType::Float64,
+                DataType::Int64
+            ]
+        );
+        Ok(())
     }
 }
