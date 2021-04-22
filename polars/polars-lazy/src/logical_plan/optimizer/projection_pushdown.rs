@@ -236,8 +236,8 @@ impl ProjectionPushDown {
                 // the projections should all be done at the latest projection node to keep the same schema order
                 if projections_seen == 0 {
                     for expr in expr {
-                        // TODO! maybe we can remove this check?
-                        // We check if we still can the projection here.
+                        // Due to the pushdown, a lot of projections cannot be done anymore at the final
+                        // node and should be skipped
                         if expr_arena
                             .get(expr)
                             .to_field(lp.schema(lp_arena), Context::Default, expr_arena)
@@ -246,7 +246,7 @@ impl ProjectionPushDown {
                             local_projection.push(expr);
                         }
                     }
-                    // only aliases should be projected locally
+                    // only aliases should be projected locally in the rest of the projections.
                 } else {
                     for expr in expr {
                         if has_aexpr(expr, expr_arena, |e| matches!(e, AExpr::Alias(_, _))) {
