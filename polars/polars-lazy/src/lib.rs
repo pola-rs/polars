@@ -185,6 +185,8 @@
 //! }
 //! ```
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#[cfg(feature = "datafusion")]
+mod datafusion;
 pub mod dsl;
 mod dummies;
 pub mod frame;

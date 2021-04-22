@@ -5,6 +5,5 @@ members = [
     "polars/polars-io",
     "polars/polars-lazy",
     "polars/polars-arrow",
-    "polars/polars-datafusion",
 ]
 
