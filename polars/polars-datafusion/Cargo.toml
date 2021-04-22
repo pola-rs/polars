@@ -1,0 +1,30 @@
+[package]
+name = "polars-datafusion"
+version = "0.12.0"
+authors = ["ritchie46 <ritchie46@gmail.com>"]
+edition = "2018"
+license = "MIT"
+description = "DataFusion Polars interopability"
+repository = "https://github.com/ritchie46/polars"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+
+[dependencies]
+datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "9a4ef4696b8b9d46e203f164345ee9c19cbac46c", default-features=false}
+
+[dependencies.polars-lazy]
+version = "0.12.0"
+path = "../polars-lazy"
+default-features = false
+
+[dependencies.polars-core]
+version = "0.12.0"
+path = "../polars-core"
+default-features = false
+
+[package.metadata.docs.rs]
+all-features = true
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]
