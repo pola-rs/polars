@@ -141,9 +141,7 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache {
-        input: Box<LogicalPlan>,
-    },
+    Cache { input: Box<LogicalPlan> },
     /// Scan a CSV file
     CsvScan {
         path: String,
