@@ -524,5 +524,9 @@ mod test {
 
         // test if it runs.
         let _ = &s * &s;
+
+        let _ = s.minute().map(|m| &m / 5);
+        let _ = s.minute().map(|m| m / 5);
+        let _ = s.minute().map(|m| m.into_series() / 5);
     }
 }

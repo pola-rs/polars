@@ -332,12 +332,14 @@ impl DefaultPlanner {
                 let parallel = if force_par {
                     force_par
                 } else if allow_par {
-                    // check if two DataFrames come from a separate source. If they don't we hope it is cached.
+                    // check if two DataFrames come from a separate source.
+                    // If they don't we can parallelize,
+                    // Otherwise it is in cache.
                     let mut sources_left =
-                        HashSet::with_capacity_and_hasher(32, RandomState::default());
+                        HashSet::with_capacity_and_hasher(16, RandomState::default());
                     agg_source_paths(input_left, &mut sources_left, lp_arena);
                     let mut sources_right =
-                        HashSet::with_capacity_and_hasher(32, RandomState::default());
+                        HashSet::with_capacity_and_hasher(16, RandomState::default());
                     agg_source_paths(input_right, &mut sources_right, lp_arena);
                     sources_left
                         .intersection(&sources_right)
