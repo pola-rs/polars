@@ -26,7 +26,7 @@ impl<'a, R: 'static + Read + Seek + Sync + Send> FinishScanOps for CsvReader<'a,
         aggregate: Option<&[ScanAggregation]>,
     ) -> Result<DataFrame> {
         let predicate =
-            predicate.map(|expr| Arc::new(PhysicalIoHelper::new(expr)) as Arc<dyn PhysicalIoExpr>);
+            predicate.map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
 
         let rechunk = self.rechunk;
         let mut csv_reader = self.build_inner_reader()?;
@@ -149,7 +149,7 @@ impl Executor for ParquetExec {
         let predicate = self
             .predicate
             .clone()
-            .map(|expr| Arc::new(PhysicalIoHelper::new(expr)) as Arc<dyn PhysicalIoExpr>);
+            .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
 
         let df = ParquetReader::new(file)
             .with_stop_after_n_rows(stop_after_n_rows)
