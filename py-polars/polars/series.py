@@ -517,11 +517,18 @@ class Series:
         Dictionary with summary statistics of a series.
         """
         if len(self) == 0:
-            raise ValueError('Series must contain at least one value')
+            raise ValueError("Series must contain at least one value")
         elif not self.is_numeric():
-            raise TypeError('This type is not supported')
+            raise TypeError("This type is not supported")
         else:
-            return {'min': self.min(), 'max': self.max(), 'sum': self.sum(), 'mean': self.mean(), 'std': self.std(), 'count': len(self)}
+            return {
+                "min": self.min(),
+                "max": self.max(),
+                "sum": self.sum(),
+                "mean": self.mean(),
+                "std": self.std(),
+                "count": len(self),
+            }
 
     def sum(self):
         """
