@@ -54,22 +54,14 @@ pub struct CacheExec {
 }
 
 impl Executor for CacheExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let guard = cache.lock().unwrap();
-
-        // cache hit
-        if let Some(df) = guard.get(&self.key) {
-            return Ok(df.clone());
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        if let Some(df) = state.cache_hit(&self.key) {
+            return Ok(df);
         }
-        drop(guard);
 
         // cache miss
-        let df = self.input.execute(cache)?;
-
-        let mut guard = cache.lock().unwrap();
-        let key = std::mem::take(&mut self.key);
-        guard.insert(key, df.clone());
-
+        let df = self.input.execute(state)?;
+        state.store_cache(std::mem::take(&mut self.key), df.clone());
         if std::env::var(POLARS_VERBOSE).is_ok() {
             println!("cache set {:?}", self.key);
         }
@@ -113,20 +105,14 @@ impl ParquetExec {
 
 #[cfg(feature = "parquet")]
 impl Executor for ParquetExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let cache_key = match &self.predicate {
             Some(predicate) => format!("{}{:?}", self.path, predicate.as_expression()),
             None => self.path.to_string(),
         };
-        if self.cache {
-            let guard = cache.lock().unwrap();
-            // cache hit
-            if let Some(df) = guard.get(&cache_key) {
-                return Ok(df.clone());
-            }
-            drop(guard);
+        if let Some(df) = state.cache_hit(&cache_key) {
+            return Ok(df);
         }
-
         // cache miss
         let file = std::fs::File::open(&self.path).unwrap();
 
@@ -160,8 +146,7 @@ impl Executor for ParquetExec {
             )?;
 
         if self.cache {
-            let mut guard = cache.lock().unwrap();
-            guard.insert(cache_key, df.clone());
+            state.store_cache(cache_key, df.clone())
         }
         if std::env::var(POLARS_VERBOSE).is_ok() {
             println!("parquet {:?} read", self.path);
@@ -217,18 +202,15 @@ impl CsvExec {
 }
 
 impl Executor for CsvExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let cache_key = match &self.predicate {
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let state_key = match &self.predicate {
             Some(predicate) => format!("{}{:?}", self.path, predicate.as_expression()),
             None => self.path.to_string(),
         };
         if self.cache {
-            let guard = cache.lock().unwrap();
-            // cache hit
-            if let Some(df) = guard.get(&cache_key) {
-                return Ok(df.clone());
+            if let Some(df) = state.cache_hit(&state_key) {
+                return Ok(df);
             }
-            drop(guard);
         }
 
         // cache miss
@@ -265,8 +247,7 @@ impl Executor for CsvExec {
         let df = reader.finish_with_scan_ops(self.predicate.clone(), aggregate)?;
 
         if self.cache {
-            let mut guard = cache.lock().unwrap();
-            guard.insert(cache_key, df.clone());
+            state.store_cache(state_key, df.clone());
         }
         if std::env::var(POLARS_VERBOSE).is_ok() {
             println!("csv {:?} read", self.path);
@@ -288,8 +269,8 @@ impl FilterExec {
 }
 
 impl Executor for FilterExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
         let s = self.predicate.evaluate(&df)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
         let df = df.filter(mask)?;
@@ -321,7 +302,7 @@ impl DataFrameExec {
 }
 
 impl Executor for DataFrameExec {
-    fn execute(&mut self, _: &Cache) -> Result<DataFrame> {
+    fn execute(&mut self, _: &ExecutionState) -> Result<DataFrame> {
         let df = mem::take(&mut self.df);
         let mut df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
 
@@ -400,8 +381,8 @@ pub(crate) fn evaluate_physical_expressions(
 }
 
 impl Executor for StandardExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
 
         let df = evaluate_physical_expressions(&df, &self.expr);
         if std::env::var(POLARS_VERBOSE).is_ok() {
@@ -417,8 +398,8 @@ pub(crate) struct ExplodeExec {
 }
 
 impl Executor for ExplodeExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
         df.explode(&self.columns)
     }
 }
@@ -430,8 +411,8 @@ pub(crate) struct SortExec {
 }
 
 impl Executor for SortExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
         df.sort(&self.by_column, self.reverse)
     }
 }
@@ -443,8 +424,8 @@ pub(crate) struct DropDuplicatesExec {
 }
 
 impl Executor for DropDuplicatesExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
         df.drop_duplicates(
             self.maintain_order,
             self.subset.as_ref().map(|v| v.as_ref()),
@@ -518,8 +499,8 @@ fn groupby_helper(
 }
 
 impl Executor for GroupByExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
         let keys = self
             .keys
             .iter()
@@ -554,8 +535,8 @@ impl PartitionGroupByExec {
 }
 
 impl Executor for PartitionGroupByExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let original_df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let original_df = self.input.execute(state)?;
 
         // already get the keys. This is the very last minute decision which groupby method we choose.
         // If the column is a categorical, we know the number of groups we have and can decide to continue
@@ -717,28 +698,28 @@ impl JoinExec {
 }
 
 impl Executor for JoinExec {
-    fn execute<'a>(&'a mut self, cache: &'a Cache) -> Result<DataFrame> {
+    fn execute<'a>(&'a mut self, state: &'a ExecutionState) -> Result<DataFrame> {
         let mut input_left = self.input_left.take().unwrap();
         let mut input_right = self.input_right.take().unwrap();
 
         let (df_left, df_right) = if self.parallel {
-            let cache_left = cache.clone();
-            let cache_right = cache.clone();
+            let state_left = state.clone();
+            let state_right = state.clone();
             // propagate the fetch_rows static value to the spawning threads.
             let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
 
             POOL.join(
                 move || {
                     FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                    input_left.execute(&cache_left)
+                    input_left.execute(&state_left)
                 },
                 move || {
                     FETCH_ROWS.with(|fr| fr.set(fetch_rows));
-                    input_right.execute(&cache_right)
+                    input_right.execute(&state_right)
                 },
             )
         } else {
-            (input_left.execute(&cache), input_right.execute(&cache))
+            (input_left.execute(&state), input_right.execute(&state))
         };
 
         let df_left = df_left?;
@@ -775,8 +756,8 @@ impl StackExec {
 }
 
 impl Executor for StackExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let mut df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let mut df = self.input.execute(state)?;
         let height = df.height();
 
         let res: Result<_> = self.expr.iter().try_for_each(|expr| {
@@ -808,8 +789,8 @@ pub struct SliceExec {
 }
 
 impl Executor for SliceExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
         Ok(df.slice(self.offset, self.len))
     }
 }
@@ -820,8 +801,8 @@ pub struct MeltExec {
 }
 
 impl Executor for MeltExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
         df.melt(&self.id_vars.as_slice(), &self.value_vars.as_slice())
     }
 }
@@ -832,8 +813,8 @@ pub(crate) struct UdfExec {
 }
 
 impl Executor for UdfExec {
-    fn execute(&mut self, cache: &Cache) -> Result<DataFrame> {
-        let df = self.input.execute(cache)?;
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
         self.function.call_udf(df)
     }
 }

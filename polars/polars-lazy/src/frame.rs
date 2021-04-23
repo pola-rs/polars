@@ -1,7 +1,6 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use ahash::RandomState;
 use itertools::Itertools;
@@ -17,6 +16,7 @@ use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer
 use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
+use crate::physical_plan::state::ExecutionState;
 use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::join_pruning::JoinPrune;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
@@ -538,11 +538,9 @@ impl LazyFrame {
         let planner = DefaultPlanner::default();
         let mut physical_plan =
             planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
-        let cache = Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
-            64,
-            RandomState::default(),
-        )));
-        let out = physical_plan.execute(&cache);
+
+        let state = ExecutionState::new();
+        let out = physical_plan.execute(&state);
         if use_string_cache {
             toggle_string_cache(!use_string_cache);
         }
