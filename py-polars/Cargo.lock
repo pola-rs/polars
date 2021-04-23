@@ -64,7 +64,7 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow"
 version = "4.0.0-SNAPSHOT"
-source = "git+https://github.com/apache/arrow?rev=9a4ef4696b8b9d46e203f164345ee9c19cbac46c#9a4ef4696b8b9d46e203f164345ee9c19cbac46c"
+source = "git+https://github.com/apache/arrow-rs?rev=c3fe3bab9905739fdda75301dab07a18c91731bd#c3fe3bab9905739fdda75301dab07a18c91731bd"
 dependencies = [
  "cfg_aliases",
  "chrono",
@@ -946,7 +946,7 @@ dependencies = [
 [[package]]
 name = "parquet"
 version = "4.0.0-SNAPSHOT"
-source = "git+https://github.com/apache/arrow?rev=9a4ef4696b8b9d46e203f164345ee9c19cbac46c#9a4ef4696b8b9d46e203f164345ee9c19cbac46c"
+source = "git+https://github.com/apache/arrow-rs?rev=c3fe3bab9905739fdda75301dab07a18c91731bd#c3fe3bab9905739fdda75301dab07a18c91731bd"
 dependencies = [
  "arrow",
  "base64 0.12.3",

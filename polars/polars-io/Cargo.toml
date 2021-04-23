@@ -22,8 +22,8 @@ dtype-date32 = ["polars-core/dtype-date32"]
 csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow", rev = "9a4ef4696b8b9d46e203f164345ee9c19cbac46c", default-features=false}
-parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow", rev = "9a4ef4696b8b9d46e203f164345ee9c19cbac46c"}
+arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-rs", rev = "c3fe3bab9905739fdda75301dab07a18c91731bd", default-features=false}
+parquet_lib = {version = "4.0.0-SNAPSHOT", optional = true, package="parquet", git = "https://github.com/apache/arrow-rs", rev = "c3fe3bab9905739fdda75301dab07a18c91731bd"}
 csv = {version="1.1", optional=true}
 lexical = {version = "5.2", optional = true}
 num_cpus = "1.13.0"
