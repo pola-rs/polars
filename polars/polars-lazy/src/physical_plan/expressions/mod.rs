@@ -49,29 +49,16 @@ pub trait PhysicalExpr: Send + Sync {
     }
 }
 
-trait ToPhysicalIoExpr {
-    fn into_physical_io_expr(self) -> Arc<dyn PhysicalIoExpr>;
-}
-
+/// Wrapper struct that allow us to use a PhysicalExpr in polars-io.
+///
+/// This is used to filter rows during the scan of file.
 pub struct PhysicalIoHelper {
-    expr: Arc<dyn PhysicalExpr>,
-}
-
-impl PhysicalIoHelper {
-    pub(crate) fn new(expr: Arc<dyn PhysicalExpr>) -> Self {
-        PhysicalIoHelper { expr }
-    }
+    pub expr: Arc<dyn PhysicalExpr>,
 }
 
 impl PhysicalIoExpr for PhysicalIoHelper {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         self.expr.evaluate(df)
-    }
-}
-
-impl PhysicalIoExpr for dyn PhysicalExpr {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        <Self as PhysicalExpr>::evaluate(self, df)
     }
 }
 
