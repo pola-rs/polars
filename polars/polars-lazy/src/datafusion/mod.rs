@@ -41,6 +41,11 @@ mod test {
             "b" => [1, 2, 3, 4, 5, 6]
         }?;
 
+        let df = df! {
+            "a" => ["a", "a", "a", "b", "b", "c"],
+            "b" => [1, 2, 3, 4, 5, 6]
+        }?;
+
         let out = df
             .lazy()
             .groupby(vec![col("a")])
