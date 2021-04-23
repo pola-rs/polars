@@ -283,7 +283,9 @@ def test_iter():
 
 def test_describe():
     num_s = pl.Series([1, 2, 3])
-    str_s = pl.Series(["a", "b", "c"])
+    float_s = pl.Series([1.3, 4.6, 8.9])
+    str_s = pl.Series(["abc", "pqr", "xyz"])
+    empty_s = pl.Series(np.empty(0))
 
     assert num_s.describe() == {
         "min": 1,
@@ -293,7 +295,17 @@ def test_describe():
         "std": 0.816496580927726,
         "count": 3,
     }
-    try:
-        str_s.describe()
-    except TypeError:
-        assert True
+    assert float_s.describe() == {
+        "min": 1.3,
+        "max": 8.9,
+        "sum": 14.8,
+        "mean": 4.933333333333334,
+        "std": 3.1116269413639905,
+        "count": 3,
+    }
+
+    with pytest.raises(ValueError):
+        assert empty_s.describe()
+
+    with pytest.raises(TypeError):
+        assert str_s.describe()
