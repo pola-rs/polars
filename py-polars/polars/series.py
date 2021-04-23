@@ -508,6 +508,21 @@ class Series:
         """
         return dtypes[self._s.dtype()]
 
+    def describe(self):
+        """
+        Quick summary statistics of a series. Does not support String types.
+
+        Returns
+        ---
+        Dictionary with summary statistics of a series.
+        """
+        if len(self) == 0:
+            raise ValueError('Series must contain at least one value')
+        elif not self.is_numeric():
+            raise TypeError('This type is not supported')
+        else:
+            return {'min': self.min(), 'max': self.max(), 'sum': self.sum(), 'mean': self.mean(), 'std': self.std(), 'count': len(self)}
+
     def sum(self):
         """
         Reduce this Series to the sum value.

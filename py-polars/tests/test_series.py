@@ -279,3 +279,13 @@ def test_iter():
     assert iter.__next__() == 2
     assert iter.__next__() == 3
     assert sum(s) == 6
+
+def test_describe():
+    num_s = pl.Series([1, 2, 3])
+    str_s = pl.Series(['a', 'b','c'])
+
+    assert num_s.describe() == {'min': 1, 'max': 3, 'sum': 6, 'mean': 2.0, 'std': 0.816496580927726, 'count': 3}
+    try:
+        str_s.describe()
+    except TypeError:
+        assert True
