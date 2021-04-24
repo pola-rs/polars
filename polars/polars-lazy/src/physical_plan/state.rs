@@ -4,18 +4,24 @@ use polars_core::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+pub type JoinTuplesCache = Arc<Mutex<HashMap<String, Vec<(u32, Option<u32>)>, RandomState>>>;
+
 /// State/ cache that is maintained during the Execution of the physical plan.
 #[derive(Clone)]
 pub struct ExecutionState {
     df_cache: Arc<Mutex<HashMap<String, DataFrame, RandomState>>>,
-    gb_cache: Arc<Mutex<HashMap<String, GroupTuples, RandomState>>>,
+    /// Used by Window Expression to prevent redundant grouping
+    pub(crate) group_tuples: Arc<Mutex<HashMap<String, GroupTuples, RandomState>>>,
+    /// Used by Window Expression to prevent redundant joins
+    pub(crate) join_tuples: JoinTuplesCache,
 }
 
 impl ExecutionState {
     pub fn new() -> Self {
         Self {
             df_cache: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
-            gb_cache: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
+            group_tuples: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
+            join_tuples: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
         }
     }
 
@@ -29,6 +35,14 @@ impl ExecutionState {
     pub fn store_cache(&self, key: String, df: DataFrame) {
         let mut guard = self.df_cache.lock().unwrap();
         guard.insert(key, df);
+    }
+
+    /// Clear the cache used by the Window expressions
+    pub fn clear_expr_cache(&self) {
+        let mut lock = self.group_tuples.lock().unwrap();
+        lock.clear();
+        let mut lock = self.join_tuples.lock().unwrap();
+        lock.clear();
     }
 }
 

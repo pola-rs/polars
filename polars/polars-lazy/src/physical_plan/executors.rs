@@ -281,6 +281,7 @@ impl Executor for FilterExec {
     }
 }
 
+/// Producer of an in memory DataFrame
 pub struct DataFrameExec {
     df: Arc<DataFrame>,
     projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
@@ -331,6 +332,7 @@ impl Executor for DataFrameExec {
 /// and a multiple PhysicalExpressions (create the output Series)
 pub struct StandardExec {
     /// i.e. sort, projection
+    #[allow(dead_code)]
     operation: &'static str,
     input: Box<dyn Executor>,
     expr: Vec<Arc<dyn PhysicalExpr>>,
@@ -386,9 +388,7 @@ impl Executor for StandardExec {
         let df = self.input.execute(state)?;
 
         let df = evaluate_physical_expressions(&df, &self.expr, state);
-        if std::env::var(POLARS_VERBOSE).is_ok() {
-            println!("operation {} on dataframe finished", self.operation);
-        }
+        state.clear_expr_cache();
         df
     }
 }
@@ -774,12 +774,10 @@ impl Executor for StackExec {
 
             let name = s.name().to_string();
             df.replace_or_add(&name, s)?;
-            if std::env::var(POLARS_VERBOSE).is_ok() {
-                println!("added column {} to dataframe", name);
-            }
             Ok(())
         });
         let _ = res?;
+        state.clear_expr_cache();
         Ok(df)
     }
 }

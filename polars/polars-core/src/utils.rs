@@ -10,6 +10,15 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+pub struct Wrap<T>(pub T);
+
+impl<T> Deref for Wrap<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
     (item as *const _ as usize - slice.as_ptr() as usize) / std::mem::size_of::<T>()
 }

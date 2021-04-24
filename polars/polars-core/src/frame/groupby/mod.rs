@@ -513,13 +513,7 @@ impl DataFrame {
                 }
             }
         };
-
-        Ok(GroupBy {
-            df: self,
-            selected_keys: by,
-            groups,
-            selected_agg: None,
-        })
+        Ok(GroupBy::new(self, by, groups, None))
     }
 
     /// Group DataFrame using a Series column.
@@ -608,8 +602,7 @@ pub struct GroupBy<'df, 'selection_str> {
 }
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
-    #[cfg(feature = "downsample")]
-    fn new(
+    pub fn new(
         df: &'df DataFrame,
         by: Vec<Series>,
         groups: GroupTuples,
@@ -642,6 +635,14 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///     Where second value in the tuple is a vector with all matching indexes.
     pub fn get_groups(&self) -> &GroupTuples {
         &self.groups
+    }
+
+    /// Get the internal representation of the GroupBy operation.
+    /// The Vec returned contains:
+    ///     (first_idx, Vec<indexes>)
+    ///     Where second value in the tuple is a vector with all matching indexes.
+    pub fn get_groups_mut(&mut self) -> &mut GroupTuples {
+        &mut self.groups
     }
 
     pub fn keys(&self) -> Vec<Series> {
