@@ -2,6 +2,7 @@
 //! and nowhere else. Note, that this differes from evaluate on groups, which is also called in that
 //! context, but typically before aggregation
 
+use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::array::ValueSize;
@@ -11,9 +12,14 @@ use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 
 impl PhysicalAggregation for AliasExpr {
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
         let agg_expr = self.physical_expr.as_agg_expr()?;
-        let opt_agg = agg_expr.aggregate(df, groups)?;
+        let opt_agg = agg_expr.aggregate(df, groups, state)?;
         Ok(opt_agg.map(|mut agg| {
             agg.rename(&self.name);
             agg
@@ -23,8 +29,13 @@ impl PhysicalAggregation for AliasExpr {
 
 impl PhysicalAggregation for SortExpr {
     // As a final aggregation a Sort returns a list array.
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
-        let s = self.physical_expr.evaluate(df)?;
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
+        let s = self.physical_expr.evaluate(df, state)?;
         let agg_s = s.agg_list(groups);
         let out = agg_s.map(|s| {
             s.list()
@@ -40,9 +51,14 @@ impl PhysicalAggregation for SortExpr {
 
 impl PhysicalAggregation for SortByExpr {
     // As a final aggregation a Sort returns a list array.
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
-        let s = self.input.evaluate(df)?;
-        let s_sort_by = self.by.evaluate(df)?;
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
+        let s = self.input.evaluate(df, state)?;
+        let s_sort_by = self.by.evaluate(df, state)?;
 
         let s_sort_by = s_sort_by.agg_list(groups).ok_or_else(|| {
             PolarsError::Other(format!("cannot aggregate {:?} as list array", self.expr).into())
@@ -80,8 +96,13 @@ fn rename_option_series(opt: Option<Series>, name: &str) -> Option<Series> {
 }
 
 impl PhysicalAggregation for AggregationExpr {
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
-        let (series, groups) = self.expr.evaluate_on_groups(df, groups)?;
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
+        let (series, groups) = self.expr.evaluate_on_groups(df, groups, state)?;
         let new_name = fmt_groupby_column(series.name(), self.agg_type);
 
         match self.agg_type {
@@ -163,10 +184,11 @@ impl PhysicalAggregation for AggregationExpr {
         &self,
         df: &DataFrame,
         groups: &GroupTuples,
+        state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         match self.agg_type {
             GroupByMethod::Mean => {
-                let series = self.expr.evaluate(df)?;
+                let series = self.expr.evaluate(df, state)?;
                 let mut new_name = fmt_groupby_column(series.name(), self.agg_type);
                 let agg_s = series.agg_sum(groups);
 
@@ -183,7 +205,7 @@ impl PhysicalAggregation for AggregationExpr {
                 }
             }
             GroupByMethod::List => {
-                let series = self.expr.evaluate(df)?;
+                let series = self.expr.evaluate(df, state)?;
                 let new_name = fmt_groupby_column(series.name(), self.agg_type);
                 let opt_agg = series.agg_list(groups);
                 Ok(opt_agg.map(|mut s| {
@@ -191,7 +213,8 @@ impl PhysicalAggregation for AggregationExpr {
                     vec![s]
                 }))
             }
-            _ => PhysicalAggregation::aggregate(self, df, groups).map(|opt| opt.map(|s| vec![s])),
+            _ => PhysicalAggregation::aggregate(self, df, groups, state)
+                .map(|opt| opt.map(|s| vec![s])),
         }
     }
 
@@ -199,10 +222,11 @@ impl PhysicalAggregation for AggregationExpr {
         &self,
         final_df: &DataFrame,
         groups: &GroupTuples,
+        state: &ExecutionState,
     ) -> Result<Option<Series>> {
         match self.agg_type {
             GroupByMethod::Mean => {
-                let series = self.expr.evaluate(final_df)?;
+                let series = self.expr.evaluate(final_df, state)?;
                 let count_name = format!("{}__POLARS_MEAN_COUNT", series.name());
                 let new_name = fmt_groupby_column(series.name(), self.agg_type);
                 let count = final_df.column(&count_name).unwrap();
@@ -212,7 +236,7 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::List => {
-                let series = self.expr.evaluate(final_df)?;
+                let series = self.expr.evaluate(final_df, state)?;
                 let ca = series.list().unwrap();
                 let new_name = fmt_groupby_column(ca.name(), self.agg_type);
 
@@ -233,13 +257,18 @@ impl PhysicalAggregation for AggregationExpr {
                 let out = builder.finish();
                 Ok(Some(out.into_series()))
             }
-            _ => PhysicalAggregation::aggregate(self, final_df, groups),
+            _ => PhysicalAggregation::aggregate(self, final_df, groups, state),
         }
     }
 }
 impl PhysicalAggregation for AggQuantileExpr {
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df)?;
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
+        let series = self.expr.evaluate(df, state)?;
         let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
         let opt_agg = series.agg_quantile(groups, self.quantile);
 
@@ -252,9 +281,14 @@ impl PhysicalAggregation for AggQuantileExpr {
     }
 }
 impl PhysicalAggregation for CastExpr {
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
         let agg_expr = self.input.as_agg_expr()?;
-        let opt_agg = agg_expr.aggregate(df, groups)?;
+        let opt_agg = agg_expr.aggregate(df, groups, state)?;
         opt_agg
             .map(|agg| agg.cast_with_datatype(&self.data_type))
             .transpose()
@@ -262,16 +296,21 @@ impl PhysicalAggregation for CastExpr {
 }
 
 impl PhysicalAggregation for ApplyExpr {
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
         match self.input.as_agg_expr() {
             // layer below is also an aggregation expr.
             Ok(expr) => {
-                let aggregated = expr.aggregate(df, groups)?;
+                let aggregated = expr.aggregate(df, groups, state)?;
                 let out = aggregated.map(|s| self.function.call_udf(s));
                 out.transpose()
             }
             Err(_) => {
-                let series = self.input.evaluate(df)?;
+                let series = self.input.evaluate(df, state)?;
                 series
                     .agg_list(groups)
                     .map(|s| {
@@ -288,8 +327,13 @@ impl PhysicalAggregation for ApplyExpr {
 }
 impl PhysicalAggregation for SliceExpr {
     // As a final aggregation a Slice returns a list array.
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
-        let s = self.input.evaluate(df)?;
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
+        let s = self.input.evaluate(df, state)?;
         let agg_s = s.agg_list(groups);
         let out = agg_s.map(|s| {
             s.list()
@@ -304,9 +348,14 @@ impl PhysicalAggregation for SliceExpr {
 }
 
 impl PhysicalAggregation for BinaryFunctionExpr {
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
-        let a = self.input_a.evaluate(df)?;
-        let b = self.input_b.evaluate(df)?;
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
+        let a = self.input_a.evaluate(df, state)?;
+        let b = self.input_b.evaluate(df, state)?;
 
         let agg_a = a.agg_list(groups).expect("no data?");
         let agg_b = b.agg_list(groups).expect("no data?");
@@ -345,25 +394,30 @@ impl PhysicalAggregation for BinaryFunctionExpr {
 }
 
 impl PhysicalAggregation for BinaryExpr {
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>> {
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
         match (self.left.as_agg_expr(), self.right.as_agg_expr()) {
             (Ok(left), Err(_)) => {
-                let opt_agg = left.aggregate(df, groups)?;
-                let rhs = self.right.evaluate(df)?;
+                let opt_agg = left.aggregate(df, groups, state)?;
+                let rhs = self.right.evaluate(df, state)?;
                 opt_agg
                     .map(|agg| apply_operator(&agg, &rhs, self.op))
                     .transpose()
             }
             (Err(_), Ok(right)) => {
-                let opt_agg = right.aggregate(df, groups)?;
-                let lhs = self.left.evaluate(df)?;
+                let opt_agg = right.aggregate(df, groups, state)?;
+                let lhs = self.left.evaluate(df, state)?;
                 opt_agg
                     .map(|agg| apply_operator(&lhs, &agg, self.op))
                     .transpose()
             }
             (Ok(left), Ok(right)) => {
-                let right_agg = right.aggregate(df, groups)?;
-                left.aggregate(df, groups)?
+                let right_agg = right.aggregate(df, groups, state)?;
+                left.aggregate(df, groups, state)?
                     .and_then(|left| right_agg.map(|right| apply_operator(&left, &right, self.op)))
                     .transpose()
             }
@@ -375,7 +429,12 @@ impl PhysicalAggregation for BinaryExpr {
 }
 
 impl PhysicalAggregation for LiteralExpr {
-    fn aggregate(&self, df: &DataFrame, _groups: &GroupTuples) -> Result<Option<Series>> {
-        PhysicalExpr::evaluate(self, df).map(Some)
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        _groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>> {
+        PhysicalExpr::evaluate(self, df, state).map(Some)
     }
 }
