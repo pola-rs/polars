@@ -60,7 +60,6 @@ pub fn to_datafusion_op(op: Operator) -> DOperator {
 
 pub fn to_datafusion_expr(expr: Expr) -> Result<DExpr> {
     use Expr::*;
-    let root_name = expr_to_root_column_name(&expr)?;
 
     let expr = match expr {
         Alias(e, name) => DExpr::Alias(Box::new(to_datafusion_expr(*e)?), name.to_string()),
@@ -85,56 +84,62 @@ pub fn to_datafusion_expr(expr: Expr) -> Result<DExpr> {
         },
         // an aggregation in polars has a different output name than one in DF, so
         // we add an extra alias.
-        Agg(ae) => {
-            let (agg_expr, agg_method) =
-                match ae {
-                    AggExpr::Min(e) => (
-                        DExpr::AggregateFunction {
-                            fun: AggregateFunction::Min,
-                            args: vec![to_datafusion_expr(*e)?],
-                            distinct: false,
-                        },
-                        GroupByMethod::Min,
-                    ),
-                    AggExpr::Max(e) => (
-                        DExpr::AggregateFunction {
-                            fun: AggregateFunction::Max,
-                            args: vec![to_datafusion_expr(*e)?],
-                            distinct: false,
-                        },
-                        GroupByMethod::Max,
-                    ),
-                    AggExpr::Sum(e) => (
-                        DExpr::AggregateFunction {
-                            fun: AggregateFunction::Sum,
-                            args: vec![to_datafusion_expr(*e)?],
-                            distinct: false,
-                        },
-                        GroupByMethod::Sum,
-                    ),
-                    AggExpr::Count(e) => (
-                        DExpr::AggregateFunction {
-                            fun: AggregateFunction::Count,
-                            args: vec![to_datafusion_expr(*e)?],
-                            distinct: false,
-                        },
-                        GroupByMethod::Count,
-                    ),
-                    AggExpr::Mean(e) => (
-                        DExpr::AggregateFunction {
-                            fun: AggregateFunction::Avg,
-                            args: vec![to_datafusion_expr(*e)?],
-                            distinct: false,
-                        },
-                        GroupByMethod::Mean,
-                    ),
-                    _ => return Err(PolarsError::Other(
-                        "this aggregation is not yet supported in polars to datafusion conversion"
-                            .into(),
-                    )),
-                };
-            let out_name = fmt_groupby_column(&root_name, agg_method);
-            DExpr::Alias(Box::new(agg_expr), out_name)
+        Agg(_) => {
+            let root_name = expr_to_root_column_name(&expr)?;
+            match expr {
+                Agg(ae) => {
+                    let (agg_expr, agg_method) =
+                        match ae {
+                            AggExpr::Min(e) => (
+                                DExpr::AggregateFunction {
+                                    fun: AggregateFunction::Min,
+                                    args: vec![to_datafusion_expr(*e)?],
+                                    distinct: false,
+                                },
+                                GroupByMethod::Min,
+                            ),
+                            AggExpr::Max(e) => (
+                                DExpr::AggregateFunction {
+                                    fun: AggregateFunction::Max,
+                                    args: vec![to_datafusion_expr(*e)?],
+                                    distinct: false,
+                                },
+                                GroupByMethod::Max,
+                            ),
+                            AggExpr::Sum(e) => (
+                                DExpr::AggregateFunction {
+                                    fun: AggregateFunction::Sum,
+                                    args: vec![to_datafusion_expr(*e)?],
+                                    distinct: false,
+                                },
+                                GroupByMethod::Sum,
+                            ),
+                            AggExpr::Count(e) => (
+                                DExpr::AggregateFunction {
+                                    fun: AggregateFunction::Count,
+                                    args: vec![to_datafusion_expr(*e)?],
+                                    distinct: false,
+                                },
+                                GroupByMethod::Count,
+                            ),
+                            AggExpr::Mean(e) => (
+                                DExpr::AggregateFunction {
+                                    fun: AggregateFunction::Avg,
+                                    args: vec![to_datafusion_expr(*e)?],
+                                    distinct: false,
+                                },
+                                GroupByMethod::Mean,
+                            ),
+                            _ => return Err(PolarsError::Other(
+                                "this aggregation is not yet supported in polars to datafusion conversion"
+                                    .into(),
+                            )),
+                        };
+                    let out_name = fmt_groupby_column(&root_name, agg_method);
+                    DExpr::Alias(Box::new(agg_expr), out_name)
+                }
+                _ => unreachable!(),
+            }
         }
         Ternary {
             predicate,
@@ -146,6 +151,7 @@ pub fn to_datafusion_expr(expr: Expr) -> Result<DExpr> {
         )
         .otherwise(to_datafusion_expr(*falsy)?)
         .unwrap(),
+        Wildcard => DExpr::Wildcard,
         _ => {
             return Err(PolarsError::Other(
                 format!(
@@ -300,6 +306,29 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
             match stop_after_n_rows {
                 Some(n) => builder.limit(n).unwrap().build().unwrap(),
                 None => builder.build().unwrap(),
+            }
+        }
+        HStack {
+            input,
+            exprs,
+            schema,
+        } => {
+            // DataFusion does not have a node that allows adding columns.
+            // So we need to use a projection.
+            // To make the schema correct we select all columns in the input schema
+            // This is probably not very efficient because projection pushdown may think
+            // we need those columns even when they are not projected
+            let input_schema = input.schema();
+            let expr = input_schema
+                .fields()
+                .iter()
+                .map(|field| Ok(col(field.name())))
+                .chain(exprs.into_iter().map(to_datafusion_expr))
+                .collect::<Result<_>>()?;
+            DLogicalPlan::Projection {
+                expr,
+                input: Arc::new(to_datafusion_lp(*input)?),
+                schema: Arc::new(schema.to_arrow().to_dfschema().unwrap()),
             }
         }
         _ => todo!(),
