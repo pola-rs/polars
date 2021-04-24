@@ -11,10 +11,8 @@ use tokio::runtime::Runtime;
 impl LazyFrame {
     /// Collect Out of Core on the DataFusion query engine
     pub fn ooc(self) -> Result<DataFrame> {
-        let mut expr_arena = Arena::with_capacity(64);
-        let mut lp_arena = Arena::with_capacity(64);
-        let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
-        let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+        // Don't use Polars optimizer, but transpile and send to DataFusion
+        let lp = self.logical_plan;
         let lp = to_datafusion_lp(lp)?;
 
         let ctx = ExecutionContext::with_config(ExecutionConfig::new().with_concurrency(8));
@@ -36,13 +34,9 @@ mod test {
 
     #[test]
     fn test_datafusion_query() -> Result<()> {
+        // TODO! run same with string column, needs sort large-utf8 support from arrow.
         let df = df! {
             "a" => [1, 1, 1, 2, 2, 3],
-            "b" => [1, 2, 3, 4, 5, 6]
-        }?;
-
-        let df = df! {
-            "a" => ["a", "a", "a", "b", "b", "c"],
             "b" => [1, 2, 3, 4, 5, 6]
         }?;
 

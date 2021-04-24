@@ -4,10 +4,11 @@ use crate::{
     logical_plan::{LiteralValue, LogicalPlan},
 };
 use datafusion::datasource::MemTable;
-use datafusion::logical_plan::ToDFSchema;
+use datafusion::prelude::CsvReadOptions;
 use datafusion::{
     logical_plan::{
-        self as lpmod, col, when, Expr as DExpr, LogicalPlan as DLogicalPlan, Operator as DOperator,
+        self as lpmod, col, when, Expr as DExpr, LogicalPlan as DLogicalPlan, LogicalPlanBuilder,
+        Operator as DOperator, ToDFSchema,
     },
     physical_plan::aggregates::AggregateFunction,
     scalar::ScalarValue,
@@ -263,6 +264,42 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
                 filters: vec![],
                 projected_schema,
                 limit: None,
+            }
+        }
+        CsvScan {
+            path,
+            schema,
+            has_header,
+            delimiter,
+            ignore_errors,
+            skip_rows,
+            stop_after_n_rows,
+            ..
+        } => {
+            let schema = schema.to_arrow();
+            let options = CsvReadOptions::new()
+                .has_header(has_header)
+                .delimiter(delimiter)
+                .schema(&schema);
+            if ignore_errors || skip_rows > 0 {
+                return Err(PolarsError::Other("DataFusion does not support `ignore_errors`, `skip_rows`, `stop_after_n_rows`, `with_columns`".into()));
+            }
+            let builder = LogicalPlanBuilder::scan_csv(&path, options, None).unwrap();
+            match stop_after_n_rows {
+                Some(n) => builder.limit(n).unwrap().build().unwrap(),
+                None => builder.build().unwrap(),
+            }
+        }
+        #[cfg(feature = "parquet")]
+        ParquetScan {
+            path,
+            stop_after_n_rows,
+            ..
+        } => {
+            let builder = LogicalPlanBuilder::scan_parquet(&path, None, 8).unwrap();
+            match stop_after_n_rows {
+                Some(n) => builder.limit(n).unwrap().build().unwrap(),
+                None => builder.build().unwrap(),
             }
         }
         _ => todo!(),
