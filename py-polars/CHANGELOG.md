@@ -2,6 +2,18 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.8
+* bug fix
+  - ensure column name persist after pyarrow cast #563
+  - make sure that `agg_list` maintains dtype #567
+
+* feature
+  - Implicitly Cast dtypes to temporal types in csv parser #560
+  - Series describe method #569
+
+* performance
+  - Cache and improve window functions performance #570
+
 ### polars 0.7.7
 * bug fix
   - fix bug with pyarrow chunkedarray: #545
