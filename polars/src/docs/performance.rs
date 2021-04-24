@@ -73,6 +73,8 @@
 //! The example below shows how you could join two DataFrames with Categorical types.
 //!
 //! ```rust
+//! # #[cfg(feature = "lazy")]
+//! # {
 //! use polars::prelude::*;
 //!
 //! fn lazy_example(mut df_a: LazyFrame, mut df_b: LazyFrame) -> Result<DataFrame> {
@@ -86,4 +88,5 @@
 //!     ]);
 //!     q1.inner_join(q2, col("a"), col("b"), None).collect()
 //! }
+//! # }
 //! ```

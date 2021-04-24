@@ -85,18 +85,18 @@
 //! Note that if you get strange compile time errors, you probably need to opt-in for that `Series` dtype.
 //! The opt-in dtypes are:
 //!
-//!     | data type               | feature flag      |
-//!     |-------------------------|-------------------|
-//!     | Time64NanoSecondType    | dtype-time64-ns   |
-//!     | DurationNanosecondType  | dtype-duration-ns |
-//!     | DurationMillisecondType | dtype-duration-ms |
-//!     | Date32Type              | dtype-date32      |
-//!     | Date64Type              | dtype-date64      |
-//!     | Int8Type                | dtype-i8          |
-//!     | Int16Type               | dtype-i16         |
-//!     | UInt8Type               | dtype-u8          |
-//!     | UInt16Type              | dtype-u16         |
-//!     | UInt64Type              | dtype-u64         |
+//! | data type               | feature flag      |
+//! |-------------------------|-------------------|
+//! | Time64NanoSecondType    | dtype-time64-ns   |
+//! | DurationNanosecondType  | dtype-duration-ns |
+//! | DurationMillisecondType | dtype-duration-ms |
+//! | Date32Type              | dtype-date32      |
+//! | Date64Type              | dtype-date64      |
+//! | Int8Type                | dtype-i8          |
+//! | Int16Type               | dtype-i16         |
+//! | UInt8Type               | dtype-u8          |
+//! | UInt16Type              | dtype-u16         |
+//! | UInt64Type              | dtype-u64         |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.
@@ -202,7 +202,7 @@
 //!
 //! ```rust
 //! # use polars::prelude::*;
-//! let s = Series::new("foo", [1, 2, 3]);
+//! let series = Series::new("foo", [1, 2, 3]);
 //!
 //! // 1 / s
 //! let divide_one_by_s = 1.div(&series);
