@@ -206,7 +206,6 @@ class LazyFrame:
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         string_cache: bool = True,
-        join_pruning: bool = True,
         no_optimization: bool = False,
     ) -> DataFrame:
         """
@@ -225,8 +224,6 @@ class LazyFrame:
         string_cache
             Use a global string cache in this query.
             This is needed if you want to join on categorical columns.
-        join_pruning
-            run join pruning optimization
         no_optimization
             Turn off optimizations
 
@@ -237,7 +234,6 @@ class LazyFrame:
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
-            join_pruning = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -245,7 +241,6 @@ class LazyFrame:
             projection_pushdown,
             simplify_expression,
             string_cache,
-            join_pruning,
         )
         return wrap_df(ldf.collect())
 
@@ -257,7 +252,6 @@ class LazyFrame:
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         string_cache: bool = True,
-        join_pruning: bool = True,
         no_optimization: bool = False,
     ) -> DataFrame:
         """
@@ -284,8 +278,6 @@ class LazyFrame:
         string_cache
             Use a global string cache in this query.
             This is needed if you want to join on categorical columns.
-        join_pruning
-            run join pruning optimization
         no_optimization
             Turn off optimizations
 
@@ -296,7 +288,6 @@ class LazyFrame:
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
-            join_pruning = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -304,7 +295,6 @@ class LazyFrame:
             projection_pushdown,
             simplify_expression,
             string_cache,
-            join_pruning,
         )
         return wrap_df(ldf.fetch(n_rows))
 
