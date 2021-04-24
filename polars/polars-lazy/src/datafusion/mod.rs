@@ -54,4 +54,21 @@ mod test {
         );
         Ok(())
     }
+    #[test]
+    fn test_datafusion_with_column() -> Result<()> {
+        let df = df! {
+            "a" => ["a", "a", "a", "b", "b", "c"],
+            "b" => [1, 2, 3, 4, 5, 6]
+        }?;
+
+        let out = df
+            .lazy()
+            .with_column(col("b").alias("c"))
+            .select(&[col("c")])
+            .ooc()?;
+
+        assert!(out.column("c").is_ok());
+        assert_eq!(out.shape(), (6, 1));
+        Ok(())
+    }
 }
