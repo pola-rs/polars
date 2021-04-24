@@ -1,6 +1,7 @@
 pub mod default;
 mod final_agg;
 
+use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 pub use default::*;
 use polars_core::frame::groupby::GroupTuples;
@@ -17,7 +18,7 @@ pub trait PhysicalExpr: Send + Sync {
     }
 
     /// Take a DataFrame and evaluate the expression.
-    fn evaluate(&self, df: &DataFrame) -> Result<Series>;
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series>;
 
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, etc.
@@ -29,8 +30,9 @@ pub trait PhysicalExpr: Send + Sync {
         &self,
         df: &DataFrame,
         groups: &'a GroupTuples,
+        state: &ExecutionState,
     ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        self.evaluate(df).map(|s| (s, Cow::Borrowed(groups)))
+        self.evaluate(df, state).map(|s| (s, Cow::Borrowed(groups)))
     }
 
     /// Get the output field of this expr
@@ -58,7 +60,7 @@ pub struct PhysicalIoHelper {
 
 impl PhysicalIoExpr for PhysicalIoHelper {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        self.expr.evaluate(df)
+        self.expr.evaluate(df, &Default::default())
     }
 }
 
@@ -66,16 +68,23 @@ pub trait PhysicalAggregation {
     #[allow(clippy::ptr_arg)]
     /// Should be called on the final aggregation node like sum, min, max, etc.
     /// When called on a tail, slice, sort, etc. it should return a list-array
-    fn aggregate(&self, df: &DataFrame, groups: &GroupTuples) -> Result<Option<Series>>;
+    fn aggregate(
+        &self,
+        df: &DataFrame,
+        groups: &GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<Option<Series>>;
 
     #[allow(clippy::ptr_arg)]
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
         groups: &GroupTuples,
+        state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         // we return a vec, such that an implementor can return more information, such as a sum and count.
-        self.aggregate(df, groups).map(|opt| opt.map(|s| vec![s]))
+        self.aggregate(df, groups, state)
+            .map(|opt| opt.map(|s| vec![s]))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -83,7 +92,8 @@ pub trait PhysicalAggregation {
         &self,
         final_df: &DataFrame,
         groups: &GroupTuples,
+        state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        self.aggregate(final_df, groups)
+        self.aggregate(final_df, groups, state)
     }
 }

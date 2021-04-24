@@ -1,4 +1,5 @@
 use crate::logical_plan::Context;
+use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
@@ -21,7 +22,7 @@ impl PhysicalExpr for LiteralExpr {
     fn as_expression(&self) -> &Expr {
         &self.1
     }
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         use LiteralValue::*;
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
@@ -177,9 +178,9 @@ impl PhysicalExpr for BinaryExpr {
         &self.expr
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let lhs = self.left.evaluate(df)?;
-        let rhs = self.right.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let lhs = self.left.evaluate(df, state)?;
+        let rhs = self.right.evaluate(df, state)?;
         apply_operator(&lhs, &rhs, self.op)
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -203,7 +204,7 @@ impl PhysicalExpr for ColumnExpr {
     fn as_expression(&self) -> &Expr {
         &self.1
     }
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         let column = match &**self.0 {
             "" => df.select_at_idx(0).ok_or_else(|| {
                 PolarsError::NoData("could not select a column from an empty DataFrame".into())
@@ -239,8 +240,8 @@ impl PhysicalExpr for SortExpr {
         &self.expr
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.physical_expr.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series = self.physical_expr.evaluate(df, state)?;
         Ok(series.sort(self.reverse))
     }
 
@@ -249,8 +250,9 @@ impl PhysicalExpr for SortExpr {
         &self,
         df: &DataFrame,
         groups: &'a GroupTuples,
+        state: &ExecutionState,
     ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (series, groups) = self.physical_expr.evaluate_on_groups(df, groups)?;
+        let (series, groups) = self.physical_expr.evaluate_on_groups(df, groups, state)?;
 
         let groups = groups
             .iter()
@@ -315,9 +317,9 @@ impl PhysicalExpr for SortByExpr {
         &self.expr
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.input.evaluate(df)?;
-        let series_sort_by = self.by.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series = self.input.evaluate(df, state)?;
+        let series_sort_by = self.by.evaluate(df, state)?;
         let sorted_idx = series_sort_by.argsort(self.reverse);
 
         // Safety:
@@ -330,9 +332,10 @@ impl PhysicalExpr for SortByExpr {
         &self,
         df: &DataFrame,
         groups: &'a GroupTuples,
+        state: &ExecutionState,
     ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (series, _) = self.input.evaluate_on_groups(df, groups)?;
-        let (series_sort_by, groups) = self.by.evaluate_on_groups(df, groups)?;
+        let (series, _) = self.input.evaluate_on_groups(df, groups, state)?;
+        let (series_sort_by, groups) = self.by.evaluate_on_groups(df, groups, state)?;
 
         let groups = groups
             .iter()
@@ -382,8 +385,8 @@ impl PhysicalExpr for NotExpr {
         &self.1
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.0.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series = self.0.evaluate(df, state)?;
         if let Ok(ca) = series.bool() {
             Ok((!ca).into_series())
         } else {
@@ -418,8 +421,8 @@ impl PhysicalExpr for AliasExpr {
         &self.expr
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let mut series = self.physical_expr.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let mut series = self.physical_expr.evaluate(df, state)?;
         series.rename(&self.name);
         Ok(series)
     }
@@ -458,8 +461,8 @@ impl PhysicalExpr for IsNullExpr {
         &self.expr
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.physical_expr.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series = self.physical_expr.evaluate(df, state)?;
         Ok(series.is_null().into_series())
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -486,8 +489,8 @@ impl PhysicalExpr for IsNotNullExpr {
         &self.expr
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.physical_expr.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series = self.physical_expr.evaluate(df, state)?;
         Ok(series.is_not_null().into_series())
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -507,7 +510,7 @@ impl AggregationExpr {
 }
 
 impl PhysicalExpr for AggregationExpr {
-    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         unimplemented!()
     }
 
@@ -534,7 +537,7 @@ impl AggQuantileExpr {
 }
 
 impl PhysicalExpr for AggQuantileExpr {
-    fn evaluate(&self, _df: &DataFrame) -> Result<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         unimplemented!()
     }
 
@@ -561,8 +564,8 @@ impl CastExpr {
 }
 
 impl PhysicalExpr for CastExpr {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.input.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series = self.input.evaluate(df, state)?;
         series.cast_with_datatype(&self.data_type)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
@@ -585,11 +588,11 @@ impl PhysicalExpr for TernaryExpr {
     fn as_expression(&self) -> &Expr {
         &self.expr
     }
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let mask_series = self.predicate.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let mask_series = self.predicate.evaluate(df, state)?;
         let mask = mask_series.bool()?;
-        let truthy = self.truthy.evaluate(df)?;
-        let falsy = self.falsy.evaluate(df)?;
+        let truthy = self.truthy.evaluate(df, state)?;
+        let falsy = self.falsy.evaluate(df, state)?;
         truthy.zip_with(&mask, &falsy)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
@@ -625,8 +628,8 @@ impl PhysicalExpr for ApplyExpr {
         &self.expr
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let input = self.input.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let input = self.input.evaluate(df, state)?;
         let in_name = input.name().to_string();
         let mut out = self.function.call_udf(input)?;
         if in_name != out.name() {
@@ -661,7 +664,7 @@ pub struct WindowExpr {
 impl PhysicalExpr for WindowExpr {
     // Note: this was first implemented with expression evaluation but this performed really bad.
     // Therefore we choose the groupby -> apply -> self join approach
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         let gb = df
             .groupby(self.group_column.as_str())?
             .select(self.apply_column.as_str());
@@ -720,8 +723,8 @@ pub struct SliceExpr {
 }
 
 impl PhysicalExpr for SliceExpr {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.input.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series = self.input.evaluate(df, state)?;
         Ok(series.slice(self.offset, self.len))
     }
 
@@ -729,8 +732,9 @@ impl PhysicalExpr for SliceExpr {
         &self,
         df: &DataFrame,
         groups: &'a GroupTuples,
+        state: &ExecutionState,
     ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let s = self.input.evaluate(df)?;
+        let s = self.input.evaluate(df, state)?;
 
         let groups = groups
             .iter()
@@ -760,9 +764,9 @@ pub(crate) struct BinaryFunctionExpr {
 }
 
 impl PhysicalExpr for BinaryFunctionExpr {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series_a = self.input_a.evaluate(df)?;
-        let series_b = self.input_b.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series_a = self.input_a.evaluate(df, state)?;
+        let series_b = self.input_b.evaluate(df, state)?;
 
         self.function.call_udf(series_a, series_b).map(|mut s| {
             s.rename("binary_function");
@@ -799,9 +803,9 @@ impl PhysicalExpr for FilterExpr {
         &self.expr
     }
 
-    fn evaluate(&self, df: &DataFrame) -> Result<Series> {
-        let series = self.input.evaluate(df)?;
-        let predicate = self.by.evaluate(df)?;
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        let series = self.input.evaluate(df, state)?;
+        let predicate = self.by.evaluate(df, state)?;
         series.filter(predicate.bool()?)
     }
 
@@ -809,9 +813,10 @@ impl PhysicalExpr for FilterExpr {
         &self,
         df: &DataFrame,
         groups: &'a GroupTuples,
+        state: &ExecutionState,
     ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let s = self.input.evaluate(df)?;
-        let predicate_s = self.by.evaluate(df)?;
+        let s = self.input.evaluate(df, state)?;
+        let predicate_s = self.by.evaluate(df, state)?;
         let predicate = predicate_s.bool()?;
 
         let groups = groups
