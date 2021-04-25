@@ -196,20 +196,24 @@ macro_rules! impl_dyn_series {
                 self.0.pivot_count(pivot_series, keys, groups)
             }
             fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
-                cast_and_apply!(self, hash_join_inner, other)
+                let other = other.to_physical_repr();
+                cast_and_apply!(self, hash_join_inner, &other)
             }
             fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
-                cast_and_apply!(self, hash_join_left, other)
+                let other = other.to_physical_repr();
+                cast_and_apply!(self, hash_join_left, &other)
             }
             fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-                cast_and_apply!(self, hash_join_outer, other)
+                let other = other.to_physical_repr();
+                cast_and_apply!(self, hash_join_outer, &other)
             }
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
                 opt_join_tuples: &[(Option<u32>, Option<u32>)],
             ) -> Series {
-                physical_dispatch!(self, zip_outer_join_column, right_column, opt_join_tuples)
+                let right_column = right_column.to_physical_repr();
+                physical_dispatch!(self, zip_outer_join_column, &right_column, opt_join_tuples)
             }
             fn subtract(&self, rhs: &Series) -> Result<Series> {
                 try_physical_dispatch!(self, subtract, rhs)
@@ -721,6 +725,43 @@ mod test {
         let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
         assert!(matches!(l.dtype(), DataType::List(ArrowDataType::Date64)));
 
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-date64")]
+    fn test_datelike_join() -> Result<()> {
+        let s = Series::new("foo", &[1, 2, 3]);
+        let mut s1 = s.cast_with_datatype(&DataType::Date64)?;
+        s1.rename("bar");
+
+        let df = DataFrame::new(vec![s, s1])?;
+
+        let out = df.left_join(&df.clone(), "bar", "bar")?;
+        assert!(matches!(out.column("bar")?.dtype(), DataType::Date64));
+
+        let out = df.inner_join(&df.clone(), "bar", "bar")?;
+        assert!(matches!(out.column("bar")?.dtype(), DataType::Date64));
+
+        let out = df.outer_join(&df.clone(), "bar", "bar")?;
+        assert!(matches!(out.column("bar")?.dtype(), DataType::Date64));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-date64")]
+    fn test_datelike_methods() -> Result<()> {
+        let s = Series::new("foo", &[1, 2, 3]);
+        let s = s.cast_with_datatype(&DataType::Date64)?;
+
+        let out = s.subtract(&s)?;
+        assert!(matches!(out.dtype(), DataType::Date64));
+        let out = s.add_to(&s)?;
+        assert!(matches!(out.dtype(), DataType::Date64));
+        let out = s.multiply(&s)?;
+        assert!(matches!(out.dtype(), DataType::Date64));
+        let out = s.divide(&s)?;
+        assert!(matches!(out.dtype(), DataType::Date64));
         Ok(())
     }
 }
