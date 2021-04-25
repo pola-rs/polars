@@ -4,6 +4,7 @@ use crate::prelude::*;
 use ahash::RandomState;
 use polars_core::prelude::*;
 use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub(crate) fn equal_aexprs(left: &[Node], right: &[Node], expr_arena: &Arena<AExpr>) -> bool {
@@ -197,7 +198,7 @@ pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema, ctxt: Contex
 /// Get a set of the data source paths in this LogicalPlan
 pub(crate) fn agg_source_paths(
     root_lp: Node,
-    paths: &mut HashSet<String, RandomState>,
+    paths: &mut HashSet<PathBuf, RandomState>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     use ALogicalPlan::*;
@@ -257,6 +258,13 @@ pub(crate) fn agg_source_paths(
         }
     }
 }
+
+pub(crate) fn try_path_to_str(path: &Path) -> Result<&str> {
+    path.to_str().ok_or_else(|| {
+        PolarsError::Other(format!("Non-UTF8 file path: {}", path.to_string_lossy()).into())
+    })
+}
+
 pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<String>> {
     aexpr_to_root_nodes(node, arena)
         .into_iter()

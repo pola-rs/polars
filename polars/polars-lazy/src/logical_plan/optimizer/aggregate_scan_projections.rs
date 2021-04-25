@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ahash::RandomState;
@@ -8,13 +9,13 @@ use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
 
 fn process_with_columns(
-    path: &str,
+    path: &Path,
     with_columns: &Option<Vec<String>>,
-    columns: &mut HashMap<String, HashSet<String, RandomState>, RandomState>,
+    columns: &mut HashMap<PathBuf, HashSet<String, RandomState>, RandomState>,
 ) {
     if let Some(with_columns) = &with_columns {
         let cols = columns
-            .entry(path.to_string())
+            .entry(path.to_owned())
             .or_insert_with(|| HashSet::with_capacity_and_hasher(256, RandomState::default()));
         cols.extend(with_columns.iter().cloned());
     }
@@ -23,7 +24,7 @@ fn process_with_columns(
 /// Aggregate all the projections in an LP
 pub(crate) fn agg_projection(
     root: Node,
-    columns: &mut HashMap<String, HashSet<String, RandomState>, RandomState>,
+    columns: &mut HashMap<PathBuf, HashSet<String, RandomState>, RandomState>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     use ALogicalPlan::*;
@@ -52,7 +53,7 @@ pub(crate) fn agg_projection(
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
 pub struct AggScanProjection {
-    pub columns: HashMap<String, HashSet<String, RandomState>, RandomState>,
+    pub columns: HashMap<PathBuf, HashSet<String, RandomState>, RandomState>,
 }
 
 impl AggScanProjection {
@@ -61,7 +62,7 @@ impl AggScanProjection {
         mut lp: ALogicalPlan,
         expr_arena: &mut Arena<AExpr>,
         lp_arena: &mut Arena<ALogicalPlan>,
-        path: &str,
+        path: &Path,
         with_columns: Option<Vec<String>>,
     ) -> ALogicalPlan {
         // if the original projection is less than the new one. Also project locally

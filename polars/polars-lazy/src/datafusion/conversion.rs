@@ -1,4 +1,4 @@
-use crate::utils::expr_to_root_column_name;
+use crate::utils::{expr_to_root_column_name, try_path_to_str};
 use crate::{
     dsl::{AggExpr, Expr, Operator},
     logical_plan::{LiteralValue, LogicalPlan},
@@ -290,7 +290,8 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
             if ignore_errors || skip_rows > 0 {
                 return Err(PolarsError::Other("DataFusion does not support `ignore_errors`, `skip_rows`, `stop_after_n_rows`, `with_columns`".into()));
             }
-            let builder = LogicalPlanBuilder::scan_csv(&path, options, None).unwrap();
+            let builder =
+                LogicalPlanBuilder::scan_csv(try_path_to_str(&path)?, options, None).unwrap();
             match stop_after_n_rows {
                 Some(n) => builder.limit(n).unwrap().build().unwrap(),
                 None => builder.build().unwrap(),
@@ -302,7 +303,8 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
             stop_after_n_rows,
             ..
         } => {
-            let builder = LogicalPlanBuilder::scan_parquet(&path, None, 8).unwrap();
+            let builder =
+                LogicalPlanBuilder::scan_parquet(try_path_to_str(&path)?, None, 8).unwrap();
             match stop_after_n_rows {
                 Some(n) => builder.limit(n).unwrap().build().unwrap(),
                 None => builder.build().unwrap(),

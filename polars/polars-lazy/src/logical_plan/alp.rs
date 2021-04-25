@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{Arena, Node};
 use std::collections::HashSet;
 use std::fs::canonicalize;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
@@ -29,7 +30,7 @@ pub enum ALogicalPlan {
         predicate: Node,
     },
     CsvScan {
-        path: String,
+        path: PathBuf,
         schema: SchemaRef,
         has_header: bool,
         delimiter: u8,
@@ -43,7 +44,7 @@ pub enum ALogicalPlan {
     },
     #[cfg(feature = "parquet")]
     ParquetScan {
-        path: String,
+        path: PathBuf,
         schema: SchemaRef,
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
