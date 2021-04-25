@@ -1104,7 +1104,6 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let new_name = fmt_groupby_column("", GroupByMethod::Groups);
         column.rename(&new_name);
         cols.push(column.into_series());
-        cols.shrink_to_fit();
         DataFrame::new(cols)
     }
 

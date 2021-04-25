@@ -168,7 +168,6 @@ where
 
                 offset += len as u32;
             }
-            hash_tbl.shrink_to_fit();
             hash_tbl
         })
     })
