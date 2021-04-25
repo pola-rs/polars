@@ -109,8 +109,8 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         if let Some(aggregate) = aggregate {
             let cols = aggregate
                 .iter()
-                .map(|scan_agg| scan_agg.evaluate_batch(&df).unwrap())
-                .collect();
+                .map(|scan_agg| scan_agg.evaluate_batch(&df))
+                .collect::<Result<_>>()?;
             if cfg!(debug_assertions) {
                 df = DataFrame::new(cols).unwrap();
             } else {
@@ -130,8 +130,8 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     if let Some(aggregate) = aggregate {
         let cols = aggregate
             .iter()
-            .map(|scan_agg| scan_agg.finish(&df).unwrap())
-            .collect();
+            .map(|scan_agg| scan_agg.finish(&df))
+            .collect::<Result<_>>()?;
         df = DataFrame::new_no_checks(cols)
     }
 

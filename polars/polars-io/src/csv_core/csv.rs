@@ -313,10 +313,9 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             df = df.filter(mask)?;
                         }
 
-                        let mut str_index = 0;
                         // update the running str bytes statistics
-                        str_columns.iter().for_each(|name| {
-                            let ca = df.column(name).unwrap().utf8().unwrap();
+                        for (str_index, name) in str_columns.iter().enumerate() {
+                            let ca = df.column(name)?.utf8()?;
                             let str_bytes_len = ca.get_values_size();
 
                             let prev_value = str_capacities[str_index]
@@ -330,8 +329,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                     name, prev_cap, str_bytes_len
                                 );
                             }
-                            str_index += 1;
-                        });
+                        }
                         dfs.push(df);
                     }
 
@@ -353,8 +351,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         let mut df = match (&self.path, self.record_iter.is_some()) {
             (Some(p), _) => {
-                let file = std::fs::File::open(p).unwrap();
-                let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+                let file = std::fs::File::open(p)?;
+                let mmap = unsafe { memmap::Mmap::map(&file)? };
                 let bytes = mmap[..].as_ref();
                 self.parse_csv(n_threads, bytes, predicate.as_ref())?
             }
@@ -375,8 +373,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         if let Some(aggregate) = aggregate {
             let cols = aggregate
                 .iter()
-                .map(|scan_agg| scan_agg.finish(&df).unwrap())
-                .collect();
+                .map(|scan_agg| scan_agg.finish(&df))
+                .collect::<Result<Vec<_>>>()?;
             df = DataFrame::new_no_checks(cols)
         }
 
