@@ -414,7 +414,7 @@ pub(crate) fn parse_lines(
                 buffers.get_unchecked_mut(processed_fields)
             };
 
-            buf.add(&[], true, read, encoding).unwrap();
+            buf.add(&[], true, read, encoding)?;
             processed_fields += 1;
         }
 
