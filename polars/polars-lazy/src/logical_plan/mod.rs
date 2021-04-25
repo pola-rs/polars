@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::{
     cell::Cell,
     fmt::{self, Debug, Formatter, Write},
@@ -144,7 +145,7 @@ pub enum LogicalPlan {
     Cache { input: Box<LogicalPlan> },
     /// Scan a CSV file
     CsvScan {
-        path: String,
+        path: PathBuf,
         schema: SchemaRef,
         has_header: bool,
         delimiter: u8,
@@ -162,7 +163,7 @@ pub enum LogicalPlan {
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     /// Scan a Parquet file
     ParquetScan {
-        path: String,
+        path: PathBuf,
         schema: SchemaRef,
         with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
@@ -261,7 +262,7 @@ pub enum LogicalPlan {
 impl Default for LogicalPlan {
     fn default() -> Self {
         CsvScan {
-            path: "".to_string(),
+            path: PathBuf::new(),
             schema: Arc::new(Schema::new(vec![Field::new("", DataType::Null)])),
             has_header: false,
             delimiter: b',',
@@ -297,7 +298,10 @@ impl fmt::Debug for LogicalPlan {
                 write!(
                     f,
                     "PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
-                    path, n_columns, total_columns, predicate
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    predicate
                 )
             }
             Selection { predicate, input } => {
@@ -321,7 +325,10 @@ impl fmt::Debug for LogicalPlan {
                 write!(
                     f,
                     "CSV SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
-                    path, n_columns, total_columns, predicate
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    predicate
                 )
             }
             DataFrameScan {
@@ -466,7 +473,7 @@ impl LogicalPlan {
 
                 let current_node = format!(
                     "CSV SCAN {};\nπ {}/{};\nσ {}\n[{:?}]",
-                    path,
+                    path.to_string_lossy(),
                     n_columns,
                     total_columns,
                     pred,
@@ -611,7 +618,7 @@ impl LogicalPlan {
                 let pred = fmt_predicate(predicate.as_ref());
                 let current_node = format!(
                     "PARQUET SCAN {};\nπ {}/{};\nσ {} [{:?}]",
-                    path,
+                    path.to_string_lossy(),
                     n_columns,
                     total_columns,
                     pred,
@@ -913,7 +920,12 @@ pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr
 impl LogicalPlanBuilder {
     #[cfg(feature = "parquet")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
-    pub fn scan_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
+    pub fn scan_parquet<P: Into<PathBuf>>(
+        path: P,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+    ) -> Self {
+        let path = path.into();
         let file = std::fs::File::open(&path).expect("could not open file");
         let schema = Arc::new(
             ParquetReader::new(file)
@@ -934,8 +946,8 @@ impl LogicalPlanBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn scan_csv(
-        path: String,
+    pub fn scan_csv<P: Into<PathBuf>>(
+        path: P,
         delimiter: u8,
         has_header: bool,
         ignore_errors: bool,
@@ -945,6 +957,7 @@ impl LogicalPlanBuilder {
         schema: Option<Arc<Schema>>,
         schema_overwrite: Option<&Schema>,
     ) -> Self {
+        let path = path.into();
         let mut file = std::fs::File::open(&path).expect("could not open file");
 
         let schema = schema.unwrap_or_else(|| {

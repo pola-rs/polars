@@ -1,6 +1,6 @@
 use super::*;
 use crate::logical_plan::{Context, FETCH_ROWS};
-use crate::utils::rename_aexpr_root_name;
+use crate::utils::{rename_aexpr_root_name, try_path_to_str};
 use itertools::Itertools;
 use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
 use polars_core::{frame::hash_join::JoinType, POOL};
@@ -9,6 +9,7 @@ use polars_io::{csv::CsvEncoding, ScanAggregation};
 use rayon::prelude::*;
 use std::io::{Read, Seek};
 use std::mem;
+use std::path::PathBuf;
 
 trait FinishScanOps {
     /// Read the file and create the DataFrame. Used from lazy execution
@@ -71,7 +72,7 @@ impl Executor for CacheExec {
 
 #[cfg(feature = "parquet")]
 pub struct ParquetExec {
-    path: String,
+    path: PathBuf,
     schema: SchemaRef,
     with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -83,7 +84,7 @@ pub struct ParquetExec {
 #[cfg(feature = "parquet")]
 impl ParquetExec {
     pub(crate) fn new(
-        path: String,
+        path: PathBuf,
         schema: SchemaRef,
         with_columns: Option<Vec<String>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
@@ -106,9 +107,10 @@ impl ParquetExec {
 #[cfg(feature = "parquet")]
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let path_str = try_path_to_str(&self.path)?;
         let cache_key = match &self.predicate {
-            Some(predicate) => format!("{}{:?}", self.path, predicate.as_expression()),
-            None => self.path.to_string(),
+            Some(predicate) => format!("{}{:?}", path_str, predicate.as_expression()),
+            None => path_str.to_string(),
         };
         if let Some(df) = state.cache_hit(&cache_key) {
             return Ok(df);
@@ -157,7 +159,7 @@ impl Executor for ParquetExec {
 }
 
 pub struct CsvExec {
-    path: String,
+    path: PathBuf,
     schema: SchemaRef,
     has_header: bool,
     delimiter: u8,
@@ -173,7 +175,7 @@ pub struct CsvExec {
 impl CsvExec {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        path: String,
+        path: PathBuf,
         schema: SchemaRef,
         has_header: bool,
         delimiter: u8,
@@ -203,9 +205,10 @@ impl CsvExec {
 
 impl Executor for CsvExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let path_str = try_path_to_str(&self.path)?;
         let state_key = match &self.predicate {
-            Some(predicate) => format!("{}{:?}", self.path, predicate.as_expression()),
-            None => self.path.to_string(),
+            Some(predicate) => format!("{}{:?}", path_str, predicate.as_expression()),
+            None => path_str.to_string(),
         };
         if self.cache {
             if let Some(df) = state.cache_hit(&state_key) {
