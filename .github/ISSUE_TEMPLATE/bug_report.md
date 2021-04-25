@@ -10,6 +10,10 @@ assignees: ''
 
 Replace this text with the **Rust** or **Python**.
 
+#### Which feature gates did you use?
+
+This can be ignored by Python users.
+
 #### What version of polars are you using?
 
 Replace this text with the version.
