@@ -61,6 +61,7 @@ pub use arrow::csv::WriterBuilder;
 use polars_core::prelude::*;
 use std::fs::File;
 use std::io::{Read, Seek, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Write a DataFrame to csv.
@@ -184,7 +185,7 @@ where
     schema: Option<Arc<Schema>>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
-    path: Option<String>,
+    path: Option<PathBuf>,
     schema_overwrite: Option<&'a Schema>,
     sample_size: usize,
     chunk_size: usize,
@@ -296,8 +297,8 @@ where
 
     /// The preferred way to initialize this builder. This allows the CSV file to be memory mapped
     /// and thereby greatly increases parsing performance.
-    pub fn with_path(mut self, path: Option<String>) -> Self {
-        self.path = path;
+    pub fn with_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
+        self.path = path.map(|p| p.into());
         self
     }
 
@@ -334,9 +335,10 @@ where
 
 impl<'a> CsvReader<'a, File> {
     /// This is the recommended way to create a csv reader as this allows for fastest parsing.
-    pub fn from_path(path: &str) -> Result<Self> {
-        let f = std::fs::File::open(path)?;
-        Ok(Self::new(f).with_path(Some(path.to_string())))
+    pub fn from_path<P: Into<PathBuf>>(path: P) -> Result<Self> {
+        let path = path.into();
+        let f = std::fs::File::open(&path)?;
+        Ok(Self::new(f).with_path(Some(path)))
     }
 }
 
