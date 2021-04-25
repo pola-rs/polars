@@ -11,6 +11,7 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::fmt;
 use std::io::{Read, Seek};
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
@@ -31,7 +32,7 @@ pub struct SequentialReader<R: Read> {
     n_rows: Option<usize>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
-    path: Option<String>,
+    path: Option<PathBuf>,
     has_header: bool,
     delimiter: u8,
     sample_size: usize,
@@ -85,7 +86,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         skip_rows: usize,
         encoding: CsvEncoding,
         n_threads: Option<usize>,
-        path: Option<String>,
+        path: Option<PathBuf>,
         sample_size: usize,
         chunk_size: usize,
     ) -> Self {
@@ -405,7 +406,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     columns: Option<Vec<String>>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
-    path: Option<String>,
+    path: Option<PathBuf>,
     schema_overwrite: Option<&Schema>,
     sample_size: usize,
     chunk_size: usize,
