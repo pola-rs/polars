@@ -447,7 +447,6 @@ pub(crate) unsafe fn take_utf8(
 
         return Arc::new(builder.finish());
     }
-    values_buf.shrink_to_fit();
 
     let mut data = ArrayData::builder(ArrowDataType::LargeUtf8)
         .len(data_len)

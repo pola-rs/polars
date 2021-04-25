@@ -1,9 +1,9 @@
+pub mod categorical;
+pub use self::categorical::CategoricalChunkedBuilder;
 use crate::{
     prelude::*,
-    use_string_cache,
     utils::{get_iter_capacity, NoNull},
 };
-use ahash::AHashMap;
 pub use arrow::alloc;
 use arrow::array::{ArrayRef, LargeListBuilder};
 use arrow::{array::Array, buffer::Buffer};
@@ -115,127 +115,6 @@ where
         PrimitiveChunkedBuilder {
             array_builder: PrimitiveArrayBuilder::<T>::new(capacity),
             field: Field::new(name, T::get_dtype()),
-        }
-    }
-}
-
-pub struct CategoricalChunkedBuilder {
-    array_builder: PrimitiveArrayBuilder<UInt32Type>,
-    field: Field,
-    mapping: AHashMap<String, u32>,
-    reverse_mapping: AHashMap<u32, String>,
-}
-
-impl CategoricalChunkedBuilder {
-    pub fn new(name: &str, capacity: usize) -> Self {
-        let mapping = AHashMap::with_capacity(128);
-        let reverse_mapping = AHashMap::with_capacity(128);
-
-        CategoricalChunkedBuilder {
-            array_builder: PrimitiveArrayBuilder::<UInt32Type>::new(capacity),
-            field: Field::new(name, DataType::Categorical),
-            mapping,
-            reverse_mapping,
-        }
-    }
-}
-impl CategoricalChunkedBuilder {
-    /// Appends all the values in a single lock of the global string cache.
-    pub fn append_values<'a, I>(&mut self, i: I)
-    where
-        I: IntoIterator<Item = Option<&'a str>>,
-    {
-        if use_string_cache() {
-            let mut mapping = crate::STRING_CACHE.lock_map();
-
-            for opt_s in i {
-                match opt_s {
-                    Some(s) => {
-                        let idx = match mapping.get(s) {
-                            Some(idx) => *idx,
-                            None => {
-                                let idx = mapping.len() as u32;
-                                mapping.insert(s.to_string(), idx);
-                                idx
-                            }
-                        };
-                        self.reverse_mapping.insert(idx, s.to_string());
-                        self.array_builder.append_value(idx);
-                    }
-                    None => {
-                        self.array_builder.append_null();
-                    }
-                }
-            }
-        } else {
-            for opt_s in i {
-                match opt_s {
-                    Some(s) => {
-                        let idx = match self.mapping.get(s) {
-                            Some(idx) => *idx,
-                            None => {
-                                let idx = self.mapping.len() as u32;
-                                self.mapping.insert(s.to_string(), idx);
-                                idx
-                            }
-                        };
-                        self.reverse_mapping.insert(idx, s.to_string());
-                        self.array_builder.append_value(idx);
-                    }
-                    None => {
-                        self.array_builder.append_null();
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl ChunkedBuilder<&str, CategoricalType> for CategoricalChunkedBuilder {
-    #[inline]
-    fn append_value(&mut self, val: &str) {
-        let idx = if use_string_cache() {
-            let mut mapping = crate::STRING_CACHE.lock_map();
-            match mapping.get(val) {
-                Some(idx) => *idx,
-                None => {
-                    let idx = mapping.len() as u32;
-                    mapping.insert(val.to_string(), idx);
-                    idx
-                }
-            }
-        } else {
-            match self.mapping.get(val) {
-                Some(idx) => *idx,
-                None => {
-                    let idx = self.mapping.len() as u32;
-                    self.mapping.insert(val.to_string(), idx);
-                    idx
-                }
-            }
-        };
-        self.reverse_mapping.insert(idx, val.to_string());
-        self.array_builder.append_value(idx);
-    }
-
-    #[inline]
-    fn append_null(&mut self) {
-        self.array_builder.append_null()
-    }
-
-    fn finish(mut self) -> ChunkedArray<CategoricalType> {
-        if self.mapping.len() > u32::MAX as usize {
-            panic!("not more than {} categories supported", u32::MAX)
-        };
-        let arr = Arc::new(self.array_builder.finish());
-        let len = arr.len();
-        self.reverse_mapping.shrink_to_fit();
-        ChunkedArray {
-            field: Arc::new(self.field),
-            chunks: vec![arr],
-            chunk_id: vec![len],
-            phantom: PhantomData,
-            categorical_map: Some(Arc::new(self.reverse_mapping)),
         }
     }
 }
@@ -715,6 +594,7 @@ pub fn get_list_builder(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::toggle_string_cache;
 
     #[test]
     fn test_primitive_builder() {
@@ -768,16 +648,31 @@ mod test {
 
     #[test]
     fn test_categorical_builder() {
-        let mut builder = CategoricalChunkedBuilder::new("foo", 10);
+        for b in &[false, true] {
+            toggle_string_cache(*b);
 
-        builder.append_value("hello");
-        builder.append_null();
-        builder.append_value("world");
+            // Use 2 builders to check if the global string cache
+            // does not interfere with the index mapping
+            let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
+            let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
+            builder1.from_iter(vec![None, Some("hello"), Some("vietnam")]);
+            builder2.from_iter(vec![Some("hello"), None, Some("world")].into_iter());
 
-        let ca = builder.finish();
-        let v = AnyValue::Utf8("hello");
-        assert_eq!(ca.get_any_value(0), v);
-        let v = AnyValue::Null;
-        assert_eq!(ca.get_any_value(1), v);
+            let ca = builder1.finish();
+            let v = AnyValue::Null;
+            assert_eq!(ca.get_any_value(0), v);
+            let v = AnyValue::Utf8("hello");
+            assert_eq!(ca.get_any_value(1), v);
+            let v = AnyValue::Utf8("vietnam");
+            assert_eq!(ca.get_any_value(2), v);
+
+            let ca = builder2.finish();
+            let v = AnyValue::Utf8("hello");
+            assert_eq!(ca.get_any_value(0), v);
+            let v = AnyValue::Null;
+            assert_eq!(ca.get_any_value(1), v);
+            let v = AnyValue::Utf8("world");
+            assert_eq!(ca.get_any_value(2), v);
+        }
     }
 }

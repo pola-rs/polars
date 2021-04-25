@@ -98,7 +98,6 @@ impl BooleanBufferBuilder {
 
     #[inline]
     pub fn finish(&mut self) -> Buffer {
-        self.shrink_to_fit();
         let buf = std::mem::replace(&mut self.buffer, MutableBuffer::new(0));
         self.len = 0;
         buf.into()
