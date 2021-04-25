@@ -2,7 +2,6 @@
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::kernels::{cast_numeric_from_dtype, transmute_array_from_dtype};
 use crate::prelude::*;
-use crate::use_string_cache;
 use arrow::compute::cast;
 use num::{NumCast, ToPrimitive};
 
@@ -50,7 +49,7 @@ impl ChunkCast for CategoricalChunked {
 
                 let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.len() * 5);
 
-                let f = |idx: u32| mapping.get(&idx).unwrap();
+                let f = |idx: u32| mapping.get(idx);
 
                 if self.null_count() == 0 {
                     self.into_no_null_iter()
@@ -144,18 +143,9 @@ impl ChunkCast for Utf8Chunked {
     {
         match N::get_dtype() {
             DataType::Categorical => {
+                let iter = self.into_iter();
                 let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
-
-                if use_string_cache() || self.null_count() != 0 {
-                    builder.append_values(self.into_iter());
-                } else if self.null_count() == 0 {
-                    self.into_no_null_iter()
-                        .for_each(|v| builder.append_value(v));
-                } else {
-                    self.into_iter()
-                        .for_each(|opt_v| builder.append_option(opt_v));
-                }
-
+                builder.from_iter(iter);
                 let ca = builder.finish();
                 let ca = unsafe { std::mem::transmute(ca) };
                 Ok(ca)

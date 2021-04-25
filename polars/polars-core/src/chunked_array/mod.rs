@@ -48,8 +48,8 @@ use arrow::array::{
     LargeListArray,
 };
 
+use crate::chunked_array::builder::categorical::RevMapping;
 use crate::utils::{slice_offsets, CustomIterTools};
-use ahash::AHashMap;
 use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
 use polars_arrow::array::ValueSize;
 use std::mem;
@@ -160,7 +160,7 @@ pub struct ChunkedArray<T> {
     chunk_id: Vec<usize>,
     phantom: PhantomData<T>,
     /// maps categorical u32 indexes to String values
-    pub(crate) categorical_map: Option<Arc<AHashMap<u32, String>>>,
+    pub(crate) categorical_map: Option<Arc<RevMapping>>,
 }
 
 impl<T> ChunkedArray<T> {
@@ -170,7 +170,7 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Get a reference to the mapping of categorical types to the string values.
-    pub fn get_categorical_map(&self) -> Option<&Arc<AHashMap<u32, String>>> {
+    pub fn get_categorical_map(&self) -> Option<&Arc<RevMapping>> {
         self.categorical_map.as_ref()
     }
 
@@ -599,14 +599,7 @@ where
             DataType::Object => AnyValue::Object(&"object"),
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
-                AnyValue::Utf8(
-                    &self
-                        .categorical_map
-                        .as_ref()
-                        .expect("should be set")
-                        .get(&v)
-                        .unwrap(),
-                )
+                AnyValue::Utf8(&self.categorical_map.as_ref().expect("should be set").get(v))
             }
             _ => unimplemented!(),
         }
