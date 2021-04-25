@@ -1233,6 +1233,26 @@ impl Series {
         };
         left.is_in_same_type(list_array)
     }
+
+    /// Cast a datelike Series to their physical representation.
+    /// Primitives remain unchanged
+    ///
+    /// * Date32 -> Int32
+    /// * Date64 -> Int64
+    /// * Time64 -> Int64
+    /// * Duration -> Int64
+    ///
+    pub fn to_physical_repr(&self) -> Series {
+        use DataType::*;
+        let out = match self.dtype() {
+            Date32 => self.cast_with_datatype(&DataType::Int32),
+            Date64 => self.cast_with_datatype(&DataType::Int64),
+            Time64(_) => self.cast_with_datatype(&DataType::Int64),
+            Duration(_) => self.cast_with_datatype(&DataType::Int64),
+            _ => return self.clone(),
+        };
+        out.unwrap()
+    }
 }
 
 impl Deref for Series {
