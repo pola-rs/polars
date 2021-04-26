@@ -1,12 +1,12 @@
 use crate::prelude::*;
 use crate::use_string_cache;
 use crate::utils::arrow::array::{Array, ArrayBuilder};
-use hashbrown::HashMap;
-use arrow::array::{LargeStringArray, LargeStringBuilder};
-use polars_arrow::builder::PrimitiveArrayBuilder;
-use std::marker::PhantomData;
 use crate::vector_hasher::IdBuildHasher;
 use ahash::AHashMap;
+use arrow::array::{LargeStringArray, LargeStringBuilder};
+use hashbrown::HashMap;
+use polars_arrow::builder::PrimitiveArrayBuilder;
+use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
     Global(HashMap<u32, u32, IdBuildHasher>, LargeStringBuilder),

@@ -22,12 +22,13 @@ pub use crate::{
     datatypes,
     datatypes::*,
     error::{PolarsError, Result},
-    frame::{groupby::VecHash, hash_join::JoinType, DataFrame},
+    frame::{hash_join::JoinType, DataFrame},
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
         IntoSeries, NamedFrom, Series, SeriesTrait,
     },
     testing::*,
+    vector_hasher::VecHash,
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field as ArrowField, Schema as ArrowSchema};
 pub(crate) use polars_arrow::array::*;
