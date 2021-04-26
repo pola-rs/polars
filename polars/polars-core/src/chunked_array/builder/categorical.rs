@@ -1,13 +1,15 @@
 use crate::prelude::*;
 use crate::use_string_cache;
 use crate::utils::arrow::array::{Array, ArrayBuilder};
-use ahash::AHashMap;
+use hashbrown::HashMap;
 use arrow::array::{LargeStringArray, LargeStringBuilder};
 use polars_arrow::builder::PrimitiveArrayBuilder;
 use std::marker::PhantomData;
+use crate::vector_hasher::IdBuildHasher;
+use ahash::AHashMap;
 
 pub enum RevMappingBuilder {
-    Global(AHashMap<u32, u32>, LargeStringBuilder),
+    Global(HashMap<u32, u32, IdBuildHasher>, LargeStringBuilder),
     Local(LargeStringBuilder),
 }
 
@@ -34,7 +36,7 @@ impl RevMappingBuilder {
 }
 
 pub enum RevMapping {
-    Global(AHashMap<u32, u32>, LargeStringArray),
+    Global(HashMap<u32, u32, IdBuildHasher>, LargeStringArray),
     Local(LargeStringArray),
 }
 
@@ -68,7 +70,7 @@ impl CategoricalChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
         let builder = LargeStringBuilder::new(capacity / 10);
         let reverse_mapping = if use_string_cache() {
-            RevMappingBuilder::Global(AHashMap::new(), builder)
+            RevMappingBuilder::Global(HashMap::with_hasher(IdBuildHasher::default()), builder)
         } else {
             RevMappingBuilder::Local(builder)
         };
