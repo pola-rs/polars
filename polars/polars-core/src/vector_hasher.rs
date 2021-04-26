@@ -12,7 +12,7 @@ use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 //  https://www.cockroachlabs.com/blog/vectorized-hash-joiner/
 //  http://myeyesareblind.com/2017/02/06/Combine-hash-values/
 
-pub(crate) struct IdHasher {
+pub struct IdHasher {
     hash: u64,
 }
 
@@ -22,11 +22,27 @@ impl Hasher for IdHasher {
     }
 
     fn write(&mut self, _bytes: &[u8]) {
-        unreachable!("IdHasher should only be used for u64 keys")
+        unreachable!("IdHasher should only be used for integer keys <= 64 bit precision")
+    }
+
+    fn write_u32(&mut self, i: u32) {
+        self.write_u64(i as u64)
     }
 
     fn write_u64(&mut self, i: u64) {
         self.hash = i;
+    }
+
+    fn write_i32(&mut self, i: i32) {
+        // Safety:
+        // same number of bits
+        unsafe { self.write_u32(std::mem::transmute::<i32, u32>(i)) }
+    }
+
+    fn write_i64(&mut self, i: i64) {
+        // Safety:
+        // same number of bits
+        unsafe { self.write_u64(std::mem::transmute::<i64, u64>(i)) }
     }
 }
 
@@ -36,7 +52,7 @@ impl Default for IdHasher {
     }
 }
 
-pub(crate) type IdBuildHasher = BuildHasherDefault<IdHasher>;
+pub type IdBuildHasher = BuildHasherDefault<IdHasher>;
 
 #[derive(Debug)]
 pub(crate) struct IdxHash {
