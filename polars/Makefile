@@ -16,6 +16,9 @@ clippy:
 	-p polars-lazy \
 	-p polars-arrow
 
+clippy-default:
+	cargo clippy -Z unstable-options
+
 test:
 	cargo test --all-features \
 	-p polars-lazy \
